@@ -7,6 +7,7 @@ using ProMaxx2.QA.Infrastructure.Identity;
 using ProMaxx2.QA.Infrastructure.Persistence;
 using System.Text;
 using ProMaxx2.QA.Application.Projects;
+using ProMaxx2.QA.Application.Releases;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
@@ -16,6 +17,7 @@ builder.Services.AddHealthChecks();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddScoped<ProjectService>();
+builder.Services.AddScoped<ReleaseService>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
 if (Encoding.UTF8.GetByteCount(jwt.Key) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Use a secret store outside Development.");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
