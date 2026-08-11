@@ -6,6 +6,7 @@ using ProMaxx2.QA.Infrastructure;
 using ProMaxx2.QA.Infrastructure.Identity;
 using ProMaxx2.QA.Infrastructure.Persistence;
 using System.Text;
+using ProMaxx2.QA.Application.Projects;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
@@ -14,13 +15,14 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<AuthenticationService>();
+builder.Services.AddScoped<ProjectService>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
 if (Encoding.UTF8.GetByteCount(jwt.Key) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Use a secret store outside Development.");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer=true, ValidIssuer=jwt.Issuer, ValidateAudience=true, ValidAudience=jwt.Audience, ValidateLifetime=true, ValidateIssuerSigningKey=true, IssuerSigningKey=new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key)), ClockSkew=TimeSpan.FromSeconds(30) };
 });
-builder.Services.AddAuthorizationBuilder().AddPolicy("AdminUser", p=>p.RequireClaim("permission","ADMIN.USER"));
+builder.Services.AddAuthorizationBuilder().AddPolicy("AdminUser",p=>p.RequireClaim("permission","ADMIN.USER")).AddPolicy("ProjectView",p=>p.RequireClaim("permission","PROJECT.VIEW")).AddPolicy("ProjectEdit",p=>p.RequireClaim("permission","PROJECT.EDIT"));
 builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
     .WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"])
     .AllowAnyHeader().AllowAnyMethod()));

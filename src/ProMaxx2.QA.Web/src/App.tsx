@@ -1,13 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import './Login.css'
 
-type Page = 'dashboard' | 'releases' | 'requirements' | 'rtm' | 'test-cases' | 'test-suites' | 'test-cycles' | 'execution' | 'defects' | 'regression' | 'summary' | 'risks' | 'signoff' | 'users' | 'audit'
+type Page = 'dashboard' | 'projects' | 'releases' | 'requirements' | 'rtm' | 'test-cases' | 'test-suites' | 'test-cycles' | 'execution' | 'defects' | 'regression' | 'summary' | 'risks' | 'signoff' | 'users' | 'audit'
 type SessionUser = { userId: string; username: string; displayName: string; roles: string[]; permissions: string[] }
 const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5038/api/v1'
 
 const nav: { label: string; items: { id: Page; icon: string; label: string }[] }[] = [
-  { label: 'ภาพรวม', items: [{ id: 'dashboard', icon: '▦', label: 'Dashboard' }, { id: 'releases', icon: '◫', label: 'Release / Build' }] },
+  { label: 'ภาพรวม', items: [{ id: 'dashboard', icon: '▦', label: 'Dashboard' }, { id: 'projects', icon: 'P', label: 'Project / Module' }, { id: 'releases', icon: '◫', label: 'Release / Build' }] },
   { label: 'REQUIREMENT & TEST DESIGN', items: [{ id: 'requirements', icon: 'R', label: 'Requirement' }, { id: 'rtm', icon: '⇄', label: 'RTM' }, { id: 'test-cases', icon: 'TC', label: 'Test Case' }, { id: 'test-suites', icon: '▤', label: 'Test Suite' }] },
   { label: 'TEST EXECUTION', items: [{ id: 'test-cycles', icon: '◎', label: 'Test Cycle' }, { id: 'execution', icon: '▶', label: 'Execution Workspace' }, { id: 'defects', icon: '!', label: 'Defect' }, { id: 'regression', icon: '↻', label: 'Regression' }] },
   { label: 'RELEASE GOVERNANCE', items: [{ id: 'summary', icon: 'Σ', label: 'Test Summary' }, { id: 'risks', icon: '⚠', label: 'Risk Acceptance' }, { id: 'signoff', icon: '✓', label: 'Release Sign-off' }] },
@@ -65,6 +65,16 @@ function DataPage({ page, search }: { page: Page; search: string }) {
 
 function EmptyPage({ page }: { page: Page }) { return <article className="card empty"><div className="empty-icon">{nav.flatMap(n=>n.items).find(i=>i.id===page)?.icon}</div><h3>{pageNames[page]}</h3><p>โมดูลนี้เตรียมไว้ตาม Screen Specification และพร้อมเชื่อมต่อข้อมูลใน vertical slice ถัดไป</p><button className="btn primary">เริ่มสร้างรายการ</button></article> }
 
+type ProjectItem={projectId:string;projectCode:string;projectName:string;description?:string;status:string;isActive:boolean;createdAt:string}
+function ProjectsPage({search,refresh}:{search:string;refresh:number}){
+  const [items,setItems]=useState<ProjectItem[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true)
+  useEffect(()=>{const token=localStorage.getItem('qa.accessToken');fetch(`${apiUrl}/projects`,{headers:{Authorization:`Bearer ${token}`}}).then(async r=>{if(!r.ok)throw new Error(r.status===401?'Session หมดอายุ กรุณาเข้าสู่ระบบใหม่':'โหลดข้อมูลโครงการไม่สำเร็จ');return r.json()}).then(setItems).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[refresh])
+  if(loading)return <article className="card empty"><p>กำลังโหลดข้อมูลโครงการ...</p></article>
+  if(error)return <article className="card empty"><div className="login-error">{error}</div></article>
+  const filtered=items.filter(x=>`${x.projectCode} ${x.projectName} ${x.description??''}`.toLowerCase().includes(search.toLowerCase()))
+  return <article className="card"><div className="table-tools"><div><select><option>ทุกสถานะ</option></select></div><span>{filtered.length} โครงการ</span></div><div className="table-wrap"><table><thead><tr><th>Project Code</th><th>Project Name</th><th>Description</th><th>Status</th><th>Active</th><th>Created At</th></tr></thead><tbody>{filtered.map(x=><tr key={x.projectId}><td><b>{x.projectCode}</b></td><td>{x.projectName}</td><td>{x.description??'-'}</td><td><Badge tone={x.isActive?'green':'red'}>{x.status}</Badge></td><td>{x.isActive?'ใช้งาน':'ปิดใช้งาน'}</td><td>{new Date(x.createdAt).toLocaleDateString('th-TH')}</td></tr>)}</tbody></table></div></article>
+}
+
 function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
   const [username,setUsername]=useState(''), [password,setPassword]=useState(''), [error,setError]=useState(''), [loading,setLoading]=useState(false)
   const submit=async(e:React.FormEvent)=>{e.preventDefault();setError('');setLoading(true);try{const response=await fetch(`${apiUrl}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');const data=await response.json();localStorage.setItem('qa.accessToken',data.accessToken);localStorage.setItem('qa.user',JSON.stringify(data.user));onLogin(data.user)}catch(ex){setError(ex instanceof Error?ex.message:'ไม่สามารถเชื่อมต่อระบบได้')}finally{setLoading(false)}}
@@ -74,16 +84,18 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
 function App() {
   const [page, setPage] = useState<Page>('dashboard'), [menu, setMenu] = useState(false), [search, setSearch] = useState(''), [modal, setModal] = useState(false)
   const [user,setUser]=useState<SessionUser|null>(()=>{try{const value=localStorage.getItem('qa.user');return value?JSON.parse(value):null}catch{return null}})
+  const [code,setCode]=useState(''),[name,setName]=useState(''),[details,setDetails]=useState(''),[refresh,setRefresh]=useState(0),[saving,setSaving]=useState(false)
   const description = useMemo(() => page === 'dashboard' ? 'สถานะคุณภาพและความพร้อม Release แบบรวมศูนย์' : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`, [page])
   const go = (id: Page) => { setPage(id); setMenu(false); window.history.replaceState(null,'',`#/${id}`) }
   const logout=()=>{localStorage.removeItem('qa.accessToken');localStorage.removeItem('qa.user');setUser(null)}
+  const save=async()=>{if(page!=='projects'){setModal(false);return}setSaving(true);try{const response=await fetch(`${apiUrl}/projects`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`},body:JSON.stringify({projectCode:code,projectName:name,description:details||null,ownerUserId:null})});if(!response.ok){const problem=await response.json();throw new Error(problem.detail??'บันทึกโครงการไม่สำเร็จ')}setModal(false);setCode('');setName('');setDetails('');setRefresh(x=>x+1)}catch(e){window.alert(e instanceof Error?e.message:'บันทึกไม่สำเร็จ')}finally{setSaving(false)}}
   if(!user)return <Login onLogin={setUser}/>
   return <div className="app">
     <aside className={menu?'sidebar open':'sidebar'}><div className="brand"><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Quality Assurance Management</small></div></div>{nav.map(g=><div className="nav-group" key={g.label}><p>{g.label}</p>{g.items.map(i=><button key={i.id} className={page===i.id?'active':''} onClick={()=>go(i.id)}><i>{i.icon}</i>{i.label}</button>)}</div>)}</aside>
     <main><header className="topbar"><button className="menu-btn" onClick={()=>setMenu(v=>!v)}>☰</button><div className="context"><select><option>ProMaxx2</option></select><select><option>Release 2026.08</option><option>Release 2026.09</option></select><select><option>Build 10.0.228 RC2</option></select></div><div className="profile"><Badge tone="yellow">2 Blockers</Badge><span className="bell">●</span><div className="avatar">{user.displayName.slice(0,2).toUpperCase()}</div><div><b>{user.displayName}</b><button className="logout" onClick={logout}>ออกจากระบบ</button></div></div></header>
-      <div className="content"><div className="page-head"><div><h1>{pageNames[page]}</h1><p>{description}</p></div><div className="actions"><label className="search">⌕<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ค้นหา..."/></label><button className="btn">Export</button><button className="btn primary" onClick={()=>setModal(true)}>+ สร้างรายการ</button></div></div>{page==='dashboard'?<Dashboard/>:<DataPage page={page} search={search}/>}</div>
+      <div className="content"><div className="page-head"><div><h1>{pageNames[page]}</h1><p>{description}</p></div><div className="actions"><label className="search">⌕<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ค้นหา..."/></label><button className="btn">Export</button><button className="btn primary" onClick={()=>setModal(true)}>+ สร้างรายการ</button></div></div>{page==='dashboard'?<Dashboard/>:page==='projects'?<ProjectsPage search={search} refresh={refresh}/>:<DataPage page={page} search={search}/>}</div>
     </main>
-    {modal&&<div className="modal" onMouseDown={()=>setModal(false)}><div className="modal-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>สร้าง {pageNames[page]}</h2><button onClick={()=>setModal(false)}>×</button></div><div className="form-grid"><label>รหัส<input placeholder="ระบุรหัส"/></label><label>ชื่อรายการ<input placeholder="ระบุชื่อ"/></label><label className="full">รายละเอียด<textarea rows={4}/></label></div><div className="modal-actions"><button className="btn" onClick={()=>setModal(false)}>ยกเลิก</button><button className="btn primary" onClick={()=>setModal(false)}>บันทึก</button></div></div></div>}
+    {modal&&<div className="modal" onMouseDown={()=>setModal(false)}><div className="modal-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>สร้าง {pageNames[page]}</h2><button onClick={()=>setModal(false)}>×</button></div><div className="form-grid"><label>รหัส<input value={code} onChange={e=>setCode(e.target.value)} placeholder="ระบุรหัส" required/></label><label>ชื่อรายการ<input value={name} onChange={e=>setName(e.target.value)} placeholder="ระบุชื่อ" required/></label><label className="full">รายละเอียด<textarea value={details} onChange={e=>setDetails(e.target.value)} rows={4}/></label></div><div className="modal-actions"><button className="btn" onClick={()=>setModal(false)}>ยกเลิก</button><button className="btn primary" disabled={saving||!code.trim()||!name.trim()} onClick={save}>{saving?'กำลังบันทึก...':'บันทึก'}</button></div></div></div>}
   </div>
 }
 
