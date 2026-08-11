@@ -10,6 +10,7 @@ using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.Releases;
 using ProMaxx2.QA.Application.Requirements;
 using ProMaxx2.QA.Application.TestManagement;
+using ProMaxx2.QA.Application.Execution;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
@@ -23,6 +24,7 @@ builder.Services.AddScoped<ReleaseService>();
 builder.Services.AddScoped<RequirementService>();
 builder.Services.AddScoped<TestCaseService>();
 builder.Services.AddScoped<TestSuiteService>();
+builder.Services.AddScoped<TestCycleService>();
 builder.Services.AddScoped<AdministrationService>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
 if (Encoding.UTF8.GetByteCount(jwt.Key) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Use a secret store outside Development.");
@@ -38,6 +40,7 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RequirementEdit",p=>p.RequireClaim("permission","REQUIREMENT.EDIT"))
     .AddPolicy("TestCaseView",p=>p.RequireClaim("permission","TESTCASE.VIEW"))
     .AddPolicy("TestCaseEdit",p=>p.RequireClaim("permission","TESTCASE.EDIT"));
+builder.Services.AddAuthorizationBuilder().AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"));
 builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
     .WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"])
     .AllowAnyHeader().AllowAnyMethod()));

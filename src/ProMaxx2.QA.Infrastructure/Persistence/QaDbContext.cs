@@ -4,6 +4,7 @@ using ProMaxx2.QA.Domain.Projects;
 using ProMaxx2.QA.Domain.Releases;
 using ProMaxx2.QA.Domain.Requirements;
 using ProMaxx2.QA.Domain.TestManagement;
+using ProMaxx2.QA.Domain.Execution;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -25,6 +26,9 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<RequirementTestCase> RequirementTestCases => Set<RequirementTestCase>();
     public DbSet<TestSuite> TestSuites => Set<TestSuite>();
     public DbSet<TestSuiteCase> TestSuiteCases => Set<TestSuiteCase>();
+    public DbSet<TestEnvironment> TestEnvironments => Set<TestEnvironment>();
+    public DbSet<TestCycle> TestCycles => Set<TestCycle>();
+    public DbSet<TestCycleCase> TestCycleCases => Set<TestCycleCase>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }
