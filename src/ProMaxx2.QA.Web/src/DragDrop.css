@@ -1,0 +1,8 @@
+.module-tree tr[draggable="true"] { cursor: grab; transition: opacity .15s, box-shadow .15s; }
+.module-tree tr[draggable="true"]:active { cursor: grabbing; }
+.module-tree tr.dragging { opacity: .35; }
+.module-tree tr.drop-before { box-shadow: inset 0 3px 0 var(--primary); }
+.module-tree tr.drop-after { box-shadow: inset 0 -3px 0 var(--primary); }
+.module-tree tr.drop-inside { background: #eaf0ff; outline: 2px solid #9db5f5; outline-offset: -2px; }
+.drag-handle { width: 18px; color: #98a2b3; font-size: 14px; letter-spacing: -3px; cursor: grab; user-select: none; }
+.tree-module:hover .drag-handle { color: var(--primary); }
