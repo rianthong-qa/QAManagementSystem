@@ -1110,6 +1110,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
     canEdit = false;
   }
   const [items, setItems] = useState<ReleaseItem[]>([]),
+    [allItems, setAllItems] = useState<ReleaseItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
     [builds, setBuilds] = useState<BuildItem[]>([]),
     [selectedId, setSelectedId] = useState(""),
@@ -1145,9 +1146,11 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
       fetch(`${apiUrl}/projects`, { headers: h }).then((r) => r.json()),
     ])
       .then(([releaseData, projectData]) => {
-        const active = (releaseData as ReleaseItem[]).filter(
+        const allReleases = releaseData as ReleaseItem[];
+        const active = allReleases.filter(
           (x) => x.status !== "Cancelled",
         );
+        setAllItems(allReleases);
         setItems(active);
         setProjects((projectData as ProjectItem[]).filter((x) => x.isActive));
         setSelectedId((current) =>
@@ -1193,7 +1196,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
       item?.releaseCode ??
         nextBusinessCode(
           `${project?.projectCode ?? "PRJ"}-REL`,
-          items
+          allItems
             .filter((x) => x.projectId === targetProjectId)
             .map((x) => x.releaseCode),
         ),
@@ -1239,7 +1242,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
               releaseOwnerUserId: null,
             }
           : {
-              releaseCode: code,
+              releaseCode: "",
               version: name,
               releaseType: type,
               plannedReleaseDate: date || null,
@@ -1526,7 +1529,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
                       setCode(
                         nextBusinessCode(
                           `${project?.projectCode ?? "PRJ"}-REL`,
-                          items
+                          allItems
                             .filter((x) => x.projectId === value)
                             .map((x) => x.releaseCode),
                         ),
