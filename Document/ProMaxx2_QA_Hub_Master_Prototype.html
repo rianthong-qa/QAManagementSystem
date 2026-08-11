@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProMaxx2 QA Hub</title>
+<style>
+:root{
+  --bg:#f5f7fb;--card:#fff;--text:#1f2937;--muted:#667085;--line:#e5e7eb;
+  --primary:#2457d6;--primary-dark:#173fa7;--sidebar:#111827;--sidebar2:#182234;
+  --green:#169c63;--yellow:#d79a00;--red:#d64545;--purple:#7457eb;--blue:#2f68ff;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:Tahoma,"Noto Sans Thai",Arial,sans-serif;background:var(--bg);color:var(--text)}
+button,input,select,textarea{font-family:inherit}
+button{cursor:pointer}
+.app{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+.sidebar{background:linear-gradient(180deg,var(--sidebar),var(--sidebar2));color:#fff;padding:18px 14px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{display:flex;align-items:center;gap:12px;padding:5px 8px 18px;border-bottom:1px solid rgba(255,255,255,.08)}
+.logo{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#3f73ff,#2457d6);display:grid;place-items:center;font-weight:800}
+.brand h1{font-size:18px;margin:0}.brand small{color:#a9b4c4;font-size:11px}
+.nav-title{font-size:10px;color:#8090a6;margin:18px 10px 7px;text-transform:uppercase;letter-spacing:.6px}
+.nav a{display:flex;align-items:center;gap:10px;text-decoration:none;color:#cbd5e1;padding:9px 11px;border-radius:9px;margin:2px 0;font-size:13px}
+.nav a:hover,.nav a.active{background:#24324a;color:white}
+.nav .ico{width:20px;text-align:center}
+.main{min-width:0}
+.topbar{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:8}
+.context{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.context select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff}
+.user{display:flex;align-items:center;gap:10px}
+.avatar{width:34px;height:34px;border-radius:50%;background:#eaf0ff;color:#2457d6;display:grid;place-items:center;font-weight:700}
+.content{padding:24px 28px 50px}
+.page{display:none}.page.active{display:block}
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:20px}
+.page-head h2{margin:0;font-size:25px}.page-head p{margin:6px 0 0;color:var(--muted);font-size:13px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:#fff;padding:9px 13px;border-radius:9px;color:var(--text)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.danger{background:#fff1f1;color:#bd3030;border-color:#f5caca}
+.grid{display:grid;gap:16px}
+.kpi-grid{grid-template-columns:repeat(4,1fr);margin-bottom:16px}
+.two{grid-template-columns:1.4fr .6fr}.three{grid-template-columns:repeat(3,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:17px;box-shadow:0 3px 12px rgba(16,24,40,.035)}
+.card h3{margin:0 0 12px;font-size:16px}
+.kpi-label{font-size:12px;color:var(--muted)}.kpi-val{font-size:28px;font-weight:700;margin:7px 0 4px}.small{font-size:12px;color:var(--muted)}
+.green{color:var(--green)}.red{color:var(--red)}.yellow{color:var(--yellow)}.blue{color:var(--primary)}
+.badge{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+.bg-green{background:#eaf8f1;color:#168b58}.bg-red{background:#fdecec;color:#c83a3a}.bg-yellow{background:#fff5d9;color:#9a6d00}.bg-blue{background:#eaf0ff;color:#2457d6}.bg-gray{background:#eef1f5;color:#596273}.bg-purple{background:#f0edff;color:#6547e8}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:10px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11px;color:#596273;background:#fafbfc;position:sticky;top:0}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
+.toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.filters input,.filters select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff}
+.progress{height:8px;background:#edf0f4;border-radius:999px;overflow:hidden}.progress > span{display:block;height:100%;background:var(--primary)}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow:auto}
+.tab{padding:9px 12px;border-radius:8px 8px 0 0;font-size:12px;color:#667085;white-space:nowrap}.tab.active{color:#2457d6;background:#eef3ff;font-weight:700}
+.list{display:grid;gap:9px}
+.list-item{border:1px solid var(--line);border-radius:10px;padding:11px;background:#fff}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:6px}.field label{font-size:11px;color:#667085}.field input,.field select,.field textarea{border:1px solid var(--line);border-radius:8px;padding:9px;background:#fff}.full{grid-column:1/-1}
+.step{display:grid;grid-template-columns:45px 1fr 1fr 1fr;gap:8px;padding:9px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;align-items:start}
+.step-num{width:32px;height:32px;border-radius:8px;background:#eef3ff;color:#2457d6;display:grid;place-items:center;font-weight:700}
+.exec-layout{display:grid;grid-template-columns:290px 1fr 270px;gap:14px}
+.exec-list{max-height:620px;overflow:auto}.case{padding:10px;border-bottom:1px solid var(--line);cursor:pointer}.case:hover,.case.active{background:#eef3ff}
+.status-buttons{display:flex;gap:8px;flex-wrap:wrap}.status-buttons .btn{font-size:12px}
+.timeline{display:grid;gap:9px}.tl{display:grid;grid-template-columns:10px 1fr;gap:10px}.dot{width:9px;height:9px;border-radius:50%;background:var(--primary);margin-top:5px}
+.gate{display:grid;gap:10px}.gate-item{display:flex;justify-content:space-between;gap:12px;padding:10px;border:1px solid var(--line);border-radius:9px}
+.callout{padding:12px;border-radius:10px;background:#fff5d9;color:#725400;font-size:12px}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}
+.modal.show{display:flex}.modal-box{background:#fff;width:min(720px,100%);max-height:88vh;overflow:auto;border-radius:14px;padding:20px}
+.modal-box h3{margin-top:0}
+@media(max-width:1200px){.app{grid-template-columns:240px 1fr}.kpi-grid,.three{grid-template-columns:1fr 1fr}.exec-layout{grid-template-columns:240px 1fr}.exec-layout>div:last-child{grid-column:1/-1}}
+@media(max-width:850px){.app{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.topbar{position:relative}.kpi-grid,.two,.three,.form-grid,.exec-layout{grid-template-columns:1fr}.content{padding:18px}.page-head{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand"><div class="logo">QA</div><div><h1>ProMaxx2 QA Hub</h1><small>Quality Assurance Management System</small></div></div>
+
+  <div class="nav-title">ภาพรวม</div>
+  <nav class="nav">
+    <a href="#" data-page="dashboard" class="active"><span class="ico">▦</span>Dashboard</a>
+    <a href="#" data-page="releases"><span class="ico">◫</span>Release / Build</a>
+  </nav>
+
+  <div class="nav-title">Requirement & Test Design</div>
+  <nav class="nav">
+    <a href="#" data-page="requirements"><span class="ico">R</span>Requirement</a>
+    <a href="#" data-page="rtm"><span class="ico">⇄</span>RTM</a>
+    <a href="#" data-page="testcases"><span class="ico">TC</span>Test Case</a>
+    <a href="#" data-page="testsuites"><span class="ico">▤</span>Test Suite</a>
+  </nav>
+
+  <div class="nav-title">Test Execution</div>
+  <nav class="nav">
+    <a href="#" data-page="cycles"><span class="ico">◎</span>Test Cycle</a>
+    <a href="#" data-page="execution"><span class="ico">▶</span>Execution Workspace</a>
+    <a href="#" data-page="defects"><span class="ico">!</span>Defect</a>
+    <a href="#" data-page="regression"><span class="ico">↻</span>Regression</a>
+  </nav>
+
+  <div class="nav-title">Release Governance</div>
+  <nav class="nav">
+    <a href="#" data-page="summary"><span class="ico">Σ</span>Test Summary</a>
+    <a href="#" data-page="risks"><span class="ico">⚠</span>Risk Acceptance</a>
+    <a href="#" data-page="signoff"><span class="ico">✓</span>Release Sign-off</a>
+  </nav>
+
+  <div class="nav-title">Administration</div>
+  <nav class="nav">
+    <a href="#" data-page="users"><span class="ico">U</span>User / Role</a>
+    <a href="#" data-page="audit"><span class="ico">⌕</span>Audit Log</a>
+  </nav>
+</aside>
+
+<section class="main">
+<header class="topbar">
+  <div class="context">
+    <select><option>ProMaxx2</option></select>
+    <select><option>Release 2026.08</option><option>Release 2026.09</option></select>
+    <select><option>Build 10.0.228 RC2</option><option>Build 10.0.227 RC1</option></select>
+  </div>
+  <div class="user"><span class="badge bg-yellow">2 Blockers</span><span>🔔</span><div class="avatar">QA</div><div><div style="font-size:12px;font-weight:700">QA Lead</div><div class="small">Administrator</div></div></div>
+</header>
+
+<main class="content">
+
+<!-- DASHBOARD -->
+<section id="dashboard" class="page active">
+  <div class="page-head"><div><h2>Dashboard</h2><p>สถานะคุณภาพและความพร้อม Release แบบรวมศูนย์</p></div><div class="actions"><button class="btn">Export Summary</button><button class="btn primary" onclick="showModal('cycleModal')">+ สร้าง Test Cycle</button></div></div>
+  <div class="grid kpi-grid">
+    <div class="card"><div class="kpi-label">Requirement Coverage</div><div class="kpi-val">94%</div><div class="small green">188 / 200 Covered</div></div>
+    <div class="card"><div class="kpi-label">Execution</div><div class="kpi-val">82%</div><div class="small blue">984 / 1,200 Cases</div></div>
+    <div class="card"><div class="kpi-label">Pass Rate</div><div class="kpi-val">91.7%</div><div class="small green">902 Passed</div></div>
+    <div class="card"><div class="kpi-label">Release Blocker</div><div class="kpi-val">2</div><div class="small red">P0 0 · P1 2</div></div>
+  </div>
+  <div class="grid two">
+    <div class="card"><h3>Module Health</h3>
+      <div class="table-wrap"><table><thead><tr><th>Module</th><th>Coverage</th><th>Pass</th><th>Defect</th><th>Status</th></tr></thead><tbody>
+        <tr><td>Authentication</td><td>100%</td><td>98%</td><td>1</td><td><span class="badge bg-green">Healthy</span></td></tr>
+        <tr><td>Sales / POS</td><td>98%</td><td>93%</td><td>5</td><td><span class="badge bg-yellow">Watch</span></td></tr>
+        <tr><td>Stock</td><td>95%</td><td>89%</td><td>8</td><td><span class="badge bg-yellow">Watch</span></td></tr>
+        <tr><td>Report / Export</td><td>92%</td><td>87%</td><td>4</td><td><span class="badge bg-red">Risk</span></td></tr>
+        <tr><td>Velopack Update</td><td>100%</td><td>100%</td><td>0</td><td><span class="badge bg-green">Healthy</span></td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="card"><h3>Release Gate</h3><div class="gate">
+      <div class="gate-item"><span>Smoke Test</span><span class="badge bg-green">100% Pass</span></div>
+      <div class="gate-item"><span>Critical Regression</span><span class="badge bg-yellow">88%</span></div>
+      <div class="gate-item"><span>Open P0</span><span class="badge bg-green">0</span></div>
+      <div class="gate-item"><span>P1 Blocker</span><span class="badge bg-red">2</span></div>
+      <div class="gate-item"><span>Update Test</span><span class="badge bg-green">Passed</span></div>
+    </div><div class="callout" style="margin-top:12px">Recommended Decision: <b>CONDITIONAL GO</b></div></div>
+  </div>
+</section>
+
+<!-- RELEASES -->
+<section id="releases" class="page">
+<div class="page-head"><div><h2>Release / Build</h2><p>ควบคุม Release Candidate และ Build ที่ใช้ทดสอบ</p></div><button class="btn primary">+ New Release</button></div>
+<div class="card">
+<div class="tabs"><div class="tab active">Release Overview</div><div class="tab">Builds</div><div class="tab">Change Impact</div><div class="tab">Known Issues</div></div>
+<div class="grid three">
+<div class="card"><div class="kpi-label">Release</div><div class="kpi-val" style="font-size:21px">2026.08</div><div class="small">Target 31 Aug 2026</div></div>
+<div class="card"><div class="kpi-label">Candidate Build</div><div class="kpi-val" style="font-size:21px">10.0.228</div><div class="small">RC2 · Smoke Passed</div></div>
+<div class="card"><div class="kpi-label">Status</div><div class="kpi-val" style="font-size:21px;color:#d79a00">Testing</div><div class="small">Owner: Release Team</div></div>
+</div>
+<div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Build</th><th>App Version</th><th>Package</th><th>Date</th><th>RC</th><th>Smoke</th><th>Status</th></tr></thead><tbody>
+<tr><td>10.0.228</td><td>10.0.228</td><td>10.0.228</td><td>11 Aug 2026</td><td><span class="badge bg-blue">RC2</span></td><td><span class="badge bg-green">Pass</span></td><td>Testing</td></tr>
+<tr><td>10.0.227</td><td>10.0.227</td><td>10.0.227</td><td>9 Aug 2026</td><td><span class="badge bg-gray">RC1</span></td><td><span class="badge bg-red">Fail</span></td><td>Rejected</td></tr>
+</tbody></table></div></div>
+</section>
+
+<!-- REQUIREMENTS -->
+<section id="requirements" class="page">
+<div class="page-head"><div><h2>Requirement Management</h2><p>จัดการ Requirement, Acceptance Criteria, Scope และ Revision</p></div><div class="actions"><button class="btn">Import</button><button class="btn primary">+ Requirement</button></div></div>
+<div class="card">
+<div class="toolbar"><div class="filters"><input placeholder="ค้นหา Requirement"><select><option>ทุก Module</option><option>Sales</option><option>Stock</option></select><select><option>ทุก Coverage</option><option>Not Covered</option></select></div><span class="small">200 Requirements</span></div>
+<div class="table-wrap"><table><thead><tr><th>ID</th><th>Requirement</th><th>Module</th><th>Priority</th><th>Coverage</th><th>Latest Result</th><th>Status</th><th>Owner</th></tr></thead><tbody>
+<tr><td>PMX2-REQ-SALE-001</td><td>ผู้ไม่มีสิทธิ์ต้องไม่สามารถแก้ราคาขาย</td><td>Sales</td><td><span class="badge bg-red">P0</span></td><td>4 Cases</td><td><span class="badge bg-red">Fail</span></td><td>In Testing</td><td>QA Lead</td></tr>
+<tr><td>PMX2-REQ-STK-004</td><td>ระบบต้องป้องกัน Stock ติดลบตาม Policy</td><td>Stock</td><td><span class="badge bg-red">P0</span></td><td>8 Cases</td><td><span class="badge bg-green">Pass</span></td><td>Passed</td><td>QA 02</td></tr>
+<tr><td>PMX2-REQ-RPT-002</td><td>Export Excel ต้องรองรับข้อมูลภาษาไทย</td><td>Report</td><td><span class="badge bg-blue">P1</span></td><td>3 Cases</td><td><span class="badge bg-yellow">Blocked</span></td><td>In Testing</td><td>QA 03</td></tr>
+</tbody></table></div>
+</div>
+</section>
+
+<!-- RTM -->
+<section id="rtm" class="page">
+<div class="page-head"><div><h2>Requirement Traceability Matrix</h2><p>Trace Requirement → Test Case → Execution → Defect</p></div><button class="btn">Export RTM</button></div>
+<div class="card">
+<div class="toolbar"><div class="filters"><select><option>Release 2026.08</option></select><select><option>Not Covered / Failed / Blocked</option></select></div><span class="badge bg-yellow">Coverage 94%</span></div>
+<div class="table-wrap"><table><thead><tr><th>Requirement</th><th>Module</th><th>Cases</th><th>Coverage</th><th>Execution</th><th>Defects</th><th>Status</th></tr></thead><tbody>
+<tr><td>PMX2-REQ-SALE-001<br><span class="small">Permission แก้ราคาขาย</span></td><td>Sales</td><td>4</td><td><span class="badge bg-green">Covered</span></td><td>3 Pass / 1 Fail</td><td><span class="badge bg-red">BUG-1025</span></td><td><span class="badge bg-red">Failed</span></td></tr>
+<tr><td>PMX2-REQ-STK-004<br><span class="small">Negative Stock Policy</span></td><td>Stock</td><td>8</td><td><span class="badge bg-green">Covered</span></td><td>8 Pass</td><td>0</td><td><span class="badge bg-green">Passed</span></td></tr>
+<tr><td>PMX2-REQ-API-009<br><span class="small">Retry ต้องไม่สร้าง Transaction ซ้ำ</span></td><td>API</td><td>0</td><td><span class="badge bg-red">Not Covered</span></td><td>-</td><td>-</td><td><span class="badge bg-gray">Not Tested</span></td></tr>
+</tbody></table></div>
+</div>
+</section>
+
+<!-- TEST CASE -->
+<section id="testcases" class="page">
+<div class="page-head"><div><h2>Test Case Management</h2><p>ออกแบบ Scenario, Step, Expected Result และ Revision</p></div><div class="actions"><button class="btn">Import Test Cases</button><button class="btn primary" onclick="showModal('caseModal')">+ Test Case</button></div></div>
+<div class="card">
+<div class="toolbar"><div class="filters"><input placeholder="ค้นหา Test Case"><select><option>ทุก Module</option><option>Sales</option></select><select><option>ทุก Priority</option><option>P0</option><option>P1</option></select></div><span class="small">1,200 Cases</span></div>
+<div class="table-wrap"><table><thead><tr><th>ID</th><th>Title</th><th>Module</th><th>Priority</th><th>Type</th><th>Rev.</th><th>Status</th><th>Last Result</th></tr></thead><tbody>
+<tr><td>PMX2-SALE-FUNC-001</td><td>บันทึกเอกสารขายปกติ</td><td>Sales</td><td><span class="badge bg-red">P0</span></td><td>Functional</td><td>3</td><td><span class="badge bg-green">Ready</span></td><td><span class="badge bg-green">Pass</span></td></tr>
+<tr><td>PMX2-SALE-PERM-005</td><td>ผู้ไม่มีสิทธิ์แก้ราคาขาย</td><td>Sales</td><td><span class="badge bg-red">P0</span></td><td>Permission</td><td>2</td><td><span class="badge bg-green">Ready</span></td><td><span class="badge bg-red">Fail</span></td></tr>
+<tr><td>PMX2-RPT-EXP-001</td><td>Export Excel ข้อมูลขนาดใหญ่</td><td>Report</td><td><span class="badge bg-blue">P1</span></td><td>Performance</td><td>1</td><td><span class="badge bg-green">Ready</span></td><td><span class="badge bg-yellow">Blocked</span></td></tr>
+</tbody></table></div></div>
+</section>
+
+<!-- SUITES -->
+<section id="testsuites" class="page">
+<div class="page-head"><div><h2>Test Suite</h2><p>จัดชุด Smoke, Critical Regression และ Module Regression</p></div><button class="btn primary">+ New Suite</button></div>
+<div class="grid three">
+<div class="card"><h3>Smoke P0</h3><p class="small">Core startup, login, database, save, report</p><div class="row"><span>24 Cases</span><span class="badge bg-red">P0</span></div></div>
+<div class="card"><h3>Critical Regression</h3><p class="small">Core business + shared component</p><div class="row"><span>186 Cases</span><span class="badge bg-blue">P1</span></div></div>
+<div class="card"><h3>Sales Regression</h3><p class="small">Sales, stock impact, report</p><div class="row"><span>96 Cases</span><span class="badge bg-yellow">P2</span></div></div>
+</div>
+</section>
+
+<!-- CYCLES -->
+<section id="cycles" class="page">
+<div class="page-head"><div><h2>Test Cycle</h2><p>บริหารรอบทดสอบ Build และ Assignment ของทีม QA</p></div><button class="btn primary" onclick="showModal('cycleModal')">+ New Cycle</button></div>
+<div class="card">
+<div class="table-wrap"><table><thead><tr><th>Cycle</th><th>Release</th><th>Build</th><th>Type</th><th>Progress</th><th>Pass Rate</th><th>Owner</th><th>Status</th></tr></thead><tbody>
+<tr><td>RC2-SMOKE-001</td><td>2026.08</td><td>10.0.228</td><td>Smoke</td><td>24/24</td><td>100%</td><td>QA Lead</td><td><span class="badge bg-green">Completed</span></td></tr>
+<tr><td>RC2-REG-001</td><td>2026.08</td><td>10.0.228</td><td>Regression</td><td>164/186</td><td>92%</td><td>QA 01</td><td><span class="badge bg-blue">In Progress</span></td></tr>
+<tr><td>RC2-RPT-001</td><td>2026.08</td><td>10.0.228</td><td>Module</td><td>41/55</td><td>87%</td><td>QA 03</td><td><span class="badge bg-yellow">Blocked</span></td></tr>
+</tbody></table></div></div>
+</section>
+
+<!-- EXECUTION -->
+<section id="execution" class="page">
+<div class="page-head"><div><h2>Execution Workspace</h2><p>พื้นที่ทำงานหลักสำหรับ Execute, Evidence และสร้าง Defect</p></div><div class="actions"><button class="btn">Pause Cycle</button><button class="btn primary">Save Progress</button></div></div>
+<div class="exec-layout">
+<div class="card exec-list"><h3>RC2 Critical Regression</h3>
+<div class="case active"><b>PMX2-SALE-PERM-005</b><div class="small">ผู้ไม่มีสิทธิ์แก้ราคา</div><span class="badge bg-red">P0</span></div>
+<div class="case"><b>PMX2-SALE-FUNC-001</b><div class="small">บันทึกขายปกติ</div><span class="badge bg-green">Pass</span></div>
+<div class="case"><b>PMX2-STK-CON-002</b><div class="small">2 Users ตัด Stock</div><span class="badge bg-gray">Not Run</span></div>
+<div class="case"><b>PMX2-RPT-EXP-001</b><div class="small">Export ข้อมูลมาก</div><span class="badge bg-yellow">Blocked</span></div>
+</div>
+<div class="card">
+<div class="row"><div><h3 style="margin-bottom:4px">PMX2-SALE-PERM-005</h3><div class="small">Revision 2 · Sales · Permission · P0</div></div><span class="badge bg-red">Current: Fail</span></div>
+<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+<div class="callout"><b>Precondition:</b> User QA-CASHIER ไม่มีสิทธิ์ PRICE_EDIT และมีสินค้า ITEM-A ราคา 100 บาท</div>
+<h3 style="margin-top:16px">Test Steps</h3>
+<div class="step"><div class="step-num">1</div><div><b>Action</b><br>Login ด้วย QA-CASHIER</div><div><b>Test Data</b><br>qa_cashier</div><div><b>Expected</b><br>Login สำเร็จตาม Role</div></div>
+<div class="step"><div class="step-num">2</div><div><b>Action</b><br>เปิดหน้าขายและเลือก ITEM-A</div><div><b>Test Data</b><br>Price 100</div><div><b>Expected</b><br>แสดงราคา 100</div></div>
+<div class="step"><div class="step-num">3</div><div><b>Action</b><br>พยายามแก้ราคาเป็น 50</div><div><b>Test Data</b><br>50</div><div><b>Expected</b><br>ระบบไม่อนุญาตแก้ราคา</div></div>
+<div class="field" style="margin-top:12px"><label>Actual Result</label><textarea rows="4">สามารถแก้ราคาเป็น 50 และบันทึกเอกสารได้</textarea></div>
+<div class="status-buttons" style="margin-top:12px"><button class="btn">✓ Pass</button><button class="btn danger" onclick="showModal('defectModal')">✕ Fail + Defect</button><button class="btn">⚠ Blocked</button><button class="btn">Skip</button></div>
+</div>
+<div class="card"><h3>Traceability</h3>
+<div class="list">
+<div class="list-item"><b>Requirement</b><div class="small">PMX2-REQ-SALE-001</div></div>
+<div class="list-item"><b>Build</b><div class="small">10.0.228 RC2</div></div>
+<div class="list-item"><b>Environment</b><div class="small">QA-WIN11-SQL</div></div>
+<div class="list-item"><b>Defect</b><div class="small red">BUG-1025</div></div>
+</div>
+<h3 style="margin-top:16px">History</h3><div class="timeline"><div class="tl"><div class="dot"></div><div class="small">Execution #1 · Build 10.0.227 · Fail</div></div><div class="tl"><div class="dot"></div><div class="small">Execution #2 · Build 10.0.228 · Fail</div></div></div>
+</div>
+</div>
+</section>
+
+<!-- DEFECT -->
+<section id="defects" class="page">
+<div class="page-head"><div><h2>Defect Management</h2><p>ติดตามปัญหาตั้งแต่ Fail → Fix → Retest → Closed</p></div><button class="btn primary" onclick="showModal('defectModal')">+ New Defect</button></div>
+<div class="card">
+<div class="toolbar"><div class="filters"><input placeholder="ค้นหา Defect"><select><option>ทุก Severity</option><option>P0</option><option>P1</option></select><select><option>Open Status</option></select></div><span class="small">Open 24</span></div>
+<div class="table-wrap"><table><thead><tr><th>ID</th><th>Title</th><th>Module</th><th>Severity</th><th>Status</th><th>Build Found</th><th>Fix Build</th><th>Assignee</th></tr></thead><tbody>
+<tr><td>BUG-1025</td><td>ผู้ไม่มีสิทธิ์สามารถแก้ราคาขายได้</td><td>Sales</td><td><span class="badge bg-red">P1</span></td><td><span class="badge bg-blue">Ready for Retest</span></td><td>10.0.227</td><td>10.0.229</td><td>Dev A</td></tr>
+<tr><td>BUG-1031</td><td>Export Excel ข้อมูลมากแล้วโปรแกรมปิด</td><td>Report</td><td><span class="badge bg-red">P1</span></td><td><span class="badge bg-purple">In Progress</span></td><td>10.0.228</td><td>-</td><td>Dev B</td></tr>
+<tr><td>BUG-1040</td><td>Stock UI ตัดข้อความ DPI 150%</td><td>Stock</td><td><span class="badge bg-yellow">P2</span></td><td><span class="badge bg-gray">Assigned</span></td><td>10.0.228</td><td>-</td><td>Dev C</td></tr>
+</tbody></table></div></div>
+</section>
+
+<!-- REGRESSION -->
+<section id="regression" class="page">
+<div class="page-head"><div><h2>Regression Impact</h2><p>เลือก Regression Scope จาก Change และ Dependency</p></div><button class="btn primary">Generate Suite</button></div>
+<div class="grid two">
+<div class="card"><h3>Change Impact Input</h3><div class="form-grid">
+<div class="field"><label>Build</label><select><option>10.0.229</option></select></div>
+<div class="field"><label>Changed Module</label><select><option>Sales</option><option>Core</option></select></div>
+<div class="field full"><label>Changed Components</label><textarea rows="4">Sales Price Permission
+Core Transaction Save Lock</textarea></div>
+<div class="field"><label><input type="checkbox" checked> Shared Component</label></div>
+<div class="field"><label><input type="checkbox" checked> P0/P1 Historical Defects</label></div>
+</div></div>
+<div class="card"><h3>Recommended Coverage</h3><div class="list">
+<div class="list-item"><div class="row"><b>Direct Impact</b><span>42 Cases</span></div><div class="small">Sales permission, save, price, discount</div></div>
+<div class="list-item"><div class="row"><b>Shared Dependency</b><span>61 Cases</span></div><div class="small">Stock, Report, Transaction engine</div></div>
+<div class="list-item"><div class="row"><b>Historical Defect</b><span>17 Cases</span></div><div class="small">P0/P1 defect regression</div></div>
+</div></div>
+</div>
+</section>
+
+<!-- SUMMARY -->
+<section id="summary" class="page">
+<div class="page-head"><div><h2>Test Summary Report</h2><p>สรุปผลการทดสอบ Release Candidate เพื่อใช้ Sign-off</p></div><div class="actions"><button class="btn">Export PDF</button><button class="btn primary">Generate Summary</button></div></div>
+<div class="grid two">
+<div class="card"><h3>Executive Summary</h3><p style="font-size:13px;line-height:1.8">Build 10.0.228 ผ่าน Smoke Test และ Critical Business Flow ส่วนใหญ่ ปัจจุบันยังมี P1 Blocker 2 รายการใน Sales และ Report โดยไม่มี P0 คงค้าง Requirement Coverage อยู่ที่ 94% และ Critical Regression ผ่าน 88% จึงแนะนำ <b>CONDITIONAL GO</b> หาก Risk Acceptance ได้รับอนุมัติ</p></div>
+<div class="card"><h3>Metrics</h3><div class="gate">
+<div class="gate-item"><span>Planned</span><b>1,200</b></div>
+<div class="gate-item"><span>Executed</span><b>984</b></div>
+<div class="gate-item"><span>Passed</span><b>902</b></div>
+<div class="gate-item"><span>Failed</span><b>47</b></div>
+<div class="gate-item"><span>Blocked</span><b>35</b></div>
+</div></div>
+</div>
+</section>
+
+<!-- RISKS -->
+<section id="risks" class="page">
+<div class="page-head"><div><h2>Risk Acceptance</h2><p>บริหาร Known Issue ที่ต้องยอมรับความเสี่ยงก่อน Release</p></div><button class="btn primary">+ New Risk</button></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Risk ID</th><th>Issue</th><th>Impact</th><th>Probability</th><th>Risk</th><th>Workaround</th><th>Status</th><th>Approver</th></tr></thead><tbody>
+<tr><td>RA-001</td><td>BUG-1031 Export Excel ข้อมูลมาก</td><td>Medium</td><td>Medium</td><td><span class="badge bg-yellow">Medium</span></td><td>ลดช่วงวันที่ก่อน Export</td><td><span class="badge bg-blue">Pending</span></td><td>Product Owner</td></tr>
+<tr><td>RA-002</td><td>UI DPI 150%</td><td>Low</td><td>Low</td><td><span class="badge bg-green">Low</span></td><td>ใช้ 125%</td><td><span class="badge bg-green">Approved</span></td><td>Release Owner</td></tr>
+</tbody></table></div></div>
+</section>
+
+<!-- SIGNOFF -->
+<section id="signoff" class="page">
+<div class="page-head"><div><h2>Release Sign-off</h2><p>จุดตัดสินใจสุดท้ายของ Release</p></div><button class="btn primary">Submit Sign-off</button></div>
+<div class="grid two">
+<div class="card"><h3>Release Gate</h3><div class="gate">
+<div class="gate-item"><span>Smoke Test</span><span class="badge bg-green">Pass</span></div>
+<div class="gate-item"><span>Requirement Coverage</span><span class="badge bg-yellow">94%</span></div>
+<div class="gate-item"><span>Critical Regression</span><span class="badge bg-yellow">88%</span></div>
+<div class="gate-item"><span>Open P0</span><span class="badge bg-green">0</span></div>
+<div class="gate-item"><span>P1 Blocker</span><span class="badge bg-red">2</span></div>
+<div class="gate-item"><span>Approved Risks</span><span class="badge bg-blue">1 / 2</span></div>
+</div><div class="callout" style="margin-top:12px">Recommended: <b>CONDITIONAL GO</b></div></div>
+<div class="card"><h3>Approval Chain</h3><div class="list">
+<div class="list-item"><div class="row"><b>QA</b><span class="badge bg-yellow">CONDITIONAL GO</span></div><div class="small">QA Lead · 11 Aug 2026 16:20</div></div>
+<div class="list-item"><div class="row"><b>Development</b><span class="badge bg-green">ACKNOWLEDGED</span></div><div class="small">Dev Lead · 11 Aug 2026 16:35</div></div>
+<div class="list-item"><div class="row"><b>Product</b><span class="badge bg-blue">PENDING</span></div></div>
+<div class="list-item"><div class="row"><b>Release Owner</b><span class="badge bg-gray">WAITING</span></div></div>
+</div></div>
+</div>
+</section>
+
+<!-- USERS -->
+<section id="users" class="page">
+<div class="page-head"><div><h2>User / Role / Permission</h2><p>กำหนดสิทธิ์การใช้งานตามบทบาท</p></div><button class="btn primary">+ User</button></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>User</th><th>Display Name</th><th>Role</th><th>Status</th><th>Last Login</th></tr></thead><tbody>
+<tr><td>qa_lead</td><td>QA Lead</td><td><span class="badge bg-purple">QA_LEAD</span></td><td><span class="badge bg-green">Active</span></td><td>Today 08:30</td></tr>
+<tr><td>qa01</td><td>QA 01</td><td><span class="badge bg-blue">QA_TESTER</span></td><td><span class="badge bg-green">Active</span></td><td>Today 08:21</td></tr>
+<tr><td>dev01</td><td>Developer A</td><td><span class="badge bg-gray">DEVELOPER</span></td><td><span class="badge bg-green">Active</span></td><td>Today 07:58</td></tr>
+</tbody></table></div></div>
+</section>
+
+<!-- AUDIT -->
+<section id="audit" class="page">
+<div class="page-head"><div><h2>Audit Log</h2><p>ตรวจสอบว่าใครเปลี่ยนข้อมูลสำคัญ เมื่อใด และเปลี่ยนอะไร</p></div></div>
+<div class="card"><div class="table-wrap"><table><thead><tr><th>Date/Time</th><th>User</th><th>Action</th><th>Entity</th><th>ID</th><th>Summary</th></tr></thead><tbody>
+<tr><td>11 Aug 16:35</td><td>Dev Lead</td><td>ACKNOWLEDGE</td><td>ReleaseSignoff</td><td>2026.08</td><td>Development acknowledged CONDITIONAL GO</td></tr>
+<tr><td>11 Aug 16:20</td><td>QA Lead</td><td>SIGNOFF</td><td>ReleaseSignoff</td><td>2026.08</td><td>QA Recommendation = CONDITIONAL GO</td></tr>
+<tr><td>11 Aug 15:42</td><td>Dev A</td><td>TRANSITION</td><td>Defect</td><td>BUG-1025</td><td>Fixed → ReadyForRetest</td></tr>
+</tbody></table></div></div>
+</section>
+
+</main>
+</section>
+</div>
+
+<!-- MODALS -->
+<div class="modal" id="cycleModal"><div class="modal-box"><h3>สร้าง Test Cycle</h3><div class="form-grid">
+<div class="field"><label>Release</label><select><option>2026.08</option></select></div>
+<div class="field"><label>Build</label><select><option>10.0.228 RC2</option></select></div>
+<div class="field"><label>Environment</label><select><option>QA-WIN11-SQL</option></select></div>
+<div class="field"><label>Test Suite</label><select><option>Critical Regression</option><option>Smoke P0</option></select></div>
+<div class="field"><label>Cycle Code</label><input value="RC2-REG-002"></div>
+<div class="field"><label>Owner</label><select><option>QA Lead</option><option>QA 01</option></select></div>
+<div class="field full"><label>Cycle Name</label><input value="RC2 Critical Regression - Retest"></div>
+</div><div class="actions" style="justify-content:flex-end;margin-top:16px"><button class="btn" onclick="hideModal('cycleModal')">Cancel</button><button class="btn primary" onclick="saveDemo('cycleModal','สร้าง Test Cycle เรียบร้อย')">Create</button></div></div></div>
+
+<div class="modal" id="caseModal"><div class="modal-box"><h3>สร้าง Test Case</h3><div class="form-grid">
+<div class="field"><label>Test Case ID</label><input value="PMX2-SALE-FUNC-NEW"></div>
+<div class="field"><label>Module</label><select><option>Sales</option><option>Stock</option><option>Report</option></select></div>
+<div class="field full"><label>Title</label><input placeholder="ชื่อ Test Case"></div>
+<div class="field"><label>Priority</label><select><option>P0</option><option>P1</option><option>P2</option></select></div>
+<div class="field"><label>Type</label><select><option>Functional</option><option>Permission</option><option>Integration</option></select></div>
+<div class="field full"><label>Preconditions</label><textarea rows="3"></textarea></div>
+</div><div class="actions" style="justify-content:flex-end;margin-top:16px"><button class="btn" onclick="hideModal('caseModal')">Cancel</button><button class="btn primary" onclick="saveDemo('caseModal','บันทึก Test Case Draft แล้ว')">Save Draft</button></div></div></div>
+
+<div class="modal" id="defectModal"><div class="modal-box"><h3>สร้าง Defect จาก Test Execution</h3><div class="form-grid">
+<div class="field full"><label>Title</label><input value="ผู้ไม่มีสิทธิ์สามารถแก้ราคาขายได้"></div>
+<div class="field"><label>Severity</label><select><option>P0</option><option selected>P1</option><option>P2</option></select></div>
+<div class="field"><label>Priority</label><select><option>P0</option><option selected>P1</option><option>P2</option></select></div>
+<div class="field"><label>Build Found</label><input value="10.0.228" readonly></div>
+<div class="field"><label>Module</label><input value="Sales" readonly></div>
+<div class="field full"><label>Actual Result</label><textarea rows="3">สามารถเปลี่ยนราคาจาก 100 เป็น 50 และบันทึกได้</textarea></div>
+<div class="field full"><label>Business Impact</label><textarea rows="3">ผู้ใช้ที่ไม่มีสิทธิ์สามารถเปลี่ยนราคาขาย ส่งผลต่อการควบคุมราคาและยอดขาย</textarea></div>
+</div><div class="actions" style="justify-content:flex-end;margin-top:16px"><button class="btn" onclick="hideModal('defectModal')">Cancel</button><button class="btn primary" onclick="saveDemo('defectModal','สร้าง BUG-NEW และ Link กับ Execution แล้ว')">Create Defect</button></div></div></div>
+
+<script>
+const links=[...document.querySelectorAll('.nav a[data-page]')];
+links.forEach(a=>a.addEventListener('click',e=>{
+ e.preventDefault();
+ links.forEach(x=>x.classList.remove('active'));
+ a.classList.add('active');
+ document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+ document.getElementById(a.dataset.page).classList.add('active');
+ window.scrollTo(0,0);
+}));
+function showModal(id){document.getElementById(id).classList.add('show')}
+function hideModal(id){document.getElementById(id).classList.remove('show')}
+function saveDemo(id,msg){alert(msg);hideModal(id)}
+document.querySelectorAll('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('show')}));
+</script>
+</body>
+</html>

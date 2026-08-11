@@ -1,0 +1,6 @@
+@ProMaxx2.QA.Api_HostAddress = http://localhost:5038
+
+GET {{ProMaxx2.QA.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

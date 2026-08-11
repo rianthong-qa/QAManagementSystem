@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ProMaxx2.QA.Api/ProMaxx2.QA.Api.csproj" />
+    <Project Path="src/ProMaxx2.QA.Application/ProMaxx2.QA.Application.csproj" />
+    <Project Path="src/ProMaxx2.QA.Domain/ProMaxx2.QA.Domain.csproj" />
+    <Project Path="src/ProMaxx2.QA.Infrastructure/ProMaxx2.QA.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ProMaxx2.QA.UnitTests/ProMaxx2.QA.UnitTests.csproj" />
+  </Folder>
+</Solution>
