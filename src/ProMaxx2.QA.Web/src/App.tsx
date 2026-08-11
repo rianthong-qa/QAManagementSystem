@@ -3100,6 +3100,15 @@ function ExecutionWorkspacePage() {
     () => workspace?.cases.find((x) => x.testCycleCaseId === selectedId),
     [workspace, selectedId],
   );
+  const executionStats = useMemo(() => {
+    const cases = workspace?.cases ?? [];
+    return {
+      total: cases.length,
+      passed: cases.filter((x) => x.currentStatus === "Pass").length,
+      failed: cases.filter((x) => x.currentStatus === "Fail").length,
+      pending: cases.filter((x) => x.currentStatus === "NotRun").length,
+    };
+  }, [workspace]);
   useEffect(() => {
     if (selected) {
       setStepStatuses(
@@ -3149,6 +3158,18 @@ function ExecutionWorkspacePage() {
       setSaving(false);
     }
   };
+  const removeExecution = async (execution: ExecutionCase["history"][number]) => {
+    if (!window.confirm(`ยืนยันลบผลการทดสอบ Run #${execution.executionNo}?\nข้อมูลจะถูกซ่อน แต่ยังเก็บไว้สำหรับ Audit`)) return;
+    const response = await fetch(`${apiUrl}/executions/${execution.testExecutionId}`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!response.ok) {
+      window.alert("ลบผลการทดสอบไม่สำเร็จ");
+      return;
+    }
+    setReload((x) => x + 1);
+  };
   return (
     <div className="execution-page">
       <div className="execution-toolbar card">
@@ -3179,6 +3200,18 @@ function ExecutionWorkspacePage() {
           </div>
         )}
       </div>
+      {workspace && (
+        <div className="execution-overview">
+          <div><small>Test Cases</small><strong>{executionStats.total}</strong></div>
+          <div className="metric-pass"><small>Passed</small><strong>{executionStats.passed}</strong></div>
+          <div className="metric-fail"><small>Failed</small><strong>{executionStats.failed}</strong></div>
+          <div className="metric-pending"><small>Not Run</small><strong>{executionStats.pending}</strong></div>
+          <div className="execution-progress-summary">
+            <span><i style={{width:`${executionStats.total ? ((executionStats.total-executionStats.pending)/executionStats.total)*100 : 0}%`}} /></span>
+            <small>{executionStats.total ? Math.round(((executionStats.total-executionStats.pending)/executionStats.total)*100) : 0}% executed</small>
+          </div>
+        </div>
+      )}
       {!workspace ? (
         <article className="card empty">
           <h3>เลือก Test Cycle เพื่อเริ่มทดสอบ</h3>
@@ -3198,7 +3231,7 @@ function ExecutionWorkspacePage() {
             <div className="card-title">
               <div>
                 <h3>Test Cases</h3>
-                <p>{workspace.cases.length} รายการ</p>
+                <p>{workspace.cases.length} รายการ · เลือกเพื่อบันทึกผล</p>
               </div>
             </div>
             {workspace.cases.map((x) => (
@@ -3343,11 +3376,14 @@ function ExecutionWorkspacePage() {
             </main>
           )}
           <aside className="card execution-history">
-            <h3>Execution History</h3>
+            <div className="history-title">
+              <div><h3>Execution History</h3><p>ประวัติของ {selected?.testCaseCode ?? "-"}</p></div>
+              <span>{selected?.history.length ?? 0} Runs</span>
+            </div>
             {selected?.history.length ? (
               selected.history.map((x) => (
                 <div className="history-item" key={x.testExecutionId}>
-                  <div>
+                  <div className="history-item-head">
                     <Badge
                       tone={
                         x.status === "Pass"
@@ -3359,7 +3395,8 @@ function ExecutionWorkspacePage() {
                     >
                       {x.status}
                     </Badge>
-                    <small>Run #{x.executionNo}</small>
+                    <span className="history-run">Run #{x.executionNo}</span>
+                    <button className="history-delete" onClick={() => removeExecution(x)} title="ลบผลการทดสอบ">ลบ</button>
                   </div>
                   <p>{x.actualResult || "-"}</p>
                   <small>
