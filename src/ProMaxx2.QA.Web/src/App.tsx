@@ -260,7 +260,8 @@ function Badge({
   children: React.ReactNode;
   tone?: string;
 }) {
-  return <span className={`badge ${tone}`}>{children}</span>;
+  const effectiveTone = children === "No Data" ? "blue" : tone;
+  return <span className={`badge ${effectiveTone}`}>{children}</span>;
 }
 
 function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; shareToken?: string }) {
@@ -279,7 +280,8 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
   const modules = data.modules.filter(x => !moduleFilter || x.moduleId === moduleFilter), users = data.users.filter(x => !userFilter || x.userId === userFilter);
   const totalStatus = Math.max(1, data.statusDistribution.reduce((n, x) => n + x.count, 0)); let angle = 0;
   const donut = data.statusDistribution.map(x => { const start = angle; angle += x.count / totalStatus * 360; return `${x.color} ${start}deg ${angle}deg`; }).join(",");
-  const decisionReason = data.openP0 > 0 ? `พบ P0 ค้าง ${data.openP0} รายการ`
+  const decisionReason = data.recommendedDecision === "NO DATA" ? "ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน"
+    : data.openP0 > 0 ? `พบ P0 ค้าง ${data.openP0} รายการ`
     : data.openP1 > 0 ? `พบ P1 ค้าง ${data.openP1} รายการ`
     : data.requirementCoverage < 90 ? `Requirement Coverage ${data.requirementCoverage}% ต่ำกว่าเกณฑ์ 90%`
     : data.passRate < 90 ? `Pass Rate ${data.passRate}% ต่ำกว่าเกณฑ์ 90%`
