@@ -7,6 +7,7 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.Releases;
 using ProMaxx2.QA.Application.Requirements;
+using ProMaxx2.QA.Application.TestManagement;
 
 namespace ProMaxx2.QA.Infrastructure;
 
@@ -20,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<IProjectRepository,ProjectRepository>();
         services.AddScoped<IReleaseRepository,ReleaseRepository>();
         services.AddScoped<IRequirementRepository,RequirementRepository>();
+        services.AddScoped<ITestCaseRepository,TestCaseRepository>();
         return services;
     }
 }
