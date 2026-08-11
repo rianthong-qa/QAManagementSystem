@@ -119,7 +119,7 @@ public sealed class TestCaseService(ITestCaseRepository repository)
         if (module.ProjectId != r.ProjectId)
             throw new EntityNotFoundException("Module not found.");
 
-        var existing = (await repository.ListAsync(r.ProjectId, null, ct)).Select(x => x.TestCaseCode).ToList();
-        return BusinessCodeGenerator.Next(BusinessCodeGenerator.ContextualPrefix(project.ProjectCode, module.ModuleCode, "TC"), existing);
+        var prefix = BusinessCodeGenerator.ContextualPrefix(project.ProjectCode, module.ModuleCode, "TC");
+        return await BusinessCodeGenerator.NextAvailableAsync(prefix, candidate => repository.CodeExistsAsync(r.ProjectId, candidate, ct));
     }
 }

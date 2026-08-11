@@ -2,6 +2,17 @@ namespace ProMaxx2.QA.Application.Common;
 
 public static class BusinessCodeGenerator
 {
+    public static async Task<string> NextAvailableAsync(string prefix,Func<string,Task<bool>> exists)
+    {
+        var normalized=prefix.Trim().ToUpperInvariant();
+        for(var number=1;number<=999999;number++)
+        {
+            var candidate=$"{normalized}-{number:000}";
+            if(!await exists(candidate))return candidate;
+        }
+        throw new InvalidOperationException($"No available code remains for {normalized}.");
+    }
+
     public static string ContextualPrefix(string projectCode,string moduleCode,string kind)
     {
         var project=projectCode.Trim().ToUpperInvariant();

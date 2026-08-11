@@ -683,7 +683,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
               ownerUserId: null,
             }
           : {
-              projectCode: code,
+              projectCode: "",
               projectName: name,
               description: description || null,
               ownerUserId: null,
@@ -701,7 +701,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
               ownerUserId: null,
             }
           : {
-              moduleCode: code,
+              moduleCode: "",
               moduleName: name,
               parentModuleId: parentId || null,
               description: description || null,
@@ -1973,7 +1973,7 @@ function TestCasesPage({
         : {
             projectId,
             moduleId,
-            testCaseCode: code,
+            testCaseCode: "",
             title,
             objective: objective || null,
             preconditions: preconditions || null,
@@ -2662,7 +2662,7 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
             buildId,
             environmentId,
             testSuiteId: suiteId || null,
-            cycleCode: code,
+            cycleCode: editing ? code : "",
             cycleName: name,
             cycleType,
             startDate: startDate || null,
@@ -3525,7 +3525,7 @@ function TestSuitesPage({
           headers,
           body: JSON.stringify({
             projectId,
-            suiteCode: code,
+            suiteCode: editing ? code : "",
             suiteName: name,
             suiteType: type,
             description: description || null,
@@ -4534,7 +4534,7 @@ function App() {
       };
       let url = `${apiUrl}/projects`,
         body: object = {
-          projectCode: code,
+          projectCode: "",
           projectName: name,
           description: details || null,
           ownerUserId: null,
@@ -4556,7 +4556,7 @@ function App() {
         if (page === "releases") {
           url = `${apiUrl}/projects/${projects[0].projectId}/releases`;
           body = {
-            releaseCode: code,
+            releaseCode: "",
             version: name,
             releaseType: "Major",
             plannedReleaseDate: null,
@@ -4570,30 +4570,17 @@ function App() {
           ).then((r) => r.json());
           if (!modules.length) throw new Error("กรุณาสร้าง Module ก่อน");
           if (page === "requirements") {
-            const [releases, requirements] = await Promise.all([
+            const [releases] = await Promise.all([
               fetch(`${apiUrl}/projects/${projects[0].projectId}/releases`, {
                 headers,
               }).then((r) => r.json()),
-              fetch(`${apiUrl}/requirements?projectId=${projects[0].projectId}`, {
-                headers,
-              }).then((r) => r.json()),
             ]);
-            const generatedCode = nextBusinessCode(
-              contextualCode(
-                projects[0].projectCode,
-                modules[0].moduleCode,
-                "REQ",
-              ),
-              requirements.map(
-                (requirement: RequirementItem) => requirement.requirementCode,
-              ),
-            );
             url = `${apiUrl}/requirements`;
             body = {
               projectId: projects[0].projectId,
               releaseId: releases[0]?.releaseId ?? null,
               moduleId: modules[0].moduleId,
-              requirementCode: generatedCode,
+              requirementCode: "",
               title: name,
               description: details || null,
               acceptanceCriteria: null,
@@ -4604,24 +4591,11 @@ function App() {
               isInScope: true,
             };
           } else {
-            const [existingCases] = await Promise.all([
-              fetch(`${apiUrl}/test-cases?projectId=${projects[0].projectId}`, {
-                headers,
-              }).then((r) => r.json()),
-            ]);
-            const generatedCode = nextBusinessCode(
-              contextualCode(
-                projects[0].projectCode,
-                modules[0].moduleCode,
-                "TC",
-              ),
-              existingCases.map((testCase: TestCaseItem) => testCase.testCaseCode),
-            );
             url = `${apiUrl}/test-cases`;
             body = {
               projectId: projects[0].projectId,
               moduleId: modules[0].moduleId,
-              testCaseCode: code.trim() ? code.trim() : generatedCode,
+              testCaseCode: "",
               title: name,
               objective: details || null,
               preconditions: null,

@@ -5,6 +5,14 @@ namespace ProMaxx2.QA.UnitTests;
 public sealed class BusinessCodeGeneratorTests
 {
     [Fact]
+    public async Task Next_available_skips_hidden_or_inactive_codes()
+    {
+        var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PMX2-MOD-001", "PMX2-MOD-002" };
+        var result = await BusinessCodeGenerator.NextAvailableAsync("PMX2-MOD", code => Task.FromResult(reserved.Contains(code)));
+        Assert.Equal("PMX2-MOD-003", result);
+    }
+
+    [Fact]
     public void Contextual_prefix_does_not_duplicate_project_code()
     {
         Assert.Equal("PMX2-MOD-001-TC", BusinessCodeGenerator.ContextualPrefix("PMX2", "PMX2-MOD-001", "TC"));
