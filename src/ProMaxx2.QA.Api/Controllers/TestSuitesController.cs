@@ -1,0 +1,10 @@
+using Microsoft.AspNetCore.Authorization;using Microsoft.AspNetCore.Mvc;using ProMaxx2.QA.Application.Projects;using ProMaxx2.QA.Application.TestManagement;
+namespace ProMaxx2.QA.Api.Controllers;
+[ApiController,Route("api/v1/test-suites"),Authorize(Policy="TestCaseView")]
+public sealed class TestSuitesController(TestSuiteService service):ControllerBase
+{
+ [HttpGet]public Task<IReadOnlyList<TestSuiteDto>>List([FromQuery]Guid?projectId,[FromQuery]string?search,CancellationToken ct)=>service.ListAsync(projectId,search,ct);[HttpGet("{id:guid}")]public async Task<ActionResult<TestSuiteDto>>Get(Guid id,CancellationToken ct){try{return Ok(await service.GetAsync(id,ct));}catch(EntityNotFoundException){return NotFound();}}
+ [HttpPost,Authorize(Policy="TestCaseEdit")]public async Task<ActionResult<TestSuiteDto>>Create(SaveTestSuiteRequest r,CancellationToken ct){try{var result=await service.CreateAsync(r,ct);return CreatedAtAction(nameof(Get),new{id=result.TestSuiteId},result);}catch(DuplicateCodeException ex){return Conflict(new ProblemDetails{Title="รหัส Test Suite ซ้ำ",Detail=ex.Message,Status=409});}catch(ArgumentException ex){return BadRequest(new ProblemDetails{Title="ข้อมูลไม่ถูกต้อง",Detail=ex.Message,Status=400});}}
+ [HttpPut("{id:guid}"),Authorize(Policy="TestCaseEdit")]public async Task<ActionResult<TestSuiteDto>>Update(Guid id,SaveTestSuiteRequest r,CancellationToken ct){try{return Ok(await service.UpdateAsync(id,r,ct));}catch(EntityNotFoundException){return NotFound();}catch(ArgumentException ex){return BadRequest(new ProblemDetails{Title="ข้อมูลไม่ถูกต้อง",Detail=ex.Message,Status=400});}}
+ [HttpPost("{id:guid}/cases"),Authorize(Policy="TestCaseEdit")]public async Task<IActionResult>AddCases(Guid id,AddSuiteCasesRequest r,CancellationToken ct){try{await service.AddCasesAsync(id,r,ct);return NoContent();}catch(EntityNotFoundException){return NotFound();}}[HttpDelete("{id:guid}/cases/{caseId:guid}"),Authorize(Policy="TestCaseEdit")]public async Task<IActionResult>RemoveCase(Guid id,Guid caseId,CancellationToken ct){await service.RemoveCaseAsync(id,caseId,ct);return NoContent();}
+}
