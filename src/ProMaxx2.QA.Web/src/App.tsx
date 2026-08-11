@@ -31,6 +31,27 @@ type SessionUser = {
 };
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:5038/api/v1";
 
+function nextBusinessCode(prefix: string, existingCodes: string[]) {
+  const normalized = prefix.trim().toUpperCase();
+  const marker = `${normalized}-`;
+  const next =
+    Math.max(
+      0,
+      ...existingCodes
+        .filter((code) => code.toUpperCase().startsWith(marker))
+        .map((code) => Number.parseInt(code.slice(marker.length), 10) || 0),
+    ) + 1;
+  return `${normalized}-${String(next).padStart(3, "0")}`;
+}
+
+function contextualCode(projectCode: string, moduleCode: string, kind: string) {
+  const project = projectCode.toUpperCase();
+  const module = moduleCode.toUpperCase().startsWith(`${project}-`)
+    ? moduleCode.slice(projectCode.length + 1)
+    : moduleCode;
+  return `${projectCode}-${module}-${kind}`;
+}
+
 const nav: {
   label: string;
   items: { id: Page; icon: string; label: string }[];
@@ -620,7 +641,10 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
   const openProject = (item?: ProjectItem) => {
     setEditProject(item ?? null);
     setEditModule(null);
-    setCode(item?.projectCode ?? "");
+    setCode(
+      item?.projectCode ??
+        nextBusinessCode("PRJ", items.map((x) => x.projectCode)),
+    );
     setName(item?.projectName ?? "");
     setDescription(item?.description ?? "");
     setModal("project");
@@ -628,7 +652,13 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
   const openModule = (item?: ModuleItem) => {
     setEditModule(item ?? null);
     setEditProject(null);
-    setCode(item?.moduleCode ?? "");
+    setCode(
+      item?.moduleCode ??
+        nextBusinessCode(
+          `${selected?.projectCode ?? "PRJ"}-MOD`,
+          modules.map((x) => x.moduleCode),
+        ),
+    );
     setName(item?.moduleName ?? "");
     setDescription(item?.description ?? "");
     setParentId(item?.parentModuleId ?? "");
@@ -979,10 +1009,10 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
               <label>
                 {modal === "project" ? "Project Code" : "Module Code"}
                 <input
-                  disabled={!!editProject || !!editModule}
+                  disabled
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="ระบุรหัส"
+                  placeholder="ระบบสร้างรหัสอัตโนมัติ"
                 />
               </label>
               <label>
@@ -1157,7 +1187,17 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
     setEditRelease(item ?? null);
     setEditBuild(null);
     setProjectId(item?.projectId ?? projects[0]?.projectId ?? "");
-    setCode(item?.releaseCode ?? "");
+    const targetProjectId = item?.projectId ?? projects[0]?.projectId ?? "";
+    const project = projects.find((x) => x.projectId === targetProjectId);
+    setCode(
+      item?.releaseCode ??
+        nextBusinessCode(
+          `${project?.projectCode ?? "PRJ"}-REL`,
+          items
+            .filter((x) => x.projectId === targetProjectId)
+            .map((x) => x.releaseCode),
+        ),
+    );
     setName(item?.version ?? "");
     setType(item?.releaseType ?? "Major");
     setReleaseStatus(item?.status ?? "Draft");
@@ -1477,7 +1517,21 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
                   Project
                   <select
                     value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setProjectId(value);
+                      const project = projects.find(
+                        (x) => x.projectId === value,
+                      );
+                      setCode(
+                        nextBusinessCode(
+                          `${project?.projectCode ?? "PRJ"}-REL`,
+                          items
+                            .filter((x) => x.projectId === value)
+                            .map((x) => x.releaseCode),
+                        ),
+                      );
+                    }}
                   >
                     {projects.map((x) => (
                       <option key={x.projectId} value={x.projectId}>
@@ -1490,7 +1544,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
               <label>
                 {modal === "release" ? "Release Code" : "Build Number"}
                 <input
-                  disabled={!!editRelease || !!editBuild}
+                  disabled={modal === "release" || !!editBuild}
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                 />
@@ -1840,11 +1894,40 @@ function TestCasesPage({
         );
       });
   }, [projectId]);
+  useEffect(() => {
+    if (!form || editing || !projectId || !moduleId) return;
+    const project = projects.find((x) => x.projectId === projectId);
+    const module = modules.find((x) => x.moduleId === moduleId);
+    setCode(
+      nextBusinessCode(
+        contextualCode(
+          project?.projectCode ?? "PRJ",
+          module?.moduleCode ?? "MOD",
+          "TC",
+        ),
+        items.map((x) => x.testCaseCode),
+      ),
+    );
+  }, [form, editing, projectId, moduleId, projects, modules, items]);
   const openForm = (item?: TestCaseItem) => {
     setEditing(item ?? null);
     setProjectId(item?.projectId ?? projects[0]?.projectId ?? "");
     setModuleId(item?.moduleId ?? "");
-    setCode(item?.testCaseCode ?? "");
+    const targetProjectId = item?.projectId ?? projects[0]?.projectId ?? "";
+    const targetModuleId = item?.moduleId ?? modules[0]?.moduleId ?? "";
+    const project = projects.find((x) => x.projectId === targetProjectId);
+    const module = modules.find((x) => x.moduleId === targetModuleId);
+    setCode(
+      item?.testCaseCode ??
+        nextBusinessCode(
+          contextualCode(
+            project?.projectCode ?? "PRJ",
+            module?.moduleCode ?? "MOD",
+            "TC",
+          ),
+          items.map((x) => x.testCaseCode),
+        ),
+    );
     setTitle(item?.title ?? "");
     setObjective(item?.objective ?? "");
     setPreconditions(item?.preconditions ?? "");
@@ -2060,7 +2143,7 @@ function TestCasesPage({
               <label>
                 Project
                 <select
-                  disabled={!!editing}
+                  disabled
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
                 >
@@ -2087,7 +2170,7 @@ function TestCasesPage({
               <label>
                 Test Case Code
                 <input
-                  disabled={!!editing}
+                  disabled
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                 />
@@ -2514,6 +2597,16 @@ function TestCyclesPage({ search }: { search: string }) {
     if (!projectEnvironments.some((x) => x.testEnvironmentId === environmentId))
       setEnvironmentId(projectEnvironments[0]?.testEnvironmentId ?? "");
   }, [projectEnvironments, environmentId]);
+  useEffect(() => {
+    if (!form || editing || !projectId) return;
+    const project = projects.find((x) => x.projectId === projectId);
+    setCode(
+      nextBusinessCode(
+        `${project?.projectCode ?? "PRJ"}-CYC`,
+        items.map((x) => x.cycleCode),
+      ),
+    );
+  }, [form, editing, projectId, projects, items]);
   const openForm = (cycle?: TestCycleItem) => {
     setEditing(cycle ?? null);
     setProjectId(cycle?.projectId ?? projects[0]?.projectId ?? "");
@@ -2521,7 +2614,15 @@ function TestCyclesPage({ search }: { search: string }) {
     setBuildId(cycle?.buildId ?? "");
     setEnvironmentId(cycle?.environmentId ?? "");
     setSuiteId(cycle?.testSuiteId ?? "");
-    setCode(cycle?.cycleCode ?? "");
+    const targetProjectId = cycle?.projectId ?? projects[0]?.projectId ?? "";
+    const project = projects.find((x) => x.projectId === targetProjectId);
+    setCode(
+      cycle?.cycleCode ??
+        nextBusinessCode(
+          `${project?.projectCode ?? "PRJ"}-CYC`,
+          items.map((x) => x.cycleCode),
+        ),
+    );
     setName(cycle?.cycleName ?? "");
     setCycleType(cycle?.cycleType ?? "Regression");
     setStartDate(cycle?.startDate?.slice(0, 10) ?? "");
@@ -2708,7 +2809,7 @@ function TestCyclesPage({ search }: { search: string }) {
               <label>
                 Project
                 <select
-                  disabled={!!editing}
+                  disabled
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
                 >
@@ -2813,7 +2914,7 @@ function TestCyclesPage({ search }: { search: string }) {
               <label>
                 Cycle Code
                 <input
-                  disabled={!!editing}
+                  disabled
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                 />
@@ -3302,9 +3403,27 @@ function TestSuitesPage({
       setProjectId((current) => current || activeProjects[0]?.projectId || "");
     });
   }, [reload]);
+  useEffect(() => {
+    if (!form || editing || !projectId) return;
+    const project = projects.find((x) => x.projectId === projectId);
+    setCode(
+      nextBusinessCode(
+        `${project?.projectCode ?? "PRJ"}-TS`,
+        items.map((x) => x.suiteCode),
+      ),
+    );
+  }, [form, editing, projectId, projects, items]);
   const openForm = (suite?: TestSuiteItem) => {
     setEditing(suite ?? null);
-    setCode(suite?.suiteCode ?? "");
+    const targetProjectId = suite?.projectId ?? projects[0]?.projectId ?? "";
+    const project = projects.find((x) => x.projectId === targetProjectId);
+    setCode(
+      suite?.suiteCode ??
+        nextBusinessCode(
+          `${project?.projectCode ?? "PRJ"}-TS`,
+          items.map((x) => x.suiteCode),
+        ),
+    );
     setName(suite?.suiteName ?? "");
     setType(suite?.suiteType ?? "Regression");
     setRisk(suite?.riskTier ?? "P1");
@@ -3498,7 +3617,7 @@ function TestSuitesPage({
               <label>
                 Suite Code
                 <input
-                  disabled={!!editing}
+                  disabled
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                 />
@@ -4368,16 +4487,30 @@ function App() {
           ).then((r) => r.json());
           if (!modules.length) throw new Error("กรุณาสร้าง Module ก่อน");
           if (page === "requirements") {
-            const releases = await fetch(
-              `${apiUrl}/projects/${projects[0].projectId}/releases`,
-              { headers },
-            ).then((r) => r.json());
+            const [releases, requirements] = await Promise.all([
+              fetch(`${apiUrl}/projects/${projects[0].projectId}/releases`, {
+                headers,
+              }).then((r) => r.json()),
+              fetch(`${apiUrl}/requirements?projectId=${projects[0].projectId}`, {
+                headers,
+              }).then((r) => r.json()),
+            ]);
+            const generatedCode = nextBusinessCode(
+              contextualCode(
+                projects[0].projectCode,
+                modules[0].moduleCode,
+                "REQ",
+              ),
+              requirements.map(
+                (requirement: RequirementItem) => requirement.requirementCode,
+              ),
+            );
             url = `${apiUrl}/requirements`;
             body = {
               projectId: projects[0].projectId,
               releaseId: releases[0]?.releaseId ?? null,
               moduleId: modules[0].moduleId,
-              requirementCode: code,
+              requirementCode: generatedCode,
               title: name,
               description: details || null,
               acceptanceCriteria: null,
@@ -4585,9 +4718,14 @@ function App() {
               <label>
                 {page === "users" ? "Username" : "รหัส"}
                 <input
+                  disabled={page === "requirements"}
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder={page === "users" ? "Username" : "ระบุรหัส"}
+                  placeholder={
+                    page === "users"
+                      ? "Username"
+                      : "ระบบสร้างรหัสอัตโนมัติเมื่อบันทึก"
+                  }
                   required
                 />
               </label>
@@ -4626,7 +4764,7 @@ function App() {
                 className="btn primary"
                 disabled={
                   saving ||
-                  !code.trim() ||
+                  (page !== "requirements" && !code.trim()) ||
                   !name.trim() ||
                   (page === "users" && details.length < 8)
                 }
