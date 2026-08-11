@@ -29,6 +29,8 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<TestEnvironment> TestEnvironments => Set<TestEnvironment>();
     public DbSet<TestCycle> TestCycles => Set<TestCycle>();
     public DbSet<TestCycleCase> TestCycleCases => Set<TestCycleCase>();
+    public DbSet<TestExecution> TestExecutions => Set<TestExecution>();
+    public DbSet<TestStepResult> TestStepResults => Set<TestStepResult>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }
