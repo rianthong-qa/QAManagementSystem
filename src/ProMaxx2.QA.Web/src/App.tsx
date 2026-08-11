@@ -2388,7 +2388,12 @@ type CycleEnvironment = {
   baseUrl?: string;
   isActive: boolean;
 };
-type CycleBuild = { buildId: string; releaseId: string; buildNumber: string };
+type CycleBuild = {
+  buildId: string;
+  releaseId: string;
+  buildNumber: string;
+  isActive: boolean;
+};
 type CycleRelease = {
   releaseId: string;
   projectId: string;
@@ -2457,20 +2462,28 @@ function TestCyclesPage({ search }: { search: string }) {
       ),
       fetch(`${apiUrl}/test-suites`, { headers: h }).then((r) => r.json()),
     ]).then(async ([c, p, r, e, s]) => {
+      const activeProjects = (p as ProjectItem[]).filter((x) => x.isActive);
+      const activeReleases = (r as CycleRelease[]).filter(
+        (x) => x.status !== "Released" && x.status !== "Cancelled",
+      );
       const buildGroups = await Promise.all(
-        r.map((release: CycleRelease) =>
+        activeReleases.map((release) =>
           fetch(`${apiUrl}/releases/${release.releaseId}/builds`, {
             headers: h,
           }).then((x) => x.json()),
         ),
       );
       setItems(c);
-      setProjects(p);
-      setReleases(r);
+      setProjects(activeProjects);
+      setReleases(activeReleases);
       setEnvironments(e);
       setSuites(s);
-      setBuilds(buildGroups.flat());
-      setProjectId((current) => current || p[0]?.projectId || "");
+      setBuilds((buildGroups.flat() as CycleBuild[]).filter((x) => x.isActive));
+      setProjectId((current) =>
+        activeProjects.some((x) => x.projectId === current)
+          ? current
+          : activeProjects[0]?.projectId || "",
+      );
     });
   }, [reload]);
   const projectReleases = useMemo(
@@ -2478,7 +2491,7 @@ function TestCyclesPage({ search }: { search: string }) {
       [releases, projectId],
     ),
     releaseBuilds = useMemo(
-      () => builds.filter((x) => x.releaseId === releaseId),
+      () => builds.filter((x) => x.releaseId === releaseId && x.isActive),
       [builds, releaseId],
     ),
     projectEnvironments = useMemo(
