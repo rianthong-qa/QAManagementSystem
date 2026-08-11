@@ -4422,6 +4422,11 @@ function App() {
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
     [details, setDetails] = useState(""),
+    [createProjectId, setCreateProjectId] = useState(""),
+    [createModuleId, setCreateModuleId] = useState(""),
+    [createReleaseId, setCreateReleaseId] = useState(""),
+    [createModules, setCreateModules] = useState<ModuleItem[]>([]),
+    [createReleases, setCreateReleases] = useState<ReleaseItem[]>([]),
     [refresh, setRefresh] = useState(0),
     [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -4499,6 +4504,27 @@ function App() {
       .then((response) => (response.ok ? response.json() : { count: 0 }))
       .then((data: { count: number }) => setBlockerCount(data.count));
   }, [contextBuildId, page, refresh]);
+  useEffect(() => {
+    if (!modal || page !== "requirements") return;
+    const targetProjectId = createProjectId || contextProjectId || contextProjects[0]?.projectId || "";
+    if (!targetProjectId) return;
+    if (targetProjectId !== createProjectId) {
+      setCreateProjectId(targetProjectId);
+      return;
+    }
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    Promise.all([
+      fetch(`${apiUrl}/projects/${targetProjectId}/modules`, { headers: h }).then((r) => r.ok ? r.json() : []),
+      fetch(`${apiUrl}/projects/${targetProjectId}/releases`, { headers: h }).then((r) => r.ok ? r.json() : []),
+    ]).then(([moduleData, releaseData]: [ModuleItem[], ReleaseItem[]]) => {
+      const activeModules = moduleData.filter((x) => x.isActive);
+      const activeReleases = releaseData.filter((x) => x.status !== "Cancelled");
+      setCreateModules(activeModules);
+      setCreateReleases(activeReleases);
+      setCreateModuleId((current) => activeModules.some((x) => x.moduleId === current) ? current : (activeModules[0]?.moduleId ?? ""));
+      setCreateReleaseId((current) => activeReleases.some((x) => x.releaseId === current) ? current : (contextReleaseId && activeReleases.some((x) => x.releaseId === contextReleaseId) ? contextReleaseId : (activeReleases[0]?.releaseId ?? "")));
+    });
+  }, [modal, page, createProjectId, contextProjectId, contextReleaseId, contextProjects]);
   const description = useMemo(
     () =>
       page === "dashboard"
@@ -4552,8 +4578,12 @@ function App() {
           headers,
         }).then((r) => r.json());
         if (!projects.length) throw new Error("กรุณาสร้าง Project ก่อน");
+        const targetProject = page === "requirements"
+          ? projects.find((x) => x.projectId === createProjectId)
+          : projects[0];
+        if (!targetProject) throw new Error("กรุณาเลือก Project");
         if (page === "releases") {
-          url = `${apiUrl}/projects/${projects[0].projectId}/releases`;
+          url = `${apiUrl}/projects/${targetProject.projectId}/releases`;
           body = {
             releaseCode: "",
             version: name,
@@ -4564,21 +4594,19 @@ function App() {
           };
         } else {
           const modules = await fetch(
-            `${apiUrl}/projects/${projects[0].projectId}/modules`,
+            `${apiUrl}/projects/${targetProject.projectId}/modules`,
             { headers },
           ).then((r) => r.json());
-          if (!modules.length) throw new Error("กรุณาสร้าง Module ก่อน");
+          const activeModules = (modules as ModuleItem[]).filter((x) => x.isActive);
+          if (!activeModules.length) throw new Error("Project ที่เลือกยังไม่มี Module ที่ Active");
           if (page === "requirements") {
-            const [releases] = await Promise.all([
-              fetch(`${apiUrl}/projects/${projects[0].projectId}/releases`, {
-                headers,
-              }).then((r) => r.json()),
-            ]);
+            const selectedModule = activeModules.find((x) => x.moduleId === createModuleId);
+            if (!selectedModule) throw new Error("กรุณาเลือก Module");
             url = `${apiUrl}/requirements`;
             body = {
-              projectId: projects[0].projectId,
-              releaseId: releases[0]?.releaseId ?? null,
-              moduleId: modules[0].moduleId,
+              projectId: targetProject.projectId,
+              releaseId: createReleaseId || null,
+              moduleId: selectedModule.moduleId,
               requirementCode: "",
               title: name,
               description: details || null,
@@ -4592,8 +4620,8 @@ function App() {
           } else {
             url = `${apiUrl}/test-cases`;
             body = {
-              projectId: projects[0].projectId,
-              moduleId: modules[0].moduleId,
+              projectId: targetProject.projectId,
+              moduleId: activeModules[0].moduleId,
               testCaseCode: "",
               title: name,
               objective: details || null,
@@ -4751,7 +4779,14 @@ function App() {
               </label>
               {can("REPORT.EXPORT") && <button className="btn">Export</button>}
               {canCreate && (
-                <button className="btn primary" onClick={() => setModal(true)}>
+                <button className="btn primary" onClick={() => {
+                  if (page === "requirements") {
+                    setCreateProjectId(contextProjectId);
+                    setCreateModuleId("");
+                    setCreateReleaseId(contextReleaseId);
+                  }
+                  setModal(true);
+                }}>
                   + สร้างรายการ
                 </button>
               )}
@@ -4784,6 +4819,30 @@ function App() {
               <button onClick={() => setModal(false)}>×</button>
             </div>
             <div className="form-grid">
+              {page === "requirements" && (
+                <>
+                  <label>
+                    Project
+                    <select value={createProjectId} onChange={(e) => { setCreateProjectId(e.target.value); setCreateModuleId(""); setCreateReleaseId(""); }}>
+                      {contextProjects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Module
+                    <select value={createModuleId} onChange={(e) => setCreateModuleId(e.target.value)}>
+                      <option value="">เลือก Module</option>
+                      {createModules.map((x) => <option key={x.moduleId} value={x.moduleId}>{x.moduleName}</option>)}
+                    </select>
+                  </label>
+                  <label className="full">
+                    Release
+                    <select value={createReleaseId} onChange={(e) => setCreateReleaseId(e.target.value)}>
+                      <option value="">ไม่ระบุ Release</option>
+                      {createReleases.map((x) => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · Version {x.version}</option>)}
+                    </select>
+                  </label>
+                </>
+              )}
               <label>
                 {page === "users" ? "Username" : "รหัส"}
                 <input
@@ -4834,6 +4893,7 @@ function App() {
                 disabled={
                   saving ||
                   (page !== "requirements" && !code.trim()) ||
+                  (page === "requirements" && (!createProjectId || !createModuleId)) ||
                   !name.trim() ||
                   (page === "users" && details.length < 8)
                 }
