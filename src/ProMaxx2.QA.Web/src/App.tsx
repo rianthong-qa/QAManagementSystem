@@ -937,8 +937,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
                             <span className="tree-spacer" />
                           )}
                           <span>
-                            <b>{x.moduleCode}</b>
-                            <small>{x.moduleName}</small>
+                            <b>{x.moduleName}</b>
                           </span>
                           {childCount > 0 && (
                             <span className="child-count">
