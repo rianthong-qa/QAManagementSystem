@@ -1,10 +1,26 @@
 using ProMaxx2.QA.Application.Dashboard;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using ProMaxx2.QA.Application.Identity;
+using ProMaxx2.QA.Infrastructure;
+using ProMaxx2.QA.Infrastructure.Identity;
+using ProMaxx2.QA.Infrastructure.Persistence;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
+builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddScoped<AuthenticationService>();
+var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
+if (Encoding.UTF8.GetByteCount(jwt.Key) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Use a secret store outside Development.");
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer=true, ValidIssuer=jwt.Issuer, ValidateAudience=true, ValidAudience=jwt.Audience, ValidateLifetime=true, ValidateIssuerSigningKey=true, IssuerSigningKey=new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key)), ClockSkew=TimeSpan.FromSeconds(30) };
+});
+builder.Services.AddAuthorizationBuilder().AddPolicy("AdminUser", p=>p.RequireClaim("permission","ADMIN.USER"));
 builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
     .WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"])
     .AllowAnyHeader().AllowAnyMethod()));
@@ -20,9 +36,12 @@ app.Use(async (context, next) =>
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 app.UseHttpsRedirection();
 app.UseCors("Web");
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapControllers();
+if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
+    await app.Services.InitializeDatabaseAsync(builder.Configuration["Seed:AdminPassword"]);
 app.Run();
 
 public partial class Program;

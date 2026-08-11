@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ProMaxx2.QA.Domain\ProMaxx2.QA.Domain.csproj" />
+    <ProjectReference Include="..\..\src\ProMaxx2.QA.Infrastructure\ProMaxx2.QA.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

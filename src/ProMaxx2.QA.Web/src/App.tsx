@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
 import './App.css'
+import './Login.css'
 
 type Page = 'dashboard' | 'releases' | 'requirements' | 'rtm' | 'test-cases' | 'test-suites' | 'test-cycles' | 'execution' | 'defects' | 'regression' | 'summary' | 'risks' | 'signoff' | 'users' | 'audit'
+type SessionUser = { userId: string; username: string; displayName: string; roles: string[]; permissions: string[] }
+const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5038/api/v1'
 
 const nav: { label: string; items: { id: Page; icon: string; label: string }[] }[] = [
   { label: 'ภาพรวม', items: [{ id: 'dashboard', icon: '▦', label: 'Dashboard' }, { id: 'releases', icon: '◫', label: 'Release / Build' }] },
@@ -62,13 +65,22 @@ function DataPage({ page, search }: { page: Page; search: string }) {
 
 function EmptyPage({ page }: { page: Page }) { return <article className="card empty"><div className="empty-icon">{nav.flatMap(n=>n.items).find(i=>i.id===page)?.icon}</div><h3>{pageNames[page]}</h3><p>โมดูลนี้เตรียมไว้ตาม Screen Specification และพร้อมเชื่อมต่อข้อมูลใน vertical slice ถัดไป</p><button className="btn primary">เริ่มสร้างรายการ</button></article> }
 
+function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
+  const [username,setUsername]=useState(''), [password,setPassword]=useState(''), [error,setError]=useState(''), [loading,setLoading]=useState(false)
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setError('');setLoading(true);try{const response=await fetch(`${apiUrl}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');const data=await response.json();localStorage.setItem('qa.accessToken',data.accessToken);localStorage.setItem('qa.user',JSON.stringify(data.user));onLogin(data.user)}catch(ex){setError(ex instanceof Error?ex.message:'ไม่สามารถเชื่อมต่อระบบได้')}finally{setLoading(false)}}
+  return <div className="login-page"><div className="login-visual"><div><div className="login-logo">QA</div><h1>ProMaxx2 QA Hub</h1><p>บริหาร Requirement, Test Execution, Defect และ Release Readiness ในที่เดียว</p></div><small>Quality Assurance Management System</small></div><form className="login-card" onSubmit={submit}><div className="mobile-brand"><div className="login-logo">QA</div><b>ProMaxx2 QA Hub</b></div><span className="eyebrow">WELCOME BACK</span><h2>เข้าสู่ระบบ</h2><p>กรอกบัญชีผู้ใช้งานเพื่อเข้าสู่ QA Workspace</p>{error&&<div className="login-error">{error}</div>}<label>ชื่อผู้ใช้<input autoFocus autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required placeholder="Username"/></label><label>รหัสผ่าน<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required placeholder="Password"/></label><label className="remember"><input type="checkbox"/> จดจำการเข้าสู่ระบบ</label><button className="btn primary login-button" disabled={loading}>{loading?'กำลังเข้าสู่ระบบ...':'เข้าสู่ระบบ'}</button><small>หากไม่สามารถเข้าสู่ระบบได้ กรุณาติดต่อ System Administrator</small></form></div>
+}
+
 function App() {
   const [page, setPage] = useState<Page>('dashboard'), [menu, setMenu] = useState(false), [search, setSearch] = useState(''), [modal, setModal] = useState(false)
+  const [user,setUser]=useState<SessionUser|null>(()=>{try{const value=localStorage.getItem('qa.user');return value?JSON.parse(value):null}catch{return null}})
   const description = useMemo(() => page === 'dashboard' ? 'สถานะคุณภาพและความพร้อม Release แบบรวมศูนย์' : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`, [page])
   const go = (id: Page) => { setPage(id); setMenu(false); window.history.replaceState(null,'',`#/${id}`) }
+  const logout=()=>{localStorage.removeItem('qa.accessToken');localStorage.removeItem('qa.user');setUser(null)}
+  if(!user)return <Login onLogin={setUser}/>
   return <div className="app">
     <aside className={menu?'sidebar open':'sidebar'}><div className="brand"><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Quality Assurance Management</small></div></div>{nav.map(g=><div className="nav-group" key={g.label}><p>{g.label}</p>{g.items.map(i=><button key={i.id} className={page===i.id?'active':''} onClick={()=>go(i.id)}><i>{i.icon}</i>{i.label}</button>)}</div>)}</aside>
-    <main><header className="topbar"><button className="menu-btn" onClick={()=>setMenu(v=>!v)}>☰</button><div className="context"><select><option>ProMaxx2</option></select><select><option>Release 2026.08</option><option>Release 2026.09</option></select><select><option>Build 10.0.228 RC2</option></select></div><div className="profile"><Badge tone="yellow">2 Blockers</Badge><span className="bell">●</span><div className="avatar">QA</div><div><b>QA Lead</b><small>Administrator</small></div></div></header>
+    <main><header className="topbar"><button className="menu-btn" onClick={()=>setMenu(v=>!v)}>☰</button><div className="context"><select><option>ProMaxx2</option></select><select><option>Release 2026.08</option><option>Release 2026.09</option></select><select><option>Build 10.0.228 RC2</option></select></div><div className="profile"><Badge tone="yellow">2 Blockers</Badge><span className="bell">●</span><div className="avatar">{user.displayName.slice(0,2).toUpperCase()}</div><div><b>{user.displayName}</b><button className="logout" onClick={logout}>ออกจากระบบ</button></div></div></header>
       <div className="content"><div className="page-head"><div><h1>{pageNames[page]}</h1><p>{description}</p></div><div className="actions"><label className="search">⌕<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ค้นหา..."/></label><button className="btn">Export</button><button className="btn primary" onClick={()=>setModal(true)}>+ สร้างรายการ</button></div></div>{page==='dashboard'?<Dashboard/>:<DataPage page={page} search={search}/>}</div>
     </main>
     {modal&&<div className="modal" onMouseDown={()=>setModal(false)}><div className="modal-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>สร้าง {pageNames[page]}</h2><button onClick={()=>setModal(false)}>×</button></div><div className="form-grid"><label>รหัส<input placeholder="ระบุรหัส"/></label><label>ชื่อรายการ<input placeholder="ระบุชื่อ"/></label><label className="full">รายละเอียด<textarea rows={4}/></label></div><div className="modal-actions"><button className="btn" onClick={()=>setModal(false)}>ยกเลิก</button><button className="btn primary" onClick={()=>setModal(false)}>บันทึก</button></div></div></div>}
