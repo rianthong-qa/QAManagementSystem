@@ -4,6 +4,7 @@ import "./Login.css";
 import "./DragDrop.css";
 import "./ReleaseBuild.css";
 import "./TestManagement.css";
+import "./Dashboard.css";
 
 type Page =
   | "dashboard"
@@ -28,6 +29,14 @@ type SessionUser = {
   displayName: string;
   roles: string[];
   permissions: string[];
+};
+type DashboardSummary = {
+  totalRequirements: number; coveredRequirements: number; requirementCoverage: number;
+  totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
+  openP0: number; openP1: number; recommendedDecision: string; generatedAt: string;
+  modules: { moduleId: string; moduleName: string; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
+  users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
+  statusDistribution: { status: string; count: number; color: string }[];
 };
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:5038/api/v1";
 
@@ -232,81 +241,36 @@ function Badge({
   return <span className={`badge ${tone}`}>{children}</span>;
 }
 
-function Dashboard() {
-  return (
-    <>
-      <div className="kpi-grid">
-        {[
-          ["Requirement Coverage", "94%", "188 / 200 Covered", "green"],
-          ["Execution", "82%", "984 / 1,200 Cases", "blue"],
-          ["Pass Rate", "91.7%", "902 Passed", "green"],
-          ["Release Blocker", "2", "P0 0 · P1 2", "red"],
-        ].map((x) => (
-          <article className="card kpi" key={x[0]}>
-            <span>{x[0]}</span>
-            <strong>{x[1]}</strong>
-            <small className={x[3]}>{x[2]}</small>
-          </article>
-        ))}
-      </div>
-      <div className="dashboard-grid">
-        <article className="card">
-          <h3>Module Health</h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Module</th>
-                  <th>Coverage</th>
-                  <th>Pass</th>
-                  <th>Defect</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ["Authentication", "100%", "98%", "1", "Healthy", "green"],
-                  ["Sales / POS", "98%", "93%", "5", "Watch", "yellow"],
-                  ["Stock", "95%", "89%", "8", "Watch", "yellow"],
-                  ["Report / Export", "92%", "87%", "4", "Risk", "red"],
-                  ["Velopack Update", "100%", "100%", "0", "Healthy", "green"],
-                ].map((r) => (
-                  <tr key={r[0]}>
-                    {r.slice(0, 4).map((c, index) => (
-                      <td key={index}>{c}</td>
-                    ))}
-                    <td>
-                      <Badge tone={r[5]}>{r[4]}</Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </article>
-        <article className="card">
-          <h3>Release Gate</h3>
-          <div className="gate">
-            {[
-              ["Smoke Test", "100% Pass", "green"],
-              ["Critical Regression", "88%", "yellow"],
-              ["Open P0", "0", "green"],
-              ["P1 Blocker", "2", "red"],
-              ["Update Test", "Passed", "green"],
-            ].map((g) => (
-              <div className="gate-row" key={g[0]}>
-                <span>{g[0]}</span>
-                <Badge tone={g[2]}>{g[1]}</Badge>
-              </div>
-            ))}
-          </div>
-          <div className="callout">
-            Recommended Decision: <b>CONDITIONAL GO</b>
-          </div>
-        </article>
-      </div>
-    </>
-  );
+function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; shareToken?: string }) {
+  const [data, setData] = useState<DashboardSummary | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
+  const [moduleFilter, setModuleFilter] = useState(""), [userFilter, setUserFilter] = useState("");
+  useEffect(() => {
+    setLoading(true); setError("");
+    const params = new URLSearchParams({ ...(projectId && { projectId }), ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
+    const url = shareToken ? `${apiUrl}/dashboard/shared?token=${encodeURIComponent(shareToken)}` : `${apiUrl}/dashboard/summary?${params}`;
+    fetch(url, shareToken ? {} : { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } })
+      .then(async r => { if (!r.ok) throw new Error(r.status === 401 ? "ลิงก์แชร์ไม่ถูกต้องหรือหมดอายุ" : "ไม่สามารถโหลดข้อมูล Dashboard ได้"); return r.json(); })
+      .then(setData).catch(e => setError(e.message)).finally(() => setLoading(false));
+  }, [projectId, releaseId, buildId, shareToken]);
+  if (loading) return <div className="executive-loading">กำลังประมวลผลข้อมูลคุณภาพ...</div>;
+  if (error || !data) return <div className="executive-error">{error || "ไม่พบข้อมูล"}</div>;
+  const modules = data.modules.filter(x => !moduleFilter || x.moduleId === moduleFilter), users = data.users.filter(x => !userFilter || x.userId === userFilter);
+  const totalStatus = Math.max(1, data.statusDistribution.reduce((n, x) => n + x.count, 0)); let angle = 0;
+  const donut = data.statusDistribution.map(x => { const start = angle; angle += x.count / totalStatus * 360; return `${x.color} ${start}deg ${angle}deg`; }).join(",");
+  return <div className="executive-dashboard">
+    <section className="executive-hero"><div><span className="eyebrow">QUALITY EXECUTIVE OVERVIEW</span><h2>Release Readiness Dashboard</h2><p>ข้อมูลจากระบบ ณ {new Date(data.generatedAt).toLocaleString("th-TH")}</p></div><div className={`decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}><small>คำแนะนำ</small><strong>{data.recommendedDecision}</strong></div></section>
+    <div className="kpi-grid">{[
+      ["Requirement Coverage", `${data.requirementCoverage}%`, `${data.coveredRequirements.toLocaleString()} / ${data.totalRequirements.toLocaleString()} Covered`, "green"],
+      ["Execution Progress", `${data.executionProgress}%`, `${data.executedCases.toLocaleString()} / ${data.totalCases.toLocaleString()} Cases`, "blue"],
+      ["Pass Rate", `${data.passRate}%`, `${data.passedCases.toLocaleString()} Passed`, "green"],
+      ["Release Blockers", data.openP0 + data.openP1, `P0 ${data.openP0} • P1 ${data.openP1}`, data.openP0 + data.openP1 ? "red" : "green"],
+    ].map(x => <article className="card kpi" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small className={String(x[3])}>{x[2]}</small></article>)}</div>
+    <div className="executive-chart-grid">
+      <article className="card status-card"><div><h3>Execution Results</h3><p>สัดส่วนผลการทดสอบทั้งหมด</p><div className="chart-legend">{data.statusDistribution.map(x => <span key={x.status}><i style={{background:x.color}} />{x.status}<b>{x.count}</b></span>)}</div></div><div className="donut" style={{background:`conic-gradient(${donut || "#e2e8f0 0 360deg"})`}}><div><strong>{data.executedCases}</strong><small>Executed</small></div></div></article>
+      <article className="card"><div className="card-title"><div><h3>Performance by User</h3><p>ผลการดำเนินงานของผู้ทดสอบ</p></div><select value={userFilter} onChange={e=>setUserFilter(e.target.value)}><option value="">ผู้ใช้ทั้งหมด</option>{data.users.map(x=><option key={x.userId} value={x.userId}>{x.displayName}</option>)}</select></div><div className="user-bars">{users.length ? users.slice(0,8).map(x=><div className="user-bar" key={x.userId}><span>{x.displayName}</span><div><i style={{width:`${x.passRate}%`}} /></div><strong>{x.passRate}%</strong><small>{x.executions} runs</small></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบโดยผู้ใช้</p>}</div></article>
+    </div>
+    <article className="card module-health-card"><div className="card-title"><div><h3>Module Health</h3><p>Coverage, execution และคุณภาพแยกตาม Module</p></div><select value={moduleFilter} onChange={e=>setModuleFilter(e.target.value)}><option value="">Module ทั้งหมด</option>{data.modules.map(x=><option key={x.moduleId} value={x.moduleId}>{x.moduleName}</option>)}</select></div><div className="table-wrap"><table><thead><tr><th>Module</th><th>Requirements</th><th>Test Cases</th><th>Coverage</th><th>Execution</th><th>Pass Rate</th><th>Fail / Blocked</th><th>Status</th></tr></thead><tbody>{modules.map(r => <tr key={r.moduleId}><td><b>{r.moduleName}</b></td><td>{r.coveredRequirements}/{r.requirements}</td><td>{r.testCases}</td><td><span className="metric-bar"><i style={{width:`${r.coveragePercent}%`}} /></span>{r.coveragePercent}%</td><td>{r.executionPercent}%</td><td><b className={r.passRate >= 90 ? "green":"red"}>{r.passRate}%</b></td><td>{r.failed} / {r.blocked}</td><td><Badge tone={r.health === "Healthy" ? "green" : r.health === "Watch" ? "yellow" : "red"}>{r.health}</Badge></td></tr>)}{!modules.length && <tr><td colSpan={8} className="muted-row">ไม่มีข้อมูล Module ในขอบเขตที่เลือก</td></tr>}</tbody></table></div></article>
+  </div>;
 }
 
 function DataPage({ page, search, canAssignExecution = false }: { page: Page; search: string; canAssignExecution?: boolean }) {
@@ -4488,6 +4452,7 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
 }
 
 function App() {
+  const shareToken = new URLSearchParams(window.location.search).get("dashboardShare") ?? "";
   const [page, setPage] = useState<Page>("dashboard"),
     [menu, setMenu] = useState(false),
     [search, setSearch] = useState(""),
@@ -4636,6 +4601,16 @@ function App() {
     localStorage.removeItem("qa.user");
     setUser(null);
   };
+  const shareDashboard = async () => {
+    try {
+      const response = await fetch(`${apiUrl}/dashboard/share`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ projectId: contextProjectId || null, releaseId: contextReleaseId || null, buildId: contextBuildId || null, validHours: 24 }) });
+      if (!response.ok) throw new Error("ไม่สามารถสร้างลิงก์แชร์ได้");
+      const result: { token: string; expiresAt: string } = await response.json();
+      const url = `${window.location.origin}${window.location.pathname}?dashboardShare=${encodeURIComponent(result.token)}`;
+      await navigator.clipboard.writeText(url);
+      window.alert(`คัดลอกลิงก์ Dashboard แบบอ่านอย่างเดียวแล้ว\nลิงก์หมดอายุ ${new Date(result.expiresAt).toLocaleString("th-TH")}`);
+    } catch (e) { window.alert(e instanceof Error ? e.message : "ไม่สามารถสร้างลิงก์แชร์ได้"); }
+  };
   const save = async () => {
     if (
       !["projects", "releases", "requirements", "test-cases", "users"].includes(
@@ -4756,6 +4731,7 @@ function App() {
       setSaving(false);
     }
   };
+  if (shareToken) return <div className="shared-dashboard"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Executive Read-only Report</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Dashboard shareToken={shareToken} /></main><footer>ข้อมูลสำหรับการบริหารจัดการ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
   if (!user) return <Login onLogin={setUser} />;
   const can = (permission: string) =>
     user.roles.includes("SYS_ADMIN") || user.permissions.includes(permission);
@@ -4872,6 +4848,7 @@ function App() {
                 />
               </label>
               {can("REPORT.EXPORT") && <button className="btn">Export</button>}
+              {page === "dashboard" && <button className="btn share-btn" onClick={shareDashboard}>↗ แชร์ Dashboard</button>}
               {canCreate && (
                 <button className="btn primary" onClick={() => {
                   if (page === "requirements") {
@@ -4887,7 +4864,7 @@ function App() {
             </div>
           </div>
           {page === "dashboard" ? (
-            <Dashboard />
+            <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (

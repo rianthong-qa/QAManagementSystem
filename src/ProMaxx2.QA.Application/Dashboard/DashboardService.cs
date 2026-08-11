@@ -1,19 +1,8 @@
 namespace ProMaxx2.QA.Application.Dashboard;
 
-public sealed record DashboardSummary(
-    decimal RequirementCoverage,
-    decimal ExecutionProgress,
-    decimal PassRate,
-    int OpenP0,
-    int OpenP1,
-    string RecommendedDecision);
-
-public interface IDashboardService
-{
-    DashboardSummary GetSummary();
-}
-
-public sealed class DashboardService : IDashboardService
-{
-    public DashboardSummary GetSummary() => new(94m, 82m, 91.7m, 0, 2, "CONDITIONAL GO");
-}
+public sealed record DashboardModuleHealth(Guid ModuleId,string ModuleName,int Requirements,int CoveredRequirements,int TestCases,int Executed,int Passed,int Failed,int Blocked,decimal CoveragePercent,decimal ExecutionPercent,decimal PassRate,string Health);
+public sealed record DashboardUserPerformance(Guid UserId,string DisplayName,int Executions,int Passed,int Failed,int Blocked,decimal PassRate,DateTime?LastExecutedAt);
+public sealed record DashboardStatusSlice(string Status,int Count,string Color);
+public sealed record DashboardSummary(int TotalRequirements,int CoveredRequirements,decimal RequirementCoverage,int TotalCases,int ExecutedCases,decimal ExecutionProgress,int PassedCases,decimal PassRate,int OpenP0,int OpenP1,string RecommendedDecision,IReadOnlyList<DashboardModuleHealth>Modules,IReadOnlyList<DashboardUserPerformance>Users,IReadOnlyList<DashboardStatusSlice>StatusDistribution,DateTime GeneratedAt);
+public interface IDashboardRepository{Task<DashboardSummary>GetAsync(Guid?projectId,Guid?releaseId,Guid?buildId,CancellationToken ct);}
+public sealed class DashboardService(IDashboardRepository repository){public Task<DashboardSummary>GetAsync(Guid?p,Guid?r,Guid?b,CancellationToken ct)=>repository.GetAsync(p,r,b,ct);}

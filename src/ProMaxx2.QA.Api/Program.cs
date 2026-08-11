@@ -26,6 +26,7 @@ builder.Services.AddScoped<TestCaseService>();
 builder.Services.AddScoped<TestSuiteService>();
 builder.Services.AddScoped<TestCycleService>();
 builder.Services.AddScoped<ExecutionService>();
+builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<AdministrationService>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
 if (Encoding.UTF8.GetByteCount(jwt.Key) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Use a secret store outside Development.");
@@ -45,8 +46,6 @@ builder.Services.AddAuthorizationBuilder().AddPolicy("ExecutionRun",p=>p.Require
 builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
     .WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"])
     .AllowAnyHeader().AllowAnyMethod()));
-builder.Services.AddSingleton<IDashboardService, DashboardService>();
-
 var app = builder.Build();
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
