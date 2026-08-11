@@ -38,6 +38,9 @@
 .module-parent-row td:first-child { background:#fbfdff; }
 .module-child-row td:first-child b { color:#40546d; font-weight:600; }
 .module-child-row td:first-child { border-left:3px solid #dbe8fa; }
+.metric-pass { color:#148657; }
+.metric-fail { color:#d83b46; }
+.metric-blocked { color:#d78300; }
 @media(max-width:700px) {
   .executive-hero { width: 100%; flex-direction: column; align-items: stretch; }
   .executive-hero .decision { min-width: 0; max-width: none; text-align: left; }
