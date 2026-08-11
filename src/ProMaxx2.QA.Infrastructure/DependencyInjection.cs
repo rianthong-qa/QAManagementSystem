@@ -6,6 +6,7 @@ using ProMaxx2.QA.Infrastructure.Identity;
 using ProMaxx2.QA.Infrastructure.Persistence;
 using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.Releases;
+using ProMaxx2.QA.Application.Requirements;
 
 namespace ProMaxx2.QA.Infrastructure;
 
@@ -18,6 +19,7 @@ public static class DependencyInjection
         services.AddScoped<IIdentityRepository,IdentityRepository>(); services.AddSingleton<IPasswordService,PasswordService>(); services.AddScoped<ITokenService,TokenService>();
         services.AddScoped<IProjectRepository,ProjectRepository>();
         services.AddScoped<IReleaseRepository,ReleaseRepository>();
+        services.AddScoped<IRequirementRepository,RequirementRepository>();
         return services;
     }
 }

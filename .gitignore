@@ -12,3 +12,4 @@ dist/
 !src/ProMaxx2.QA.Web/.env.development
 TestResults/
 coverage/
+*.log
