@@ -1254,9 +1254,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
         );
         if (!statusResponse.ok) {
           const problem = await statusResponse.json();
-          throw new Error(
-            problem.detail ?? "เปลี่ยนสถานะ Release ไม่สำเร็จ",
-          );
+          throw new Error(problem.detail ?? "เปลี่ยนสถานะ Release ไม่สำเร็จ");
         }
       }
       if (modal === "build" && editBuild && buildStatus !== editBuild.status) {
@@ -1760,7 +1758,12 @@ type TestCaseItem = {
   revisionNo: number;
   automationCandidate: boolean;
   ownerUserId?: string;
-  steps: { stepNo: number; action: string; testData?: string; expectedResult: string }[];
+  steps: {
+    stepNo: number;
+    action: string;
+    testData?: string;
+    expectedResult: string;
+  }[];
 };
 function TestCasesPage({
   search,
@@ -1789,34 +1792,53 @@ function TestCasesPage({
     [automation, setAutomation] = useState(false),
     [status, setStatus] = useState("Draft"),
     [changeReason, setChangeReason] = useState(""),
-    [steps, setSteps] = useState([{ stepNo: 1, action: "", testData: "", expectedResult: "" }]);
+    [steps, setSteps] = useState([
+      { stepNo: 1, action: "", testData: "", expectedResult: "" },
+    ]);
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
   };
   useEffect(() => {
-    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
     Promise.all([
       fetch(`${apiUrl}/test-cases`, { headers: h }).then((r) => r.json()),
       fetch(`${apiUrl}/projects`, { headers: h }).then((r) => r.json()),
     ])
       .then(([cases, projectData]) => {
         setItems(cases);
-        const activeProjects = (projectData as ProjectItem[]).filter((x) => x.isActive);
+        const activeProjects = (projectData as ProjectItem[]).filter(
+          (x) => x.isActive,
+        );
         setProjects(activeProjects);
-        setProjectId((current) => current || activeProjects[0]?.projectId || "");
+        setProjectId(
+          (current) => current || activeProjects[0]?.projectId || "",
+        );
       })
       .finally(() => setLoading(false));
   }, [reload]);
   useEffect(() => {
-    if (!projectId) { setModules([]); return; }
+    if (!projectId) {
+      setModules([]);
+      return;
+    }
     fetch(`${apiUrl}/projects/${projectId}/modules`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` },
-    }).then((r) => r.json()).then((data: ModuleItem[]) => {
-      const active = data.filter((x) => x.isActive);
-      setModules(active);
-      setModuleId((current) => active.some((x) => x.moduleId === current) ? current : active[0]?.moduleId || "");
-    });
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+      },
+    })
+      .then((r) => r.json())
+      .then((data: ModuleItem[]) => {
+        const active = data.filter((x) => x.isActive);
+        setModules(active);
+        setModuleId((current) =>
+          active.some((x) => x.moduleId === current)
+            ? current
+            : active[0]?.moduleId || "",
+        );
+      });
   }, [projectId]);
   const openForm = (item?: TestCaseItem) => {
     setEditing(item ?? null);
@@ -1830,32 +1852,96 @@ function TestCasesPage({
     setTestType(item?.testType ?? "Functional");
     setAutomation(item?.automationCandidate ?? false);
     setStatus(item?.status ?? "Draft");
-    setChangeReason("");
-    setSteps(item?.steps.length ? item.steps.map((x) => ({ ...x, testData: x.testData ?? "" })) : [{ stepNo: 1, action: "", testData: "", expectedResult: "" }]);
+    setChangeReason(item ? "ปรับปรุงข้อมูล Test Case" : "");
+    setSteps(
+      item?.steps.length
+        ? item.steps.map((x) => ({ ...x, testData: x.testData ?? "" }))
+        : [{ stepNo: 1, action: "", testData: "", expectedResult: "" }],
+    );
     setForm(true);
   };
-  const updateStep = (index: number, field: "action" | "testData" | "expectedResult", value: string) =>
-    setSteps((current) => current.map((x, i) => i === index ? { ...x, [field]: value } : x));
+  const updateStep = (
+    index: number,
+    field: "action" | "testData" | "expectedResult",
+    value: string,
+  ) =>
+    setSteps((current) =>
+      current.map((x, i) => (i === index ? { ...x, [field]: value } : x)),
+    );
   const save = async () => {
     setSaving(true);
     try {
       const body = editing
-        ? { moduleId, title, objective: objective || null, preconditions: preconditions || null, priority, testType, automationCandidate: automation, ownerUserId: editing.ownerUserId ?? null, changeReason, steps }
-        : { projectId, moduleId, testCaseCode: code, title, objective: objective || null, preconditions: preconditions || null, priority, testType, automationCandidate: automation, ownerUserId: null, steps };
-      const response = await fetch(`${apiUrl}/test-cases${editing ? `/${editing.testCaseId}` : ""}`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
-      if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึก Test Case ไม่สำเร็จ"); }
-      if (editing && status !== editing.status) {
-        const statusResponse = await fetch(`${apiUrl}/test-cases/${editing.testCaseId}/status`, { method: "POST", headers, body: JSON.stringify({ status }) });
-        if (!statusResponse.ok) { const problem = await statusResponse.json(); throw new Error(problem.detail ?? "เปลี่ยนสถานะไม่สำเร็จ"); }
+        ? {
+            moduleId,
+            title,
+            objective: objective || null,
+            preconditions: preconditions || null,
+            priority,
+            testType,
+            automationCandidate: automation,
+            ownerUserId: editing.ownerUserId ?? null,
+            changeReason: changeReason.trim(),
+            steps,
+          }
+        : {
+            projectId,
+            moduleId,
+            testCaseCode: code,
+            title,
+            objective: objective || null,
+            preconditions: preconditions || null,
+            priority,
+            testType,
+            automationCandidate: automation,
+            ownerUserId: null,
+            steps,
+          };
+      const response = await fetch(
+        `${apiUrl}/test-cases${editing ? `/${editing.testCaseId}` : ""}`,
+        {
+          method: editing ? "PUT" : "POST",
+          headers,
+          body: JSON.stringify(body),
+        },
+      );
+      if (!response.ok) {
+        const problem = await response.json();
+        throw new Error(problem.detail ?? "บันทึก Test Case ไม่สำเร็จ");
       }
-      setForm(false); setReload((x) => x + 1);
-    } catch (e) { window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ"); }
-    finally { setSaving(false); }
+      if (editing && status !== editing.status) {
+        const statusResponse = await fetch(
+          `${apiUrl}/test-cases/${editing.testCaseId}/status`,
+          { method: "POST", headers, body: JSON.stringify({ status }) },
+        );
+        if (!statusResponse.ok) {
+          const problem = await statusResponse.json();
+          throw new Error(problem.detail ?? "เปลี่ยนสถานะไม่สำเร็จ");
+        }
+      }
+      setForm(false);
+      setReload((x) => x + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
   };
   const remove = async (item: TestCaseItem) => {
-    if (!window.confirm(`ยืนยันลบ ${item.testCaseCode}? ข้อมูลประวัติเดิมจะยังคงอยู่`)) return;
-    const response = await fetch(`${apiUrl}/test-cases/${item.testCaseId}`, { method: "DELETE", headers });
-    if (!response.ok) { window.alert("ลบ Test Case ไม่สำเร็จ"); return; }
+    if (
+      !window.confirm(
+        `ยืนยันลบ ${item.testCaseCode}? ข้อมูลประวัติเดิมจะยังคงอยู่`,
+      )
+    )
+      return;
+    const response = await fetch(`${apiUrl}/test-cases/${item.testCaseId}`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!response.ok) {
+      window.alert("ลบ Test Case ไม่สำเร็จ");
+      return;
+    }
     setReload((x) => x + 1);
   };
   if (loading)
@@ -1864,77 +1950,334 @@ function TestCasesPage({
         <p>กำลังโหลด Test Case...</p>
       </article>
     );
-  const rows = items.filter((x) => `${x.testCaseCode} ${x.title} ${x.testType ?? ""} ${x.status}`.toLowerCase().includes(search.toLowerCase()) && (!statusFilter || x.status === statusFilter));
+  const rows = items.filter(
+    (x) =>
+      `${x.testCaseCode} ${x.title} ${x.testType ?? ""} ${x.status}`
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      (!statusFilter || x.status === statusFilter),
+  );
   return (
-    <><article className="card">
-      <div className="table-tools">
-        <div>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="">ทุกสถานะ</option>
-            <option>Draft</option><option>Review</option><option>Ready</option><option>Deprecated</option>
-          </select>
+    <>
+      <article className="card">
+        <div className="table-tools">
+          <div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">ทุกสถานะ</option>
+              <option>Draft</option>
+              <option>Review</option>
+              <option>Ready</option>
+              <option>Deprecated</option>
+            </select>
+          </div>
+          <div className="row-actions">
+            <span>{rows.length} Test Cases</span>
+            {canEdit && (
+              <button className="btn primary" onClick={() => openForm()}>
+                + Test Case
+              </button>
+            )}
+          </div>
         </div>
-        <div className="row-actions"><span>{rows.length} Test Cases</span>{canEdit && <button className="btn primary" onClick={() => openForm()}>+ Test Case</button>}</div>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Test Case ID</th>
-              <th>Title</th>
-              <th>Priority</th>
-              <th>Type</th>
-              <th>Revision</th>
-              <th>Steps</th>
-              <th>Status</th>
-              {canEdit && <th>จัดการ</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((x) => (
-              <tr key={x.testCaseId}>
-                <td>
-                  <b>{x.testCaseCode}</b>
-                </td>
-                <td>{x.title}</td>
-                <td>
-                  <Badge
-                    tone={
-                      x.priority === "P0" || x.priority === "P1"
-                        ? "red"
-                        : "blue"
-                    }
-                  >
-                    {x.priority}
-                  </Badge>
-                </td>
-                <td>{x.testType ?? "-"}</td>
-                <td>Rev. {x.revisionNo}</td>
-                <td>{x.steps.length}</td>
-                <td>
-                  <Badge tone={x.status === "Ready" ? "green" : "yellow"}>
-                    {x.status}
-                  </Badge>
-                </td>
-                {canEdit && <td><div className="row-actions"><button className="table-action" onClick={() => openForm(x)}>แก้ไข</button><button className="table-action danger-action" onClick={() => remove(x)}>ลบ</button></div></td>}
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Test Case ID</th>
+                <th>Title</th>
+                <th>Priority</th>
+                <th>Type</th>
+                <th>Revision</th>
+                <th>Steps</th>
+                <th>Status</th>
+                {canEdit && <th>จัดการ</th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </article>{form && <div className="modal" onMouseDown={() => setForm(false)}><div className="modal-box testcase-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><h2>{editing ? "แก้ไข" : "เพิ่ม"} Test Case</h2><button onClick={() => setForm(false)}>×</button></div><div className="form-grid">
-      <label>Project<select disabled={!!editing} value={projectId} onChange={(e) => setProjectId(e.target.value)}>{projects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label>
-      <label>Module<select value={moduleId} onChange={(e) => setModuleId(e.target.value)}>{modules.map((x) => <option key={x.moduleId} value={x.moduleId}>{x.moduleCode} · {x.moduleName}</option>)}</select></label>
-      <label>Test Case Code<input disabled={!!editing} value={code} onChange={(e) => setCode(e.target.value)} /></label>
-      <label>Title<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-      <label>Priority<select value={priority} onChange={(e) => setPriority(e.target.value)}><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label>
-      <label>Type<select value={testType} onChange={(e) => setTestType(e.target.value)}><option>Functional</option><option>Regression</option><option>Integration</option><option>Performance</option><option>Security</option><option>UAT</option></select></label>
-      {editing && <label>สถานะ<select value={status} onChange={(e) => setStatus(e.target.value)}><option>Draft</option><option>Review</option><option>Ready</option><option>Deprecated</option></select></label>}
-      <label className="check-line"><input type="checkbox" checked={automation} onChange={(e) => setAutomation(e.target.checked)} /> Automation Candidate</label>
-      <label className="full">Objective<textarea rows={2} value={objective} onChange={(e) => setObjective(e.target.value)} /></label>
-      <label className="full">Preconditions<textarea rows={2} value={preconditions} onChange={(e) => setPreconditions(e.target.value)} /></label>
-      {editing && <label className="full">เหตุผลที่แก้ไข<input value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="ระบุเหตุผลเพื่อสร้าง Revision ใหม่" /></label>}
-    </div><div className="testcase-steps"><div className="card-title"><div><h3>Test Steps</h3><p>{steps.length} ขั้นตอน</p></div><button className="btn" onClick={() => setSteps((current) => [...current, { stepNo: current.length + 1, action: "", testData: "", expectedResult: "" }])}>+ Step</button></div>{steps.map((step, index) => <div className="testcase-step" key={index}><b>{index + 1}</b><input placeholder="Action" value={step.action} onChange={(e) => updateStep(index, "action", e.target.value)} /><input placeholder="Test Data" value={step.testData ?? ""} onChange={(e) => updateStep(index, "testData", e.target.value)} /><input placeholder="Expected Result" value={step.expectedResult} onChange={(e) => updateStep(index, "expectedResult", e.target.value)} />{steps.length > 1 && <button className="table-action danger-action" onClick={() => setSteps((current) => current.filter((_, i) => i !== index).map((x, i) => ({ ...x, stepNo: i + 1 })))}>ลบ</button>}</div>)}</div><div className="modal-actions"><button className="btn" onClick={() => setForm(false)}>ยกเลิก</button><button className="btn primary" disabled={saving || !projectId || !moduleId || !code.trim() || !title.trim() || (editing && !changeReason.trim()) || steps.some((x) => !x.action.trim() || !x.expectedResult.trim())} onClick={save}>{saving ? "กำลังบันทึก..." : "บันทึก"}</button></div></div></div>}</>
+            </thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.testCaseId}>
+                  <td>
+                    <b>{x.testCaseCode}</b>
+                  </td>
+                  <td>{x.title}</td>
+                  <td>
+                    <Badge
+                      tone={
+                        x.priority === "P0" || x.priority === "P1"
+                          ? "red"
+                          : "blue"
+                      }
+                    >
+                      {x.priority}
+                    </Badge>
+                  </td>
+                  <td>{x.testType ?? "-"}</td>
+                  <td>Rev. {x.revisionNo}</td>
+                  <td>{x.steps.length}</td>
+                  <td>
+                    <Badge tone={x.status === "Ready" ? "green" : "yellow"}>
+                      {x.status}
+                    </Badge>
+                  </td>
+                  {canEdit && (
+                    <td>
+                      <div className="row-actions">
+                        <button
+                          className="table-action"
+                          onClick={() => openForm(x)}
+                        >
+                          แก้ไข
+                        </button>
+                        <button
+                          className="table-action danger-action"
+                          onClick={() => remove(x)}
+                        >
+                          ลบ
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
+      {form && (
+        <div className="modal" onMouseDown={() => setForm(false)}>
+          <div
+            className="modal-box testcase-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <h2>{editing ? "แก้ไข" : "เพิ่ม"} Test Case</h2>
+              <button onClick={() => setForm(false)}>×</button>
+            </div>
+            <div className="form-grid">
+              <label>
+                Project
+                <select
+                  disabled={!!editing}
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                >
+                  {projects.map((x) => (
+                    <option key={x.projectId} value={x.projectId}>
+                      {x.projectName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Module
+                <select
+                  value={moduleId}
+                  onChange={(e) => setModuleId(e.target.value)}
+                >
+                  {modules.map((x) => (
+                    <option key={x.moduleId} value={x.moduleId}>
+                      {x.moduleCode} · {x.moduleName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Test Case Code
+                <input
+                  disabled={!!editing}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </label>
+              <label>
+                Title
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </label>
+              <label>
+                Priority
+                <select
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                >
+                  <option>P0</option>
+                  <option>P1</option>
+                  <option>P2</option>
+                  <option>P3</option>
+                </select>
+              </label>
+              <label>
+                Type
+                <select
+                  value={testType}
+                  onChange={(e) => setTestType(e.target.value)}
+                >
+                  <option>Functional</option>
+                  <option>Regression</option>
+                  <option>Integration</option>
+                  <option>Performance</option>
+                  <option>Security</option>
+                  <option>UAT</option>
+                </select>
+              </label>
+              {editing && (
+                <label>
+                  สถานะ
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                  >
+                    <option>Draft</option>
+                    <option>Review</option>
+                    <option>Ready</option>
+                    <option>Deprecated</option>
+                  </select>
+                </label>
+              )}
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={automation}
+                  onChange={(e) => setAutomation(e.target.checked)}
+                />{" "}
+                Automation Candidate
+              </label>
+              <label className="full">
+                Objective
+                <textarea
+                  rows={2}
+                  value={objective}
+                  onChange={(e) => setObjective(e.target.value)}
+                />
+              </label>
+              <label className="full">
+                Preconditions
+                <textarea
+                  rows={2}
+                  value={preconditions}
+                  onChange={(e) => setPreconditions(e.target.value)}
+                />
+              </label>
+              {editing && (
+                <label className="full">
+                  <span>
+                    เหตุผลที่แก้ไข <b className="required-mark">*</b>
+                  </span>
+                  <input
+                    value={changeReason}
+                    onChange={(e) => setChangeReason(e.target.value)}
+                    placeholder="ระบุเหตุผลเพื่อสร้าง Revision ใหม่"
+                  />
+                  {!changeReason.trim() && (
+                    <small className="field-error">
+                      กรุณาระบุเหตุผลก่อนบันทึก เพื่อสร้าง Revision ใหม่
+                    </small>
+                  )}
+                </label>
+              )}
+            </div>
+            <div className="testcase-steps">
+              <div className="card-title">
+                <div>
+                  <h3>Test Steps</h3>
+                  <p>{steps.length} ขั้นตอน</p>
+                </div>
+                <button
+                  className="btn"
+                  onClick={() =>
+                    setSteps((current) => [
+                      ...current,
+                      {
+                        stepNo: current.length + 1,
+                        action: "",
+                        testData: "",
+                        expectedResult: "",
+                      },
+                    ])
+                  }
+                >
+                  + Step
+                </button>
+              </div>
+              <div className="testcase-step-head" aria-hidden="true">
+                <span>#</span>
+                <span>Action</span>
+                <span>Test Data</span>
+                <span>Expected Result</span>
+                <span>จัดการ</span>
+              </div>
+              {steps.map((step, index) => (
+                <div className="testcase-step" key={index}>
+                  <b>{index + 1}</b>
+                  <input
+                    placeholder="Action"
+                    value={step.action}
+                    onChange={(e) =>
+                      updateStep(index, "action", e.target.value)
+                    }
+                  />
+                  <input
+                    placeholder="Test Data"
+                    value={step.testData ?? ""}
+                    onChange={(e) =>
+                      updateStep(index, "testData", e.target.value)
+                    }
+                  />
+                  <input
+                    placeholder="Expected Result"
+                    value={step.expectedResult}
+                    onChange={(e) =>
+                      updateStep(index, "expectedResult", e.target.value)
+                    }
+                  />
+                  {steps.length > 1 && (
+                    <button
+                      className="table-action danger-action"
+                      onClick={() =>
+                        setSteps((current) =>
+                          current
+                            .filter((_, i) => i !== index)
+                            .map((x, i) => ({ ...x, stepNo: i + 1 })),
+                        )
+                      }
+                    >
+                      ลบ
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setForm(false)}>
+                ยกเลิก
+              </button>
+              <button
+                className="btn primary"
+                disabled={
+                  saving ||
+                  !projectId ||
+                  !moduleId ||
+                  !code.trim() ||
+                  !title.trim() ||
+                  (editing && !changeReason.trim()) ||
+                  steps.some(
+                    (x) => !x.action.trim() || !x.expectedResult.trim(),
+                  )
+                }
+                onClick={save}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 type RtmItem = {
@@ -3013,15 +3356,28 @@ function TestSuitesPage({
     setReload((x) => x + 1);
   };
   const removeSuite = async (suite: TestSuiteItem) => {
-    if (!window.confirm(`ยืนยันลบ ${suite.suiteCode}? ข้อมูลประวัติเดิมจะยังคงอยู่`)) return;
-    const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}`, { method: "DELETE", headers });
-    if (!response.ok) { window.alert("ลบ Test Suite ไม่สำเร็จ"); return; }
+    if (
+      !window.confirm(
+        `ยืนยันลบ ${suite.suiteCode}? ข้อมูลประวัติเดิมจะยังคงอยู่`,
+      )
+    )
+      return;
+    const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!response.ok) {
+      window.alert("ลบ Test Suite ไม่สำเร็จ");
+      return;
+    }
     setReload((x) => x + 1);
   };
-  const rows = items.filter((x) => x.isActive &&
-    `${x.suiteCode} ${x.suiteName} ${x.suiteType ?? ""}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+  const rows = items.filter(
+    (x) =>
+      x.isActive &&
+      `${x.suiteCode} ${x.suiteName} ${x.suiteType ?? ""}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
   );
   const available = testCases.filter(
     (x) =>
@@ -3090,7 +3446,12 @@ function TestSuitesPage({
                         >
                           จัด Test Case
                         </button>
-                        <button className="table-action danger-action" onClick={() => removeSuite(x)}>ลบ</button>
+                        <button
+                          className="table-action danger-action"
+                          onClick={() => removeSuite(x)}
+                        >
+                          ลบ
+                        </button>
                       </div>
                     </td>
                   )}
@@ -3834,9 +4195,15 @@ function App() {
   const [contextProjects, setContextProjects] = useState<ProjectItem[]>([]),
     [contextReleases, setContextReleases] = useState<ReleaseItem[]>([]),
     [contextBuilds, setContextBuilds] = useState<BuildItem[]>([]),
-    [contextProjectId, setContextProjectId] = useState(() => localStorage.getItem("qa.context.project") ?? ""),
-    [contextReleaseId, setContextReleaseId] = useState(() => localStorage.getItem("qa.context.release") ?? ""),
-    [contextBuildId, setContextBuildId] = useState(() => localStorage.getItem("qa.context.build") ?? ""),
+    [contextProjectId, setContextProjectId] = useState(
+      () => localStorage.getItem("qa.context.project") ?? "",
+    ),
+    [contextReleaseId, setContextReleaseId] = useState(
+      () => localStorage.getItem("qa.context.release") ?? "",
+    ),
+    [contextBuildId, setContextBuildId] = useState(
+      () => localStorage.getItem("qa.context.build") ?? "",
+    ),
     [blockerCount, setBlockerCount] = useState(0);
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
@@ -3845,46 +4212,77 @@ function App() {
     [saving, setSaving] = useState(false);
   useEffect(() => {
     if (!user) return;
-    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
     fetch(`${apiUrl}/projects`, { headers: h })
-      .then((response) => response.ok ? response.json() : [])
+      .then((response) => (response.ok ? response.json() : []))
       .then((data: ProjectItem[]) => {
         const active = data.filter((x) => x.isActive);
         setContextProjects(active);
-        setContextProjectId((current) => active.some((x) => x.projectId === current) ? current : active[0]?.projectId ?? "");
+        setContextProjectId((current) =>
+          active.some((x) => x.projectId === current)
+            ? current
+            : (active[0]?.projectId ?? ""),
+        );
       });
   }, [user, page, refresh]);
   useEffect(() => {
-    if (!contextProjectId) { setContextReleases([]); setContextReleaseId(""); return; }
+    if (!contextProjectId) {
+      setContextReleases([]);
+      setContextReleaseId("");
+      return;
+    }
     localStorage.setItem("qa.context.project", contextProjectId);
-    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
     fetch(`${apiUrl}/projects/${contextProjectId}/releases`, { headers: h })
-      .then((response) => response.ok ? response.json() : [])
+      .then((response) => (response.ok ? response.json() : []))
       .then((data: ReleaseItem[]) => {
         const active = data.filter((x) => x.status !== "Cancelled");
         setContextReleases(active);
-        setContextReleaseId((current) => active.some((x) => x.releaseId === current) ? current : active[0]?.releaseId ?? "");
+        setContextReleaseId((current) =>
+          active.some((x) => x.releaseId === current)
+            ? current
+            : (active[0]?.releaseId ?? ""),
+        );
       });
   }, [contextProjectId, page, refresh]);
   useEffect(() => {
-    if (!contextReleaseId) { setContextBuilds([]); setContextBuildId(""); return; }
+    if (!contextReleaseId) {
+      setContextBuilds([]);
+      setContextBuildId("");
+      return;
+    }
     localStorage.setItem("qa.context.release", contextReleaseId);
-    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
     fetch(`${apiUrl}/releases/${contextReleaseId}/builds`, { headers: h })
-      .then((response) => response.ok ? response.json() : [])
+      .then((response) => (response.ok ? response.json() : []))
       .then((data: BuildItem[]) => {
         const active = data.filter((x) => x.isActive);
         setContextBuilds(active);
-        setContextBuildId((current) => active.some((x) => x.buildId === current) ? current : active[0]?.buildId ?? "");
+        setContextBuildId((current) =>
+          active.some((x) => x.buildId === current)
+            ? current
+            : (active[0]?.buildId ?? ""),
+        );
       });
   }, [contextReleaseId, page, refresh]);
   useEffect(() => {
-    if (!contextBuildId) { setBlockerCount(0); return; }
+    if (!contextBuildId) {
+      setBlockerCount(0);
+      return;
+    }
     setBlockerCount(0);
     localStorage.setItem("qa.context.build", contextBuildId);
-    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
     fetch(`${apiUrl}/builds/${contextBuildId}/blocked-count`, { headers: h })
-      .then((response) => response.ok ? response.json() : { count: 0 })
+      .then((response) => (response.ok ? response.json() : { count: 0 }))
       .then((data: { count: number }) => setBlockerCount(data.count));
   }, [contextBuildId, page, refresh]);
   const description = useMemo(
@@ -4061,21 +4459,54 @@ function App() {
             ☰
           </button>
           <div className="context">
-            <select value={contextProjectId} onChange={(e) => setContextProjectId(e.target.value)} aria-label="Project ปัจจุบัน">
-              {!contextProjects.length && <option value="">ไม่มี Project</option>}
-              {contextProjects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}
+            <select
+              value={contextProjectId}
+              onChange={(e) => setContextProjectId(e.target.value)}
+              aria-label="Project ปัจจุบัน"
+            >
+              {!contextProjects.length && (
+                <option value="">ไม่มี Project</option>
+              )}
+              {contextProjects.map((x) => (
+                <option key={x.projectId} value={x.projectId}>
+                  {x.projectName}
+                </option>
+              ))}
             </select>
-            <select value={contextReleaseId} onChange={(e) => setContextReleaseId(e.target.value)} aria-label="Release ปัจจุบัน" disabled={!contextReleases.length}>
-              {!contextReleases.length && <option value="">ไม่มี Release</option>}
-              {contextReleases.map((x) => <option key={x.releaseId} value={x.releaseId}>Release {x.releaseCode}</option>)}
+            <select
+              value={contextReleaseId}
+              onChange={(e) => setContextReleaseId(e.target.value)}
+              aria-label="Release ปัจจุบัน"
+              disabled={!contextReleases.length}
+            >
+              {!contextReleases.length && (
+                <option value="">ไม่มี Release</option>
+              )}
+              {contextReleases.map((x) => (
+                <option key={x.releaseId} value={x.releaseId}>
+                  Release {x.releaseCode}
+                </option>
+              ))}
             </select>
-            <select value={contextBuildId} onChange={(e) => setContextBuildId(e.target.value)} aria-label="Build ปัจจุบัน" disabled={!contextBuilds.length}>
+            <select
+              value={contextBuildId}
+              onChange={(e) => setContextBuildId(e.target.value)}
+              aria-label="Build ปัจจุบัน"
+              disabled={!contextBuilds.length}
+            >
               {!contextBuilds.length && <option value="">ไม่มี Build</option>}
-              {contextBuilds.map((x) => <option key={x.buildId} value={x.buildId}>Build {x.buildNumber}{x.isReleaseCandidate ? " RC" : ""}</option>)}
+              {contextBuilds.map((x) => (
+                <option key={x.buildId} value={x.buildId}>
+                  Build {x.buildNumber}
+                  {x.isReleaseCandidate ? " RC" : ""}
+                </option>
+              ))}
             </select>
           </div>
           <div className="profile">
-            <Badge tone={blockerCount ? "yellow" : "green"}>{blockerCount} Blockers</Badge>
+            <Badge tone={blockerCount ? "yellow" : "green"}>
+              {blockerCount} Blockers
+            </Badge>
             <span className="bell">●</span>
             <div className="avatar">
               {user.displayName.slice(0, 2).toUpperCase()}

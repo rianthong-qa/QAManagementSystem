@@ -1,6 +1,83 @@
-.testcase-modal{width:min(1040px,calc(100vw - 32px));max-height:92vh;overflow:auto}
-.testcase-steps{margin-top:20px;padding-top:18px;border-top:1px solid #e2e8f0}
-.testcase-step{display:grid;grid-template-columns:32px minmax(180px,1.2fr) minmax(140px,.8fr) minmax(180px,1.2fr) auto;gap:10px;align-items:center;margin-top:10px}
-.testcase-step>b{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:#eef4ff;color:#2456d8}
-.testcase-step input{width:100%;min-width:0}
-@media(max-width:760px){.testcase-step{grid-template-columns:32px 1fr}.testcase-step input,.testcase-step button{grid-column:2}}
+.testcase-modal {
+  width: min(1040px, calc(100vw - 32px));
+  max-height: 92vh;
+  overflow: auto;
+}
+.testcase-steps {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+}
+.testcase-step-head,
+.testcase-step {
+  display: grid;
+  grid-template-columns: 32px minmax(180px, 1.2fr) minmax(140px, 0.8fr) minmax(
+      180px,
+      1.2fr
+    ) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+.testcase-step-head {
+  margin-top: 12px;
+  padding: 0 2px 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.testcase-step-head span:first-child {
+  text-align: center;
+}
+.testcase-step > b {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #eef4ff;
+  color: #2456d8;
+}
+.testcase-step input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+.testcase-step input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px #2457d61a;
+}
+.testcase-step .table-action {
+  min-height: 36px;
+  align-self: center;
+}
+.required-mark,
+.field-error {
+  color: var(--red);
+}
+.field-error {
+  font-size: 11px;
+}
+.testcase-modal .btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+@media (max-width: 760px) {
+  .testcase-step-head {
+    display: none;
+  }
+  .testcase-step {
+    grid-template-columns: 32px 1fr;
+  }
+  .testcase-step input,
+  .testcase-step button {
+    grid-column: 2;
+  }
+}
