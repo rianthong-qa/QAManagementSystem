@@ -29,6 +29,9 @@ public sealed class User
 
     public void RecordLogin() => LastLoginAt = DateTime.UtcNow;
     public void Deactivate() { IsActive = false; UpdatedAt = DateTime.UtcNow; }
+    public void Activate() { IsActive = true; UpdatedAt = DateTime.UtcNow; }
+    public void Update(string displayName,string? email) { if(string.IsNullOrWhiteSpace(displayName))throw new ArgumentException("Display name is required.");DisplayName=displayName.Trim();Email=email?.Trim();UpdatedAt=DateTime.UtcNow; }
+    public void ResetPassword(string passwordHash) { PasswordHash=passwordHash;UpdatedAt=DateTime.UtcNow; }
 }
 
 public sealed class Role
@@ -42,6 +45,7 @@ public sealed class Role
     public bool IsActive { get; private set; }
     public ICollection<UserRole> UserRoles { get; private set; } = [];
     public ICollection<RolePermission> RolePermissions { get; private set; } = [];
+    public void Update(string name,string? description){if(string.IsNullOrWhiteSpace(name))throw new ArgumentException("Role name is required.");RoleName=name.Trim();Description=description?.Trim();}
 }
 
 public sealed class Permission

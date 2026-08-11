@@ -22,6 +22,7 @@ builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<ReleaseService>();
 builder.Services.AddScoped<RequirementService>();
 builder.Services.AddScoped<TestCaseService>();
+builder.Services.AddScoped<AdministrationService>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
 if (Encoding.UTF8.GetByteCount(jwt.Key) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Use a secret store outside Development.");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
