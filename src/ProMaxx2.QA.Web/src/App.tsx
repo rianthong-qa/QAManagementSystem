@@ -2536,14 +2536,18 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
     const h = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
+    const readList = async <T,>(url: string): Promise<T[]> => {
+      const response = await fetch(url, { headers: h });
+      if (!response.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (${response.status})`);
+      const data: unknown = await response.json();
+      return Array.isArray(data) ? (data as T[]) : [];
+    };
     Promise.all([
-      fetch(`${apiUrl}/test-cycles`, { headers: h }).then((r) => r.json()),
-      fetch(`${apiUrl}/projects`, { headers: h }).then((r) => r.json()),
-      fetch(`${apiUrl}/releases`, { headers: h }).then((r) => r.json()),
-      fetch(`${apiUrl}/test-environments`, { headers: h }).then((r) =>
-        r.json(),
-      ),
-      fetch(`${apiUrl}/test-suites`, { headers: h }).then((r) => r.json()),
+      readList<TestCycleItem>(`${apiUrl}/test-cycles`),
+      readList<ProjectItem>(`${apiUrl}/projects`),
+      readList<CycleRelease>(`${apiUrl}/releases`),
+      readList<CycleEnvironment>(`${apiUrl}/test-environments`),
+      readList<TestSuiteItem>(`${apiUrl}/test-suites`),
     ]).then(async ([c, p, r, e, s]) => {
       const activeProjects = (p as ProjectItem[]).filter((x) => x.isActive);
       const activeReleases = (r as CycleRelease[]).filter(
@@ -2553,7 +2557,11 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
         activeReleases.map((release) =>
           fetch(`${apiUrl}/releases/${release.releaseId}/builds`, {
             headers: h,
-          }).then((x) => x.json()),
+          }).then(async (x) => {
+            if (!x.ok) throw new Error(`โหลด Build ไม่สำเร็จ (${x.status})`);
+            const data: unknown = await x.json();
+            return Array.isArray(data) ? (data as CycleBuild[]) : [];
+          }),
         ),
       );
       setItems(c);
@@ -2567,6 +2575,13 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
           ? current
           : activeProjects[0]?.projectId || "",
       );
+    }).catch(() => {
+      setItems([]);
+      setProjects([]);
+      setReleases([]);
+      setBuilds([]);
+      setEnvironments([]);
+      setSuites([]);
     });
   }, [reload]);
   const projectReleases = useMemo(
@@ -2744,9 +2759,9 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
             <tbody>
               {rows.map((x) => (
                 <tr key={x.testCycleId}>
-                  {canEdit && <td>
+                  <td>
                     <b>{x.cycleCode}</b>
-                  </td>}
+                  </td>
                   <td>{x.cycleName}</td>
                   <td>
                     {x.releaseCode}
@@ -2777,7 +2792,7 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
                       {x.status}
                     </Badge>
                   </td>
-                  <td>
+                  {canEdit && <td>
                     <div className="row-actions">
                       <button
                         className="table-action"
@@ -2808,7 +2823,7 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
                         ลบ
                       </button>
                     </div>
-                  </td>
+                  </td>}
                 </tr>
               ))}
             </tbody>
@@ -3048,10 +3063,18 @@ function ExecutionWorkspacePage() {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
     fetch(`${apiUrl}/test-cycles`, { headers: h })
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
+        const data: unknown = await r.json();
+        return Array.isArray(data) ? (data as TestCycleItem[]) : [];
+      })
       .then((data: TestCycleItem[]) => {
         setCycles(data);
         setCycleId((current) => current || data[0]?.testCycleId || "");
+      })
+      .catch(() => {
+        setCycles([]);
+        setCycleId("");
       });
   }, [reload]);
   useEffect(() => {
