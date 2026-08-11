@@ -6,4 +6,5 @@ public sealed class TestCaseTests
  [Fact]public void Step_requires_expected_result()=>Assert.Throws<ArgumentException>(()=>new TestCase(Guid.NewGuid(),Guid.NewGuid(),"TC","Sale",null,null,"P1",null,false,null,[new(1,"Action",null,"")],null));
  [Fact]public void Ready_requires_step(){var c=new TestCase(Guid.NewGuid(),Guid.NewGuid(),"TC","Sale",null,null,"P1",null,false,null,[],null);Assert.Throws<InvalidOperationException>(()=>c.ChangeStatus("Ready",null));}
  [Fact]public void Valid_case_can_be_ready(){var c=new TestCase(Guid.NewGuid(),Guid.NewGuid(),"TC","Sale",null,null,"P1",null,false,null,[new(1,"Action",null,"Expected")],null);c.ChangeStatus("Ready",null);Assert.Equal("Ready",c.Status);}
+ [Fact]public void Revision_keeps_old_steps(){var c=new TestCase(Guid.NewGuid(),Guid.NewGuid(),"TC","Sale",null,null,"P1",null,false,null,[new(1,"Old",null,"Old result")],null);c.CreateRevision("Sale TH",null,null,[new(1,"ใหม่",null,"ผลลัพธ์ใหม่")],"แปลภาษา",null);Assert.Equal(2,c.RevisionNo);Assert.Equal(2,c.Steps.Count);}
 }
