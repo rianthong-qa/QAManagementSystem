@@ -3831,11 +3831,62 @@ function App() {
       return null;
     }
   });
+  const [contextProjects, setContextProjects] = useState<ProjectItem[]>([]),
+    [contextReleases, setContextReleases] = useState<ReleaseItem[]>([]),
+    [contextBuilds, setContextBuilds] = useState<BuildItem[]>([]),
+    [contextProjectId, setContextProjectId] = useState(() => localStorage.getItem("qa.context.project") ?? ""),
+    [contextReleaseId, setContextReleaseId] = useState(() => localStorage.getItem("qa.context.release") ?? ""),
+    [contextBuildId, setContextBuildId] = useState(() => localStorage.getItem("qa.context.build") ?? ""),
+    [blockerCount, setBlockerCount] = useState(0);
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
     [details, setDetails] = useState(""),
     [refresh, setRefresh] = useState(0),
     [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    fetch(`${apiUrl}/projects`, { headers: h })
+      .then((response) => response.ok ? response.json() : [])
+      .then((data: ProjectItem[]) => {
+        const active = data.filter((x) => x.isActive);
+        setContextProjects(active);
+        setContextProjectId((current) => active.some((x) => x.projectId === current) ? current : active[0]?.projectId ?? "");
+      });
+  }, [user, page, refresh]);
+  useEffect(() => {
+    if (!contextProjectId) { setContextReleases([]); setContextReleaseId(""); return; }
+    localStorage.setItem("qa.context.project", contextProjectId);
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    fetch(`${apiUrl}/projects/${contextProjectId}/releases`, { headers: h })
+      .then((response) => response.ok ? response.json() : [])
+      .then((data: ReleaseItem[]) => {
+        const active = data.filter((x) => x.status !== "Cancelled");
+        setContextReleases(active);
+        setContextReleaseId((current) => active.some((x) => x.releaseId === current) ? current : active[0]?.releaseId ?? "");
+      });
+  }, [contextProjectId, page, refresh]);
+  useEffect(() => {
+    if (!contextReleaseId) { setContextBuilds([]); setContextBuildId(""); return; }
+    localStorage.setItem("qa.context.release", contextReleaseId);
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    fetch(`${apiUrl}/releases/${contextReleaseId}/builds`, { headers: h })
+      .then((response) => response.ok ? response.json() : [])
+      .then((data: BuildItem[]) => {
+        const active = data.filter((x) => x.isActive);
+        setContextBuilds(active);
+        setContextBuildId((current) => active.some((x) => x.buildId === current) ? current : active[0]?.buildId ?? "");
+      });
+  }, [contextReleaseId, page, refresh]);
+  useEffect(() => {
+    if (!contextBuildId) { setBlockerCount(0); return; }
+    setBlockerCount(0);
+    localStorage.setItem("qa.context.build", contextBuildId);
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    fetch(`${apiUrl}/builds/${contextBuildId}/blocked-count`, { headers: h })
+      .then((response) => response.ok ? response.json() : { count: 0 })
+      .then((data: { count: number }) => setBlockerCount(data.count));
+  }, [contextBuildId, page, refresh]);
   const description = useMemo(
     () =>
       page === "dashboard"
@@ -4010,19 +4061,21 @@ function App() {
             ☰
           </button>
           <div className="context">
-            <select>
-              <option>ProMaxx2</option>
+            <select value={contextProjectId} onChange={(e) => setContextProjectId(e.target.value)} aria-label="Project ปัจจุบัน">
+              {!contextProjects.length && <option value="">ไม่มี Project</option>}
+              {contextProjects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}
             </select>
-            <select>
-              <option>Release 2026.08</option>
-              <option>Release 2026.09</option>
+            <select value={contextReleaseId} onChange={(e) => setContextReleaseId(e.target.value)} aria-label="Release ปัจจุบัน" disabled={!contextReleases.length}>
+              {!contextReleases.length && <option value="">ไม่มี Release</option>}
+              {contextReleases.map((x) => <option key={x.releaseId} value={x.releaseId}>Release {x.releaseCode}</option>)}
             </select>
-            <select>
-              <option>Build 10.0.228 RC2</option>
+            <select value={contextBuildId} onChange={(e) => setContextBuildId(e.target.value)} aria-label="Build ปัจจุบัน" disabled={!contextBuilds.length}>
+              {!contextBuilds.length && <option value="">ไม่มี Build</option>}
+              {contextBuilds.map((x) => <option key={x.buildId} value={x.buildId}>Build {x.buildNumber}{x.isReleaseCandidate ? " RC" : ""}</option>)}
             </select>
           </div>
           <div className="profile">
-            <Badge tone="yellow">2 Blockers</Badge>
+            <Badge tone={blockerCount ? "yellow" : "green"}>{blockerCount} Blockers</Badge>
             <span className="bell">●</span>
             <div className="avatar">
               {user.displayName.slice(0, 2).toUpperCase()}
