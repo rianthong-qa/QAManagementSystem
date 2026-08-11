@@ -1,200 +1,4015 @@
-import { useEffect, useMemo, useState } from 'react'
-import './App.css'
-import './Login.css'
-import './DragDrop.css'
-import './ReleaseBuild.css'
+import { useEffect, useMemo, useState } from "react";
+import "./App.css";
+import "./Login.css";
+import "./DragDrop.css";
+import "./ReleaseBuild.css";
 
-type Page = 'dashboard' | 'projects' | 'releases' | 'requirements' | 'rtm' | 'test-cases' | 'test-suites' | 'test-cycles' | 'execution' | 'defects' | 'regression' | 'summary' | 'risks' | 'signoff' | 'users' | 'audit'
-type SessionUser = { userId: string; username: string; displayName: string; roles: string[]; permissions: string[] }
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:5038/api/v1'
+type Page =
+  | "dashboard"
+  | "projects"
+  | "releases"
+  | "requirements"
+  | "rtm"
+  | "test-cases"
+  | "test-suites"
+  | "test-cycles"
+  | "execution"
+  | "defects"
+  | "regression"
+  | "summary"
+  | "risks"
+  | "signoff"
+  | "users"
+  | "audit";
+type SessionUser = {
+  userId: string;
+  username: string;
+  displayName: string;
+  roles: string[];
+  permissions: string[];
+};
+const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:5038/api/v1";
 
-const nav: { label: string; items: { id: Page; icon: string; label: string }[] }[] = [
-  { label: 'ภาพรวม', items: [{ id: 'dashboard', icon: '▦', label: 'Dashboard' }, { id: 'projects', icon: 'P', label: 'Project / Module' }, { id: 'releases', icon: '◫', label: 'Release / Build' }] },
-  { label: 'REQUIREMENT & TEST DESIGN', items: [{ id: 'requirements', icon: 'R', label: 'Requirement' }, { id: 'rtm', icon: '⇄', label: 'RTM' }, { id: 'test-cases', icon: 'TC', label: 'Test Case' }, { id: 'test-suites', icon: '▤', label: 'Test Suite' }] },
-  { label: 'TEST EXECUTION', items: [{ id: 'test-cycles', icon: '◎', label: 'Test Cycle' }, { id: 'execution', icon: '▶', label: 'Execution Workspace' }, { id: 'defects', icon: '!', label: 'Defect' }, { id: 'regression', icon: '↻', label: 'Regression' }] },
-  { label: 'RELEASE GOVERNANCE', items: [{ id: 'summary', icon: 'Σ', label: 'Test Summary' }, { id: 'risks', icon: '⚠', label: 'Risk Acceptance' }, { id: 'signoff', icon: '✓', label: 'Release Sign-off' }] },
-  { label: 'ADMINISTRATION', items: [{ id: 'users', icon: 'U', label: 'User / Role' }, { id: 'audit', icon: '⌕', label: 'Audit Log' }] },
-]
+const nav: {
+  label: string;
+  items: { id: Page; icon: string; label: string }[];
+}[] = [
+  {
+    label: "ภาพรวม",
+    items: [
+      { id: "dashboard", icon: "▦", label: "Dashboard" },
+      { id: "projects", icon: "P", label: "Project / Module" },
+      { id: "releases", icon: "◫", label: "Release / Build" },
+    ],
+  },
+  {
+    label: "REQUIREMENT & TEST DESIGN",
+    items: [
+      { id: "requirements", icon: "R", label: "Requirement" },
+      { id: "rtm", icon: "⇄", label: "RTM" },
+      { id: "test-cases", icon: "TC", label: "Test Case" },
+      { id: "test-suites", icon: "▤", label: "Test Suite" },
+    ],
+  },
+  {
+    label: "TEST EXECUTION",
+    items: [
+      { id: "test-cycles", icon: "◎", label: "Test Cycle" },
+      { id: "execution", icon: "▶", label: "Execution Workspace" },
+      { id: "defects", icon: "!", label: "Defect" },
+      { id: "regression", icon: "↻", label: "Regression" },
+    ],
+  },
+  {
+    label: "RELEASE GOVERNANCE",
+    items: [
+      { id: "summary", icon: "Σ", label: "Test Summary" },
+      { id: "risks", icon: "⚠", label: "Risk Acceptance" },
+      { id: "signoff", icon: "✓", label: "Release Sign-off" },
+    ],
+  },
+  {
+    label: "ADMINISTRATION",
+    items: [
+      { id: "users", icon: "U", label: "User / Role" },
+      { id: "audit", icon: "⌕", label: "Audit Log" },
+    ],
+  },
+];
 
-const pageNames: Record<Page, string> = Object.fromEntries(nav.flatMap(g => g.items.map(i => [i.id, i.label]))) as Record<Page, string>
-const viewPermission:Record<Page,string>={dashboard:'PROJECT.VIEW',projects:'PROJECT.VIEW',releases:'PROJECT.VIEW',requirements:'REQUIREMENT.VIEW',rtm:'REQUIREMENT.VIEW','test-cases':'TESTCASE.VIEW','test-suites':'TESTCASE.VIEW','test-cycles':'EXECUTION.RUN',execution:'EXECUTION.RUN',defects:'DEFECT.EDIT',regression:'TESTCASE.VIEW',summary:'REPORT.EXPORT',risks:'RISK.APPROVE',signoff:'RELEASE.SIGNOFF',users:'ADMIN.USER',audit:'ADMIN.PERMISSION'}
-const editPermission:Partial<Record<Page,string>>={requirements:'REQUIREMENT.EDIT','test-cases':'TESTCASE.EDIT',users:'ADMIN.USER'}
+const pageNames: Record<Page, string> = Object.fromEntries(
+  nav.flatMap((g) => g.items.map((i) => [i.id, i.label])),
+) as Record<Page, string>;
+const viewPermission: Record<Page, string> = {
+  dashboard: "PROJECT.VIEW",
+  projects: "PROJECT.VIEW",
+  releases: "PROJECT.VIEW",
+  requirements: "REQUIREMENT.VIEW",
+  rtm: "REQUIREMENT.VIEW",
+  "test-cases": "TESTCASE.VIEW",
+  "test-suites": "TESTCASE.VIEW",
+  "test-cycles": "EXECUTION.RUN",
+  execution: "EXECUTION.RUN",
+  defects: "DEFECT.EDIT",
+  regression: "TESTCASE.VIEW",
+  summary: "REPORT.EXPORT",
+  risks: "RISK.APPROVE",
+  signoff: "RELEASE.SIGNOFF",
+  users: "ADMIN.USER",
+  audit: "ADMIN.PERMISSION",
+};
+const editPermission: Partial<Record<Page, string>> = {
+  requirements: "REQUIREMENT.EDIT",
+  "test-cases": "TESTCASE.EDIT",
+  users: "ADMIN.USER",
+};
 
 const releases = [
-  ['REL-2026.08', '10.0.228', 'Major', '28 ส.ค. 2026', 'Testing', 'สมชาย ใจดี', 'Conditional'],
-  ['REL-2026.09', '10.0.240', 'Minor', '25 ก.ย. 2026', 'Planning', 'วิภา แสงทอง', 'Pending'],
-  ['HOTFIX-226', '10.0.226.1', 'Hotfix', '12 ส.ค. 2026', 'Ready', 'สมชาย ใจดี', 'Go'],
-]
+  [
+    "REL-2026.08",
+    "10.0.228",
+    "Major",
+    "28 ส.ค. 2026",
+    "Testing",
+    "สมชาย ใจดี",
+    "Conditional",
+  ],
+  [
+    "REL-2026.09",
+    "10.0.240",
+    "Minor",
+    "25 ก.ย. 2026",
+    "Planning",
+    "วิภา แสงทอง",
+    "Pending",
+  ],
+  [
+    "HOTFIX-226",
+    "10.0.226.1",
+    "Hotfix",
+    "12 ส.ค. 2026",
+    "Ready",
+    "สมชาย ใจดี",
+    "Go",
+  ],
+];
 const requirements = [
-  ['REQ-SALE-142', 'รองรับส่วนลดหลายระดับ', 'Sales / POS', 'P0', '100%', 'Passed', 'Ready'],
-  ['REQ-STK-088', 'ปรับยอดสต็อกแบบ Real-time', 'Stock', 'P1', '80%', 'Failed', 'Testing'],
-  ['REQ-RPT-071', 'ส่งออกรายงาน PDF/Excel', 'Report', 'P1', '50%', 'Blocked', 'Testing'],
-  ['REQ-UPD-031', 'Auto update ผ่าน Velopack', 'Update', 'P0', '100%', 'Passed', 'Ready'],
-]
+  [
+    "REQ-SALE-142",
+    "รองรับส่วนลดหลายระดับ",
+    "Sales / POS",
+    "P0",
+    "100%",
+    "Passed",
+    "Ready",
+  ],
+  [
+    "REQ-STK-088",
+    "ปรับยอดสต็อกแบบ Real-time",
+    "Stock",
+    "P1",
+    "80%",
+    "Failed",
+    "Testing",
+  ],
+  [
+    "REQ-RPT-071",
+    "ส่งออกรายงาน PDF/Excel",
+    "Report",
+    "P1",
+    "50%",
+    "Blocked",
+    "Testing",
+  ],
+  [
+    "REQ-UPD-031",
+    "Auto update ผ่าน Velopack",
+    "Update",
+    "P0",
+    "100%",
+    "Passed",
+    "Ready",
+  ],
+];
 const defects = [
-  ['DEF-1042', 'ยอดคงเหลือไม่อัปเดตหลัง Void', 'Stock', 'P1', 'Open', '10.0.228 RC2', 'กิตติ'],
-  ['DEF-1038', 'PDF ภาษาไทยตัดคำผิด', 'Report', 'P1', 'Ready for Retest', '10.0.227 RC1', 'ณัฐพล'],
-  ['DEF-1021', 'Token หมดอายุเร็วกว่ากำหนด', 'Authentication', 'P2', 'Resolved', '10.0.226', 'กิตติ'],
-]
+  [
+    "DEF-1042",
+    "ยอดคงเหลือไม่อัปเดตหลัง Void",
+    "Stock",
+    "P1",
+    "Open",
+    "10.0.228 RC2",
+    "กิตติ",
+  ],
+  [
+    "DEF-1038",
+    "PDF ภาษาไทยตัดคำผิด",
+    "Report",
+    "P1",
+    "Ready for Retest",
+    "10.0.227 RC1",
+    "ณัฐพล",
+  ],
+  [
+    "DEF-1021",
+    "Token หมดอายุเร็วกว่ากำหนด",
+    "Authentication",
+    "P2",
+    "Resolved",
+    "10.0.226",
+    "กิตติ",
+  ],
+];
 
-function Badge({ children, tone = 'blue' }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone}`}>{children}</span> }
+function Badge({
+  children,
+  tone = "blue",
+}: {
+  children: React.ReactNode;
+  tone?: string;
+}) {
+  return <span className={`badge ${tone}`}>{children}</span>;
+}
 
 function Dashboard() {
-  return <>
-    <div className="kpi-grid">
-      {[['Requirement Coverage','94%','188 / 200 Covered','green'],['Execution','82%','984 / 1,200 Cases','blue'],['Pass Rate','91.7%','902 Passed','green'],['Release Blocker','2','P0 0 · P1 2','red']].map(x => <article className="card kpi" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small className={x[3]}>{x[2]}</small></article>)}
-    </div>
-    <div className="dashboard-grid">
-      <article className="card"><h3>Module Health</h3><div className="table-wrap"><table><thead><tr><th>Module</th><th>Coverage</th><th>Pass</th><th>Defect</th><th>Status</th></tr></thead><tbody>
-        {[['Authentication','100%','98%','1','Healthy','green'],['Sales / POS','98%','93%','5','Watch','yellow'],['Stock','95%','89%','8','Watch','yellow'],['Report / Export','92%','87%','4','Risk','red'],['Velopack Update','100%','100%','0','Healthy','green']].map(r => <tr key={r[0]}>{r.slice(0,4).map((c,index)=><td key={index}>{c}</td>)}<td><Badge tone={r[5]}>{r[4]}</Badge></td></tr>)}
-      </tbody></table></div></article>
-      <article className="card"><h3>Release Gate</h3><div className="gate">
-        {[['Smoke Test','100% Pass','green'],['Critical Regression','88%','yellow'],['Open P0','0','green'],['P1 Blocker','2','red'],['Update Test','Passed','green']].map(g=><div className="gate-row" key={g[0]}><span>{g[0]}</span><Badge tone={g[2]}>{g[1]}</Badge></div>)}
-      </div><div className="callout">Recommended Decision: <b>CONDITIONAL GO</b></div></article>
-    </div>
-  </>
+  return (
+    <>
+      <div className="kpi-grid">
+        {[
+          ["Requirement Coverage", "94%", "188 / 200 Covered", "green"],
+          ["Execution", "82%", "984 / 1,200 Cases", "blue"],
+          ["Pass Rate", "91.7%", "902 Passed", "green"],
+          ["Release Blocker", "2", "P0 0 · P1 2", "red"],
+        ].map((x) => (
+          <article className="card kpi" key={x[0]}>
+            <span>{x[0]}</span>
+            <strong>{x[1]}</strong>
+            <small className={x[3]}>{x[2]}</small>
+          </article>
+        ))}
+      </div>
+      <div className="dashboard-grid">
+        <article className="card">
+          <h3>Module Health</h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Module</th>
+                  <th>Coverage</th>
+                  <th>Pass</th>
+                  <th>Defect</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["Authentication", "100%", "98%", "1", "Healthy", "green"],
+                  ["Sales / POS", "98%", "93%", "5", "Watch", "yellow"],
+                  ["Stock", "95%", "89%", "8", "Watch", "yellow"],
+                  ["Report / Export", "92%", "87%", "4", "Risk", "red"],
+                  ["Velopack Update", "100%", "100%", "0", "Healthy", "green"],
+                ].map((r) => (
+                  <tr key={r[0]}>
+                    {r.slice(0, 4).map((c, index) => (
+                      <td key={index}>{c}</td>
+                    ))}
+                    <td>
+                      <Badge tone={r[5]}>{r[4]}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+        <article className="card">
+          <h3>Release Gate</h3>
+          <div className="gate">
+            {[
+              ["Smoke Test", "100% Pass", "green"],
+              ["Critical Regression", "88%", "yellow"],
+              ["Open P0", "0", "green"],
+              ["P1 Blocker", "2", "red"],
+              ["Update Test", "Passed", "green"],
+            ].map((g) => (
+              <div className="gate-row" key={g[0]}>
+                <span>{g[0]}</span>
+                <Badge tone={g[2]}>{g[1]}</Badge>
+              </div>
+            ))}
+          </div>
+          <div className="callout">
+            Recommended Decision: <b>CONDITIONAL GO</b>
+          </div>
+        </article>
+      </div>
+    </>
+  );
 }
 
 function DataPage({ page, search }: { page: Page; search: string }) {
-  if(page==='execution')return <ExecutionWorkspacePage/>
-  if(page==='test-cycles')return <TestCyclesPage search={search}/>
-  if(page==='test-suites'){let canEdit=false;try{const current:SessionUser=JSON.parse(localStorage.getItem('qa.user')??'{}');canEdit=current.roles?.includes('SYS_ADMIN')||current.permissions?.includes('TESTCASE.EDIT')}catch{canEdit=false}return <TestSuitesPage search={search} canEdit={canEdit}/>}
-  let headers: string[] = [], rows: string[][] = []
-  if (page === 'releases') { headers=['Release Code','Version','Type','Planned Date','Status','Owner','Readiness']; rows=releases }
-  else if (page === 'requirements' || page === 'rtm') { headers=['Requirement','Title','Module','Priority','Coverage','Latest Result','Status']; rows=requirements }
-  else if (page === 'defects') { headers=['Defect ID','Title','Module','Severity','Status','Build Found','Assignee']; rows=defects }
-  else if (page === 'test-cases') { headers=['Test Case ID','Title','Module','Priority','Type','Revision','Last Result']; rows=[['TC-SALE-201','ใช้ส่วนลดสมาชิกและคูปอง','Sales / POS','P0','Functional','4','Passed'],['TC-STK-114','Void แล้วคืนยอดสต็อก','Stock','P1','Regression','2','Failed'],['TC-RPT-089','Export PDF ภาษาไทย','Report','P1','Functional','3','Blocked']] }
-  else { return <EmptyPage page={page}/> }
-  const filtered = rows.filter(r => r.join(' ').toLowerCase().includes(search.toLowerCase()))
-  return <article className="card"><div className="table-tools"><div><select aria-label="สถานะ"><option>ทุกสถานะ</option></select><select aria-label="โมดูล"><option>ทุกโมดูล</option></select></div><span>{filtered.length} รายการ</span></div><div className="table-wrap"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{filtered.map(r=><tr key={r[0]}>{r.map((c,i)=><td key={`${r[0]}-${i}`}>{['P0','P1','Failed','Blocked','Open','Conditional'].includes(c)?<Badge tone={['P0','P1','Failed','Open'].includes(c)?'red':'yellow'}>{c}</Badge>:['Passed','Go','Ready','Resolved','Closed'].includes(c)?<Badge tone="green">{c}</Badge>:c}</td>)}</tr>)}</tbody></table></div></article>
-}
-
-function EmptyPage({ page }: { page: Page }) { return <article className="card empty"><div className="empty-icon">{nav.flatMap(n=>n.items).find(i=>i.id===page)?.icon}</div><h3>{pageNames[page]}</h3><p>โมดูลนี้เตรียมไว้ตาม Screen Specification และจะเปิดการจัดการข้อมูลเมื่อ API ของโมดูลพร้อมใช้งาน</p></article> }
-
-type ProjectItem={projectId:string;projectCode:string;projectName:string;description?:string;status:string;isActive:boolean;createdAt:string};type ModuleItem={moduleId:string;projectId:string;parentModuleId?:string|null;moduleCode:string;moduleName:string;description?:string;isActive:boolean;sortOrder:number}
-function ProjectsPage({search}:{search:string;refresh?:number}){
- let canEdit=false;try{const current:SessionUser=JSON.parse(localStorage.getItem('qa.user')??'{}');canEdit=current.roles?.includes('SYS_ADMIN')||current.permissions?.includes('PROJECT.EDIT')}catch{canEdit=false}
- const[items,setItems]=useState<ProjectItem[]>([]),[modules,setModules]=useState<ModuleItem[]>([]),[selectedId,setSelectedId]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[reload,setReload]=useState(0),[modal,setModal]=useState<'project'|'module'|null>(null),[editProject,setEditProject]=useState<ProjectItem|null>(null),[editModule,setEditModule]=useState<ModuleItem|null>(null),[code,setCode]=useState(''),[name,setName]=useState(''),[description,setDescription]=useState(''),[parentId,setParentId]=useState(''),[saving,setSaving]=useState(false),[expanded,setExpanded]=useState<string[]>([]),[draggingId,setDraggingId]=useState(''),[dropHint,setDropHint]=useState('');const headers={'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`}
- useEffect(()=>{setLoading(true);const h={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};fetch(`${apiUrl}/projects`,{headers:h}).then(async r=>{if(!r.ok)throw new Error(r.status===401?'Session หมดอายุ กรุณาเข้าสู่ระบบใหม่':'โหลดข้อมูลโครงการไม่สำเร็จ');return r.json()}).then((data:ProjectItem[])=>{const activeProjects=data.filter(x=>x.isActive);setItems(activeProjects);setSelectedId(current=>activeProjects.some(x=>x.projectId===current)?current:activeProjects[0]?.projectId??'')}).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[reload]);useEffect(()=>{if(!selectedId){setModules([]);return}const h={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};fetch(`${apiUrl}/projects/${selectedId}/modules`,{headers:h}).then(r=>r.json()).then((data:ModuleItem[])=>setModules(data.filter(x=>x.isActive)))},[selectedId,reload])
- const selected=items.find(x=>x.projectId===selectedId),term=search.toLowerCase();const filteredProjects=items.filter(x=>`${x.projectCode} ${x.projectName} ${x.description??''}`.toLowerCase().includes(term));const includedIds=new Set(modules.filter(x=>!term||`${x.moduleCode} ${x.moduleName} ${x.description??''}`.toLowerCase().includes(term)).map(x=>x.moduleId));if(term){for(const module of modules.filter(x=>includedIds.has(x.moduleId))){let parent=modules.find(x=>x.moduleId===module.parentModuleId);while(parent){includedIds.add(parent.moduleId);parent=modules.find(x=>x.moduleId===parent?.parentModuleId)}}}const visibleModules:{item:ModuleItem;level:number;childCount:number}[]=[];const visited=new Set<string>();const appendModules=(parent:string|null|undefined,level:number)=>{for(const item of modules.filter(x=>x.parentModuleId===parent&&includedIds.has(x.moduleId)).sort((a,b)=>a.sortOrder-b.sortOrder||a.moduleCode.localeCompare(b.moduleCode))){if(visited.has(item.moduleId))continue;visited.add(item.moduleId);const children=modules.filter(x=>x.parentModuleId===item.moduleId&&includedIds.has(x.moduleId));visibleModules.push({item,level,childCount:children.length});if(term||expanded.includes(item.moduleId))appendModules(item.moduleId,level+1)}};appendModules(null,0);appendModules(undefined,0);for(const orphan of modules.filter(x=>includedIds.has(x.moduleId)&&!visited.has(x.moduleId)&&!modules.some(parent=>parent.moduleId===x.parentModuleId)))appendModules(orphan.parentModuleId,0)
- const openProject=(item?:ProjectItem)=>{setEditProject(item??null);setEditModule(null);setCode(item?.projectCode??'');setName(item?.projectName??'');setDescription(item?.description??'');setModal('project')};const openModule=(item?:ModuleItem)=>{setEditModule(item??null);setEditProject(null);setCode(item?.moduleCode??'');setName(item?.moduleName??'');setDescription(item?.description??'');setParentId(item?.parentModuleId??'');setModal('module')}
- const save=async()=>{if(!modal)return;setSaving(true);try{let url='',method='POST',body:object;if(modal==='project'){url=editProject?`${apiUrl}/projects/${editProject.projectId}`:`${apiUrl}/projects`;method=editProject?'PUT':'POST';body=editProject?{projectName:name,description:description||null,ownerUserId:null}:{projectCode:code,projectName:name,description:description||null,ownerUserId:null}}else{url=editModule?`${apiUrl}/modules/${editModule.moduleId}`:`${apiUrl}/projects/${selectedId}/modules`;method=editModule?'PUT':'POST';body=editModule?{moduleName:name,parentModuleId:parentId||null,description:description||null,ownerUserId:null}:{moduleCode:code,moduleName:name,parentModuleId:parentId||null,description:description||null,ownerUserId:null}}const response=await fetch(url,{method,headers,body:JSON.stringify(body)});if(!response.ok){const p=await response.json();throw new Error(p.detail??'บันทึกข้อมูลไม่สำเร็จ')}setModal(null);setReload(x=>x+1)}catch(e){window.alert(e instanceof Error?e.message:'บันทึกข้อมูลไม่สำเร็จ')}finally{setSaving(false)}}
- const deactivate=async(kind:'project'|'module',id:string,label:string)=>{if(!window.confirm(`ยืนยันปิดใช้งาน ${label}?`))return;const response=await fetch(`${apiUrl}/${kind==='project'?'projects':'modules'}/${id}`,{method:'DELETE',headers});if(!response.ok){window.alert('ไม่สามารถปิดใช้งานข้อมูลได้');return}setReload(x=>x+1)}
- const moveModule=async(target:ModuleItem,position:'before'|'inside'|'after')=>{if(!draggingId||draggingId===target.moduleId)return;const dragged=modules.find(x=>x.moduleId===draggingId);if(!dragged)return;const parentModuleId=position==='inside'?target.moduleId:target.parentModuleId??null;const siblings=modules.filter(x=>x.moduleId!==dragged.moduleId&&(x.parentModuleId??null)===parentModuleId).sort((a,b)=>a.sortOrder-b.sortOrder||a.moduleCode.localeCompare(b.moduleCode));const targetIndex=position==='inside'?siblings.length:Math.max(0,siblings.findIndex(x=>x.moduleId===target.moduleId)+(position==='after'?1:0));const response=await fetch(`${apiUrl}/modules/${dragged.moduleId}/move`,{method:'POST',headers,body:JSON.stringify({parentModuleId,sortOrder:targetIndex})});setDraggingId('');setDropHint('');if(!response.ok){const problem=await response.json();window.alert(problem.detail??'ไม่สามารถย้าย Module ได้');return}if(parentModuleId)setExpanded(current=>current.includes(parentModuleId)?current:[...current,parentModuleId]);setReload(x=>x+1)}
- if(loading)return <article className="card empty"><p>กำลังโหลดข้อมูลโครงการ...</p></article>;if(error)return <article className="card empty"><div className="login-error">{error}</div></article>
- return <div className="project-layout">
-  <article className="card project-list"><div className="card-title"><div><h3>Projects</h3><p>{filteredProjects.length} โครงการ · คลิกเพื่อดู Module</p></div>{canEdit&&<button className="btn primary" onClick={()=>openProject()}>+ Project</button>}</div><div className="project-cards">{filteredProjects.map(x=><button key={x.projectId} className={selectedId===x.projectId?'active':''} onClick={()=>setSelectedId(x.projectId)}><span className="project-code">{x.projectCode}</span><b>{x.projectName}</b><small>{x.description||'ไม่มีรายละเอียด'}</small><Badge tone={x.isActive?'green':'red'}>{x.isActive?'ใช้งาน':'ปิดใช้งาน'}</Badge></button>)}</div></article>
-  <article className="card module-panel"><div className="card-title"><div><h3>Modules {selected&&<span>· {selected.projectCode}</span>}</h3><p>{modules.length} Module ในโครงการที่เลือก {canEdit&&'· ลากเพื่อจัดลำดับหรือวางซ้อนเป็น Module ลูก'}</p></div>{canEdit&&selected?.isActive&&<div className="row-actions"><button className="btn" onClick={()=>openProject(selected)}>แก้ไข Project</button><button className="btn primary" onClick={()=>openModule()}>+ Module</button></div>}</div>{selected?<div className="table-wrap"><table className="module-tree"><thead><tr><th>Module</th><th>Description</th><th>Status</th>{canEdit&&<th>จัดการ</th>}</tr></thead><tbody>{visibleModules.map(({item:x,level,childCount})=>{const hint=dropHint.startsWith(`${x.moduleId}:`)?dropHint.split(':')[1]:'';return <tr key={x.moduleId} draggable={canEdit} className={`${level?'child-row ':''}${draggingId===x.moduleId?'dragging ':''}${hint?`drop-${hint}`:''}`} onDragStart={e=>{setDraggingId(x.moduleId);e.dataTransfer.effectAllowed='move'}} onDragEnd={()=>{setDraggingId('');setDropHint('')}} onDragOver={e=>{if(!canEdit||draggingId===x.moduleId)return;e.preventDefault();const box=e.currentTarget.getBoundingClientRect(),ratio=(e.clientY-box.top)/box.height,position=ratio<.28?'before':ratio>.72?'after':'inside';setDropHint(`${x.moduleId}:${position}`)}} onDrop={e=>{e.preventDefault();const position=(dropHint.split(':')[1]||'inside') as 'before'|'inside'|'after';moveModule(x,position)}}><td><div className="tree-module" style={{paddingLeft:`${level*24}px`}}>{canEdit&&<span className="drag-handle" title="ลากเพื่อย้ายตำแหน่ง">⋮⋮</span>}{childCount?<button className="tree-toggle" onClick={()=>setExpanded(current=>current.includes(x.moduleId)?current.filter(id=>id!==x.moduleId):[...current,x.moduleId])} aria-label={expanded.includes(x.moduleId)?'ย่อ Module':'ขยาย Module'}>{term||expanded.includes(x.moduleId)?'▾':'▸'}</button>:<span className="tree-spacer"/>}<span><b>{x.moduleCode}</b><small>{x.moduleName}</small></span>{childCount>0&&<span className="child-count">{childCount} Module</span>}</div></td><td>{x.description||'-'}</td><td><Badge tone="green">ใช้งาน</Badge></td>{canEdit&&<td><div className="row-actions"><button className="table-action" onClick={()=>openModule(x)}>แก้ไข</button><button className="table-action danger-action" onClick={()=>deactivate('module',x.moduleId,x.moduleName)}>ลบ</button></div></td>}</tr>})}</tbody></table></div>:<div className="empty"><p>เลือก Project เพื่อดู Modules</p></div>}{canEdit&&selected?.isActive&&<div className="project-footer"><button className="danger-link" onClick={()=>deactivate('project',selected.projectId,selected.projectName)}>ปิดใช้งาน Project นี้</button></div>}</article>
- {modal&&<div className="modal" onMouseDown={()=>setModal(null)}><div className="modal-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>{editProject||editModule?'แก้ไข':'เพิ่ม'} {modal==='project'?'Project':'Module'}</h2><button onClick={()=>setModal(null)}>×</button></div><div className="form-grid"><label>{modal==='project'?'Project Code':'Module Code'}<input disabled={!!editProject||!!editModule} value={code} onChange={e=>setCode(e.target.value)} placeholder="ระบุรหัส"/></label><label>ชื่อ<input value={name} onChange={e=>setName(e.target.value)} placeholder="ระบุชื่อ"/></label>{modal==='module'&&<label className="full">Parent Module<select value={parentId} onChange={e=>setParentId(e.target.value)}><option value="">ไม่มี Parent</option>{modules.filter(x=>x.moduleId!==editModule?.moduleId&&x.isActive).map(x=><option key={x.moduleId} value={x.moduleId}>{x.moduleCode} · {x.moduleName}</option>)}</select></label>}<label className="full">รายละเอียด<textarea rows={4} value={description} onChange={e=>setDescription(e.target.value)}/></label></div><div className="modal-actions"><button className="btn" onClick={()=>setModal(null)}>ยกเลิก</button><button className="btn primary" disabled={saving||!code.trim()||!name.trim()} onClick={save}>{saving?'กำลังบันทึก...':'บันทึก'}</button></div></div></div>}</div>
-}
-type ReleaseItem={releaseId:string;projectId:string;releaseCode:string;version:string;releaseType?:string;scope?:string;plannedReleaseDate?:string;actualReleaseDate?:string;status:string;createdAt:string};type BuildItem={buildId:string;releaseId:string;buildNumber:string;applicationVersion?:string;packageVersion?:string;commitReference?:string;buildDate?:string;changeNotes?:string;knownIssues?:string;isReleaseCandidate:boolean;isActive:boolean;status:string}
-function ReleasesPage({search}:{search:string;refresh?:number}){
- let canEdit=false;try{const current:SessionUser=JSON.parse(localStorage.getItem('qa.user')??'{}');canEdit=current.roles?.includes('SYS_ADMIN')||current.permissions?.includes('PROJECT.EDIT')}catch{canEdit=false}const[items,setItems]=useState<ReleaseItem[]>([]),[projects,setProjects]=useState<ProjectItem[]>([]),[builds,setBuilds]=useState<BuildItem[]>([]),[selectedId,setSelectedId]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[reload,setReload]=useState(0),[modal,setModal]=useState<'release'|'build'|null>(null),[editRelease,setEditRelease]=useState<ReleaseItem|null>(null),[editBuild,setEditBuild]=useState<BuildItem|null>(null),[projectId,setProjectId]=useState(''),[code,setCode]=useState(''),[name,setName]=useState(''),[type,setType]=useState('Major'),[date,setDate]=useState(''),[details,setDetails]=useState(''),[packageVersion,setPackageVersion]=useState(''),[commit,setCommit]=useState(''),[issues,setIssues]=useState(''),[saving,setSaving]=useState(false);const headers={'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`}
- useEffect(()=>{setLoading(true);const h={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};Promise.all([fetch(`${apiUrl}/releases`,{headers:h}).then(r=>r.json()),fetch(`${apiUrl}/projects`,{headers:h}).then(r=>r.json())]).then(([releaseData,projectData])=>{const active=(releaseData as ReleaseItem[]).filter(x=>x.status!=='Cancelled');setItems(active);setProjects((projectData as ProjectItem[]).filter(x=>x.isActive));setSelectedId(current=>active.some(x=>x.releaseId===current)?current:active[0]?.releaseId??'')}).catch(()=>setError('โหลดข้อมูล Release ไม่สำเร็จ')).finally(()=>setLoading(false))},[reload]);useEffect(()=>{if(!selectedId){setBuilds([]);return}const h={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};fetch(`${apiUrl}/releases/${selectedId}/builds`,{headers:h}).then(r=>r.json()).then((data:BuildItem[])=>setBuilds(data.filter(x=>x.isActive)))},[selectedId,reload])
- const selected=items.find(x=>x.releaseId===selectedId),term=search.toLowerCase(),filteredReleases=items.filter(x=>`${x.releaseCode} ${x.version} ${x.releaseType??''} ${x.status}`.toLowerCase().includes(term)),filteredBuilds=builds.filter(x=>`${x.buildNumber} ${x.applicationVersion??''} ${x.commitReference??''}`.toLowerCase().includes(term))
- const openRelease=(item?:ReleaseItem)=>{setEditRelease(item??null);setEditBuild(null);setProjectId(item?.projectId??projects[0]?.projectId??'');setCode(item?.releaseCode??'');setName(item?.version??'');setType(item?.releaseType??'Major');setDate(item?.plannedReleaseDate?.slice(0,10)??'');setDetails(item?.scope??'');setModal('release')};const openBuild=(item?:BuildItem)=>{setEditBuild(item??null);setEditRelease(null);setCode(item?.buildNumber??'');setName(item?.applicationVersion??'');setPackageVersion(item?.packageVersion??'');setCommit(item?.commitReference??'');setDate(item?.buildDate?.slice(0,10)??'');setDetails(item?.changeNotes??'');setIssues(item?.knownIssues??'');setModal('build')}
- const save=async()=>{if(!modal)return;setSaving(true);try{let url='',method='POST',body:object;if(modal==='release'){url=editRelease?`${apiUrl}/releases/${editRelease.releaseId}`:`${apiUrl}/projects/${projectId}/releases`;method=editRelease?'PUT':'POST';body=editRelease?{version:name,releaseType:type,plannedReleaseDate:date||null,scope:details||null,releaseOwnerUserId:null}:{releaseCode:code,version:name,releaseType:type,plannedReleaseDate:date||null,scope:details||null,releaseOwnerUserId:null}}else{url=editBuild?`${apiUrl}/builds/${editBuild.buildId}`:`${apiUrl}/releases/${selectedId}/builds`;method=editBuild?'PUT':'POST';body=editBuild?{applicationVersion:name||null,packageVersion:packageVersion||null,commitReference:commit||null,buildDate:date||null,changeNotes:details||null,knownIssues:issues||null}:{buildNumber:code,applicationVersion:name||null,packageVersion:packageVersion||null,commitReference:commit||null,buildDate:date||null,changeNotes:details||null,knownIssues:issues||null}}const response=await fetch(url,{method,headers,body:JSON.stringify(body)});if(!response.ok){const p=await response.json();throw new Error(p.detail??'บันทึกไม่สำเร็จ')}setModal(null);setReload(x=>x+1)}catch(e){window.alert(e instanceof Error?e.message:'บันทึกไม่สำเร็จ')}finally{setSaving(false)}}
- const remove=async(kind:'release'|'build',id:string,label:string)=>{if(!window.confirm(`ยืนยันลบ ${label}? ข้อมูลจะถูกปิดใช้งานและไม่แสดงในรายการ`))return;const response=await fetch(`${apiUrl}/${kind==='release'?'releases':'builds'}/${id}`,{method:'DELETE',headers});if(!response.ok){window.alert('ไม่สามารถลบข้อมูลได้');return}setReload(x=>x+1)}
- const markRc=async(item:BuildItem)=>{await fetch(`${apiUrl}/builds/${item.buildId}/mark-release-candidate`,{method:'POST',headers});setReload(x=>x+1)}
- if(loading)return <article className="card empty"><p>กำลังโหลดข้อมูล Release...</p></article>;if(error)return <article className="card empty"><div className="login-error">{error}</div></article>
- return <div className="release-layout"><article className="card release-list"><div className="card-title"><div><h3>Releases</h3><p>{filteredReleases.length} Release ที่ใช้งาน</p></div>{canEdit&&<button className="btn primary" onClick={()=>openRelease()}>+ Release</button>}</div><div className="release-cards">{filteredReleases.map(x=><button key={x.releaseId} className={selectedId===x.releaseId?'active':''} onClick={()=>setSelectedId(x.releaseId)}><span>{x.releaseCode}</span><b>Version {x.version}</b><small>{x.releaseType||'-'} · {x.plannedReleaseDate?new Date(x.plannedReleaseDate).toLocaleDateString('th-TH'):'ไม่ระบุวัน'}</small><Badge tone={x.status==='Ready'||x.status==='Released'?'green':'yellow'}>{x.status}</Badge></button>)}</div></article><article className="card build-panel"><div className="card-title"><div><h3>Builds {selected&&<span>· {selected.releaseCode}</span>}</h3><p>{filteredBuilds.length} Build ใน Release ที่เลือก</p></div>{canEdit&&selected&&<div className="row-actions"><button className="btn" onClick={()=>openRelease(selected)}>แก้ไข Release</button><button className="btn primary" onClick={()=>openBuild()}>+ Build</button></div>}</div>{selected?<div className="table-wrap"><table><thead><tr><th>Build Number</th><th>App Version</th><th>Package</th><th>Commit</th><th>Build Date</th><th>Status</th>{canEdit&&<th>จัดการ</th>}</tr></thead><tbody>{filteredBuilds.map(x=><tr key={x.buildId}><td><b>{x.buildNumber}</b>{x.isReleaseCandidate&&<Badge tone="blue">RC</Badge>}</td><td>{x.applicationVersion||'-'}</td><td>{x.packageVersion||'-'}</td><td>{x.commitReference||'-'}</td><td>{x.buildDate?new Date(x.buildDate).toLocaleDateString('th-TH'):'-'}</td><td><Badge tone="green">{x.status}</Badge></td>{canEdit&&<td><div className="row-actions"><button className="table-action" onClick={()=>openBuild(x)}>แก้ไข</button>{!x.isReleaseCandidate&&<button className="table-action" onClick={()=>markRc(x)}>Mark RC</button>}<button className="table-action danger-action" onClick={()=>remove('build',x.buildId,x.buildNumber)}>ลบ</button></div></td>}</tr>)}</tbody></table></div>:<div className="empty"><p>เลือก Release เพื่อดู Builds</p></div>}{canEdit&&selected&&<div className="project-footer"><button className="danger-link" onClick={()=>remove('release',selected.releaseId,selected.releaseCode)}>ยกเลิกและซ่อน Release นี้</button></div>}</article>{modal&&<div className="modal" onMouseDown={()=>setModal(null)}><div className="modal-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>{editRelease||editBuild?'แก้ไข':'เพิ่ม'} {modal==='release'?'Release':'Build'}</h2><button onClick={()=>setModal(null)}>×</button></div><div className="form-grid">{modal==='release'&&!editRelease&&<label>Project<select value={projectId} onChange={e=>setProjectId(e.target.value)}>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label>}<label>{modal==='release'?'Release Code':'Build Number'}<input disabled={!!editRelease||!!editBuild} value={code} onChange={e=>setCode(e.target.value)}/></label><label>{modal==='release'?'Version':'Application Version'}<input value={name} onChange={e=>setName(e.target.value)}/></label>{modal==='release'?<><label>Release Type<select value={type} onChange={e=>setType(e.target.value)}><option>Major</option><option>Minor</option><option>Hotfix</option></select></label><label>Planned Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label className="full">Scope<textarea rows={4} value={details} onChange={e=>setDetails(e.target.value)}/></label></>:<><label>Package Version<input value={packageVersion} onChange={e=>setPackageVersion(e.target.value)}/></label><label>Commit Reference<input value={commit} onChange={e=>setCommit(e.target.value)}/></label><label>Build Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label className="full">Change Notes<textarea rows={3} value={details} onChange={e=>setDetails(e.target.value)}/></label><label className="full">Known Issues<textarea rows={3} value={issues} onChange={e=>setIssues(e.target.value)}/></label></>}</div><div className="modal-actions"><button className="btn" onClick={()=>setModal(null)}>ยกเลิก</button><button className="btn primary" disabled={saving||!code.trim()||(modal==='release'&&!name.trim())} onClick={save}>{saving?'กำลังบันทึก...':'บันทึก'}</button></div></div></div>}</div>
-}
-type RequirementItem={requirementId:string;requirementCode:string;title:string;priority:string;riskLevel?:string;status:string;revisionNo:number;isInScope:boolean;moduleId:string;releaseId?:string}
-function RequirementsPage({search,refresh}:{search:string;refresh:number}){
- const[items,setItems]=useState<RequirementItem[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true)
- useEffect(()=>{fetch(`${apiUrl}/requirements`,{headers:{Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`}}).then(async r=>{if(!r.ok)throw new Error('โหลด Requirement ไม่สำเร็จ');return r.json()}).then(setItems).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[refresh])
- if(loading)return <article className="card empty"><p>กำลังโหลด Requirement...</p></article>;if(error)return <article className="card empty"><div className="login-error">{error}</div></article>;const filtered=items.filter(x=>`${x.requirementCode} ${x.title} ${x.priority} ${x.status}`.toLowerCase().includes(search.toLowerCase()))
- return <article className="card"><div className="table-tools"><div><select><option>ทุกสถานะ</option></select><select><option>ทุก Priority</option><option>P0</option><option>P1</option></select></div><span>{filtered.length} Requirements</span></div><div className="table-wrap"><table><thead><tr><th>Requirement ID</th><th>Title</th><th>Priority</th><th>Risk</th><th>Revision</th><th>In Scope</th><th>Status</th></tr></thead><tbody>{filtered.map(x=><tr key={x.requirementId}><td><b>{x.requirementCode}</b></td><td>{x.title}</td><td><Badge tone={x.priority==='P0'||x.priority==='P1'?'red':'blue'}>{x.priority}</Badge></td><td>{x.riskLevel??'-'}</td><td>Rev. {x.revisionNo}</td><td>{x.isInScope?'Yes':'No'}</td><td><Badge tone={x.status==='Approved'||x.status==='Implemented'?'green':'yellow'}>{x.status}</Badge></td></tr>)}</tbody></table></div></article>
-}
-type TestCaseItem={testCaseId:string;projectId:string;testCaseCode:string;title:string;priority:string;testType?:string;status:string;revisionNo:number;automationCandidate:boolean;steps:{stepNo:number}[]}
-function TestCasesPage({search,refresh}:{search:string;refresh:number}){const[items,setItems]=useState<TestCaseItem[]>([]),[loading,setLoading]=useState(true);useEffect(()=>{fetch(`${apiUrl}/test-cases`,{headers:{Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`}}).then(r=>r.json()).then(setItems).finally(()=>setLoading(false))},[refresh]);if(loading)return <article className="card empty"><p>กำลังโหลด Test Case...</p></article>;const rows=items.filter(x=>`${x.testCaseCode} ${x.title}`.toLowerCase().includes(search.toLowerCase()));return <article className="card"><div className="table-tools"><div><select><option>ทุกสถานะ</option></select></div><span>{rows.length} Test Cases</span></div><div className="table-wrap"><table><thead><tr><th>Test Case ID</th><th>Title</th><th>Priority</th><th>Type</th><th>Revision</th><th>Steps</th><th>Status</th></tr></thead><tbody>{rows.map(x=><tr key={x.testCaseId}><td><b>{x.testCaseCode}</b></td><td>{x.title}</td><td><Badge tone={x.priority==='P0'||x.priority==='P1'?'red':'blue'}>{x.priority}</Badge></td><td>{x.testType??'-'}</td><td>Rev. {x.revisionNo}</td><td>{x.steps.length}</td><td><Badge tone={x.status==='Ready'?'green':'yellow'}>{x.status}</Badge></td></tr>)}</tbody></table></div></article>}
-type RtmItem={requirementId:string;requirementCode:string;title:string;priority:string;testCaseCount:number;coverageStatus:string;status:string}
-function RtmPage({refresh}:{refresh:number}){const[items,setItems]=useState<RtmItem[]>([]),[summary,setSummary]=useState<{totalRequirements:number;covered:number;coveragePercent:number}|null>(null),[loading,setLoading]=useState(true);useEffect(()=>{const h={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};fetch(`${apiUrl}/releases`,{headers:h}).then(r=>r.json()).then(async releases=>{if(!releases.length)return;const[data,sum]=await Promise.all([fetch(`${apiUrl}/releases/${releases[0].releaseId}/rtm`,{headers:h}).then(r=>r.json()),fetch(`${apiUrl}/releases/${releases[0].releaseId}/coverage-summary`,{headers:h}).then(r=>r.json())]);setItems(data);setSummary(sum)}).finally(()=>setLoading(false))},[refresh]);if(loading)return <article className="card empty"><p>กำลังคำนวณ RTM...</p></article>;return <><div className="kpi-grid"><article className="card kpi"><span>Requirements</span><strong>{summary?.totalRequirements??0}</strong><small>In Scope</small></article><article className="card kpi"><span>Covered</span><strong>{summary?.covered??0}</strong><small className="green">Linked Test Cases</small></article><article className="card kpi"><span>Coverage</span><strong>{summary?.coveragePercent??0}%</strong><small>Current Release</small></article></div><article className="card"><div className="table-wrap"><table><thead><tr><th>Requirement</th><th>Title</th><th>Priority</th><th>Test Cases</th><th>Coverage</th><th>Status</th></tr></thead><tbody>{items.map(x=><tr key={x.requirementId}><td><b>{x.requirementCode}</b></td><td>{x.title}</td><td>{x.priority}</td><td>{x.testCaseCount}</td><td><Badge tone={x.testCaseCount?'green':'red'}>{x.coverageStatus}</Badge></td><td>{x.status}</td></tr>)}</tbody></table></div></article></>}
-type CycleEnvironment={testEnvironmentId:string;projectId:string;environmentName:string;baseUrl?:string;isActive:boolean};type CycleBuild={buildId:string;releaseId:string;buildNumber:string};type CycleRelease={releaseId:string;projectId:string;releaseCode:string;status:string};type TestCycleItem={testCycleId:string;projectId:string;releaseId:string;releaseCode:string;buildId:string;buildNumber:string;environmentId:string;environmentName:string;testSuiteId?:string;suiteName?:string;cycleCode:string;cycleName:string;cycleType?:string;startDate?:string;endDate?:string;status:string;notes?:string;caseCount:number;executedCount:number;progressPercent:number}
-function TestCyclesPage({search}:{search:string}){
- const[items,setItems]=useState<TestCycleItem[]>([]),[projects,setProjects]=useState<ProjectItem[]>([]),[releases,setReleases]=useState<CycleRelease[]>([]),[builds,setBuilds]=useState<CycleBuild[]>([]),[environments,setEnvironments]=useState<CycleEnvironment[]>([]),[suites,setSuites]=useState<TestSuiteItem[]>([]),[reload,setReload]=useState(0),[form,setForm]=useState(false),[editing,setEditing]=useState<TestCycleItem|null>(null),[saving,setSaving]=useState(false);const[projectId,setProjectId]=useState(''),[releaseId,setReleaseId]=useState(''),[buildId,setBuildId]=useState(''),[environmentId,setEnvironmentId]=useState(''),[suiteId,setSuiteId]=useState(''),[code,setCode]=useState(''),[name,setName]=useState(''),[cycleType,setCycleType]=useState('Regression'),[startDate,setStartDate]=useState(''),[endDate,setEndDate]=useState(''),[notes,setNotes]=useState(''),[environmentName,setEnvironmentName]=useState('');const headers={'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`}
- useEffect(()=>{const h={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};Promise.all([fetch(`${apiUrl}/test-cycles`,{headers:h}).then(r=>r.json()),fetch(`${apiUrl}/projects`,{headers:h}).then(r=>r.json()),fetch(`${apiUrl}/releases`,{headers:h}).then(r=>r.json()),fetch(`${apiUrl}/test-environments`,{headers:h}).then(r=>r.json()),fetch(`${apiUrl}/test-suites`,{headers:h}).then(r=>r.json())]).then(async([c,p,r,e,s])=>{const buildGroups=await Promise.all(r.map((release:CycleRelease)=>fetch(`${apiUrl}/releases/${release.releaseId}/builds`,{headers:h}).then(x=>x.json())));setItems(c);setProjects(p);setReleases(r);setEnvironments(e);setSuites(s);setBuilds(buildGroups.flat());setProjectId(current=>current||p[0]?.projectId||'')})},[reload])
- const projectReleases=useMemo(()=>releases.filter(x=>x.projectId===projectId),[releases,projectId]),releaseBuilds=useMemo(()=>builds.filter(x=>x.releaseId===releaseId),[builds,releaseId]),projectEnvironments=useMemo(()=>environments.filter(x=>x.projectId===projectId&&x.isActive),[environments,projectId]),projectSuites=useMemo(()=>suites.filter(x=>x.projectId===projectId&&x.isActive),[suites,projectId])
- useEffect(()=>{if(!projectReleases.some(x=>x.releaseId===releaseId))setReleaseId(projectReleases[0]?.releaseId??'')},[projectReleases,releaseId]);useEffect(()=>{if(!releaseBuilds.some(x=>x.buildId===buildId))setBuildId(releaseBuilds[0]?.buildId??'')},[releaseBuilds,buildId]);useEffect(()=>{if(!projectEnvironments.some(x=>x.testEnvironmentId===environmentId))setEnvironmentId(projectEnvironments[0]?.testEnvironmentId??'')},[projectEnvironments,environmentId])
- const openForm=(cycle?:TestCycleItem)=>{setEditing(cycle??null);setProjectId(cycle?.projectId??projects[0]?.projectId??'');setReleaseId(cycle?.releaseId??'');setBuildId(cycle?.buildId??'');setEnvironmentId(cycle?.environmentId??'');setSuiteId(cycle?.testSuiteId??'');setCode(cycle?.cycleCode??'');setName(cycle?.cycleName??'');setCycleType(cycle?.cycleType??'Regression');setStartDate(cycle?.startDate?.slice(0,10)??'');setEndDate(cycle?.endDate?.slice(0,10)??'');setNotes(cycle?.notes??'');setForm(true)}
- const save=async()=>{setSaving(true);try{const response=await fetch(`${apiUrl}/test-cycles${editing?`/${editing.testCycleId}`:''}`,{method:editing?'PUT':'POST',headers,body:JSON.stringify({projectId,releaseId,buildId,environmentId,testSuiteId:suiteId||null,cycleCode:code,cycleName:name,cycleType,startDate:startDate||null,endDate:endDate||null,ownerUserId:null,notes:notes||null,populateFromSuite:true,requiredOnly:false})});if(!response.ok){const p=await response.json();throw new Error(p.detail??'บันทึกไม่สำเร็จ')}setForm(false);setReload(x=>x+1)}catch(e){window.alert(e instanceof Error?e.message:'บันทึกไม่สำเร็จ')}finally{setSaving(false)}}
- const createEnvironment=async()=>{if(!projectId||!environmentName.trim())return;setSaving(true);try{const response=await fetch(`${apiUrl}/test-environments`,{method:'POST',headers,body:JSON.stringify({projectId,environmentName,baseUrl:null,isActive:true})});if(!response.ok)throw new Error();const result=await response.json();setEnvironmentName('');setEnvironmentId(result.testEnvironmentId);setReload(x=>x+1)}finally{setSaving(false)}}
- const changeStatus=async(cycle:TestCycleItem,status:string)=>{await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}/status`,{method:'POST',headers,body:JSON.stringify({status})});setReload(x=>x+1)}
- const rows=items.filter(x=>`${x.cycleCode} ${x.cycleName} ${x.releaseCode} ${x.buildNumber}`.toLowerCase().includes(search.toLowerCase()))
- return <><article className="card"><div className="table-tools"><span>{rows.length} Test Cycles</span><button className="btn primary" onClick={()=>openForm()}>+ สร้าง Test Cycle</button></div><div className="table-wrap"><table><thead><tr><th>Cycle Code</th><th>Name</th><th>Release / Build</th><th>Environment</th><th>Type</th><th>Progress</th><th>Status</th><th>จัดการ</th></tr></thead><tbody>{rows.map(x=><tr key={x.testCycleId}><td><b>{x.cycleCode}</b></td><td>{x.cycleName}</td><td>{x.releaseCode}<small className="cell-sub">{x.buildNumber}</small></td><td>{x.environmentName}</td><td>{x.cycleType??'-'}</td><td><div className="progress-cell"><span><i style={{width:`${x.progressPercent}%`}}/></span><small>{x.executedCount}/{x.caseCount} · {x.progressPercent}%</small></div></td><td><Badge tone={x.status==='Closed'||x.status==='Completed'?'green':x.status==='Cancelled'?'red':'yellow'}>{x.status}</Badge></td><td><div className="row-actions"><button className="table-action" onClick={()=>openForm(x)}>แก้ไข</button>{x.status==='Draft'&&<button className="table-action" onClick={()=>changeStatus(x,'InProgress')}>เริ่ม</button>}{x.status==='InProgress'&&<button className="table-action" onClick={()=>changeStatus(x,'Closed')}>ปิด Cycle</button>}</div></td></tr>)}</tbody></table></div></article>
- {form&&<div className="modal" onMouseDown={()=>setForm(false)}><div className="modal-box cycle-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>{editing?'แก้ไข':'สร้าง'} Test Cycle</h2><button onClick={()=>setForm(false)}>×</button></div><div className="form-grid"><label>Project<select disabled={!!editing} value={projectId} onChange={e=>setProjectId(e.target.value)}>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label><label>Release<select disabled={!!editing} value={releaseId} onChange={e=>setReleaseId(e.target.value)}><option value="">เลือก Release</option>{projectReleases.map(x=><option key={x.releaseId} value={x.releaseId}>{x.releaseCode}</option>)}</select></label><label>Build<select disabled={!!editing} value={buildId} onChange={e=>setBuildId(e.target.value)}><option value="">เลือก Build</option>{releaseBuilds.map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber}</option>)}</select></label><label>Environment<select disabled={!!editing} value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{projectEnvironments.map(x=><option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label>{!editing&&!projectEnvironments.length&&<div className="full inline-create"><input value={environmentName} onChange={e=>setEnvironmentName(e.target.value)} placeholder="ชื่อ Environment เช่น QA Server"/><button className="btn" onClick={createEnvironment} disabled={saving||!environmentName.trim()}>+ สร้าง Environment</button></div>}<label>Test Suite<select disabled={!!editing} value={suiteId} onChange={e=>setSuiteId(e.target.value)}><option value="">ไม่ระบุ Suite</option>{projectSuites.map(x=><option key={x.testSuiteId} value={x.testSuiteId}>{x.suiteName}</option>)}</select></label><label>Cycle Type<select value={cycleType} onChange={e=>setCycleType(e.target.value)}><option>Smoke</option><option>Regression</option><option>UAT</option><option>Exploratory</option></select></label><label>Cycle Code<input disabled={!!editing} value={code} onChange={e=>setCode(e.target.value)}/></label><label>Cycle Name<input value={name} onChange={e=>setName(e.target.value)}/></label><label>Start Date<input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></label><label>End Date<input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/></label><label className="full">Notes<textarea rows={3} value={notes} onChange={e=>setNotes(e.target.value)}/></label></div><div className="modal-actions"><button className="btn" onClick={()=>setForm(false)}>ยกเลิก</button><button className="btn primary" disabled={saving||!projectId||!releaseId||!buildId||!environmentId||!code.trim()||!name.trim()} onClick={save}>{saving?'กำลังบันทึก...':'บันทึก Test Cycle'}</button></div></div></div>}</>
-}
-type ExecutionCase={testCycleCaseId:string;testCaseId:string;testCaseCode:string;title:string;preconditions?:string;priority:string;currentStatus:string;executionOrder:number;steps:{stepNo:number;action:string;testData?:string;expectedResult:string}[];history:{testExecutionId:string;executionNo:number;status:string;actualResult?:string;comment?:string;testerName:string;completedAt?:string}[]};type ExecutionWorkspace={testCycleId:string;cycleCode:string;cycleName:string;status:string;buildNumber:string;environmentName:string;cases:ExecutionCase[]}
-function ExecutionWorkspacePage(){
- const[cycles,setCycles]=useState<TestCycleItem[]>([]),[cycleId,setCycleId]=useState(''),[workspace,setWorkspace]=useState<ExecutionWorkspace|null>(null),[selectedId,setSelectedId]=useState(''),[stepStatuses,setStepStatuses]=useState<Record<number,string>>({}),[stepActuals,setStepActuals]=useState<Record<number,string>>({}),[actual,setActual]=useState(''),[comment,setComment]=useState(''),[saving,setSaving]=useState(false),[reload,setReload]=useState(0);const headers={'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`}
- useEffect(()=>{const h={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};fetch(`${apiUrl}/test-cycles`,{headers:h}).then(r=>r.json()).then((data:TestCycleItem[])=>{setCycles(data);setCycleId(current=>current||data[0]?.testCycleId||'')})},[reload]);useEffect(()=>{if(!cycleId){setWorkspace(null);return}const h={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};fetch(`${apiUrl}/test-cycles/${cycleId}/execution`,{headers:h}).then(r=>r.ok?r.json():null).then((data:ExecutionWorkspace|null)=>{setWorkspace(data);setSelectedId(current=>data?.cases.some(x=>x.testCycleCaseId===current)?current:data?.cases[0]?.testCycleCaseId??'')})},[cycleId,reload])
- const selected=useMemo(()=>workspace?.cases.find(x=>x.testCycleCaseId===selectedId),[workspace,selectedId]);useEffect(()=>{if(selected){setStepStatuses(Object.fromEntries(selected.steps.map(x=>[x.stepNo,'NotRun'])));setStepActuals({});setActual('');setComment('')}},[selected])
- const finalize=async(status:string)=>{if(!selected||!window.confirm(`ยืนยันบันทึกผล ${status} สำหรับ ${selected.testCaseCode}?\nผลที่บันทึกแล้วจะไม่สามารถแก้ไขทับได้`))return;setSaving(true);try{const response=await fetch(`${apiUrl}/test-cycle-cases/${selected.testCycleCaseId}/executions`,{method:'POST',headers,body:JSON.stringify({status,actualResult:actual||null,comment:comment||null,stepResults:selected.steps.map(x=>({stepNo:x.stepNo,status:stepStatuses[x.stepNo]??'NotRun',actualResult:stepActuals[x.stepNo]||null,comment:null}))})});if(!response.ok){const problem=await response.json();throw new Error(problem.detail??'บันทึกผลไม่สำเร็จ')}setReload(x=>x+1)}catch(e){window.alert(e instanceof Error?e.message:'บันทึกผลไม่สำเร็จ')}finally{setSaving(false)}}
- return <div className="execution-page"><div className="execution-toolbar card"><label>Test Cycle<select value={cycleId} onChange={e=>setCycleId(e.target.value)}><option value="">เลือก Test Cycle</option>{cycles.map(x=><option key={x.testCycleId} value={x.testCycleId}>{x.cycleCode} · {x.cycleName}</option>)}</select></label>{workspace&&<div className="execution-context"><span><small>Build</small><b>{workspace.buildNumber}</b></span><span><small>Environment</small><b>{workspace.environmentName}</b></span><Badge tone={workspace.status==='Closed'?'green':'yellow'}>{workspace.status}</Badge></div>}</div>{!workspace?<article className="card empty"><h3>เลือก Test Cycle เพื่อเริ่มทดสอบ</h3><p>สร้าง Cycle และ Populate Test Case จาก Test Suite ก่อนเข้า Execution Workspace</p></article>:!workspace.cases.length?<article className="card empty"><h3>Cycle นี้ยังไม่มี Test Case</h3><p>เลือก Test Suite ตอนสร้าง Cycle เพื่อเพิ่ม Test Case อัตโนมัติ</p></article>:<div className="execution-layout"><aside className="card case-queue"><div className="card-title"><div><h3>Test Cases</h3><p>{workspace.cases.length} รายการ</p></div></div>{workspace.cases.map(x=><button className={selectedId===x.testCycleCaseId?'active':''} key={x.testCycleCaseId} onClick={()=>setSelectedId(x.testCycleCaseId)}><Badge tone={x.priority==='P0'?'red':'blue'}>{x.priority}</Badge><span><b>{x.testCaseCode}</b><small>{x.title}</small></span><i className={`status-dot ${x.currentStatus.toLowerCase()}`}>{x.currentStatus}</i></button>)}</aside>{selected&&<main className="card execution-main"><div className="execution-case-head"><div><span>{selected.testCaseCode}</span><h2>{selected.title}</h2></div><Badge tone={selected.currentStatus==='Pass'?'green':selected.currentStatus==='Fail'?'red':'yellow'}>{selected.currentStatus}</Badge></div>{selected.preconditions&&<div className="precondition"><b>Preconditions</b><p>{selected.preconditions}</p></div>}<div className="step-table"><div className="step-row step-head"><span>#</span><span>Action / Test Data</span><span>Expected Result</span><span>Result</span></div>{selected.steps.map(x=><div className="step-row" key={x.stepNo}><span>{x.stepNo}</span><span><b>{x.action}</b>{x.testData&&<small>{x.testData}</small>}</span><span>{x.expectedResult}</span><span><select value={stepStatuses[x.stepNo]??'NotRun'} onChange={e=>setStepStatuses(s=>({...s,[x.stepNo]:e.target.value}))}><option>NotRun</option><option>Pass</option><option>Fail</option><option>Blocked</option><option>Skipped</option></select><input value={stepActuals[x.stepNo]??''} onChange={e=>setStepActuals(s=>({...s,[x.stepNo]:e.target.value}))} placeholder="ผลที่ได้จริง"/></span></div>)}</div><div className="execution-notes"><label>Actual Result<textarea rows={3} value={actual} onChange={e=>setActual(e.target.value)} placeholder="สรุปผลที่เกิดขึ้นจริง"/></label><label>Comment<textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="หมายเหตุเพิ่มเติม"/></label></div><div className="execution-actions"><button className="result-btn pass" disabled={saving} onClick={()=>finalize('Pass')}>✓ Pass</button><button className="result-btn fail" disabled={saving} onClick={()=>finalize('Fail')}>× Fail</button><button className="result-btn blocked" disabled={saving} onClick={()=>finalize('Blocked')}>! Blocked</button><button className="result-btn skip" disabled={saving} onClick={()=>finalize('Skipped')}>→ Skip</button></div></main>}<aside className="card execution-history"><h3>Execution History</h3>{selected?.history.length?selected.history.map(x=><div className="history-item" key={x.testExecutionId}><div><Badge tone={x.status==='Pass'?'green':x.status==='Fail'?'red':'yellow'}>{x.status}</Badge><small>Run #{x.executionNo}</small></div><p>{x.actualResult||'-'}</p><small>{x.testerName} · {x.completedAt?new Date(x.completedAt).toLocaleString('th-TH'):'-'}</small></div>):<p className="muted-text">ยังไม่มีประวัติการทดสอบ</p>}</aside></div>}</div>
-}
-type TestSuiteItem={testSuiteId:string;projectId:string;suiteCode:string;suiteName:string;suiteType?:string;description?:string;riskTier?:string;isActive:boolean;cases:{testCaseId:string;testCaseCode:string;title:string;priority:string;sortOrder:number;isRequired:boolean}[]}
-function TestSuitesPage({search,canEdit}:{search:string;canEdit:boolean}){
- const[items,setItems]=useState<TestSuiteItem[]>([]),[projects,setProjects]=useState<ProjectItem[]>([]),[testCases,setTestCases]=useState<TestCaseItem[]>([]),[reload,setReload]=useState(0),[form,setForm]=useState(false),[editing,setEditing]=useState<TestSuiteItem|null>(null),[managing,setManaging]=useState<TestSuiteItem|null>(null),[checked,setChecked]=useState<string[]>([]),[saving,setSaving]=useState(false);const[code,setCode]=useState(''),[name,setName]=useState(''),[type,setType]=useState('Regression'),[risk,setRisk]=useState('P1'),[description,setDescription]=useState(''),[projectId,setProjectId]=useState(''),[active,setActive]=useState(true);const headers={'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`}
- useEffect(()=>{const requestHeaders={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};Promise.all([fetch(`${apiUrl}/test-suites`,{headers:requestHeaders}).then(r=>r.json()),fetch(`${apiUrl}/projects`,{headers:requestHeaders}).then(r=>r.json()),fetch(`${apiUrl}/test-cases`,{headers:requestHeaders}).then(r=>r.json())]).then(([s,p,t])=>{setItems(s);setProjects(p);setTestCases(t);setProjectId(current=>current||p[0]?.projectId||'')})},[reload])
- const openForm=(suite?:TestSuiteItem)=>{setEditing(suite??null);setCode(suite?.suiteCode??'');setName(suite?.suiteName??'');setType(suite?.suiteType??'Regression');setRisk(suite?.riskTier??'P1');setDescription(suite?.description??'');setProjectId(suite?.projectId??projects[0]?.projectId??'');setActive(suite?.isActive??true);setForm(true)}
- const save=async()=>{setSaving(true);try{const response=await fetch(`${apiUrl}/test-suites${editing?`/${editing.testSuiteId}`:''}`,{method:editing?'PUT':'POST',headers,body:JSON.stringify({projectId,suiteCode:code,suiteName:name,suiteType:type,description:description||null,riskTier:risk,isActive:active})});if(!response.ok){const problem=await response.json();throw new Error(problem.detail??'บันทึกไม่สำเร็จ')}setForm(false);setReload(x=>x+1)}catch(e){window.alert(e instanceof Error?e.message:'บันทึกไม่สำเร็จ')}finally{setSaving(false)}}
- const addCases=async()=>{if(!managing||!checked.length)return;setSaving(true);try{await fetch(`${apiUrl}/test-suites/${managing.testSuiteId}/cases`,{method:'POST',headers,body:JSON.stringify({testCaseIds:checked,isRequired:true})});setChecked([]);setManaging(null);setReload(x=>x+1)}finally{setSaving(false)}}
- const removeCase=async(suiteId:string,caseId:string)=>{await fetch(`${apiUrl}/test-suites/${suiteId}/cases/${caseId}`,{method:'DELETE',headers});setManaging(null);setReload(x=>x+1)}
- const rows=items.filter(x=>`${x.suiteCode} ${x.suiteName} ${x.suiteType??''}`.toLowerCase().includes(search.toLowerCase()));const available=testCases.filter(x=>managing&&!managing.cases.some(c=>c.testCaseId===x.testCaseId)&&x.projectId===managing.projectId)
- return <><article className="card"><div className="table-tools"><span>{rows.length} Test Suites</span>{canEdit&&<button className="btn primary" onClick={()=>openForm()}>+ สร้าง Test Suite</button>}</div><div className="table-wrap"><table><thead><tr><th>Suite Code</th><th>Suite Name</th><th>Type</th><th>Risk Tier</th><th>Case Count</th><th>Active</th>{canEdit&&<th>จัดการ</th>}</tr></thead><tbody>{rows.map(x=><tr key={x.testSuiteId}><td><b>{x.suiteCode}</b></td><td>{x.suiteName}</td><td>{x.suiteType??'-'}</td><td><Badge tone={x.riskTier==='P0'?'red':'yellow'}>{x.riskTier??'-'}</Badge></td><td>{x.cases.length}</td><td><Badge tone={x.isActive?'green':'red'}>{x.isActive?'ใช้งาน':'ปิดใช้งาน'}</Badge></td>{canEdit&&<td><div className="row-actions"><button className="table-action" onClick={()=>openForm(x)}>แก้ไข</button><button className="table-action" onClick={()=>{setManaging(x);setChecked([])}}>จัด Test Case</button></div></td>}</tr>)}</tbody></table></div></article>
- {form&&<div className="modal" onMouseDown={()=>setForm(false)}><div className="modal-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>{editing?'แก้ไข':'สร้าง'} Test Suite</h2><button onClick={()=>setForm(false)}>×</button></div><div className="form-grid"><label>Project<select value={projectId} onChange={e=>setProjectId(e.target.value)}>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label><label>Suite Code<input disabled={!!editing} value={code} onChange={e=>setCode(e.target.value)}/></label><label className="full">Suite Name<input value={name} onChange={e=>setName(e.target.value)}/></label><label>Type<select value={type} onChange={e=>setType(e.target.value)}><option>Smoke</option><option>Regression</option><option>Critical Regression</option><option>UAT</option></select></label><label>Risk Tier<select value={risk} onChange={e=>setRisk(e.target.value)}><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label><label className="full">รายละเอียด<textarea rows={3} value={description} onChange={e=>setDescription(e.target.value)}/></label>{editing&&<label className="full check-line"><input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)}/> เปิดใช้งาน</label>}</div><div className="modal-actions"><button className="btn" onClick={()=>setForm(false)}>ยกเลิก</button><button className="btn primary" disabled={saving||!projectId||!code.trim()||!name.trim()} onClick={save}>{saving?'กำลังบันทึก...':'บันทึก'}</button></div></div></div>}
- {managing&&<div className="modal" onMouseDown={()=>setManaging(null)}><div className="modal-box suite-editor" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2>จัด Test Case</h2><small>{managing.suiteCode} · {managing.suiteName}</small></div><button onClick={()=>setManaging(null)}>×</button></div><div className="suite-columns"><section><h3>Test Case ในชุด ({managing.cases.length})</h3>{managing.cases.length?managing.cases.map(x=><div className="suite-case" key={x.testCaseId}><span><b>{x.testCaseCode}</b><small>{x.title}</small></span><button onClick={()=>removeCase(managing.testSuiteId,x.testCaseId)}>นำออก</button></div>):<p className="muted-text">ยังไม่มี Test Case</p>}</section><section><h3>Test Case ที่เพิ่มได้ ({available.length})</h3>{available.map(x=><label className="suite-case selectable" key={x.testCaseId}><input type="checkbox" checked={checked.includes(x.testCaseId)} onChange={e=>setChecked(c=>e.target.checked?[...c,x.testCaseId]:c.filter(id=>id!==x.testCaseId))}/><span><b>{x.testCaseCode}</b><small>{x.title}</small></span></label>)}</section></div><div className="modal-actions"><button className="btn" onClick={()=>setManaging(null)}>ปิด</button><button className="btn primary" onClick={addCases} disabled={saving||!checked.length}>เพิ่ม {checked.length} รายการ</button></div></div></div>}</>
-}
-type AdminUser={userId:string;username:string;displayName:string;email?:string;isActive:boolean;lastLoginAt?:string;roles:string[]};type AdminRole={roleId:string;roleCode:string;roleName:string;permissions:string[]};type AdminPermission={permissionId:string;permissionCode:string;moduleArea?:string}
-function AdministrationPage({refresh}:{refresh:number}){
-  const[users,setUsers]=useState<AdminUser[]>([]),[roles,setRoles]=useState<AdminRole[]>([]),[permissions,setPermissions]=useState<AdminPermission[]>([]),[roleId,setRoleId]=useState(''),[selected,setSelected]=useState<string[]>([]),[saving,setSaving]=useState(false),[version,setVersion]=useState(0)
-  const[editing,setEditing]=useState<AdminUser|null>(null),[displayName,setDisplayName]=useState(''),[email,setEmail]=useState(''),[active,setActive]=useState(true),[userRoleIds,setUserRoleIds]=useState<string[]>([]),[passwordUser,setPasswordUser]=useState<AdminUser|null>(null),[newPassword,setNewPassword]=useState('')
-  const headers={'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`}
-  useEffect(()=>{const requestHeaders={Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};Promise.all([fetch(`${apiUrl}/admin/users`,{headers:requestHeaders}).then(r=>r.json()),fetch(`${apiUrl}/admin/roles`,{headers:requestHeaders}).then(r=>r.json()),fetch(`${apiUrl}/admin/permissions`,{headers:requestHeaders}).then(r=>r.json())]).then(([u,r,p])=>{setUsers(u);setRoles(r);setPermissions(p);if(r.length){setRoleId(r[0].roleId);setSelected(p.filter((x:AdminPermission)=>r[0].permissions.includes(x.permissionCode)).map((x:AdminPermission)=>x.permissionId))}})},[refresh,version])
-  const changeRole=(id:string)=>{setRoleId(id);const role=roles.find(x=>x.roleId===id);setSelected(permissions.filter(x=>role?.permissions.includes(x.permissionCode)).map(x=>x.permissionId))}
-  const togglePermission=(id:string,checked:boolean)=>setSelected(current=>checked?[...current,id]:current.filter(value=>value!==id))
-  const savePermissions=async()=>{setSaving(true);try{const response=await fetch(`${apiUrl}/admin/roles/${roleId}/permissions`,{method:'POST',headers,body:JSON.stringify({permissionIds:selected})});if(!response.ok)throw new Error();window.alert('บันทึกสิทธิ์เรียบร้อยแล้ว')}catch{window.alert('ไม่สามารถบันทึกสิทธิ์ได้ กรุณาลองใหม่')}finally{setSaving(false)}}
-  const openEdit=(user:AdminUser)=>{setEditing(user);setDisplayName(user.displayName);setEmail(user.email??'');setActive(user.isActive);setUserRoleIds(roles.filter(role=>user.roles.includes(role.roleCode)).map(role=>role.roleId))}
-  const saveUser=async()=>{if(!editing)return;setSaving(true);try{const update=await fetch(`${apiUrl}/admin/users/${editing.userId}`,{method:'PUT',headers,body:JSON.stringify({displayName,email:email||null,isActive:active})});if(!update.ok)throw new Error();const assign=await fetch(`${apiUrl}/admin/users/${editing.userId}/roles`,{method:'POST',headers,body:JSON.stringify({roleIds:userRoleIds})});if(!assign.ok)throw new Error();setEditing(null);setVersion(x=>x+1)}catch{window.alert('ไม่สามารถบันทึกข้อมูลผู้ใช้ได้')}finally{setSaving(false)}}
-  const toggleActive=async(user:AdminUser)=>{setSaving(true);try{const response=await fetch(`${apiUrl}/admin/users/${user.userId}`,{method:'PUT',headers,body:JSON.stringify({displayName:user.displayName,email:user.email??null,isActive:!user.isActive})});if(!response.ok)throw new Error();setVersion(x=>x+1)}catch{window.alert('ไม่สามารถเปลี่ยนสถานะผู้ใช้ได้')}finally{setSaving(false)}}
-  const resetPassword=async()=>{if(!passwordUser||newPassword.length<8)return;setSaving(true);try{const response=await fetch(`${apiUrl}/admin/users/${passwordUser.userId}/reset-password`,{method:'POST',headers,body:JSON.stringify({newPassword})});if(!response.ok)throw new Error();setPasswordUser(null);setNewPassword('');window.alert('รีเซ็ตรหัสผ่านเรียบร้อยแล้ว')}catch{window.alert('ไม่สามารถรีเซ็ตรหัสผ่านได้')}finally{setSaving(false)}}
-  const grouped=permissions.reduce<Record<string,AdminPermission[]>>((result,item)=>{const key=item.moduleArea||'OTHER';(result[key]??=[]).push(item);return result},{})
-  return <div className="admin-layout">
-    <article className="card user-admin-panel">
-      <div className="card-title"><div><h3>ดำเนินการกับผู้ใช้</h3><p>เลือกบัญชีเพื่อแก้ไขบทบาท สถานะ หรือรีเซ็ตรหัสผ่าน</p></div></div>
-      <div className="user-action-bar"><select aria-label="เลือกผู้ใช้" value={editing?.userId??''} onChange={e=>{const target=users.find(x=>x.userId===e.target.value);if(target)openEdit(target);else setEditing(null)}}><option value="">เลือกบัญชีผู้ใช้...</option>{users.map(x=><option key={x.userId} value={x.userId}>{x.displayName} ({x.username})</option>)}</select>{editing&&<><button className="btn" onClick={()=>toggleActive(editing)} disabled={saving}>{editing.isActive?'ปิดใช้งาน':'เปิดใช้งาน'}</button><button className="btn" onClick={()=>{setPasswordUser(editing);setNewPassword('')}}>รีเซ็ตรหัสผ่าน</button></>}</div>
-      {editing&&<div className="user-edit-form"><label>ชื่อที่แสดง<input value={displayName} onChange={e=>setDisplayName(e.target.value)}/></label><label>อีเมล<input type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label><fieldset><legend>บทบาทของผู้ใช้</legend><div className="role-checks">{roles.map(role=><label key={role.roleId} className={userRoleIds.includes(role.roleId)?'selected':''}><input type="checkbox" checked={userRoleIds.includes(role.roleId)} onChange={e=>setUserRoleIds(current=>e.target.checked?[...current,role.roleId]:current.filter(id=>id!==role.roleId))}/><span><b>{role.roleName}</b><small>{role.roleCode}</small></span></label>)}</div></fieldset><div className="inline-actions"><label className="active-switch"><input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)}/> อนุญาตให้เข้าสู่ระบบ</label><button className="btn primary" onClick={saveUser} disabled={saving||!displayName.trim()}>{saving?'กำลังบันทึก...':'บันทึกข้อมูลผู้ใช้'}</button></div></div>}
-      {passwordUser&&<div className="password-panel"><div><b>ตั้งรหัสผ่านใหม่สำหรับ {passwordUser.username}</b><small>รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร</small></div><input type="password" autoFocus value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="รหัสผ่านใหม่"/><button className="btn primary" onClick={resetPassword} disabled={saving||newPassword.length<8}>ยืนยัน</button><button className="btn" onClick={()=>setPasswordUser(null)}>ยกเลิก</button></div>}
+  if (page === "execution") return <ExecutionWorkspacePage />;
+  if (page === "test-cycles") return <TestCyclesPage search={search} />;
+  if (page === "test-suites") {
+    let canEdit = false;
+    try {
+      const current: SessionUser = JSON.parse(
+        localStorage.getItem("qa.user") ?? "{}",
+      );
+      canEdit =
+        current.roles?.includes("SYS_ADMIN") ||
+        current.permissions?.includes("TESTCASE.EDIT");
+    } catch {
+      canEdit = false;
+    }
+    return <TestSuitesPage search={search} canEdit={canEdit} />;
+  }
+  let headers: string[] = [],
+    rows: string[][] = [];
+  if (page === "releases") {
+    headers = [
+      "Release Code",
+      "Version",
+      "Type",
+      "Planned Date",
+      "Status",
+      "Owner",
+      "Readiness",
+    ];
+    rows = releases;
+  } else if (page === "requirements" || page === "rtm") {
+    headers = [
+      "Requirement",
+      "Title",
+      "Module",
+      "Priority",
+      "Coverage",
+      "Latest Result",
+      "Status",
+    ];
+    rows = requirements;
+  } else if (page === "defects") {
+    headers = [
+      "Defect ID",
+      "Title",
+      "Module",
+      "Severity",
+      "Status",
+      "Build Found",
+      "Assignee",
+    ];
+    rows = defects;
+  } else if (page === "test-cases") {
+    headers = [
+      "Test Case ID",
+      "Title",
+      "Module",
+      "Priority",
+      "Type",
+      "Revision",
+      "Last Result",
+    ];
+    rows = [
+      [
+        "TC-SALE-201",
+        "ใช้ส่วนลดสมาชิกและคูปอง",
+        "Sales / POS",
+        "P0",
+        "Functional",
+        "4",
+        "Passed",
+      ],
+      [
+        "TC-STK-114",
+        "Void แล้วคืนยอดสต็อก",
+        "Stock",
+        "P1",
+        "Regression",
+        "2",
+        "Failed",
+      ],
+      [
+        "TC-RPT-089",
+        "Export PDF ภาษาไทย",
+        "Report",
+        "P1",
+        "Functional",
+        "3",
+        "Blocked",
+      ],
+    ];
+  } else {
+    return <EmptyPage page={page} />;
+  }
+  const filtered = rows.filter((r) =>
+    r.join(" ").toLowerCase().includes(search.toLowerCase()),
+  );
+  return (
+    <article className="card">
+      <div className="table-tools">
+        <div>
+          <select aria-label="สถานะ">
+            <option>ทุกสถานะ</option>
+          </select>
+          <select aria-label="โมดูล">
+            <option>ทุกโมดูล</option>
+          </select>
+        </div>
+        <span>{filtered.length} รายการ</span>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              {headers.map((h) => (
+                <th key={h}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r) => (
+              <tr key={r[0]}>
+                {r.map((c, i) => (
+                  <td key={`${r[0]}-${i}`}>
+                    {[
+                      "P0",
+                      "P1",
+                      "Failed",
+                      "Blocked",
+                      "Open",
+                      "Conditional",
+                    ].includes(c) ? (
+                      <Badge
+                        tone={
+                          ["P0", "P1", "Failed", "Open"].includes(c)
+                            ? "red"
+                            : "yellow"
+                        }
+                      >
+                        {c}
+                      </Badge>
+                    ) : [
+                        "Passed",
+                        "Go",
+                        "Ready",
+                        "Resolved",
+                        "Closed",
+                      ].includes(c) ? (
+                      <Badge tone="green">{c}</Badge>
+                    ) : (
+                      c
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </article>
-    <article className="card admin-users"><div className="card-title"><div><h3>จัดการผู้ใช้งาน</h3><p>บัญชีผู้ใช้และบทบาทที่ได้รับมอบหมาย</p></div><span className="count-pill">{users.length} ผู้ใช้</span></div><div className="table-wrap"><table><thead><tr><th>ผู้ใช้งาน</th><th>ชื่อที่แสดง</th><th>บทบาท</th><th>สถานะ</th><th>เข้าสู่ระบบล่าสุด</th><th>จัดการ</th></tr></thead><tbody>{users.map(x=><tr key={x.userId}><td><div className="user-cell"><span className="user-avatar">{x.displayName.slice(0,1).toUpperCase()}</span><b>{x.username}</b></div></td><td>{x.displayName}</td><td><div className="role-tags">{x.roles.length?x.roles.map(role=><span key={role}>{role}</span>):'-'}</div></td><td><Badge tone={x.isActive?'green':'red'}>{x.isActive?'ใช้งาน':'ปิดใช้งาน'}</Badge></td><td>{x.lastLoginAt?new Date(x.lastLoginAt).toLocaleString('th-TH'):'-'}</td><td><button className="table-action" onClick={()=>openEdit(x)}>แก้ไข</button></td></tr>)}</tbody></table></div></article>
-    <article className="card permission-card"><div className="card-title"><div><h3>สิทธิ์ตามบทบาท</h3><p>กำหนดเมนูและการดำเนินการที่แต่ละบทบาทเข้าถึงได้</p></div><span className="count-pill blue-pill">{selected.length}/{permissions.length}</span></div><label className="role-selector"><span>บทบาท</span><select value={roleId} onChange={e=>changeRole(e.target.value)}>{roles.map(x=><option value={x.roleId} key={x.roleId}>{x.roleName} ({x.roleCode})</option>)}</select></label><div className="permission-toolbar"><span>สิทธิ์ที่อนุญาต</span><div><button type="button" onClick={()=>setSelected(permissions.map(x=>x.permissionId))}>เลือกทั้งหมด</button><button type="button" onClick={()=>setSelected([])}>ล้างทั้งหมด</button></div></div><div className="permission-groups">{Object.entries(grouped).map(([area,items])=><section key={area}><h4>{area.replaceAll('_',' ')}</h4><div className="permission-grid">{items.map(x=><label className={selected.includes(x.permissionId)?'selected':''} key={x.permissionId}><input type="checkbox" checked={selected.includes(x.permissionId)} onChange={e=>togglePermission(x.permissionId,e.target.checked)}/><span><b>{x.permissionCode.split('.').at(-1)}</b><small>{x.permissionCode}</small></span></label>)}</div></section>)}</div><div className="permission-actions"><small>เลือกแล้ว {selected.length} สิทธิ์</small><button className="btn primary" onClick={savePermissions} disabled={!roleId||saving}>{saving?'กำลังบันทึก...':'บันทึกการเปลี่ยนแปลง'}</button></div></article>
-  </div>
+  );
+}
+
+function EmptyPage({ page }: { page: Page }) {
+  return (
+    <article className="card empty">
+      <div className="empty-icon">
+        {nav.flatMap((n) => n.items).find((i) => i.id === page)?.icon}
+      </div>
+      <h3>{pageNames[page]}</h3>
+      <p>
+        โมดูลนี้เตรียมไว้ตาม Screen Specification และจะเปิดการจัดการข้อมูลเมื่อ
+        API ของโมดูลพร้อมใช้งาน
+      </p>
+    </article>
+  );
+}
+
+type ProjectItem = {
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  description?: string;
+  status: string;
+  isActive: boolean;
+  createdAt: string;
+};
+type ModuleItem = {
+  moduleId: string;
+  projectId: string;
+  parentModuleId?: string | null;
+  moduleCode: string;
+  moduleName: string;
+  description?: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+function ProjectsPage({ search }: { search: string; refresh?: number }) {
+  let canEdit = false;
+  try {
+    const current: SessionUser = JSON.parse(
+      localStorage.getItem("qa.user") ?? "{}",
+    );
+    canEdit =
+      current.roles?.includes("SYS_ADMIN") ||
+      current.permissions?.includes("PROJECT.EDIT");
+  } catch {
+    canEdit = false;
+  }
+  const [items, setItems] = useState<ProjectItem[]>([]),
+    [modules, setModules] = useState<ModuleItem[]>([]),
+    [selectedId, setSelectedId] = useState(""),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [reload, setReload] = useState(0),
+    [modal, setModal] = useState<"project" | "module" | null>(null),
+    [editProject, setEditProject] = useState<ProjectItem | null>(null),
+    [editModule, setEditModule] = useState<ModuleItem | null>(null),
+    [code, setCode] = useState(""),
+    [name, setName] = useState(""),
+    [description, setDescription] = useState(""),
+    [parentId, setParentId] = useState(""),
+    [saving, setSaving] = useState(false),
+    [expanded, setExpanded] = useState<string[]>([]),
+    [draggingId, setDraggingId] = useState(""),
+    [dropHint, setDropHint] = useState("");
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
+  useEffect(() => {
+    setLoading(true);
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    fetch(`${apiUrl}/projects`, { headers: h })
+      .then(async (r) => {
+        if (!r.ok)
+          throw new Error(
+            r.status === 401
+              ? "Session หมดอายุ กรุณาเข้าสู่ระบบใหม่"
+              : "โหลดข้อมูลโครงการไม่สำเร็จ",
+          );
+        return r.json();
+      })
+      .then((data: ProjectItem[]) => {
+        const activeProjects = data.filter((x) => x.isActive);
+        setItems(activeProjects);
+        setSelectedId((current) =>
+          activeProjects.some((x) => x.projectId === current)
+            ? current
+            : (activeProjects[0]?.projectId ?? ""),
+        );
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [reload]);
+  useEffect(() => {
+    if (!selectedId) {
+      setModules([]);
+      return;
+    }
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    fetch(`${apiUrl}/projects/${selectedId}/modules`, { headers: h })
+      .then((r) => r.json())
+      .then((data: ModuleItem[]) => setModules(data.filter((x) => x.isActive)));
+  }, [selectedId, reload]);
+  const selected = items.find((x) => x.projectId === selectedId),
+    term = search.toLowerCase();
+  const filteredProjects = items.filter((x) =>
+    `${x.projectCode} ${x.projectName} ${x.description ?? ""}`
+      .toLowerCase()
+      .includes(term),
+  );
+  const includedIds = new Set(
+    modules
+      .filter(
+        (x) =>
+          !term ||
+          `${x.moduleCode} ${x.moduleName} ${x.description ?? ""}`
+            .toLowerCase()
+            .includes(term),
+      )
+      .map((x) => x.moduleId),
+  );
+  if (term) {
+    for (const module of modules.filter((x) => includedIds.has(x.moduleId))) {
+      let parent = modules.find((x) => x.moduleId === module.parentModuleId);
+      while (parent) {
+        includedIds.add(parent.moduleId);
+        parent = modules.find((x) => x.moduleId === parent?.parentModuleId);
+      }
+    }
+  }
+  const visibleModules: {
+    item: ModuleItem;
+    level: number;
+    childCount: number;
+  }[] = [];
+  const visited = new Set<string>();
+  const appendModules = (parent: string | null | undefined, level: number) => {
+    for (const item of modules
+      .filter((x) => x.parentModuleId === parent && includedIds.has(x.moduleId))
+      .sort(
+        (a, b) =>
+          a.sortOrder - b.sortOrder || a.moduleCode.localeCompare(b.moduleCode),
+      )) {
+      if (visited.has(item.moduleId)) continue;
+      visited.add(item.moduleId);
+      const children = modules.filter(
+        (x) =>
+          x.parentModuleId === item.moduleId && includedIds.has(x.moduleId),
+      );
+      visibleModules.push({ item, level, childCount: children.length });
+      if (term || expanded.includes(item.moduleId))
+        appendModules(item.moduleId, level + 1);
+    }
+  };
+  appendModules(null, 0);
+  appendModules(undefined, 0);
+  for (const orphan of modules.filter(
+    (x) =>
+      includedIds.has(x.moduleId) &&
+      !visited.has(x.moduleId) &&
+      !modules.some((parent) => parent.moduleId === x.parentModuleId),
+  ))
+    appendModules(orphan.parentModuleId, 0);
+  const openProject = (item?: ProjectItem) => {
+    setEditProject(item ?? null);
+    setEditModule(null);
+    setCode(item?.projectCode ?? "");
+    setName(item?.projectName ?? "");
+    setDescription(item?.description ?? "");
+    setModal("project");
+  };
+  const openModule = (item?: ModuleItem) => {
+    setEditModule(item ?? null);
+    setEditProject(null);
+    setCode(item?.moduleCode ?? "");
+    setName(item?.moduleName ?? "");
+    setDescription(item?.description ?? "");
+    setParentId(item?.parentModuleId ?? "");
+    setModal("module");
+  };
+  const save = async () => {
+    if (!modal) return;
+    setSaving(true);
+    try {
+      let url = "",
+        method = "POST",
+        body: object;
+      if (modal === "project") {
+        url = editProject
+          ? `${apiUrl}/projects/${editProject.projectId}`
+          : `${apiUrl}/projects`;
+        method = editProject ? "PUT" : "POST";
+        body = editProject
+          ? {
+              projectName: name,
+              description: description || null,
+              ownerUserId: null,
+            }
+          : {
+              projectCode: code,
+              projectName: name,
+              description: description || null,
+              ownerUserId: null,
+            };
+      } else {
+        url = editModule
+          ? `${apiUrl}/modules/${editModule.moduleId}`
+          : `${apiUrl}/projects/${selectedId}/modules`;
+        method = editModule ? "PUT" : "POST";
+        body = editModule
+          ? {
+              moduleName: name,
+              parentModuleId: parentId || null,
+              description: description || null,
+              ownerUserId: null,
+            }
+          : {
+              moduleCode: code,
+              moduleName: name,
+              parentModuleId: parentId || null,
+              description: description || null,
+              ownerUserId: null,
+            };
+      }
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const p = await response.json();
+        throw new Error(p.detail ?? "บันทึกข้อมูลไม่สำเร็จ");
+      }
+      setModal(null);
+      setReload((x) => x + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "บันทึกข้อมูลไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const deactivate = async (
+    kind: "project" | "module",
+    id: string,
+    label: string,
+  ) => {
+    if (!window.confirm(`ยืนยันปิดใช้งาน ${label}?`)) return;
+    const response = await fetch(
+      `${apiUrl}/${kind === "project" ? "projects" : "modules"}/${id}`,
+      { method: "DELETE", headers },
+    );
+    if (!response.ok) {
+      window.alert("ไม่สามารถปิดใช้งานข้อมูลได้");
+      return;
+    }
+    setReload((x) => x + 1);
+  };
+  const moveModule = async (
+    target: ModuleItem,
+    position: "before" | "inside" | "after",
+  ) => {
+    if (!draggingId || draggingId === target.moduleId) return;
+    const dragged = modules.find((x) => x.moduleId === draggingId);
+    if (!dragged) return;
+    const parentModuleId =
+      position === "inside" ? target.moduleId : (target.parentModuleId ?? null);
+    const siblings = modules
+      .filter(
+        (x) =>
+          x.moduleId !== dragged.moduleId &&
+          (x.parentModuleId ?? null) === parentModuleId,
+      )
+      .sort(
+        (a, b) =>
+          a.sortOrder - b.sortOrder || a.moduleCode.localeCompare(b.moduleCode),
+      );
+    const targetIndex =
+      position === "inside"
+        ? siblings.length
+        : Math.max(
+            0,
+            siblings.findIndex((x) => x.moduleId === target.moduleId) +
+              (position === "after" ? 1 : 0),
+          );
+    const response = await fetch(`${apiUrl}/modules/${dragged.moduleId}/move`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ parentModuleId, sortOrder: targetIndex }),
+    });
+    setDraggingId("");
+    setDropHint("");
+    if (!response.ok) {
+      const problem = await response.json();
+      window.alert(problem.detail ?? "ไม่สามารถย้าย Module ได้");
+      return;
+    }
+    if (parentModuleId)
+      setExpanded((current) =>
+        current.includes(parentModuleId)
+          ? current
+          : [...current, parentModuleId],
+      );
+    setReload((x) => x + 1);
+  };
+  if (loading)
+    return (
+      <article className="card empty">
+        <p>กำลังโหลดข้อมูลโครงการ...</p>
+      </article>
+    );
+  if (error)
+    return (
+      <article className="card empty">
+        <div className="login-error">{error}</div>
+      </article>
+    );
+  return (
+    <div className="project-layout">
+      <article className="card project-list">
+        <div className="card-title">
+          <div>
+            <h3>Projects</h3>
+            <p>{filteredProjects.length} โครงการ · คลิกเพื่อดู Module</p>
+          </div>
+          {canEdit && (
+            <button className="btn primary" onClick={() => openProject()}>
+              + Project
+            </button>
+          )}
+        </div>
+        <div className="project-cards">
+          {filteredProjects.map((x) => (
+            <button
+              key={x.projectId}
+              className={selectedId === x.projectId ? "active" : ""}
+              onClick={() => setSelectedId(x.projectId)}
+            >
+              <span className="project-code">{x.projectCode}</span>
+              <b>{x.projectName}</b>
+              <small>{x.description || "ไม่มีรายละเอียด"}</small>
+              <Badge tone={x.isActive ? "green" : "red"}>
+                {x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
+              </Badge>
+            </button>
+          ))}
+        </div>
+      </article>
+      <article className="card module-panel">
+        <div className="card-title">
+          <div>
+            <h3>Modules {selected && <span>· {selected.projectCode}</span>}</h3>
+            <p>
+              {modules.length} Module ในโครงการที่เลือก{" "}
+              {canEdit && "· ลากเพื่อจัดลำดับหรือวางซ้อนเป็น Module ลูก"}
+            </p>
+          </div>
+          {canEdit && selected?.isActive && (
+            <div className="row-actions">
+              <button className="btn" onClick={() => openProject(selected)}>
+                แก้ไข Project
+              </button>
+              <button className="btn primary" onClick={() => openModule()}>
+                + Module
+              </button>
+            </div>
+          )}
+        </div>
+        {selected ? (
+          <div className="table-wrap">
+            <table className="module-tree">
+              <thead>
+                <tr>
+                  <th>Module</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  {canEdit && <th>จัดการ</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleModules.map(({ item: x, level, childCount }) => {
+                  const hint = dropHint.startsWith(`${x.moduleId}:`)
+                    ? dropHint.split(":")[1]
+                    : "";
+                  return (
+                    <tr
+                      key={x.moduleId}
+                      draggable={canEdit}
+                      className={`${level ? "child-row " : ""}${draggingId === x.moduleId ? "dragging " : ""}${hint ? `drop-${hint}` : ""}`}
+                      onDragStart={(e) => {
+                        setDraggingId(x.moduleId);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => {
+                        setDraggingId("");
+                        setDropHint("");
+                      }}
+                      onDragOver={(e) => {
+                        if (!canEdit || draggingId === x.moduleId) return;
+                        e.preventDefault();
+                        const box = e.currentTarget.getBoundingClientRect(),
+                          ratio = (e.clientY - box.top) / box.height,
+                          position =
+                            ratio < 0.28
+                              ? "before"
+                              : ratio > 0.72
+                                ? "after"
+                                : "inside";
+                        setDropHint(`${x.moduleId}:${position}`);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const position = (dropHint.split(":")[1] ||
+                          "inside") as "before" | "inside" | "after";
+                        moveModule(x, position);
+                      }}
+                    >
+                      <td>
+                        <div
+                          className="tree-module"
+                          style={{ paddingLeft: `${level * 24}px` }}
+                        >
+                          {canEdit && (
+                            <span
+                              className="drag-handle"
+                              title="ลากเพื่อย้ายตำแหน่ง"
+                            >
+                              ⋮⋮
+                            </span>
+                          )}
+                          {childCount ? (
+                            <button
+                              className="tree-toggle"
+                              onClick={() =>
+                                setExpanded((current) =>
+                                  current.includes(x.moduleId)
+                                    ? current.filter((id) => id !== x.moduleId)
+                                    : [...current, x.moduleId],
+                                )
+                              }
+                              aria-label={
+                                expanded.includes(x.moduleId)
+                                  ? "ย่อ Module"
+                                  : "ขยาย Module"
+                              }
+                            >
+                              {term || expanded.includes(x.moduleId)
+                                ? "▾"
+                                : "▸"}
+                            </button>
+                          ) : (
+                            <span className="tree-spacer" />
+                          )}
+                          <span>
+                            <b>{x.moduleCode}</b>
+                            <small>{x.moduleName}</small>
+                          </span>
+                          {childCount > 0 && (
+                            <span className="child-count">
+                              {childCount} Module
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>{x.description || "-"}</td>
+                      <td>
+                        <Badge tone="green">ใช้งาน</Badge>
+                      </td>
+                      {canEdit && (
+                        <td>
+                          <div className="row-actions">
+                            <button
+                              className="table-action"
+                              onClick={() => openModule(x)}
+                            >
+                              แก้ไข
+                            </button>
+                            <button
+                              className="table-action danger-action"
+                              onClick={() =>
+                                deactivate("module", x.moduleId, x.moduleName)
+                              }
+                            >
+                              ลบ
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty">
+            <p>เลือก Project เพื่อดู Modules</p>
+          </div>
+        )}
+        {canEdit && selected?.isActive && (
+          <div className="project-footer">
+            <button
+              className="danger-link"
+              onClick={() =>
+                deactivate("project", selected.projectId, selected.projectName)
+              }
+            >
+              ปิดใช้งาน Project นี้
+            </button>
+          </div>
+        )}
+      </article>
+      {modal && (
+        <div className="modal" onMouseDown={() => setModal(null)}>
+          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>
+                {editProject || editModule ? "แก้ไข" : "เพิ่ม"}{" "}
+                {modal === "project" ? "Project" : "Module"}
+              </h2>
+              <button onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="form-grid">
+              <label>
+                {modal === "project" ? "Project Code" : "Module Code"}
+                <input
+                  disabled={!!editProject || !!editModule}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="ระบุรหัส"
+                />
+              </label>
+              <label>
+                ชื่อ
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="ระบุชื่อ"
+                />
+              </label>
+              {modal === "module" && (
+                <label className="full">
+                  Parent Module
+                  <select
+                    value={parentId}
+                    onChange={(e) => setParentId(e.target.value)}
+                  >
+                    <option value="">ไม่มี Parent</option>
+                    {modules
+                      .filter(
+                        (x) =>
+                          x.moduleId !== editModule?.moduleId && x.isActive,
+                      )
+                      .map((x) => (
+                        <option key={x.moduleId} value={x.moduleId}>
+                          {x.moduleCode} · {x.moduleName}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+              <label className="full">
+                รายละเอียด
+                <textarea
+                  rows={4}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setModal(null)}>
+                ยกเลิก
+              </button>
+              <button
+                className="btn primary"
+                disabled={saving || !code.trim() || !name.trim()}
+                onClick={save}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+type ReleaseItem = {
+  releaseId: string;
+  projectId: string;
+  releaseCode: string;
+  version: string;
+  releaseType?: string;
+  scope?: string;
+  plannedReleaseDate?: string;
+  actualReleaseDate?: string;
+  status: string;
+  createdAt: string;
+};
+type BuildItem = {
+  buildId: string;
+  releaseId: string;
+  buildNumber: string;
+  applicationVersion?: string;
+  packageVersion?: string;
+  commitReference?: string;
+  buildDate?: string;
+  changeNotes?: string;
+  knownIssues?: string;
+  isReleaseCandidate: boolean;
+  isActive: boolean;
+  status: string;
+};
+function ReleasesPage({ search }: { search: string; refresh?: number }) {
+  let canEdit = false;
+  try {
+    const current: SessionUser = JSON.parse(
+      localStorage.getItem("qa.user") ?? "{}",
+    );
+    canEdit =
+      current.roles?.includes("SYS_ADMIN") ||
+      current.permissions?.includes("PROJECT.EDIT");
+  } catch {
+    canEdit = false;
+  }
+  const [items, setItems] = useState<ReleaseItem[]>([]),
+    [projects, setProjects] = useState<ProjectItem[]>([]),
+    [builds, setBuilds] = useState<BuildItem[]>([]),
+    [selectedId, setSelectedId] = useState(""),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [reload, setReload] = useState(0),
+    [modal, setModal] = useState<"release" | "build" | null>(null),
+    [editRelease, setEditRelease] = useState<ReleaseItem | null>(null),
+    [editBuild, setEditBuild] = useState<BuildItem | null>(null),
+    [projectId, setProjectId] = useState(""),
+    [code, setCode] = useState(""),
+    [name, setName] = useState(""),
+    [type, setType] = useState("Major"),
+    [releaseStatus, setReleaseStatus] = useState("Draft"),
+    [date, setDate] = useState(""),
+    [details, setDetails] = useState(""),
+    [packageVersion, setPackageVersion] = useState(""),
+    [commit, setCommit] = useState(""),
+    [issues, setIssues] = useState(""),
+    [saving, setSaving] = useState(false);
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
+  useEffect(() => {
+    setLoading(true);
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    Promise.all([
+      fetch(`${apiUrl}/releases`, { headers: h }).then((r) => r.json()),
+      fetch(`${apiUrl}/projects`, { headers: h }).then((r) => r.json()),
+    ])
+      .then(([releaseData, projectData]) => {
+        const active = (releaseData as ReleaseItem[]).filter(
+          (x) => x.status !== "Cancelled",
+        );
+        setItems(active);
+        setProjects((projectData as ProjectItem[]).filter((x) => x.isActive));
+        setSelectedId((current) =>
+          active.some((x) => x.releaseId === current)
+            ? current
+            : (active[0]?.releaseId ?? ""),
+        );
+      })
+      .catch(() => setError("โหลดข้อมูล Release ไม่สำเร็จ"))
+      .finally(() => setLoading(false));
+  }, [reload]);
+  useEffect(() => {
+    if (!selectedId) {
+      setBuilds([]);
+      return;
+    }
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    fetch(`${apiUrl}/releases/${selectedId}/builds`, { headers: h })
+      .then((r) => r.json())
+      .then((data: BuildItem[]) => setBuilds(data.filter((x) => x.isActive)));
+  }, [selectedId, reload]);
+  const selected = items.find((x) => x.releaseId === selectedId),
+    term = search.toLowerCase(),
+    filteredReleases = items.filter((x) =>
+      `${x.releaseCode} ${x.version} ${x.releaseType ?? ""} ${x.status}`
+        .toLowerCase()
+        .includes(term),
+    ),
+    filteredBuilds = builds.filter((x) =>
+      `${x.buildNumber} ${x.applicationVersion ?? ""} ${x.commitReference ?? ""}`
+        .toLowerCase()
+        .includes(term),
+    );
+  const openRelease = (item?: ReleaseItem) => {
+    setEditRelease(item ?? null);
+    setEditBuild(null);
+    setProjectId(item?.projectId ?? projects[0]?.projectId ?? "");
+    setCode(item?.releaseCode ?? "");
+    setName(item?.version ?? "");
+    setType(item?.releaseType ?? "Major");
+    setReleaseStatus(item?.status ?? "Draft");
+    setDate(item?.plannedReleaseDate?.slice(0, 10) ?? "");
+    setDetails(item?.scope ?? "");
+    setModal("release");
+  };
+  const openBuild = (item?: BuildItem) => {
+    setEditBuild(item ?? null);
+    setEditRelease(null);
+    setCode(item?.buildNumber ?? "");
+    setName(item?.applicationVersion ?? "");
+    setPackageVersion(item?.packageVersion ?? "");
+    setCommit(item?.commitReference ?? "");
+    setDate(item?.buildDate?.slice(0, 10) ?? "");
+    setDetails(item?.changeNotes ?? "");
+    setIssues(item?.knownIssues ?? "");
+    setModal("build");
+  };
+  const save = async () => {
+    if (!modal) return;
+    setSaving(true);
+    try {
+      let url = "",
+        method = "POST",
+        body: object;
+      if (modal === "release") {
+        url = editRelease
+          ? `${apiUrl}/releases/${editRelease.releaseId}`
+          : `${apiUrl}/projects/${projectId}/releases`;
+        method = editRelease ? "PUT" : "POST";
+        body = editRelease
+          ? {
+              version: name,
+              releaseType: type,
+              plannedReleaseDate: date || null,
+              scope: details || null,
+              releaseOwnerUserId: null,
+            }
+          : {
+              releaseCode: code,
+              version: name,
+              releaseType: type,
+              plannedReleaseDate: date || null,
+              scope: details || null,
+              releaseOwnerUserId: null,
+            };
+      } else {
+        url = editBuild
+          ? `${apiUrl}/builds/${editBuild.buildId}`
+          : `${apiUrl}/releases/${selectedId}/builds`;
+        method = editBuild ? "PUT" : "POST";
+        body = editBuild
+          ? {
+              applicationVersion: name || null,
+              packageVersion: packageVersion || null,
+              commitReference: commit || null,
+              buildDate: date || null,
+              changeNotes: details || null,
+              knownIssues: issues || null,
+            }
+          : {
+              buildNumber: code,
+              applicationVersion: name || null,
+              packageVersion: packageVersion || null,
+              commitReference: commit || null,
+              buildDate: date || null,
+              changeNotes: details || null,
+              knownIssues: issues || null,
+            };
+      }
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const p = await response.json();
+        throw new Error(p.detail ?? "บันทึกไม่สำเร็จ");
+      }
+      if (
+        modal === "release" &&
+        editRelease &&
+        releaseStatus !== editRelease.status
+      ) {
+        const statusResponse = await fetch(
+          `${apiUrl}/releases/${editRelease.releaseId}/status`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ status: releaseStatus }),
+          },
+        );
+        if (!statusResponse.ok) {
+          const problem = await statusResponse.json();
+          throw new Error(
+            problem.detail ?? "เปลี่ยนสถานะ Release ไม่สำเร็จ",
+          );
+        }
+      }
+      setModal(null);
+      setReload((x) => x + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async (
+    kind: "release" | "build",
+    id: string,
+    label: string,
+  ) => {
+    if (
+      !window.confirm(
+        `ยืนยันลบ ${label}? ข้อมูลจะถูกปิดใช้งานและไม่แสดงในรายการ`,
+      )
+    )
+      return;
+    const response = await fetch(
+      `${apiUrl}/${kind === "release" ? "releases" : "builds"}/${id}`,
+      { method: "DELETE", headers },
+    );
+    if (!response.ok) {
+      window.alert("ไม่สามารถลบข้อมูลได้");
+      return;
+    }
+    setReload((x) => x + 1);
+  };
+  const markRc = async (item: BuildItem) => {
+    await fetch(`${apiUrl}/builds/${item.buildId}/mark-release-candidate`, {
+      method: "POST",
+      headers,
+    });
+    setReload((x) => x + 1);
+  };
+  if (loading)
+    return (
+      <article className="card empty">
+        <p>กำลังโหลดข้อมูล Release...</p>
+      </article>
+    );
+  if (error)
+    return (
+      <article className="card empty">
+        <div className="login-error">{error}</div>
+      </article>
+    );
+  return (
+    <div className="release-layout">
+      <article className="card release-list">
+        <div className="card-title">
+          <div>
+            <h3>Releases</h3>
+            <p>{filteredReleases.length} Release ที่ใช้งาน</p>
+          </div>
+          {canEdit && (
+            <button className="btn primary" onClick={() => openRelease()}>
+              + Release
+            </button>
+          )}
+        </div>
+        <div className="release-cards">
+          {filteredReleases.map((x) => (
+            <button
+              key={x.releaseId}
+              className={selectedId === x.releaseId ? "active" : ""}
+              onClick={() => setSelectedId(x.releaseId)}
+            >
+              <span>{x.releaseCode}</span>
+              <b>Version {x.version}</b>
+              <small>
+                {x.releaseType || "-"} ·{" "}
+                {x.plannedReleaseDate
+                  ? new Date(x.plannedReleaseDate).toLocaleDateString("th-TH")
+                  : "ไม่ระบุวัน"}
+              </small>
+              <Badge
+                tone={
+                  x.status === "Ready" || x.status === "Released"
+                    ? "green"
+                    : "yellow"
+                }
+              >
+                {x.status}
+              </Badge>
+            </button>
+          ))}
+        </div>
+      </article>
+      <article className="card build-panel">
+        <div className="card-title">
+          <div>
+            <h3>Builds {selected && <span>· {selected.releaseCode}</span>}</h3>
+            <p>{filteredBuilds.length} Build ใน Release ที่เลือก</p>
+          </div>
+          {canEdit && selected && (
+            <div className="row-actions">
+              <button className="btn" onClick={() => openRelease(selected)}>
+                แก้ไข Release
+              </button>
+              <button className="btn primary" onClick={() => openBuild()}>
+                + Build
+              </button>
+            </div>
+          )}
+        </div>
+        {selected ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Build Number</th>
+                  <th>App Version</th>
+                  <th>Package</th>
+                  <th>Commit</th>
+                  <th>Build Date</th>
+                  <th>Status</th>
+                  {canEdit && <th>จัดการ</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBuilds.map((x) => (
+                  <tr key={x.buildId}>
+                    <td>
+                      <b>{x.buildNumber}</b>
+                      {x.isReleaseCandidate && <Badge tone="blue">RC</Badge>}
+                    </td>
+                    <td>{x.applicationVersion || "-"}</td>
+                    <td>{x.packageVersion || "-"}</td>
+                    <td>{x.commitReference || "-"}</td>
+                    <td>
+                      {x.buildDate
+                        ? new Date(x.buildDate).toLocaleDateString("th-TH")
+                        : "-"}
+                    </td>
+                    <td>
+                      <Badge tone="green">{x.status}</Badge>
+                    </td>
+                    {canEdit && (
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            className="table-action"
+                            onClick={() => openBuild(x)}
+                          >
+                            แก้ไข
+                          </button>
+                          {!x.isReleaseCandidate && (
+                            <button
+                              className="table-action"
+                              onClick={() => markRc(x)}
+                            >
+                              Mark RC
+                            </button>
+                          )}
+                          <button
+                            className="table-action danger-action"
+                            onClick={() =>
+                              remove("build", x.buildId, x.buildNumber)
+                            }
+                          >
+                            ลบ
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty">
+            <p>เลือก Release เพื่อดู Builds</p>
+          </div>
+        )}
+        {canEdit && selected && (
+          <div className="project-footer">
+            <button
+              className="danger-link"
+              onClick={() =>
+                remove("release", selected.releaseId, selected.releaseCode)
+              }
+            >
+              ยกเลิกและซ่อน Release นี้
+            </button>
+          </div>
+        )}
+      </article>
+      {modal && (
+        <div className="modal" onMouseDown={() => setModal(null)}>
+          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>
+                {editRelease || editBuild ? "แก้ไข" : "เพิ่ม"}{" "}
+                {modal === "release" ? "Release" : "Build"}
+              </h2>
+              <button onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="form-grid">
+              {modal === "release" && !editRelease && (
+                <label>
+                  Project
+                  <select
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
+                  >
+                    {projects.map((x) => (
+                      <option key={x.projectId} value={x.projectId}>
+                        {x.projectName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label>
+                {modal === "release" ? "Release Code" : "Build Number"}
+                <input
+                  disabled={!!editRelease || !!editBuild}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </label>
+              <label>
+                {modal === "release" ? "Version" : "Application Version"}
+                <input value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
+              {modal === "release" ? (
+                <>
+                  <label>
+                    Release Type
+                    <select
+                      value={type}
+                      onChange={(e) => setType(e.target.value)}
+                    >
+                      <option>Major</option>
+                      <option>Minor</option>
+                      <option>Hotfix</option>
+                    </select>
+                  </label>
+                  {editRelease && (
+                    <label>
+                      สถานะ Release
+                      <select
+                        value={releaseStatus}
+                        onChange={(e) => setReleaseStatus(e.target.value)}
+                      >
+                        <option value="Draft">Draft</option>
+                        <option value="Testing">Testing</option>
+                        <option value="Ready">Ready</option>
+                        <option value="Released">Released</option>
+                      </select>
+                    </label>
+                  )}
+                  <label>
+                    Planned Date
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                    />
+                  </label>
+                  <label className="full">
+                    Scope
+                    <textarea
+                      rows={4}
+                      value={details}
+                      onChange={(e) => setDetails(e.target.value)}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    Package Version
+                    <input
+                      value={packageVersion}
+                      onChange={(e) => setPackageVersion(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Commit Reference
+                    <input
+                      value={commit}
+                      onChange={(e) => setCommit(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Build Date
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                    />
+                  </label>
+                  <label className="full">
+                    Change Notes
+                    <textarea
+                      rows={3}
+                      value={details}
+                      onChange={(e) => setDetails(e.target.value)}
+                    />
+                  </label>
+                  <label className="full">
+                    Known Issues
+                    <textarea
+                      rows={3}
+                      value={issues}
+                      onChange={(e) => setIssues(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setModal(null)}>
+                ยกเลิก
+              </button>
+              <button
+                className="btn primary"
+                disabled={
+                  saving ||
+                  !code.trim() ||
+                  (modal === "release" && !name.trim())
+                }
+                onClick={save}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+type RequirementItem = {
+  requirementId: string;
+  requirementCode: string;
+  title: string;
+  priority: string;
+  riskLevel?: string;
+  status: string;
+  revisionNo: number;
+  isInScope: boolean;
+  moduleId: string;
+  releaseId?: string;
+};
+function RequirementsPage({
+  search,
+  refresh,
+}: {
+  search: string;
+  refresh: number;
+}) {
+  const [items, setItems] = useState<RequirementItem[]>([]),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${apiUrl}/requirements`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+      },
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error("โหลด Requirement ไม่สำเร็จ");
+        return r.json();
+      })
+      .then(setItems)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [refresh]);
+  if (loading)
+    return (
+      <article className="card empty">
+        <p>กำลังโหลด Requirement...</p>
+      </article>
+    );
+  if (error)
+    return (
+      <article className="card empty">
+        <div className="login-error">{error}</div>
+      </article>
+    );
+  const filtered = items.filter((x) =>
+    `${x.requirementCode} ${x.title} ${x.priority} ${x.status}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  return (
+    <article className="card">
+      <div className="table-tools">
+        <div>
+          <select>
+            <option>ทุกสถานะ</option>
+          </select>
+          <select>
+            <option>ทุก Priority</option>
+            <option>P0</option>
+            <option>P1</option>
+          </select>
+        </div>
+        <span>{filtered.length} Requirements</span>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Requirement ID</th>
+              <th>Title</th>
+              <th>Priority</th>
+              <th>Risk</th>
+              <th>Revision</th>
+              <th>In Scope</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((x) => (
+              <tr key={x.requirementId}>
+                <td>
+                  <b>{x.requirementCode}</b>
+                </td>
+                <td>{x.title}</td>
+                <td>
+                  <Badge
+                    tone={
+                      x.priority === "P0" || x.priority === "P1"
+                        ? "red"
+                        : "blue"
+                    }
+                  >
+                    {x.priority}
+                  </Badge>
+                </td>
+                <td>{x.riskLevel ?? "-"}</td>
+                <td>Rev. {x.revisionNo}</td>
+                <td>{x.isInScope ? "Yes" : "No"}</td>
+                <td>
+                  <Badge
+                    tone={
+                      x.status === "Approved" || x.status === "Implemented"
+                        ? "green"
+                        : "yellow"
+                    }
+                  >
+                    {x.status}
+                  </Badge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  );
+}
+type TestCaseItem = {
+  testCaseId: string;
+  projectId: string;
+  testCaseCode: string;
+  title: string;
+  priority: string;
+  testType?: string;
+  status: string;
+  revisionNo: number;
+  automationCandidate: boolean;
+  steps: { stepNo: number }[];
+};
+function TestCasesPage({
+  search,
+  refresh,
+}: {
+  search: string;
+  refresh: number;
+}) {
+  const [items, setItems] = useState<TestCaseItem[]>([]),
+    [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${apiUrl}/test-cases`, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+      },
+    })
+      .then((r) => r.json())
+      .then(setItems)
+      .finally(() => setLoading(false));
+  }, [refresh]);
+  if (loading)
+    return (
+      <article className="card empty">
+        <p>กำลังโหลด Test Case...</p>
+      </article>
+    );
+  const rows = items.filter((x) =>
+    `${x.testCaseCode} ${x.title}`.toLowerCase().includes(search.toLowerCase()),
+  );
+  return (
+    <article className="card">
+      <div className="table-tools">
+        <div>
+          <select>
+            <option>ทุกสถานะ</option>
+          </select>
+        </div>
+        <span>{rows.length} Test Cases</span>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Test Case ID</th>
+              <th>Title</th>
+              <th>Priority</th>
+              <th>Type</th>
+              <th>Revision</th>
+              <th>Steps</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((x) => (
+              <tr key={x.testCaseId}>
+                <td>
+                  <b>{x.testCaseCode}</b>
+                </td>
+                <td>{x.title}</td>
+                <td>
+                  <Badge
+                    tone={
+                      x.priority === "P0" || x.priority === "P1"
+                        ? "red"
+                        : "blue"
+                    }
+                  >
+                    {x.priority}
+                  </Badge>
+                </td>
+                <td>{x.testType ?? "-"}</td>
+                <td>Rev. {x.revisionNo}</td>
+                <td>{x.steps.length}</td>
+                <td>
+                  <Badge tone={x.status === "Ready" ? "green" : "yellow"}>
+                    {x.status}
+                  </Badge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  );
+}
+type RtmItem = {
+  requirementId: string;
+  requirementCode: string;
+  title: string;
+  priority: string;
+  testCaseCount: number;
+  coverageStatus: string;
+  status: string;
+};
+function RtmPage({ refresh }: { refresh: number }) {
+  const [items, setItems] = useState<RtmItem[]>([]),
+    [summary, setSummary] = useState<{
+      totalRequirements: number;
+      covered: number;
+      coveragePercent: number;
+    } | null>(null),
+    [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    fetch(`${apiUrl}/releases`, { headers: h })
+      .then((r) => r.json())
+      .then(async (releases) => {
+        if (!releases.length) return;
+        const [data, sum] = await Promise.all([
+          fetch(`${apiUrl}/releases/${releases[0].releaseId}/rtm`, {
+            headers: h,
+          }).then((r) => r.json()),
+          fetch(
+            `${apiUrl}/releases/${releases[0].releaseId}/coverage-summary`,
+            { headers: h },
+          ).then((r) => r.json()),
+        ]);
+        setItems(data);
+        setSummary(sum);
+      })
+      .finally(() => setLoading(false));
+  }, [refresh]);
+  if (loading)
+    return (
+      <article className="card empty">
+        <p>กำลังคำนวณ RTM...</p>
+      </article>
+    );
+  return (
+    <>
+      <div className="kpi-grid">
+        <article className="card kpi">
+          <span>Requirements</span>
+          <strong>{summary?.totalRequirements ?? 0}</strong>
+          <small>In Scope</small>
+        </article>
+        <article className="card kpi">
+          <span>Covered</span>
+          <strong>{summary?.covered ?? 0}</strong>
+          <small className="green">Linked Test Cases</small>
+        </article>
+        <article className="card kpi">
+          <span>Coverage</span>
+          <strong>{summary?.coveragePercent ?? 0}%</strong>
+          <small>Current Release</small>
+        </article>
+      </div>
+      <article className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Requirement</th>
+                <th>Title</th>
+                <th>Priority</th>
+                <th>Test Cases</th>
+                <th>Coverage</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((x) => (
+                <tr key={x.requirementId}>
+                  <td>
+                    <b>{x.requirementCode}</b>
+                  </td>
+                  <td>{x.title}</td>
+                  <td>{x.priority}</td>
+                  <td>{x.testCaseCount}</td>
+                  <td>
+                    <Badge tone={x.testCaseCount ? "green" : "red"}>
+                      {x.coverageStatus}
+                    </Badge>
+                  </td>
+                  <td>{x.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </>
+  );
+}
+type CycleEnvironment = {
+  testEnvironmentId: string;
+  projectId: string;
+  environmentName: string;
+  baseUrl?: string;
+  isActive: boolean;
+};
+type CycleBuild = { buildId: string; releaseId: string; buildNumber: string };
+type CycleRelease = {
+  releaseId: string;
+  projectId: string;
+  releaseCode: string;
+  status: string;
+};
+type TestCycleItem = {
+  testCycleId: string;
+  projectId: string;
+  releaseId: string;
+  releaseCode: string;
+  buildId: string;
+  buildNumber: string;
+  environmentId: string;
+  environmentName: string;
+  testSuiteId?: string;
+  suiteName?: string;
+  cycleCode: string;
+  cycleName: string;
+  cycleType?: string;
+  startDate?: string;
+  endDate?: string;
+  status: string;
+  notes?: string;
+  caseCount: number;
+  executedCount: number;
+  progressPercent: number;
+};
+function TestCyclesPage({ search }: { search: string }) {
+  const [items, setItems] = useState<TestCycleItem[]>([]),
+    [projects, setProjects] = useState<ProjectItem[]>([]),
+    [releases, setReleases] = useState<CycleRelease[]>([]),
+    [builds, setBuilds] = useState<CycleBuild[]>([]),
+    [environments, setEnvironments] = useState<CycleEnvironment[]>([]),
+    [suites, setSuites] = useState<TestSuiteItem[]>([]),
+    [reload, setReload] = useState(0),
+    [form, setForm] = useState(false),
+    [editing, setEditing] = useState<TestCycleItem | null>(null),
+    [saving, setSaving] = useState(false);
+  const [projectId, setProjectId] = useState(""),
+    [releaseId, setReleaseId] = useState(""),
+    [buildId, setBuildId] = useState(""),
+    [environmentId, setEnvironmentId] = useState(""),
+    [suiteId, setSuiteId] = useState(""),
+    [code, setCode] = useState(""),
+    [name, setName] = useState(""),
+    [cycleType, setCycleType] = useState("Regression"),
+    [startDate, setStartDate] = useState(""),
+    [endDate, setEndDate] = useState(""),
+    [notes, setNotes] = useState(""),
+    [environmentName, setEnvironmentName] = useState("");
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
+  useEffect(() => {
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    Promise.all([
+      fetch(`${apiUrl}/test-cycles`, { headers: h }).then((r) => r.json()),
+      fetch(`${apiUrl}/projects`, { headers: h }).then((r) => r.json()),
+      fetch(`${apiUrl}/releases`, { headers: h }).then((r) => r.json()),
+      fetch(`${apiUrl}/test-environments`, { headers: h }).then((r) =>
+        r.json(),
+      ),
+      fetch(`${apiUrl}/test-suites`, { headers: h }).then((r) => r.json()),
+    ]).then(async ([c, p, r, e, s]) => {
+      const buildGroups = await Promise.all(
+        r.map((release: CycleRelease) =>
+          fetch(`${apiUrl}/releases/${release.releaseId}/builds`, {
+            headers: h,
+          }).then((x) => x.json()),
+        ),
+      );
+      setItems(c);
+      setProjects(p);
+      setReleases(r);
+      setEnvironments(e);
+      setSuites(s);
+      setBuilds(buildGroups.flat());
+      setProjectId((current) => current || p[0]?.projectId || "");
+    });
+  }, [reload]);
+  const projectReleases = useMemo(
+      () => releases.filter((x) => x.projectId === projectId),
+      [releases, projectId],
+    ),
+    releaseBuilds = useMemo(
+      () => builds.filter((x) => x.releaseId === releaseId),
+      [builds, releaseId],
+    ),
+    projectEnvironments = useMemo(
+      () => environments.filter((x) => x.projectId === projectId && x.isActive),
+      [environments, projectId],
+    ),
+    projectSuites = useMemo(
+      () => suites.filter((x) => x.projectId === projectId && x.isActive),
+      [suites, projectId],
+    );
+  useEffect(() => {
+    if (!projectReleases.some((x) => x.releaseId === releaseId))
+      setReleaseId(projectReleases[0]?.releaseId ?? "");
+  }, [projectReleases, releaseId]);
+  useEffect(() => {
+    if (!releaseBuilds.some((x) => x.buildId === buildId))
+      setBuildId(releaseBuilds[0]?.buildId ?? "");
+  }, [releaseBuilds, buildId]);
+  useEffect(() => {
+    if (!projectEnvironments.some((x) => x.testEnvironmentId === environmentId))
+      setEnvironmentId(projectEnvironments[0]?.testEnvironmentId ?? "");
+  }, [projectEnvironments, environmentId]);
+  const openForm = (cycle?: TestCycleItem) => {
+    setEditing(cycle ?? null);
+    setProjectId(cycle?.projectId ?? projects[0]?.projectId ?? "");
+    setReleaseId(cycle?.releaseId ?? "");
+    setBuildId(cycle?.buildId ?? "");
+    setEnvironmentId(cycle?.environmentId ?? "");
+    setSuiteId(cycle?.testSuiteId ?? "");
+    setCode(cycle?.cycleCode ?? "");
+    setName(cycle?.cycleName ?? "");
+    setCycleType(cycle?.cycleType ?? "Regression");
+    setStartDate(cycle?.startDate?.slice(0, 10) ?? "");
+    setEndDate(cycle?.endDate?.slice(0, 10) ?? "");
+    setNotes(cycle?.notes ?? "");
+    setForm(true);
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch(
+        `${apiUrl}/test-cycles${editing ? `/${editing.testCycleId}` : ""}`,
+        {
+          method: editing ? "PUT" : "POST",
+          headers,
+          body: JSON.stringify({
+            projectId,
+            releaseId,
+            buildId,
+            environmentId,
+            testSuiteId: suiteId || null,
+            cycleCode: code,
+            cycleName: name,
+            cycleType,
+            startDate: startDate || null,
+            endDate: endDate || null,
+            ownerUserId: null,
+            notes: notes || null,
+            populateFromSuite: true,
+            requiredOnly: false,
+          }),
+        },
+      );
+      if (!response.ok) {
+        const p = await response.json();
+        throw new Error(p.detail ?? "บันทึกไม่สำเร็จ");
+      }
+      setForm(false);
+      setReload((x) => x + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const createEnvironment = async () => {
+    if (!projectId || !environmentName.trim()) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`${apiUrl}/test-environments`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          projectId,
+          environmentName,
+          baseUrl: null,
+          isActive: true,
+        }),
+      });
+      if (!response.ok) throw new Error();
+      const result = await response.json();
+      setEnvironmentName("");
+      setEnvironmentId(result.testEnvironmentId);
+      setReload((x) => x + 1);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const changeStatus = async (cycle: TestCycleItem, status: string) => {
+    await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}/status`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ status }),
+    });
+    setReload((x) => x + 1);
+  };
+  const rows = items.filter((x) =>
+    `${x.cycleCode} ${x.cycleName} ${x.releaseCode} ${x.buildNumber}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  return (
+    <>
+      <article className="card">
+        <div className="table-tools">
+          <span>{rows.length} Test Cycles</span>
+          <button className="btn primary" onClick={() => openForm()}>
+            + สร้าง Test Cycle
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Cycle Code</th>
+                <th>Name</th>
+                <th>Release / Build</th>
+                <th>Environment</th>
+                <th>Type</th>
+                <th>Progress</th>
+                <th>Status</th>
+                <th>จัดการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.testCycleId}>
+                  <td>
+                    <b>{x.cycleCode}</b>
+                  </td>
+                  <td>{x.cycleName}</td>
+                  <td>
+                    {x.releaseCode}
+                    <small className="cell-sub">{x.buildNumber}</small>
+                  </td>
+                  <td>{x.environmentName}</td>
+                  <td>{x.cycleType ?? "-"}</td>
+                  <td>
+                    <div className="progress-cell">
+                      <span>
+                        <i style={{ width: `${x.progressPercent}%` }} />
+                      </span>
+                      <small>
+                        {x.executedCount}/{x.caseCount} · {x.progressPercent}%
+                      </small>
+                    </div>
+                  </td>
+                  <td>
+                    <Badge
+                      tone={
+                        x.status === "Closed" || x.status === "Completed"
+                          ? "green"
+                          : x.status === "Cancelled"
+                            ? "red"
+                            : "yellow"
+                      }
+                    >
+                      {x.status}
+                    </Badge>
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button
+                        className="table-action"
+                        onClick={() => openForm(x)}
+                      >
+                        แก้ไข
+                      </button>
+                      {x.status === "Draft" && (
+                        <button
+                          className="table-action"
+                          onClick={() => changeStatus(x, "InProgress")}
+                        >
+                          เริ่ม
+                        </button>
+                      )}
+                      {x.status === "InProgress" && (
+                        <button
+                          className="table-action"
+                          onClick={() => changeStatus(x, "Closed")}
+                        >
+                          ปิด Cycle
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
+      {form && (
+        <div className="modal" onMouseDown={() => setForm(false)}>
+          <div
+            className="modal-box cycle-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <h2>{editing ? "แก้ไข" : "สร้าง"} Test Cycle</h2>
+              <button onClick={() => setForm(false)}>×</button>
+            </div>
+            <div className="form-grid">
+              <label>
+                Project
+                <select
+                  disabled={!!editing}
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                >
+                  {projects.map((x) => (
+                    <option key={x.projectId} value={x.projectId}>
+                      {x.projectName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Release
+                <select
+                  disabled={!!editing}
+                  value={releaseId}
+                  onChange={(e) => setReleaseId(e.target.value)}
+                >
+                  <option value="">เลือก Release</option>
+                  {projectReleases.map((x) => (
+                    <option key={x.releaseId} value={x.releaseId}>
+                      {x.releaseCode}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Build
+                <select
+                  disabled={!!editing}
+                  value={buildId}
+                  onChange={(e) => setBuildId(e.target.value)}
+                >
+                  <option value="">เลือก Build</option>
+                  {releaseBuilds.map((x) => (
+                    <option key={x.buildId} value={x.buildId}>
+                      {x.buildNumber}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Environment
+                <select
+                  disabled={!!editing}
+                  value={environmentId}
+                  onChange={(e) => setEnvironmentId(e.target.value)}
+                >
+                  <option value="">เลือก Environment</option>
+                  {projectEnvironments.map((x) => (
+                    <option
+                      key={x.testEnvironmentId}
+                      value={x.testEnvironmentId}
+                    >
+                      {x.environmentName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {!editing && !projectEnvironments.length && (
+                <div className="full inline-create">
+                  <input
+                    value={environmentName}
+                    onChange={(e) => setEnvironmentName(e.target.value)}
+                    placeholder="ชื่อ Environment เช่น QA Server"
+                  />
+                  <button
+                    className="btn"
+                    onClick={createEnvironment}
+                    disabled={saving || !environmentName.trim()}
+                  >
+                    + สร้าง Environment
+                  </button>
+                </div>
+              )}
+              <label>
+                Test Suite
+                <select
+                  disabled={!!editing}
+                  value={suiteId}
+                  onChange={(e) => setSuiteId(e.target.value)}
+                >
+                  <option value="">ไม่ระบุ Suite</option>
+                  {projectSuites.map((x) => (
+                    <option key={x.testSuiteId} value={x.testSuiteId}>
+                      {x.suiteName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Cycle Type
+                <select
+                  value={cycleType}
+                  onChange={(e) => setCycleType(e.target.value)}
+                >
+                  <option>Smoke</option>
+                  <option>Regression</option>
+                  <option>UAT</option>
+                  <option>Exploratory</option>
+                </select>
+              </label>
+              <label>
+                Cycle Code
+                <input
+                  disabled={!!editing}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </label>
+              <label>
+                Cycle Name
+                <input value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
+              <label>
+                Start Date
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </label>
+              <label>
+                End Date
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </label>
+              <label className="full">
+                Notes
+                <textarea
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setForm(false)}>
+                ยกเลิก
+              </button>
+              <button
+                className="btn primary"
+                disabled={
+                  saving ||
+                  !projectId ||
+                  !releaseId ||
+                  !buildId ||
+                  !environmentId ||
+                  !code.trim() ||
+                  !name.trim()
+                }
+                onClick={save}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก Test Cycle"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+type ExecutionCase = {
+  testCycleCaseId: string;
+  testCaseId: string;
+  testCaseCode: string;
+  title: string;
+  preconditions?: string;
+  priority: string;
+  currentStatus: string;
+  executionOrder: number;
+  steps: {
+    stepNo: number;
+    action: string;
+    testData?: string;
+    expectedResult: string;
+  }[];
+  history: {
+    testExecutionId: string;
+    executionNo: number;
+    status: string;
+    actualResult?: string;
+    comment?: string;
+    testerName: string;
+    completedAt?: string;
+  }[];
+};
+type ExecutionWorkspace = {
+  testCycleId: string;
+  cycleCode: string;
+  cycleName: string;
+  status: string;
+  buildNumber: string;
+  environmentName: string;
+  cases: ExecutionCase[];
+};
+function ExecutionWorkspacePage() {
+  const [cycles, setCycles] = useState<TestCycleItem[]>([]),
+    [cycleId, setCycleId] = useState(""),
+    [workspace, setWorkspace] = useState<ExecutionWorkspace | null>(null),
+    [selectedId, setSelectedId] = useState(""),
+    [stepStatuses, setStepStatuses] = useState<Record<number, string>>({}),
+    [stepActuals, setStepActuals] = useState<Record<number, string>>({}),
+    [actual, setActual] = useState(""),
+    [comment, setComment] = useState(""),
+    [saving, setSaving] = useState(false),
+    [reload, setReload] = useState(0);
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
+  useEffect(() => {
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    fetch(`${apiUrl}/test-cycles`, { headers: h })
+      .then((r) => r.json())
+      .then((data: TestCycleItem[]) => {
+        setCycles(data);
+        setCycleId((current) => current || data[0]?.testCycleId || "");
+      });
+  }, [reload]);
+  useEffect(() => {
+    if (!cycleId) {
+      setWorkspace(null);
+      return;
+    }
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    fetch(`${apiUrl}/test-cycles/${cycleId}/execution`, { headers: h })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: ExecutionWorkspace | null) => {
+        setWorkspace(data);
+        setSelectedId((current) =>
+          data?.cases.some((x) => x.testCycleCaseId === current)
+            ? current
+            : (data?.cases[0]?.testCycleCaseId ?? ""),
+        );
+      });
+  }, [cycleId, reload]);
+  const selected = useMemo(
+    () => workspace?.cases.find((x) => x.testCycleCaseId === selectedId),
+    [workspace, selectedId],
+  );
+  useEffect(() => {
+    if (selected) {
+      setStepStatuses(
+        Object.fromEntries(selected.steps.map((x) => [x.stepNo, "NotRun"])),
+      );
+      setStepActuals({});
+      setActual("");
+      setComment("");
+    }
+  }, [selected]);
+  const finalize = async (status: string) => {
+    if (
+      !selected ||
+      !window.confirm(
+        `ยืนยันบันทึกผล ${status} สำหรับ ${selected.testCaseCode}?\nผลที่บันทึกแล้วจะไม่สามารถแก้ไขทับได้`,
+      )
+    )
+      return;
+    setSaving(true);
+    try {
+      const response = await fetch(
+        `${apiUrl}/test-cycle-cases/${selected.testCycleCaseId}/executions`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            status,
+            actualResult: actual || null,
+            comment: comment || null,
+            stepResults: selected.steps.map((x) => ({
+              stepNo: x.stepNo,
+              status: stepStatuses[x.stepNo] ?? "NotRun",
+              actualResult: stepActuals[x.stepNo] || null,
+              comment: null,
+            })),
+          }),
+        },
+      );
+      if (!response.ok) {
+        const problem = await response.json();
+        throw new Error(problem.detail ?? "บันทึกผลไม่สำเร็จ");
+      }
+      setReload((x) => x + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "บันทึกผลไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="execution-page">
+      <div className="execution-toolbar card">
+        <label>
+          Test Cycle
+          <select value={cycleId} onChange={(e) => setCycleId(e.target.value)}>
+            <option value="">เลือก Test Cycle</option>
+            {cycles.map((x) => (
+              <option key={x.testCycleId} value={x.testCycleId}>
+                {x.cycleCode} · {x.cycleName}
+              </option>
+            ))}
+          </select>
+        </label>
+        {workspace && (
+          <div className="execution-context">
+            <span>
+              <small>Build</small>
+              <b>{workspace.buildNumber}</b>
+            </span>
+            <span>
+              <small>Environment</small>
+              <b>{workspace.environmentName}</b>
+            </span>
+            <Badge tone={workspace.status === "Closed" ? "green" : "yellow"}>
+              {workspace.status}
+            </Badge>
+          </div>
+        )}
+      </div>
+      {!workspace ? (
+        <article className="card empty">
+          <h3>เลือก Test Cycle เพื่อเริ่มทดสอบ</h3>
+          <p>
+            สร้าง Cycle และ Populate Test Case จาก Test Suite ก่อนเข้า Execution
+            Workspace
+          </p>
+        </article>
+      ) : !workspace.cases.length ? (
+        <article className="card empty">
+          <h3>Cycle นี้ยังไม่มี Test Case</h3>
+          <p>เลือก Test Suite ตอนสร้าง Cycle เพื่อเพิ่ม Test Case อัตโนมัติ</p>
+        </article>
+      ) : (
+        <div className="execution-layout">
+          <aside className="card case-queue">
+            <div className="card-title">
+              <div>
+                <h3>Test Cases</h3>
+                <p>{workspace.cases.length} รายการ</p>
+              </div>
+            </div>
+            {workspace.cases.map((x) => (
+              <button
+                className={selectedId === x.testCycleCaseId ? "active" : ""}
+                key={x.testCycleCaseId}
+                onClick={() => setSelectedId(x.testCycleCaseId)}
+              >
+                <Badge tone={x.priority === "P0" ? "red" : "blue"}>
+                  {x.priority}
+                </Badge>
+                <span>
+                  <b>{x.testCaseCode}</b>
+                  <small>{x.title}</small>
+                </span>
+                <i className={`status-dot ${x.currentStatus.toLowerCase()}`}>
+                  {x.currentStatus}
+                </i>
+              </button>
+            ))}
+          </aside>
+          {selected && (
+            <main className="card execution-main">
+              <div className="execution-case-head">
+                <div>
+                  <span>{selected.testCaseCode}</span>
+                  <h2>{selected.title}</h2>
+                </div>
+                <Badge
+                  tone={
+                    selected.currentStatus === "Pass"
+                      ? "green"
+                      : selected.currentStatus === "Fail"
+                        ? "red"
+                        : "yellow"
+                  }
+                >
+                  {selected.currentStatus}
+                </Badge>
+              </div>
+              {selected.preconditions && (
+                <div className="precondition">
+                  <b>Preconditions</b>
+                  <p>{selected.preconditions}</p>
+                </div>
+              )}
+              <div className="step-table">
+                <div className="step-row step-head">
+                  <span>#</span>
+                  <span>Action / Test Data</span>
+                  <span>Expected Result</span>
+                  <span>Result</span>
+                </div>
+                {selected.steps.map((x) => (
+                  <div className="step-row" key={x.stepNo}>
+                    <span>{x.stepNo}</span>
+                    <span>
+                      <b>{x.action}</b>
+                      {x.testData && <small>{x.testData}</small>}
+                    </span>
+                    <span>{x.expectedResult}</span>
+                    <span>
+                      <select
+                        value={stepStatuses[x.stepNo] ?? "NotRun"}
+                        onChange={(e) =>
+                          setStepStatuses((s) => ({
+                            ...s,
+                            [x.stepNo]: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>NotRun</option>
+                        <option>Pass</option>
+                        <option>Fail</option>
+                        <option>Blocked</option>
+                        <option>Skipped</option>
+                      </select>
+                      <input
+                        value={stepActuals[x.stepNo] ?? ""}
+                        onChange={(e) =>
+                          setStepActuals((s) => ({
+                            ...s,
+                            [x.stepNo]: e.target.value,
+                          }))
+                        }
+                        placeholder="ผลที่ได้จริง"
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="execution-notes">
+                <label>
+                  Actual Result
+                  <textarea
+                    rows={3}
+                    value={actual}
+                    onChange={(e) => setActual(e.target.value)}
+                    placeholder="สรุปผลที่เกิดขึ้นจริง"
+                  />
+                </label>
+                <label>
+                  Comment
+                  <textarea
+                    rows={3}
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="หมายเหตุเพิ่มเติม"
+                  />
+                </label>
+              </div>
+              <div className="execution-actions">
+                <button
+                  className="result-btn pass"
+                  disabled={saving}
+                  onClick={() => finalize("Pass")}
+                >
+                  ✓ Pass
+                </button>
+                <button
+                  className="result-btn fail"
+                  disabled={saving}
+                  onClick={() => finalize("Fail")}
+                >
+                  × Fail
+                </button>
+                <button
+                  className="result-btn blocked"
+                  disabled={saving}
+                  onClick={() => finalize("Blocked")}
+                >
+                  ! Blocked
+                </button>
+                <button
+                  className="result-btn skip"
+                  disabled={saving}
+                  onClick={() => finalize("Skipped")}
+                >
+                  → Skip
+                </button>
+              </div>
+            </main>
+          )}
+          <aside className="card execution-history">
+            <h3>Execution History</h3>
+            {selected?.history.length ? (
+              selected.history.map((x) => (
+                <div className="history-item" key={x.testExecutionId}>
+                  <div>
+                    <Badge
+                      tone={
+                        x.status === "Pass"
+                          ? "green"
+                          : x.status === "Fail"
+                            ? "red"
+                            : "yellow"
+                      }
+                    >
+                      {x.status}
+                    </Badge>
+                    <small>Run #{x.executionNo}</small>
+                  </div>
+                  <p>{x.actualResult || "-"}</p>
+                  <small>
+                    {x.testerName} ·{" "}
+                    {x.completedAt
+                      ? new Date(x.completedAt).toLocaleString("th-TH")
+                      : "-"}
+                  </small>
+                </div>
+              ))
+            ) : (
+              <p className="muted-text">ยังไม่มีประวัติการทดสอบ</p>
+            )}
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+}
+type TestSuiteItem = {
+  testSuiteId: string;
+  projectId: string;
+  suiteCode: string;
+  suiteName: string;
+  suiteType?: string;
+  description?: string;
+  riskTier?: string;
+  isActive: boolean;
+  cases: {
+    testCaseId: string;
+    testCaseCode: string;
+    title: string;
+    priority: string;
+    sortOrder: number;
+    isRequired: boolean;
+  }[];
+};
+function TestSuitesPage({
+  search,
+  canEdit,
+}: {
+  search: string;
+  canEdit: boolean;
+}) {
+  const [items, setItems] = useState<TestSuiteItem[]>([]),
+    [projects, setProjects] = useState<ProjectItem[]>([]),
+    [testCases, setTestCases] = useState<TestCaseItem[]>([]),
+    [reload, setReload] = useState(0),
+    [form, setForm] = useState(false),
+    [editing, setEditing] = useState<TestSuiteItem | null>(null),
+    [managing, setManaging] = useState<TestSuiteItem | null>(null),
+    [checked, setChecked] = useState<string[]>([]),
+    [saving, setSaving] = useState(false);
+  const [code, setCode] = useState(""),
+    [name, setName] = useState(""),
+    [type, setType] = useState("Regression"),
+    [risk, setRisk] = useState("P1"),
+    [description, setDescription] = useState(""),
+    [projectId, setProjectId] = useState(""),
+    [active, setActive] = useState(true);
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
+  useEffect(() => {
+    const requestHeaders = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    Promise.all([
+      fetch(`${apiUrl}/test-suites`, { headers: requestHeaders }).then((r) =>
+        r.json(),
+      ),
+      fetch(`${apiUrl}/projects`, { headers: requestHeaders }).then((r) =>
+        r.json(),
+      ),
+      fetch(`${apiUrl}/test-cases`, { headers: requestHeaders }).then((r) =>
+        r.json(),
+      ),
+    ]).then(([s, p, t]) => {
+      setItems(s);
+      setProjects(p);
+      setTestCases(t);
+      setProjectId((current) => current || p[0]?.projectId || "");
+    });
+  }, [reload]);
+  const openForm = (suite?: TestSuiteItem) => {
+    setEditing(suite ?? null);
+    setCode(suite?.suiteCode ?? "");
+    setName(suite?.suiteName ?? "");
+    setType(suite?.suiteType ?? "Regression");
+    setRisk(suite?.riskTier ?? "P1");
+    setDescription(suite?.description ?? "");
+    setProjectId(suite?.projectId ?? projects[0]?.projectId ?? "");
+    setActive(suite?.isActive ?? true);
+    setForm(true);
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch(
+        `${apiUrl}/test-suites${editing ? `/${editing.testSuiteId}` : ""}`,
+        {
+          method: editing ? "PUT" : "POST",
+          headers,
+          body: JSON.stringify({
+            projectId,
+            suiteCode: code,
+            suiteName: name,
+            suiteType: type,
+            description: description || null,
+            riskTier: risk,
+            isActive: active,
+          }),
+        },
+      );
+      if (!response.ok) {
+        const problem = await response.json();
+        throw new Error(problem.detail ?? "บันทึกไม่สำเร็จ");
+      }
+      setForm(false);
+      setReload((x) => x + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const addCases = async () => {
+    if (!managing || !checked.length) return;
+    setSaving(true);
+    try {
+      await fetch(`${apiUrl}/test-suites/${managing.testSuiteId}/cases`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ testCaseIds: checked, isRequired: true }),
+      });
+      setChecked([]);
+      setManaging(null);
+      setReload((x) => x + 1);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const removeCase = async (suiteId: string, caseId: string) => {
+    await fetch(`${apiUrl}/test-suites/${suiteId}/cases/${caseId}`, {
+      method: "DELETE",
+      headers,
+    });
+    setManaging(null);
+    setReload((x) => x + 1);
+  };
+  const rows = items.filter((x) =>
+    `${x.suiteCode} ${x.suiteName} ${x.suiteType ?? ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  const available = testCases.filter(
+    (x) =>
+      managing &&
+      !managing.cases.some((c) => c.testCaseId === x.testCaseId) &&
+      x.projectId === managing.projectId,
+  );
+  return (
+    <>
+      <article className="card">
+        <div className="table-tools">
+          <span>{rows.length} Test Suites</span>
+          {canEdit && (
+            <button className="btn primary" onClick={() => openForm()}>
+              + สร้าง Test Suite
+            </button>
+          )}
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Suite Code</th>
+                <th>Suite Name</th>
+                <th>Type</th>
+                <th>Risk Tier</th>
+                <th>Case Count</th>
+                <th>Active</th>
+                {canEdit && <th>จัดการ</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.testSuiteId}>
+                  <td>
+                    <b>{x.suiteCode}</b>
+                  </td>
+                  <td>{x.suiteName}</td>
+                  <td>{x.suiteType ?? "-"}</td>
+                  <td>
+                    <Badge tone={x.riskTier === "P0" ? "red" : "yellow"}>
+                      {x.riskTier ?? "-"}
+                    </Badge>
+                  </td>
+                  <td>{x.cases.length}</td>
+                  <td>
+                    <Badge tone={x.isActive ? "green" : "red"}>
+                      {x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
+                    </Badge>
+                  </td>
+                  {canEdit && (
+                    <td>
+                      <div className="row-actions">
+                        <button
+                          className="table-action"
+                          onClick={() => openForm(x)}
+                        >
+                          แก้ไข
+                        </button>
+                        <button
+                          className="table-action"
+                          onClick={() => {
+                            setManaging(x);
+                            setChecked([]);
+                          }}
+                        >
+                          จัด Test Case
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
+      {form && (
+        <div className="modal" onMouseDown={() => setForm(false)}>
+          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>{editing ? "แก้ไข" : "สร้าง"} Test Suite</h2>
+              <button onClick={() => setForm(false)}>×</button>
+            </div>
+            <div className="form-grid">
+              <label>
+                Project
+                <select
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                >
+                  {projects.map((x) => (
+                    <option key={x.projectId} value={x.projectId}>
+                      {x.projectName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Suite Code
+                <input
+                  disabled={!!editing}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </label>
+              <label className="full">
+                Suite Name
+                <input value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
+              <label>
+                Type
+                <select value={type} onChange={(e) => setType(e.target.value)}>
+                  <option>Smoke</option>
+                  <option>Regression</option>
+                  <option>Critical Regression</option>
+                  <option>UAT</option>
+                </select>
+              </label>
+              <label>
+                Risk Tier
+                <select value={risk} onChange={(e) => setRisk(e.target.value)}>
+                  <option>P0</option>
+                  <option>P1</option>
+                  <option>P2</option>
+                  <option>P3</option>
+                </select>
+              </label>
+              <label className="full">
+                รายละเอียด
+                <textarea
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </label>
+              {editing && (
+                <label className="full check-line">
+                  <input
+                    type="checkbox"
+                    checked={active}
+                    onChange={(e) => setActive(e.target.checked)}
+                  />{" "}
+                  เปิดใช้งาน
+                </label>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setForm(false)}>
+                ยกเลิก
+              </button>
+              <button
+                className="btn primary"
+                disabled={saving || !projectId || !code.trim() || !name.trim()}
+                onClick={save}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {managing && (
+        <div className="modal" onMouseDown={() => setManaging(null)}>
+          <div
+            className="modal-box suite-editor"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <h2>จัด Test Case</h2>
+                <small>
+                  {managing.suiteCode} · {managing.suiteName}
+                </small>
+              </div>
+              <button onClick={() => setManaging(null)}>×</button>
+            </div>
+            <div className="suite-columns">
+              <section>
+                <h3>Test Case ในชุด ({managing.cases.length})</h3>
+                {managing.cases.length ? (
+                  managing.cases.map((x) => (
+                    <div className="suite-case" key={x.testCaseId}>
+                      <span>
+                        <b>{x.testCaseCode}</b>
+                        <small>{x.title}</small>
+                      </span>
+                      <button
+                        onClick={() =>
+                          removeCase(managing.testSuiteId, x.testCaseId)
+                        }
+                      >
+                        นำออก
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted-text">ยังไม่มี Test Case</p>
+                )}
+              </section>
+              <section>
+                <h3>Test Case ที่เพิ่มได้ ({available.length})</h3>
+                {available.map((x) => (
+                  <label className="suite-case selectable" key={x.testCaseId}>
+                    <input
+                      type="checkbox"
+                      checked={checked.includes(x.testCaseId)}
+                      onChange={(e) =>
+                        setChecked((c) =>
+                          e.target.checked
+                            ? [...c, x.testCaseId]
+                            : c.filter((id) => id !== x.testCaseId),
+                        )
+                      }
+                    />
+                    <span>
+                      <b>{x.testCaseCode}</b>
+                      <small>{x.title}</small>
+                    </span>
+                  </label>
+                ))}
+              </section>
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setManaging(null)}>
+                ปิด
+              </button>
+              <button
+                className="btn primary"
+                onClick={addCases}
+                disabled={saving || !checked.length}
+              >
+                เพิ่ม {checked.length} รายการ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+type AdminUser = {
+  userId: string;
+  username: string;
+  displayName: string;
+  email?: string;
+  isActive: boolean;
+  lastLoginAt?: string;
+  roles: string[];
+};
+type AdminRole = {
+  roleId: string;
+  roleCode: string;
+  roleName: string;
+  permissions: string[];
+};
+type AdminPermission = {
+  permissionId: string;
+  permissionCode: string;
+  moduleArea?: string;
+};
+function AdministrationPage({ refresh }: { refresh: number }) {
+  const [users, setUsers] = useState<AdminUser[]>([]),
+    [roles, setRoles] = useState<AdminRole[]>([]),
+    [permissions, setPermissions] = useState<AdminPermission[]>([]),
+    [roleId, setRoleId] = useState(""),
+    [selected, setSelected] = useState<string[]>([]),
+    [saving, setSaving] = useState(false),
+    [version, setVersion] = useState(0);
+  const [editing, setEditing] = useState<AdminUser | null>(null),
+    [displayName, setDisplayName] = useState(""),
+    [email, setEmail] = useState(""),
+    [active, setActive] = useState(true),
+    [userRoleIds, setUserRoleIds] = useState<string[]>([]),
+    [passwordUser, setPasswordUser] = useState<AdminUser | null>(null),
+    [newPassword, setNewPassword] = useState("");
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
+  useEffect(() => {
+    const requestHeaders = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    Promise.all([
+      fetch(`${apiUrl}/admin/users`, { headers: requestHeaders }).then((r) =>
+        r.json(),
+      ),
+      fetch(`${apiUrl}/admin/roles`, { headers: requestHeaders }).then((r) =>
+        r.json(),
+      ),
+      fetch(`${apiUrl}/admin/permissions`, { headers: requestHeaders }).then(
+        (r) => r.json(),
+      ),
+    ]).then(([u, r, p]) => {
+      setUsers(u);
+      setRoles(r);
+      setPermissions(p);
+      if (r.length) {
+        setRoleId(r[0].roleId);
+        setSelected(
+          p
+            .filter((x: AdminPermission) =>
+              r[0].permissions.includes(x.permissionCode),
+            )
+            .map((x: AdminPermission) => x.permissionId),
+        );
+      }
+    });
+  }, [refresh, version]);
+  const changeRole = (id: string) => {
+    setRoleId(id);
+    const role = roles.find((x) => x.roleId === id);
+    setSelected(
+      permissions
+        .filter((x) => role?.permissions.includes(x.permissionCode))
+        .map((x) => x.permissionId),
+    );
+  };
+  const togglePermission = (id: string, checked: boolean) =>
+    setSelected((current) =>
+      checked ? [...current, id] : current.filter((value) => value !== id),
+    );
+  const savePermissions = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch(
+        `${apiUrl}/admin/roles/${roleId}/permissions`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ permissionIds: selected }),
+        },
+      );
+      if (!response.ok) throw new Error();
+      window.alert("บันทึกสิทธิ์เรียบร้อยแล้ว");
+    } catch {
+      window.alert("ไม่สามารถบันทึกสิทธิ์ได้ กรุณาลองใหม่");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const openEdit = (user: AdminUser) => {
+    setEditing(user);
+    setDisplayName(user.displayName);
+    setEmail(user.email ?? "");
+    setActive(user.isActive);
+    setUserRoleIds(
+      roles
+        .filter((role) => user.roles.includes(role.roleCode))
+        .map((role) => role.roleId),
+    );
+  };
+  const saveUser = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const update = await fetch(`${apiUrl}/admin/users/${editing.userId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          displayName,
+          email: email || null,
+          isActive: active,
+        }),
+      });
+      if (!update.ok) throw new Error();
+      const assign = await fetch(
+        `${apiUrl}/admin/users/${editing.userId}/roles`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ roleIds: userRoleIds }),
+        },
+      );
+      if (!assign.ok) throw new Error();
+      setEditing(null);
+      setVersion((x) => x + 1);
+    } catch {
+      window.alert("ไม่สามารถบันทึกข้อมูลผู้ใช้ได้");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const toggleActive = async (user: AdminUser) => {
+    setSaving(true);
+    try {
+      const response = await fetch(`${apiUrl}/admin/users/${user.userId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          displayName: user.displayName,
+          email: user.email ?? null,
+          isActive: !user.isActive,
+        }),
+      });
+      if (!response.ok) throw new Error();
+      setVersion((x) => x + 1);
+    } catch {
+      window.alert("ไม่สามารถเปลี่ยนสถานะผู้ใช้ได้");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const resetPassword = async () => {
+    if (!passwordUser || newPassword.length < 8) return;
+    setSaving(true);
+    try {
+      const response = await fetch(
+        `${apiUrl}/admin/users/${passwordUser.userId}/reset-password`,
+        { method: "POST", headers, body: JSON.stringify({ newPassword }) },
+      );
+      if (!response.ok) throw new Error();
+      setPasswordUser(null);
+      setNewPassword("");
+      window.alert("รีเซ็ตรหัสผ่านเรียบร้อยแล้ว");
+    } catch {
+      window.alert("ไม่สามารถรีเซ็ตรหัสผ่านได้");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const grouped = permissions.reduce<Record<string, AdminPermission[]>>(
+    (result, item) => {
+      const key = item.moduleArea || "OTHER";
+      (result[key] ??= []).push(item);
+      return result;
+    },
+    {},
+  );
+  return (
+    <div className="admin-layout">
+      <article className="card user-admin-panel">
+        <div className="card-title">
+          <div>
+            <h3>ดำเนินการกับผู้ใช้</h3>
+            <p>เลือกบัญชีเพื่อแก้ไขบทบาท สถานะ หรือรีเซ็ตรหัสผ่าน</p>
+          </div>
+        </div>
+        <div className="user-action-bar">
+          <select
+            aria-label="เลือกผู้ใช้"
+            value={editing?.userId ?? ""}
+            onChange={(e) => {
+              const target = users.find((x) => x.userId === e.target.value);
+              if (target) openEdit(target);
+              else setEditing(null);
+            }}
+          >
+            <option value="">เลือกบัญชีผู้ใช้...</option>
+            {users.map((x) => (
+              <option key={x.userId} value={x.userId}>
+                {x.displayName} ({x.username})
+              </option>
+            ))}
+          </select>
+          {editing && (
+            <>
+              <button
+                className="btn"
+                onClick={() => toggleActive(editing)}
+                disabled={saving}
+              >
+                {editing.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  setPasswordUser(editing);
+                  setNewPassword("");
+                }}
+              >
+                รีเซ็ตรหัสผ่าน
+              </button>
+            </>
+          )}
+        </div>
+        {editing && (
+          <div className="user-edit-form">
+            <label>
+              ชื่อที่แสดง
+              <input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </label>
+            <label>
+              อีเมล
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </label>
+            <fieldset>
+              <legend>บทบาทของผู้ใช้</legend>
+              <div className="role-checks">
+                {roles.map((role) => (
+                  <label
+                    key={role.roleId}
+                    className={
+                      userRoleIds.includes(role.roleId) ? "selected" : ""
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={userRoleIds.includes(role.roleId)}
+                      onChange={(e) =>
+                        setUserRoleIds((current) =>
+                          e.target.checked
+                            ? [...current, role.roleId]
+                            : current.filter((id) => id !== role.roleId),
+                        )
+                      }
+                    />
+                    <span>
+                      <b>{role.roleName}</b>
+                      <small>{role.roleCode}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="inline-actions">
+              <label className="active-switch">
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={(e) => setActive(e.target.checked)}
+                />{" "}
+                อนุญาตให้เข้าสู่ระบบ
+              </label>
+              <button
+                className="btn primary"
+                onClick={saveUser}
+                disabled={saving || !displayName.trim()}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึกข้อมูลผู้ใช้"}
+              </button>
+            </div>
+          </div>
+        )}
+        {passwordUser && (
+          <div className="password-panel">
+            <div>
+              <b>ตั้งรหัสผ่านใหม่สำหรับ {passwordUser.username}</b>
+              <small>รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร</small>
+            </div>
+            <input
+              type="password"
+              autoFocus
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="รหัสผ่านใหม่"
+            />
+            <button
+              className="btn primary"
+              onClick={resetPassword}
+              disabled={saving || newPassword.length < 8}
+            >
+              ยืนยัน
+            </button>
+            <button className="btn" onClick={() => setPasswordUser(null)}>
+              ยกเลิก
+            </button>
+          </div>
+        )}
+      </article>
+      <article className="card admin-users">
+        <div className="card-title">
+          <div>
+            <h3>จัดการผู้ใช้งาน</h3>
+            <p>บัญชีผู้ใช้และบทบาทที่ได้รับมอบหมาย</p>
+          </div>
+          <span className="count-pill">{users.length} ผู้ใช้</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ผู้ใช้งาน</th>
+                <th>ชื่อที่แสดง</th>
+                <th>บทบาท</th>
+                <th>สถานะ</th>
+                <th>เข้าสู่ระบบล่าสุด</th>
+                <th>จัดการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((x) => (
+                <tr key={x.userId}>
+                  <td>
+                    <div className="user-cell">
+                      <span className="user-avatar">
+                        {x.displayName.slice(0, 1).toUpperCase()}
+                      </span>
+                      <b>{x.username}</b>
+                    </div>
+                  </td>
+                  <td>{x.displayName}</td>
+                  <td>
+                    <div className="role-tags">
+                      {x.roles.length
+                        ? x.roles.map((role) => <span key={role}>{role}</span>)
+                        : "-"}
+                    </div>
+                  </td>
+                  <td>
+                    <Badge tone={x.isActive ? "green" : "red"}>
+                      {x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
+                    </Badge>
+                  </td>
+                  <td>
+                    {x.lastLoginAt
+                      ? new Date(x.lastLoginAt).toLocaleString("th-TH")
+                      : "-"}
+                  </td>
+                  <td>
+                    <button
+                      className="table-action"
+                      onClick={() => openEdit(x)}
+                    >
+                      แก้ไข
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </article>
+      <article className="card permission-card">
+        <div className="card-title">
+          <div>
+            <h3>สิทธิ์ตามบทบาท</h3>
+            <p>กำหนดเมนูและการดำเนินการที่แต่ละบทบาทเข้าถึงได้</p>
+          </div>
+          <span className="count-pill blue-pill">
+            {selected.length}/{permissions.length}
+          </span>
+        </div>
+        <label className="role-selector">
+          <span>บทบาท</span>
+          <select value={roleId} onChange={(e) => changeRole(e.target.value)}>
+            {roles.map((x) => (
+              <option value={x.roleId} key={x.roleId}>
+                {x.roleName} ({x.roleCode})
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="permission-toolbar">
+          <span>สิทธิ์ที่อนุญาต</span>
+          <div>
+            <button
+              type="button"
+              onClick={() =>
+                setSelected(permissions.map((x) => x.permissionId))
+              }
+            >
+              เลือกทั้งหมด
+            </button>
+            <button type="button" onClick={() => setSelected([])}>
+              ล้างทั้งหมด
+            </button>
+          </div>
+        </div>
+        <div className="permission-groups">
+          {Object.entries(grouped).map(([area, items]) => (
+            <section key={area}>
+              <h4>{area.replaceAll("_", " ")}</h4>
+              <div className="permission-grid">
+                {items.map((x) => (
+                  <label
+                    className={
+                      selected.includes(x.permissionId) ? "selected" : ""
+                    }
+                    key={x.permissionId}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(x.permissionId)}
+                      onChange={(e) =>
+                        togglePermission(x.permissionId, e.target.checked)
+                      }
+                    />
+                    <span>
+                      <b>{x.permissionCode.split(".").at(-1)}</b>
+                      <small>{x.permissionCode}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+        <div className="permission-actions">
+          <small>เลือกแล้ว {selected.length} สิทธิ์</small>
+          <button
+            className="btn primary"
+            onClick={savePermissions}
+            disabled={!roleId || saving}
+          >
+            {saving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
+          </button>
+        </div>
+      </article>
+    </div>
+  );
 }
 
 function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
-  const [username,setUsername]=useState(''), [password,setPassword]=useState(''), [error,setError]=useState(''), [loading,setLoading]=useState(false)
-  const submit=async(e:React.FormEvent)=>{e.preventDefault();setError('');setLoading(true);try{const response=await fetch(`${apiUrl}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});if(!response.ok)throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');const data=await response.json();localStorage.setItem('qa.accessToken',data.accessToken);localStorage.setItem('qa.user',JSON.stringify(data.user));onLogin(data.user)}catch(ex){setError(ex instanceof Error?ex.message:'ไม่สามารถเชื่อมต่อระบบได้')}finally{setLoading(false)}}
-  return <div className="login-page"><div className="login-visual"><div><div className="login-logo">QA</div><h1>ProMaxx2 QA Hub</h1><p>บริหาร Requirement, Test Execution, Defect และ Release Readiness ในที่เดียว</p></div><small>Quality Assurance Management System</small></div><form className="login-card" onSubmit={submit}><div className="mobile-brand"><div className="login-logo">QA</div><b>ProMaxx2 QA Hub</b></div><span className="eyebrow">WELCOME BACK</span><h2>เข้าสู่ระบบ</h2><p>กรอกบัญชีผู้ใช้งานเพื่อเข้าสู่ QA Workspace</p>{error&&<div className="login-error">{error}</div>}<label>ชื่อผู้ใช้<input autoFocus autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required placeholder="Username"/></label><label>รหัสผ่าน<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required placeholder="Password"/></label><label className="remember"><input type="checkbox"/> จดจำการเข้าสู่ระบบ</label><button className="btn primary login-button" disabled={loading}>{loading?'กำลังเข้าสู่ระบบ...':'เข้าสู่ระบบ'}</button><small>หากไม่สามารถเข้าสู่ระบบได้ กรุณาติดต่อ System Administrator</small></form></div>
+  const [username, setUsername] = useState(""),
+    [password, setPassword] = useState(""),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!response.ok) throw new Error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+      const data = await response.json();
+      localStorage.setItem("qa.accessToken", data.accessToken);
+      localStorage.setItem("qa.user", JSON.stringify(data.user));
+      onLogin(data.user);
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "ไม่สามารถเชื่อมต่อระบบได้");
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <div className="login-page">
+      <div className="login-visual">
+        <div>
+          <div className="login-logo">QA</div>
+          <h1>ProMaxx2 QA Hub</h1>
+          <p>
+            บริหาร Requirement, Test Execution, Defect และ Release Readiness
+            ในที่เดียว
+          </p>
+        </div>
+        <small>Quality Assurance Management System</small>
+      </div>
+      <form className="login-card" onSubmit={submit}>
+        <div className="mobile-brand">
+          <div className="login-logo">QA</div>
+          <b>ProMaxx2 QA Hub</b>
+        </div>
+        <span className="eyebrow">WELCOME BACK</span>
+        <h2>เข้าสู่ระบบ</h2>
+        <p>กรอกบัญชีผู้ใช้งานเพื่อเข้าสู่ QA Workspace</p>
+        {error && <div className="login-error">{error}</div>}
+        <label>
+          ชื่อผู้ใช้
+          <input
+            autoFocus
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            placeholder="Username"
+          />
+        </label>
+        <label>
+          รหัสผ่าน
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="Password"
+          />
+        </label>
+        <label className="remember">
+          <input type="checkbox" /> จดจำการเข้าสู่ระบบ
+        </label>
+        <button className="btn primary login-button" disabled={loading}>
+          {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
+        </button>
+        <small>
+          หากไม่สามารถเข้าสู่ระบบได้ กรุณาติดต่อ System Administrator
+        </small>
+      </form>
+    </div>
+  );
 }
 
 function App() {
-  const [page, setPage] = useState<Page>('dashboard'), [menu, setMenu] = useState(false), [search, setSearch] = useState(''), [modal, setModal] = useState(false)
-  const [user,setUser]=useState<SessionUser|null>(()=>{try{const value=localStorage.getItem('qa.user');return value?JSON.parse(value):null}catch{return null}})
-  const [code,setCode]=useState(''),[name,setName]=useState(''),[details,setDetails]=useState(''),[refresh,setRefresh]=useState(0),[saving,setSaving]=useState(false)
-  const description = useMemo(() => page === 'dashboard' ? 'สถานะคุณภาพและความพร้อม Release แบบรวมศูนย์' : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`, [page])
-  const go = (id: Page) => { setPage(id); setMenu(false); window.history.replaceState(null,'',`#/${id}`) }
-  const logout=()=>{localStorage.removeItem('qa.accessToken');localStorage.removeItem('qa.user');setUser(null)}
-  const save=async()=>{if(!['projects','releases','requirements','test-cases','users'].includes(page)){setModal(false);return}setSaving(true);try{const headers={'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('qa.accessToken')}`};let url=`${apiUrl}/projects`,body:object={projectCode:code,projectName:name,description:details||null,ownerUserId:null};if(page==='users'){url=`${apiUrl}/admin/users`;body={username:code,displayName:name,email:null,password:details,roleIds:null}}else if(page!=='projects'){const projects:ProjectItem[]=await fetch(`${apiUrl}/projects`,{headers}).then(r=>r.json());if(!projects.length)throw new Error('กรุณาสร้าง Project ก่อน');if(page==='releases'){url=`${apiUrl}/projects/${projects[0].projectId}/releases`;body={releaseCode:code,version:name,releaseType:'Major',plannedReleaseDate:null,scope:details||null,releaseOwnerUserId:user?.userId??null}}else{const modules=await fetch(`${apiUrl}/projects/${projects[0].projectId}/modules`,{headers}).then(r=>r.json());if(!modules.length)throw new Error('กรุณาสร้าง Module ก่อน');if(page==='requirements'){const releases=await fetch(`${apiUrl}/projects/${projects[0].projectId}/releases`,{headers}).then(r=>r.json());url=`${apiUrl}/requirements`;body={projectId:projects[0].projectId,releaseId:releases[0]?.releaseId??null,moduleId:modules[0].moduleId,requirementCode:code,title:name,description:details||null,acceptanceCriteria:null,priority:'P1',riskLevel:'High',source:'Manual',ownerUserId:user?.userId??null,isInScope:true}}else{url=`${apiUrl}/test-cases`;body={projectId:projects[0].projectId,moduleId:modules[0].moduleId,testCaseCode:code,title:name,objective:details||null,preconditions:null,priority:'P1',testType:'Functional',automationCandidate:false,ownerUserId:user?.userId??null,steps:[{stepNo:1,action:'ดำเนินการตามกรณีทดสอบ',testData:null,expectedResult:'ผลลัพธ์ถูกต้องตามข้อกำหนด'}]}}}}const response=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});if(!response.ok){const problem=await response.json();throw new Error(problem.detail??'บันทึกข้อมูลไม่สำเร็จ')}setModal(false);setCode('');setName('');setDetails('');setRefresh(x=>x+1)}catch(e){window.alert(e instanceof Error?e.message:'บันทึกไม่สำเร็จ')}finally{setSaving(false)}}
-  if(!user)return <Login onLogin={setUser}/>
-  const can=(permission:string)=>user.roles.includes('SYS_ADMIN')||user.permissions.includes(permission)
-  const canCreate=editPermission[page]!==undefined&&can(editPermission[page]!)
-  return <div className="app">
-    <aside className={menu?'sidebar open':'sidebar'}><div className="brand"><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Quality Assurance Management</small></div></div>{nav.map(g=>{const items=g.items.filter(i=>can(viewPermission[i.id]));return items.length?<div className="nav-group" key={g.label}><p>{g.label}</p>{items.map(i=><button key={i.id} className={page===i.id?'active':''} onClick={()=>go(i.id)}><i>{i.icon}</i>{i.label}</button>)}</div>:null})}</aside>
-    <main><header className="topbar"><button className="menu-btn" onClick={()=>setMenu(v=>!v)}>☰</button><div className="context"><select><option>ProMaxx2</option></select><select><option>Release 2026.08</option><option>Release 2026.09</option></select><select><option>Build 10.0.228 RC2</option></select></div><div className="profile"><Badge tone="yellow">2 Blockers</Badge><span className="bell">●</span><div className="avatar">{user.displayName.slice(0,2).toUpperCase()}</div><div><b>{user.displayName}</b><button className="logout" onClick={logout}>ออกจากระบบ</button></div></div></header>
-      <div className="content"><div className="page-head"><div><h1>{pageNames[page]}</h1><p>{description}</p></div><div className="actions"><label className="search">⌕<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ค้นหา..."/></label>{can('REPORT.EXPORT')&&<button className="btn">Export</button>}{canCreate&&<button className="btn primary" onClick={()=>setModal(true)}>+ สร้างรายการ</button>}</div></div>{page==='dashboard'?<Dashboard/>:page==='projects'?<ProjectsPage search={search} refresh={refresh}/>:page==='releases'?<ReleasesPage search={search} refresh={refresh}/>:page==='requirements'?<RequirementsPage search={search} refresh={refresh}/>:page==='test-cases'?<TestCasesPage search={search} refresh={refresh}/>:page==='rtm'?<RtmPage refresh={refresh}/>:page==='users'?<AdministrationPage refresh={refresh}/>:<DataPage page={page} search={search}/>}</div>
-    </main>
-    {modal&&<div className="modal" onMouseDown={()=>setModal(false)}><div className="modal-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>สร้าง {pageNames[page]}</h2><button onClick={()=>setModal(false)}>×</button></div><div className="form-grid"><label>{page==='users'?'Username':'รหัส'}<input value={code} onChange={e=>setCode(e.target.value)} placeholder={page==='users'?'Username':'ระบุรหัส'} required/></label><label>{page==='users'?'ชื่อที่แสดง':'ชื่อรายการ'}<input value={name} onChange={e=>setName(e.target.value)} placeholder="ระบุชื่อ" required/></label><label className="full">{page==='users'?'รหัสผ่านเริ่มต้น':'รายละเอียด'}{page==='users'?<input type="password" value={details} onChange={e=>setDetails(e.target.value)} minLength={8}/>:<textarea value={details} onChange={e=>setDetails(e.target.value)} rows={4}/>}</label></div><div className="modal-actions"><button className="btn" onClick={()=>setModal(false)}>ยกเลิก</button><button className="btn primary" disabled={saving||!code.trim()||!name.trim()||(page==='users'&&details.length<8)} onClick={save}>{saving?'กำลังบันทึก...':'บันทึก'}</button></div></div></div>}
-  </div>
+  const [page, setPage] = useState<Page>("dashboard"),
+    [menu, setMenu] = useState(false),
+    [search, setSearch] = useState(""),
+    [modal, setModal] = useState(false);
+  const [user, setUser] = useState<SessionUser | null>(() => {
+    try {
+      const value = localStorage.getItem("qa.user");
+      return value ? JSON.parse(value) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [code, setCode] = useState(""),
+    [name, setName] = useState(""),
+    [details, setDetails] = useState(""),
+    [refresh, setRefresh] = useState(0),
+    [saving, setSaving] = useState(false);
+  const description = useMemo(
+    () =>
+      page === "dashboard"
+        ? "สถานะคุณภาพและความพร้อม Release แบบรวมศูนย์"
+        : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
+    [page],
+  );
+  const go = (id: Page) => {
+    setPage(id);
+    setMenu(false);
+    window.history.replaceState(null, "", `#/${id}`);
+  };
+  const logout = () => {
+    localStorage.removeItem("qa.accessToken");
+    localStorage.removeItem("qa.user");
+    setUser(null);
+  };
+  const save = async () => {
+    if (
+      !["projects", "releases", "requirements", "test-cases", "users"].includes(
+        page,
+      )
+    ) {
+      setModal(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+      };
+      let url = `${apiUrl}/projects`,
+        body: object = {
+          projectCode: code,
+          projectName: name,
+          description: details || null,
+          ownerUserId: null,
+        };
+      if (page === "users") {
+        url = `${apiUrl}/admin/users`;
+        body = {
+          username: code,
+          displayName: name,
+          email: null,
+          password: details,
+          roleIds: null,
+        };
+      } else if (page !== "projects") {
+        const projects: ProjectItem[] = await fetch(`${apiUrl}/projects`, {
+          headers,
+        }).then((r) => r.json());
+        if (!projects.length) throw new Error("กรุณาสร้าง Project ก่อน");
+        if (page === "releases") {
+          url = `${apiUrl}/projects/${projects[0].projectId}/releases`;
+          body = {
+            releaseCode: code,
+            version: name,
+            releaseType: "Major",
+            plannedReleaseDate: null,
+            scope: details || null,
+            releaseOwnerUserId: user?.userId ?? null,
+          };
+        } else {
+          const modules = await fetch(
+            `${apiUrl}/projects/${projects[0].projectId}/modules`,
+            { headers },
+          ).then((r) => r.json());
+          if (!modules.length) throw new Error("กรุณาสร้าง Module ก่อน");
+          if (page === "requirements") {
+            const releases = await fetch(
+              `${apiUrl}/projects/${projects[0].projectId}/releases`,
+              { headers },
+            ).then((r) => r.json());
+            url = `${apiUrl}/requirements`;
+            body = {
+              projectId: projects[0].projectId,
+              releaseId: releases[0]?.releaseId ?? null,
+              moduleId: modules[0].moduleId,
+              requirementCode: code,
+              title: name,
+              description: details || null,
+              acceptanceCriteria: null,
+              priority: "P1",
+              riskLevel: "High",
+              source: "Manual",
+              ownerUserId: user?.userId ?? null,
+              isInScope: true,
+            };
+          } else {
+            url = `${apiUrl}/test-cases`;
+            body = {
+              projectId: projects[0].projectId,
+              moduleId: modules[0].moduleId,
+              testCaseCode: code,
+              title: name,
+              objective: details || null,
+              preconditions: null,
+              priority: "P1",
+              testType: "Functional",
+              automationCandidate: false,
+              ownerUserId: user?.userId ?? null,
+              steps: [
+                {
+                  stepNo: 1,
+                  action: "ดำเนินการตามกรณีทดสอบ",
+                  testData: null,
+                  expectedResult: "ผลลัพธ์ถูกต้องตามข้อกำหนด",
+                },
+              ],
+            };
+          }
+        }
+      }
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const problem = await response.json();
+        throw new Error(problem.detail ?? "บันทึกข้อมูลไม่สำเร็จ");
+      }
+      setModal(false);
+      setCode("");
+      setName("");
+      setDetails("");
+      setRefresh((x) => x + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+  if (!user) return <Login onLogin={setUser} />;
+  const can = (permission: string) =>
+    user.roles.includes("SYS_ADMIN") || user.permissions.includes(permission);
+  const canCreate =
+    editPermission[page] !== undefined && can(editPermission[page]!);
+  return (
+    <div className="app">
+      <aside className={menu ? "sidebar open" : "sidebar"}>
+        <div className="brand">
+          <div className="logo">QA</div>
+          <div>
+            <b>ProMaxx2 QA Hub</b>
+            <small>Quality Assurance Management</small>
+          </div>
+        </div>
+        {nav.map((g) => {
+          const items = g.items.filter((i) => can(viewPermission[i.id]));
+          return items.length ? (
+            <div className="nav-group" key={g.label}>
+              <p>{g.label}</p>
+              {items.map((i) => (
+                <button
+                  key={i.id}
+                  className={page === i.id ? "active" : ""}
+                  onClick={() => go(i.id)}
+                >
+                  <i>{i.icon}</i>
+                  {i.label}
+                </button>
+              ))}
+            </div>
+          ) : null;
+        })}
+      </aside>
+      <main>
+        <header className="topbar">
+          <button className="menu-btn" onClick={() => setMenu((v) => !v)}>
+            ☰
+          </button>
+          <div className="context">
+            <select>
+              <option>ProMaxx2</option>
+            </select>
+            <select>
+              <option>Release 2026.08</option>
+              <option>Release 2026.09</option>
+            </select>
+            <select>
+              <option>Build 10.0.228 RC2</option>
+            </select>
+          </div>
+          <div className="profile">
+            <Badge tone="yellow">2 Blockers</Badge>
+            <span className="bell">●</span>
+            <div className="avatar">
+              {user.displayName.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <b>{user.displayName}</b>
+              <button className="logout" onClick={logout}>
+                ออกจากระบบ
+              </button>
+            </div>
+          </div>
+        </header>
+        <div className="content">
+          <div className="page-head">
+            <div>
+              <h1>{pageNames[page]}</h1>
+              <p>{description}</p>
+            </div>
+            <div className="actions">
+              <label className="search">
+                ⌕
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="ค้นหา..."
+                />
+              </label>
+              {can("REPORT.EXPORT") && <button className="btn">Export</button>}
+              {canCreate && (
+                <button className="btn primary" onClick={() => setModal(true)}>
+                  + สร้างรายการ
+                </button>
+              )}
+            </div>
+          </div>
+          {page === "dashboard" ? (
+            <Dashboard />
+          ) : page === "projects" ? (
+            <ProjectsPage search={search} refresh={refresh} />
+          ) : page === "releases" ? (
+            <ReleasesPage search={search} refresh={refresh} />
+          ) : page === "requirements" ? (
+            <RequirementsPage search={search} refresh={refresh} />
+          ) : page === "test-cases" ? (
+            <TestCasesPage search={search} refresh={refresh} />
+          ) : page === "rtm" ? (
+            <RtmPage refresh={refresh} />
+          ) : page === "users" ? (
+            <AdministrationPage refresh={refresh} />
+          ) : (
+            <DataPage page={page} search={search} />
+          )}
+        </div>
+      </main>
+      {modal && (
+        <div className="modal" onMouseDown={() => setModal(false)}>
+          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>สร้าง {pageNames[page]}</h2>
+              <button onClick={() => setModal(false)}>×</button>
+            </div>
+            <div className="form-grid">
+              <label>
+                {page === "users" ? "Username" : "รหัส"}
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder={page === "users" ? "Username" : "ระบุรหัส"}
+                  required
+                />
+              </label>
+              <label>
+                {page === "users" ? "ชื่อที่แสดง" : "ชื่อรายการ"}
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="ระบุชื่อ"
+                  required
+                />
+              </label>
+              <label className="full">
+                {page === "users" ? "รหัสผ่านเริ่มต้น" : "รายละเอียด"}
+                {page === "users" ? (
+                  <input
+                    type="password"
+                    value={details}
+                    onChange={(e) => setDetails(e.target.value)}
+                    minLength={8}
+                  />
+                ) : (
+                  <textarea
+                    value={details}
+                    onChange={(e) => setDetails(e.target.value)}
+                    rows={4}
+                  />
+                )}
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setModal(false)}>
+                ยกเลิก
+              </button>
+              <button
+                className="btn primary"
+                disabled={
+                  saving ||
+                  !code.trim() ||
+                  !name.trim() ||
+                  (page === "users" && details.length < 8)
+                }
+                onClick={save}
+              >
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
-export default App
+export default App;
