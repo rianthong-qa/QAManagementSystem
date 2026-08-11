@@ -309,9 +309,9 @@ function Dashboard() {
   );
 }
 
-function DataPage({ page, search }: { page: Page; search: string }) {
+function DataPage({ page, search, canAssignExecution = false }: { page: Page; search: string; canAssignExecution?: boolean }) {
   if (page === "execution") return <ExecutionWorkspacePage />;
-  if (page === "test-cycles") return <TestCyclesPage search={search} />;
+  if (page === "test-cycles") return <TestCyclesPage search={search} canEdit={canAssignExecution} />;
   if (page === "test-suites") {
     let canEdit = false;
     try {
@@ -2505,7 +2505,7 @@ type TestCycleItem = {
   executedCount: number;
   progressPercent: number;
 };
-function TestCyclesPage({ search }: { search: string }) {
+function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean }) {
   const [items, setItems] = useState<TestCycleItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
     [releases, setReleases] = useState<CycleRelease[]>([]),
@@ -2699,6 +2699,18 @@ function TestCyclesPage({ search }: { search: string }) {
     });
     setReload((x) => x + 1);
   };
+  const remove = async (cycle: TestCycleItem) => {
+    if (!window.confirm(`ยืนยันลบ ${cycle.cycleCode}?`)) return;
+    const response = await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}`, {
+      method: "DELETE",
+      headers,
+    });
+    if (!response.ok) {
+      window.alert("ลบ Test Cycle ไม่สำเร็จ");
+      return;
+    }
+    setReload((x) => x + 1);
+  };
   const rows = items.filter((x) =>
     `${x.cycleCode} ${x.cycleName} ${x.releaseCode} ${x.buildNumber}`
       .toLowerCase()
@@ -2709,9 +2721,11 @@ function TestCyclesPage({ search }: { search: string }) {
       <article className="card">
         <div className="table-tools">
           <span>{rows.length} Test Cycles</span>
-          <button className="btn primary" onClick={() => openForm()}>
-            + สร้าง Test Cycle
-          </button>
+          {canEdit && (
+            <button className="btn primary" onClick={() => openForm()}>
+              + สร้าง Test Cycle
+            </button>
+          )}
         </div>
         <div className="table-wrap">
           <table>
@@ -2724,15 +2738,15 @@ function TestCyclesPage({ search }: { search: string }) {
                 <th>Type</th>
                 <th>Progress</th>
                 <th>Status</th>
-                <th>จัดการ</th>
+                {canEdit && <th>จัดการ</th>}
               </tr>
             </thead>
             <tbody>
               {rows.map((x) => (
                 <tr key={x.testCycleId}>
-                  <td>
+                  {canEdit && <td>
                     <b>{x.cycleCode}</b>
-                  </td>
+                  </td>}
                   <td>{x.cycleName}</td>
                   <td>
                     {x.releaseCode}
@@ -2787,6 +2801,12 @@ function TestCyclesPage({ search }: { search: string }) {
                           ปิด Cycle
                         </button>
                       )}
+                      <button
+                        className="table-action danger-action"
+                        onClick={() => remove(x)}
+                      >
+                        ลบ
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -4521,11 +4541,24 @@ function App() {
               isInScope: true,
             };
           } else {
+            const [existingCases] = await Promise.all([
+              fetch(`${apiUrl}/test-cases?projectId=${projects[0].projectId}`, {
+                headers,
+              }).then((r) => r.json()),
+            ]);
+            const generatedCode = nextBusinessCode(
+              contextualCode(
+                projects[0].projectCode,
+                modules[0].moduleCode,
+                "TC",
+              ),
+              existingCases.map((testCase: TestCaseItem) => testCase.testCaseCode),
+            );
             url = `${apiUrl}/test-cases`;
             body = {
               projectId: projects[0].projectId,
               moduleId: modules[0].moduleId,
-              testCaseCode: code,
+              testCaseCode: code.trim() ? code.trim() : generatedCode,
               title: name,
               objective: details || null,
               preconditions: null,
@@ -4703,7 +4736,7 @@ function App() {
           ) : page === "users" ? (
             <AdministrationPage refresh={refresh} />
           ) : (
-            <DataPage page={page} search={search} />
+            <DataPage page={page} search={search} canAssignExecution={can("EXECUTION.ASSIGN")} />
           )}
         </div>
       </main>
