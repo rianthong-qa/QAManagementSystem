@@ -1681,10 +1681,15 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
 }
 type RequirementItem = {
   requirementId: string;
+  projectId: string;
   requirementCode: string;
   title: string;
+  description?: string;
+  acceptanceCriteria?: string;
   priority: string;
   riskLevel?: string;
+  source?: string;
+  ownerUserId?: string;
   status: string;
   revisionNo: number;
   isInScope: boolean;
@@ -1694,13 +1699,34 @@ type RequirementItem = {
 function RequirementsPage({
   search,
   refresh,
+  canEdit,
 }: {
   search: string;
   refresh: number;
+  canEdit: boolean;
 }) {
   const [items, setItems] = useState<RequirementItem[]>([]),
     [error, setError] = useState(""),
-    [loading, setLoading] = useState(true);
+    [loading, setLoading] = useState(true),
+    [reload, setReload] = useState(0),
+    [editing, setEditing] = useState<RequirementItem | null>(null),
+    [modules, setModules] = useState<ModuleItem[]>([]),
+    [releases, setReleases] = useState<ReleaseItem[]>([]),
+    [moduleId, setModuleId] = useState(""),
+    [releaseId, setReleaseId] = useState(""),
+    [title, setTitle] = useState(""),
+    [description, setDescription] = useState(""),
+    [criteria, setCriteria] = useState(""),
+    [priority, setPriority] = useState("P2"),
+    [risk, setRisk] = useState("Medium"),
+    [source, setSource] = useState(""),
+    [status, setStatus] = useState("Draft"),
+    [inScope, setInScope] = useState(true),
+    [saving, setSaving] = useState(false);
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
   useEffect(() => {
     fetch(`${apiUrl}/requirements`, {
       headers: {
@@ -1714,7 +1740,52 @@ function RequirementsPage({
       .then(setItems)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [refresh]);
+  }, [refresh, reload]);
+  const openEdit = async (item: RequirementItem) => {
+    const [moduleData, releaseData] = await Promise.all([
+      fetch(`${apiUrl}/projects/${item.projectId}/modules`, { headers }).then((r) => r.json()),
+      fetch(`${apiUrl}/projects/${item.projectId}/releases`, { headers }).then((r) => r.json()),
+    ]);
+    setModules((moduleData as ModuleItem[]).filter((x) => x.isActive || x.moduleId === item.moduleId));
+    setReleases((releaseData as ReleaseItem[]).filter((x) => x.status !== "Cancelled" || x.releaseId === item.releaseId));
+    setEditing(item);
+    setModuleId(item.moduleId);
+    setReleaseId(item.releaseId ?? "");
+    setTitle(item.title);
+    setDescription(item.description ?? "");
+    setCriteria(item.acceptanceCriteria ?? "");
+    setPriority(item.priority);
+    setRisk(item.riskLevel ?? "Medium");
+    setSource(item.source ?? "");
+    setStatus(item.status);
+    setInScope(item.isInScope);
+  };
+  const saveEdit = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`${apiUrl}/requirements/${editing.requirementId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ releaseId: releaseId || null, moduleId, title, description: description || null, acceptanceCriteria: criteria || null, priority, riskLevel: risk || null, source: source || null, ownerUserId: editing.ownerUserId ?? null, isInScope: inScope }),
+      });
+      if (!response.ok) throw new Error((await response.json()).detail ?? "แก้ไข Requirement ไม่สำเร็จ");
+      if (status !== editing.status) {
+        const statusResponse = await fetch(`${apiUrl}/requirements/${editing.requirementId}/status`, { method: "POST", headers, body: JSON.stringify({ status }) });
+        if (!statusResponse.ok) throw new Error((await statusResponse.json()).detail ?? "เปลี่ยนสถานะไม่สำเร็จ");
+      }
+      setEditing(null);
+      setReload((x) => x + 1);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "แก้ไข Requirement ไม่สำเร็จ");
+    } finally { setSaving(false); }
+  };
+  const remove = async (item: RequirementItem) => {
+    if (!window.confirm(`ยืนยันลบ ${item.requirementCode}?\nข้อมูลจะถูกซ่อนและยังเก็บประวัติไว้`)) return;
+    const response = await fetch(`${apiUrl}/requirements/${item.requirementId}`, { method: "DELETE", headers });
+    if (!response.ok) { window.alert("ลบ Requirement ไม่สำเร็จ"); return; }
+    setReload((x) => x + 1);
+  };
   if (loading)
     return (
       <article className="card empty">
@@ -1758,6 +1829,7 @@ function RequirementsPage({
               <th>Revision</th>
               <th>In Scope</th>
               <th>Status</th>
+              {canEdit && <th>จัดการ</th>}
             </tr>
           </thead>
           <tbody>
@@ -1792,11 +1864,33 @@ function RequirementsPage({
                     {x.status}
                   </Badge>
                 </td>
+                {canEdit && <td><div className="row-actions"><button className="table-action" onClick={() => openEdit(x)}>แก้ไข</button><button className="table-action danger-action" onClick={() => remove(x)}>ลบ</button></div></td>}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {editing && (
+        <div className="modal" onMouseDown={() => setEditing(null)}>
+          <div className="modal-box requirement-editor" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head"><h2>แก้ไข Requirement</h2><button onClick={() => setEditing(null)}>×</button></div>
+            <div className="form-grid">
+              <label>Requirement Code<input value={editing.requirementCode} disabled /></label>
+              <label>Module<select value={moduleId} onChange={(e) => setModuleId(e.target.value)}>{modules.map((x) => <option key={x.moduleId} value={x.moduleId}>{x.moduleName}</option>)}</select></label>
+              <label>Release<select value={releaseId} onChange={(e) => setReleaseId(e.target.value)}><option value="">ไม่ระบุ Release</option>{releases.map((x) => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · Version {x.version}</option>)}</select></label>
+              <label>Title<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+              <label>Priority<select value={priority} onChange={(e) => setPriority(e.target.value)}>{["P0","P1","P2","P3"].map((x) => <option key={x}>{x}</option>)}</select></label>
+              <label>Risk<select value={risk} onChange={(e) => setRisk(e.target.value)}>{["Critical","High","Medium","Low"].map((x) => <option key={x}>{x}</option>)}</select></label>
+              <label>Status<select value={status} onChange={(e) => setStatus(e.target.value)}>{["Draft","Review","Approved","Implemented","Cancelled"].map((x) => <option key={x}>{x}</option>)}</select></label>
+              <label>Source<input value={source} onChange={(e) => setSource(e.target.value)} /></label>
+              <label className="check-line"><input type="checkbox" checked={inScope} onChange={(e) => setInScope(e.target.checked)} /> In Scope</label>
+              <label className="full">Description<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+              <label className="full">Acceptance Criteria<textarea rows={3} value={criteria} onChange={(e) => setCriteria(e.target.value)} /></label>
+            </div>
+            <div className="modal-actions"><button className="btn" onClick={() => setEditing(null)}>ยกเลิก</button><button className="btn primary" disabled={saving || !title.trim() || !moduleId} onClick={saveEdit}>{saving ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
@@ -4799,7 +4893,7 @@ function App() {
           ) : page === "releases" ? (
             <ReleasesPage search={search} refresh={refresh} />
           ) : page === "requirements" ? (
-            <RequirementsPage search={search} refresh={refresh} />
+            <RequirementsPage search={search} refresh={refresh} canEdit={can("REQUIREMENT.EDIT")} />
           ) : page === "test-cases" ? (
             <TestCasesPage search={search} canEdit={can("TESTCASE.EDIT")} />
           ) : page === "rtm" ? (
