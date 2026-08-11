@@ -11,6 +11,7 @@ public sealed class TestSuite
     }
     public Guid TestSuiteId{get;private set;} public Guid ProjectId{get;private set;} public string SuiteCode{get;private set;}=string.Empty; public string SuiteName{get;private set;}=string.Empty; public string?SuiteType{get;private set;} public string?Description{get;private set;} public string?RiskTier{get;private set;} public bool IsActive{get;private set;} public ICollection<TestSuiteCase>Cases{get;private set;}=[];
     public void Update(string name,string?type,string?description,string?riskTier,bool isActive){Validate(SuiteCode,name);SuiteName=name.Trim();SuiteType=type?.Trim();Description=description?.Trim();RiskTier=riskTier?.Trim();IsActive=isActive;}
+    public void Deactivate(){IsActive=false;}
     private static void Validate(string code,string name){if(string.IsNullOrWhiteSpace(code))throw new ArgumentException("Suite code is required.");if(string.IsNullOrWhiteSpace(name))throw new ArgumentException("Suite name is required.");}
 }
 
