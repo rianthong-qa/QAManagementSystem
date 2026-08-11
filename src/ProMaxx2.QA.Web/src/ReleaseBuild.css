@@ -1,0 +1,14 @@
+.release-layout { display:grid; grid-template-columns:320px minmax(0,1fr); gap:16px; align-items:start; }
+.release-list { padding:14px; }
+.release-cards { display:flex; flex-direction:column; gap:7px; max-height:calc(100vh - 250px); overflow:auto; }
+.release-cards > button { display:grid; grid-template-columns:1fr auto; gap:4px 8px; border:1px solid var(--line); border-radius:10px; padding:11px; background:#fff; text-align:left; cursor:pointer; }
+.release-cards > button:hover { border-color:#b5c7f8; }
+.release-cards > button.active { border-color:var(--primary); background:#f4f7ff; box-shadow:0 0 0 2px #2457d610; }
+.release-cards > button > span { color:var(--primary); font-size:9px; font-weight:800; }
+.release-cards > button > b { grid-column:1; font-size:12px; }
+.release-cards > button > small { grid-column:1; color:var(--muted); font-size:10px; }
+.release-cards > button > .badge { grid-column:2; grid-row:1/4; align-self:center; }
+.build-panel .card-title h3 span { color:var(--primary); }
+.build-panel td:first-child .badge { margin-left:6px; }
+@media(max-width:1000px){.release-layout{grid-template-columns:1fr}.release-cards{display:grid;grid-template-columns:repeat(2,1fr);max-height:none}}
+@media(max-width:600px){.release-cards{grid-template-columns:1fr}.build-panel .card-title{align-items:stretch}.build-panel .card-title .row-actions{flex-direction:column}}
