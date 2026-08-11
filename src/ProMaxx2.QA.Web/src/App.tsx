@@ -1094,6 +1094,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
     [name, setName] = useState(""),
     [type, setType] = useState("Major"),
     [releaseStatus, setReleaseStatus] = useState("Draft"),
+    [buildStatus, setBuildStatus] = useState("Ready"),
     [date, setDate] = useState(""),
     [details, setDetails] = useState(""),
     [packageVersion, setPackageVersion] = useState(""),
@@ -1169,6 +1170,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
     setEditRelease(null);
     setCode(item?.buildNumber ?? "");
     setName(item?.applicationVersion ?? "");
+    setBuildStatus(item?.status ?? "Ready");
     setPackageVersion(item?.packageVersion ?? "");
     setCommit(item?.commitReference ?? "");
     setDate(item?.buildDate?.slice(0, 10) ?? "");
@@ -1255,6 +1257,20 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
           throw new Error(
             problem.detail ?? "เปลี่ยนสถานะ Release ไม่สำเร็จ",
           );
+        }
+      }
+      if (modal === "build" && editBuild && buildStatus !== editBuild.status) {
+        const statusResponse = await fetch(
+          `${apiUrl}/builds/${editBuild.buildId}/status`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ status: buildStatus }),
+          },
+        );
+        if (!statusResponse.ok) {
+          const problem = await statusResponse.json();
+          throw new Error(problem.detail ?? "เปลี่ยนสถานะ Build ไม่สำเร็จ");
         }
       }
       setModal(null);
@@ -1531,6 +1547,21 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
                 </>
               ) : (
                 <>
+                  {editBuild && (
+                    <label>
+                      สถานะ Build
+                      <select
+                        value={buildStatus}
+                        onChange={(e) => setBuildStatus(e.target.value)}
+                      >
+                        <option value="Ready">Ready</option>
+                        <option value="Testing">Testing</option>
+                        <option value="Passed">Passed</option>
+                        <option value="Failed">Failed</option>
+                        <option value="Blocked">Blocked</option>
+                      </select>
+                    </label>
+                  )}
                   <label>
                     Package Version
                     <input

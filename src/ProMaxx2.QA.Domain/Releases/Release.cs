@@ -1,6 +1,7 @@
 namespace ProMaxx2.QA.Domain.Releases;
 
 public static class ReleaseStatuses { public static readonly string[] All=["Draft","Testing","Ready","Released","Cancelled"]; }
+public static class BuildStatuses { public static readonly string[] All=["Ready","Testing","Passed","Failed","Blocked"]; }
 public sealed class Release
 {
     private Release(){}
@@ -16,5 +17,6 @@ public sealed class Build
     public Guid BuildId{get;private set;}public Guid ReleaseId{get;private set;}public string BuildNumber{get;private set;}=string.Empty;public string? ApplicationVersion{get;private set;}public string? PackageVersion{get;private set;}public string? CommitReference{get;private set;}public DateTime? BuildDate{get;private set;}public string? ChangeNotes{get;private set;}public string? KnownIssues{get;private set;}public bool IsReleaseCandidate{get;private set;}public bool IsActive{get;private set;}public string Status{get;private set;}="Ready";public DateTime CreatedAt{get;private set;}public Guid? CreatedBy{get;private set;}public Release Release{get;private set;}=null!;
     public void Update(string? appVersion,string? packageVersion,string? commitReference,DateTime? buildDate,string? changeNotes,string? knownIssues){ApplicationVersion=appVersion?.Trim();PackageVersion=packageVersion?.Trim();CommitReference=commitReference?.Trim();BuildDate=buildDate;ChangeNotes=changeNotes?.Trim();KnownIssues=knownIssues?.Trim();}
     public void MarkReleaseCandidate()=>IsReleaseCandidate=true;
+    public void ChangeStatus(string status){Status=BuildStatuses.All.SingleOrDefault(x=>x.Equals(status,StringComparison.OrdinalIgnoreCase))??throw new ArgumentException("Invalid build status.");}
     public void Deactivate(){IsActive=false;Status="Inactive";}
 }
