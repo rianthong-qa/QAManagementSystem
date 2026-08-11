@@ -34,7 +34,7 @@ type SessionUser = {
 type DashboardSummary = {
   totalRequirements: number; coveredRequirements: number; requirementCoverage: number;
   totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
-  openP0: number; openP1: number; recommendedDecision: string; generatedAt: string;
+  openP0: number; openP1: number; overallScore?: number; recommendedDecision: string; generatedAt: string;
   modules: { moduleId: string; parentModuleId?: string; moduleName: string; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
   users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
   statusDistribution: { status: string; count: number; color: string }[];
@@ -294,7 +294,7 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
     : data.passRate < 90 ? `Pass Rate ${data.passRate}% ต่ำกว่าเกณฑ์ 90%`
     : "ผ่านเกณฑ์ P0/P1, Coverage และ Pass Rate";
   return <div className="executive-dashboard">
-    <section className="executive-hero"><div><span className="eyebrow">QUALITY EXECUTIVE OVERVIEW</span><h2>Release Readiness Dashboard</h2><p>ข้อมูลจากระบบ ณ {new Date(data.generatedAt).toLocaleString("th-TH")}</p></div><div className={`decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}><small>คำแนะนำ</small><strong>{data.recommendedDecision}</strong><span>{decisionReason}</span></div></section>
+    <section className="executive-hero"><div className="executive-title"><span className="eyebrow">QUALITY EXECUTIVE OVERVIEW</span><h2>Release Readiness Dashboard</h2><p>ข้อมูลจากระบบ ณ {new Date(data.generatedAt).toLocaleString("th-TH")}</p></div><div className="overall-score"><small>PROJECT OVERALL SCORE</small><strong>{data.overallScore == null ? "N/A" : `${data.overallScore}%`}</strong><span>Coverage 30% · Execution 30% · Pass 40%</span></div><div className={`decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}><small>คำแนะนำ</small><strong>{data.recommendedDecision}</strong><span>{decisionReason}</span></div></section>
     <div className="kpi-grid">{[
       ["Requirement Coverage", `${data.requirementCoverage}%`, `${data.coveredRequirements.toLocaleString()} / ${data.totalRequirements.toLocaleString()} Covered`, "green"],
       ["Execution Progress", `${data.executionProgress}%`, `${data.executedCases.toLocaleString()} / ${data.totalCases.toLocaleString()} Cases`, "blue"],
