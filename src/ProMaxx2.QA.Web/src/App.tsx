@@ -40,6 +40,27 @@ type DashboardSummary = {
 };
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:5038/api/v1";
 
+async function copyText(text: string) {
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Continue with the HTTP-compatible fallback below.
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  let copied = false;
+  try { copied = document.execCommand("copy"); } finally { document.body.removeChild(textarea); }
+  return copied;
+}
+
 function nextBusinessCode(prefix: string, existingCodes: string[]) {
   const normalized = prefix.trim().toUpperCase();
   const marker = `${normalized}-`;
@@ -4607,8 +4628,9 @@ function App() {
       if (!response.ok) throw new Error("ไม่สามารถสร้างลิงก์แชร์ได้");
       const result: { token: string; expiresAt: string } = await response.json();
       const url = `${window.location.origin}${window.location.pathname}?dashboardShare=${encodeURIComponent(result.token)}`;
-      await navigator.clipboard.writeText(url);
-      window.alert(`คัดลอกลิงก์ Dashboard แบบอ่านอย่างเดียวแล้ว\nลิงก์หมดอายุ ${new Date(result.expiresAt).toLocaleString("th-TH")}`);
+      const copied = await copyText(url);
+      if (copied) window.alert(`คัดลอกลิงก์ Dashboard แบบอ่านอย่างเดียวแล้ว\nลิงก์หมดอายุ ${new Date(result.expiresAt).toLocaleString("th-TH")}`);
+      else window.prompt("เบราว์เซอร์ไม่อนุญาตให้คัดลอกอัตโนมัติ กรุณาคัดลอกลิงก์นี้", url);
     } catch (e) { window.alert(e instanceof Error ? e.message : "ไม่สามารถสร้างลิงก์แชร์ได้"); }
   };
   const save = async () => {
