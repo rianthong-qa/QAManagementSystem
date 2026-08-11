@@ -42,6 +42,7 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RequirementEdit",p=>p.RequireClaim("permission","REQUIREMENT.EDIT"))
     .AddPolicy("TestCaseView",p=>p.RequireClaim("permission","TESTCASE.VIEW"))
     .AddPolicy("TestCaseEdit",p=>p.RequireClaim("permission","TESTCASE.EDIT"));
+builder.Services.AddAuthorizationBuilder().AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"));
 builder.Services.AddAuthorizationBuilder().AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"));
 builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
     .WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"])

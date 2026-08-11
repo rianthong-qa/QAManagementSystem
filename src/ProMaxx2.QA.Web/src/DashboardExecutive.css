@@ -31,6 +31,7 @@
 .overall-score { min-width:190px; padding:8px 14px; text-align:center; color:#2457a6; background:#fff; border:1px solid #cadcf4; border-radius:11px; }
 .overall-score small,.overall-score span { display:block; color:#64748b; font-size:9px; }
 .overall-score strong { display:block; margin:2px 0; font-size:24px; }
+.executive-dashboard .kpi-grid { grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); }
 .module-search { display:flex; align-items:center; gap:6px; min-width:230px; padding:0 10px; color:#64748b; background:#fff; border:1px solid #d8e0eb; border-radius:9px; }
 .module-search input { width:100%; padding:8px 2px; font:inherit; border:0; outline:0; }
 .module-table-scroll { max-height:430px; overflow:auto; }

@@ -5,6 +5,7 @@ using ProMaxx2.QA.Domain.Releases;
 using ProMaxx2.QA.Domain.Requirements;
 using ProMaxx2.QA.Domain.TestManagement;
 using ProMaxx2.QA.Domain.Execution;
+using ProMaxx2.QA.Domain.Defects;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -31,6 +32,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<TestCycleCase> TestCycleCases => Set<TestCycleCase>();
     public DbSet<TestExecution> TestExecutions => Set<TestExecution>();
     public DbSet<TestStepResult> TestStepResults => Set<TestStepResult>();
+    public DbSet<Defect> Defects => Set<Defect>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

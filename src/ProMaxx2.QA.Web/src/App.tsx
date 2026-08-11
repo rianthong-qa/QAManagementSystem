@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import "./Login.css";
 import "./DragDrop.css";
@@ -34,7 +34,7 @@ type SessionUser = {
 type DashboardSummary = {
   totalRequirements: number; coveredRequirements: number; requirementCoverage: number;
   totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
-  openP0: number; openP1: number; overallScore?: number; recommendedDecision: string; generatedAt: string;
+  openP0: number; openP1: number; overallScore?: number; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string; generatedAt: string;
   modules: { moduleId: string; parentModuleId?: string; moduleName: string; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
   users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
   statusDistribution: { status: string; count: number; color: string }[];
@@ -288,17 +288,20 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
   const totalStatus = Math.max(1, data.statusDistribution.reduce((n, x) => n + x.count, 0)); let angle = 0;
   const donut = data.statusDistribution.map(x => { const start = angle; angle += x.count / totalStatus * 360; return `${x.color} ${start}deg ${angle}deg`; }).join(",");
   const decisionReason = data.recommendedDecision === "NO DATA" ? "ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน"
+    : data.criticalDefects > 0 ? `พบ Critical Defect ค้าง ${data.criticalDefects} รายการ`
     : data.openP0 > 0 ? `พบ P0 ค้าง ${data.openP0} รายการ`
+    : data.highDefects > 0 ? `พบ High Defect ค้าง ${data.highDefects} รายการ`
     : data.openP1 > 0 ? `พบ P1 ค้าง ${data.openP1} รายการ`
     : data.requirementCoverage < 90 ? `Requirement Coverage ${data.requirementCoverage}% ต่ำกว่าเกณฑ์ 90%`
     : data.passRate < 90 ? `Pass Rate ${data.passRate}% ต่ำกว่าเกณฑ์ 90%`
-    : "ผ่านเกณฑ์ P0/P1, Coverage และ Pass Rate";
+    : "ผ่านเกณฑ์ P0/P1, Coverage, Pass Rate และ Defect";
   return <div className="executive-dashboard">
-    <section className="executive-hero"><div className="executive-title"><span className="eyebrow">QUALITY EXECUTIVE OVERVIEW</span><h2>Release Readiness Dashboard</h2><p>ข้อมูลจากระบบ ณ {new Date(data.generatedAt).toLocaleString("th-TH")}</p></div><div className="overall-score"><small>PROJECT OVERALL SCORE</small><strong>{data.overallScore == null ? "N/A" : `${data.overallScore}%`}</strong><span>Coverage 30% · Execution 30% · Pass 40%</span></div><div className={`decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}><small>คำแนะนำ</small><strong>{data.recommendedDecision}</strong><span>{decisionReason}</span></div></section>
+    <section className="executive-hero"><div className="executive-title"><span className="eyebrow">QUALITY EXECUTIVE OVERVIEW</span><h2>Release Readiness Dashboard</h2><p>ข้อมูลจากระบบ ณ {new Date(data.generatedAt).toLocaleString("th-TH")}</p></div><div className="overall-score"><small>PROJECT OVERALL SCORE</small><strong>{data.overallScore == null ? "N/A" : `${data.overallScore}%`}</strong><span>Coverage 25% · Execution 25% · Pass 30% · Defect 20%</span></div><div className={`decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}><small>คำแนะนำ</small><strong>{data.recommendedDecision}</strong><span>{decisionReason}</span></div></section>
     <div className="kpi-grid">{[
       ["Requirement Coverage", `${data.requirementCoverage}%`, `${data.coveredRequirements.toLocaleString()} / ${data.totalRequirements.toLocaleString()} Covered`, "green"],
       ["Execution Progress", `${data.executionProgress}%`, `${data.executedCases.toLocaleString()} / ${data.totalCases.toLocaleString()} Cases`, "blue"],
       ["Pass Rate", `${data.passRate}%`, `${data.passedCases.toLocaleString()} Passed`, "green"],
+      ["Defect Quality", `${data.defectQuality}%`, `${data.openDefects} Open · Critical ${data.criticalDefects} · High ${data.highDefects}`, data.criticalDefects ? "red" : data.highDefects ? "yellow" : "green"],
       ["Release Blockers", data.openP0 + data.openP1, `P0 ${data.openP0} • P1 ${data.openP1}`, data.openP0 + data.openP1 ? "red" : "green"],
     ].map(x => <article className="card kpi" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small className={String(x[3])}>{x[2]}</small></article>)}</div>
     <div className="executive-chart-grid">
@@ -313,6 +316,18 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
       </tbody></table></div>
     </article>
   </div>;
+}
+
+type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string };
+function DefectsPage({projectId,releaseId,buildId,search}:{projectId:string;releaseId:string;buildId:string;search:string}) {
+  const [items,setItems]=useState<DefectItem[]>([]),[loading,setLoading]=useState(true);
+  const headers=useMemo(()=>({"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}),[]);
+  const load=useCallback(()=>{if(!projectId){setItems([]);setLoading(false);return;}setLoading(true);const q=new URLSearchParams({projectId,...(releaseId&&{releaseId}),...(buildId&&{buildId}),...(search&&{search})});fetch(`${apiUrl}/defects?${q}`,{headers}).then(r=>r.ok?r.json():[]).then(setItems).finally(()=>setLoading(false));},[projectId,releaseId,buildId,search,headers]);
+  useEffect(load,[load]);
+  const save=async(item?:DefectItem)=>{const title=window.prompt("ชื่อ Defect",item?.title??"");if(!title)return;const severity=window.prompt("Severity: Critical, High, Medium, Low",item?.severity??"Medium");if(!severity)return;const status=window.prompt("Status: Open, In Progress, Resolved, Closed, Rejected",item?.status??"Open");if(!status)return;const response=await fetch(item?`${apiUrl}/defects/${item.defectId}`:`${apiUrl}/defects`,{method:item?"PUT":"POST",headers,body:JSON.stringify({projectId,releaseId:releaseId||null,buildId:buildId||null,moduleId:null,title,severity,status})});if(!response.ok){window.alert(await response.text());return;}load();};
+  const remove=async(item:DefectItem)=>{if(!window.confirm(`ลบ ${item.defectCode} ใช่หรือไม่?`))return;const response=await fetch(`${apiUrl}/defects/${item.defectId}`,{method:"DELETE",headers});if(response.ok)load();};
+  const tone=(value:string)=>value==="Critical"?"red":value==="High"?"yellow":value==="Low"?"blue":"green";
+  return <article className="card"><div className="table-tools"><span>{items.length} Defects ในขอบเขตที่เลือก</span><button className="btn primary" disabled={!projectId} onClick={()=>save()}>+ Defect</button></div><div className="table-wrap"><table><thead><tr><th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Created</th><th>จัดการ</th></tr></thead><tbody>{items.map(x=><tr key={x.defectId}><td><b>{x.defectCode}</b></td><td>{x.title}</td><td><Badge tone={tone(x.severity)}>{x.severity}</Badge></td><td>{x.status}</td><td>{new Date(x.createdAt).toLocaleDateString("th-TH")}</td><td><button className="action-button" onClick={()=>save(x)}>แก้ไข</button> <button className="action-button danger" onClick={()=>remove(x)}>ลบ</button></td></tr>)}{!loading&&!items.length&&<tr><td colSpan={6} className="muted-row">ยังไม่มี Defect ใน Project / Release / Build ที่เลือก</td></tr>}</tbody></table></div></article>;
 }
 
 function DataPage({ page, search, canAssignExecution = false }: { page: Page; search: string; canAssignExecution?: boolean }) {
@@ -4920,6 +4935,8 @@ function App() {
             <RtmPage refresh={refresh} />
           ) : page === "users" ? (
             <AdministrationPage refresh={refresh} />
+          ) : page === "defects" ? (
+            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} />
           ) : (
             <DataPage page={page} search={search} canAssignExecution={can("EXECUTION.ASSIGN")} />
           )}
