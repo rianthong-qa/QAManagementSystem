@@ -35,7 +35,7 @@ type DashboardSummary = {
   totalRequirements: number; coveredRequirements: number; requirementCoverage: number;
   totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
   openP0: number; openP1: number; recommendedDecision: string; generatedAt: string;
-  modules: { moduleId: string; moduleName: string; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
+  modules: { moduleId: string; parentModuleId?: string; moduleName: string; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
   users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
   statusDistribution: { status: string; count: number; color: string }[];
 };
@@ -266,7 +266,7 @@ function Badge({
 
 function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; shareToken?: string }) {
   const [data, setData] = useState<DashboardSummary | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
-  const [moduleFilter, setModuleFilter] = useState(""), [userFilter, setUserFilter] = useState("");
+  const [moduleSearch, setModuleSearch] = useState(""), [collapsedModules, setCollapsedModules] = useState<Set<string>>(new Set()), [userFilter, setUserFilter] = useState("");
   useEffect(() => {
     setLoading(true); setError("");
     const params = new URLSearchParams({ ...(projectId && { projectId }), ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
@@ -277,7 +277,14 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
   }, [projectId, releaseId, buildId, shareToken]);
   if (loading) return <div className="executive-loading">กำลังประมวลผลข้อมูลคุณภาพ...</div>;
   if (error || !data) return <div className="executive-error">{error || "ไม่พบข้อมูล"}</div>;
-  const modules = data.modules.filter(x => !moduleFilter || x.moduleId === moduleFilter), users = data.users.filter(x => !userFilter || x.userId === userFilter);
+  const normalizedModuleSearch = moduleSearch.trim().toLocaleLowerCase("th-TH");
+  const includedModuleIds = new Set(data.modules.filter(x => !normalizedModuleSearch || x.moduleName.toLocaleLowerCase("th-TH").includes(normalizedModuleSearch)).map(x => x.moduleId));
+  if (normalizedModuleSearch) for (const item of data.modules) if (includedModuleIds.has(item.moduleId)) { let parentId = item.parentModuleId; while (parentId) { includedModuleIds.add(parentId); parentId = data.modules.find(x => x.moduleId === parentId)?.parentModuleId; } }
+  const moduleRows: { item: DashboardSummary["modules"][number]; depth: number; childCount: number }[] = [];
+  const appendModules = (parentId: string | undefined, depth: number) => data.modules.filter(x => (x.parentModuleId || undefined) === parentId && includedModuleIds.has(x.moduleId)).sort((a,b) => a.moduleName.localeCompare(b.moduleName, "th")).forEach(item => { const children = data.modules.filter(x => x.parentModuleId === item.moduleId && includedModuleIds.has(x.moduleId)); moduleRows.push({ item, depth, childCount: children.length }); if (normalizedModuleSearch || !collapsedModules.has(item.moduleId)) appendModules(item.moduleId, depth + 1); });
+  appendModules(undefined, 0);
+  data.modules.filter(x => x.parentModuleId && !data.modules.some(parent => parent.moduleId === x.parentModuleId) && includedModuleIds.has(x.moduleId)).forEach(item => { if (!moduleRows.some(row => row.item.moduleId === item.moduleId)) moduleRows.push({ item, depth: 0, childCount: 0 }); });
+  const users = data.users.filter(x => !userFilter || x.userId === userFilter);
   const totalStatus = Math.max(1, data.statusDistribution.reduce((n, x) => n + x.count, 0)); let angle = 0;
   const donut = data.statusDistribution.map(x => { const start = angle; angle += x.count / totalStatus * 360; return `${x.color} ${start}deg ${angle}deg`; }).join(",");
   const decisionReason = data.recommendedDecision === "NO DATA" ? "ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน"
@@ -298,7 +305,13 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
       <article className="card status-card"><div><h3>Execution Results</h3><p>สัดส่วนผลการทดสอบทั้งหมด</p><div className="chart-legend">{data.statusDistribution.map(x => <span key={x.status}><i style={{background:x.color}} />{x.status}<b>{x.count}</b></span>)}</div></div><div className="donut" style={{background:`conic-gradient(${donut || "#e2e8f0 0 360deg"})`}}><div><strong>{data.executedCases}</strong><small>Executed</small></div></div></article>
       <article className="card"><div className="card-title"><div><h3>Performance by User</h3><p>ผลการดำเนินงานของผู้ทดสอบ</p></div><select value={userFilter} onChange={e=>setUserFilter(e.target.value)}><option value="">ผู้ใช้ทั้งหมด</option>{data.users.map(x=><option key={x.userId} value={x.userId}>{x.displayName}</option>)}</select></div><div className="user-bars">{users.length ? users.slice(0,8).map(x=><div className="user-bar" key={x.userId}><span>{x.displayName}</span><div><i style={{width:`${x.passRate}%`}} /></div><strong>{x.passRate}%</strong><small>{x.executions} runs</small></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบโดยผู้ใช้</p>}</div></article>
     </div>
-    <article className="card module-health-card"><div className="card-title"><div><h3>Module Health</h3><p>Coverage, execution และคุณภาพแยกตาม Module</p></div><select value={moduleFilter} onChange={e=>setModuleFilter(e.target.value)}><option value="">Module ทั้งหมด</option>{data.modules.map(x=><option key={x.moduleId} value={x.moduleId}>{x.moduleName}</option>)}</select></div><div className="table-wrap"><table><thead><tr><th>Module</th><th>Requirements</th><th>Test Cases</th><th>Coverage</th><th>Execution</th><th>Pass Rate</th><th>Fail / Blocked</th><th>Status</th></tr></thead><tbody>{modules.map(r => <tr key={r.moduleId}><td><b>{r.moduleName}</b></td><td>{r.coveredRequirements}/{r.requirements}</td><td>{r.testCases}</td><td><span className="metric-bar"><i style={{width:`${r.coveragePercent}%`}} /></span>{r.coveragePercent}%</td><td>{r.executionPercent}%</td><td><b className={r.passRate >= 90 ? "green":"red"}>{r.passRate}%</b></td><td>{r.failed} / {r.blocked}</td><td><Badge tone={r.health === "Healthy" ? "green" : r.health === "Watch" ? "yellow" : "red"}>{r.health}</Badge></td></tr>)}{!modules.length && <tr><td colSpan={8} className="muted-row">ไม่มีข้อมูล Module ในขอบเขตที่เลือก</td></tr>}</tbody></table></div></article>
+    <article className="card module-health-card">
+      <div className="card-title"><div><h3>Module Health <Badge tone="blue">{data.modules.length}</Badge></h3><p>Coverage, execution และคุณภาพตามโครงสร้าง Module</p></div><label className="module-search"><span>⌕</span><input value={moduleSearch} onChange={e=>setModuleSearch(e.target.value)} placeholder="ค้นหา Module..." /></label></div>
+      <div className="table-wrap module-table-scroll"><table><thead><tr><th>Module</th><th>Requirements</th><th>Test Cases</th><th>Coverage</th><th>Execution</th><th>Pass Rate</th><th>Fail / Blocked</th><th>Status</th></tr></thead><tbody>
+        {moduleRows.map(({item:r,depth,childCount}) => <tr key={r.moduleId} className={depth ? "module-child-row" : "module-parent-row"}><td><div className="module-tree-name" style={{paddingLeft:`${depth * 24}px`}}>{childCount > 0 ? <button title={collapsedModules.has(r.moduleId) ? "ขยาย" : "ย่อ"} onClick={()=>setCollapsedModules(current=>{const next=new Set(current); if(next.has(r.moduleId)) next.delete(r.moduleId); else next.add(r.moduleId); return next;})}>{collapsedModules.has(r.moduleId) ? "▸" : "▾"}</button> : <span className="tree-branch">└</span>}<b>{r.moduleName}</b>{childCount > 0 && <small>{childCount} รายการ</small>}</div></td><td>{r.coveredRequirements}/{r.requirements}</td><td>{r.testCases}</td><td><span className="metric-bar"><i style={{width:`${r.coveragePercent}%`}} /></span>{r.coveragePercent}%</td><td>{r.executionPercent}%</td><td><b className={r.passRate >= 90 ? "green":"red"}>{r.passRate}%</b></td><td>{r.failed} / {r.blocked}</td><td><Badge tone={r.health === "Healthy" ? "green" : r.health === "Watch" ? "yellow" : "red"}>{r.health}</Badge></td></tr>)}
+        {!moduleRows.length && <tr><td colSpan={8} className="muted-row">ไม่พบ Module ที่ค้นหา</td></tr>}
+      </tbody></table></div>
+    </article>
   </div>;
 }
 

@@ -27,6 +27,17 @@
 .executive-hero .decision-no-go { color: #a32e38; background: #fde5e7; border-color: #f6c7cc; }
 .executive-hero .decision-conditional-go { color: #895d00; background: #fff1c9; border-color: #f2dda2; }
 .executive-hero .decision-no-data { color: #365676; background: #e8f0f7; border-color: #cad9e7; }
+.module-search { display:flex; align-items:center; gap:6px; min-width:230px; padding:0 10px; color:#64748b; background:#fff; border:1px solid #d8e0eb; border-radius:9px; }
+.module-search input { width:100%; padding:8px 2px; font:inherit; border:0; outline:0; }
+.module-table-scroll { max-height:430px; overflow:auto; }
+.module-table-scroll thead { position:sticky; top:0; z-index:2; box-shadow:0 1px #e5e7eb; }
+.module-tree-name { display:flex; align-items:center; gap:7px; min-width:210px; }
+.module-tree-name button { width:22px; height:22px; padding:0; color:#315b96; background:#eaf2ff; border:0; border-radius:6px; cursor:pointer; }
+.module-tree-name small { padding:2px 7px; color:#64748b; background:#edf2f7; border-radius:20px; font-size:9px; }
+.tree-branch { width:22px; color:#a6b4c8; text-align:center; }
+.module-parent-row td:first-child { background:#fbfdff; }
+.module-child-row td:first-child b { color:#40546d; font-weight:600; }
+.module-child-row td:first-child { border-left:3px solid #dbe8fa; }
 @media(max-width:700px) {
   .executive-hero { width: 100%; flex-direction: column; align-items: stretch; }
   .executive-hero .decision { min-width: 0; max-width: none; text-align: left; }
