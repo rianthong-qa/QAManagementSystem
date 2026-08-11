@@ -5,6 +5,7 @@ import "./DragDrop.css";
 import "./ReleaseBuild.css";
 import "./TestManagement.css";
 import "./Dashboard.css";
+import "./DashboardExecutive.css";
 
 type Page =
   | "dashboard"
@@ -278,8 +279,13 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
   const modules = data.modules.filter(x => !moduleFilter || x.moduleId === moduleFilter), users = data.users.filter(x => !userFilter || x.userId === userFilter);
   const totalStatus = Math.max(1, data.statusDistribution.reduce((n, x) => n + x.count, 0)); let angle = 0;
   const donut = data.statusDistribution.map(x => { const start = angle; angle += x.count / totalStatus * 360; return `${x.color} ${start}deg ${angle}deg`; }).join(",");
+  const decisionReason = data.openP0 > 0 ? `พบ P0 ค้าง ${data.openP0} รายการ`
+    : data.openP1 > 0 ? `พบ P1 ค้าง ${data.openP1} รายการ`
+    : data.requirementCoverage < 90 ? `Requirement Coverage ${data.requirementCoverage}% ต่ำกว่าเกณฑ์ 90%`
+    : data.passRate < 90 ? `Pass Rate ${data.passRate}% ต่ำกว่าเกณฑ์ 90%`
+    : "ผ่านเกณฑ์ P0/P1, Coverage และ Pass Rate";
   return <div className="executive-dashboard">
-    <section className="executive-hero"><div><span className="eyebrow">QUALITY EXECUTIVE OVERVIEW</span><h2>Release Readiness Dashboard</h2><p>ข้อมูลจากระบบ ณ {new Date(data.generatedAt).toLocaleString("th-TH")}</p></div><div className={`decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}><small>คำแนะนำ</small><strong>{data.recommendedDecision}</strong></div></section>
+    <section className="executive-hero"><div><span className="eyebrow">QUALITY EXECUTIVE OVERVIEW</span><h2>Release Readiness Dashboard</h2><p>ข้อมูลจากระบบ ณ {new Date(data.generatedAt).toLocaleString("th-TH")}</p></div><div className={`decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}><small>คำแนะนำ</small><strong>{data.recommendedDecision}</strong><span>{decisionReason}</span></div></section>
     <div className="kpi-grid">{[
       ["Requirement Coverage", `${data.requirementCoverage}%`, `${data.coveredRequirements.toLocaleString()} / ${data.totalRequirements.toLocaleString()} Covered`, "green"],
       ["Execution Progress", `${data.executionProgress}%`, `${data.executedCases.toLocaleString()} / ${data.totalCases.toLocaleString()} Cases`, "blue"],
