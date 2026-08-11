@@ -28,7 +28,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 {
     options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer=true, ValidIssuer=jwt.Issuer, ValidateAudience=true, ValidAudience=jwt.Audience, ValidateLifetime=true, ValidateIssuerSigningKey=true, IssuerSigningKey=new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key)), ClockSkew=TimeSpan.FromSeconds(30) };
 });
-builder.Services.AddAuthorizationBuilder().AddPolicy("AdminUser",p=>p.RequireClaim("permission","ADMIN.USER")).AddPolicy("ProjectView",p=>p.RequireClaim("permission","PROJECT.VIEW")).AddPolicy("ProjectEdit",p=>p.RequireClaim("permission","PROJECT.EDIT"));
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminUser",p=>p.RequireClaim("permission","ADMIN.USER"))
+    .AddPolicy("ProjectView",p=>p.RequireClaim("permission","PROJECT.VIEW"))
+    .AddPolicy("ProjectEdit",p=>p.RequireClaim("permission","PROJECT.EDIT"))
+    .AddPolicy("RequirementView",p=>p.RequireClaim("permission","REQUIREMENT.VIEW"))
+    .AddPolicy("RequirementEdit",p=>p.RequireClaim("permission","REQUIREMENT.EDIT"))
+    .AddPolicy("TestCaseView",p=>p.RequireClaim("permission","TESTCASE.VIEW"))
+    .AddPolicy("TestCaseEdit",p=>p.RequireClaim("permission","TESTCASE.EDIT"));
 builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
     .WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"])
     .AllowAnyHeader().AllowAnyMethod()));
