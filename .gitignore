@@ -9,5 +9,6 @@ dist/
 .env
 .env.*
 !.env.example
+!src/ProMaxx2.QA.Web/.env.development
 TestResults/
 coverage/

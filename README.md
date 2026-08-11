@@ -19,7 +19,12 @@ npm install
 npm run dev
 ```
 
-Web UI: `http://localhost:5173`  
+Web UI (LAN): `http://192.168.200.219:5173`
+
+Web UI (เครื่องพัฒนา): `http://localhost:5173`
+
+API (LAN): `http://192.168.200.219:5038`
+
 API health: ดู URL HTTPS จาก output ของ `dotnet run` แล้วเรียก `/health`  
 OpenAPI (Development): `/openapi/v1.json`
 
