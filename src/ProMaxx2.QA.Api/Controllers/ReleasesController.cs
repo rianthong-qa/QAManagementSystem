@@ -1,6 +1,6 @@
-using System.Security.Claims;using Microsoft.AspNetCore.Authorization;using Microsoft.AspNetCore.Mvc;using ProMaxx2.QA.Application.Projects;using ProMaxx2.QA.Application.Releases;
+using System.Security.Claims;using Microsoft.AspNetCore.Authorization;using Microsoft.AspNetCore.Mvc;using ProMaxx2.QA.Application.Projects;using ProMaxx2.QA.Application.Releases;using ProMaxx2.QA.Api.Services;
 namespace ProMaxx2.QA.Api.Controllers;
-[ApiController,Route("api/v1"),Authorize(Policy="ProjectView")]
+[ApiController,Route("api/v1"),Authorize(Policy="ProjectView"),RequireProjectAccess]
 public sealed class ReleasesController(ReleaseService service):ControllerBase
 {
  [HttpGet("releases")]public Task<IReadOnlyList<ReleaseDto>>List([FromQuery]Guid? projectId,CancellationToken ct)=>service.ListAsync(projectId,ct);

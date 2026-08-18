@@ -1,0 +1,9 @@
+## Cloudflare Tunnel config for qahub.store (sample)
+# Replace TUNNEL_ID with the actual tunnel id created by `cloudflared tunnel create`
+tunnel: TUNNEL_ID
+credentials-file: C:\Users\<YOU>\.cloudflared\TUNNEL_ID.json
+
+ingress:
+  - hostname: qahub.store
+    service: http://192.168.200.219:5173
+  - service: http_status:404

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import "./App.css";
-import "./Login.css";
+import "./styles.css";
 import "./DragDrop.css";
 import "./ReleaseBuild.css";
 import "./TestManagement.css";
 import "./Dashboard.css";
 import "./DashboardExecutive.css";
+import "./Rtm.css";
 
 type Page =
   | "dashboard"
@@ -23,6 +24,8 @@ type Page =
   | "risks"
   | "signoff"
   | "users"
+  | "settings"
+  | "system-monitor"
   | "audit";
 type SessionUser = {
   userId: string;
@@ -30,16 +33,71 @@ type SessionUser = {
   displayName: string;
   roles: string[];
   permissions: string[];
+  assignedProjectIds: string[];
 };
 type DashboardSummary = {
   totalRequirements: number; coveredRequirements: number; requirementCoverage: number;
   totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
   openP0: number; openP1: number; overallScore?: number; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string; generatedAt: string;
-  modules: { moduleId: string; parentModuleId?: string; moduleName: string; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
+  modules: { moduleId: string; parentModuleId?: string; moduleCode?: string; moduleName: string; sortOrder?: number; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
   users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
   statusDistribution: { status: string; count: number; color: string }[];
 };
-const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:5038/api/v1";
+const apiUrl = import.meta.env.VITE_API_URL ?? "/api/v1";
+
+type MasterOption = { masterOptionId: string; category: string; value: string; displayName: string; sortOrder: number; isActive: boolean };
+function useMasterOptions() {
+  const [options, setOptions] = useState<MasterOption[]>([]);
+  useEffect(() => {
+    fetch(`${apiUrl}/master-settings`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: MasterOption[]) => setOptions(Array.isArray(data) ? data : []));
+  }, []);
+  return (category: string) => options.filter((x) => x.category === category && x.isActive);
+}
+function masterOptionElements(options: MasterOption[], current: string) {
+  return <>{current && !options.some((x) => x.value === current) && <option value={current}>{current} (ปิดใช้งาน)</option>}{options.map((x) => <option key={x.masterOptionId} value={x.value}>{x.displayName}</option>)}</>;
+}
+
+// Global fetch wrapper: redirect to login on 401 Unauthorized
+if (typeof window !== "undefined") {
+  const __origFetch = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const resp = await __origFetch(input, init);
+    if (resp.status === 401) {
+      try { localStorage.removeItem("qa.accessToken"); localStorage.removeItem("qa.user"); } catch {}
+      // determine request url (string)
+      let reqUrl = "";
+      try {
+        if (typeof input === "string") reqUrl = input;
+        else if (input instanceof Request) reqUrl = input.url;
+        else reqUrl = String(input);
+      } catch {}
+      // Don't redirect when the failing request is the login call itself
+      if (reqUrl.includes("/auth/login")) return resp;
+      const isLoginPath = window.location.pathname === "/" || window.location.pathname.startsWith("/login");
+      if (!isLoginPath) {
+        // add a query flag so login page can show a message if desired
+        window.location.href = "/?sessionExpired=1";
+      }
+    }
+    return resp;
+  };
+}
+
+function isTokenExpiredLocal(): boolean {
+  try {
+    const token = localStorage.getItem("qa.accessToken");
+    if (!token) return true;
+    const parts = token.split(".");
+    if (parts.length < 2) return true;
+    const payload = JSON.parse(atob(parts[1]));
+    if (!payload || !payload.exp) return true;
+    return Date.now() / 1000 >= payload.exp;
+  } catch {
+    return true;
+  }
+}
 
 async function copyText(text: string) {
   if (window.isSecureContext && navigator.clipboard?.writeText) {
@@ -125,6 +183,8 @@ const nav: {
     label: "ADMINISTRATION",
     items: [
       { id: "users", icon: "U", label: "User / Role" },
+      { id: "settings", icon: "⚙", label: "Setting Center" },
+      { id: "system-monitor", icon: "M", label: "System Monitor" },
       { id: "audit", icon: "⌕", label: "Audit Log" },
     ],
   },
@@ -133,6 +193,13 @@ const nav: {
 const pageNames: Record<Page, string> = Object.fromEntries(
   nav.flatMap((g) => g.items.map((i) => [i.id, i.label])),
 ) as Record<Page, string>;
+const pageIds = new Set<Page>(Object.keys(pageNames) as Page[]);
+function restoredActivePage(): Page {
+  const hashPage = window.location.hash.match(/^#\/([^/?#]+)/)?.[1];
+  if (hashPage && pageIds.has(hashPage as Page)) return hashPage as Page;
+  const savedPage = localStorage.getItem("qa.activePage");
+  return savedPage && pageIds.has(savedPage as Page) ? savedPage as Page : "dashboard";
+}
 const viewPermission: Record<Page, string> = {
   dashboard: "PROJECT.VIEW",
   projects: "PROJECT.VIEW",
@@ -149,6 +216,8 @@ const viewPermission: Record<Page, string> = {
   risks: "RISK.APPROVE",
   signoff: "RELEASE.SIGNOFF",
   users: "ADMIN.USER",
+  settings: "ADMIN.USER",
+  "system-monitor": "SYSTEM.MONITOR",
   audit: "ADMIN.PERMISSION",
 };
 const editPermission: Partial<Record<Page, string>> = {
@@ -264,29 +333,232 @@ function Badge({
   return <span className={`badge ${effectiveTone}`}>{children}</span>;
 }
 
-function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; shareToken?: string }) {
+type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string };
+
+function QualityOverviewCharts({ data, projectId, releaseId, buildId }: { data: DashboardSummary; projectId?: string; releaseId?: string; buildId?: string }) {
+  const [defects, setDefects] = useState<DefectItem[]>([]);
+  const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+  useEffect(() => {
+    if (!projectId) return;
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
+    fetch(`${apiUrl}/defects?${q}`, { headers }).then(r => r.ok ? r.json() : []).then(setDefects).catch(() => {});
+  }, [projectId, releaseId, buildId, headers]);
+
+  const statusDist = data.statusDistribution || [];
+  const totalStatus = Math.max(1, statusDist.reduce((s, x) => s + x.count, 0));
+
+  const sevOrder = ["Critical","High","Medium","Low"];
+  const sevColor: Record<string, string> = { Critical: "#dc2626", High: "#f59e0b", Medium: "#2563eb", Low: "#94a3b8" };
+  const sevCounts = sevOrder.map(s => ({ sev: s, count: defects.filter(d => d.severity === s).length, color: sevColor[s] }));
+  const maxSev = Math.max(1, ...sevCounts.map(x => x.count));
+
+  // Build conic gradient for donut
+  let angle = 0;
+  const donutSegments = statusDist.filter(x => x.count > 0).map(x => {
+    const start = angle;
+    const pct = x.count / totalStatus * 100;
+    angle += pct / 100 * 360;
+    return `${x.color} ${start}deg ${angle}deg`;
+  }).join(", ") || "#e2e8f0 0deg 360deg";
+
+  return <div className="charts-grid">
+    <article className="card chart-card">
+      <div className="chart-card-head">
+        <h3>Test Execution Status</h3>
+        <span>{totalStatus.toLocaleString()} Total Cases</span>
+      </div>
+      <div className="chart-donut-wrap">
+        <div className="chart-donut" style={{background:`conic-gradient(${donutSegments})`}}>
+          <div className="chart-donut-hole">
+            <b>{data.passRate}%</b>
+            <span>Pass Rate</span>
+          </div>
+        </div>
+        <div className="chart-donut-legend">
+          {statusDist.map(x => <div key={x.status} className="legend-item">
+            <i style={{background:x.color}} />
+            <span className="legend-label">{x.status}</span>
+            <span className="legend-count">{x.count}</span>
+            <span className="legend-pct">{Math.round(x.count / totalStatus * 100)}%</span>
+          </div>)}
+        </div>
+      </div>
+    </article>
+    <article className="card chart-card">
+      <div className="chart-card-head">
+        <h3>Defects by Severity</h3>
+        <span>{defects.length} Total</span>
+      </div>
+      <div className="chart-bars">
+        {sevCounts.map(x => <div key={x.sev} className="bar-row">
+          <div className="bar-label">{x.sev}</div>
+          <div className="bar-track">
+            <div className="bar-fill" style={{width:`${Math.max(x.count / maxSev * 100, x.count > 0 ? 8 : 0)}%`,background:x.color}}>
+              {x.count > 0 && <span>{x.count}</span>}
+            </div>
+          </div>
+        </div>)}
+      </div>
+      {defects.length === 0 && <p className="chart-empty">ยังไม่มีข้อมูล Defect</p>}
+    </article>
+  </div>;
+}
+
+type TimelineRelease = { releaseId: string; releaseCode: string; version: string; plannedReleaseDate?: string; actualReleaseDate?: string; status: string };
+type TimelineCycle = { testCycleId: string; cycleCode: string; cycleName: string; startDate?: string; endDate?: string; status: string; progressPercent: number };
+
+const TH_OFFSET = 7;
+function nowTH(): Date { const u = new Date(); return new Date(u.getTime() + (u.getTimezoneOffset() + TH_OFFSET * 60) * 60000); }
+function startOfDayTH(d: Date): Date { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function parseDateTH(s: string): Date { const d = new Date(s); return new Date(d.getTime() + (d.getTimezoneOffset() + TH_OFFSET * 60) * 60000); }
+function isWeekday(d: Date): boolean { const day = d.getDay(); return day >= 1 && day <= 5; }
+function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function sameDay(a: Date, b: Date): boolean { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+function fmtShort(d: Date): string { return `${d.getDate()}/${d.getMonth() + 1}`; }
+const TH_MONTHS = ["","ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+
+function ExecutiveTimeline({ projectId, releaseId, buildId }: { projectId?: string; releaseId?: string; buildId?: string }) {
+  const [releases, setReleases] = useState<TimelineRelease[]>([]);
+  const [cycles, setCycles] = useState<TimelineCycle[]>([]);
+  const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+  useEffect(() => {
+    if (!projectId) return;
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
+    Promise.all([
+      fetch(`${apiUrl}/releases?${q}`, { headers }).then(r => r.ok ? r.json() : []),
+      fetch(`${apiUrl}/test-cycles?${q}`, { headers }).then(r => r.ok ? r.json() : []),
+    ]).then(([rel, cyc]) => {
+      const aR = new Set(["Draft","Testing","Ready"]);
+      const aC = new Set(["Draft","InProgress"]);
+      setReleases((rel as TimelineRelease[]).filter(r => aR.has(r.status)));
+      setCycles((cyc as TimelineCycle[]).filter(c => aC.has(c.status)));
+    }).catch(() => {});
+  }, [projectId, releaseId, buildId, headers]);
+
+  const todayTH = startOfDayTH(nowTH());
+  const allDates: Date[] = [];
+  releases.forEach(r => { if (r.plannedReleaseDate) allDates.push(parseDateTH(r.plannedReleaseDate)); if (r.actualReleaseDate) allDates.push(parseDateTH(r.actualReleaseDate)); });
+  cycles.forEach(c => { if (c.startDate) allDates.push(parseDateTH(c.startDate)); if (c.endDate) allDates.push(parseDateTH(c.endDate)); });
+  allDates.push(todayTH);
+  if (!releases.length && !cycles.length) return null;
+
+  const minD = new Date(Math.min(...allDates.map(d => d.getTime())));
+  const maxD = new Date(Math.max(...allDates.map(d => d.getTime())));
+  const rangeStart = addDays(minD, -7);
+  const rangeEnd = addDays(maxD, 14);
+
+  // Build working days array (Mon-Fri only)
+  const workDays: Date[] = [];
+  const d = new Date(rangeStart);
+  while (d <= rangeEnd) { if (isWeekday(d)) workDays.push(new Date(d)); d.setDate(d.getDate() + 1); }
+  const totalCols = workDays.length;
+  if (totalCols === 0) return null;
+
+  const dayIndex = (target: Date) => workDays.findIndex(w => sameDay(w, target));
+  const colStart = (target: Date) => { const i = dayIndex(target); return i >= 0 ? i + 1 : -1; };
+  const colSpan = (from: Date, to: Date) => { const s = dayIndex(from); const e = dayIndex(to); return s >= 0 && e >= 0 ? Math.max(1, e - s + 1) : 0; };
+
+  // Build week groups (Mon-Fri chunks)
+  type WeekGroup = { weekNo: number; start: Date; end: Date; dayCount: number; label: string };
+  const weekGroups: WeekGroup[] = [];
+  let wg: WeekGroup | null = null;
+  workDays.forEach(w => {
+    if (!wg || w.getDay() === 1) {
+      if (wg) weekGroups.push(wg);
+      wg = { weekNo: weekGroups.length + 1, start: new Date(w), end: new Date(w), dayCount: 0, label: "" };
+    }
+    wg.end = new Date(w);
+    wg.dayCount++;
+  });
+  if (wg) weekGroups.push(wg);
+  weekGroups.forEach(wg => { wg.label = `${fmtShort(wg.start)} – ${fmtShort(wg.end)}`; });
+
+  // Today column
+  const todayCol = dayIndex(todayTH);
+
+  const cycleColor = (s: string) => s === "Completed" ? "#16a34a" : s === "InProgress" ? "#2563eb" : s === "Cancelled" ? "#94a3b8" : "#d97706";
+  const releaseColor = (s: string) => s === "Released" ? "#16a34a" : s === "Ready" ? "#2563eb" : s === "Testing" ? "#d97706" : "#64748b";
+
+  // Build week header spans (how many cols each week has)
+  const weekSpans = weekGroups.map(wg => wg.dayCount);
+
+  return <article className="card panel" style={{padding:24,overflowX:"auto"}}>
+    <h3 className="title" style={{fontSize:16}}>Executive Timeline</h3>
+    <p className="subtitle">Weekly Delivery View — Release milestones & Test Cycle progress</p>
+    <div className="tl-head">
+      <div></div>
+      <div>
+        <div className="weeks">
+          {weekGroups.map((wg, i) => <span key={i} style={{gridColumn:`span ${weekSpans[i]}`}}>{wg.label}</span>)}
+        </div>
+        <div className="days">
+          {workDays.map((w, i) => <span key={i} className={sameDay(w, todayTH) ? "today-col" : ""}>{w.getDate()}</span>)}
+        </div>
+      </div>
+    </div>
+    {releases.length > 0 && <>
+      <div className="week-group-header"><div><span>RELEASES</span><b>Milestones</b></div><strong>{releases.length} Active</strong></div>
+      {releases.map((r, idx) => {
+        const pd = r.plannedReleaseDate ? parseDateTH(r.plannedReleaseDate) : null;
+        const ad = r.actualReleaseDate ? parseDateTH(r.actualReleaseDate) : null;
+        const sd = pd || ad; const ed = ad || pd;
+        const gc = sd && ed ? colStart(sd) : -1;
+        const gs = sd && ed ? colSpan(sd, ed) : 0;
+        return <div key={r.releaseId} className={`tl-row animated-row${r.status === "Testing" ? " critical-row" : ""}`} style={{"--delay":`${idx * 0.06}s`} as React.CSSProperties}>
+          <div className="tl-label">
+            <div className="tl-title">{r.releaseCode}</div>
+            <div className="tl-meta">{r.version} • {r.status}</div>
+          </div>
+          <div className="tl-track">
+            <div className="day-grid">{workDays.map((_, i) => <i key={i} />)}</div>
+            <div className="tl-bar-grid">
+              {gc > 0 && <span className="animated-bar" style={{gridColumn:`${gc}/span ${Math.max(gs,1)}`,background:releaseColor(r.status),["--bar-delay" as string]:`${0.15 + idx * 0.08}s`}}>
+                <em>{pd ? fmtShort(pd) : ""}{ad && pd ? "–" : ""}{ad ? fmtShort(ad) : ""}</em>
+              </span>}
+            </div>
+          </div>
+        </div>;
+      })}
+    </>}
+    {cycles.length > 0 && <>
+      <div className="week-group-header"><div><span>TEST CYCLES</span><b>Execution Progress</b></div><strong>{cycles.length} Active</strong></div>
+      {cycles.map((c, idx) => {
+        const sd = c.startDate ? parseDateTH(c.startDate) : null;
+        const ed = c.endDate ? parseDateTH(c.endDate) : null;
+        const gc = sd && ed ? colStart(sd) : -1;
+        const gs = sd && ed ? colSpan(sd, ed) : 0;
+        const color = cycleColor(c.status);
+        return <div key={c.testCycleId} className="tl-row animated-row" style={{"--delay":`${idx * 0.06}s`} as React.CSSProperties}>
+          <div className="tl-label">
+            <div className="tl-title">{c.cycleCode}</div>
+            <div className="tl-meta">{c.cycleName} • {c.progressPercent}%</div>
+          </div>
+          <div className="tl-track">
+            <div className="day-grid">{workDays.map((_, i) => <i key={i} />)}</div>
+            <div className="tl-bar-grid">
+              {gc > 0 && gs > 0 && <span className="animated-bar" style={{gridColumn:`${gc}/span ${gs}`,background:color,["--bar-delay" as string]:`${0.15 + idx * 0.08}s`}}>
+                <em>{sd ? fmtShort(sd) : ""}{ed && sd ? "–" : ""}{ed ? fmtShort(ed) : ""}</em>
+              </span>}
+            </div>
+          </div>
+        </div>;
+      })}
+    </>}
+  </article>;
+}
+
+function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, projectName }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string; projectName?: string }) {
   const [data, setData] = useState<DashboardSummary | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
-  const [moduleSearch, setModuleSearch] = useState(""), [collapsedModules, setCollapsedModules] = useState<Set<string>>(new Set()), [userFilter, setUserFilter] = useState("");
   useEffect(() => {
     setLoading(true); setError("");
     const params = new URLSearchParams({ ...(projectId && { projectId }), ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
-    const url = shareToken ? `${apiUrl}/dashboard/shared?token=${encodeURIComponent(shareToken)}` : `${apiUrl}/dashboard/summary?${params}`;
-    fetch(url, shareToken ? {} : { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } })
+    const url = shareCode ? `${apiUrl}/dashboard/shared/${encodeURIComponent(shareCode)}` : shareToken ? `${apiUrl}/dashboard/shared?token=${encodeURIComponent(shareToken)}` : `${apiUrl}/dashboard/summary?${params}`;
+    fetch(url, shareCode || shareToken ? {} : { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } })
       .then(async r => { if (!r.ok) throw new Error(r.status === 401 ? "ลิงก์แชร์ไม่ถูกต้องหรือหมดอายุ" : "ไม่สามารถโหลดข้อมูล Dashboard ได้"); return r.json(); })
       .then(setData).catch(e => setError(e.message)).finally(() => setLoading(false));
-  }, [projectId, releaseId, buildId, shareToken]);
+  }, [projectId, releaseId, buildId, shareCode, shareToken]);
   if (loading) return <div className="executive-loading">กำลังประมวลผลข้อมูลคุณภาพ...</div>;
   if (error || !data) return <div className="executive-error">{error || "ไม่พบข้อมูล"}</div>;
-  const normalizedModuleSearch = moduleSearch.trim().toLocaleLowerCase("th-TH");
-  const includedModuleIds = new Set(data.modules.filter(x => !normalizedModuleSearch || x.moduleName.toLocaleLowerCase("th-TH").includes(normalizedModuleSearch)).map(x => x.moduleId));
-  if (normalizedModuleSearch) for (const item of data.modules) if (includedModuleIds.has(item.moduleId)) { let parentId = item.parentModuleId; while (parentId) { includedModuleIds.add(parentId); parentId = data.modules.find(x => x.moduleId === parentId)?.parentModuleId; } }
-  const moduleRows: { item: DashboardSummary["modules"][number]; depth: number; childCount: number }[] = [];
-  const appendModules = (parentId: string | undefined, depth: number) => data.modules.filter(x => (x.parentModuleId || undefined) === parentId && includedModuleIds.has(x.moduleId)).sort((a,b) => a.moduleName.localeCompare(b.moduleName, "th")).forEach(item => { const children = data.modules.filter(x => x.parentModuleId === item.moduleId && includedModuleIds.has(x.moduleId)); moduleRows.push({ item, depth, childCount: children.length }); if (normalizedModuleSearch || !collapsedModules.has(item.moduleId)) appendModules(item.moduleId, depth + 1); });
-  appendModules(undefined, 0);
-  data.modules.filter(x => x.parentModuleId && !data.modules.some(parent => parent.moduleId === x.parentModuleId) && includedModuleIds.has(x.moduleId)).forEach(item => { if (!moduleRows.some(row => row.item.moduleId === item.moduleId)) moduleRows.push({ item, depth: 0, childCount: 0 }); });
-  const users = data.users.filter(x => !userFilter || x.userId === userFilter);
-  const totalStatus = Math.max(1, data.statusDistribution.reduce((n, x) => n + x.count, 0)); let angle = 0;
-  const donut = data.statusDistribution.map(x => { const start = angle; angle += x.count / totalStatus * 360; return `${x.color} ${start}deg ${angle}deg`; }).join(",");
   const decisionReason = data.recommendedDecision === "NO DATA" ? "ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน"
     : data.criticalDefects > 0 ? `พบ Critical Defect ค้าง ${data.criticalDefects} รายการ`
     : data.openP0 > 0 ? `พบ P0 ค้าง ${data.openP0} รายการ`
@@ -296,7 +568,39 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
     : data.passRate < 90 ? `Pass Rate ${data.passRate}% ต่ำกว่าเกณฑ์ 90%`
     : "ผ่านเกณฑ์ P0/P1, Coverage, Pass Rate และ Defect";
   return <div className="executive-dashboard">
-    <section className="executive-hero"><div className="executive-title"><span className="eyebrow">QUALITY EXECUTIVE OVERVIEW</span><h2>Release Readiness Dashboard</h2><p>ข้อมูลจากระบบ ณ {new Date(data.generatedAt).toLocaleString("th-TH")}</p></div><div className="overall-score"><small>PROJECT OVERALL SCORE</small><strong>{data.overallScore == null ? "N/A" : `${data.overallScore}%`}</strong><span>Coverage 25% · Execution 25% · Pass 30% · Defect 20%</span></div><div className={`decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}><small>คำแนะนำ</small><strong>{data.recommendedDecision}</strong><span>{decisionReason}</span></div></section>
+    <section className="exec-hero">
+      <div className="exec-hero-accent" />
+      <div className="exec-hero-body">
+        <div className="exec-hero-top">
+          <div className="exec-hero-info">
+            <span className="exec-hero-eyebrow">QUALITY EXECUTIVE OVERVIEW</span>
+            <h2 className="exec-hero-title">{projectName || "Release Readiness Dashboard"}</h2>
+          </div>
+          <div className="exec-hero-score">
+            <strong>{data.overallScore == null ? "N/A" : `${data.overallScore}%`}</strong>
+            <small>Overall Score</small>
+          </div>
+        </div>
+        <div className="exec-hero-bottom">
+          <div className={`exec-hero-decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}>
+            <span className="decision-icon">{data.recommendedDecision === "GO" ? "✓" : data.recommendedDecision === "NO GO" ? "✕" : "!"}</span>
+            <div className="decision-text">
+              <strong>{data.recommendedDecision}</strong>
+              <span>{decisionReason}</span>
+            </div>
+          </div>
+          <div className="exec-hero-context">
+            <span>{data.totalRequirements} Requirements</span>
+            <span>{data.totalCases} Test Cases</span>
+            <span>{data.executionProgress}% Execution</span>
+            <span>{data.passRate}% Pass Rate</span>
+            {data.openDefects > 0 && <span className="ctx-alert">{data.openDefects} Open Defects</span>}
+            {data.criticalDefects > 0 && <span className="ctx-alert">{data.criticalDefects} Critical</span>}
+            <span className="ctx-time">{new Date(data.generatedAt).toLocaleString("th-TH", {timeZone:"Asia/Bangkok", day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit"})}</span>
+          </div>
+        </div>
+      </div>
+    </section>
     <div className="kpi-grid">{[
       ["Requirement Coverage", `${data.requirementCoverage}%`, `${data.coveredRequirements.toLocaleString()} / ${data.totalRequirements.toLocaleString()} Covered`, "green"],
       ["Execution Progress", `${data.executionProgress}%`, `${data.executedCases.toLocaleString()} / ${data.totalCases.toLocaleString()} Cases`, "blue"],
@@ -304,21 +608,45 @@ function Dashboard({ projectId, releaseId, buildId, shareToken }: { projectId?: 
       ["Defect Quality", `${data.defectQuality}%`, `${data.openDefects} Open · Critical ${data.criticalDefects} · High ${data.highDefects}`, data.criticalDefects ? "red" : data.highDefects ? "yellow" : "green"],
       ["Release Blockers", data.openP0 + data.openP1, `P0 ${data.openP0} • P1 ${data.openP1}`, data.openP0 + data.openP1 ? "red" : "green"],
     ].map(x => <article className="card kpi" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small className={String(x[3])}>{x[2]}</small></article>)}</div>
-    <div className="executive-chart-grid">
-      <article className="card status-card"><div><h3>Execution Results</h3><p>สัดส่วนผลการทดสอบทั้งหมด</p><div className="chart-legend">{data.statusDistribution.map(x => <span key={x.status}><i style={{background:x.color}} />{x.status}<b>{x.count}</b></span>)}</div></div><div className="donut" style={{background:`conic-gradient(${donut || "#e2e8f0 0 360deg"})`}}><div><strong>{data.executedCases}</strong><small>Executed</small></div></div></article>
-      <article className="card"><div className="card-title"><div><h3>Performance by User</h3><p>ผลการดำเนินงานของผู้ทดสอบ</p></div><select value={userFilter} onChange={e=>setUserFilter(e.target.value)}><option value="">ผู้ใช้ทั้งหมด</option>{data.users.map(x=><option key={x.userId} value={x.userId}>{x.displayName}</option>)}</select></div><div className="user-bars">{users.length ? users.slice(0,8).map(x=><div className="user-bar" key={x.userId}><span>{x.displayName}</span><div><i style={{width:`${x.passRate}%`}} /></div><strong>{x.passRate}%</strong><small>{x.executions} runs</small></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบโดยผู้ใช้</p>}</div></article>
-    </div>
-    <article className="card module-health-card">
-      <div className="card-title"><div><h3>Module Health <Badge tone="blue">{data.modules.length}</Badge></h3><p>Coverage, execution และคุณภาพตามโครงสร้าง Module</p></div><label className="module-search"><span>⌕</span><input value={moduleSearch} onChange={e=>setModuleSearch(e.target.value)} placeholder="ค้นหา Module..." /></label></div>
-      <div className="table-wrap module-table-scroll"><table><thead><tr><th>Module</th><th>Requirements</th><th>Test Cases</th><th>Coverage</th><th>Execution</th><th>Pass Rate</th><th>Fail</th><th>Blocked</th><th>Status</th></tr></thead><tbody>
-        {moduleRows.map(({item:r,depth,childCount}) => <tr key={r.moduleId} className={depth ? "module-child-row" : "module-parent-row"}><td><div className="module-tree-name" style={{paddingLeft:`${depth * 24}px`}}>{childCount > 0 ? <button title={collapsedModules.has(r.moduleId) ? "ขยาย" : "ย่อ"} onClick={()=>setCollapsedModules(current=>{const next=new Set(current); if(next.has(r.moduleId)) next.delete(r.moduleId); else next.add(r.moduleId); return next;})}>{collapsedModules.has(r.moduleId) ? "▸" : "▾"}</button> : <span className="tree-branch">└</span>}<b>{r.moduleName}</b>{childCount > 0 && <small>{childCount} รายการ</small>}</div></td><td>{r.coveredRequirements}/{r.requirements}</td><td>{r.testCases}</td><td><span className="metric-bar"><i style={{width:`${r.coveragePercent}%`}} /></span>{r.coveragePercent}%</td><td>{r.executionPercent}%</td><td><b className="metric-pass">{r.passRate}%</b></td><td><b className="metric-fail">{r.failed}</b></td><td><b className="metric-blocked">{r.blocked}</b></td><td><Badge tone={r.health === "Healthy" ? "green" : r.health === "Watch" ? "yellow" : "red"}>{r.health}</Badge></td></tr>)}
-        {!moduleRows.length && <tr><td colSpan={9} className="muted-row">ไม่พบ Module ที่ค้นหา</td></tr>}
+    <QualityOverviewCharts data={data} projectId={projectId} releaseId={releaseId} buildId={buildId} />
+    <ExecutiveTimeline projectId={projectId} releaseId={releaseId} buildId={buildId} />
+    <article className="card" style={{padding:24}}>
+      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>Module Overview</h3>
+      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ลำดับ Module ตามโครงสร้างระบบ พร้อมจำนวน Test Case และสถานะ</p>
+      <div className="module-sequence">
+        {data.modules.filter(x => !x.parentModuleId).sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || (a.moduleCode ?? "").localeCompare(b.moduleCode ?? "")).map((m, i) => { const tc = Math.max(1, m.testCases); const pPct = Math.round(m.passed / tc * 100); const fPct = Math.round(m.failed / tc * 100); const bPct = Math.round(m.blocked / tc * 100); return <div className="module-card" key={m.moduleId}><div className="module-index">{String(i + 1).padStart(2, "0")}</div><div className="module-main"><div className="module-name">{m.moduleName}</div><div className="module-owner">{m.testCases} Test Cases · {m.health}</div></div><div className="module-stat"><b>{m.testCases}</b><span>Cases</span></div><div className="module-status-bar"><div className="status-bar-track"><span style={{width:`${pPct}%`,background:"#16a34a"}} /><span style={{width:`${fPct}%`,background:"#dc2626"}} /><span style={{width:`${bPct}%`,background:"#d97706"}} /></div><div className="status-bar-labels"><span className="sb-pass">{pPct}%</span><span className="sb-fail">{fPct}%</span><span className="sb-block">{bPct}%</span></div></div></div>; })}
+      </div>
+    </article>
+    <article className="card" style={{padding:24}}>
+      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>QA Performance</h3>
+      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ผลการดำเนินงานของผู้ทดสอบแต่ละคน</p>
+      <div className="qa-list">
+        {data.users.length ? data.users.map((u, i) => <div className="qa-card" key={u.userId}><div className="qa-icon">{i + 1}</div><div className="qa-body"><div className="qa-top"><b>{u.displayName}</b><span>{u.passRate}%</span></div><div className="qa-desc">{u.executions} Executions · {u.passed} Passed · {u.failed} Failed</div><div className="qa-progress"><span style={{width:`${u.passRate}%`}} /></div></div></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบ</p>}
+      </div>
+    </article>
+    <article className="card" style={{padding:24}}>
+      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>Module Effort Summary</h3>
+      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>สรุปข้อมูล Module พร้อม Coverage, Execution และ Pass Rate</p>
+      <div className="table-wrap" style={{overflowX:"auto"}}><table className="effort-table"><thead><tr><th>#</th><th>Module</th><th>Test Cases</th><th>Coverage</th><th>Execution</th><th>Pass Rate</th><th>Fail</th><th>Blocked</th><th>Status</th></tr></thead><tbody>
+        {data.modules.filter(x => !x.parentModuleId).sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999)).map((m, i) => <tr key={m.moduleId}><td><span className="order-no">{i + 1}</span></td><td><div className="m-title">{m.moduleName}</div></td><td><span className="count-pill">{m.testCases}</span></td><td><span className="metric-bar"><i style={{width:`${m.coveragePercent}%`}} /></span>{m.coveragePercent}%</td><td>{m.executionPercent}%</td><td><b className="metric-pass">{m.passRate}%</b></td><td><b className="metric-fail">{m.failed}</b></td><td><b className="metric-blocked">{m.blocked}</b></td><td><Badge tone={m.health === "Healthy" ? "green" : m.health === "Watch" ? "yellow" : "red"}>{m.health}</Badge></td></tr>)}
       </tbody></table></div>
+    </article>
+    <article className="card" style={{padding:24}}>
+      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>Risks &amp; Blockers</h3>
+      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ความเสี่ยงและสิ่งกีดขวางที่ต้องติดตาม</p>
+      <div className="risks-grid">
+        {data.criticalDefects > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>Critical Defects</b><span>พบ Critical Defect ค้าง {data.criticalDefects} รายการ ต้องแก้ไขก่อน Release</span></div></div>}
+        {data.openP0 > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>P0 Blockers</b><span>พบ P0 ค้าง {data.openP0} รายการ เป็น Blocker สำหรับ Release</span></div></div>}
+        {data.highDefects > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>High Defects</b><span>พบ High Defect ค้าง {data.highDefects} รายการ ควรตรวจสอบและจัดลำดับ</span></div></div>}
+        {data.openP1 > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>P1 Issues</b><span>พบ P1 ค้าง {data.openP1} รายการ ตรวจสอบว่าต้องแก้ก่อน Release หรือไม่</span></div></div>}
+        {data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).length > 0 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>Low Coverage Modules</b><span>{data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).map(x => x.moduleName).join(", ")} มี Coverage ต่ำกว่า 50%</span></div></div>}
+        {data.requirementCoverage < 80 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>Low Requirement Coverage</b><span>Requirement Coverage อยู่ที่ {data.requirementCoverage}% ต่ำกว่าเกณฑ์ 80%</span></div></div>}
+        {data.criticalDefects === 0 && data.openP0 === 0 && data.highDefects === 0 && data.openP1 === 0 && <div className="risk-card" style={{background:"#f0fdf4",borderColor:"#bbf7d0"}}><div className="risk-icon" style={{background:"#dcfce7",color:"#16a34a"}}>✓</div><div className="risk-body"><b>No Critical Risks</b><span>ไม่พบ Critical Defect, P0 หรือ High Defect ค้าง — สถานะปกติ</span></div></div>}
+      </div>
     </article>
   </div>;
 }
 
-type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string };
 function DefectsPage({projectId,releaseId,buildId,search}:{projectId:string;releaseId:string;buildId:string;search:string}) {
   const [items,setItems]=useState<DefectItem[]>([]),[loading,setLoading]=useState(true);
   const headers=useMemo(()=>({"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}),[]);
@@ -330,9 +658,9 @@ function DefectsPage({projectId,releaseId,buildId,search}:{projectId:string;rele
   return <article className="card"><div className="table-tools"><span>{items.length} Defects ในขอบเขตที่เลือก</span><button className="btn primary" disabled={!projectId} onClick={()=>save()}>+ Defect</button></div><div className="table-wrap"><table><thead><tr><th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Created</th><th>จัดการ</th></tr></thead><tbody>{items.map(x=><tr key={x.defectId}><td><b>{x.defectCode}</b></td><td>{x.title}</td><td><Badge tone={tone(x.severity)}>{x.severity}</Badge></td><td>{x.status}</td><td>{new Date(x.createdAt).toLocaleDateString("th-TH")}</td><td><button className="action-button" onClick={()=>save(x)}>แก้ไข</button> <button className="action-button danger" onClick={()=>remove(x)}>ลบ</button></td></tr>)}{!loading&&!items.length&&<tr><td colSpan={6} className="muted-row">ยังไม่มี Defect ใน Project / Release / Build ที่เลือก</td></tr>}</tbody></table></div></article>;
 }
 
-function DataPage({ page, search, canAssignExecution = false }: { page: Page; search: string; canAssignExecution?: boolean }) {
-  if (page === "execution") return <ExecutionWorkspacePage />;
-  if (page === "test-cycles") return <TestCyclesPage search={search} canEdit={canAssignExecution} />;
+function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecution = false }: { page: Page; search: string; projectId?: string; releaseId?: string; buildId?: string; canAssignExecution?: boolean }) {
+  if (page === "execution") return <ExecutionWorkspacePage contextProjectId={projectId} contextReleaseId={releaseId} contextBuildId={buildId} />;
+  if (page === "test-cycles") return <TestCyclesPage search={search} canEdit={canAssignExecution} contextProjectId={projectId} contextReleaseId={releaseId} contextBuildId={buildId} />;
   if (page === "test-suites") {
     let canEdit = false;
     try {
@@ -345,7 +673,7 @@ function DataPage({ page, search, canAssignExecution = false }: { page: Page; se
     } catch {
       canEdit = false;
     }
-    return <TestSuitesPage search={search} canEdit={canEdit} />;
+    return <TestSuitesPage search={search} canEdit={canEdit} contextProjectId={projectId} />;
   }
   let headers: string[] = [],
     rows: string[][] = [];
@@ -556,10 +884,10 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
     [expanded, setExpanded] = useState<string[]>([]),
     [draggingId, setDraggingId] = useState(""),
     [dropHint, setDropHint] = useState("");
-  const headers = {
+  const headers = useMemo(() => ({
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
-  };
+  }), []);
   useEffect(() => {
     setLoading(true);
     const h = {
@@ -1117,7 +1445,8 @@ type BuildItem = {
   isActive: boolean;
   status: string;
 };
-function ReleasesPage({ search }: { search: string; refresh?: number }) {
+function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: number; contextProjectId?: string }) {
+  const masterOptions = useMasterOptions(), releaseTypes = masterOptions("ReleaseType");
   let canEdit = false;
   try {
     const current: SessionUser = JSON.parse(
@@ -1143,7 +1472,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
     [projectId, setProjectId] = useState(""),
     [code, setCode] = useState(""),
     [name, setName] = useState(""),
-    [type, setType] = useState("Major"),
+    [type, setType] = useState(""),
     [releaseStatus, setReleaseStatus] = useState("Draft"),
     [buildStatus, setBuildStatus] = useState("Ready"),
     [date, setDate] = useState(""),
@@ -1197,6 +1526,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
   const selected = items.find((x) => x.releaseId === selectedId),
     term = search.toLowerCase(),
     filteredReleases = items.filter((x) =>
+      (!contextProjectId || x.projectId === contextProjectId) &&
       `${x.releaseCode} ${x.version} ${x.releaseType ?? ""} ${x.status}`
         .toLowerCase()
         .includes(term),
@@ -1206,6 +1536,11 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
         .toLowerCase()
         .includes(term),
     );
+  useEffect(() => {
+    if (contextProjectId && filteredReleases.length && !filteredReleases.some((x) => x.releaseId === selectedId)) {
+      setSelectedId(filteredReleases[0].releaseId);
+    }
+  }, [contextProjectId, filteredReleases, selectedId]);
   const openRelease = (item?: ReleaseItem) => {
     setEditRelease(item ?? null);
     setEditBuild(null);
@@ -1222,7 +1557,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
         ),
     );
     setName(item?.version ?? "");
-    setType(item?.releaseType ?? "Major");
+    setType(item?.releaseType ?? releaseTypes[0]?.value ?? "");
     setReleaseStatus(item?.status ?? "Draft");
     setDate(item?.plannedReleaseDate?.slice(0, 10) ?? "");
     setDetails(item?.scope ?? "");
@@ -1337,7 +1672,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
       setModal(null);
       setReload((x) => x + 1);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
@@ -1584,9 +1919,7 @@ function ReleasesPage({ search }: { search: string; refresh?: number }) {
                       value={type}
                       onChange={(e) => setType(e.target.value)}
                     >
-                      <option>Major</option>
-                      <option>Minor</option>
-                      <option>Hotfix</option>
+                      {masterOptionElements(releaseTypes, type)}
                     </select>
                   </label>
                   {editRelease && (
@@ -1717,20 +2050,52 @@ type RequirementItem = {
   moduleId: string;
   releaseId?: string;
 };
+type RequirementRevisionItem = {
+  revisionNo: number;
+  title: string;
+  description?: string;
+  acceptanceCriteria?: string;
+  changedBy?: string;
+  changedAt: string;
+  changeReason?: string;
+};
+const requirementStatusInformation = [
+  { value: "Draft", label: "ฉบับร่าง", meaning: "Requirement ยังอยู่ระหว่างจัดทำและแก้ไขรายละเอียด", impact: "ยังไม่ถือว่าผ่านการตรวจสอบ เหมาะสำหรับเก็บข้อมูลเริ่มต้นก่อนส่งให้ทีม Review" },
+  { value: "Review", label: "รอตรวจสอบ", meaning: "Requirement พร้อมให้ผู้เกี่ยวข้องตรวจความครบถ้วนและความถูกต้อง", impact: "ทีมควรตรวจ Description, Acceptance Criteria, Priority และ Scope ก่อนอนุมัติ" },
+  { value: "Approved", label: "อนุมัติแล้ว", meaning: "Requirement ผ่านการรับรองและใช้เป็นข้อตกลงอ้างอิงของทีม", impact: "พร้อมนำไปออกแบบ Test Case และวางแผนพัฒนา การแก้สาระสำคัญควรระบุเหตุผลและสร้าง Revision" },
+  { value: "Implemented", label: "พัฒนาแล้ว", meaning: "ความสามารถตาม Requirement ถูกนำไปพัฒนาหรือส่งมอบแล้ว", impact: "ไม่ได้หมายความว่าทดสอบผ่านโดยอัตโนมัติ ยังต้องมี Test Case, Execution และผลทดสอบรองรับ" },
+  { value: "Cancelled", label: "ยกเลิก", meaning: "Requirement นี้เลิกใช้งานหรือไม่นำไปดำเนินการต่อ", impact: "ระบบยังนับใน RTM/Coverage หากเลือก In Scope อยู่ หากไม่ต้องการให้นับต้องยกเลิก In Scope ด้วย" },
+] as const;
 function RequirementsPage({
   search,
   refresh,
   canEdit,
+  contextProjectId,
 }: {
   search: string;
   refresh: number;
   canEdit: boolean;
+  contextProjectId?: string;
 }) {
   const [items, setItems] = useState<RequirementItem[]>([]),
+    [testCaseCounts, setTestCaseCounts] = useState<Record<string, number>>({}),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     [reload, setReload] = useState(0),
     [editing, setEditing] = useState<RequirementItem | null>(null),
+    [users, setUsers] = useState<AdminUser[]>([]),
+    [ownerUserId, setOwnerUserId] = useState(""),
+    [statusFilter, setStatusFilter] = useState(""),
+    [priorityFilter, setPriorityFilter] = useState(""),
+    [scopeFilter, setScopeFilter] = useState(""),
+    [moduleFilter, setModuleFilter] = useState(""),
+    [filterModules, setFilterModules] = useState<ModuleItem[]>([]),
+    [filterProjects, setFilterProjects] = useState<ProjectItem[]>([]),
+    [viewing, setViewing] = useState<RequirementItem | null>(null),
+    [viewRelease, setViewRelease] = useState<ReleaseItem | null>(null),
+    [historyItem, setHistoryItem] = useState<RequirementItem | null>(null),
+    [revisions, setRevisions] = useState<RequirementRevisionItem[]>([]),
+    [historyLoading, setHistoryLoading] = useState(false),
     [modules, setModules] = useState<ModuleItem[]>([]),
     [releases, setReleases] = useState<ReleaseItem[]>([]),
     [moduleId, setModuleId] = useState(""),
@@ -1758,10 +2123,31 @@ function RequirementsPage({
         if (!r.ok) throw new Error("โหลด Requirement ไม่สำเร็จ");
         return r.json();
       })
-      .then(setItems)
+      .then(async (data: RequirementItem[]) => {
+        setItems(data);
+        const releaseIds = [...new Set(data.map((x) => x.releaseId).filter((x): x is string => !!x))];
+        const rows = await Promise.all(releaseIds.map((id) => fetch(`${apiUrl}/releases/${id}/rtm`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } }).then((r) => r.ok ? r.json() : [])));
+        const counts: Record<string, number> = {};
+        rows.flat().forEach((x: RtmItem) => { counts[x.requirementId] = x.testCaseCount; });
+        setTestCaseCounts(counts);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [refresh, reload]);
+  useEffect(() => {
+    fetch(`${apiUrl}/admin/users`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: AdminUser[]) => setUsers(data.filter((x) => x.isActive)));
+  }, []);
+  useEffect(() => {
+    const authHeaders = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    fetch(`${apiUrl}/projects`, { headers: authHeaders }).then((r) => r.ok ? r.json() : []).then(async (projects: ProjectItem[]) => {
+      setFilterProjects(projects);
+      const moduleGroups = await Promise.all(projects.map((project) => fetch(`${apiUrl}/projects/${project.projectId}/modules`, { headers: authHeaders }).then((r) => r.ok ? r.json() : [])));
+      setFilterModules(moduleGroups.flat().filter((module: ModuleItem) => module.isActive).sort((a: ModuleItem, b: ModuleItem) => a.moduleName.localeCompare(b.moduleName, "th")));
+    });
+  }, []);
+  useEffect(() => { setModuleFilter(""); }, [contextProjectId]);
   const openEdit = async (item: RequirementItem) => {
     const [moduleData, releaseData] = await Promise.all([
       fetch(`${apiUrl}/projects/${item.projectId}/modules`, { headers }).then((r) => r.json()),
@@ -1778,6 +2164,7 @@ function RequirementsPage({
     setPriority(item.priority);
     setRisk(item.riskLevel ?? "Medium");
     setSource(item.source ?? "");
+    setOwnerUserId(item.ownerUserId ?? "");
     setStatus(item.status);
     setInScope(item.isInScope);
   };
@@ -1788,7 +2175,7 @@ function RequirementsPage({
       const response = await fetch(`${apiUrl}/requirements/${editing.requirementId}`, {
         method: "PUT",
         headers,
-        body: JSON.stringify({ releaseId: releaseId || null, moduleId, title, description: description || null, acceptanceCriteria: criteria || null, priority, riskLevel: risk || null, source: source || null, ownerUserId: editing.ownerUserId ?? null, isInScope: inScope }),
+        body: JSON.stringify({ releaseId: releaseId || null, moduleId, title, description: description || null, acceptanceCriteria: criteria || null, priority, riskLevel: risk || null, source: source || null, ownerUserId: ownerUserId || null, isInScope: inScope }),
       });
       if (!response.ok) throw new Error((await response.json()).detail ?? "แก้ไข Requirement ไม่สำเร็จ");
       if (status !== editing.status) {
@@ -1800,6 +2187,24 @@ function RequirementsPage({
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "แก้ไข Requirement ไม่สำเร็จ");
     } finally { setSaving(false); }
+  };
+  const openHistory = async (item: RequirementItem) => {
+    setHistoryItem(item);
+    setHistoryLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/requirements/${item.requirementId}/revisions`, { headers });
+      setRevisions(response.ok ? await response.json() : []);
+    } finally { setHistoryLoading(false); }
+  };
+  const openDetail = async (item: RequirementItem) => {
+    setViewing(item);
+    setViewRelease(null);
+    if (!item.releaseId) return;
+    const response = await fetch(`${apiUrl}/projects/${item.projectId}/releases`, { headers });
+    if (response.ok) {
+      const data: ReleaseItem[] = await response.json();
+      setViewRelease(data.find((x) => x.releaseId === item.releaseId) ?? null);
+    }
   };
   const remove = async (item: RequirementItem) => {
     if (!window.confirm(`ยืนยันลบ ${item.requirementCode}?\nข้อมูลจะถูกซ่อนและยังเก็บประวัติไว้`)) return;
@@ -1819,28 +2224,53 @@ function RequirementsPage({
         <div className="login-error">{error}</div>
       </article>
     );
+  const renderFilterModuleTree = (projectId: string): ReactElement[] => {
+    const projectModules = filterModules.filter((x) => x.projectId === projectId && x.isActive);
+    const options: ReactElement[] = [];
+    const append = (module: ModuleItem, depth: number) => {
+      const children = projectModules.filter((x) => x.parentModuleId === module.moduleId).sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.moduleName.localeCompare(b.moduleName, "th"));
+      const branch = depth > 0 ? `${"│  ".repeat(Math.max(0, depth - 1))}└─ ` : children.length ? "▸ " : "• ";
+      options.push(<option key={module.moduleId} value={module.moduleId}>{branch}{module.moduleName}</option>);
+      children.forEach((child) => append(child, depth + 1));
+    };
+    projectModules.filter((x) => !x.parentModuleId || !projectModules.some((parent) => parent.moduleId === x.parentModuleId)).sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.moduleName.localeCompare(b.moduleName, "th")).forEach((root) => append(root, 0));
+    return options;
+  };
   const filtered = items.filter((x) =>
-    `${x.requirementCode} ${x.title} ${x.priority} ${x.status}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+    (!contextProjectId || x.projectId === contextProjectId) &&
+    `${x.requirementCode} ${x.title} ${x.priority} ${x.status}`.toLowerCase().includes(search.toLowerCase()) &&
+    (!statusFilter || x.status === statusFilter) &&
+    (!priorityFilter || x.priority === priorityFilter) &&
+    (!scopeFilter || String(x.isInScope) === scopeFilter) &&
+    (!moduleFilter || x.moduleId === moduleFilter),
   );
   return (
-    <article className="card">
+    <article className="card requirement-page-card">
       <div className="table-tools">
         <div>
-          <select>
-            <option>ทุกสถานะ</option>
+          <select aria-label="กรองตามสถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">ทุกสถานะ</option>
+            {["Draft","Review","Approved","Implemented","Cancelled"].map((x) => <option key={x}>{x}</option>)}
           </select>
-          <select>
-            <option>ทุก Priority</option>
-            <option>P0</option>
-            <option>P1</option>
+          <select aria-label="กรองตาม Priority" value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+            <option value="">ทุก Priority</option>
+            {["P0","P1","P2","P3"].map((x) => <option key={x}>{x}</option>)}
+          </select>
+          <select aria-label="กรองตามขอบเขต" value={scopeFilter} onChange={(e) => setScopeFilter(e.target.value)}>
+            <option value="">ทุก Scope</option><option value="true">In Scope</option><option value="false">Out of Scope</option>
+          </select>
+          <select aria-label="กรองตาม Module" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
+            <option value="">ทุก Module</option>
+            {filterProjects.map((project) => {
+              const options = renderFilterModuleTree(project.projectId);
+              return options.length ? <optgroup key={project.projectId} label={project.projectName}>{options}</optgroup> : null;
+            })}
           </select>
         </div>
         <span>{filtered.length} Requirements</span>
       </div>
       <div className="table-wrap">
-        <table>
+        <table className="requirement-table">
           <thead>
             <tr>
               <th>Requirement ID</th>
@@ -1850,17 +2280,18 @@ function RequirementsPage({
               <th>Revision</th>
               <th>In Scope</th>
               <th>Status</th>
-              {canEdit && <th>จัดการ</th>}
+              <th>Test Cases</th>
+              <th>จัดการ</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((x) => (
               <tr key={x.requirementId}>
-                <td>
-                  <b>{x.requirementCode}</b>
+                <td data-label="Requirement">
+                  <button className="requirement-id-link" onClick={() => openDetail(x)} aria-label={`ดูรายละเอียด ${x.requirementCode}`}>{x.requirementCode}</button>
                 </td>
-                <td>{x.title}</td>
-                <td>
+                <td data-label="Title">{x.title}</td>
+                <td data-label="Priority">
                   <Badge
                     tone={
                       x.priority === "P0" || x.priority === "P1"
@@ -1871,10 +2302,10 @@ function RequirementsPage({
                     {x.priority}
                   </Badge>
                 </td>
-                <td>{x.riskLevel ?? "-"}</td>
-                <td>Rev. {x.revisionNo}</td>
-                <td>{x.isInScope ? "Yes" : "No"}</td>
-                <td>
+                <td data-label="Risk">{x.riskLevel ?? "-"}</td>
+                <td data-label="Revision">Rev. {x.revisionNo}</td>
+                <td data-label="Scope">{x.isInScope ? "In Scope" : "Out of Scope"}</td>
+                <td data-label="Status">
                   <Badge
                     tone={
                       x.status === "Approved" || x.status === "Implemented"
@@ -1885,26 +2316,63 @@ function RequirementsPage({
                     {x.status}
                   </Badge>
                 </td>
-                {canEdit && <td><div className="row-actions"><button className="table-action" onClick={() => openEdit(x)}>แก้ไข</button><button className="table-action danger-action" onClick={() => remove(x)}>ลบ</button></div></td>}
+                <td data-label="Test Cases"><Badge tone={(testCaseCounts[x.requirementId] ?? 0) > 0 ? "green" : "red"}>{testCaseCounts[x.requirementId] ?? 0} Cases</Badge></td>
+                <td data-label="จัดการ"><div className="row-actions"><button className="table-action" onClick={() => openHistory(x)}>Revision</button>{canEdit && <><button className="table-action" onClick={() => openEdit(x)}>แก้ไข</button><button className="table-action danger-action" onClick={() => remove(x)}>ลบ</button></>}</div></td>
               </tr>
             ))}
+            {filtered.length === 0 && <tr><td colSpan={10}><div className="empty"><p>ไม่พบ Requirement ตามตัวกรองที่เลือก</p></div></td></tr>}
           </tbody>
         </table>
       </div>
+      {viewing && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="requirement-detail-title" onMouseDown={() => setViewing(null)}>
+        <div className="modal-box requirement-detail-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="modal-head"><div><h2 id="requirement-detail-title">รายละเอียด Requirement</h2><small>{viewing.requirementCode}</small></div><button aria-label="ปิดหน้าต่างรายละเอียด" onClick={() => setViewing(null)}>×</button></div>
+          <div className="requirement-detail-title"><div><span>Requirement ID</span><b>{viewing.requirementCode}</b></div><h3>{viewing.title}</h3><div className="requirement-detail-badges"><Badge tone={viewing.priority === "P0" || viewing.priority === "P1" ? "red" : "blue"}>{viewing.priority}</Badge><Badge tone={viewing.status === "Approved" || viewing.status === "Implemented" ? "green" : "yellow"}>{viewing.status}</Badge><Badge tone={viewing.isInScope ? "green" : "red"}>{viewing.isInScope ? "In Scope" : "Out of Scope"}</Badge></div></div>
+          <dl className="requirement-detail-grid">
+            <div><dt>Project</dt><dd>{filterProjects.find((x) => x.projectId === viewing.projectId)?.projectName ?? "-"}</dd></div>
+            <div><dt>Module</dt><dd>{filterModules.find((x) => x.moduleId === viewing.moduleId)?.moduleName ?? "-"}</dd></div>
+            <div><dt>Release</dt><dd>{viewRelease ? `${viewRelease.releaseCode} · Version ${viewRelease.version}` : viewing.releaseId ? "กำลังโหลด..." : "ไม่ระบุ Release"}</dd></div>
+            <div><dt>Revision</dt><dd>Rev. {viewing.revisionNo}</dd></div>
+            <div><dt>Risk</dt><dd>{viewing.riskLevel || "ไม่ระบุ"}</dd></div>
+            <div><dt>Owner</dt><dd>{users.find((x) => x.userId === viewing.ownerUserId)?.displayName ?? "ไม่ระบุผู้รับผิดชอบ"}</dd></div>
+            <div className="full"><dt>Source</dt><dd>{viewing.source || "ไม่ระบุ"}</dd></div>
+            <div className="full detail-copy"><dt>Description</dt><dd>{viewing.description || "ไม่มีรายละเอียด"}</dd></div>
+            <div className="full detail-copy criteria"><dt>Acceptance Criteria</dt><dd>{viewing.acceptanceCriteria || "ไม่มี Acceptance Criteria"}</dd></div>
+          </dl>
+          <div className="requirement-detail-status"><span className="information-icon" aria-hidden="true">i</span><div><b>{viewing.status} · {requirementStatusInformation.find((x) => x.value === viewing.status)?.label}</b><p>{requirementStatusInformation.find((x) => x.value === viewing.status)?.meaning}</p><small>{requirementStatusInformation.find((x) => x.value === viewing.status)?.impact}</small></div></div>
+          <div className="modal-actions"><button className="btn primary" onClick={() => setViewing(null)}>ปิด</button></div>
+        </div>
+      </div>}
       {editing && (
         <div className="modal" onMouseDown={() => setEditing(null)}>
           <div className="modal-box requirement-editor" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head"><h2>แก้ไข Requirement</h2><button onClick={() => setEditing(null)}>×</button></div>
             <div className="form-grid">
               <label>Requirement Code<input value={editing.requirementCode} disabled /></label>
-              <label>Module<select value={moduleId} onChange={(e) => setModuleId(e.target.value)}>{modules.map((x) => <option key={x.moduleId} value={x.moduleId}>{x.moduleName}</option>)}</select></label>
+              <label>Module<select value={moduleId} onChange={(e) => setModuleId(e.target.value)}>{(() => { const renderModuleOptions = (mods: ModuleItem[], parentId?: string, depth = 0): ReactElement[] => { return mods.filter((x) => (x.parentModuleId || undefined) === parentId && x.isActive).sort((a, b) => a.moduleName.localeCompare(b.moduleName, "th")).flatMap((mod) => [<option key={mod.moduleId} value={mod.moduleId}>{depth > 0 ? "  ".repeat(depth) + "└ " : ""}{mod.moduleName}</option>, ...renderModuleOptions(mods, mod.moduleId, depth + 1)]); }; return renderModuleOptions(modules); })()}</select></label>
               <label>Release<select value={releaseId} onChange={(e) => setReleaseId(e.target.value)}><option value="">ไม่ระบุ Release</option>{releases.map((x) => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · Version {x.version}</option>)}</select></label>
               <label>Title<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
               <label>Priority<select value={priority} onChange={(e) => setPriority(e.target.value)}>{["P0","P1","P2","P3"].map((x) => <option key={x}>{x}</option>)}</select></label>
               <label>Risk<select value={risk} onChange={(e) => setRisk(e.target.value)}>{["Critical","High","Medium","Low"].map((x) => <option key={x}>{x}</option>)}</select></label>
               <label>Status<select value={status} onChange={(e) => setStatus(e.target.value)}>{["Draft","Review","Approved","Implemented","Cancelled"].map((x) => <option key={x}>{x}</option>)}</select></label>
               <label>Source<input value={source} onChange={(e) => setSource(e.target.value)} /></label>
+              <label>Owner<select value={ownerUserId} onChange={(e) => setOwnerUserId(e.target.value)}><option value="">ไม่ระบุผู้รับผิดชอบ</option>{users.map((x) => <option key={x.userId} value={x.userId}>{x.displayName}</option>)}</select></label>
               <label className="check-line"><input type="checkbox" checked={inScope} onChange={(e) => setInScope(e.target.checked)} /> In Scope</label>
+              <details className="requirement-status-information full">
+                <summary>
+                  <span className="information-icon" aria-hidden="true">i</span>
+                  <span><b>{status} · {requirementStatusInformation.find((x) => x.value === status)?.label}</b><small>{requirementStatusInformation.find((x) => x.value === status)?.meaning}</small></span>
+                  <em>ดูความหมายทั้งหมด</em>
+                </summary>
+                <div className="requirement-status-list">
+                  {requirementStatusInformation.map((item) => <article key={item.value} className={status === item.value ? "active" : ""}>
+                    <div><b>{item.value}</b><span>{item.label}</span></div>
+                    <p>{item.meaning}</p>
+                    <small><strong>ผลต่อการใช้งาน:</strong> {item.impact}</small>
+                  </article>)}
+                  <p className="status-scope-note"><b>หมายเหตุ:</b> Status ใช้บอกขั้นตอนการทำงานและใช้กรองรายการ ส่วนการนำ Requirement ไปคำนวณ RTM และ Coverage พิจารณาจากช่อง <b>In Scope</b></p>
+                </div>
+              </details>
               <label className="full">Description<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
               <label className="full">Acceptance Criteria<textarea rows={3} value={criteria} onChange={(e) => setCriteria(e.target.value)} /></label>
             </div>
@@ -1912,6 +2380,7 @@ function RequirementsPage({
           </div>
         </div>
       )}
+      {historyItem && <div className="modal" onMouseDown={() => setHistoryItem(null)}><div className="modal-box requirement-history" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2>Revision History</h2><small>{historyItem.requirementCode} · {historyItem.title}</small></div><button onClick={() => setHistoryItem(null)}>×</button></div>{historyLoading ? <div className="empty"><p>กำลังโหลดประวัติ...</p></div> : <div className="revision-list">{revisions.length === 0 ? <div className="empty"><p>ยังไม่มีประวัติ Revision</p></div> : revisions.map((x) => <article key={x.revisionNo}><div><b>Rev. {x.revisionNo}</b><time>{new Date(x.changedAt).toLocaleString("th-TH")}</time></div><h3>{x.title}</h3><p>{x.changeReason || "ไม่ระบุเหตุผลการเปลี่ยนแปลง"}</p>{x.acceptanceCriteria && <small>Acceptance Criteria: {x.acceptanceCriteria}</small>}</article>)}</div>}<div className="modal-actions"><button className="btn primary" onClick={() => setHistoryItem(null)}>ปิด</button></div></div></div>}
     </article>
   );
 }
@@ -1936,30 +2405,58 @@ type TestCaseItem = {
     expectedResult: string;
   }[];
 };
+type TestCaseRequirement = { requirementId:string; requirementCode:string; title:string; status:string; coverageType?:string };
+type TestCaseRevision = { revisionNo:number; changeReason:string; changedBy?:string; changedByName?:string; changedAt:string; steps:TestCaseItem["steps"] };
+type UserLookup = { userId:string; displayName:string };
+const testCaseStatusInfo = [
+  {value:"Draft",label:"ฉบับร่าง",detail:"อยู่ระหว่างออกแบบและยังไม่นำไปนับ Coverage",impact:"แก้ไขได้ และยังไม่พร้อมสำหรับ Execution"},
+  {value:"Review",label:"รอตรวจสอบ",detail:"ส่งให้ผู้เกี่ยวข้องตรวจความครบถ้วนของขั้นตอน",impact:"เชื่อม Requirement ได้ แต่ RTM จะแสดง Partial"},
+  {value:"Ready",label:"พร้อมใช้งาน",detail:"ผ่านการตรวจและพร้อมนำไปจัด Suite หรือ Execution",impact:"Test Case ที่เชื่อมจะทำให้ Requirement เป็น Covered"},
+  {value:"Deprecated",label:"เลิกใช้งาน",detail:"เก็บไว้เพื่อประวัติและไม่ควรนำไปใช้รอบใหม่",impact:"ไม่ควรเพิ่มเข้า Test Suite หรือ Cycle ใหม่"},
+];
+type GeneratedTestCase = { title:string; objective:string; preconditions:string; priority:string; testType:string; automationCandidate:boolean; steps:{ stepNo:number; action:string; testData?:string; expectedResult:string }[] };
 function TestCasesPage({
   search,
   canEdit,
+  contextProjectId,
 }: {
   search: string;
   canEdit: boolean;
+  contextProjectId?: string;
 }) {
+  const masterOptions = useMasterOptions(), testCasePriorities = masterOptions("TestCasePriority"), testCaseTypes = masterOptions("TestCaseType");
   const [items, setItems] = useState<TestCaseItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
     [modules, setModules] = useState<ModuleItem[]>([]),
+    [filterModules,setFilterModules]=useState<ModuleItem[]>([]),
     [loading, setLoading] = useState(true),
     [reload, setReload] = useState(0),
     [form, setForm] = useState(false),
     [editing, setEditing] = useState<TestCaseItem | null>(null),
     [saving, setSaving] = useState(false),
-    [statusFilter, setStatusFilter] = useState("");
+    [statusFilter, setStatusFilter] = useState(""),
+    [projectFilter,setProjectFilter]=useState(""),[moduleFilter,setModuleFilter]=useState(""),
+    [priorityFilter,setPriorityFilter]=useState(""),[typeFilter,setTypeFilter]=useState(""),[automationFilter,setAutomationFilter]=useState(""),
+    [users,setUsers]=useState<UserLookup[]>([]),[ownerUserId,setOwnerUserId]=useState(""),
+    [error,setError]=useState(""),[notice,setNotice]=useState(""),[page,setPage]=useState(1),[pageSize,setPageSize]=useState(10),
+    [detail,setDetail]=useState<TestCaseItem|null>(null),[detailRequirements,setDetailRequirements]=useState<TestCaseRequirement[]>([]),
+    [revisions,setRevisions]=useState<TestCaseRevision[]>([]),[confirmDelete,setConfirmDelete]=useState<TestCaseItem|null>(null),
+    [importing,setImporting]=useState(false),[templateDownloading,setTemplateDownloading]=useState(false),
+    [testCaseAiModal,setTestCaseAiModal]=useState(false),
+    [testCaseAiPrompt,setTestCaseAiPrompt]=useState(""),
+    [testCaseAiFiles,setTestCaseAiFiles]=useState<File[]>([]),
+    [testCaseAiGenerating,setTestCaseAiGenerating]=useState(false),
+    [testCaseAiError,setTestCaseAiError]=useState(""),
+    [caseAiDrafts,setCaseAiDrafts]=useState<GeneratedTestCase[]>([]),
+    [caseAiExpanded,setCaseAiExpanded]=useState<number|undefined>(undefined);
   const [projectId, setProjectId] = useState(""),
     [moduleId, setModuleId] = useState(""),
     [code, setCode] = useState(""),
     [title, setTitle] = useState(""),
     [objective, setObjective] = useState(""),
     [preconditions, setPreconditions] = useState(""),
-    [priority, setPriority] = useState("P1"),
-    [testType, setTestType] = useState("Functional"),
+    [priority, setPriority] = useState(""),
+    [testType, setTestType] = useState(""),
     [automation, setAutomation] = useState(false),
     [status, setStatus] = useState("Draft"),
     [changeReason, setChangeReason] = useState(""),
@@ -1974,12 +2471,12 @@ function TestCasesPage({
     const h = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
-    Promise.all([
-      fetch(`${apiUrl}/test-cases`, { headers: h }).then((r) => r.json()),
-      fetch(`${apiUrl}/projects`, { headers: h }).then((r) => r.json()),
-    ])
-      .then(([cases, projectData]) => {
+    setLoading(true); setError("");
+    const readJson=(url:string)=>fetch(url,{headers:h}).then(async r=>{if(!r.ok)throw new Error((await r.text())||`HTTP ${r.status}`);return r.json();});
+    Promise.all([readJson(`${apiUrl}/test-cases`),readJson(`${apiUrl}/projects`),readJson(`${apiUrl}/lookups/users`)])
+      .then(([cases, projectData, userData]) => {
         setItems(cases);
+        setUsers(userData);
         const activeProjects = (projectData as ProjectItem[]).filter(
           (x) => x.isActive,
         );
@@ -1987,7 +2484,7 @@ function TestCasesPage({
         setProjectId(
           (current) => current || activeProjects[0]?.projectId || "",
         );
-      })
+      }).catch(e=>setError(e instanceof Error?e.message:"โหลดข้อมูล Test Case ไม่สำเร็จ"))
       .finally(() => setLoading(false));
   }, [reload]);
   useEffect(() => {
@@ -2011,6 +2508,17 @@ function TestCasesPage({
         );
       });
   }, [projectId]);
+  useEffect(()=>{
+    if(!projects.length){setFilterModules([]);return;}
+    let cancelled=false;
+    const targets=projectFilter?projects.filter(x=>x.projectId===projectFilter):projects;
+    const authHeaders={Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`};
+    Promise.all(targets.map(project=>fetch(`${apiUrl}/projects/${project.projectId}/modules`,{headers:authHeaders}).then(async response=>response.ok?response.json():Promise.reject(new Error(`โหลด Module ของ ${project.projectName} ไม่สำเร็จ`)))))
+      .then(groups=>{if(!cancelled)setFilterModules((groups.flat() as ModuleItem[]).filter(x=>x.isActive));})
+      .catch(error=>{if(!cancelled){setFilterModules([]);setError(error instanceof Error?error.message:"โหลดข้อมูล Module ไม่สำเร็จ");}});
+    return()=>{cancelled=true};
+  },[projects,projectFilter,reload]);
+  useEffect(() => { setProjectFilter(contextProjectId ?? ""); setModuleFilter(""); setPage(1); }, [contextProjectId]);
   useEffect(() => {
     if (!form || editing || !projectId || !moduleId) return;
     const project = projects.find((x) => x.projectId === projectId);
@@ -2048,9 +2556,10 @@ function TestCasesPage({
     setTitle(item?.title ?? "");
     setObjective(item?.objective ?? "");
     setPreconditions(item?.preconditions ?? "");
-    setPriority(item?.priority ?? "P1");
-    setTestType(item?.testType ?? "Functional");
+    setPriority(item?.priority ?? testCasePriorities[0]?.value ?? "");
+    setTestType(item?.testType ?? testCaseTypes[0]?.value ?? "");
     setAutomation(item?.automationCandidate ?? false);
+    setOwnerUserId(item?.ownerUserId ?? "");
     setStatus(item?.status ?? "Draft");
     setChangeReason(item ? "ปรับปรุงข้อมูล Test Case" : "");
     setSteps(
@@ -2080,7 +2589,7 @@ function TestCasesPage({
             priority,
             testType,
             automationCandidate: automation,
-            ownerUserId: editing.ownerUserId ?? null,
+            ownerUserId: ownerUserId || null,
             changeReason: changeReason.trim(),
             steps,
           }
@@ -2094,7 +2603,7 @@ function TestCasesPage({
             priority,
             testType,
             automationCandidate: automation,
-            ownerUserId: null,
+            ownerUserId: ownerUserId || null,
             steps,
           };
       const response = await fetch(
@@ -2119,31 +2628,45 @@ function TestCasesPage({
           throw new Error(problem.detail ?? "เปลี่ยนสถานะไม่สำเร็จ");
         }
       }
-      setForm(false);
+      setForm(false); setNotice(editing ? "บันทึกและสร้าง Revision ใหม่แล้ว" : "เพิ่ม Test Case แล้ว");
       setReload((x) => x + 1);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
   };
   const remove = async (item: TestCaseItem) => {
-    if (
-      !window.confirm(
-        `ยืนยันลบ ${item.testCaseCode}? ข้อมูลประวัติเดิมจะยังคงอยู่`,
-      )
-    )
-      return;
     const response = await fetch(`${apiUrl}/test-cases/${item.testCaseId}`, {
       method: "DELETE",
       headers,
     });
     if (!response.ok) {
-      window.alert("ลบ Test Case ไม่สำเร็จ");
+      setError("ลบ Test Case ไม่สำเร็จ");
       return;
     }
-    setReload((x) => x + 1);
+    setConfirmDelete(null);setNotice(`ลบ ${item.testCaseCode} แล้ว`);setReload((x) => x + 1);
   };
+  const openDetail=async(item:TestCaseItem)=>{setDetail(item);setDetailRequirements([]);setRevisions([]);try{const h={Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`};const read=(url:string)=>fetch(url,{headers:h}).then(r=>r.ok?r.json():[]);const [reqs,history]=await Promise.all([read(`${apiUrl}/test-cases/${item.testCaseId}/requirements`),read(`${apiUrl}/test-cases/${item.testCaseId}/revisions`)]);setDetailRequirements(Array.isArray(reqs)?reqs:[]);setRevisions(Array.isArray(history)?history:[]);}catch{}};
+  const cloneCase=async(item:TestCaseItem)=>{try{const r=await fetch(`${apiUrl}/test-cases/${item.testCaseId}/clone`,{method:"POST",headers});if(!r.ok)throw new Error("คัดลอก Test Case ไม่สำเร็จ");setNotice(`สร้างสำเนาจาก ${item.testCaseCode} แล้ว`);setReload(x=>x+1);}catch(e){setError(e instanceof Error?e.message:"คัดลอกไม่สำเร็จ");}};
+  const importFile=async(file:File)=>{setImporting(true);setError("");try{const data=new FormData();data.append("file",file);data.append("projectId",projectFilter||projects[0]?.projectId||"");const r=await fetch(`${apiUrl}/test-cases/import`,{method:"POST",headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`},body:data});if(!r.ok)throw new Error((await r.text())||"นำเข้าข้อมูลไม่สำเร็จ");const result=await r.json();setNotice(`นำเข้าสำเร็จ ${result.imported} รายการ${result.failed?` ไม่สำเร็จ ${result.failed} รายการ`:""}`);setReload(x=>x+1);}catch(e){setError(e instanceof Error?e.message:"นำเข้าข้อมูลไม่สำเร็จ");}finally{setImporting(false);}};
+  const downloadImportTemplate=async()=>{const selectedProjectId=projectFilter||projects[0]?.projectId||"";if(!selectedProjectId){setError("กรุณาเลือก Project ก่อนดาวน์โหลด Template");return;}setTemplateDownloading(true);setError("");try{const response=await fetch(`${apiUrl}/test-cases/import-template?projectId=${selectedProjectId}`,{headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}});if(!response.ok){const problem=await response.json().catch(()=>null);throw new Error(problem?.detail??"ดาวน์โหลด Template ไม่สำเร็จ");}const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="TestCase_Import_Template.xlsx";link.click();URL.revokeObjectURL(url);}catch(e){setError(e instanceof Error?e.message:"ดาวน์โหลด Template ไม่สำเร็จ");}finally{setTemplateDownloading(false);}};
+  const openTestCaseAi=()=>{setProjectId(projectFilter||projectId||projects[0]?.projectId||"");setModuleId(moduleFilter||moduleId||"");setTestCaseAiPrompt("");setTestCaseAiFiles([]);setTestCaseAiError("");setCaseAiDrafts([]);setCaseAiExpanded(undefined);setTestCaseAiModal(true);};
+  const addTestCaseAiFiles=(selected:File[])=>{const next=[...testCaseAiFiles,...selected].slice(0,5);if(next.reduce((sum,file)=>sum+file.size,0)>20_000_000){setTestCaseAiError("ขนาดไฟล์รวมต้องไม่เกิน 20 MB");return;}setTestCaseAiError(selected.length+testCaseAiFiles.length>5?"แนบไฟล์ได้ไม่เกิน 5 ไฟล์":"");setTestCaseAiFiles(next);};
+  const generateTestCaseWithAi=async()=>{
+    if(!projectId||!moduleId||!testCaseAiPrompt.trim())return;
+    setTestCaseAiGenerating(true);setTestCaseAiError("");
+    try{
+      const body=new FormData();body.append("prompt",testCaseAiPrompt.trim());body.append("projectName",projects.find(x=>x.projectId===projectId)?.projectName??"");body.append("moduleName",modules.find(x=>x.moduleId===moduleId)?.moduleName??"");body.append("moduleId",moduleId);body.append("projectId",projectId);testCaseAiFiles.forEach(file=>body.append("files",file));
+      const response=await fetch(`${apiUrl}/test-cases/generate-ai`,{method:"POST",headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`},body});
+      if(!response.ok){const problem=await response.json().catch(()=>null);throw new Error(problem?.detail??"AI Generate Test Case ไม่สำเร็จ");}
+      const drafts:GeneratedTestCase[]=await response.json();
+      if(!Array.isArray(drafts)||!drafts.length)throw new Error("AI ไม่ได้สร้าง Test Case กลับมา");
+      setCaseAiDrafts(drafts);setCaseAiExpanded(0);
+    }catch(e){setTestCaseAiError(e instanceof Error?e.message:"AI Generate Test Case ไม่สำเร็จ");}finally{setTestCaseAiGenerating(false);}
+  };
+  const removeCaseAiDraft=(index:number)=>setCaseAiDrafts(drafts=>{const next=drafts.filter((_,i)=>i!==index);if(next.length===0){setTestCaseAiModal(false);}return next;});
+  const saveAllCaseDrafts=async()=>{if(!caseAiDrafts.length)return;setTestCaseAiGenerating(true);setTestCaseAiError("");try{let created=0;for(const draft of caseAiDrafts){const priority=testCasePriorities.some(x=>x.value===draft.priority)?draft.priority:(testCasePriorities[0]?.value??"");const testType=testCaseTypes.some(x=>x.value===draft.testType)?draft.testType:(testCaseTypes[0]?.value??"");const res=await fetch(`${apiUrl}/test-cases`,{method:"POST",headers,body:JSON.stringify({projectId,moduleId,testCaseCode:"",title:draft.title,objective:draft.objective,preconditions:draft.preconditions,priority,testType,automationCandidate:draft.automationCandidate,ownerUserId:null,steps:draft.steps.map((x,i)=>({stepNo:i+1,action:x.action,testData:x.testData??"",expectedResult:x.expectedResult}))})});if(!res.ok){const problem=await res.json().catch(()=>null);throw new Error(`สร้าง Test Case "${draft.title}" ไม่สำเร็จ: ${problem?.detail??""}`);}await res.json();created++;}setCaseAiDrafts([]);setTestCaseAiModal(false);setReload(x=>x+1);}catch(e){setTestCaseAiError(e instanceof Error?e.message:"บันทึก Test Case ไม่สำเร็จ");}finally{setTestCaseAiGenerating(false);}};
   if (loading)
     return (
       <article className="card empty">
@@ -2155,13 +2678,39 @@ function TestCasesPage({
       `${x.testCaseCode} ${x.title} ${x.testType ?? ""} ${x.status}`
         .toLowerCase()
         .includes(search.toLowerCase()) &&
-      (!statusFilter || x.status === statusFilter),
+      (!statusFilter || x.status === statusFilter) && (!projectFilter||x.projectId===projectFilter) && (!moduleFilter||x.moduleId===moduleFilter) && (!priorityFilter||x.priority===priorityFilter) && (!typeFilter||x.testType===typeFilter) && (!automationFilter||(automationFilter==="yes"?x.automationCandidate:!x.automationCandidate)),
   );
+  const pageCount=Math.max(1,Math.ceil(rows.length/pageSize));
+  const pagedRows=rows.slice((Math.min(page,pageCount)-1)*pageSize,Math.min(page,pageCount)*pageSize);
+  const moduleFilterGroups=projects.filter(project=>!projectFilter||project.projectId===projectFilter).map(project=>{
+    const projectModules=filterModules.filter(module=>module.projectId===project.projectId);
+    const ordered:{module:ModuleItem;depth:number}[]=[];
+    const visited=new Set<string>();
+    const append=(parentId:string|null|undefined,depth:number)=>projectModules.filter(module=>(module.parentModuleId??null)===(parentId??null)).sort((a,b)=>a.sortOrder-b.sortOrder||a.moduleCode.localeCompare(b.moduleCode)).forEach(module=>{if(visited.has(module.moduleId))return;visited.add(module.moduleId);ordered.push({module,depth});append(module.moduleId,depth+1)});
+    append(null,0);
+    projectModules.filter(module=>!visited.has(module.moduleId)).sort((a,b)=>a.sortOrder-b.sortOrder||a.moduleCode.localeCompare(b.moduleCode)).forEach(module=>{visited.add(module.moduleId);ordered.push({module,depth:0});append(module.moduleId,1)});
+    return{project,ordered};
+  }).filter(group=>group.ordered.length);
   return (
     <>
       <article className="card">
-        <div className="table-tools">
-          <div>
+        {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>{setError("");setReload(x=>x+1)}}>ลองใหม่</button></div>}
+        {notice&&<div className="inline-alert success"><span>{notice}</span><button onClick={()=>setNotice("")}>×</button></div>}
+        <div className="testcase-toolbar">
+          <div className="testcase-toolbar-head">
+            <div className="testcase-result-count"><strong>{rows.length}</strong><span>Test Cases</span></div>
+            <div className="testcase-toolbar-actions">
+              {canEdit&&<button className="btn ai-button" onClick={openTestCaseAi}><span aria-hidden="true">✦</span> AI Generate</button>}
+              {canEdit&&<button className="btn" disabled={templateDownloading||projects.length===0} onClick={downloadImportTemplate}>{templateDownloading?"กำลังดาวน์โหลด...":"↓ Template"}</button>}
+              {canEdit&&<label className="btn import-button">{importing?"กำลังนำเข้า...":"↑ Import"}<small>CSV/XLSX</small><input type="file" accept=".csv,.xlsx" disabled={importing} onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);e.target.value=""}} /></label>}
+              {canEdit&&<button className="btn primary" onClick={()=>openForm()}>+ Test Case</button>}
+            </div>
+          </div>
+          <div className="testcase-filter-section">
+            <span className="testcase-filter-label">ตัวกรอง</span>
+            <div className="testcase-filters">
+            <select value={projectFilter} onChange={e=>{setProjectFilter(e.target.value);setModuleFilter("");setPage(1)}}><option value="">ทุก Project</option>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select>
+            <select className="testcase-module-filter" value={moduleFilter} onChange={e=>{setModuleFilter(e.target.value);setPage(1)}} disabled={!moduleFilterGroups.length}><option value="">ทุก Module</option>{moduleFilterGroups.map(({project,ordered})=><optgroup key={project.projectId} label={`${project.projectCode} · ${project.projectName}`}>{ordered.map(({module,depth})=><option className={depth===0?"module-root-option":"module-child-option"} key={module.moduleId} value={module.moduleId}>{depth?`${"　".repeat(depth)}└ `:"▾ "}{module.moduleCode} · {module.moduleName}</option>)}</optgroup>)}</select>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -2172,18 +2721,14 @@ function TestCasesPage({
               <option>Ready</option>
               <option>Deprecated</option>
             </select>
-          </div>
-          <div className="row-actions">
-            <span>{rows.length} Test Cases</span>
-            {canEdit && (
-              <button className="btn primary" onClick={() => openForm()}>
-                + Test Case
-              </button>
-            )}
+            <select value={priorityFilter} onChange={e=>{setPriorityFilter(e.target.value);setPage(1)}}><option value="">ทุก Priority</option>{testCasePriorities.map(x=><option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
+            <select value={typeFilter} onChange={e=>{setTypeFilter(e.target.value);setPage(1)}}><option value="">ทุก Type</option>{testCaseTypes.map(x=><option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
+            <select value={automationFilter} onChange={e=>{setAutomationFilter(e.target.value);setPage(1)}}><option value="">ทุก Automation</option><option value="yes">Automation Candidate</option><option value="no">Manual</option></select>
+            </div>
           </div>
         </div>
         <div className="table-wrap">
-          <table>
+          <table className="testcase-list-table">
             <thead>
               <tr>
                 <th>Test Case ID</th>
@@ -2197,13 +2742,13 @@ function TestCasesPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map((x) => (
+              {pagedRows.map((x) => (
                 <tr key={x.testCaseId}>
-                  <td>
-                    <b>{x.testCaseCode}</b>
+                  <td data-label="Test Case ID">
+                    <button className="link-button" onClick={()=>openDetail(x)}>{x.testCaseCode}</button>
                   </td>
-                  <td>{x.title}</td>
-                  <td>
+                  <td data-label="Title">{x.title}</td>
+                  <td data-label="Priority">
                     <Badge
                       tone={
                         x.priority === "P0" || x.priority === "P1"
@@ -2214,16 +2759,16 @@ function TestCasesPage({
                       {x.priority}
                     </Badge>
                   </td>
-                  <td>{x.testType ?? "-"}</td>
-                  <td>Rev. {x.revisionNo}</td>
-                  <td>{x.steps.length}</td>
-                  <td>
+                  <td data-label="Type">{x.testType ?? "-"}</td>
+                  <td data-label="Revision">Rev. {x.revisionNo}</td>
+                  <td data-label="Steps">{x.steps.length}</td>
+                  <td data-label="Status">
                     <Badge tone={x.status === "Ready" ? "green" : "yellow"}>
                       {x.status}
                     </Badge>
                   </td>
                   {canEdit && (
-                    <td>
+                    <td data-label="จัดการ">
                       <div className="row-actions">
                         <button
                           className="table-action"
@@ -2231,9 +2776,10 @@ function TestCasesPage({
                         >
                           แก้ไข
                         </button>
+                        <button className="table-action" onClick={() => cloneCase(x)}>สำเนา</button>
                         <button
                           className="table-action danger-action"
-                          onClick={() => remove(x)}
+                          onClick={() => setConfirmDelete(x)}
                         >
                           ลบ
                         </button>
@@ -2245,7 +2791,32 @@ function TestCasesPage({
             </tbody>
           </table>
         </div>
+        <div className="pagination"><label>แสดง<select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1)}}><option>10</option><option>25</option><option>50</option></select> รายการ</label><span>หน้า {Math.min(page,pageCount)} / {pageCount}</span><button className="btn" disabled={page<=1} onClick={()=>setPage(x=>x-1)}>ก่อนหน้า</button><button className="btn" disabled={page>=pageCount} onClick={()=>setPage(x=>x+1)}>ถัดไป</button></div>
       </article>
+      {testCaseAiModal&&<div className="modal" onMouseDown={()=>{if(!testCaseAiGenerating)setTestCaseAiModal(false)}}><div className="modal-box requirement-ai-modal" role="dialog" aria-modal="true" aria-labelledby="testcase-ai-title" onMouseDown={e=>e.stopPropagation()} style={{position:"relative"}}>{testCaseAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{caseAiDrafts.length?<p>กำลังบันทึก Test Cases...</p>:<p>AI กำลังออกแบบ Test Case...</p>}<small>{caseAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังสร้าง Test Steps และ Expected Results"}</small></div>}
+        <div className="modal-head"><div><h2 id="testcase-ai-title">AI Generate Test Case</h2><small>{caseAiDrafts.length?`พบ ${caseAiDrafts.length} Test Cases ที่ AI สร้าง — ตรวจสอบและบันทึก`:"สร้าง Draft พร้อม Test Steps จากคำอธิบายและไฟล์อ้างอิง"}</small></div><button aria-label="ปิดหน้าต่าง AI Generate" disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiModal(false)}>×</button></div>
+        {caseAiDrafts.length===0?(
+        <section className="requirement-ai-panel">
+          <div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยออกแบบ Test Case</strong><small>AI จะสร้าง Test Case หลายชุดจากคำอธิบายเดียว</small></p></div><span className="ai-review-badge">ต้องตรวจสอบก่อนบันทึก</span></div>
+          {testCaseAiError&&<div className="inline-alert error"><span>{testCaseAiError}</span></div>}
+          <div className="form-grid">
+            <label>Project<select value={projectId} disabled={testCaseAiGenerating} onChange={e=>{setProjectId(e.target.value);setModuleId("")}}><option value="">เลือก Project</option>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label>
+            <label>Module<select value={moduleId} disabled={testCaseAiGenerating||!projectId} onChange={e=>setModuleId(e.target.value)}><option value="">เลือก Module</option>{(()=>{const render=(parentId?:string,depth=0):ReactElement[]=>modules.filter(x=>(x.parentModuleId||undefined)===parentId&&x.isActive).sort((a,b)=>a.sortOrder-b.sortOrder||a.moduleName.localeCompare(b.moduleName,"th")).flatMap(x=>[<option key={x.moduleId} value={x.moduleId}>{depth?`${"  ".repeat(depth)}└ `:""}{x.moduleCode} · {x.moduleName}</option>,...render(x.moduleId,depth+1)]);return render()})()}</select></label>
+            <label className="full">อธิบายสิ่งที่ต้องการทดสอบ<textarea rows={5} value={testCaseAiPrompt} disabled={testCaseAiGenerating} onChange={e=>setTestCaseAiPrompt(e.target.value)} placeholder="เช่น ตรวจสอบ Dashboard หลัง Login โดยครอบคลุม KPI, กราฟ และกรณีไม่มีข้อมูล"/><small>{testCaseAiPrompt.length} ตัวอักษร</small></label>
+          </div>
+          <div className="ai-attachments"><div><strong>ไฟล์อ้างอิง (ไม่บังคับ)</strong><small>รองรับ PDF, Word, Excel, CSV, Text และรูปภาพ สูงสุด 5 ไฟล์ รวมไม่เกิน 20 MB</small></div><label className="ai-file-picker">+ เลือกไฟล์<input type="file" multiple accept=".pdf,.txt,.md,.csv,.docx,.xlsx,.png,.jpg,.jpeg,.webp" disabled={testCaseAiGenerating||testCaseAiFiles.length>=5} onChange={e=>{addTestCaseAiFiles(Array.from(e.target.files??[]));e.target.value=""}}/></label>{testCaseAiFiles.length>0&&<div className="ai-file-list">{testCaseAiFiles.map((file,index)=><div key={`${file.name}-${index}`}><span aria-hidden="true">▧</span><p><b>{file.name}</b><small>{(file.size/1024/1024).toFixed(2)} MB</small></p><button aria-label={`ลบไฟล์ ${file.name}`} disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiFiles(current=>current.filter((_,i)=>i!==index))}>×</button></div>)}</div>}</div>
+          <div className="ai-draft-note"><span aria-hidden="true">i</span><p><strong>AI จะยังไม่บันทึกข้อมูล</strong><small>AI จะสร้าง Test Case หลายชุดให้ตรวจสอบก่อนบันทึก ผลลัพธ์ยังไม่ถูกบันทึกลงระบบ</small></p></div>
+          <div className="requirement-ai-actions"><small>ไฟล์ใช้วิเคราะห์เฉพาะคำขอนี้และไม่บันทึกลงระบบ</small><div className="row-actions"><button className="btn" disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiModal(false)}>ยกเลิก</button><button className="btn primary" disabled={testCaseAiGenerating||!projectId||!moduleId||!testCaseAiPrompt.trim()} onClick={generateTestCaseWithAi}>{testCaseAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Cases"}</button></div></div>
+        </section>
+        ):(
+        <section className="requirement-ai-panel case-ai-review">
+          <div className="case-ai-review-head"><div><h3>Test Cases ที่ AI สร้าง ({caseAiDrafts.length})</h3></div></div>
+          {testCaseAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{testCaseAiError}</span></div>}
+          <div className="case-ai-draft-list">{caseAiDrafts.map((draft,index)=>{const isExpanded=caseAiExpanded===index;return<div key={index} className={`case-ai-draft-card${isExpanded?" expanded":""}`}><div className="case-ai-draft-head" onClick={()=>setCaseAiExpanded(isExpanded?undefined:index)}><div className="case-ai-draft-title"><b>{draft.title}</b><div className="case-ai-draft-tags"><Badge tone={draft.priority==="P0"||draft.priority==="P1"?"red":"blue"}>{draft.priority}</Badge><Badge tone="yellow">{draft.testType}</Badge>{draft.automationCandidate&&<Badge tone="green">Auto</Badge>}<span className="case-ai-step-count">{draft.steps.length} Steps</span></div></div><span className="case-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="case-ai-draft-body"><p className="case-ai-draft-desc"><strong>Objective:</strong> {draft.objective}</p>{draft.preconditions&&<p className="case-ai-draft-desc"><strong>Preconditions:</strong> {draft.preconditions}</p>}<div className="case-ai-steps-list">{draft.steps.map(step=><div key={step.stepNo}><b>{step.stepNo}</b><span><strong>{step.action}</strong>{step.testData&&<small>Test Data: {step.testData}</small>}<small>Expected: {step.expectedResult}</small></span></div>)}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeCaseAiDraft(index)}>นำ Test Case นี้ออก</button></div>}</div>})}</div>
+          <div className="requirement-ai-actions"><small>{caseAiDrafts.length} Test Cases พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={testCaseAiGenerating} onClick={()=>setCaseAiDrafts([])}>สร้างใหม่</button><button className="btn primary" disabled={testCaseAiGenerating||!caseAiDrafts.length} onClick={saveAllCaseDrafts}>{testCaseAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${caseAiDrafts.length} Cases)`}</button></div></div>
+        </section>
+        )}
+      </div></div>}
       {form && (
         <div className="modal" onMouseDown={() => setForm(false)}>
           <div
@@ -2257,7 +2828,7 @@ function TestCasesPage({
               <button onClick={() => setForm(false)}>×</button>
             </div>
             <div className="form-grid">
-              <label>
+              <label className="tc-span-2">
                 Project
                 <select
                   disabled
@@ -2271,20 +2842,16 @@ function TestCasesPage({
                   ))}
                 </select>
               </label>
-              <label>
+              <label className="tc-span-2">
                 Module
                 <select
                   value={moduleId}
                   onChange={(e) => setModuleId(e.target.value)}
                 >
-                  {modules.map((x) => (
-                    <option key={x.moduleId} value={x.moduleId}>
-                      {x.moduleCode} · {x.moduleName}
-                    </option>
-                  ))}
+                  {(() => { const renderModuleOptions = (mods: ModuleItem[], parentId?: string, depth = 0): ReactElement[] => { return mods.filter((x) => (x.parentModuleId || undefined) === parentId && x.isActive).sort((a, b) => a.moduleName.localeCompare(b.moduleName, "th")).flatMap((mod) => [<option key={mod.moduleId} value={mod.moduleId}>{depth > 0 ? "  ".repeat(depth) + "└ " : ""}{mod.moduleCode} · {mod.moduleName}</option>, ...renderModuleOptions(mods, mod.moduleId, depth + 1)]); }; return renderModuleOptions(modules); })()}
                 </select>
               </label>
-              <label>
+              <label className="tc-span-2">
                 Test Case Code
                 <input
                   disabled
@@ -2292,41 +2859,33 @@ function TestCasesPage({
                   onChange={(e) => setCode(e.target.value)}
                 />
               </label>
-              <label>
+              <label className="tc-span-2">
                 Title
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                 />
               </label>
-              <label>
+              <label className="tc-compact-field">
                 Priority
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value)}
                 >
-                  <option>P0</option>
-                  <option>P1</option>
-                  <option>P2</option>
-                  <option>P3</option>
+                  {masterOptionElements(testCasePriorities, priority)}
                 </select>
               </label>
-              <label>
+              <label className="tc-compact-field">
                 Type
                 <select
                   value={testType}
                   onChange={(e) => setTestType(e.target.value)}
                 >
-                  <option>Functional</option>
-                  <option>Regression</option>
-                  <option>Integration</option>
-                  <option>Performance</option>
-                  <option>Security</option>
-                  <option>UAT</option>
+                  {masterOptionElements(testCaseTypes, testType)}
                 </select>
               </label>
               {editing && (
-                <label>
+                <label className="tc-compact-field">
                   สถานะ
                   <select
                     value={status}
@@ -2339,7 +2898,7 @@ function TestCasesPage({
                   </select>
                 </label>
               )}
-              <label className="check-line">
+              <label className="check-line tc-automation">
                 <input
                   type="checkbox"
                   checked={automation}
@@ -2347,7 +2906,9 @@ function TestCasesPage({
                 />{" "}
                 Automation Candidate
               </label>
-              <label className="full">
+              <label className="tc-span-2">Owner<select value={ownerUserId} onChange={e=>setOwnerUserId(e.target.value)}><option value="">ไม่ระบุผู้รับผิดชอบ</option>{users.map(x=><option key={x.userId} value={x.userId}>{x.displayName}</option>)}</select></label>
+              <div className="status-information tc-span-2"><strong>ข้อมูลสถานะ</strong><span>{testCaseStatusInfo.find(x=>x.value===status)?.label}</span><small>{testCaseStatusInfo.find(x=>x.value===status)?.detail}</small><small><b>ผลกระทบ:</b> {testCaseStatusInfo.find(x=>x.value===status)?.impact}</small></div>
+              <label className="tc-span-2">
                 Objective
                 <textarea
                   rows={2}
@@ -2355,7 +2916,7 @@ function TestCasesPage({
                   onChange={(e) => setObjective(e.target.value)}
                 />
               </label>
-              <label className="full">
+              <label className="tc-span-2">
                 Preconditions
                 <textarea
                   rows={2}
@@ -2364,7 +2925,7 @@ function TestCasesPage({
                 />
               </label>
               {editing && (
-                <label className="full">
+                <label className="full tc-span-4">
                   <span>
                     เหตุผลที่แก้ไข <b className="required-mark">*</b>
                   </span>
@@ -2477,109 +3038,63 @@ function TestCasesPage({
           </div>
         </div>
       )}
+ {detail&&<div className="modal" onMouseDown={()=>setDetail(null)}><div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}> <div className="modal-head"><div><h2>{detail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===detail.moduleId)?.moduleName||"-"} · {projects.find(x=>x.projectId===detail.projectId)?.projectName||""}</small></div><button onClick={()=>setDetail(null)}>×</button></div> <div className="tc-detail-hero"><h3>{detail.title}</h3> <div className="tc-detail-badges"> <Badge tone={detail.priority==="P0"||detail.priority==="P1"?"red":"blue"}>{detail.priority}</Badge> <Badge tone={detail.status==="Ready"?"green":detail.status==="Deprecated"?"yellow":"blue"}>{detail.status}</Badge> {detail.testType&&<Badge tone="yellow">{detail.testType}</Badge>} <Badge tone={detail.automationCandidate?"green":"gray"}>{detail.automationCandidate?"Automation Candidate":"Manual"}</Badge> </div> </div> <div className="tc-detail-meta"> <div className="tc-detail-meta-item"><span>Owner</span><b>{users.find(x=>x.userId===detail.ownerUserId)?.displayName||"ไม่ระบุ"}</b></div> <div className="tc-detail-meta-item"><span>Revision</span><b>Rev. {detail.revisionNo}</b></div> <div className="tc-detail-meta-item"><span>Module</span><b>{modules.find(x=>x.moduleId===detail.moduleId)?.moduleCode||"-"}</b></div> </div> <section className="tc-detail-section"> <h3>Objective</h3> <p className="tc-detail-body">{detail.objective||"ไม่ระบุวัตถุประสงค์"}</p> </section> {detail.preconditions&&<section className="tc-detail-section"> <h3>Preconditions</h3> <p className="tc-detail-body">{detail.preconditions}</p> </section>} <section className="tc-detail-section"> <h3>Test Steps ({detail.steps.length})</h3> <div className="tc-detail-steps">{detail.steps.map(x=><div key={x.stepNo} className="tc-detail-step"><div className="tc-detail-step-no">{x.stepNo}</div><div className="tc-detail-step-body"><div className="tc-detail-step-action"><strong>Action</strong><p>{x.action}</p></div>{x.testData&&<div className="tc-detail-step-data"><strong>Test Data</strong><p>{x.testData}</p></div>}<div className="tc-detail-step-expect"><strong>Expected Result</strong><p>{x.expectedResult}</p></div></div></div>)}</div> </section> <section className="tc-detail-section"> <h3>Requirements ที่เชื่อมโยง ({detailRequirements.length})</h3> {detailRequirements.length?<div className="tc-detail-reqs">{detailRequirements.map(x=><div key={x.requirementId} className="tc-detail-req-card"><div className="tc-detail-req-head"><b>{x.requirementCode}</b><Badge tone={x.status==="Approved"?"green":x.status==="Draft"?"yellow":"blue"}>{x.status}</Badge></div><p className="tc-detail-req-title">{x.title}</p>{x.coverageType&&<span className="tc-detail-req-coverage">Coverage: {x.coverageType}</span>}</div>)}</div>:<p className="muted-text">ยังไม่มี Requirement ที่เชื่อมโยง — สามารถเชื่อมได้จากหน้า Requirement</p>} </section> {revisions.length?<section className="tc-detail-section"> <h3>Revision History ({revisions.length})</h3> <div className="tc-detail-revisions">{revisions.map(x=><div key={x.revisionNo} className="tc-detail-revision"><div className="tc-detail-rev-head"><b>Rev. {x.revisionNo}</b><small>{x.changedByName||"ไม่ระบุผู้แก้ไข"} · {new Date(x.changedAt).toLocaleString("th-TH")}</small></div><p className="tc-detail-rev-reason">{x.changeReason||"-"}</p></div>)}</div> </section>:null} <div className="modal-actions"> <button className="btn" onClick={()=>setDetail(null)}>ปิด</button> {canEdit&&<button className="btn primary" onClick={()=>{const item=detail;setDetail(null);openForm(item);}}>แก้ไข</button>} </div> </div></div>}       {confirmDelete&&<div className="modal" onMouseDown={()=>setConfirmDelete(null)}><div className="modal-box confirm-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>ยืนยันการลบ Test Case</h2><button onClick={()=>setConfirmDelete(null)}>×</button></div><p>ต้องการลบ <b>{confirmDelete.testCaseCode}</b> ใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" onClick={()=>setConfirmDelete(null)}>ยกเลิก</button><button className="btn danger" onClick={()=>remove(confirmDelete)}>ยืนยันลบ</button></div></div></div>}
     </>
   );
 }
-type RtmItem = {
-  requirementId: string;
-  requirementCode: string;
-  title: string;
-  priority: string;
-  testCaseCount: number;
-  coverageStatus: string;
-  status: string;
-};
-function RtmPage({ refresh }: { refresh: number }) {
-  const [items, setItems] = useState<RtmItem[]>([]),
-    [summary, setSummary] = useState<{
-      totalRequirements: number;
-      covered: number;
-      coveragePercent: number;
-    } | null>(null),
-    [loading, setLoading] = useState(true);
+type RtmLinkedCase = { testCaseId: string; testCaseCode: string; title: string; priority: string; testType?: string; status: string; revisionNo: number; coverageType?: string };
+type RtmItem = { requirementId: string; moduleId: string; moduleName: string; requirementCode: string; title: string; priority: string; testCaseCount: number; coverageStatus: string; status: string; testCases: RtmLinkedCase[] };
+function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: number; projectId?: string; releaseId?: string; search: string; canEdit: boolean }) {
+  const [items, setItems] = useState<RtmItem[]>([]), [releases, setReleases] = useState<ReleaseItem[]>([]), [modules, setModules] = useState<ModuleItem[]>([]), [cases, setCases] = useState<TestCaseItem[]>([]);
+  const [selectedRelease, setSelectedRelease] = useState(releaseId ?? ""), [moduleFilter, setModuleFilter] = useState(""), [coverageFilter, setCoverageFilter] = useState(""), [statusFilter, setStatusFilter] = useState("");
+  const [detail, setDetail] = useState<RtmItem | null>(null), [caseDetail, setCaseDetail] = useState<RtmLinkedCase | null>(null), [linking, setLinking] = useState<RtmItem | null>(null), [linkModuleFilter,setLinkModuleFilter]=useState(""), [selectedCase, setSelectedCase] = useState(""), [coverageType, setCoverageType] = useState("Direct");
+  const [busy, setBusy] = useState(false), [reload, setReload] = useState(0), [error, setError] = useState(""), [loading, setLoading] = useState(true);
+  const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+  useEffect(() => setSelectedRelease(releaseId ?? ""), [releaseId]);
   useEffect(() => {
-    const h = {
-      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    const readJson = (url: string) => fetch(url, { headers }).then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status} ${url}`)));
+    Promise.all([
+      readJson(`${apiUrl}/releases`),
+      projectId ? readJson(`${apiUrl}/projects/${projectId}/modules`) : Promise.resolve([]),
+      readJson(`${apiUrl}/test-cases${projectId ? `?projectId=${projectId}` : ""}`),
+    ]).then(([releaseRows, moduleRows, caseRows]) => {
+      setReleases(releaseRows);
+      setModules((moduleRows as ModuleItem[]).filter(x => x.isActive));
+      setCases(caseRows);
+    }).catch(() => setError("โหลดข้อมูลตัวกรอง RTM ไม่สำเร็จ"));
+  }, [headers, projectId, refresh]);
+  useEffect(() => { if (!selectedRelease) { setItems([]); setLoading(false); return; } setLoading(true); setError(""); fetch(`${apiUrl}/releases/${selectedRelease}/rtm`, { headers }).then(r => r.ok ? r.json() : Promise.reject()).then(setItems).catch(() => setError("โหลด RTM ไม่สำเร็จ")).finally(() => setLoading(false)); }, [headers, selectedRelease, refresh, reload]);
+  const filtered = items.filter(x => (!moduleFilter || x.moduleId === moduleFilter) && (!coverageFilter || x.coverageStatus === coverageFilter) && (!statusFilter || x.status === statusFilter) && (!search || `${x.requirementCode} ${x.title} ${x.moduleName} ${x.testCases.map(t => t.testCaseCode).join(" ")}`.toLowerCase().includes(search.toLowerCase())));
+  const moduleTreeOptions = useMemo(() => {
+    const rows: { module: ModuleItem; depth: number }[] = [];
+    const activeModules = modules.filter(x => x.isActive && (!projectId || x.projectId === projectId));
+    const append = (module: ModuleItem, depth: number) => {
+      rows.push({ module, depth });
+      activeModules
+        .filter(x => x.parentModuleId === module.moduleId)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.moduleCode.localeCompare(b.moduleCode))
+        .forEach(child => append(child, depth + 1));
     };
-    fetch(`${apiUrl}/releases`, { headers: h })
-      .then((r) => r.json())
-      .then(async (releases) => {
-        if (!releases.length) return;
-        const [data, sum] = await Promise.all([
-          fetch(`${apiUrl}/releases/${releases[0].releaseId}/rtm`, {
-            headers: h,
-          }).then((r) => r.json()),
-          fetch(
-            `${apiUrl}/releases/${releases[0].releaseId}/coverage-summary`,
-            { headers: h },
-          ).then((r) => r.json()),
-        ]);
-        setItems(data);
-        setSummary(sum);
-      })
-      .finally(() => setLoading(false));
-  }, [refresh]);
-  if (loading)
-    return (
-      <article className="card empty">
-        <p>กำลังคำนวณ RTM...</p>
-      </article>
-    );
-  return (
-    <>
-      <div className="kpi-grid">
-        <article className="card kpi">
-          <span>Requirements</span>
-          <strong>{summary?.totalRequirements ?? 0}</strong>
-          <small>In Scope</small>
-        </article>
-        <article className="card kpi">
-          <span>Covered</span>
-          <strong>{summary?.covered ?? 0}</strong>
-          <small className="green">Linked Test Cases</small>
-        </article>
-        <article className="card kpi">
-          <span>Coverage</span>
-          <strong>{summary?.coveragePercent ?? 0}%</strong>
-          <small>Current Release</small>
-        </article>
-      </div>
-      <article className="card">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Requirement</th>
-                <th>Title</th>
-                <th>Priority</th>
-                <th>Test Cases</th>
-                <th>Coverage</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((x) => (
-                <tr key={x.requirementId}>
-                  <td>
-                    <b>{x.requirementCode}</b>
-                  </td>
-                  <td>{x.title}</td>
-                  <td>{x.priority}</td>
-                  <td>{x.testCaseCount}</td>
-                  <td>
-                    <Badge tone={x.testCaseCount ? "green" : "red"}>
-                      {x.coverageStatus}
-                    </Badge>
-                  </td>
-                  <td>{x.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </article>
-    </>
-  );
+    activeModules
+      .filter(x => !x.parentModuleId || !activeModules.some(parent => parent.moduleId === x.parentModuleId))
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.moduleCode.localeCompare(b.moduleCode))
+      .forEach(root => append(root, 0));
+    return rows;
+  }, [modules, projectId]);
+  const linkableCases=cases.filter(testCase=>(!linkModuleFilter||testCase.moduleId===linkModuleFilter)&&(!linking||!linking.testCases.some(linked=>linked.testCaseId===testCase.testCaseId)));
+  const counts = { covered: items.filter(x => x.coverageStatus === "Covered").length, partial: items.filter(x => x.coverageStatus === "Partial").length, none: items.filter(x => x.coverageStatus === "Not Covered").length };
+  const saveLink = async (remove?: RtmLinkedCase) => { if (!linking || (!remove && !selectedCase)) return; setBusy(true); const id = remove?.testCaseId ?? selectedCase; const r = await fetch(`${apiUrl}/requirements/${linking.requirementId}/test-cases/${id}${remove ? "" : `?coverageType=${coverageType}`}`, { method: remove ? "DELETE" : "POST", headers }); setBusy(false); if (!r.ok) { setError("บันทึกการเชื่อมโยง Test Case ไม่สำเร็จ"); return; } if (!remove) { setLinking(null); setSelectedCase(""); } setReload(x => x + 1); };
+  const exportCsv = () => { const rows = [["Requirement ID","Title","Module","Priority","Status","Coverage","Test Case ID","Test Case Title","Test Case Status","Link Type"], ...filtered.flatMap(x => (x.testCases.length ? x.testCases : [null]).map(t => [x.requirementCode,x.title,x.moduleName,x.priority,x.status,x.coverageStatus,t?.testCaseCode ?? "",t?.title ?? "",t?.status ?? "",t?.coverageType ?? ""]))]; const csv = "\ufeff" + rows.map(row => row.map(v => `"${String(v).replaceAll('"','""')}"`).join(",")).join("\r\n"); const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href=url; a.download="rtm.csv"; a.click(); URL.revokeObjectURL(url); };
+  if (loading) return <article className="card empty"><p>กำลังคำนวณ RTM...</p></article>;
+  return <>
+    <div className="kpi-grid"><article className="card kpi"><span>Requirements</span><strong>{items.length}</strong><small>In Scope</small></article><article className="card kpi"><span>Covered</span><strong>{counts.covered}</strong><small className="green">มี Test Case Ready</small></article><article className="card kpi"><span>Partial</span><strong>{counts.partial}</strong><small className="blue">เชื่อมแล้ว แต่ยังไม่ Ready</small></article><article className="card kpi"><span>Not Covered</span><strong>{counts.none}</strong><small className="red">ยังไม่มี Test Case</small></article></div>
+    <article className="card"><div className="table-tools rtm-tools"><div><select value={selectedRelease} onChange={e => setSelectedRelease(e.target.value)}><option value="">เลือก Release</option>{releases.filter(x => !projectId || x.projectId === projectId).map(x => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}</select><select value={moduleFilter} onChange={e => setModuleFilter(e.target.value)} aria-label="กรองตาม Module"><option value="">ทุก Module</option>{moduleTreeOptions.map(({ module, depth }) => <option key={module.moduleId} value={module.moduleId}>{depth ? `${"　".repeat(depth)}└ ` : "▾ "}{module.moduleCode} · {module.moduleName}</option>)}</select><select value={coverageFilter} onChange={e => setCoverageFilter(e.target.value)}><option value="">ทุก Coverage</option><option>Covered</option><option>Partial</option><option>Not Covered</option></select><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">ทุก Status</option>{[...new Set(items.map(x => x.status))].map(x => <option key={x}>{x}</option>)}</select></div><button className="btn" onClick={exportCsv}>Export CSV</button></div>{error && <div className="inline-error">{error}</div>}
+      <div className="table-wrap"><table className="rtm-table"><thead><tr><th>Requirement</th><th>Title</th><th>Priority</th><th>Test Cases</th><th>Coverage</th><th>Status</th><th>จัดการ</th></tr></thead><tbody>{filtered.map(x => <tr key={x.requirementId}><td data-label="Requirement"><button className="link-button" onClick={() => setDetail(x)}>{x.requirementCode}</button><small className="rtm-module">{x.moduleName}</small></td><td data-label="Title">{x.title}</td><td data-label="Priority">{x.priority}</td><td data-label="Test Cases">{x.testCaseCount}</td><td data-label="Coverage"><Badge tone={x.coverageStatus === "Covered" ? "green" : x.coverageStatus === "Partial" ? "yellow" : "red"}>{x.coverageStatus}</Badge></td><td data-label="Status">{x.status}</td><td data-label="จัดการ"><div className="row-actions"><button className="btn" onClick={() => setDetail(x)}>รายละเอียด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(x);setLinkModuleFilter(x.moduleId);setSelectedCase("");setCoverageType("Direct")}}>จัดการ Link</button>}</div></td></tr>)}</tbody></table></div>
+    </article>
+    {detail && <div className="modal" onMouseDown={() => setDetail(null)}><div className="modal-box rtm-detail" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>{detail.requirementCode}</h2><small>{detail.moduleName}</small></div><button onClick={() => setDetail(null)}>×</button></div><h3>{detail.title}</h3><div className="detail-grid"><span>Priority<b>{detail.priority}</b></span><span>Status<b>{detail.status}</b></span><span>Coverage<b>{detail.coverageStatus}</b></span><span>Test Cases<b>{detail.testCaseCount}</b></span></div><h3>Test Cases ที่เชื่อมโยง</h3><div className="rtm-linked-list">{detail.testCases.length ? detail.testCases.map(t => <button key={t.testCaseId} onClick={() => setCaseDetail(t)}><b>{t.testCaseCode}</b><span>{t.title}</span><Badge tone={t.status === "Ready" ? "green" : "yellow"}>{t.status}</Badge></button>) : <p className="muted">ยังไม่มี Test Case ที่เชื่อมโยง</p>}</div></div></div>}
+    {caseDetail && <div className="modal nested-modal" onMouseDown={() => setCaseDetail(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><h2>{caseDetail.testCaseCode}</h2><button onClick={() => setCaseDetail(null)}>×</button></div><h3>{caseDetail.title}</h3><div className="detail-grid"><span>Priority<b>{caseDetail.priority}</b></span><span>Type<b>{caseDetail.testType || "-"}</b></span><span>Status<b>{caseDetail.status}</b></span><span>Revision<b>Rev. {caseDetail.revisionNo}</b></span><span>Link Type<b>{caseDetail.coverageType || "Direct"}</b></span></div></div></div>}
+    {linking && <div className="modal" onMouseDown={() => setLinking(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>จัดการ Test Case Link</h2><small>{linking.requirementCode}</small></div><button onClick={() => setLinking(null)}>×</button></div><div className="rtm-linked-list editable">{linking.testCases.map(t => <div key={t.testCaseId}><button onClick={() => setCaseDetail(t)}><b>{t.testCaseCode}</b><span>{t.title}</span></button><button className="btn danger" disabled={busy} onClick={() => saveLink(t)}>ยกเลิก Link</button></div>)}</div><div className="form-grid rtm-link-form"><label className="full">Module<select className="rtm-link-module-filter" value={linkModuleFilter} onChange={e=>{setLinkModuleFilter(e.target.value);setSelectedCase("")}}><option value="">ทุก Module</option>{moduleTreeOptions.map(({module,depth})=><option className={depth===0?"module-root-option":"module-child-option"} key={module.moduleId} value={module.moduleId}>{depth?`${"　".repeat(depth)}└ `:"▾ "}{module.moduleCode} · {module.moduleName}</option>)}</select></label><label>Test Case <small>{linkableCases.length} รายการ</small><select value={selectedCase} onChange={e => setSelectedCase(e.target.value)}><option value="">{linkableCases.length?"เลือก Test Case":"ไม่พบ Test Case ใน Module นี้"}</option>{linkableCases.map(t => <option key={t.testCaseId} value={t.testCaseId}>{t.testCaseCode} · {t.title}</option>)}</select></label><label>Coverage Type<select value={coverageType} onChange={e => setCoverageType(e.target.value)}><option>Direct</option><option>Indirect</option></select></label></div><div className="modal-actions"><button className="btn" onClick={() => setLinking(null)}>ปิด</button><button className="btn primary" disabled={busy || !selectedCase} onClick={() => saveLink()}>{busy ? "กำลังบันทึก..." : "เพิ่ม Link"}</button></div></div></div>}
+  </>;
 }
 type CycleEnvironment = {
   testEnvironmentId: string;
@@ -2622,7 +3137,8 @@ type TestCycleItem = {
   executedCount: number;
   progressPercent: number;
 };
-function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean }) {
+function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, contextBuildId }: { search: string; canEdit: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
+  const masterOptions = useMasterOptions(), cycleTypes = masterOptions("TestCycleType");
   const [items, setItems] = useState<TestCycleItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
     [releases, setReleases] = useState<CycleRelease[]>([]),
@@ -2640,7 +3156,7 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
     [suiteId, setSuiteId] = useState(""),
     [code, setCode] = useState(""),
     [name, setName] = useState(""),
-    [cycleType, setCycleType] = useState("Regression"),
+    [cycleType, setCycleType] = useState(""),
     [startDate, setStartDate] = useState(""),
     [endDate, setEndDate] = useState(""),
     [notes, setNotes] = useState(""),
@@ -2756,7 +3272,7 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
         ),
     );
     setName(cycle?.cycleName ?? "");
-    setCycleType(cycle?.cycleType ?? "Regression");
+    setCycleType(cycle?.cycleType ?? cycleTypes[0]?.value ?? "");
     setStartDate(cycle?.startDate?.slice(0, 10) ?? "");
     setEndDate(cycle?.endDate?.slice(0, 10) ?? "");
     setNotes(cycle?.notes ?? "");
@@ -2844,6 +3360,9 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
     setReload((x) => x + 1);
   };
   const rows = items.filter((x) =>
+    (!contextProjectId || x.projectId === contextProjectId) &&
+    (!contextReleaseId || x.releaseId === contextReleaseId) &&
+    (!contextBuildId || x.buildId === contextBuildId) &&
     `${x.cycleCode} ${x.cycleName} ${x.releaseCode} ${x.buildNumber}`
       .toLowerCase()
       .includes(search.toLowerCase()),
@@ -3057,10 +3576,7 @@ function TestCyclesPage({ search, canEdit }: { search: string; canEdit: boolean 
                   value={cycleType}
                   onChange={(e) => setCycleType(e.target.value)}
                 >
-                  <option>Smoke</option>
-                  <option>Regression</option>
-                  <option>UAT</option>
-                  <option>Exploratory</option>
+                  {masterOptionElements(cycleTypes, cycleType)}
                 </select>
               </label>
               <label>
@@ -3160,7 +3676,7 @@ type ExecutionWorkspace = {
   environmentName: string;
   cases: ExecutionCase[];
 };
-function ExecutionWorkspacePage() {
+function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBuildId }: { contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
   const [cycles, setCycles] = useState<TestCycleItem[]>([]),
     [cycleId, setCycleId] = useState(""),
     [workspace, setWorkspace] = useState<ExecutionWorkspace | null>(null),
@@ -3169,6 +3685,8 @@ function ExecutionWorkspacePage() {
     [stepActuals, setStepActuals] = useState<Record<number, string>>({}),
     [actual, setActual] = useState(""),
     [comment, setComment] = useState(""),
+    [caseSearch, setCaseSearch] = useState(""),
+    [statusFilter, setStatusFilter] = useState("All"),
     [saving, setSaving] = useState(false),
     [reload, setReload] = useState(0);
   const headers = {
@@ -3223,9 +3741,17 @@ function ExecutionWorkspacePage() {
       total: cases.length,
       passed: cases.filter((x) => x.currentStatus === "Pass").length,
       failed: cases.filter((x) => x.currentStatus === "Fail").length,
+      blocked: cases.filter((x) => x.currentStatus === "Blocked").length,
       pending: cases.filter((x) => x.currentStatus === "NotRun").length,
     };
   }, [workspace]);
+  const filteredCases = useMemo(() => {
+    const query = caseSearch.trim().toLocaleLowerCase("th-TH");
+    return (workspace?.cases ?? []).filter((item) =>
+      (statusFilter === "All" || item.currentStatus === statusFilter) &&
+      (!query || `${item.testCaseCode} ${item.title}`.toLocaleLowerCase("th-TH").includes(query)),
+    );
+  }, [workspace, caseSearch, statusFilter]);
   useEffect(() => {
     if (selected) {
       setStepStatuses(
@@ -3287,6 +3813,16 @@ function ExecutionWorkspacePage() {
     }
     setReload((x) => x + 1);
   };
+  const filteredCycles = useMemo(() => cycles.filter((x) =>
+    (!contextProjectId || x.projectId === contextProjectId) &&
+    (!contextReleaseId || x.releaseId === contextReleaseId) &&
+    (!contextBuildId || x.buildId === contextBuildId)
+  ), [cycles, contextProjectId, contextReleaseId, contextBuildId]);
+  useEffect(() => {
+    if (filteredCycles.length && !filteredCycles.some((x) => x.testCycleId === cycleId)) {
+      setCycleId(filteredCycles[0].testCycleId);
+    }
+  }, [filteredCycles, cycleId]);
   return (
     <div className="execution-page">
       <div className="execution-toolbar card">
@@ -3294,7 +3830,7 @@ function ExecutionWorkspacePage() {
           Test Cycle
           <select value={cycleId} onChange={(e) => setCycleId(e.target.value)}>
             <option value="">เลือก Test Cycle</option>
-            {cycles.map((x) => (
+            {filteredCycles.map((x) => (
               <option key={x.testCycleId} value={x.testCycleId}>
                 {x.cycleCode} · {x.cycleName}
               </option>
@@ -3322,6 +3858,7 @@ function ExecutionWorkspacePage() {
           <div><small>Test Cases</small><strong>{executionStats.total}</strong></div>
           <div className="metric-pass"><small>Passed</small><strong>{executionStats.passed}</strong></div>
           <div className="metric-fail"><small>Failed</small><strong>{executionStats.failed}</strong></div>
+          <div className="metric-blocked"><small>Blocked</small><strong>{executionStats.blocked}</strong></div>
           <div className="metric-pending"><small>Not Run</small><strong>{executionStats.pending}</strong></div>
           <div className="execution-progress-summary">
             <span><i style={{width:`${executionStats.total ? ((executionStats.total-executionStats.pending)/executionStats.total)*100 : 0}%`}} /></span>
@@ -3351,7 +3888,14 @@ function ExecutionWorkspacePage() {
                 <p>{workspace.cases.length} รายการ · เลือกเพื่อบันทึกผล</p>
               </div>
             </div>
-            {workspace.cases.map((x) => (
+            <div className="case-queue-tools">
+              <input aria-label="ค้นหา Test Case" value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} placeholder="ค้นหารหัสหรือชื่อ Test Case" />
+              <select aria-label="กรองสถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                {["All", "NotRun", "Pass", "Fail", "Blocked", "Skipped"].map((status) => <option key={status} value={status}>{status === "All" ? "ทุกสถานะ" : status}</option>)}
+              </select>
+            </div>
+            <div className="case-queue-list">
+            {filteredCases.map((x) => (
               <button
                 className={selectedId === x.testCycleCaseId ? "active" : ""}
                 key={x.testCycleCaseId}
@@ -3369,6 +3913,8 @@ function ExecutionWorkspacePage() {
                 </i>
               </button>
             ))}
+            {!filteredCases.length && <p className="queue-empty">ไม่พบ Test Case ที่ตรงกับตัวกรอง</p>}
+            </div>
           </aside>
           {selected && (
             <main className="card execution-main">
@@ -3396,6 +3942,10 @@ function ExecutionWorkspacePage() {
                 </div>
               )}
               <div className="step-table">
+                <div className="step-bulk-actions">
+                  <span>Test Steps <b>{selected.steps.length}</b></span>
+                  <div>{["Pass", "Fail", "NotRun"].map((status) => <button type="button" key={status} onClick={() => setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])))}>ทั้งหมด: {status}</button>)}</div>
+                </div>
                 <div className="step-row step-head">
                   <span>#</span>
                   <span>Action / Test Data</span>
@@ -3542,6 +4092,7 @@ type TestSuiteItem = {
   description?: string;
   riskTier?: string;
   isActive: boolean;
+  cycleCount: number;
   cases: {
     testCaseId: string;
     testCaseCode: string;
@@ -3551,33 +4102,54 @@ type TestSuiteItem = {
     isRequired: boolean;
   }[];
 };
+type GeneratedTestSuiteDraft={suiteName:string;suiteType:string;description:string;riskTier:string;testCases:{testCaseId:string;isRequired:boolean;reason:string}[];selectionSummary:string};
 function TestSuitesPage({
   search,
   canEdit,
+  contextProjectId,
 }: {
   search: string;
   canEdit: boolean;
+  contextProjectId?: string;
 }) {
+  const masterOptions = useMasterOptions(), suiteTypes = masterOptions("TestSuiteType"), riskTiers = masterOptions("TestSuiteRiskTier");
   const [items, setItems] = useState<TestSuiteItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
+    [modules, setModules] = useState<ModuleItem[]>([]),
     [testCases, setTestCases] = useState<TestCaseItem[]>([]),
     [reload, setReload] = useState(0),
     [form, setForm] = useState(false),
     [editing, setEditing] = useState<TestSuiteItem | null>(null),
     [managing, setManaging] = useState<TestSuiteItem | null>(null),
+    [detail, setDetail] = useState<TestSuiteItem | null>(null),
     [checked, setChecked] = useState<string[]>([]),
-    [saving, setSaving] = useState(false);
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState(""),
+    [projectFilter, setProjectFilter] = useState(contextProjectId ?? ""),
+    [typeFilter, setTypeFilter] = useState(""),
+    [riskFilter, setRiskFilter] = useState(""),
+    [activeFilter, setActiveFilter] = useState("active"),
+    [caseSearch, setCaseSearch] = useState(""),
+    [caseModuleFilter, setCaseModuleFilter] = useState(""),
+    [casePriorityFilter, setCasePriorityFilter] = useState(""),
+    [caseTypeFilter, setCaseTypeFilter] = useState(""),
+    [caseStatusFilter, setCaseStatusFilter] = useState(""),
+    [addRequired, setAddRequired] = useState(true),
+    [suiteAiModal,setSuiteAiModal]=useState(false),[suiteAiGenerating,setSuiteAiGenerating]=useState(false),[suiteAiError,setSuiteAiError]=useState(""),
+    [suiteAiProjectId,setSuiteAiProjectId]=useState(""),[suiteAiModuleId,setSuiteAiModuleId]=useState(""),[suiteAiModules,setSuiteAiModules]=useState<ModuleItem[]>([]),
+    [suiteAiDrafts,setSuiteAiDrafts]=useState<GeneratedTestSuiteDraft[]>([]),[suiteAiExpanded,setSuiteAiExpanded]=useState<number|undefined>(undefined);
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
-    [type, setType] = useState("Regression"),
-    [risk, setRisk] = useState("P1"),
+    [type, setType] = useState(""),
+    [risk, setRisk] = useState(""),
     [description, setDescription] = useState(""),
     [projectId, setProjectId] = useState(""),
     [active, setActive] = useState(true);
-  const headers = {
+  const headers = useMemo(() => ({
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
-  };
+  }), []);
+  useEffect(() => { if (contextProjectId) setProjectFilter(contextProjectId); }, [contextProjectId]);
   useEffect(() => {
     const requestHeaders = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -3601,6 +4173,15 @@ function TestSuitesPage({
     });
   }, [reload]);
   useEffect(() => {
+    const target = managing?.projectId ?? projectFilter ?? contextProjectId;
+    if (!target) { setModules([]); return; }
+    fetch(`${apiUrl}/projects/${target}/modules`, { headers }).then(r => r.ok ? r.json() : []).then((rows: ModuleItem[]) => setModules(rows.filter(x => x.isActive)));
+  }, [headers, managing?.projectId, projectFilter, contextProjectId]);
+  useEffect(()=>{
+    if(!suiteAiProjectId){setSuiteAiModules([]);setSuiteAiModuleId("");return;}
+    fetch(`${apiUrl}/projects/${suiteAiProjectId}/modules`,{headers}).then(async response=>response.ok?response.json():Promise.reject(new Error("โหลด Module ไม่สำเร็จ"))).then((rows:ModuleItem[])=>{const active=rows.filter(x=>x.isActive);setSuiteAiModules(active);setSuiteAiModuleId(current=>active.some(x=>x.moduleId===current)?current:(active[0]?.moduleId??""));}).catch(error=>setSuiteAiError(error instanceof Error?error.message:"โหลด Module ไม่สำเร็จ"));
+  },[suiteAiProjectId,headers]);
+  useEffect(() => {
     if (!form || editing || !projectId) return;
     const project = projects.find((x) => x.projectId === projectId);
     setCode(
@@ -3622,13 +4203,17 @@ function TestSuitesPage({
         ),
     );
     setName(suite?.suiteName ?? "");
-    setType(suite?.suiteType ?? "Regression");
-    setRisk(suite?.riskTier ?? "P1");
+    setType(suite?.suiteType ?? suiteTypes[0]?.value ?? "");
+    setRisk(suite?.riskTier ?? riskTiers[0]?.value ?? "");
     setDescription(suite?.description ?? "");
-    setProjectId(suite?.projectId ?? projects[0]?.projectId ?? "");
+    setProjectId(suite?.projectId ?? contextProjectId ?? projects[0]?.projectId ?? "");
     setActive(suite?.isActive ?? true);
     setForm(true);
   };
+  const openSuiteAi=()=>{const targetProject=contextProjectId||projectFilter||projects[0]?.projectId||"";setSuiteAiProjectId(targetProject);setSuiteAiModuleId("");setSuiteAiError("");setSuiteAiDrafts([]);setSuiteAiExpanded(undefined);setSuiteAiModal(true);};
+  const generateSuiteWithAi=async()=>{if(!suiteAiProjectId||!suiteAiModuleId)return;setSuiteAiGenerating(true);setSuiteAiError("");try{const response=await fetch(`${apiUrl}/test-suites/generate-ai`,{method:"POST",headers,body:JSON.stringify({projectId:suiteAiProjectId,moduleId:suiteAiModuleId,suiteTypes:suiteTypes.map(x=>x.value),riskTiers:riskTiers.map(x=>x.value)})});if(!response.ok){const problem=await response.json().catch(()=>null);throw new Error(problem?.detail??"AI Generate Test Suite ไม่สำเร็จ");}const drafts:GeneratedTestSuiteDraft[]=await response.json();if(!Array.isArray(drafts)||!drafts.length)throw new Error("AI ไม่ได้สร้าง Test Suite กลับมา");setSuiteAiDrafts(drafts);setSuiteAiExpanded(0);}catch(error){if(error instanceof SyntaxError)setSuiteAiError("AI ส่งข้อมูลกลับมาในรูปแบบที่ไม่ถูกต้อง กรุณาลองใหม่");else setSuiteAiError(error instanceof Error?error.message:"AI Generate Test Suite ไม่สำเร็จ");}finally{setSuiteAiGenerating(false);}};
+  const removeSuiteAiDraft=(index:number)=>setSuiteAiDrafts(drafts=>{const next=drafts.filter((_,i)=>i!==index);if(next.length===0){setSuiteAiModal(false);}return next;});
+  const saveAllSuiteDrafts=async()=>{if(!suiteAiDrafts.length)return;setSuiteAiGenerating(true);setSuiteAiError("");try{let created=0;for(const draft of suiteAiDrafts){const body={code:"",name:draft.suiteName,projectId:suiteAiProjectId,moduleId:suiteAiModuleId,suiteType:draft.suiteType,riskTier:draft.riskTier,description:draft.description,isActive:true};const res=await fetch(`${apiUrl}/test-suites`,{method:"POST",headers,body:JSON.stringify(body)});if(!res.ok){const problem=await res.json().catch(()=>null);throw new Error(`สร้าง Suite "${draft.suiteName}" ไม่สำเร็จ: ${problem?.detail??""}`);}const saved:TestSuiteItem=await res.json();const required=draft.testCases.filter(x=>x.isRequired).map(x=>x.testCaseId),optional=draft.testCases.filter(x=>!x.isRequired).map(x=>x.testCaseId);for(const [ids,isRequired] of [[required,true],[optional,false]] as const){if(!ids.length)continue;const ar=await fetch(`${apiUrl}/test-suites/${saved.testSuiteId}/cases`,{method:"POST",headers,body:JSON.stringify({testCaseIds:ids,isRequired})});if(!ar.ok)throw new Error(`สร้าง "${draft.suiteName}" แล้ว แต่กำหนด Test Case ไม่สำเร็จ`);}created++;}setSuiteAiDrafts([]);setSuiteAiModal(false);setReload(x=>x+1);}catch(error){setSuiteAiError(error instanceof Error?error.message:"บันทึก Test Suite ไม่สำเร็จ");}finally{setSuiteAiGenerating(false);}};
   const save = async () => {
     setSaving(true);
     try {
@@ -3652,6 +4237,7 @@ function TestSuitesPage({
         const problem = await response.json();
         throw new Error(problem.detail ?? "บันทึกไม่สำเร็จ");
       }
+      await response.json();
       setForm(false);
       setReload((x) => x + 1);
     } catch (e) {
@@ -3664,25 +4250,36 @@ function TestSuitesPage({
     if (!managing || !checked.length) return;
     setSaving(true);
     try {
-      await fetch(`${apiUrl}/test-suites/${managing.testSuiteId}/cases`, {
+      const response = await fetch(`${apiUrl}/test-suites/${managing.testSuiteId}/cases`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ testCaseIds: checked, isRequired: true }),
+        body: JSON.stringify({ testCaseIds: checked, isRequired: addRequired }),
       });
+      if (!response.ok) throw new Error(await response.text() || "เพิ่ม Test Case ไม่สำเร็จ");
       setChecked([]);
       setManaging(null);
       setReload((x) => x + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "เพิ่ม Test Case ไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
   };
   const removeCase = async (suiteId: string, caseId: string) => {
-    await fetch(`${apiUrl}/test-suites/${suiteId}/cases/${caseId}`, {
+    const response = await fetch(`${apiUrl}/test-suites/${suiteId}/cases/${caseId}`, {
       method: "DELETE",
       headers,
     });
+    if (!response.ok) { setError("นำ Test Case ออกจาก Suite ไม่สำเร็จ"); return; }
     setManaging(null);
     setReload((x) => x + 1);
+  };
+  const updateCase = async (suite: TestSuiteItem, caseId: string, sortOrder: number, isRequired: boolean) => {
+    setSaving(true); setError("");
+    const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}/cases/${caseId}`, { method: "PUT", headers, body: JSON.stringify({ sortOrder, isRequired }) });
+    if (!response.ok) { setError("ปรับ Test Case ไม่สำเร็จ"); setSaving(false); return; }
+    const fresh = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}`, { headers }).then(r => r.json());
+    setManaging(fresh); setItems(current => current.map(x => x.testSuiteId === fresh.testSuiteId ? fresh : x)); setSaving(false);
   };
   const removeSuite = async (suite: TestSuiteItem) => {
     if (
@@ -3703,7 +4300,10 @@ function TestSuitesPage({
   };
   const rows = items.filter(
     (x) =>
-      x.isActive &&
+      (!projectFilter || x.projectId === projectFilter) &&
+      (!typeFilter || x.suiteType === typeFilter) &&
+      (!riskFilter || x.riskTier === riskFilter) &&
+      (activeFilter === "all" || (activeFilter === "active" ? x.isActive : !x.isActive)) &&
       `${x.suiteCode} ${x.suiteName} ${x.suiteType ?? ""}`
         .toLowerCase()
         .includes(search.toLowerCase()),
@@ -3713,20 +4313,25 @@ function TestSuitesPage({
       managing &&
       !managing.cases.some((c) => c.testCaseId === x.testCaseId) &&
       x.projectId === managing.projectId,
-  );
+  ).filter(x => (!caseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseSearch.toLowerCase())) && (!caseModuleFilter || x.moduleId === caseModuleFilter) && (!casePriorityFilter || x.priority === casePriorityFilter) && (!caseTypeFilter || x.testType === caseTypeFilter) && (!caseStatusFilter || x.status === caseStatusFilter));
+  const suiteAiModuleOptions:(ModuleItem&{depth:number})[]=[];const appendSuiteAiModules=(parentId:string|null|undefined,depth:number)=>suiteAiModules.filter(x=>(x.parentModuleId??null)===(parentId??null)).sort((a,b)=>a.sortOrder-b.sortOrder||a.moduleCode.localeCompare(b.moduleCode)).forEach(module=>{suiteAiModuleOptions.push({...module,depth});appendSuiteAiModules(module.moduleId,depth+1)});appendSuiteAiModules(null,0);
   return (
     <>
       <article className="card">
-        <div className="table-tools">
+        <div className="table-tools suite-toolbar">
           <span>{rows.length} Test Suites</span>
+          <div className="suite-filters">
+            <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)}><option value="">ทุก Project</option>{projects.map(x => <option key={x.projectId} value={x.projectId}>{x.projectCode} · {x.projectName}</option>)}</select>
+            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">ทุก Type</option>{suiteTypes.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
+            <select value={riskFilter} onChange={e => setRiskFilter(e.target.value)}><option value="">ทุก Risk Tier</option>{riskTiers.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
+            <select value={activeFilter} onChange={e => setActiveFilter(e.target.value)}><option value="active">ใช้งาน</option><option value="inactive">ปิดใช้งาน</option><option value="all">ทุกสถานะ</option></select>
+          </div>
           {canEdit && (
-            <button className="btn primary" onClick={() => openForm()}>
-              + สร้าง Test Suite
-            </button>
+            <div className="suite-create-actions"><button className="btn ai-button" onClick={openSuiteAi}><span aria-hidden="true">✦</span> AI Generate</button><button className="btn primary" onClick={() => openForm()}>+ สร้าง Test Suite</button></div>
           )}
         </div>
         <div className="table-wrap">
-          <table>
+          <table className="suite-table">
             <thead>
               <tr>
                 <th>Suite Code</th>
@@ -3734,6 +4339,7 @@ function TestSuitesPage({
                 <th>Type</th>
                 <th>Risk Tier</th>
                 <th>Case Count</th>
+                <th>Test Cycles</th>
                 <th>Active</th>
                 {canEdit && <th>จัดการ</th>}
               </tr>
@@ -3741,25 +4347,32 @@ function TestSuitesPage({
             <tbody>
               {rows.map((x) => (
                 <tr key={x.testSuiteId}>
-                  <td>
-                    <b>{x.suiteCode}</b>
+                  <td data-label="Suite Code">
+                    <button className="link-button" onClick={() => setDetail(x)}>{x.suiteCode}</button>
                   </td>
-                  <td>{x.suiteName}</td>
-                  <td>{x.suiteType ?? "-"}</td>
-                  <td>
+                  <td data-label="Suite Name">{x.suiteName}</td>
+                  <td data-label="Type">{x.suiteType ?? "-"}</td>
+                  <td data-label="Risk Tier">
                     <Badge tone={x.riskTier === "P0" ? "red" : "yellow"}>
                       {x.riskTier ?? "-"}
                     </Badge>
                   </td>
-                  <td>{x.cases.length}</td>
-                  <td>
+                  <td data-label="Case Count">{x.cases.length}</td>
+                  <td data-label="Test Cycles">{x.cycleCount}</td>
+                  <td data-label="Status">
                     <Badge tone={x.isActive ? "green" : "red"}>
                       {x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
                     </Badge>
                   </td>
                   {canEdit && (
-                    <td>
+                    <td data-label="จัดการ">
                       <div className="row-actions">
+                        <button
+                          className="table-action"
+                          onClick={() => setDetail(x)}
+                        >
+                          รายละเอียด
+                        </button>
                         <button
                           className="table-action"
                           onClick={() => openForm(x)}
@@ -3771,6 +4384,13 @@ function TestSuitesPage({
                           onClick={() => {
                             setManaging(x);
                             setChecked([]);
+                            setCaseSearch("");
+                            setCaseModuleFilter("");
+                            setCasePriorityFilter("");
+                            setCaseTypeFilter("");
+                            setCaseStatusFilter("");
+                            setAddRequired(true);
+                            setError("");
                           }}
                         >
                           จัด Test Case
@@ -3790,6 +4410,7 @@ function TestSuitesPage({
           </table>
         </div>
       </article>
+      {suiteAiModal&&<div className="modal" onMouseDown={()=>!suiteAiGenerating&&setSuiteAiModal(false)}><div className="modal-box requirement-ai-modal suite-ai-modal" role="dialog" aria-modal="true" aria-labelledby="suite-ai-title" onMouseDown={event=>event.stopPropagation()} style={{position:"relative"}}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}>×</button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{suiteAiModuleOptions.map(module=><option className={module.depth===0?"module-root-option":"module-child-option"} key={module.moduleId} value={module.moduleId}>{module.depth?`${"　".repeat(module.depth)}└ `:"▾ "}{module.moduleCode} · {module.moduleName}</option>)}</select></label></div><div className="ai-draft-note"><span aria-hidden="true">i</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<div className="requirement-ai-actions"><small>{testCases.filter(testCase=>testCase.moduleId===suiteAiModuleId&&testCase.status!=="Deprecated").length} Test Cases พร้อมวิเคราะห์</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}>ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}>สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</div></div>}
       {form && (
         <div className="modal" onMouseDown={() => setForm(false)}>
           <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
@@ -3802,6 +4423,7 @@ function TestSuitesPage({
                 Project
                 <select
                   value={projectId}
+                  disabled={Boolean(editing)}
                   onChange={(e) => setProjectId(e.target.value)}
                 >
                   {projects.map((x) => (
@@ -3826,19 +4448,13 @@ function TestSuitesPage({
               <label>
                 Type
                 <select value={type} onChange={(e) => setType(e.target.value)}>
-                  <option>Smoke</option>
-                  <option>Regression</option>
-                  <option>Critical Regression</option>
-                  <option>UAT</option>
+                  {masterOptionElements(suiteTypes, type)}
                 </select>
               </label>
               <label>
                 Risk Tier
                 <select value={risk} onChange={(e) => setRisk(e.target.value)}>
-                  <option>P0</option>
-                  <option>P1</option>
-                  <option>P2</option>
-                  <option>P3</option>
+                  {masterOptionElements(riskTiers, risk)}
                 </select>
               </label>
               <label className="full">
@@ -3890,16 +4506,26 @@ function TestSuitesPage({
               </div>
               <button onClick={() => setManaging(null)}>×</button>
             </div>
+            {error && <div className="inline-error">{error}</div>}
+            <div className="suite-case-toolbar">
+              <input value={caseSearch} onChange={e => setCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." />
+              <select value={caseModuleFilter} onChange={e => setCaseModuleFilter(e.target.value)}><option value="">ทุก Module</option>{modules.map(x => <option key={x.moduleId} value={x.moduleId}>{x.moduleCode} · {x.moduleName}</option>)}</select>
+              <select value={casePriorityFilter} onChange={e => setCasePriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(testCases.map(x => x.priority))].map(x => <option key={x}>{x}</option>)}</select>
+              <select value={caseTypeFilter} onChange={e => setCaseTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(testCases.map(x => x.testType).filter(Boolean))].map(x => <option key={x} value={x}>{x}</option>)}</select>
+              <select value={caseStatusFilter} onChange={e => setCaseStatusFilter(e.target.value)}><option value="">ทุก Status</option>{[...new Set(testCases.map(x => x.status))].map(x => <option key={x}>{x}</option>)}</select>
+            </div>
             <div className="suite-columns">
               <section>
                 <h3>Test Case ในชุด ({managing.cases.length})</h3>
                 {managing.cases.length ? (
-                  managing.cases.map((x) => (
+                  managing.cases.map((x, index) => (
                     <div className="suite-case" key={x.testCaseId}>
                       <span>
                         <b>{x.testCaseCode}</b>
                         <small>{x.title}</small>
+                        <small>ลำดับ {x.sortOrder} · {x.isRequired ? "Required" : "Optional"}</small>
                       </span>
+                      <div className="suite-case-actions"><button disabled={saving || index === 0} title="เลื่อนขึ้น" onClick={() => updateCase(managing, x.testCaseId, managing.cases[index - 1]?.sortOrder ?? x.sortOrder, x.isRequired)}>↑</button><button disabled={saving || index === managing.cases.length - 1} title="เลื่อนลง" onClick={() => updateCase(managing, x.testCaseId, managing.cases[index + 1]?.sortOrder ?? x.sortOrder, x.isRequired)}>↓</button><button className="requirement-toggle" disabled={saving} onClick={() => updateCase(managing, x.testCaseId, x.sortOrder, !x.isRequired)}>{x.isRequired ? "Required" : "Optional"}</button></div>
                       <button
                         onClick={() =>
                           removeCase(managing.testSuiteId, x.testCaseId)
@@ -3914,7 +4540,7 @@ function TestSuitesPage({
                 )}
               </section>
               <section>
-                <h3>Test Case ที่เพิ่มได้ ({available.length})</h3>
+                <div className="suite-available-head"><h3>Test Case ที่เพิ่มได้ ({available.length})</h3><div><button className="table-action" onClick={() => setChecked(available.map(x => x.testCaseId))}>เลือกทั้งหมด</button><button className="table-action" onClick={() => setChecked([])}>ล้าง</button></div></div>
                 {available.map((x) => (
                   <label className="suite-case selectable" key={x.testCaseId}>
                     <input
@@ -3937,6 +4563,7 @@ function TestSuitesPage({
               </section>
             </div>
             <div className="modal-actions">
+              <label className="suite-required-choice"><input type="checkbox" checked={addRequired} onChange={e => setAddRequired(e.target.checked)} /> เพิ่มเป็น Required</label>
               <button className="btn" onClick={() => setManaging(null)}>
                 ปิด
               </button>
@@ -3951,6 +4578,7 @@ function TestSuitesPage({
           </div>
         </div>
       )}
+      {detail && <div className="modal" onMouseDown={() => setDetail(null)}><div className="modal-box suite-detail" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>{detail.suiteCode}</h2><small>{projects.find(x => x.projectId === detail.projectId)?.projectName ?? "-"}</small></div><button onClick={() => setDetail(null)}>×</button></div><h3>{detail.suiteName}</h3><p className="muted-text">{detail.description || "ไม่มีรายละเอียด"}</p><div className="detail-grid"><span>Type<b>{detail.suiteType || "-"}</b></span><span>Risk Tier<b>{detail.riskTier || "-"}</b></span><span>Status<b>{detail.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</b></span><span>Test Cycles<b>{detail.cycleCount}</b></span></div><h3>Test Cases ({detail.cases.length})</h3><div className="suite-detail-cases">{detail.cases.map(x => <div key={x.testCaseId}><span><b>{x.sortOrder}. {x.testCaseCode}</b><small>{x.title}</small></span><Badge tone={x.isRequired ? "blue" : "yellow"}>{x.isRequired ? "Required" : "Optional"}</Badge></div>)}</div><div className="modal-actions"><button className="btn primary" onClick={() => setDetail(null)}>ปิด</button></div></div></div>}
     </>
   );
 }
@@ -3962,6 +4590,7 @@ type AdminUser = {
   isActive: boolean;
   lastLoginAt?: string;
   roles: string[];
+  assignedProjectIds: string[];
 };
 type AdminRole = {
   roleId: string;
@@ -3974,19 +4603,146 @@ type AdminPermission = {
   permissionCode: string;
   moduleArea?: string;
 };
-function AdministrationPage({ refresh }: { refresh: number }) {
+const masterSettingGroups = [
+  ["ReleaseType", "Release", "Release Type"],
+  ["TestCasePriority", "Test Case", "Priority"],
+  ["TestCaseType", "Test Case", "Type"],
+  ["TestSuiteType", "Test Suite", "Type"],
+  ["TestSuiteRiskTier", "Test Suite", "Risk Tier"],
+  ["TestCycleType", "Test Cycle", "Cycle Type"],
+] as const;
+const masterSettingSections = [
+  { name: "Release", description: "ค่าที่ใช้ในหน้าจัดการ Release", groups: masterSettingGroups.filter((x) => x[1] === "Release") },
+  { name: "Test Case", description: "ค่าที่ใช้ในการออกแบบ Test Case", groups: masterSettingGroups.filter((x) => x[1] === "Test Case") },
+  { name: "Test Suite", description: "ค่าที่ใช้จัดกลุ่ม Test Case", groups: masterSettingGroups.filter((x) => x[1] === "Test Suite") },
+  { name: "Test Cycle", description: "ค่าที่ใช้ในการวางแผนรอบทดสอบ", groups: masterSettingGroups.filter((x) => x[1] === "Test Cycle") },
+];
+type EnvironmentSetting = { testEnvironmentId: string; projectId: string; environmentName: string; baseUrl?: string; isActive: boolean };
+type AiConfiguration = { provider: "OpenAI" | "Google" | "Anthropic" | "OpenRouter" | "Local"; model: string; baseUrl?: string; isEnabled: boolean; hasApiKey: boolean; apiKeyHint?: string; updatedAt?: string };
+const aiProviderModels: Record<AiConfiguration["provider"], string[]> = { OpenAI: ["gpt-5-mini", "gpt-5.4"], Google: ["gemini-3.5-flash", "gemini-3.1-pro"], Anthropic: ["claude-sonnet-5", "claude-haiku-4-5-20251001"], OpenRouter: ["openai/gpt-4o", "anthropic/claude-sonnet-4", "google/gemini-2.5-flash", "meta-llama/llama-4-maverick", "nvidia/nemotron-3.5-lightning:free"], Local: ["qwen3", "llama3.3", "mistral-small"] };
+type AiModelOption = { id: string; displayName: string };
+function MasterSettingsPage() {
+  const [items, setItems] = useState<MasterOption[]>([]), [environments, setEnvironments] = useState<EnvironmentSetting[]>([]), [projects, setProjects] = useState<ProjectItem[]>([]), [reload, setReload] = useState(0);
+  const [category, setCategory] = useState("ReleaseType"), [formCategory, setFormCategory] = useState<string | null>(null), [value, setValue] = useState(""), [displayName, setDisplayName] = useState(""), [sortOrder, setSortOrder] = useState(10), [editing, setEditing] = useState<MasterOption | null>(null);
+  const [environment, setEnvironment] = useState<EnvironmentSetting | null>(null), [environmentFormOpen, setEnvironmentFormOpen] = useState(false), [environmentProjectId, setEnvironmentProjectId] = useState(""), [environmentName, setEnvironmentName] = useState(""), [baseUrl, setBaseUrl] = useState("");
+  const [aiConfiguration, setAiConfiguration] = useState<AiConfiguration>({ provider: "OpenAI", model: "gpt-5-mini", isEnabled: true, hasApiKey: false }), [aiApiKey, setAiApiKey] = useState(""), [savingAi, setSavingAi] = useState(false);
+  const [aiModels, setAiModels] = useState<AiModelOption[]>([]), [loadingAiModels, setLoadingAiModels] = useState(false), [aiModelsError, setAiModelsError] = useState("");
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
+  const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+  useEffect(() => {
+    const load = async () => {
+      const read = async (url: string) => { const response = await fetch(url, { headers }); if (!response.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (${response.status})`); return response.json(); };
+      try { const [masterData, environmentData, projectData, aiData] = await Promise.all([read(`${apiUrl}/master-settings?includeInactive=true`), read(`${apiUrl}/master-settings/environments`), read(`${apiUrl}/projects`), read(`${apiUrl}/master-settings/ai`)]); setItems(masterData); setEnvironments(environmentData); setProjects(projectData); setAiConfiguration(aiData); setEnvironmentProjectId((x) => x || projectData[0]?.projectId || ""); }
+      catch (error) { window.alert(error instanceof Error ? `${error.message} กรุณาตรวจสอบว่า API ใช้งานเวอร์ชันล่าสุด` : "โหลดการตั้งค่ากลางไม่สำเร็จ"); }
+    };
+    load();
+  }, [reload, headers]);
+  const resetOption = () => { setEditing(null); setFormCategory(null); setValue(""); setDisplayName(""); setSortOrder(10); };
+  const saveOption = async () => {
+    const response = await fetch(`${apiUrl}/master-settings${editing ? `/${editing.masterOptionId}` : ""}`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify({ category: editing?.category ?? category, value, displayName, sortOrder, isActive: editing?.isActive ?? true }) });
+    if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "บันทึกข้อมูลไม่สำเร็จ"); return; } resetOption(); setReload((x) => x + 1);
+  };
+  const toggleOption = async (item: MasterOption) => { await fetch(`${apiUrl}/master-settings/${item.masterOptionId}`, { method: "PUT", headers, body: JSON.stringify({ ...item, isActive: !item.isActive }) }); setReload((x) => x + 1); };
+  const deleteOption = async (item: MasterOption) => { if (!window.confirm(`ยืนยันลบ ${item.displayName}?`)) return; const response = await fetch(`${apiUrl}/master-settings/${item.masterOptionId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "ลบข้อมูลไม่สำเร็จ"); return; } if (editing?.masterOptionId === item.masterOptionId) resetOption(); setReload((x) => x + 1); };
+  const editEnvironment = (item?: EnvironmentSetting) => { setEnvironment(item ?? null); setEnvironmentFormOpen(true); setEnvironmentProjectId(item?.projectId ?? projects[0]?.projectId ?? ""); setEnvironmentName(item?.environmentName ?? ""); setBaseUrl(item?.baseUrl ?? ""); };
+  const resetEnvironment = () => { setEnvironment(null); setEnvironmentFormOpen(false); setEnvironmentName(""); setBaseUrl(""); };
+  const saveEnvironment = async () => { const response = await fetch(`${apiUrl}/master-settings/environments${environment ? `/${environment.testEnvironmentId}` : ""}`, { method: environment ? "PUT" : "POST", headers, body: JSON.stringify({ projectId: environmentProjectId, environmentName, baseUrl: baseUrl || null, isActive: environment?.isActive ?? true }) }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "บันทึก Environment ไม่สำเร็จ"); return; } resetEnvironment(); setReload((x) => x + 1); };
+  const toggleEnvironment = async (item: EnvironmentSetting) => { await fetch(`${apiUrl}/master-settings/environments/${item.testEnvironmentId}`, { method: "PUT", headers, body: JSON.stringify({ ...item, isActive: !item.isActive }) }); setReload((x) => x + 1); };
+  const deleteEnvironment = async (item: EnvironmentSetting) => { if (!window.confirm(`ยืนยันลบ Environment ${item.environmentName}?`)) return; const response = await fetch(`${apiUrl}/master-settings/environments/${item.testEnvironmentId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "ลบ Environment ไม่สำเร็จ"); return; } if (environment?.testEnvironmentId === item.testEnvironmentId) resetEnvironment(); setReload((x) => x + 1); };
+  const openOptionForm = (targetCategory: string, item?: MasterOption) => { setCategory(targetCategory); setFormCategory(targetCategory); setEditing(item ?? null); setValue(item?.value ?? ""); setDisplayName(item?.displayName ?? ""); setSortOrder(item?.sortOrder ?? 10); };
+  const saveAiConfiguration = async () => { setSavingAi(true); try { const response = await fetch(`${apiUrl}/master-settings/ai`, { method: "PUT", headers, body: JSON.stringify({ provider: aiConfiguration.provider, model: aiConfiguration.model, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null, isEnabled: aiConfiguration.isEnabled, clearApiKey: false }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } setAiConfiguration(await response.json()); setAiApiKey(""); window.alert("บันทึกการตั้งค่า AI เรียบร้อยแล้ว"); } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } finally { setSavingAi(false); } };
+  const loadAiModels = async () => { setLoadingAiModels(true); setAiModelsError(""); try { const response = await fetch(`${apiUrl}/master-settings/ai/models`, { method: "POST", headers, body: JSON.stringify({ provider: aiConfiguration.provider, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "โหลดรายการ Model ไม่สำเร็จ"); } const models = await response.json() as AiModelOption[]; setAiModels(models); if (!models.length) setAiModelsError("Provider ไม่ส่งรายการ Model กลับมา"); } catch (error) { setAiModelsError(error instanceof Error ? error.message : "โหลดรายการ Model ไม่สำเร็จ"); } finally { setLoadingAiModels(false); } };
+  const toggleSection = (name: string) => setExpandedSections((current) => { const next = new Set(current); if (next.has(name)) next.delete(name); else next.add(name); return next; });
+  const optionForm = (targetCategory: string) => formCategory === targetCategory && <div className="master-inline-editor"><label>รหัสค่า<input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="เช่น Major" /></label><label>ชื่อที่แสดง<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></label><label className="master-order-field">ลำดับ<input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} /></label><div className="master-setting-actions"><button className="btn" onClick={resetOption}>ยกเลิก</button><button className="btn primary" disabled={!value.trim() || !displayName.trim()} onClick={saveOption}>{editing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>;
+  return <div className="master-settings-page">
+    <section className="card master-setting-card master-ai-configuration">
+      <div className="master-section-head"><div><span className="master-section-icon">AI</span><div><h3>AI Configuration</h3><p>ค่ากลางสำหรับ AI Generate ของ Requirement, Test Case และ Test Suite</p></div></div><Badge tone={aiConfiguration.isEnabled && aiConfiguration.hasApiKey ? "green" : "yellow"}>{aiConfiguration.isEnabled && aiConfiguration.hasApiKey ? "พร้อมใช้งาน" : "ยังไม่พร้อมใช้งาน"}</Badge></div>
+      <div className="master-ai-body">
+        <div className="master-ai-note"><b>การจัดเก็บที่ปลอดภัย</b><span>API key ถูกเข้ารหัสและเก็บเฉพาะฝั่ง Server เมื่อเปลี่ยน Provider ต้องกรอกคีย์ใหม่ ส่วน AI Local สามารถเว้นคีย์ได้</span></div>
+        <div className="master-ai-form">
+          <label>Provider<select value={aiConfiguration.provider} onChange={(e) => { const provider = e.target.value as AiConfiguration["provider"]; setAiApiKey(""); setAiModels([]); setAiModelsError(""); setAiConfiguration((current) => ({ ...current, provider, model: aiProviderModels[provider][0], baseUrl: provider === "Local" ? "http://localhost:11434/v1" : provider === "OpenRouter" ? "https://openrouter.ai/api/v1" : undefined, hasApiKey: false, apiKeyHint: undefined })); }}><option value="OpenAI">OpenAI</option><option value="Google">Google Gemini</option><option value="Anthropic">Anthropic Claude</option><option value="OpenRouter">OpenRouter</option><option value="Local">AI Local</option></select></label>
+          <label>Model<span className="master-model-label"><small>{aiModels.length ? `${aiModels.length} Models` : "เลือกหรือพิมพ์ Model ID"}</small><button type="button" onClick={loadAiModels} disabled={loadingAiModels}>{loadingAiModels ? "กำลังโหลด..." : "โหลดทั้งหมด"}</button></span><input list="ai-model-options" value={aiConfiguration.model} onChange={(e) => setAiConfiguration((current) => ({ ...current, model: e.target.value }))} placeholder="ระบุ Model ID" /><datalist id="ai-model-options">{(aiModels.length ? aiModels : aiProviderModels[aiConfiguration.provider].map((id) => ({ id, displayName: "" }))).map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</datalist>{aiModelsError && <small className="master-model-error">{aiModelsError}</small>}</label>
+          {(aiConfiguration.provider === "Local" || aiConfiguration.provider === "OpenRouter") && <label>Base URL<input value={aiConfiguration.baseUrl ?? ""} onChange={(e) => setAiConfiguration((current) => ({ ...current, baseUrl: e.target.value }))} placeholder={aiConfiguration.provider === "Local" ? "http://localhost:11434/v1" : "https://openrouter.ai/api/v1"} /></label>}
+          <label>API key {aiConfiguration.provider === "Local" && <small>(ไม่บังคับ)</small>}<input type="password" autoComplete="new-password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder={aiConfiguration.hasApiKey ? `ตั้งค่าแล้ว ${aiConfiguration.apiKeyHint ?? ""} — เว้นว่างเพื่อใช้ค่าเดิม` : aiConfiguration.provider === "Local" ? "เว้นว่างได้ หาก Server ไม่ใช้คีย์" : `กรอก API key สำหรับ ${aiConfiguration.provider}`} /></label>
+          <label className="master-ai-toggle"><input type="checkbox" checked={aiConfiguration.isEnabled} onChange={(e) => setAiConfiguration((current) => ({ ...current, isEnabled: e.target.checked }))} /><span>เปิดใช้งาน AI ร่วมกันทุกระบบ</span></label>
+          <button className="btn primary" disabled={savingAi || !aiConfiguration.model.trim() || ((aiConfiguration.provider === "Local" || aiConfiguration.provider === "OpenRouter") && !aiConfiguration.baseUrl?.trim()) || (aiConfiguration.provider !== "Local" && !aiConfiguration.hasApiKey && !aiApiKey.trim())} onClick={saveAiConfiguration}>{savingAi ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}</button>
+        </div>
+      </div>
+    </section>
+    {masterSettingSections.map((section) => <section className={`card master-setting-card master-section-${section.name.toLowerCase().replace(" ", "-")} ${expandedSections.has(section.name) ? "is-expanded" : ""}`} key={section.name}>
+      <button type="button" className="master-section-head master-section-toggle" aria-expanded={expandedSections.has(section.name)} onClick={() => toggleSection(section.name)}><span className="master-section-summary"><span className="master-section-icon">{section.name === "Release" ? "R" : section.name === "Test Case" ? "TC" : section.name === "Test Suite" ? "TS" : "CY"}</span><span><strong>{section.name}</strong><small>{section.description}</small></span></span><span className="master-section-meta"><span className="count-pill">{items.filter((x) => section.groups.some((g) => g[0] === x.category) && x.isActive).length + (section.name === "Test Cycle" ? environments.filter((x) => x.isActive).length : 0)} Active</span><span className="master-chevron" aria-hidden="true">⌄</span></span></button>
+      {expandedSections.has(section.name) && <><div className="master-section-groups">{section.groups.map((group) => <div className="master-subgroup" key={group[0]}><div className="master-subgroup-head"><h4>{group[2]}</h4><div><span>{items.filter((x) => x.category === group[0] && x.isActive).length}</span><button className="master-add-button" onClick={() => openOptionForm(group[0])}>+ เพิ่ม</button></div></div>{optionForm(group[0])}<div className="master-setting-list">{items.filter((x) => x.category === group[0]).map((item) => <div key={item.masterOptionId} className={!item.isActive ? "inactive" : ""}><span><b>{item.displayName}</b><small>{item.value} · ลำดับ {item.sortOrder}</small></span><button className="table-action" onClick={() => openOptionForm(group[0], item)}>แก้ไข</button><button className="table-action danger-action" onClick={() => deleteOption(item)}>ลบ</button><button className="table-action" onClick={() => toggleOption(item)}>{item.isActive ? "ปิดใช้" : "เปิดใช้"}</button></div>)}</div></div>)}</div>
+      {section.name === "Test Cycle" && <div className="master-subgroup master-environment-group"><div className="master-subgroup-head"><h4>Environment</h4><div><span>{environments.filter((x) => x.isActive).length}</span><button className="master-add-button" onClick={() => editEnvironment()}>+ เพิ่ม</button></div></div>{environmentFormOpen && <div className="master-setting-form environment-form"><label>Project<select disabled={!!environment} value={environmentProjectId} onChange={(e) => setEnvironmentProjectId(e.target.value)}>{projects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label><label>Environment<input autoFocus value={environmentName} onChange={(e) => setEnvironmentName(e.target.value)} /></label><label>Base URL<input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} /></label><div className="master-setting-actions"><button className="btn" onClick={resetEnvironment}>ยกเลิก</button><button className="btn primary" disabled={!environmentProjectId || !environmentName.trim()} onClick={saveEnvironment}>{environment ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>}<div className="master-setting-list">{environments.map((item) => <div key={item.testEnvironmentId} className={!item.isActive ? "inactive" : ""}><span><b>{item.environmentName}</b><small>{projects.find((x) => x.projectId === item.projectId)?.projectName ?? "-"} · {item.baseUrl || "ไม่ระบุ URL"}</small></span><button className="table-action" onClick={() => editEnvironment(item)}>แก้ไข</button><button className="table-action danger-action" onClick={() => deleteEnvironment(item)}>ลบ</button><button className="table-action" onClick={() => toggleEnvironment(item)}>{item.isActive ? "ปิดใช้" : "เปิดใช้"}</button></div>)}</div></div>}</>}
+    </section>)}
+  </div>;
+}
+
+type SystemMonitorData = {
+  checkedAt: string;
+  machineName: string;
+  environment: string;
+  api: { status: string; processId: number; uptime: string; memoryBytes: number; processorCount: number };
+  database: { status: string; responseMilliseconds: number; error?: string };
+  services: { key: string; displayName: string; description?: string; status: string; isRunning: boolean; error?: string }[];
+};
+function SystemMonitorPage() {
+  const [data, setData] = useState<SystemMonitorData | null>(null),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true),
+    [busy, setBusy] = useState("");
+  const headers = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/system-monitor`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
+      if (!response.ok) throw new Error(response.status === 403 ? "หน้านี้สำหรับ System Admin เท่านั้น" : "โหลดสถานะระบบไม่สำเร็จ");
+      setData(await response.json());
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลดสถานะระบบไม่สำเร็จ"); }
+    finally { if (!silent) setLoading(false); }
+  }, []);
+  useEffect(() => { load(); const timer = window.setInterval(() => load(true), 15000); return () => window.clearInterval(timer); }, [load]);
+  const control = async (service: SystemMonitorData["services"][number], action: "start" | "restart") => {
+    const verb = action === "restart" ? "Restart" : "Start";
+    if (!window.confirm(`ยืนยัน ${verb} ${service.displayName}?\nการเชื่อมต่ออาจหยุดชั่วคราว`)) return;
+    setBusy(service.key);
+    try {
+      const response = await fetch(`${apiUrl}/system-monitor/services/${encodeURIComponent(service.key)}/${action}`, { method: "POST", headers });
+      if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? `${verb} Service ไม่สำเร็จ`); }
+      await load(true);
+    } catch (e) { window.alert(e instanceof Error ? e.message : `${verb} Service ไม่สำเร็จ`); }
+    finally { setBusy(""); }
+  };
+  if (loading) return <article className="card empty"><p>กำลังตรวจสอบสถานะระบบ...</p></article>;
+  if (error || !data) return <article className="card empty"><div className="login-error">{error}</div><button className="btn" onClick={() => load()}>ลองใหม่</button></article>;
+  const statusTone = (status: string) => status === "Online" || status === "Running" ? "green" : status === "Starting" || status === "Stopping" ? "yellow" : "red";
+  return <div className="system-monitor-page">
+    <div className="monitor-summary">
+      <article className="card monitor-card"><div className="monitor-card-head"><span className="monitor-icon">API</span><Badge tone={statusTone(data.api.status)}>{data.api.status}</Badge></div><h3>QA Management API</h3><p>Process #{data.api.processId} · Uptime {data.api.uptime}</p><div className="monitor-metrics"><span><b>{(data.api.memoryBytes / 1048576).toFixed(1)} MB</b><small>Memory</small></span><span><b>{data.api.processorCount}</b><small>CPU Cores</small></span></div></article>
+      <article className="card monitor-card"><div className="monitor-card-head"><span className="monitor-icon">DB</span><Badge tone={statusTone(data.database.status)}>{data.database.status}</Badge></div><h3>QA Database</h3><p>{data.database.error || "เชื่อมต่อฐานข้อมูลสำเร็จ"}</p><div className="monitor-metrics"><span><b>{data.database.responseMilliseconds.toFixed(0)} ms</b><small>Response</small></span><span><b>{data.machineName}</b><small>Machine</small></span></div></article>
+    </div>
+    <article className="card monitor-services"><div className="monitor-section-head"><div><h3>Managed Services</h3><p>แสดงเฉพาะ Service ที่อนุญาตไว้ใน Server configuration</p></div><button className="btn" onClick={() => load()} disabled={loading || !!busy}>↻ Refresh</button></div>
+      <div className="monitor-service-list">{data.services.length === 0 ? <div className="empty"><p>ยังไม่มี Service ในรายการที่อนุญาต</p></div> : data.services.map((service) => <div className="monitor-service" key={service.key}><span className={`service-light ${service.isRunning ? "online" : "offline"}`} /><div><b>{service.displayName}</b><small>{service.description || service.key}</small>{service.error && <em>{service.error}</em>}</div><Badge tone={statusTone(service.status)}>{service.status}</Badge><div className="row-actions"><button className="btn" disabled={!!busy || service.isRunning} onClick={() => control(service, "start")}>{busy === service.key ? "กำลังทำงาน..." : "Start"}</button><button className="btn primary" disabled={!!busy || !service.isRunning} onClick={() => control(service, "restart")}>{busy === service.key ? "กำลังทำงาน..." : "Restart"}</button></div></div>)}</div>
+    </article>
+    <footer className="monitor-footer">ตรวจล่าสุด {new Date(data.checkedAt).toLocaleString("th-TH")} · {data.environment}</footer>
+  </div>;
+}
+
+function AdministrationPage({ refresh, allProjects }: { refresh: number; allProjects: ProjectItem[] }) {
   const [users, setUsers] = useState<AdminUser[]>([]),
     [roles, setRoles] = useState<AdminRole[]>([]),
     [permissions, setPermissions] = useState<AdminPermission[]>([]),
     [roleId, setRoleId] = useState(""),
     [selected, setSelected] = useState<string[]>([]),
     [saving, setSaving] = useState(false),
-    [version, setVersion] = useState(0);
+    [version, setVersion] = useState(0),
+    [userSearch, setUserSearch] = useState("");
   const [editing, setEditing] = useState<AdminUser | null>(null),
     [displayName, setDisplayName] = useState(""),
     [email, setEmail] = useState(""),
     [active, setActive] = useState(true),
     [userRoleIds, setUserRoleIds] = useState<string[]>([]),
+    [userProjectIds, setUserProjectIds] = useState<string[]>([]),
     [passwordUser, setPasswordUser] = useState<AdminUser | null>(null),
     [newPassword, setNewPassword] = useState("");
   const headers = {
@@ -4023,6 +4779,13 @@ function AdministrationPage({ refresh }: { refresh: number }) {
       }
     });
   }, [refresh, version]);
+  const filteredUsers = users.filter(
+    (u) =>
+      u.displayName.toLowerCase().includes(userSearch.toLowerCase()) ||
+      u.username.toLowerCase().includes(userSearch.toLowerCase()) ||
+      (u.email ?? "").toLowerCase().includes(userSearch.toLowerCase()),
+  );
+  const activeCount = users.filter((u) => u.isActive).length;
   const changeRole = (id: string) => {
     setRoleId(id);
     const role = roles.find((x) => x.roleId === id);
@@ -4065,6 +4828,7 @@ function AdministrationPage({ refresh }: { refresh: number }) {
         .filter((role) => user.roles.includes(role.roleCode))
         .map((role) => role.roleId),
     );
+    setUserProjectIds(user.assignedProjectIds ?? []);
   };
   const saveUser = async () => {
     if (!editing) return;
@@ -4089,6 +4853,15 @@ function AdministrationPage({ refresh }: { refresh: number }) {
         },
       );
       if (!assign.ok) throw new Error();
+      const assignProjects = await fetch(
+        `${apiUrl}/admin/users/${editing.userId}/projects`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ projectIds: userProjectIds }),
+        },
+      );
+      if (!assignProjects.ok) throw new Error();
       setEditing(null);
       setVersion((x) => x + 1);
     } catch {
@@ -4144,78 +4917,183 @@ function AdministrationPage({ refresh }: { refresh: number }) {
     {},
   );
   return (
-    <div className="admin-layout">
-      <article className="card user-admin-panel">
-        <div className="card-title">
+    <div className="admin-page">
+      <header className="admin-page-header">
+        <div>
+          <h2>จัดการผู้ใช้และสิทธิ์</h2>
+          <p>เพิ่ม แก้ไข และกำหนดบทบาท สิทธิ์ และ Project ให้ผู้ใช้ในระบบ</p>
+        </div>
+      </header>
+
+      <div className="admin-stats-row">
+        <div className="admin-stat-card">
+          <span className="admin-stat-icon blue">&#x1F465;</span>
           <div>
-            <h3>ดำเนินการกับผู้ใช้</h3>
-            <p>เลือกบัญชีเพื่อแก้ไขบทบาท สถานะ หรือรีเซ็ตรหัสผ่าน</p>
+            <b>{users.length}</b>
+            <small>ผู้ใช้ทั้งหมด</small>
           </div>
         </div>
-        <div className="user-action-bar">
-          <select
-            aria-label="เลือกผู้ใช้"
-            value={editing?.userId ?? ""}
-            onChange={(e) => {
-              const target = users.find((x) => x.userId === e.target.value);
-              if (target) openEdit(target);
-              else setEditing(null);
-            }}
-          >
-            <option value="">เลือกบัญชีผู้ใช้...</option>
-            {users.map((x) => (
-              <option key={x.userId} value={x.userId}>
-                {x.displayName} ({x.username})
-              </option>
-            ))}
-          </select>
-          {editing && (
-            <>
-              <button
-                className="btn"
-                onClick={() => toggleActive(editing)}
-                disabled={saving}
-              >
-                {editing.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}
-              </button>
-              <button
-                className="btn"
-                onClick={() => {
-                  setPasswordUser(editing);
-                  setNewPassword("");
-                }}
-              >
-                รีเซ็ตรหัสผ่าน
-              </button>
-            </>
-          )}
+        <div className="admin-stat-card">
+          <span className="admin-stat-icon green">&#x2705;</span>
+          <div>
+            <b>{activeCount}</b>
+            <small>ใช้งานอยู่</small>
+          </div>
         </div>
-        {editing && (
-          <div className="user-edit-form">
-            <label>
-              ชื่อที่แสดง
+        <div className="admin-stat-card">
+          <span className="admin-stat-icon orange">&#x1F6E1;</span>
+          <div>
+            <b>{users.length - activeCount}</b>
+            <small>ปิดใช้งาน</small>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <span className="admin-stat-icon purple">&#x1F3F7;</span>
+          <div>
+            <b>{roles.length}</b>
+            <small>บทบาท</small>
+          </div>
+        </div>
+      </div>
+
+      <article className="card admin-users-card">
+        <div className="card-title">
+          <div>
+            <h3>รายชื่อผู้ใช้งาน</h3>
+            <p>เลือกผู้ใช้เพื่อแก้ไขข้อมูล บทบาท และ Project ที่เข้าถึงได้</p>
+          </div>
+          <div className="admin-users-toolbar">
+            <div className="admin-search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
               <input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="ค้นหาผู้ใช้..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
               />
-            </label>
-            <label>
-              อีเมล
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </label>
-            <fieldset>
-              <legend>บทบาทของผู้ใช้</legend>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-users-table-wrap">
+          <table className="admin-users-table">
+            <thead>
+              <tr>
+                <th>ผู้ใช้งาน</th>
+                <th>บทบาท</th>
+                <th>Project</th>
+                <th>สถานะ</th>
+                <th>เข้าสู่ระบบล่าสุด</th>
+                <th className="th-action">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.map((x) => (
+                <tr key={x.userId}>
+                  <td data-label="ผู้ใช้งาน" className="td-user">
+                    <div className="user-cell">
+                      <span className={`user-avatar ${x.isActive ? "" : "inactive"}`}>
+                        {x.displayName.slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="user-info">
+                        <b>{x.displayName}</b>
+                        <small>{x.username}{x.email ? ` · ${x.email}` : ""}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td data-label="บทบาท">
+                    <div className="role-tags">
+                      {x.roles.length
+                        ? x.roles.map((role) => <span key={role}>{role}</span>)
+                        : <span className="tag-empty">-</span>}
+                    </div>
+                  </td>
+                  <td data-label="Project">
+                    <div className="role-tags project-tags">
+                      {x.assignedProjectIds?.length
+                        ? x.assignedProjectIds.map((pid) => {
+                            const proj = allProjects.find((p) => p.projectId === pid);
+                            return <span key={pid} className="project-tag">{proj?.projectCode ?? pid.slice(0, 8)}</span>;
+                          })
+                        : <span className="tag-empty">-</span>}
+                    </div>
+                  </td>
+                  <td data-label="สถานะ">
+                    <Badge tone={x.isActive ? "green" : "red"}>
+                      {x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
+                    </Badge>
+                  </td>
+                  <td data-label="เข้าสู่ระบบล่าสุด" className="td-meta">
+                    {x.lastLoginAt
+                      ? new Date(x.lastLoginAt).toLocaleString("th-TH")
+                      : <span className="tag-empty">-</span>}
+                  </td>
+                  <td data-label="จัดการ" className="td-actions">
+                    <button className="table-action" onClick={() => openEdit(x)}>
+                      แก้ไข
+                    </button>
+                    <button
+                      className={`table-action ${x.isActive ? "table-action-warn" : "table-action-green"}`}
+                      onClick={() => toggleActive(x)}
+                      disabled={saving}
+                    >
+                      {x.isActive ? "ปิด" : "เปิด"}
+                    </button>
+                    <button
+                      className="table-action table-action-key"
+                      onClick={() => { setPasswordUser(x); setNewPassword(""); }}
+                    >
+                      รหัสผ่าน
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!filteredUsers.length && (
+                <tr>
+                  <td colSpan={6} className="empty-cell">
+                    <div className="empty-state">
+                      <span>&#x1F464;</span>
+                      <b>ไม่พบผู้ใช้</b>
+                      <small>{userSearch ? "ลองค้นหาด้วยคำอื่น" : "ยังไม่มีผู้ใช้ในระบบ"}</small>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      {editing && (
+        <div className="modal" onMouseDown={() => setEditing(null)}>
+          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>แก้ไขผู้ใช้ — {editing.username}</h2>
+              <button onClick={() => setEditing(null)}>&times;</button>
+            </div>
+            <div className="form-grid form-grid-2col">
+              <label>
+                ชื่อที่แสดง <span className="required">*</span>
+                <input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                />
+              </label>
+              <label>
+                อีเมล
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="modal-section">
+              <h3 className="modal-section-title">บทบาทของผู้ใช้</h3>
               <div className="role-checks">
                 {roles.map((role) => (
                   <label
                     key={role.roleId}
-                    className={
-                      userRoleIds.includes(role.roleId) ? "selected" : ""
-                    }
+                    className={userRoleIds.includes(role.roleId) ? "selected" : ""}
                   >
                     <input
                       type="checkbox"
@@ -4235,16 +5113,46 @@ function AdministrationPage({ refresh }: { refresh: number }) {
                   </label>
                 ))}
               </div>
-            </fieldset>
-            <div className="inline-actions">
-              <label className="active-switch">
-                <input
-                  type="checkbox"
-                  checked={active}
-                  onChange={(e) => setActive(e.target.checked)}
-                />{" "}
-                อนุญาตให้เข้าสู่ระบบ
-              </label>
+            </div>
+            <div className="modal-section">
+              <h3 className="modal-section-title">Project ที่เข้าถึงได้</h3>
+              <p className="fieldset-hint">ไม่เลือก Project ใด = ไม่เห็น Project ในระบบ</p>
+              <div className="role-checks">
+                {allProjects.map((project) => (
+                  <label
+                    key={project.projectId}
+                    className={userProjectIds.includes(project.projectId) ? "selected" : ""}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={userProjectIds.includes(project.projectId)}
+                      onChange={(e) =>
+                        setUserProjectIds((current) =>
+                          e.target.checked
+                            ? [...current, project.projectId]
+                            : current.filter((id) => id !== project.projectId),
+                        )
+                      }
+                    />
+                    <span>
+                      <b>{project.projectName}</b>
+                      <small>{project.projectCode}</small>
+                    </span>
+                  </label>
+                ))}
+                {!allProjects.length && <p className="muted-text">ไม่มี Project ในระบบ</p>}
+              </div>
+            </div>
+            <label className="active-switch">
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(e) => setActive(e.target.checked)}
+              />
+              อนุญาตให้เข้าสู่ระบบ
+            </label>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setEditing(null)}>ยกเลิก</button>
               <button
                 className="btn primary"
                 onClick={saveUser}
@@ -4254,96 +5162,44 @@ function AdministrationPage({ refresh }: { refresh: number }) {
               </button>
             </div>
           </div>
-        )}
-        {passwordUser && (
-          <div className="password-panel">
-            <div>
-              <b>ตั้งรหัสผ่านใหม่สำหรับ {passwordUser.username}</b>
-              <small>รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร</small>
+        </div>
+      )}
+
+      {passwordUser && (
+        <div className="modal" onMouseDown={() => setPasswordUser(null)}>
+          <div className="modal-box" style={{ maxWidth: 480 }} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>รีเซ็ตรหัสผ่าน — {passwordUser.username}</h2>
+              <button onClick={() => setPasswordUser(null)}>&times;</button>
             </div>
-            <input
-              type="password"
-              autoFocus
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="รหัสผ่านใหม่"
-            />
-            <button
-              className="btn primary"
-              onClick={resetPassword}
-              disabled={saving || newPassword.length < 8}
-            >
-              ยืนยัน
-            </button>
-            <button className="btn" onClick={() => setPasswordUser(null)}>
-              ยกเลิก
-            </button>
+            <div className="password-hint-box">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span>รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร</span>
+            </div>
+            <label>
+              รหัสผ่านใหม่
+              <input
+                type="password"
+                autoFocus
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="รหัสผ่านใหม่"
+              />
+            </label>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setPasswordUser(null)}>ยกเลิก</button>
+              <button
+                className="btn primary"
+                onClick={resetPassword}
+                disabled={saving || newPassword.length < 8}
+              >
+                {saving ? "กำลังบันทึก..." : "ยืนยันรีเซ็ตรหัสผ่าน"}
+              </button>
+            </div>
           </div>
-        )}
-      </article>
-      <article className="card admin-users">
-        <div className="card-title">
-          <div>
-            <h3>จัดการผู้ใช้งาน</h3>
-            <p>บัญชีผู้ใช้และบทบาทที่ได้รับมอบหมาย</p>
-          </div>
-          <span className="count-pill">{users.length} ผู้ใช้</span>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ผู้ใช้งาน</th>
-                <th>ชื่อที่แสดง</th>
-                <th>บทบาท</th>
-                <th>สถานะ</th>
-                <th>เข้าสู่ระบบล่าสุด</th>
-                <th>จัดการ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((x) => (
-                <tr key={x.userId}>
-                  <td>
-                    <div className="user-cell">
-                      <span className="user-avatar">
-                        {x.displayName.slice(0, 1).toUpperCase()}
-                      </span>
-                      <b>{x.username}</b>
-                    </div>
-                  </td>
-                  <td>{x.displayName}</td>
-                  <td>
-                    <div className="role-tags">
-                      {x.roles.length
-                        ? x.roles.map((role) => <span key={role}>{role}</span>)
-                        : "-"}
-                    </div>
-                  </td>
-                  <td>
-                    <Badge tone={x.isActive ? "green" : "red"}>
-                      {x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
-                    </Badge>
-                  </td>
-                  <td>
-                    {x.lastLoginAt
-                      ? new Date(x.lastLoginAt).toLocaleString("th-TH")
-                      : "-"}
-                  </td>
-                  <td>
-                    <button
-                      className="table-action"
-                      onClick={() => openEdit(x)}
-                    >
-                      แก้ไข
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </article>
+      )}
+
       <article className="card permission-card">
         <div className="card-title">
           <div>
@@ -4369,9 +5225,7 @@ function AdministrationPage({ refresh }: { refresh: number }) {
           <div>
             <button
               type="button"
-              onClick={() =>
-                setSelected(permissions.map((x) => x.permissionId))
-              }
+              onClick={() => setSelected(permissions.map((x) => x.permissionId))}
             >
               เลือกทั้งหมด
             </button>
@@ -4387,17 +5241,13 @@ function AdministrationPage({ refresh }: { refresh: number }) {
               <div className="permission-grid">
                 {items.map((x) => (
                   <label
-                    className={
-                      selected.includes(x.permissionId) ? "selected" : ""
-                    }
+                    className={selected.includes(x.permissionId) ? "selected" : ""}
                     key={x.permissionId}
                   >
                     <input
                       type="checkbox"
                       checked={selected.includes(x.permissionId)}
-                      onChange={(e) =>
-                        togglePermission(x.permissionId, e.target.checked)
-                      }
+                      onChange={(e) => togglePermission(x.permissionId, e.target.checked)}
                     />
                     <span>
                       <b>{x.permissionCode.split(".").at(-1)}</b>
@@ -4411,11 +5261,7 @@ function AdministrationPage({ refresh }: { refresh: number }) {
         </div>
         <div className="permission-actions">
           <small>เลือกแล้ว {selected.length} สิทธิ์</small>
-          <button
-            className="btn primary"
-            onClick={savePermissions}
-            disabled={!roleId || saving}
-          >
+          <button className="btn primary" onClick={savePermissions} disabled={!roleId || saving}>
             {saving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
           </button>
         </div>
@@ -4454,7 +5300,7 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
     <div className="login-page">
       <div className="login-visual">
         <div>
-          <div className="login-logo">QA</div>
+          <div className="login-logo"><span className="login-logo-text">QA</span></div>
           <h1>ProMaxx2 QA Hub</h1>
           <p>
             บริหาร Requirement, Test Execution, Defect และ Release Readiness
@@ -4465,7 +5311,7 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
       </div>
       <form className="login-card" onSubmit={submit}>
         <div className="mobile-brand">
-          <div className="login-logo">QA</div>
+          <div className="login-logo"><span className="login-logo-text">QA</span></div>
           <b>ProMaxx2 QA Hub</b>
         </div>
         <span className="eyebrow">WELCOME BACK</span>
@@ -4509,8 +5355,10 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
 }
 
 function App() {
-  const shareToken = new URLSearchParams(window.location.search).get("dashboardShare") ?? "";
-  const [page, setPage] = useState<Page>("dashboard"),
+  const shareParams = new URLSearchParams(window.location.search);
+  const shareCode = shareParams.get("s") ?? "";
+  const shareToken = shareParams.get("dashboardShare") ?? "";
+  const [page, setPage] = useState<Page>(restoredActivePage),
     [menu, setMenu] = useState(false),
     [search, setSearch] = useState(""),
     [modal, setModal] = useState(false);
@@ -4522,6 +5370,31 @@ function App() {
       return null;
     }
   });
+  // on mount, verify token not expired — if expired, clear and redirect to login
+  useEffect(() => {
+    try {
+      if (isTokenExpiredLocal()) {
+        localStorage.removeItem("qa.accessToken");
+        localStorage.removeItem("qa.user");
+        setUser(null);
+        if (window.location.pathname !== "/") window.location.href = "/";
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    if (shareCode || shareToken) return;
+    localStorage.setItem("qa.activePage", page);
+    const expectedHash = `#/${page}`;
+    if (window.location.hash !== expectedHash) window.history.replaceState(null, "", expectedHash);
+  }, [page, shareCode, shareToken]);
+  useEffect(() => {
+    const restoreFromHistory = () => {
+      const hashPage = window.location.hash.match(/^#\/([^/?#]+)/)?.[1];
+      if (hashPage && pageIds.has(hashPage as Page)) setPage(hashPage as Page);
+    };
+    window.addEventListener("hashchange", restoreFromHistory);
+    return () => window.removeEventListener("hashchange", restoreFromHistory);
+  }, []);
   const [contextProjects, setContextProjects] = useState<ProjectItem[]>([]),
     [contextReleases, setContextReleases] = useState<ReleaseItem[]>([]),
     [contextBuilds, setContextBuilds] = useState<BuildItem[]>([]),
@@ -4543,8 +5416,34 @@ function App() {
     [createReleaseId, setCreateReleaseId] = useState(""),
     [createModules, setCreateModules] = useState<ModuleItem[]>([]),
     [createReleases, setCreateReleases] = useState<ReleaseItem[]>([]),
+    [createRequirementPriority, setCreateRequirementPriority] = useState("P2"),
+    [createRequirementRisk, setCreateRequirementRisk] = useState("Medium"),
+    [createRequirementSource, setCreateRequirementSource] = useState(""),
+    [createRequirementCriteria, setCreateRequirementCriteria] = useState(""),
+    [createRequirementOwnerId, setCreateRequirementOwnerId] = useState(""),
+    [createRequirementInScope, setCreateRequirementInScope] = useState(true),
+    [createRequirementUsers, setCreateRequirementUsers] = useState<AdminUser[]>([]),
+    [requirementAiPrompt,setRequirementAiPrompt]=useState(""),
+    [requirementAiGenerating,setRequirementAiGenerating]=useState(false),
+    [requirementAiError,setRequirementAiError]=useState(""),
+    [requirementAiModal,setRequirementAiModal]=useState(false),
+    [requirementAiFiles,setRequirementAiFiles]=useState<File[]>([]),
     [refresh, setRefresh] = useState(0),
     [saving, setSaving] = useState(false);
+  const generateRequirementWithAi=async()=>{
+    if(!requirementAiPrompt.trim())return;
+    setRequirementAiGenerating(true);setRequirementAiError("");
+    try{
+      const project=contextProjects.find(x=>x.projectId===createProjectId);
+      const module=createModules.find(x=>x.moduleId===createModuleId);
+      const release=createReleases.find(x=>x.releaseId===createReleaseId);
+      const body=new FormData();body.append("prompt",requirementAiPrompt);body.append("projectName",project?.projectName??"");body.append("moduleName",module?.moduleName??"");body.append("releaseName",release?`${release.releaseCode} Version ${release.version}`:"");requirementAiFiles.forEach(file=>body.append("files",file));
+      const response=await fetch(`${apiUrl}/requirements/generate-ai`,{method:"POST",headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`},body});
+      if(!response.ok){const problem=await response.json().catch(()=>null);throw new Error(problem?.detail??"AI Generate Requirement ไม่สำเร็จ");}
+      const draft=await response.json();setName(draft.title);setDetails(draft.description);setCreateRequirementCriteria(draft.acceptanceCriteria);setCreateRequirementPriority(draft.priority);setCreateRequirementRisk(draft.riskLevel);setCreateRequirementSource(draft.source);setRequirementAiModal(false);setModal(true);
+    }catch(e){setRequirementAiError(e instanceof Error?e.message:"AI Generate Requirement ไม่สำเร็จ");}
+    finally{setRequirementAiGenerating(false);}
+  };
   useEffect(() => {
     if (!user) return;
     const h = {
@@ -4632,26 +5531,47 @@ function App() {
     Promise.all([
       fetch(`${apiUrl}/projects/${targetProjectId}/modules`, { headers: h }).then((r) => r.ok ? r.json() : []),
       fetch(`${apiUrl}/projects/${targetProjectId}/releases`, { headers: h }).then((r) => r.ok ? r.json() : []),
+      fetch(`${apiUrl}/admin/users`, { headers: h }).then((r) => r.ok ? r.json() : []),
+    ]).then(([moduleData, releaseData, userData]: [ModuleItem[], ReleaseItem[], AdminUser[]]) => {
+      const activeModules = moduleData.filter((x) => x.isActive);
+      const activeReleases = releaseData.filter((x) => x.status !== "Cancelled");
+      setCreateModules(activeModules);
+      setCreateReleases(activeReleases);
+      setCreateRequirementUsers(userData.filter((x) => x.isActive));
+      setCreateModuleId((current) => activeModules.some((x) => x.moduleId === current) ? current : (activeModules[0]?.moduleId ?? ""));
+      setCreateReleaseId((current) => activeReleases.some((x) => x.releaseId === current) ? current : (contextReleaseId && activeReleases.some((x) => x.releaseId === contextReleaseId) ? contextReleaseId : (activeReleases[0]?.releaseId ?? "")));
+    });
+  }, [modal, page, createProjectId, contextProjectId, contextReleaseId, contextProjects]);
+  useEffect(() => {
+    if (!requirementAiModal) return;
+    const targetProjectId = createProjectId || contextProjectId || contextProjects[0]?.projectId || "";
+    if (!targetProjectId) return;
+    if (targetProjectId !== createProjectId) { setCreateProjectId(targetProjectId); return; }
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    Promise.all([
+      fetch(`${apiUrl}/projects/${targetProjectId}/modules`, { headers: h }).then((r) => r.ok ? r.json() : []),
+      fetch(`${apiUrl}/projects/${targetProjectId}/releases`, { headers: h }).then((r) => r.ok ? r.json() : []),
     ]).then(([moduleData, releaseData]: [ModuleItem[], ReleaseItem[]]) => {
       const activeModules = moduleData.filter((x) => x.isActive);
       const activeReleases = releaseData.filter((x) => x.status !== "Cancelled");
       setCreateModules(activeModules);
       setCreateReleases(activeReleases);
       setCreateModuleId((current) => activeModules.some((x) => x.moduleId === current) ? current : (activeModules[0]?.moduleId ?? ""));
-      setCreateReleaseId((current) => activeReleases.some((x) => x.releaseId === current) ? current : (contextReleaseId && activeReleases.some((x) => x.releaseId === contextReleaseId) ? contextReleaseId : (activeReleases[0]?.releaseId ?? "")));
+      setCreateReleaseId((current) => activeReleases.some((x) => x.releaseId === current) ? current : (activeReleases[0]?.releaseId ?? ""));
     });
-  }, [modal, page, createProjectId, contextProjectId, contextReleaseId, contextProjects]);
+  }, [requirementAiModal, createProjectId, contextProjectId, contextProjects]);
   const description = useMemo(
     () =>
       page === "dashboard"
         ? "สถานะคุณภาพและความพร้อม Release แบบรวมศูนย์"
+        : page === "settings"
+          ? "จัดการค่ากลางและบริการ AI ที่ทุกระบบใช้งานร่วมกัน"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
     [page],
   );
   const go = (id: Page) => {
     setPage(id);
     setMenu(false);
-    window.history.replaceState(null, "", `#/${id}`);
   };
   const logout = () => {
     localStorage.removeItem("qa.accessToken");
@@ -4660,10 +5580,10 @@ function App() {
   };
   const shareDashboard = async () => {
     try {
-      const response = await fetch(`${apiUrl}/dashboard/share`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ projectId: contextProjectId || null, releaseId: contextReleaseId || null, buildId: contextBuildId || null, validHours: 24 }) });
+      const response = await fetch(`${apiUrl}/dashboard/share`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ projectId: contextProjectId || null, releaseId: contextReleaseId || null, buildId: contextBuildId || null, validHours: 24 * 30 }) });
       if (!response.ok) throw new Error("ไม่สามารถสร้างลิงก์แชร์ได้");
-      const result: { token: string; expiresAt: string } = await response.json();
-      const url = `${window.location.origin}${window.location.pathname}?dashboardShare=${encodeURIComponent(result.token)}`;
+      const result: { code: string; expiresAt: string } = await response.json();
+      const url = `${window.location.origin}${window.location.pathname}?s=${encodeURIComponent(result.code)}`;
       const copied = await copyText(url);
       if (copied) window.alert(`คัดลอกลิงก์ Dashboard แบบอ่านอย่างเดียวแล้ว\nลิงก์หมดอายุ ${new Date(result.expiresAt).toLocaleString("th-TH")}`);
       else window.prompt("เบราว์เซอร์ไม่อนุญาตให้คัดลอกอัตโนมัติ กรุณาคัดลอกลิงก์นี้", url);
@@ -4737,12 +5657,12 @@ function App() {
               requirementCode: "",
               title: name,
               description: details || null,
-              acceptanceCriteria: null,
-              priority: "P1",
-              riskLevel: "High",
-              source: "Manual",
-              ownerUserId: user?.userId ?? null,
-              isInScope: true,
+              acceptanceCriteria: createRequirementCriteria || null,
+              priority: createRequirementPriority,
+              riskLevel: createRequirementRisk || null,
+              source: createRequirementSource || null,
+              ownerUserId: createRequirementOwnerId || null,
+              isInScope: createRequirementInScope,
             };
           } else {
             url = `${apiUrl}/test-cases`;
@@ -4782,6 +5702,14 @@ function App() {
       setCode("");
       setName("");
       setDetails("");
+      if (page === "requirements") {
+        setCreateRequirementPriority("P2");
+        setCreateRequirementRisk("Medium");
+        setCreateRequirementSource("");
+        setCreateRequirementCriteria("");
+        setCreateRequirementOwnerId("");
+        setCreateRequirementInScope(true);
+      }
       setRefresh((x) => x + 1);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
@@ -4789,8 +5717,8 @@ function App() {
       setSaving(false);
     }
   };
-  if (shareToken) return <div className="shared-dashboard"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Executive Read-only Report</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Dashboard shareToken={shareToken} /></main><footer>ข้อมูลสำหรับการบริหารจัดการ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
-  if (!user) return <Login onLogin={setUser} />;
+  if (shareCode || shareToken) return <div className="shared-dashboard"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Executive Read-only Report</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Dashboard shareCode={shareCode} shareToken={shareToken} /></main><footer>ข้อมูลสำหรับการบริหารจัดการ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
+  if (!user) return <Login onLogin={(u) => { localStorage.removeItem("qa.activePage"); setPage("dashboard"); setUser(u); }} />;
   const can = (permission: string) =>
     user.roles.includes("SYS_ADMIN") || user.permissions.includes(permission);
   const canCreate =
@@ -4825,12 +5753,12 @@ function App() {
         })}
       </aside>
       <main>
-        <header className="topbar">
-          <button className="menu-btn" onClick={() => setMenu((v) => !v)}>
-            ☰
+        <header className="topbar qa-topbar">
+          <button className="menu-btn topbar-menu" aria-label={menu?"ปิดเมนู":"เปิดเมนู"} onClick={() => setMenu((v) => !v)}>
+            <span aria-hidden="true">☰</span>
           </button>
-          <div className="context">
-            <select
+          {!["projects","users","settings","system-monitor"].includes(page) && <div className="context">
+            <label className="context-field"><span>Project</span><select
               value={contextProjectId}
               onChange={(e) => setContextProjectId(e.target.value)}
               aria-label="Project ปัจจุบัน"
@@ -4843,8 +5771,8 @@ function App() {
                   {x.projectName}
                 </option>
               ))}
-            </select>
-            <select
+            </select></label>
+            <label className="context-field"><span>Release</span><select
               value={contextReleaseId}
               onChange={(e) => setContextReleaseId(e.target.value)}
               aria-label="Release ปัจจุบัน"
@@ -4858,8 +5786,8 @@ function App() {
                   Release {x.releaseCode}
                 </option>
               ))}
-            </select>
-            <select
+            </select></label>
+            <label className="context-field"><span>Build</span><select
               value={contextBuildId}
               onChange={(e) => setContextBuildId(e.target.value)}
               aria-label="Build ปัจจุบัน"
@@ -4872,22 +5800,18 @@ function App() {
                   {x.isReleaseCandidate ? " RC" : ""}
                 </option>
               ))}
-            </select>
-          </div>
+            </select></label>
+          </div>}
           <div className="profile">
-            <Badge tone={blockerCount ? "yellow" : "green"}>
-              {blockerCount} Blockers
-            </Badge>
-            <span className="bell">●</span>
+            <div className={`topbar-health ${blockerCount?"has-blockers":""}`}><span aria-hidden="true"></span><b>{blockerCount}</b><small>Blockers</small></div>
             <div className="avatar">
               {user.displayName.slice(0, 2).toUpperCase()}
             </div>
-            <div>
+            <div className="profile-copy">
               <b>{user.displayName}</b>
-              <button className="logout" onClick={logout}>
-                ออกจากระบบ
-              </button>
+              <small>{user.roles.includes("SYS_ADMIN")?"System Administrator":"QA Workspace"}</small>
             </div>
+            <button className="logout" aria-label="ออกจากระบบ" title="ออกจากระบบ" onClick={logout}><span aria-hidden="true">↪</span><span>ออกจากระบบ</span></button>
           </div>
         </header>
         <div className="content">
@@ -4907,6 +5831,7 @@ function App() {
               </label>
               {can("REPORT.EXPORT") && <button className="btn">Export</button>}
               {page === "dashboard" && <button className="btn share-btn" onClick={shareDashboard}>↗ แชร์ Dashboard</button>}
+              {page === "requirements"&&can("REQUIREMENT.EDIT")&&<button className="btn ai-button" onClick={()=>{setCreateProjectId(contextProjectId);setCreateModuleId("");setCreateReleaseId(contextReleaseId);setRequirementAiPrompt("");setRequirementAiFiles([]);setRequirementAiError("");setRequirementAiModal(true)}}><span aria-hidden="true">✦</span> AI Generate</button>}
               {canCreate && (
                 <button className="btn primary" onClick={() => {
                   if (page === "requirements") {
@@ -4922,29 +5847,55 @@ function App() {
             </div>
           </div>
           {page === "dashboard" ? (
-            <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} />
+            <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (
-            <ReleasesPage search={search} refresh={refresh} />
+            <ReleasesPage search={search} refresh={refresh} contextProjectId={contextProjectId} />
           ) : page === "requirements" ? (
-            <RequirementsPage search={search} refresh={refresh} canEdit={can("REQUIREMENT.EDIT")} />
+            <RequirementsPage search={search} refresh={refresh} canEdit={can("REQUIREMENT.EDIT")} contextProjectId={contextProjectId} />
           ) : page === "test-cases" ? (
-            <TestCasesPage search={search} canEdit={can("TESTCASE.EDIT")} />
+            <TestCasesPage search={search} canEdit={can("TESTCASE.EDIT")} contextProjectId={contextProjectId} />
           ) : page === "rtm" ? (
-            <RtmPage refresh={refresh} />
+            <RtmPage refresh={refresh} projectId={contextProjectId} releaseId={contextReleaseId} search={search} canEdit={can("TESTCASE.EDIT")} />
           ) : page === "users" ? (
-            <AdministrationPage refresh={refresh} />
+            <AdministrationPage refresh={refresh} allProjects={contextProjects} />
+          ) : page === "settings" ? (
+            <MasterSettingsPage />
+          ) : page === "system-monitor" ? (
+            <SystemMonitorPage />
           ) : page === "defects" ? (
             <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} />
           ) : (
-            <DataPage page={page} search={search} canAssignExecution={can("EXECUTION.ASSIGN")} />
+            <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} />
           )}
         </div>
       </main>
+      {requirementAiModal&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="requirement-ai-title" onMouseDown={()=>!requirementAiGenerating&&setRequirementAiModal(false)}>
+        <div className="modal-box requirement-ai-modal" onMouseDown={e=>e.stopPropagation()} style={{position:"relative"}}>{requirementAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/><p>AI กำลังวิเคราะห์ Requirement...</p><small>รอสักครู่ ระบบกำลังประมวลผลข้อมูลและไฟล์แนบ</small></div>}
+          <div className="modal-head"><div><h2 id="requirement-ai-title">AI Generate Requirement</h2><small>สร้าง Draft จากคำอธิบายและไฟล์อ้างอิง</small></div><button aria-label="ปิดหน้าต่าง AI Generate" disabled={requirementAiGenerating} onClick={()=>setRequirementAiModal(false)}>×</button></div>
+          <div className="requirement-ai-panel">
+            <div className="requirement-ai-head"><div><span className="ai-spark" aria-hidden="true">AI</span><div><h3>ข้อมูลอ้างอิง</h3><p>เลือกบริบทให้ AI สร้าง Requirement ได้ตรงกับระบบ</p></div></div><span className="ai-review-badge">ต้องตรวจสอบก่อนใช้</span></div>
+            <div className="form-grid">
+              <label>Project<select value={createProjectId} onChange={e=>{setCreateProjectId(e.target.value);setCreateModuleId("");setCreateReleaseId("")}}>{contextProjects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label>
+              <label>Module<select value={createModuleId} onChange={e=>setCreateModuleId(e.target.value)}><option value="">เลือก Module</option>{(()=>{const render=(parentId?:string,depth=0):ReactElement[]=>createModules.filter(x=>(x.parentModuleId||undefined)===parentId&&x.isActive).sort((a,b)=>a.sortOrder-b.sortOrder||a.moduleName.localeCompare(b.moduleName,"th")).flatMap(x=>[<option key={x.moduleId} value={x.moduleId}>{depth?`${"  ".repeat(depth)}└ `:""}{x.moduleCode} · {x.moduleName}</option>,...render(x.moduleId,depth+1)]);return render()})()}</select></label>
+              <label className="full">Release<select value={createReleaseId} onChange={e=>setCreateReleaseId(e.target.value)}><option value="">ไม่ระบุ Release</option>{createReleases.sort((a,b)=>a.releaseCode.localeCompare(b.releaseCode)).map(x=><option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · Version {x.version}</option>)}</select></label>
+              <label className="full">อธิบายความต้องการ<textarea rows={5} value={requirementAiPrompt} onChange={e=>setRequirementAiPrompt(e.target.value)} placeholder="เช่น ผู้ใช้ต้องเห็นยอดขายวันนี้ จำนวนบิล และสินค้าใกล้หมดบน Dashboard หลัง Login" maxLength={4000} autoFocus/><small>{requirementAiPrompt.length.toLocaleString()} / 4,000 ตัวอักษร</small></label>
+              <div className="ai-attachments full">
+                <div><b>ไฟล์สำหรับให้ AI วิเคราะห์เพิ่มเติม</b><small>PDF, Word, Excel, CSV, TXT, Markdown หรือรูปภาพ · สูงสุด 5 ไฟล์ รวม 20 MB</small></div>
+                <label className="ai-file-picker">＋ เลือกไฟล์<input type="file" multiple accept=".pdf,.txt,.md,.csv,.docx,.xlsx,.png,.jpg,.jpeg,.webp" disabled={requirementAiGenerating||requirementAiFiles.length>=5} onChange={e=>{const selected=Array.from(e.target.files??[]);const next=[...requirementAiFiles,...selected].slice(0,5);if(next.reduce((sum,file)=>sum+file.size,0)>20_000_000)setRequirementAiError("ขนาดไฟล์รวมต้องไม่เกิน 20 MB");else{setRequirementAiFiles(next);setRequirementAiError("")}e.target.value=""}}/></label>
+                {requirementAiFiles.length>0&&<div className="ai-file-list">{requirementAiFiles.map((file,index)=><div key={`${file.name}-${file.lastModified}`}><span aria-hidden="true">▤</span><p><b>{file.name}</b><small>{(file.size/1024/1024).toFixed(2)} MB</small></p><button type="button" aria-label={`ลบไฟล์ ${file.name}`} disabled={requirementAiGenerating} onClick={()=>setRequirementAiFiles(files=>files.filter((_,i)=>i!==index))}>×</button></div>)}</div>}
+              </div>
+            </div>
+            {requirementAiError&&<div className="login-error" role="alert">{requirementAiError}</div>}
+            <div className="ai-draft-note"><span aria-hidden="true">i</span><p><b>AI จะไม่บันทึกข้อมูลหรือไฟล์แนบอัตโนมัติ</b><small>ไฟล์ใช้วิเคราะห์ในคำขอนี้เท่านั้น จากนั้นระบบจะเปิดฟอร์มพร้อม Draft ให้ตรวจสอบ</small></p></div>
+          </div>
+          <div className="modal-actions"><button className="btn" disabled={requirementAiGenerating} onClick={()=>setRequirementAiModal(false)}>ยกเลิก</button><button className="btn ai-button" disabled={requirementAiGenerating||!requirementAiPrompt.trim()||!createProjectId||!createModuleId} onClick={generateRequirementWithAi}>{requirementAiGenerating?"กำลังวิเคราะห์...":"✦ สร้าง Draft ด้วย AI"}</button></div>
+        </div>
+      </div>}
       {modal && (
         <div className="modal" onMouseDown={() => setModal(false)}>
-          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+          <div className={`modal-box ${page === "requirements" ? "requirement-editor" : ""}`} onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h2>สร้าง {pageNames[page]}</h2>
               <button onClick={() => setModal(false)}>×</button>
@@ -4962,7 +5913,20 @@ function App() {
                     Module
                     <select value={createModuleId} onChange={(e) => setCreateModuleId(e.target.value)}>
                       <option value="">เลือก Module</option>
-                      {createModules.map((x) => <option key={x.moduleId} value={x.moduleId}>{x.moduleName}</option>)}
+                      {(() => {
+                        const renderModuleOptions = (modules: ModuleItem[], parentId?: string, depth = 0): ReactElement[] => {
+                          return modules
+                            .filter((x) => (x.parentModuleId || undefined) === parentId && x.isActive)
+                            .sort((a, b) => a.moduleName.localeCompare(b.moduleName, "th"))
+                            .flatMap((mod) => [
+                              <option key={mod.moduleId} value={mod.moduleId}>
+                                {depth > 0 ? "  ".repeat(depth) + "└ " : ""}{mod.moduleName}
+                              </option>,
+                              ...renderModuleOptions(modules, mod.moduleId, depth + 1),
+                            ]);
+                        };
+                        return renderModuleOptions(createModules);
+                      })()}
                     </select>
                   </label>
                   <label className="full">
@@ -5014,6 +5978,14 @@ function App() {
                   />
                 )}
               </label>
+              {page === "requirements" && <>
+                <label>Priority<select value={createRequirementPriority} onChange={(e) => setCreateRequirementPriority(e.target.value)}>{["P0","P1","P2","P3"].map((x) => <option key={x}>{x}</option>)}</select></label>
+                <label>Risk<select value={createRequirementRisk} onChange={(e) => setCreateRequirementRisk(e.target.value)}>{["Critical","High","Medium","Low"].map((x) => <option key={x}>{x}</option>)}</select></label>
+                <label>Source<input value={createRequirementSource} onChange={(e) => setCreateRequirementSource(e.target.value)} placeholder="เช่น BRD, User Story, ลูกค้า" /></label>
+                <label>Owner<select value={createRequirementOwnerId} onChange={(e) => setCreateRequirementOwnerId(e.target.value)}><option value="">ไม่ระบุผู้รับผิดชอบ</option>{createRequirementUsers.map((x) => <option key={x.userId} value={x.userId}>{x.displayName}</option>)}</select></label>
+                <label className="check-line"><input type="checkbox" checked={createRequirementInScope} onChange={(e) => setCreateRequirementInScope(e.target.checked)} /> In Scope</label>
+                <label className="full">Acceptance Criteria<textarea rows={3} value={createRequirementCriteria} onChange={(e) => setCreateRequirementCriteria(e.target.value)} placeholder="ระบุเงื่อนไขที่ใช้ยืนยันว่า Requirement เสร็จสมบูรณ์" /></label>
+              </>}
             </div>
             <div className="modal-actions">
               <button className="btn" onClick={() => setModal(false)}>

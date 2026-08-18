@@ -1,0 +1,2570 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ProMaxx2 QA Test Plan — Premium Executive v14 Balanced Workload</title><style>
+:root{--ink:#0b1220;--muted:#697386;--line:#e6eaf0;--card:#fff;--shadow:0 22px 60px rgba(15,23,42,.10);--radius:24px}
+*{box-sizing:border-box} body{margin:0;font-family:"Segoe UI",Tahoma,sans-serif;color:var(--ink);background:linear-gradient(180deg,#eef4ff 0,#f8fafc 24%,#f5f7fb 100%)}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 8% 4%,rgba(37,99,235,.16),transparent 16%),radial-gradient(circle at 92% 2%,rgba(124,58,237,.15),transparent 18%)}
+.wrap{position:relative;max-width:1560px;margin:auto;padding:28px}
+.hero{position:relative;overflow:hidden;border-radius:34px;padding:38px 40px;color:#fff;background:linear-gradient(125deg,#071a33 0%,#123b77 36%,#2563eb 67%,#7c3aed 100%);box-shadow:0 32px 75px rgba(37,99,235,.25)}
+.hero:before{content:"";position:absolute;width:420px;height:420px;border-radius:50%;right:-130px;top:-180px;background:#ffffff13}.hero:after{content:"";position:absolute;width:230px;height:230px;border-radius:50%;right:170px;bottom:-155px;background:#22d3ee22}
+.eyebrow{display:inline-flex;padding:8px 13px;border-radius:999px;background:#ffffff14;border:1px solid #ffffff2e;font-size:11px;font-weight:800;letter-spacing:.11em}
+.hero h1{font-size:42px;line-height:1.08;margin:17px 0 10px;max-width:900px}.hero p{max-width:1100px;line-height:1.75;color:#edf6ff;font-size:15px}
+.hero-badges{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}.hero-badges span{padding:8px 12px;border-radius:999px;background:#ffffff12;border:1px solid #ffffff2b;font-size:12px;font-weight:700}
+.hero-side{position:absolute;right:40px;bottom:36px;text-align:right;z-index:2}.hero-side b{font-size:42px;display:block}.hero-side span{font-size:12px;color:#dce9ff}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:18px 0}.card{background:rgba(255,255,255,.94);border:1px solid rgba(255,255,255,.8);border-radius:var(--radius);box-shadow:var(--shadow);backdrop-filter:blur(10px)}
+.kpi{padding:20px;position:relative;overflow:hidden}.kpi:after{content:"";position:absolute;right:-26px;bottom:-28px;width:90px;height:90px;border-radius:30px;background:linear-gradient(135deg,#2563eb,#7c3aed);opacity:.10;transform:rotate(16deg)}
+.kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}.kpi .val{font-size:34px;font-weight:900;margin:8px 0 3px}.kpi .sub{font-size:12px;color:var(--muted)}
+.section{margin-top:18px}.panel{padding:24px}.title{font-size:23px;font-weight:900;margin-bottom:5px}.subtitle{font-size:13px;color:var(--muted);line-height:1.65;margin-bottom:16px}
+.module-sequence{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.module-card{display:grid;grid-template-columns:48px 1fr 88px 78px;gap:12px;align-items:center;padding:14px 15px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,#fff,#f9fbff)}
+.module-index{width:38px;height:38px;border-radius:13px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#2563eb,#7c3aed);font-weight:900;box-shadow:0 8px 18px rgba(37,99,235,.22)}
+.module-name{font-weight:900}.module-owner{font-size:11px;color:var(--muted);margin-top:3px}.module-stat{text-align:right}.module-stat b{display:block;font-size:17px}.module-stat span{font-size:10px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1.04fr .96fr;gap:16px}.assump-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.assump{padding:15px;border:1px solid var(--line);border-radius:17px;background:linear-gradient(135deg,#fff,#f7faff)}.assump b{display:block;font-size:20px}.assump span{font-size:11px;color:var(--muted)}
+.callout{margin-top:14px;padding:15px 16px;border-radius:17px;background:linear-gradient(135deg,#eff6ff,#f5f3ff);border:1px solid #dbeafe;font-size:13px;line-height:1.65}
+.qa-list{display:grid;gap:10px}.qa-card{display:flex;gap:12px;align-items:center;padding:13px;border:1px solid var(--line);border-radius:17px;background:#fbfdff}.qa-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:13px;color:#fff;font-weight:900;background:linear-gradient(135deg,#0ea5e9,#2563eb)}
+.qa-body{flex:1}.qa-top{display:flex;justify-content:space-between;font-size:13px}.qa-desc{font-size:11px;color:var(--muted);margin:3px 0 7px}.progress{height:8px;background:#e8edf5;border-radius:999px;overflow:hidden}.progress span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#2563eb,#06b6d4,#22c55e,#f59e0b)}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{padding:13px 11px;border-bottom:1px solid #edf0f5;text-align:left;vertical-align:top;font-size:13px}th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:#fafcff}
+tr:hover td{background:#fbfdff}.order-no{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:10px;background:#eef2ff;color:#4338ca;font-weight:900}.m-title{font-weight:900}.muted{font-size:11px;color:var(--muted);margin-top:2px}.count-pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-weight:900}
+.legend{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0 16px}.legend span{display:inline-flex;align-items:center;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:11px;color:#475569}.legend i{width:10px;height:10px;border-radius:3px;margin-right:6px}
+.tl-head,.tl-row{display:grid;grid-template-columns:340px 1fr;gap:14px}.weeks,.days,.day-grid,.tl-bar-grid{display:grid;grid-template-columns:repeat(30,minmax(20px,1fr));gap:4px}.weeks span{padding:5px 0;text-align:center;border-radius:8px;background:#eef2f7;font-size:10px;color:#64748b;font-weight:800}.days span{padding:4px 0;text-align:center;font-size:10px;color:#94a3b8}
+.tl-row{align-items:center;margin-top:9px}.tl-label{padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(135deg,#fff,#f8fafc)}.tl-title{font-size:12px;font-weight:900}.tl-meta{font-size:10px;color:var(--muted);margin-top:4px}.tl-track{position:relative}.day-grid i{height:35px;background:#f8fafc;border:1px solid #edf1f5;border-radius:9px}.tl-bar-grid{position:absolute;inset:0}.tl-bar-grid span{display:flex;align-items:center;justify-content:center;color:#fff;border-radius:9px;font-size:10px;font-weight:900;box-shadow:0 7px 15px rgba(15,23,42,.14)}
+.tag{padding:3px 7px;border-radius:999px;font-size:9px;font-weight:900}.critical{background:#fee2e2;color:#b91c1c}.high{background:#fef3c7;color:#b45309}.medium{background:#dcfce7;color:#15803d}
+.module-detail{margin-top:10px;border:1px solid var(--line);border-radius:18px;background:#fff;overflow:hidden}.module-detail summary{cursor:pointer;padding:15px 16px;display:flex;justify-content:space-between;gap:12px;align-items:center;background:linear-gradient(135deg,#fbfdff,#f8fafc)}.sum-left{display:flex;align-items:center;gap:10px}.sum-no{display:grid;place-items:center;width:34px;height:34px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-size:11px;font-weight:900}.sum-left small{color:var(--muted);margin-left:8px}.sum-right{font-size:12px;color:var(--muted)}.detail-body{padding:0 12px 12px}
+.risks{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.risk{padding:18px}.risk-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}.risk-num{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;color:#fff;font-weight:900;background:linear-gradient(135deg,#f59e0b,#ef4444)}.risk b{font-size:14px}.risk p{margin:0;color:var(--muted);font-size:12px;line-height:1.65}
+.footer{text-align:right;color:#94a3b8;font-size:11px;padding:18px 4px}
+@media(max-width:1200px){.kpis{grid-template-columns:repeat(2,1fr)}.module-sequence{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}.tl-head,.tl-row{grid-template-columns:1fr}}
+@media(max-width:720px){.wrap{padding:14px}.hero{padding:28px 24px}.hero h1{font-size:30px}.hero-side{display:none}.kpis{grid-template-columns:1fr}.assump-grid{grid-template-columns:repeat(2,1fr)}.module-card{grid-template-columns:44px 1fr 70px}.module-card .module-stat:last-child{display:none}.risks{grid-template-columns:1fr}}
+@media print{body{background:#fff}.wrap{max-width:none;padding:8px}.card,.hero{box-shadow:none}}
+</style>
+<style id="gantt-animation-v5">
+@keyframes rowIn{0%{opacity:0;transform:translateY(12px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes barGrow{0%{transform:scaleX(0);opacity:.25}100%{transform:scaleX(1);opacity:1}}
+@keyframes shimmer{0%{transform:translateX(-130%)}100%{transform:translateX(180%)}}
+@keyframes pulseCritical{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}50%{box-shadow:0 0 0 5px rgba(239,68,68,.10)}}
+@keyframes dotMove{0%{left:0;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:calc(100% - 8px);opacity:0}}
+.animated-row{opacity:0;animation:rowIn .58s cubic-bezier(.2,.7,.2,1) forwards;animation-delay:var(--delay)}
+.animated-bar{position:relative;overflow:hidden;transform-origin:left center;opacity:0;animation:barGrow .8s cubic-bezier(.16,.84,.32,1) forwards;animation-delay:var(--bar-delay)}
+.animated-bar:before{content:"";position:absolute;top:0;bottom:0;width:32%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.38),transparent);animation:shimmer 2.7s ease-in-out infinite;animation-delay:calc(var(--bar-delay) + .7s)}
+.animated-bar:after{content:"";position:absolute;top:50%;left:0;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:#fff;box-shadow:0 0 10px rgba(255,255,255,.95);animation:dotMove 3.2s ease-in-out infinite;animation-delay:calc(var(--bar-delay) + 1.1s)}
+.animated-bar em{font-style:normal;position:relative;z-index:2}
+.critical-row .tl-label{border-color:#fecaca;animation:pulseCritical 2.8s ease-in-out infinite}
+.tl-row:hover .tl-label{transform:translateX(4px);border-color:#93c5fd;box-shadow:0 10px 24px rgba(37,99,235,.10)}
+.tl-row:hover .animated-bar{filter:saturate(1.18) brightness(1.04);box-shadow:0 10px 22px rgba(15,23,42,.20)}
+.tl-label,.animated-bar{transition:.25s ease}
+.complex-tag,.role-tag{display:inline-block;margin-left:4px;padding:3px 7px;border-radius:999px;font-size:9px;font-weight:800}
+.complex-vh{background:#ede9fe;color:#6d28d9}.complex-h{background:#e0f2fe;color:#0369a1}.complex-m{background:#f1f5f9;color:#475569}
+.role-tag{background:#f8fafc;color:#64748b;border:1px solid #e2e8f0}
+.priority-logic{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0 16px}
+.logic-item{display:flex;gap:10px;align-items:flex-start;padding:13px 14px;border:1px solid #e5e7eb;border-radius:16px;background:linear-gradient(135deg,#ffffff,#f8fafc)}
+.logic-item>b{display:grid;place-items:center;min-width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff}
+.logic-item strong{display:block;font-size:12px}.logic-item small{display:block;color:#64748b;line-height:1.45;margin-top:3px}
+@media(max-width:1000px){.priority-logic{grid-template-columns:repeat(2,1fr)}}@media(max-width:620px){.priority-logic{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.animated-row,.animated-bar,.animated-bar:before,.animated-bar:after,.critical-row .tl-label{animation:none!important;opacity:1!important;transform:none!important}}
+</style>
+
+<style id="weekly-delivery-v6">
+.weekly-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0 18px}
+.week-delivery-card{padding:16px;border:1px solid #e4e9f1;border-radius:18px;background:linear-gradient(145deg,#fff,#f8fbff);box-shadow:0 10px 26px rgba(15,23,42,.06);transition:.25s ease}
+.week-delivery-card:hover{transform:translateY(-3px);box-shadow:0 16px 32px rgba(37,99,235,.10)}
+.week-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.week-kicker{font-size:10px;font-weight:900;letter-spacing:.12em;color:#2563eb}.week-card-head h3{margin:4px 0 0;font-size:17px}
+.week-score{text-align:center;min-width:62px;padding:8px;border-radius:14px;background:linear-gradient(135deg,#eff6ff,#eef2ff)}
+.week-score b{display:block;font-size:22px;color:#1d4ed8}.week-score span{font-size:9px;color:#64748b}
+.week-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0}.week-stats span{padding:7px 6px;border-radius:10px;background:#f8fafc;font-size:10px;color:#64748b;text-align:center}.week-stats b{display:block;font-size:14px;color:#0f172a;margin-top:2px}
+.week-complete-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:900;color:#64748b;margin:9px 0 6px}
+.week-complete-list{list-style:none;padding:0;margin:0;display:grid;gap:6px}.week-complete-list li{display:grid;grid-template-columns:9px 1fr auto;gap:7px;align-items:center;font-size:11px;padding:6px 0;border-bottom:1px dashed #edf0f5}.week-complete-list i{width:8px;height:8px;border-radius:50%}.week-complete-list b{font-size:9px;color:#64748b}.week-complete-list .empty{display:block;color:#94a3b8;font-style:italic}
+.week-group-header{display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px;padding:11px 14px;border-radius:15px;background:linear-gradient(90deg,#0f172a,#1d4ed8);color:#fff}
+.week-group-header div{display:flex;align-items:center;gap:10px}.week-group-header span{font-size:10px;font-weight:900;letter-spacing:.12em;padding:5px 8px;border:1px solid #ffffff33;border-radius:999px}.week-group-header b{font-size:13px}.week-group-header strong{font-size:11px;color:#dbeafe}
+.done-badge{display:inline-block;margin-left:4px;padding:3px 7px;border-radius:999px;background:#dcfce7;color:#15803d;font-size:9px;font-weight:900}
+@media(max-width:1100px){.weekly-overview{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.weekly-overview{grid-template-columns:1fr}.week-group-header{align-items:flex-start;gap:8px;flex-direction:column}}
+</style>
+
+<style id="scroll-reveal-v7">
+/* Initial page loader */
+.page-loader{
+  position:fixed;inset:0;z-index:9999;display:grid;place-items:center;
+  background:
+    radial-gradient(circle at 20% 20%,rgba(37,99,235,.22),transparent 25%),
+    radial-gradient(circle at 80% 20%,rgba(124,58,237,.20),transparent 28%),
+    linear-gradient(135deg,#071a33,#0f2f61 55%,#34216b);
+  transition:opacity .7s ease,visibility .7s ease;
+}
+.page-loader.loaded{opacity:0;visibility:hidden}
+.loader-shell{text-align:center;color:#fff;min-width:280px}
+.loader-logo{display:flex;gap:7px;justify-content:center;align-items:flex-end;height:42px;margin-bottom:18px}
+.loader-logo span{width:10px;border-radius:999px;background:linear-gradient(#60a5fa,#c084fc);animation:loaderBars 1s ease-in-out infinite}
+.loader-logo span:nth-child(1){height:18px;animation-delay:0s}
+.loader-logo span:nth-child(2){height:34px;animation-delay:.13s}
+.loader-logo span:nth-child(3){height:25px;animation-delay:.26s}
+.loader-title{font-size:23px;font-weight:900;letter-spacing:.02em}
+.loader-subtitle{font-size:12px;color:#bfdbfe;margin-top:6px}
+.loader-progress{width:270px;height:5px;margin:18px auto 0;border-radius:999px;background:#ffffff20;overflow:hidden}
+.loader-progress i{display:block;height:100%;width:42%;border-radius:999px;background:linear-gradient(90deg,#38bdf8,#818cf8,#c084fc);animation:loaderProgress 1.25s ease-in-out infinite}
+@keyframes loaderBars{0%,100%{transform:scaleY(.65);opacity:.65}50%{transform:scaleY(1.15);opacity:1}}
+@keyframes loaderProgress{0%{transform:translateX(-115%)}100%{transform:translateX(340%)}}
+
+/* Reading progress bar */
+.scroll-progress{position:fixed;left:0;right:0;top:0;height:3px;z-index:9990;background:transparent}
+.scroll-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#06b6d4,#2563eb,#7c3aed);box-shadow:0 0 10px rgba(37,99,235,.5)}
+
+/* Progressive reveal */
+.reveal-section{
+  opacity:0;
+  transform:translateY(34px) scale(.985);
+  filter:blur(6px);
+  transition:
+    opacity .78s cubic-bezier(.2,.7,.2,1),
+    transform .78s cubic-bezier(.2,.7,.2,1),
+    filter .78s ease;
+  will-change:opacity,transform,filter;
+}
+.reveal-section.is-visible{
+  opacity:1;
+  transform:translateY(0) scale(1);
+  filter:blur(0);
+}
+.reveal-child{
+  opacity:0;
+  transform:translateY(18px);
+  transition:opacity .65s ease,transform .65s ease;
+}
+.reveal-child.is-visible{opacity:1;transform:none}
+
+/* Stagger inside visible sections */
+.reveal-section .module-card,
+.reveal-section .qa-card,
+.reveal-section .week-delivery-card,
+.reveal-section .module-detail,
+.reveal-section .risk{
+  opacity:0;
+  transform:translateY(18px);
+}
+.reveal-section.is-visible .module-card,
+.reveal-section.is-visible .qa-card,
+.reveal-section.is-visible .week-delivery-card,
+.reveal-section.is-visible .module-detail,
+.reveal-section.is-visible .risk{
+  animation:staggerIn .52s cubic-bezier(.2,.7,.2,1) forwards;
+}
+.reveal-section.is-visible .module-card:nth-child(1),
+.reveal-section.is-visible .qa-card:nth-child(1),
+.reveal-section.is-visible .week-delivery-card:nth-child(1),
+.reveal-section.is-visible .module-detail:nth-child(1){animation-delay:.05s}
+.reveal-section.is-visible .module-card:nth-child(2),
+.reveal-section.is-visible .qa-card:nth-child(2),
+.reveal-section.is-visible .week-delivery-card:nth-child(2),
+.reveal-section.is-visible .module-detail:nth-child(2){animation-delay:.10s}
+.reveal-section.is-visible .module-card:nth-child(3),
+.reveal-section.is-visible .qa-card:nth-child(3),
+.reveal-section.is-visible .week-delivery-card:nth-child(3),
+.reveal-section.is-visible .module-detail:nth-child(3){animation-delay:.15s}
+.reveal-section.is-visible .module-card:nth-child(4),
+.reveal-section.is-visible .qa-card:nth-child(4),
+.reveal-section.is-visible .week-delivery-card:nth-child(4),
+.reveal-section.is-visible .module-detail:nth-child(4){animation-delay:.20s}
+.reveal-section.is-visible .module-card:nth-child(5),
+.reveal-section.is-visible .week-delivery-card:nth-child(5),
+.reveal-section.is-visible .module-detail:nth-child(5){animation-delay:.25s}
+.reveal-section.is-visible .module-card:nth-child(6),
+.reveal-section.is-visible .week-delivery-card:nth-child(6),
+.reveal-section.is-visible .module-detail:nth-child(6){animation-delay:.30s}
+.reveal-section.is-visible .module-card:nth-child(7),
+.reveal-section.is-visible .week-delivery-card:nth-child(7),
+.reveal-section.is-visible .module-detail:nth-child(7){animation-delay:.35s}
+.reveal-section.is-visible .module-card:nth-child(8),
+.reveal-section.is-visible .module-detail:nth-child(8){animation-delay:.40s}
+.reveal-section.is-visible .module-card:nth-child(9),
+.reveal-section.is-visible .module-detail:nth-child(9){animation-delay:.45s}
+.reveal-section.is-visible .module-card:nth-child(10),
+.reveal-section.is-visible .module-detail:nth-child(10){animation-delay:.50s}
+@keyframes staggerIn{to{opacity:1;transform:none}}
+
+/* Hero entrance */
+.hero{
+  opacity:0;transform:translateY(-16px) scale(.99);
+  animation:heroLoad .85s cubic-bezier(.2,.7,.2,1) forwards;
+  animation-delay:.22s
+}
+.kpis .kpi{
+  opacity:0;transform:translateY(18px);
+  animation:kpiLoad .55s cubic-bezier(.2,.7,.2,1) forwards;
+}
+.kpis .kpi:nth-child(1){animation-delay:.45s}
+.kpis .kpi:nth-child(2){animation-delay:.53s}
+.kpis .kpi:nth-child(3){animation-delay:.61s}
+.kpis .kpi:nth-child(4){animation-delay:.69s}
+.kpis .kpi:nth-child(5){animation-delay:.77s}
+@keyframes heroLoad{to{opacity:1;transform:none}}
+@keyframes kpiLoad{to{opacity:1;transform:none}}
+
+/* Slight reveal marker */
+.reveal-section:before{
+  content:"";
+  position:absolute;
+  pointer-events:none;
+}
+
+/* Keep details smooth */
+.module-detail[open] .detail-body{animation:detailsOpen .35s ease}
+@keyframes detailsOpen{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+
+@media(prefers-reduced-motion:reduce){
+  .page-loader{display:none!important}
+  .hero,.kpis .kpi,.reveal-section,.reveal-child,
+  .reveal-section .module-card,.reveal-section .qa-card,.reveal-section .week-delivery-card,
+  .reveal-section .module-detail,.reveal-section .risk{
+    animation:none!important;transition:none!important;opacity:1!important;transform:none!important;filter:none!important
+  }
+}
+</style>
+
+<style id="module-share-v8">
+.module-share-grid{display:grid;grid-template-columns:360px 1fr;gap:28px;align-items:center}
+.donut-wrap{display:grid;justify-items:center;gap:14px}
+.donut-chart{width:245px;height:245px;border-radius:50%;display:grid;place-items:center;position:relative;box-shadow:0 18px 40px rgba(15,23,42,.12);transform:scale(.82) rotate(-10deg);opacity:0;transition:transform .8s cubic-bezier(.2,.7,.2,1),opacity .8s ease}
+.module-share-section.is-visible .donut-chart{transform:scale(1) rotate(0deg);opacity:1}
+.donut-chart:after{content:"";position:absolute;inset:0;border-radius:50%;background:linear-gradient(145deg,rgba(255,255,255,.16),transparent 50%)}
+.donut-hole{width:126px;height:126px;border-radius:50%;background:#fff;display:grid;place-items:center;align-content:center;z-index:2;box-shadow:inset 0 0 0 1px #edf0f5,0 5px 18px rgba(15,23,42,.08)}
+.donut-hole b{font-size:29px}.donut-hole span{font-size:11px;color:#64748b;margin-top:3px}
+.donut-caption{text-align:center;max-width:300px}.donut-caption b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}.donut-caption span{display:block;font-size:12px;line-height:1.6;margin-top:4px}
+.module-pct-list{display:grid;gap:9px}
+.module-pct-row{display:grid;grid-template-columns:180px 1fr 80px;gap:12px;align-items:center;padding:8px 10px;border-radius:13px;transition:.2s ease}
+.module-pct-row:hover{background:#f8fafc;transform:translateX(3px)}
+.pct-name{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700}.pct-name i{width:10px;height:10px;border-radius:3px;flex:none}
+.pct-bar{height:10px;background:#eef2f7;border-radius:999px;overflow:hidden}.pct-bar span{display:block;height:100%;border-radius:999px;transform:scaleX(0);transform-origin:left;transition:transform .7s cubic-bezier(.2,.7,.2,1)}
+.module-share-section.is-visible .pct-bar span{transform:scaleX(1)}
+.module-pct-row:nth-child(1) .pct-bar span{transition-delay:.08s}.module-pct-row:nth-child(2) .pct-bar span{transition-delay:.12s}.module-pct-row:nth-child(3) .pct-bar span{transition-delay:.16s}.module-pct-row:nth-child(4) .pct-bar span{transition-delay:.20s}.module-pct-row:nth-child(5) .pct-bar span{transition-delay:.24s}.module-pct-row:nth-child(6) .pct-bar span{transition-delay:.28s}.module-pct-row:nth-child(7) .pct-bar span{transition-delay:.32s}.module-pct-row:nth-child(8) .pct-bar span{transition-delay:.36s}.module-pct-row:nth-child(9) .pct-bar span{transition-delay:.40s}.module-pct-row:nth-child(10) .pct-bar span{transition-delay:.44s}
+.pct-value{text-align:right}.pct-value b{display:block;font-size:13px}.pct-value small{font-size:10px;color:#94a3b8}
+@media(max-width:900px){.module-share-grid{grid-template-columns:1fr}.module-pct-row{grid-template-columns:150px 1fr 70px}}
+@media(max-width:560px){.module-pct-row{grid-template-columns:1fr 60px}.pct-bar{grid-column:1/-1;grid-row:2}.donut-chart{width:210px;height:210px}}
+</style>
+
+<style id="qa-grouped-summary-v9">
+.qa-group-header td{
+  padding:16px 12px 10px;
+  background:linear-gradient(135deg,#eef4ff,#f5f3ff);
+  border-top:2px solid #dbeafe;
+  border-bottom:1px solid #dbeafe
+}
+.qa-group-line{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.qa-group-line>div:first-child{display:flex;align-items:center;gap:10px}
+.qa-group-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:52px;padding:7px 10px;border-radius:12px;
+  background:linear-gradient(135deg,#2563eb,#7c3aed);
+  color:#fff;font-size:11px;font-weight:900;
+  box-shadow:0 7px 16px rgba(37,99,235,.18)
+}
+.qa-group-line b{font-size:13px;color:#172033}
+.qa-group-total{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.qa-group-total span{
+  padding:6px 9px;border-radius:999px;background:#fff;
+  border:1px solid #dbeafe;font-size:10px;font-weight:800;color:#475569
+}
+.qa-group-header + tr td{border-top:none}
+@media(max-width:760px){
+  .qa-group-line{align-items:flex-start;flex-direction:column}
+  .qa-group-total{justify-content:flex-start}
+}
+</style>
+
+<style id="tc-modal-style-v10">
+.tc-count-btn{
+  border:0;cursor:pointer;min-width:34px;padding:6px 10px;border-radius:999px;
+  background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:900;
+  font-size:12px;box-shadow:0 7px 16px rgba(37,99,235,.18);transition:.2s ease
+}
+.tc-count-btn:hover{transform:translateY(-2px) scale(1.04);box-shadow:0 11px 22px rgba(37,99,235,.25)}
+.tc-count-btn:active{transform:scale(.98)}
+
+.tc-modal{position:fixed;inset:0;z-index:10000;display:none}
+.tc-modal.open{display:block}
+.tc-modal-backdrop{position:absolute;inset:0;background:rgba(4,10,20,.68);backdrop-filter:blur(8px);animation:fadeModal .22s ease}
+.tc-modal-dialog{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-46%) scale(.97);
+  width:min(1120px,92vw);max-height:88vh;overflow:hidden;
+  background:linear-gradient(180deg,#fff,#f8fafc);border:1px solid rgba(255,255,255,.7);
+  border-radius:26px;box-shadow:0 35px 90px rgba(0,0,0,.28);
+  opacity:0;animation:modalIn .28s cubic-bezier(.2,.7,.2,1) forwards
+}
+@keyframes modalIn{to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@keyframes fadeModal{from{opacity:0}to{opacity:1}}
+.tc-modal-head{
+  display:flex;justify-content:space-between;gap:20px;align-items:flex-start;
+  padding:22px 24px 16px;border-bottom:1px solid #e7ebf1;
+  background:linear-gradient(135deg,#071a33,#1d4ed8 62%,#7c3aed);color:#fff
+}
+.tc-modal-kicker{font-size:10px;font-weight:900;letter-spacing:.12em;color:#bfdbfe}
+.tc-modal-head h2{margin:5px 0 3px;font-size:24px}.tc-modal-head p{margin:0;font-size:12px;color:#dbeafe}
+.tc-modal-close{
+  width:38px;height:38px;border:1px solid #ffffff33;border-radius:12px;background:#ffffff12;
+  color:#fff;font-size:25px;line-height:1;cursor:pointer;transition:.2s ease
+}
+.tc-modal-close:hover{background:#ffffff22;transform:rotate(4deg)}
+.tc-modal-toolbar{
+  display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px 18px;
+  background:#fff;border-bottom:1px solid #edf0f4
+}
+.tc-search-wrap{
+  flex:1;display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid #dfe5ee;
+  border-radius:13px;background:#f8fafc
+}
+.tc-search-wrap input{border:0;outline:0;background:transparent;width:100%;font:inherit;font-size:12px}
+.tc-summary-pills{display:flex;gap:6px;flex-wrap:wrap}.tc-summary-pills span{padding:6px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:10px;font-weight:800}
+.tc-modal-list{padding:16px 18px 22px;overflow:auto;max-height:calc(88vh - 155px);display:grid;gap:12px}
+.tc-case{
+  border:1px solid #e5e9f0;border-radius:17px;background:#fff;overflow:hidden;
+  box-shadow:0 8px 20px rgba(15,23,42,.04);animation:caseIn .34s ease both
+}
+@keyframes caseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.tc-case-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding:14px 16px;background:linear-gradient(135deg,#fbfdff,#f8fafc);border-bottom:1px solid #edf0f4}
+.tc-case-id{display:inline-block;padding:5px 8px;border-radius:9px;background:#e0e7ff;color:#3730a3;font-size:10px;font-weight:900;margin-bottom:5px}
+.tc-case-title{font-size:14px;font-weight:900;color:#111827}
+.tc-priority{padding:5px 8px;border-radius:999px;font-size:9px;font-weight:900;white-space:nowrap}
+.tc-priority.high{background:#fee2e2;color:#b91c1c}.tc-priority.medium{background:#fef3c7;color:#b45309}.tc-priority.low{background:#dcfce7;color:#15803d}.tc-priority.unknown{background:#f1f5f9;color:#64748b}
+.tc-case-body{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px 16px}
+.tc-field{padding:11px 12px;border-radius:13px;background:#f8fafc;border:1px solid #edf0f4}
+.tc-field.full{grid-column:1/-1}.tc-field label{display:block;font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin-bottom:5px}
+.tc-field div{font-size:12px;line-height:1.65;color:#334155;white-space:pre-line}
+.tc-empty{padding:30px;text-align:center;color:#94a3b8;font-size:13px}
+body.tc-modal-open{overflow:hidden}
+@media(max-width:760px){
+  .tc-modal-toolbar{align-items:stretch;flex-direction:column}.tc-summary-pills{justify-content:flex-start}
+  .tc-case-body{grid-template-columns:1fr}.tc-field.full{grid-column:auto}
+  .tc-modal-dialog{width:95vw;max-height:92vh}.tc-modal-list{max-height:calc(92vh - 190px)}
+}
+</style>
+
+<style id="dynamic-start-date-v11">
+.dynamic-date-panel{
+  position:relative;z-index:3;margin-top:18px;
+  display:flex;justify-content:space-between;gap:18px;align-items:center;
+  padding:14px 16px;border-radius:18px;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.24);
+  backdrop-filter:blur(8px)
+}
+.date-control-left{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.date-control-label{font-size:10px;font-weight:900;letter-spacing:.11em;color:#bfdbfe}
+.date-control-main{display:flex;gap:8px;align-items:center}
+.date-control-main input{
+  appearance:none;border:1px solid rgba(255,255,255,.30);outline:none;
+  padding:9px 11px;border-radius:12px;background:rgba(255,255,255,.94);
+  color:#0f172a;font:inherit;font-size:12px;font-weight:700
+}
+.date-control-main button{
+  border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.10);
+  color:#fff;padding:9px 11px;border-radius:12px;cursor:pointer;font-size:11px;font-weight:800;
+  transition:.2s ease
+}
+.date-control-main button:hover{background:rgba(255,255,255,.20);transform:translateY(-1px)}
+.date-control-summary{display:flex;gap:10px;flex-wrap:wrap}
+.date-control-summary>div{
+  min-width:112px;padding:9px 11px;border-radius:13px;background:rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.16)
+}
+.date-control-summary span{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#bfdbfe}
+.date-control-summary b{display:block;font-size:12px;margin-top:3px}
+.timeline-updating .animated-bar{animation:none!important;opacity:1!important;transform:none!important}
+.timeline-updating .tl-row{animation:none!important;opacity:1!important;transform:none!important}
+@media(max-width:900px){.dynamic-date-panel{align-items:flex-start;flex-direction:column}.date-control-summary{width:100%}}
+</style>
+
+<style id="bug-simulator-v12">
+.bug-sim-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:18px}
+.bug-input-panel,.bug-result-panel{display:grid;gap:10px}
+.bug-input-row,.bug-cycle-row{
+  display:grid;grid-template-columns:1fr 110px;gap:12px;align-items:center;
+  padding:13px 14px;border:1px solid #e5e9f0;border-radius:16px;background:linear-gradient(135deg,#fff,#f8fafc)
+}
+.bug-severity span,.bug-cycle-row span{display:block;font-size:13px;font-weight:900}
+.bug-severity small,.bug-cycle-row small{display:block;margin-top:3px;font-size:10px;color:#64748b}
+.bug-input-row input,.bug-cycle-row input{
+  width:100%;border:1px solid #dbe1ea;border-radius:12px;padding:10px 11px;
+  font:inherit;font-weight:800;text-align:center;background:#fff;outline:none
+}
+.bug-input-row input:focus,.bug-cycle-row input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.15)}
+.critical-sv span{color:#b91c1c}.high-sv span{color:#c2410c}.medium-sv span{color:#b45309}.low-sv span{color:#15803d}
+.bug-buffer-row{padding:12px 14px;border-radius:14px;background:#eff6ff;border:1px solid #dbeafe;font-size:12px}
+.bug-buffer-row label{display:flex;gap:8px;align-items:center;font-weight:700;color:#334155}
+.bug-result-panel{grid-template-columns:repeat(2,1fr)}
+.bug-result-card{
+  padding:16px;border:1px solid #e5e9f0;border-radius:17px;background:linear-gradient(145deg,#fff,#f8fafc);
+  transition:.25s ease
+}
+.bug-result-card:hover{transform:translateY(-2px);box-shadow:0 12px 25px rgba(15,23,42,.07)}
+.bug-result-card span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:900}
+.bug-result-card b{display:block;font-size:22px;margin:7px 0 4px}
+.bug-result-card small{font-size:10px;color:#94a3b8;line-height:1.45}
+.bug-result-card.accent{grid-column:1/-1;background:linear-gradient(135deg,#071a33,#1d4ed8 65%,#7c3aed);color:#fff;border:none}
+.bug-result-card.accent span,.bug-result-card.accent small{color:#dbeafe}
+.bug-impact-note{margin-top:14px;padding:14px 16px;border-radius:16px;background:linear-gradient(135deg,#fff7ed,#fefce8);border:1px solid #fde68a;font-size:12px;line-height:1.65;color:#475569}
+.bug-impact-note b{color:#92400e}
+@media(max-width:900px){.bug-sim-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.bug-result-panel{grid-template-columns:1fr}.bug-result-card.accent{grid-column:auto}}
+</style>
+
+<style id="configurable-capacity-filter-v13">
+.capacity-control-panel{
+  position:relative;z-index:3;margin-top:10px;
+  display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px
+}
+.capacity-control-item{
+  padding:11px 12px;border-radius:15px;background:rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.18)
+}
+.capacity-label{display:block;font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#bfdbfe;margin-bottom:6px}
+.capacity-control-item input{
+  width:76px;border:1px solid rgba(255,255,255,.28);border-radius:10px;
+  padding:7px 8px;background:#fff;color:#0f172a;font-weight:900;text-align:center
+}
+.capacity-control-item small{margin-left:5px;color:#dbeafe;font-size:10px}
+.capacity-readonly b{display:block;font-size:13px;color:#fff}
+
+.gantt-filter-toolbar{
+  display:flex;justify-content:space-between;gap:14px;align-items:center;
+  padding:12px 14px;margin:10px 0 14px;border:1px solid #dbeafe;border-radius:16px;
+  background:linear-gradient(135deg,#eff6ff,#f5f3ff)
+}
+.filter-label{display:block;font-size:9px;font-weight:900;letter-spacing:.1em;color:#64748b;margin-bottom:7px}
+.qa-filter-buttons{display:flex;gap:6px;flex-wrap:wrap}
+.qa-filter-btn{
+  border:1px solid #dbe1ea;background:#fff;color:#475569;padding:7px 10px;border-radius:999px;
+  cursor:pointer;font-size:10px;font-weight:900;transition:.2s ease
+}
+.qa-filter-btn:hover{transform:translateY(-1px);border-color:#93c5fd}
+.qa-filter-btn.active{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border-color:transparent;box-shadow:0 7px 16px rgba(37,99,235,.18)}
+.gantt-filter-summary{text-align:right}.gantt-filter-summary span{display:block;font-size:9px;color:#64748b;text-transform:uppercase}.gantt-filter-summary b{font-size:12px}
+
+.tl-row.qa-hidden{display:none!important}
+.week-group-header.qa-hidden{display:none!important}
+
+.week-delivery-card{position:relative;cursor:pointer}
+.week-expand-btn{
+  position:absolute;right:14px;bottom:12px;border:0;border-radius:999px;padding:6px 9px;
+  background:#eef2ff;color:#4338ca;font-size:9px;font-weight:900;cursor:pointer;transition:.2s ease
+}
+.week-expand-btn:hover{background:#e0e7ff;transform:translateY(-1px)}
+.week-delivery-card.expanded{
+  grid-column:1/-1;
+  transform:scale(1.01);
+  box-shadow:0 20px 45px rgba(37,99,235,.14);
+  border-color:#bfdbfe;
+  z-index:2
+}
+.week-delivery-card.expanded .week-complete-list{
+  grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px
+}
+.week-delivery-card.expanded .week-complete-list li{padding:9px 0;font-size:12px}
+.week-delivery-card.expanded .week-card-head h3{font-size:20px}
+.week-delivery-card.expanded .week-stats span{padding:10px}
+.week-delivery-card.expanded .week-expand-btn{background:#1d4ed8;color:#fff}
+
+.capacity-recalc-note{
+  margin-top:8px;font-size:10px;color:#dbeafe
+}
+
+@media(max-width:1000px){
+  .capacity-control-panel{grid-template-columns:repeat(2,1fr)}
+  .gantt-filter-toolbar{align-items:flex-start;flex-direction:column}
+  .gantt-filter-summary{text-align:left}
+}
+@media(max-width:620px){
+  .capacity-control-panel{grid-template-columns:1fr}
+  .week-delivery-card.expanded .week-complete-list{grid-template-columns:1fr}
+}
+</style>
+
+<style id="week-zoom-animation-v14">
+.week-zoom-backdrop{
+  position:fixed;inset:0;z-index:9980;
+  background:rgba(5,12,24,.58);
+  backdrop-filter:blur(7px);
+  opacity:0;visibility:hidden;
+  transition:opacity .3s ease,visibility .3s ease;
+}
+.week-zoom-backdrop.show{opacity:1;visibility:visible}
+
+.week-delivery-card{
+  transform-origin:center center;
+  transition:
+    transform .42s cubic-bezier(.16,.84,.32,1),
+    opacity .3s ease,
+    box-shadow .42s ease,
+    border-color .3s ease;
+}
+.week-delivery-card.zoom-active{
+  position:fixed!important;
+  z-index:9990!important;
+  left:50%!important;
+  top:50%!important;
+  width:min(880px,90vw)!important;
+  max-height:82vh!important;
+  overflow:auto!important;
+  margin:0!important;
+  grid-column:auto!important;
+  transform:translate(-50%,-50%) scale(1)!important;
+  opacity:1!important;
+  border-color:#93c5fd!important;
+  box-shadow:0 34px 90px rgba(3,10,24,.38)!important;
+  animation:weekZoomIn .46s cubic-bezier(.16,.84,.32,1) both!important;
+}
+.week-delivery-card.zoom-active .week-card-head h3{font-size:24px}
+.week-delivery-card.zoom-active .week-score b{font-size:30px}
+.week-delivery-card.zoom-active .week-stats{
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+}
+.week-delivery-card.zoom-active .week-stats span{
+  padding:14px 10px;
+  font-size:11px;
+}
+.week-delivery-card.zoom-active .week-stats b{font-size:19px}
+.week-delivery-card.zoom-active .week-complete-title{
+  margin-top:16px;
+  font-size:11px;
+}
+.week-delivery-card.zoom-active .week-complete-list{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:0 20px;
+}
+.week-delivery-card.zoom-active .week-complete-list li{
+  padding:11px 0;
+  font-size:13px;
+}
+.week-delivery-card.zoom-active .week-expand-btn{
+  position:sticky;
+  float:right;
+  right:0;
+  bottom:auto;
+  top:0;
+  z-index:2;
+  background:#1d4ed8;
+  color:#fff;
+  padding:7px 12px;
+}
+
+.week-delivery-card.zoom-source{
+  opacity:.20!important;
+  transform:scale(.96)!important;
+}
+
+@keyframes weekZoomIn{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.72)}
+  68%{opacity:1;transform:translate(-50%,-50%) scale(1.025)}
+  100%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+}
+@keyframes weekZoomOut{
+  0%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-50%) scale(.76)}
+}
+.week-delivery-card.zoom-closing{
+  animation:weekZoomOut .28s ease both!important;
+}
+body.week-zoom-open{overflow:hidden}
+
+@media(max-width:700px){
+  .week-delivery-card.zoom-active{
+    width:94vw!important;
+    max-height:86vh!important;
+  }
+  .week-delivery-card.zoom-active .week-complete-list{
+    grid-template-columns:1fr;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  .week-delivery-card.zoom-active,.week-delivery-card.zoom-closing{
+    animation:none!important;
+  }
+}
+</style>
+</head>
+<body>
+<div id="page-loader" class="page-loader" aria-hidden="true">
+  <div class="loader-shell">
+    <div class="loader-logo">
+      <span></span><span></span><span></span>
+    </div>
+    <div class="loader-title">ProMaxx2 QA Test Plan</div>
+    <div class="loader-subtitle">Preparing Executive Timeline...</div>
+    <div class="loader-progress"><i></i></div>
+  </div>
+</div>
+<div class="scroll-progress"><span id="scroll-progress-bar"></span></div>
+<div class="wrap">
+<section class="hero">
+<div class="eyebrow">PREMIUM EXECUTIVE QA PLAN • WEEK ZOOM EXPERIENCE</div>
+<h1>ProMaxx2 QA Test Plan & Delivery Timeline</h1>
+<p>แผนทดสอบฉบับ Executive Premium สำหรับ QA 4 คน โดยจัดเรียง Module ตามลำดับบริหารงานที่กำหนด คำนวณจากโมดูลย่อยและ Test Case จริง, ทำงานวันจันทร์–ศุกร์, ทดสอบแบบ Manual และกัน Capacity สำหรับ Support Cases ระหว่างวัน</p>
+<div class="hero-badges"><span>เริ่ม 18 ส.ค. 2569</span><span>เป้าหมาย 28 ก.ย. 2569</span><span>30 วันทำการ</span><span>QA 4 คน</span><span>Manual Test</span><span>Support Reserve 25%</span></div>
+<div class="dynamic-date-panel">
+  <div class="date-control-left">
+    <span class="date-control-label">PROJECT START DATE</span>
+    <div class="date-control-main">
+      <input id="project-start-date" type="date" value="2026-08-18">
+      <button id="reset-start-date" type="button">คืนค่าเริ่มต้น</button>
+    </div>
+  </div>
+  <div class="date-control-summary">
+    <div><span>Start</span><b id="dynamic-start-label">18 ส.ค. 2569</b></div>
+    <div><span>Working Days</span><b>30 วัน</b></div>
+    <div><span>Expected End</span><b id="dynamic-end-label">28 ก.ย. 2569</b></div>
+  </div>
+</div>
+
+<div class="hero-side"><b>220</b><span>Test Cases in Scope</span></div></section>
+
+<section class="kpis">
+<div class="card kpi"><div class="lab">Modules</div><div class="val">10</div><div class="sub">เรียงตามลำดับที่กำหนด</div></div>
+<div class="card kpi"><div class="lab">Test Cases</div><div class="val">220</div><div class="sub">จากเอกสาร Test Plan ทั้งหมด</div></div>
+<div class="card kpi"><div class="lab">Base Manual Effort</div><div class="val">287h</div><div class="sub">Execution + Setup + Evidence</div></div>
+<div class="card kpi"><div class="lab">Planned Effort</div><div class="val">388h</div><div class="sub">รวม Retest / Regression 35%</div></div>
+<div class="card kpi"><div class="lab">Delivery Window</div><div class="val">6 wk</div><div class="sub">30 วันทำการ จันทร์–ศุกร์</div></div>
+</section>
+
+<section class="section reveal-section card panel"><div class="title">Module Sequence</div><div class="subtitle">ลำดับ Module ตามที่กำหนดสำหรับใช้ทั้ง Executive View, Effort Summary และรายละเอียดด้านล่าง</div><div class="module-sequence">
+    <div class="module-card">
+      <div class="module-index">01</div>
+      <div class="module-main">
+        <div class="module-name">Dashboard</div>
+        <div class="module-owner">QA 1 • 1 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>7</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>1.3</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">02</div>
+      <div class="module-main">
+        <div class="module-name">Inventory</div>
+        <div class="module-owner">QA 2 • 15 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>48</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>15.4</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">03</div>
+      <div class="module-main">
+        <div class="module-name">Person</div>
+        <div class="module-owner">QA 3 • 4 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>21</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>4.7</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">04</div>
+      <div class="module-main">
+        <div class="module-name">Transaction</div>
+        <div class="module-owner">QA 1 • 14 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>36</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>12.5</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">05</div>
+      <div class="module-main">
+        <div class="module-name">Promotion</div>
+        <div class="module-owner">QA 1 • 1 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>10</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>2.3</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">06</div>
+      <div class="module-main">
+        <div class="module-name">Settings</div>
+        <div class="module-owner">QA 4 • 6 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>22</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>5.9</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">07</div>
+      <div class="module-main">
+        <div class="module-name">Utility</div>
+        <div class="module-owner">QA 3 • 4 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>14</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>3.5</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">08</div>
+      <div class="module-main">
+        <div class="module-name">Devices</div>
+        <div class="module-owner">QA 3 • 8 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>21</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>7.8</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">09</div>
+      <div class="module-main">
+        <div class="module-name">Reporting</div>
+        <div class="module-owner">QA 4 • 6 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>17</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>5.2</b><span>QA-day</span></div>
+    </div>
+    <div class="module-card">
+      <div class="module-index">10</div>
+      <div class="module-main">
+        <div class="module-name">Data &amp; Database</div>
+        <div class="module-owner">QA 4 • 2 กลุ่มงานย่อย</div>
+      </div>
+      <div class="module-stat"><b>24</b><span>Test Cases</span></div>
+      <div class="module-stat"><b>6.0</b><span>QA-day</span></div>
+    </div></div></section>
+
+<section class="section reveal-section grid2">
+<div class="card panel"><div class="title">Capacity Assumption</div><div class="subtitle">คำนวณแบบ Manual Testing และสะท้อนเวลาที่ QA ต้องรับเคส Support ระหว่างวัน</div>
+<div class="assump-grid"><div class="assump"><b>8 ชม.</b><span>เวลางานต่อวัน</span></div><div class="assump"><b>2 ชม.</b><span>Support Reserve / คน / วัน</span></div><div class="assump"><b>6 ชม.</b><span>Effective Test Time</span></div><div class="assump"><b>+35%</b><span>Retest / Regression / Defect</span></div></div>
+<div class="callout"><b>Baseline:</b> Manual execution เฉลี่ย 45 นาที/Test Case + เวลาเตรียม Test Data/Evidence ต่อกลุ่มงาน และเพิ่ม Complexity Factor สำหรับ Transaction, Inventory, Devices และ Database</div></div>
+<div class="card panel"><div class="title">QA Workload</div><div class="subtitle">ภาระงานหลังรวม Retest/Regression โดยแบ่ง Ownership ตามกลุ่ม Module</div><div class="qa-list">
+    <div class="qa-card"><div class="qa-icon">1</div><div class="qa-body">
+      <div class="qa-top"><b>QA 1</b><span>16.1 QA-day</span></div>
+      <div class="qa-desc">Dashboard + Transaction + Promotion</div>
+      <div class="progress"><span style="width:94%"></span></div>
+    </div></div>
+    <div class="qa-card"><div class="qa-icon">2</div><div class="qa-body">
+      <div class="qa-top"><b>QA 2</b><span>15.4 QA-day</span></div>
+      <div class="qa-desc">Inventory</div>
+      <div class="progress"><span style="width:90%"></span></div>
+    </div></div>
+    <div class="qa-card"><div class="qa-icon">3</div><div class="qa-body">
+      <div class="qa-top"><b>QA 3</b><span>16.0 QA-day</span></div>
+      <div class="qa-desc">Person + Utility + Devices</div>
+      <div class="progress"><span style="width:93%"></span></div>
+    </div></div>
+    <div class="qa-card"><div class="qa-icon">4</div><div class="qa-body">
+      <div class="qa-top"><b>QA 4</b><span>17.2 QA-day</span></div>
+      <div class="qa-desc">Settings + Reporting + Data & Database</div>
+      <div class="progress"><span style="width:100%"></span></div>
+    </div></div></div></div>
+</section>
+
+
+
+<section class="section card panel reveal-section bug-simulator-section">
+  <div class="title">Bug Impact Simulator</div>
+  <div class="subtitle">
+    จำลองผลกระทบของ Bug ต่อ Timeline โดยคำนวณจาก Severity, จำนวน Fix Cycle,
+    Effective QA Capacity 6 ชั่วโมง/คน/วัน และ QA 4 คน
+  </div>
+
+  <div class="bug-sim-grid">
+    <div class="bug-input-panel">
+      <div class="bug-input-row">
+        <div class="bug-severity critical-sv">
+          <span>Critical / Blocker</span>
+          <small>4.5 ชม. / Bug / Cycle</small>
+        </div>
+        <input id="bug-critical" type="number" min="0" value="0">
+      </div>
+
+      <div class="bug-input-row">
+        <div class="bug-severity high-sv">
+          <span>High</span>
+          <small>3.0 ชม. / Bug / Cycle</small>
+        </div>
+        <input id="bug-high" type="number" min="0" value="0">
+      </div>
+
+      <div class="bug-input-row">
+        <div class="bug-severity medium-sv">
+          <span>Medium</span>
+          <small>1.5 ชม. / Bug / Cycle</small>
+        </div>
+        <input id="bug-medium" type="number" min="0" value="0">
+      </div>
+
+      <div class="bug-input-row">
+        <div class="bug-severity low-sv">
+          <span>Low</span>
+          <small>0.75 ชม. / Bug / Cycle</small>
+        </div>
+        <input id="bug-low" type="number" min="0" value="0">
+      </div>
+
+      <div class="bug-cycle-row">
+        <div>
+          <span>Fix Cycle</span>
+          <small>จำนวนรอบ Dev Fix → QA Retest</small>
+        </div>
+        <input id="bug-cycle" type="number" min="1" max="10" value="1">
+      </div>
+
+      <div class="bug-buffer-row">
+        <label>
+          <input id="bug-use-buffer" type="checkbox" checked>
+          หักจาก Defect / Retest Buffer 35% ก่อน
+        </label>
+      </div>
+    </div>
+
+    <div class="bug-result-panel">
+      <div class="bug-result-card">
+        <span>Bug Effort</span>
+        <b id="bug-effort-hours">0.0 ชม.</b>
+        <small>รวมทุก Severity และ Fix Cycle</small>
+      </div>
+
+      <div class="bug-result-card">
+        <span>Excess Effort</span>
+        <b id="bug-excess-hours">0.0 ชม.</b>
+        <small>ส่วนที่เกิน Buffer ที่มีอยู่</small>
+      </div>
+
+      <div class="bug-result-card">
+        <span>Timeline Impact</span>
+        <b id="bug-added-days">0 วันทำการ</b>
+        <small>คำนวณจาก 24 QA-hours / วัน</small>
+      </div>
+
+      <div class="bug-result-card accent">
+        <span>New Expected End</span>
+        <b id="bug-new-end-date">-</b>
+        <small id="bug-impact-status">ยังไม่มีผลกระทบต่อ Timeline</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="bug-impact-note">
+    <b>หลักการคำนวณ:</b>
+    Bug Effort = Σ(จำนวน Bug × ชั่วโมงเฉลี่ยตาม Severity × Fix Cycle) และจะเพิ่ม Timeline
+    เฉพาะส่วนที่เกิน Defect/Regression Buffer ที่เหลืออยู่
+  </div>
+</section>
+<section class="section card panel reveal-section module-share-section">
+  <div class="title">Module Workload Distribution</div>
+  <div class="subtitle">สัดส่วน % ของ Planned Manual QA Effort แยกตาม Module โดยรวม Complexity, Test Data/Evidence และ Retest/Regression 35% แล้ว</div>
+  <div class="module-share-grid">
+    <div class="donut-wrap">
+      <div class="donut-chart" style="background:conic-gradient(#2563eb 0.00% 2.04%, #06b6d4 2.04% 25.85%, #14b8a6 25.85% 33.08%, #7c3aed 33.08% 52.44%, #f59e0b 52.44% 55.94%, #0ea5e9 55.94% 65.13%, #22c55e 65.13% 70.52%, #f97316 70.52% 82.62%, #ef4444 82.62% 90.72%, #64748b 90.72% 100.00%)">
+        <div class="donut-hole">
+          <b>100%</b>
+          <span>388 QA-hours</span>
+        </div>
+      </div>
+      <div class="donut-caption"><b>Top workload</b><span>Inventory 23.8% • Transaction 19.4% • Devices 12.1%</span></div>
+    </div>
+    <div class="module-pct-list">
+      
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#2563eb"></i><span>1. Dashboard</span></div>
+      <div class="pct-bar"><span style="width:2.04%;background:#2563eb"></span></div>
+      <div class="pct-value"><b>2.0%</b><small>7.9h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#06b6d4"></i><span>2. Inventory</span></div>
+      <div class="pct-bar"><span style="width:23.82%;background:#06b6d4"></span></div>
+      <div class="pct-value"><b>23.8%</b><small>92.4h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#14b8a6"></i><span>3. Person</span></div>
+      <div class="pct-bar"><span style="width:7.22%;background:#14b8a6"></span></div>
+      <div class="pct-value"><b>7.2%</b><small>28.0h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#7c3aed"></i><span>4. Transaction</span></div>
+      <div class="pct-bar"><span style="width:19.36%;background:#7c3aed"></span></div>
+      <div class="pct-value"><b>19.4%</b><small>75.1h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#f59e0b"></i><span>5. Promotion</span></div>
+      <div class="pct-bar"><span style="width:3.50%;background:#f59e0b"></span></div>
+      <div class="pct-value"><b>3.5%</b><small>13.6h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#0ea5e9"></i><span>6. Settings</span></div>
+      <div class="pct-bar"><span style="width:9.19%;background:#0ea5e9"></span></div>
+      <div class="pct-value"><b>9.2%</b><small>35.6h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#22c55e"></i><span>7. Utility</span></div>
+      <div class="pct-bar"><span style="width:5.39%;background:#22c55e"></span></div>
+      <div class="pct-value"><b>5.4%</b><small>20.9h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#f97316"></i><span>8. Devices</span></div>
+      <div class="pct-bar"><span style="width:12.10%;background:#f97316"></span></div>
+      <div class="pct-value"><b>12.1%</b><small>46.9h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#ef4444"></i><span>9. Reporting</span></div>
+      <div class="pct-bar"><span style="width:8.10%;background:#ef4444"></span></div>
+      <div class="pct-value"><b>8.1%</b><small>31.4h</small></div>
+    </div>
+    <div class="module-pct-row">
+      <div class="pct-name"><i style="background:#64748b"></i><span>10. Data &amp; Database</span></div>
+      <div class="pct-bar"><span style="width:9.28%;background:#64748b"></span></div>
+      <div class="pct-value"><b>9.3%</b><small>36.0h</small></div>
+    </div>
+    </div>
+  </div>
+</section>
+<section class="section reveal-section card panel"><div class="title">Module Effort Summary</div><div class="subtitle">จัดกลุ่มตาม QA Ownership เพื่อให้เห็น Module, Test Cases และ Effort รวมของแต่ละ QA ได้ชัดเจน</div><div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Module</th><th>Owner</th><th>Test Cases</th><th>Base Hours</th><th>Base QA-day</th><th>QA-day +35%</th></tr></thead>
+<tbody>
+    <tr class="qa-group-header">
+      <td colspan="7">
+        <div class="qa-group-line">
+          <div><span class="qa-group-badge">QA 1</span><b>Dashboard + Transaction + Promotion</b></div>
+          <div class="qa-group-total">
+            <span>53 Test Cases</span>
+            <span>71.6 ชม.</span>
+            <span>16.1 QA-day</span>
+          </div>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td><span class="order-no">1</span></td>
+      <td><div class="m-title">Dashboard</div><div class="muted">1 กลุ่มงานย่อย</div></td>
+      <td>QA 1</td>
+      <td><span class="count-pill">7</span></td>
+      <td>5.9 ชม.</td>
+      <td>1.0</td>
+      <td><b>1.3</b></td>
+    </tr><tr>
+      <td><span class="order-no">4</span></td>
+      <td><div class="m-title">Transaction</div><div class="muted">14 กลุ่มงานย่อย</div></td>
+      <td>QA 1</td>
+      <td><span class="count-pill">36</span></td>
+      <td>55.6 ชม.</td>
+      <td>9.3</td>
+      <td><b>12.5</b></td>
+    </tr><tr>
+      <td><span class="order-no">5</span></td>
+      <td><div class="m-title">Promotion</div><div class="muted">1 กลุ่มงานย่อย</div></td>
+      <td>QA 1</td>
+      <td><span class="count-pill">10</span></td>
+      <td>10.1 ชม.</td>
+      <td>1.7</td>
+      <td><b>2.3</b></td>
+    </tr>
+    <tr class="qa-group-header">
+      <td colspan="7">
+        <div class="qa-group-line">
+          <div><span class="qa-group-badge">QA 2</span><b>Inventory</b></div>
+          <div class="qa-group-total">
+            <span>48 Test Cases</span>
+            <span>68.4 ชม.</span>
+            <span>15.4 QA-day</span>
+          </div>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td><span class="order-no">2</span></td>
+      <td><div class="m-title">Inventory</div><div class="muted">15 กลุ่มงานย่อย</div></td>
+      <td>QA 2</td>
+      <td><span class="count-pill">48</span></td>
+      <td>68.4 ชม.</td>
+      <td>11.4</td>
+      <td><b>15.4</b></td>
+    </tr>
+    <tr class="qa-group-header">
+      <td colspan="7">
+        <div class="qa-group-line">
+          <div><span class="qa-group-badge">QA 3</span><b>Person + Utility + Devices</b></div>
+          <div class="qa-group-total">
+            <span>56 Test Cases</span>
+            <span>71.1 ชม.</span>
+            <span>16.0 QA-day</span>
+          </div>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td><span class="order-no">3</span></td>
+      <td><div class="m-title">Person</div><div class="muted">4 กลุ่มงานย่อย</div></td>
+      <td>QA 3</td>
+      <td><span class="count-pill">21</span></td>
+      <td>20.8 ชม.</td>
+      <td>3.5</td>
+      <td><b>4.7</b></td>
+    </tr><tr>
+      <td><span class="order-no">7</span></td>
+      <td><div class="m-title">Utility</div><div class="muted">4 กลุ่มงานย่อย</div></td>
+      <td>QA 3</td>
+      <td><span class="count-pill">14</span></td>
+      <td>15.5 ชม.</td>
+      <td>2.6</td>
+      <td><b>3.5</b></td>
+    </tr><tr>
+      <td><span class="order-no">8</span></td>
+      <td><div class="m-title">Devices</div><div class="muted">8 กลุ่มงานย่อย</div></td>
+      <td>QA 3</td>
+      <td><span class="count-pill">21</span></td>
+      <td>34.8 ชม.</td>
+      <td>5.8</td>
+      <td><b>7.8</b></td>
+    </tr>
+    <tr class="qa-group-header">
+      <td colspan="7">
+        <div class="qa-group-line">
+          <div><span class="qa-group-badge">QA 4</span><b>Settings + Reporting + Data & Database</b></div>
+          <div class="qa-group-total">
+            <span>63 Test Cases</span>
+            <span>76.4 ชม.</span>
+            <span>17.1 QA-day</span>
+          </div>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td><span class="order-no">6</span></td>
+      <td><div class="m-title">Settings</div><div class="muted">6 กลุ่มงานย่อย</div></td>
+      <td>QA 4</td>
+      <td><span class="count-pill">22</span></td>
+      <td>26.4 ชม.</td>
+      <td>4.4</td>
+      <td><b>5.9</b></td>
+    </tr><tr>
+      <td><span class="order-no">9</span></td>
+      <td><div class="m-title">Reporting</div><div class="muted">6 กลุ่มงานย่อย</div></td>
+      <td>QA 4</td>
+      <td><span class="count-pill">17</span></td>
+      <td>23.3 ชม.</td>
+      <td>3.9</td>
+      <td><b>5.2</b></td>
+    </tr><tr>
+      <td><span class="order-no">10</span></td>
+      <td><div class="m-title">Data &amp; Database</div><div class="muted">2 กลุ่มงานย่อย</div></td>
+      <td>QA 4</td>
+      <td><span class="count-pill">24</span></td>
+      <td>26.7 ชม.</td>
+      <td>4.4</td>
+      <td><b>6.0</b></td>
+    </tr></tbody></table></div></section>
+
+<section class="section reveal-section card panel"><div class="title">Executive Timeline / Gantt — Weekly Delivery View</div><div class="subtitle">จัดกลุ่มตาม Week เพื่อให้เห็นว่าในแต่ละสัปดาห์มีงานใดกำลังทดสอบ และงานใดคาดว่าจะเสร็จ พร้อมยังคงลำดับตาม Criticality, Complexity และ Dependency</div>
+
+
+<div class="weekly-overview reveal-child">
+  
+    <div class="week-delivery-card" data-week-index="0">
+      <div class="week-card-head">
+        <div><span class="week-kicker">WEEK 1</span><h3>18/8 – 21/8</h3></div><button class="week-expand-btn" type="button">ขยาย</button>
+        <div class="week-score"><b>1</b><span>งานเสร็จ</span></div>
+      </div>
+      <div class="week-stats">
+        <span>เริ่มใหม่ <b>5</b></span>
+        <span>กำลังทดสอบ <b>5</b></span>
+        <span>เสร็จใน Week <b>1</b></span>
+      </div>
+      <div class="week-complete-title">Expected Completed</div>
+      <ul class="week-complete-list"><li><i style="background:#8b5cf6"></i><span>Test Planning / Environment / Critical Test Data</span><b>QA 1-4</b></li></ul>
+    </div>
+    <div class="week-delivery-card" data-week-index="1">
+      <div class="week-card-head">
+        <div><span class="week-kicker">WEEK 2</span><h3>24/8 – 28/8</h3></div><button class="week-expand-btn" type="button">ขยาย</button>
+        <div class="week-score"><b>4</b><span>งานเสร็จ</span></div>
+      </div>
+      <div class="week-stats">
+        <span>เริ่มใหม่ <b>2</b></span>
+        <span>กำลังทดสอบ <b>6</b></span>
+        <span>เสร็จใน Week <b>4</b></span>
+      </div>
+      <div class="week-complete-title">Expected Completed</div>
+      <ul class="week-complete-list"><li><i style="background:#2563eb"></i><span>Inventory — Item Master / Template / Stock Foundation</span><b>QA 2</b></li><li><i style="background:#2563eb"></i><span>Person — Customer / Staff / Supplier Master</span><b>QA 3</b></li><li><i style="background:#2563eb"></i><span>Settings — Terminal / System / DB / UI</span><b>QA 4</b></li><li><i style="background:#2563eb"></i><span>Transaction — TranPos / TranOut / TranIn</span><b>QA 1</b></li></ul>
+    </div>
+    <div class="week-delivery-card" data-week-index="2">
+      <div class="week-card-head">
+        <div><span class="week-kicker">WEEK 3</span><h3>31/8 – 4/9</h3></div><button class="week-expand-btn" type="button">ขยาย</button>
+        <div class="week-score"><b>3</b><span>งานเสร็จ</span></div>
+      </div>
+      <div class="week-stats">
+        <span>เริ่มใหม่ <b>2</b></span>
+        <span>กำลังทดสอบ <b>4</b></span>
+        <span>เสร็จใน Week <b>3</b></span>
+      </div>
+      <div class="week-complete-title">Expected Completed</div>
+      <ul class="week-complete-list"><li><i style="background:#f59e0b"></i><span>Data &amp; Database — Connection / CRUD / Encryption</span><b>QA 4</b></li><li><i style="background:#2563eb"></i><span>Inventory — Serial / Lot / Adjustment / Price</span><b>QA 2</b></li><li><i style="background:#2563eb"></i><span>Transaction — CN / Transfer / Branch / Deposit / TW</span><b>QA 1</b></li></ul>
+    </div>
+    <div class="week-delivery-card" data-week-index="3">
+      <div class="week-card-head">
+        <div><span class="week-kicker">WEEK 4</span><h3>7/9 – 11/9</h3></div><button class="week-expand-btn" type="button">ขยาย</button>
+        <div class="week-score"><b>5</b><span>งานเสร็จ</span></div>
+      </div>
+      <div class="week-stats">
+        <span>เริ่มใหม่ <b>6</b></span>
+        <span>กำลังทดสอบ <b>7</b></span>
+        <span>เสร็จใน Week <b>5</b></span>
+      </div>
+      <div class="week-complete-title">Expected Completed</div>
+      <ul class="week-complete-list"><li><i style="background:#2563eb"></i><span>Reporting — Daily / Sales / Profit / Email / Receipt</span><b>QA 4</b></li><li><i style="background:#2563eb"></i><span>Promotion Engine</span><b>QA 1</b></li><li><i style="background:#06b6d4"></i><span>Devices / Hardware Integration</span><b>QA 3</b></li><li><i style="background:#2563eb"></i><span>Inventory — Transfer / DeviceDoc / IStock / Suite</span><b>QA 2</b></li><li><i style="background:#2563eb"></i><span>Dashboard — Sales / Stock / Top Product / Realtime</span><b>QA 1</b></li></ul>
+    </div>
+    <div class="week-delivery-card" data-week-index="4">
+      <div class="week-card-head">
+        <div><span class="week-kicker">WEEK 5</span><h3>14/9 – 18/9</h3></div><button class="week-expand-btn" type="button">ขยาย</button>
+        <div class="week-score"><b>5</b><span>งานเสร็จ</span></div>
+      </div>
+      <div class="week-stats">
+        <span>เริ่มใหม่ <b>5</b></span>
+        <span>กำลังทดสอบ <b>7</b></span>
+        <span>เสร็จใน Week <b>5</b></span>
+      </div>
+      <div class="week-complete-title">Expected Completed</div>
+      <ul class="week-complete-list"><li><i style="background:#22c55e"></i><span>Settings + Reporting + Database Retest</span><b>QA 4</b></li><li><i style="background:#22c55e"></i><span>Transaction + Promotion Retest</span><b>QA 1</b></li><li><i style="background:#2563eb"></i><span>Utility — Barcode / Export-Import / Maintenance</span><b>QA 3</b></li><li><i style="background:#22c55e"></i><span>Inventory Retest</span><b>QA 2</b></li><li><i style="background:#06b6d4"></i><span>System Stability / Configuration Validation</span><b>QA 4</b></li></ul>
+    </div>
+    <div class="week-delivery-card" data-week-index="5">
+      <div class="week-card-head">
+        <div><span class="week-kicker">WEEK 6</span><h3>21/9 – 25/9</h3></div><button class="week-expand-btn" type="button">ขยาย</button>
+        <div class="week-score"><b>3</b><span>งานเสร็จ</span></div>
+      </div>
+      <div class="week-stats">
+        <span>เริ่มใหม่ <b>2</b></span>
+        <span>กำลังทดสอบ <b>4</b></span>
+        <span>เสร็จใน Week <b>3</b></span>
+      </div>
+      <div class="week-complete-title">Expected Completed</div>
+      <ul class="week-complete-list"><li><i style="background:#22c55e"></i><span>Person + Utility + Devices Retest</span><b>QA 3</b></li><li><i style="background:#06b6d4"></i><span>Business Flow Integration — Master → Stock → POS → Report</span><b>QA 1</b></li><li><i style="background:#06b6d4"></i><span>Cross-module Data Reconcile</span><b>QA 3</b></li></ul>
+    </div>
+    <div class="week-delivery-card" data-week-index="6">
+      <div class="week-card-head">
+        <div><span class="week-kicker">WEEK 7</span><h3>28/9 – 28/9</h3></div><button class="week-expand-btn" type="button">ขยาย</button>
+        <div class="week-score"><b>2</b><span>งานเสร็จ</span></div>
+      </div>
+      <div class="week-stats">
+        <span>เริ่มใหม่ <b>1</b></span>
+        <span>กำลังทดสอบ <b>2</b></span>
+        <span>เสร็จใน Week <b>2</b></span>
+      </div>
+      <div class="week-complete-title">Expected Completed</div>
+      <ul class="week-complete-list"><li><i style="background:#ef4444"></i><span>Full End-to-End Regression</span><b>QA 1-4</b></li><li><i style="background:#ef4444"></i><span>Defect Closure / Release Readiness / Sign-off</span><b>QA 1-4</b></li></ul>
+    </div>
+</div>
+<div class="priority-logic reveal-child">
+  <div class="logic-item"><b>1</b><span><strong>Criticality</strong><small>Core Business / Stock / Transaction / Database มาก่อน</small></span></div>
+  <div class="logic-item"><b>2</b><span><strong>Complexity</strong><small>Serial, Lot, Transaction, Devices, Database ได้เวลามากกว่า</small></span></div>
+  <div class="logic-item"><b>3</b><span><strong>Dependency</strong><small>Master Data และ Settings มาก่อน Reporting / Dashboard / Integration</small></span></div>
+  <div class="logic-item"><b>4</b><span><strong>Regression Risk</strong><small>Critical Flow มีรอบ Retest ก่อน Final E2E</small></span></div>
+</div>
+<div class="legend"><span><i style="background:#8b5cf6"></i>Preparation</span><span><i style="background:#2563eb"></i>Functional</span><span><i style="background:#06b6d4"></i>Integration</span><span><i style="background:#f59e0b"></i>Compatibility</span><span><i style="background:#22c55e"></i>Regression</span><span><i style="background:#ef4444"></i>Final Gate</span></div>
+
+<div class="gantt-filter-toolbar reveal-child">
+  <div class="gantt-filter-left">
+    <span class="filter-label">FILTER GANTT BY QA</span>
+    <div class="qa-filter-buttons">
+      <button class="qa-filter-btn active" data-qa-filter="ALL">All QA</button>
+      <button class="qa-filter-btn" data-qa-filter="QA 1">QA 1</button>
+      <button class="qa-filter-btn" data-qa-filter="QA 2">QA 2</button>
+      <button class="qa-filter-btn" data-qa-filter="QA 3">QA 3</button>
+      <button class="qa-filter-btn" data-qa-filter="QA 4">QA 4</button>
+      <button class="qa-filter-btn" data-qa-filter="QA 1-4">Shared</button>
+    </div>
+  </div>
+  <div class="gantt-filter-summary">
+    <span>กำลังแสดง</span>
+    <b id="gantt-filter-label">All QA</b>
+  </div>
+</div>
+<div class="tl-head"><div></div><div><div class="weeks"><span style="grid-column:span 4">18/8–21/8</span><span style="grid-column:span 5">24/8–28/8</span><span style="grid-column:span 5">31/8–4/9</span><span style="grid-column:span 5">7/9–11/9</span><span style="grid-column:span 5">14/9–18/9</span><span style="grid-column:span 5">21/9–25/9</span><span style="grid-column:span 1">28/9–28/9</span></div><div class="days"><span>18</span><span>19</span><span>20</span><span>21</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span><span>31</span><span>1</span><span>2</span><span>3</span><span>4</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>21</span><span>22</span><span>23</span><span>24</span><span>25</span><span>28</span></div></div></div>
+    <div class="week-group-header" data-week-index="0">
+      <div><span>WEEK 1</span><b>18/8 – 21/8</b></div>
+      <strong>1 Expected Complete</strong>
+    </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.05s" data-start-offset="0" data-duration="2" data-owner="QA 1-4">
+          <div class="tl-label">
+            <div class="tl-title">Test Planning / Environment / Critical Test Data</div>
+            <div class="tl-meta">QA 1-4 • 2 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:1/span 2;background:#8b5cf6;--bar-delay:0.20s">
+                <em>18/8–19/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:0.10s" data-start-offset="2" data-duration="3" data-owner="QA 3">
+          <div class="tl-label">
+            <div class="tl-title">Person — Customer / Staff / Supplier Master</div>
+            <div class="tl-meta">QA 3 • 3 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">Medium</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:3/span 3;background:#2563eb;--bar-delay:0.25s">
+                <em>20/8–24/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:0.15s" data-start-offset="2" data-duration="4" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">Settings — Terminal / System / DB / UI</div>
+            <div class="tl-meta">QA 4 • 4 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:3/span 4;background:#2563eb;--bar-delay:0.30s">
+                <em>20/8–25/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.20s" data-start-offset="2" data-duration="5" data-owner="QA 2">
+          <div class="tl-label">
+            <div class="tl-title">Inventory — Item Master / Template / Stock Foundation</div>
+            <div class="tl-meta">QA 2 • 5 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:3/span 5;background:#2563eb;--bar-delay:0.35s">
+                <em>20/8–26/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.25s" data-start-offset="3" data-duration="6" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Transaction — TranPos / TranOut / TranIn</div>
+            <div class="tl-meta">QA 1 • 6 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:4/span 6;background:#2563eb;--bar-delay:0.40s">
+                <em>21/8–28/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+    <div class="week-group-header" data-week-index="1">
+      <div><span>WEEK 2</span><b>24/8 – 28/8</b></div>
+      <strong>4 Expected Complete</strong>
+    </div>
+        <div class="tl-row animated-row" style="--delay:0.30s" data-owner="QA 3">
+          <div class="tl-label">
+            <div class="tl-title">Person — Customer / Staff / Supplier Master</div>
+            <div class="tl-meta">QA 3 • 3 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">Medium</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:3/span 3;background:#2563eb;--bar-delay:0.45s">
+                <em>20/8–24/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:0.35s" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">Settings — Terminal / System / DB / UI</div>
+            <div class="tl-meta">QA 4 • 4 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:3/span 4;background:#2563eb;--bar-delay:0.50s">
+                <em>20/8–25/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.40s" data-owner="QA 2">
+          <div class="tl-label">
+            <div class="tl-title">Inventory — Item Master / Template / Stock Foundation</div>
+            <div class="tl-meta">QA 2 • 5 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:3/span 5;background:#2563eb;--bar-delay:0.55s">
+                <em>20/8–26/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.45s" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Transaction — TranPos / TranOut / TranIn</div>
+            <div class="tl-meta">QA 1 • 6 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:4/span 6;background:#2563eb;--bar-delay:0.60s">
+                <em>21/8–28/8</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.50s" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">Data &amp; Database — Connection / CRUD / Encryption</div>
+            <div class="tl-meta">QA 4 • 5 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:7/span 5;background:#f59e0b;--bar-delay:0.65s">
+                <em>26/8–1/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.55s" data-start-offset="7" data-duration="6" data-owner="QA 2">
+          <div class="tl-label">
+            <div class="tl-title">Inventory — Serial / Lot / Adjustment / Price</div>
+            <div class="tl-meta">QA 2 • 6 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:8/span 6;background:#2563eb;--bar-delay:0.70s">
+                <em>27/8–3/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+    <div class="week-group-header" data-week-index="2">
+      <div><span>WEEK 3</span><b>31/8 – 4/9</b></div>
+      <strong>3 Expected Complete</strong>
+    </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.60s" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">Data &amp; Database — Connection / CRUD / Encryption</div>
+            <div class="tl-meta">QA 4 • 5 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:7/span 5;background:#f59e0b;--bar-delay:0.75s">
+                <em>26/8–1/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.65s" data-owner="QA 2">
+          <div class="tl-label">
+            <div class="tl-title">Inventory — Serial / Lot / Adjustment / Price</div>
+            <div class="tl-meta">QA 2 • 6 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:8/span 6;background:#2563eb;--bar-delay:0.80s">
+                <em>27/8–3/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.70s" data-start-offset="9" data-duration="5" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Transaction — CN / Transfer / Branch / Deposit / TW</div>
+            <div class="tl-meta">QA 1 • 5 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:10/span 5;background:#2563eb;--bar-delay:0.85s">
+                <em>31/8–4/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.75s" data-start-offset="11" data-duration="5" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">Reporting — Daily / Sales / Profit / Email / Receipt</div>
+            <div class="tl-meta">QA 4 • 5 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:12/span 5;background:#2563eb;--bar-delay:0.90s">
+                <em>2/9–8/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+    <div class="week-group-header" data-week-index="3">
+      <div><span>WEEK 4</span><b>7/9 – 11/9</b></div>
+      <strong>5 Expected Complete</strong>
+    </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.80s" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">Reporting — Daily / Sales / Profit / Email / Receipt</div>
+            <div class="tl-meta">QA 4 • 5 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:12/span 5;background:#2563eb;--bar-delay:0.95s">
+                <em>2/9–8/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:0.85s" data-start-offset="14" data-duration="2" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Promotion Engine</div>
+            <div class="tl-meta">QA 1 • 2 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:15/span 2;background:#2563eb;--bar-delay:1.00s">
+                <em>7/9–8/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:0.90s" data-start-offset="16" data-duration="2" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Dashboard — Sales / Stock / Top Product / Realtime</div>
+            <div class="tl-meta">QA 1 • 2 วัน
+              <span class="tag medium">Medium</span>
+              <span class="complex-tag">Medium</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:17/span 2;background:#2563eb;--bar-delay:1.05s">
+                <em>9/9–10/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:0.95s" data-start-offset="14" data-duration="5" data-owner="QA 2">
+          <div class="tl-label">
+            <div class="tl-title">Inventory — Transfer / DeviceDoc / IStock / Suite</div>
+            <div class="tl-meta">QA 2 • 5 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:15/span 5;background:#2563eb;--bar-delay:1.10s">
+                <em>7/9–11/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:1.00s" data-start-offset="14" data-duration="5" data-owner="QA 3">
+          <div class="tl-label">
+            <div class="tl-title">Devices / Hardware Integration</div>
+            <div class="tl-meta">QA 3 • 5 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:15/span 5;background:#06b6d4;--bar-delay:1.15s">
+                <em>7/9–11/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.05s" data-start-offset="16" data-duration="4" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">Settings + Reporting + Database Retest</div>
+            <div class="tl-meta">QA 4 • 4 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:17/span 4;background:#22c55e;--bar-delay:1.20s">
+                <em>9/9–14/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.10s" data-start-offset="18" data-duration="4" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Transaction + Promotion Retest</div>
+            <div class="tl-meta">QA 1 • 4 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:19/span 4;background:#22c55e;--bar-delay:1.25s">
+                <em>11/9–16/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+    <div class="week-group-header" data-week-index="4">
+      <div><span>WEEK 5</span><b>14/9 – 18/9</b></div>
+      <strong>5 Expected Complete</strong>
+    </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.15s" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">Settings + Reporting + Database Retest</div>
+            <div class="tl-meta">QA 4 • 4 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:17/span 4;background:#22c55e;--bar-delay:1.30s">
+                <em>9/9–14/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.20s" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Transaction + Promotion Retest</div>
+            <div class="tl-meta">QA 1 • 4 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:19/span 4;background:#22c55e;--bar-delay:1.35s">
+                <em>11/9–16/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:1.25s" data-start-offset="19" data-duration="3" data-owner="QA 3">
+          <div class="tl-label">
+            <div class="tl-title">Utility — Barcode / Export-Import / Maintenance</div>
+            <div class="tl-meta">QA 3 • 3 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">Medium</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:20/span 3;background:#2563eb;--bar-delay:1.40s">
+                <em>14/9–16/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.30s" data-start-offset="19" data-duration="4" data-owner="QA 2">
+          <div class="tl-label">
+            <div class="tl-title">Inventory Retest</div>
+            <div class="tl-meta">QA 2 • 4 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:20/span 4;background:#22c55e;--bar-delay:1.45s">
+                <em>14/9–17/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:1.35s" data-start-offset="20" data-duration="4" data-owner="QA 4">
+          <div class="tl-label">
+            <div class="tl-title">System Stability / Configuration Validation</div>
+            <div class="tl-meta">QA 4 • 4 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:21/span 4;background:#06b6d4;--bar-delay:1.50s">
+                <em>15/9–18/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.40s" data-start-offset="22" data-duration="4" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Business Flow Integration — Master → Stock → POS → Report</div>
+            <div class="tl-meta">QA 1 • 4 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:23/span 4;background:#06b6d4;--bar-delay:1.55s">
+                <em>17/9–22/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:1.45s" data-start-offset="22" data-duration="4" data-owner="QA 3">
+          <div class="tl-label">
+            <div class="tl-title">Person + Utility + Devices Retest</div>
+            <div class="tl-meta">QA 3 • 4 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:23/span 4;background:#22c55e;--bar-delay:1.60s">
+                <em>17/9–22/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+    <div class="week-group-header" data-week-index="5">
+      <div><span>WEEK 6</span><b>21/9 – 25/9</b></div>
+      <strong>3 Expected Complete</strong>
+    </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.50s" data-owner="QA 1">
+          <div class="tl-label">
+            <div class="tl-title">Business Flow Integration — Master → Stock → POS → Report</div>
+            <div class="tl-meta">QA 1 • 4 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:23/span 4;background:#06b6d4;--bar-delay:1.65s">
+                <em>17/9–22/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row" style="--delay:1.55s" data-owner="QA 3">
+          <div class="tl-label">
+            <div class="tl-title">Person + Utility + Devices Retest</div>
+            <div class="tl-meta">QA 3 • 4 วัน
+              <span class="tag high">High</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:23/span 4;background:#22c55e;--bar-delay:1.70s">
+                <em>17/9–22/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.60s" data-start-offset="26" data-duration="3" data-owner="QA 3">
+          <div class="tl-label">
+            <div class="tl-title">Cross-module Data Reconcile</div>
+            <div class="tl-meta">QA 3 • 3 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:27/span 3;background:#06b6d4;--bar-delay:1.75s">
+                <em>23/9–25/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.60s" data-start-offset="27" data-duration="3" data-owner="QA 1-4">
+          <div class="tl-label">
+            <div class="tl-title">Full End-to-End Regression</div>
+            <div class="tl-meta">QA 1-4 • 3 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:28/span 3;background:#ef4444;--bar-delay:1.75s">
+                <em>24/9–28/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+    <div class="week-group-header" data-week-index="6">
+      <div><span>WEEK 7</span><b>28/9 – 28/9</b></div>
+      <strong>2 Expected Complete</strong>
+    </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.60s" data-owner="QA 1-4">
+          <div class="tl-label">
+            <div class="tl-title">Full End-to-End Regression</div>
+            <div class="tl-meta">QA 1-4 • 3 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">Very High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:28/span 3;background:#ef4444;--bar-delay:1.75s">
+                <em>24/9–28/9</em>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="tl-row animated-row critical-row" style="--delay:1.60s" data-start-offset="29" data-duration="1" data-owner="QA 1-4">
+          <div class="tl-label">
+            <div class="tl-title">Defect Closure / Release Readiness / Sign-off</div>
+            <div class="tl-meta">QA 1-4 • 1 วัน
+              <span class="tag critical">Critical</span>
+              <span class="complex-tag">High</span>
+              
+            </div>
+          </div>
+          <div class="tl-track">
+            <div class="day-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="tl-bar-grid">
+              <span class="animated-bar" style="grid-column:30/span 1;background:#ef4444;--bar-delay:1.75s">
+                <em>28/9–28/9</em>
+              </span>
+            </div>
+          </div>
+        </div></section>
+
+<section class="section reveal-section card panel"><div class="title">Submodule Calculation Detail</div><div class="subtitle">กดเปิดแต่ละ Module เพื่อดู Scope ย่อย, จำนวน Test Cases และ Effort ที่ใช้คำนวณ</div>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">01</span><span><b>Dashboard</b><small>QA 1</small></span></div>
+        <div class="sum-right">7 Test Cases • 1 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Test Cases</td><td><button class="tc-count-btn" data-tc-key="Dashboard||Test Cases">7</button></td><td>5.9</td><td>1.0</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">02</span><span><b>Inventory</b><small>QA 2</small></span></div>
+        <div class="sum-right">48 Test Cases • 15 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Items (ข้อมูลสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Inventory||Items (ข้อมูลสินค้า)">11</button></td><td>11.9</td><td>2.0</td></tr><tr><td>ItemTemplate (เทมเพลตสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Inventory||ItemTemplate (เทมเพลตสินค้า)">4</button></td><td>5.3</td><td>0.9</td></tr><tr><td>StockCount (ตรวจนับสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Inventory||StockCount (ตรวจนับสินค้า)">4</button></td><td>5.3</td><td>0.9</td></tr><tr><td>SerialCount (ตรวจนับ Serial)</td><td><button class="tc-count-btn" data-tc-key="Inventory||SerialCount (ตรวจนับ Serial)">2</button></td><td>3.4</td><td>0.6</td></tr><tr><td>LotCount (ตรวจนับ Lot)</td><td><button class="tc-count-btn" data-tc-key="Inventory||LotCount (ตรวจนับ Lot)">2</button></td><td>3.4</td><td>0.6</td></tr><tr><td>StockAdjustment (ปรับปรุงยอดสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Inventory||StockAdjustment (ปรับปรุงยอดสินค้า)">4</button></td><td>5.3</td><td>0.9</td></tr><tr><td>PriceChange (เปลี่ยนแปลงราคา)</td><td><button class="tc-count-btn" data-tc-key="Inventory||PriceChange (เปลี่ยนแปลงราคา)">4</button></td><td>5.3</td><td>0.9</td></tr><tr><td>ItemStockMinMax (ตั้งค่า Max/Min)</td><td><button class="tc-count-btn" data-tc-key="Inventory||ItemStockMinMax (ตั้งค่า Max/Min)">3</button></td><td>4.4</td><td>0.7</td></tr><tr><td>TransLocation (โอนย้ายระหว่างคลัง)</td><td><button class="tc-count-btn" data-tc-key="Inventory||TransLocation (โอนย้ายระหว่างคลัง)">3</button></td><td>4.4</td><td>0.7</td></tr><tr><td>DeviceDoc (เอกสารอุปกรณ์)</td><td><button class="tc-count-btn" data-tc-key="Inventory||DeviceDoc (เอกสารอุปกรณ์)">3</button></td><td>4.4</td><td>0.7</td></tr><tr><td>IStock (รายงานคลังสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Inventory||IStock (รายงานคลังสินค้า)">3</button></td><td>4.4</td><td>0.7</td></tr><tr><td>Suite (จัดชุดสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Inventory||Suite (จัดชุดสินค้า)">2</button></td><td>3.4</td><td>0.6</td></tr><tr><td>GroupItem (กลุ่มสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Inventory||GroupItem (กลุ่มสินค้า)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>CategoryConflict (ตรวจสอบความขัดแย้ง)</td><td><button class="tc-count-btn" data-tc-key="Inventory||CategoryConflict (ตรวจสอบความขัดแย้ง)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>SetItemControlledDrug (สินค้ายาควบคุม)</td><td><button class="tc-count-btn" data-tc-key="Inventory||SetItemControlledDrug (สินค้ายาควบคุม)">1</button></td><td>2.5</td><td>0.4</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">03</span><span><b>Person</b><small>QA 3</small></span></div>
+        <div class="sum-right">21 Test Cases • 4 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Customer (ลูกค้า)</td><td><button class="tc-count-btn" data-tc-key="Person||Customer (ลูกค้า)">10</button></td><td>8.8</td><td>1.5</td></tr><tr><td>Staff (พนักงาน)</td><td><button class="tc-count-btn" data-tc-key="Person||Staff (พนักงาน)">6</button></td><td>5.8</td><td>1.0</td></tr><tr><td>Supplier (ซัพพลายเออร์)</td><td><button class="tc-count-btn" data-tc-key="Person||Supplier (ซัพพลายเออร์)">4</button></td><td>4.2</td><td>0.7</td></tr><tr><td>Cross-Cutting Test Scenarios</td><td><button class="tc-count-btn" data-tc-key="Person||Cross-Cutting Test Scenarios">1</button></td><td>2.0</td><td>0.3</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">04</span><span><b>Transaction</b><small>QA 1</small></span></div>
+        <div class="sum-right">36 Test Cases • 14 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>TranPos (ขายหน้าร้าน)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranPos (ขายหน้าร้าน)">10</button></td><td>10.9</td><td>1.8</td></tr><tr><td>TranOut (ขายสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranOut (ขายสินค้า)">6</button></td><td>7.2</td><td>1.2</td></tr><tr><td>TranIn (รับสินค้า)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranIn (รับสินค้า)">4</button></td><td>5.3</td><td>0.9</td></tr><tr><td>TranCnOut (ออกใบลดหนี้)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranCnOut (ออกใบลดหนี้)">2</button></td><td>3.4</td><td>0.6</td></tr><tr><td>TranCnIn (รับใบลดหนี้)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranCnIn (รับใบลดหนี้)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>TranTbOut (โอนสินค้าออก)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranTbOut (โอนสินค้าออก)">2</button></td><td>3.4</td><td>0.6</td></tr><tr><td>TranTbIn (รับสินค้าโอนเข้า)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranTbIn (รับสินค้าโอนเข้า)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>TranBnOut (ส่งสินค้าเบิก)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranBnOut (ส่งสินค้าเบิก)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>TranBnIn (รับสินค้าเบิก)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranBnIn (รับสินค้าเบิก)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>TranDpOut (จ่ายเงินมัดจำ)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranDpOut (จ่ายเงินมัดจำ)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>TranDpIn (รับเงินมัดจำ)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranDpIn (รับเงินมัดจำ)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>TranTwOut / TranTwIn (เบิก/รับเบิก)</td><td><button class="tc-count-btn" data-tc-key="Transaction||TranTwOut / TranTwIn (เบิก/รับเบิก)">2</button></td><td>3.4</td><td>0.6</td></tr><tr><td>Notation (ใบแจ้งหนี้/ใบเสร็จ)</td><td><button class="tc-count-btn" data-tc-key="Transaction||Notation (ใบแจ้งหนี้/ใบเสร็จ)">1</button></td><td>2.5</td><td>0.4</td></tr><tr><td>Credit Note / Deposit</td><td><button class="tc-count-btn" data-tc-key="Transaction||Credit Note / Deposit">3</button></td><td>4.4</td><td>0.7</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">05</span><span><b>Promotion</b><small>QA 1</small></span></div>
+        <div class="sum-right">10 Test Cases • 1 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Test Cases</td><td><button class="tc-count-btn" data-tc-key="Promotion||Test Cases">10</button></td><td>10.1</td><td>1.7</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">06</span><span><b>Settings</b><small>QA 4</small></span></div>
+        <div class="sum-right">22 Test Cases • 6 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Terminal Settings</td><td><button class="tc-count-btn" data-tc-key="Settings||Terminal Settings">4</button></td><td>4.7</td><td>0.8</td></tr><tr><td>System Settings</td><td><button class="tc-count-btn" data-tc-key="Settings||System Settings">6</button></td><td>6.3</td><td>1.1</td></tr><tr><td>Database Settings</td><td><button class="tc-count-btn" data-tc-key="Settings||Database Settings">5</button></td><td>5.5</td><td>0.9</td></tr><tr><td>UI Settings</td><td><button class="tc-count-btn" data-tc-key="Settings||UI Settings">3</button></td><td>3.9</td><td>0.6</td></tr><tr><td>Service Settings</td><td><button class="tc-count-btn" data-tc-key="Settings||Service Settings">2</button></td><td>3.0</td><td>0.5</td></tr><tr><td>Feature Settings</td><td><button class="tc-count-btn" data-tc-key="Settings||Feature Settings">2</button></td><td>3.0</td><td>0.5</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">07</span><span><b>Utility</b><small>QA 3</small></span></div>
+        <div class="sum-right">14 Test Cases • 4 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Barcode Generator</td><td><button class="tc-count-btn" data-tc-key="Utility||Barcode Generator">4</button></td><td>4.2</td><td>0.7</td></tr><tr><td>Data Export/Import</td><td><button class="tc-count-btn" data-tc-key="Utility||Data Export/Import">4</button></td><td>4.2</td><td>0.7</td></tr><tr><td>Data Maintenance</td><td><button class="tc-count-btn" data-tc-key="Utility||Data Maintenance">4</button></td><td>4.2</td><td>0.7</td></tr><tr><td>System Tools</td><td><button class="tc-count-btn" data-tc-key="Utility||System Tools">2</button></td><td>2.8</td><td>0.5</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">08</span><span><b>Devices</b><small>QA 3</small></span></div>
+        <div class="sum-right">21 Test Cases • 8 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Receipt Printer (TMU)</td><td><button class="tc-count-btn" data-tc-key="Devices||Receipt Printer (TMU)">5</button></td><td>6.8</td><td>1.1</td></tr><tr><td>Cash Drawer (ลิ้นชักเก็บเงิน)</td><td><button class="tc-count-btn" data-tc-key="Devices||Cash Drawer (ลิ้นชักเก็บเงิน)">4</button></td><td>5.7</td><td>1.0</td></tr><tr><td>Customer Display (จอแสดงผลลูกค้า)</td><td><button class="tc-count-btn" data-tc-key="Devices||Customer Display (จอแสดงผลลูกค้า)">3</button></td><td>4.7</td><td>0.8</td></tr><tr><td>EDC (Electronic Data Capture)</td><td><button class="tc-count-btn" data-tc-key="Devices||EDC (Electronic Data Capture)">2</button></td><td>3.7</td><td>0.6</td></tr><tr><td>Scale (เครื่องชั่ง)</td><td><button class="tc-count-btn" data-tc-key="Devices||Scale (เครื่องชั่ง)">3</button></td><td>4.7</td><td>0.8</td></tr><tr><td>Smart Card Reader</td><td><button class="tc-count-btn" data-tc-key="Devices||Smart Card Reader">2</button></td><td>3.7</td><td>0.6</td></tr><tr><td>Webcam</td><td><button class="tc-count-btn" data-tc-key="Devices||Webcam">1</button></td><td>2.7</td><td>0.5</td></tr><tr><td>Display Video</td><td><button class="tc-count-btn" data-tc-key="Devices||Display Video">1</button></td><td>2.7</td><td>0.5</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">09</span><span><b>Reporting</b><small>QA 4</small></span></div>
+        <div class="sum-right">17 Test Cases • 6 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Daily Summary (สรุปยอดขายรายวัน)</td><td><button class="tc-count-btn" data-tc-key="Reporting||Daily Summary (สรุปยอดขายรายวัน)">3</button></td><td>4.0</td><td>0.7</td></tr><tr><td>Sales Report (รายงานยอดขาย)</td><td><button class="tc-count-btn" data-tc-key="Reporting||Sales Report (รายงานยอดขาย)">4</button></td><td>4.9</td><td>0.8</td></tr><tr><td>Profit Report (รายงานกำไร)</td><td><button class="tc-count-btn" data-tc-key="Reporting||Profit Report (รายงานกำไร)">2</button></td><td>3.2</td><td>0.5</td></tr><tr><td>Email Report (ส่งรายงานทางอีเมล)</td><td><button class="tc-count-btn" data-tc-key="Reporting||Email Report (ส่งรายงานทางอีเมล)">4</button></td><td>4.9</td><td>0.8</td></tr><tr><td>Receipt (ใบเสร็จ)</td><td><button class="tc-count-btn" data-tc-key="Reporting||Receipt (ใบเสร็จ)">3</button></td><td>4.0</td><td>0.7</td></tr><tr><td>Email System (send_mail)</td><td><button class="tc-count-btn" data-tc-key="Reporting||Email System (send_mail)">1</button></td><td>2.3</td><td>0.4</td></tr></tbody></table></div>
+    </details>
+    <details class="module-detail">
+      <summary>
+        <div class="sum-left"><span class="sum-no">10</span><span><b>Data &amp; Database</b><small>QA 4</small></span></div>
+        <div class="sum-right">24 Test Cases • 2 กลุ่มย่อย</div>
+      </summary>
+      <div class="detail-body"><table><thead><tr><th>โมดูลย่อย / Scope</th><th>Test Cases</th><th>Manual Hours</th><th>QA-day</th></tr></thead><tbody><tr><td>Test Cases</td><td><button class="tc-count-btn" data-tc-key="Data &amp; Database||Test Cases">23</button></td><td>24.1</td><td>4.0</td></tr><tr><td>Encryption Details</td><td><button class="tc-count-btn" data-tc-key="Data &amp; Database||Encryption Details">1</button></td><td>2.6</td><td>0.4</td></tr></tbody></table></div>
+    </details></section>
+
+<section class="section reveal-section risks">
+<div class="card risk"><div class="risk-head"><span class="risk-num">1</span><b>Support Interruptions</b></div><p>กัน Capacity 25% ต่อวันไว้แล้ว หาก Support ใช้เวลาเฉลี่ยเกิน 2 ชม./คน/วัน Timeline จะเลื่อนตามสัดส่วน</p></div>
+<div class="card risk"><div class="risk-head"><span class="risk-num">2</span><b>Build / Defect Stability</b></div><p>หากเกิด Critical/Blocker หรือ Fix กระทบ Core Flow หลายรอบ ควรเพิ่ม Buffer อีก 5–10 วันทำการ</p></div>
+<div class="card risk"><div class="risk-head"><span class="risk-num">3</span><b>Environment Dependency</b></div><p>Devices, Serial/Lot, Reporting และ Database ต้องมี Test Data/Hardware/Environment พร้อม ไม่เช่นนั้นจะกระทบ Critical Path</p></div>
+</section>
+
+
+<div class="callout" style="margin-top:14px;background:linear-gradient(135deg,#ecfdf5,#eff6ff);border-color:#bbf7d0">
+<b>Balanced Workload:</b> QA 1 = 16.1, QA 2 = 15.4, QA 3 = 16.0, QA 4 = 17.2 QA-day 
+— ส่วนต่างสูงสุดประมาณ 1.8 QA-day ทำให้การกระจายภาระใกล้เคียงกันมากขึ้น
+</div><div class="footer">ProMaxx2 QA Test Plan • Premium Executive v14 • Balanced QA Workload</div>
+</div>
+<script id="progressive-reveal-script">
+document.addEventListener("DOMContentLoaded", () => {
+  const loader = document.getElementById("page-loader");
+
+  // Short polished loading intro
+  setTimeout(() => {
+    loader?.classList.add("loaded");
+  }, 900);
+
+  const revealObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add("is-visible");
+
+        // child reveal in the section
+        entry.target.querySelectorAll(".reveal-child").forEach((child, index) => {
+          setTimeout(() => child.classList.add("is-visible"), 120 + index * 110);
+        });
+
+        observer.unobserve(entry.target);
+      }
+    });
+  }, {
+    root: null,
+    threshold: 0.10,
+    rootMargin: "0px 0px -7% 0px"
+  });
+
+  document.querySelectorAll(".reveal-section").forEach(section => {
+    revealObserver.observe(section);
+  });
+
+  // Scroll reading progress
+  const progressBar = document.getElementById("scroll-progress-bar");
+  const updateProgress = () => {
+    const doc = document.documentElement;
+    const total = doc.scrollHeight - doc.clientHeight;
+    const ratio = total > 0 ? (doc.scrollTop / total) * 100 : 0;
+    if (progressBar) progressBar.style.width = ratio + "%";
+  };
+  window.addEventListener("scroll", updateProgress, { passive:true });
+  updateProgress();
+
+  // Re-trigger Gantt row animation only when Gantt comes into view
+  const ganttRows = document.querySelectorAll(".animated-row");
+  ganttRows.forEach(row => {
+    row.style.animationPlayState = "paused";
+  });
+
+  const ganttSection = [...document.querySelectorAll(".reveal-section")]
+    .find(s => s.textContent.includes("Executive Timeline / Gantt"));
+
+  if (ganttSection) {
+    const ganttObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          ganttRows.forEach((row, i) => {
+            setTimeout(() => {
+              row.style.animationPlayState = "running";
+            }, i * 35);
+          });
+          ganttObserver.disconnect();
+        }
+      });
+    }, { threshold:.12 });
+    ganttObserver.observe(ganttSection);
+  }
+});
+</script>
+
+<div id="tc-modal" class="tc-modal" aria-hidden="true">
+  <div class="tc-modal-backdrop" data-close-modal></div>
+  <div class="tc-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="tc-modal-title">
+    <div class="tc-modal-head">
+      <div>
+        <span class="tc-modal-kicker">TEST CASE DETAIL</span>
+        <h2 id="tc-modal-title">Test Cases</h2>
+        <p id="tc-modal-subtitle"></p>
+      </div>
+      <button class="tc-modal-close" data-close-modal aria-label="Close">×</button>
+    </div>
+    <div class="tc-modal-toolbar">
+      <div class="tc-search-wrap">
+        <span>⌕</span>
+        <input id="tc-search" type="search" placeholder="ค้นหา Case ID / ชื่อ Test Case / Expected Result">
+      </div>
+      <div class="tc-summary-pills">
+        <span id="tc-total-pill">0 Cases</span>
+        <span id="tc-high-pill">0 High</span>
+        <span id="tc-medium-pill">0 Medium</span>
+        <span id="tc-low-pill">0 Low</span>
+      </div>
+    </div>
+    <div id="tc-modal-list" class="tc-modal-list"></div>
+  </div>
+</div>
+
+<script id="tc-modal-script-v10">
+const TC_DATA = {"Dashboard||Test Cases": [{"id": "TC-DB-001", "title": "แสดงยอดขายวันนี้", "steps": "1. เปิด Dashboard 2. ดูยอดขายวันนี้", "expected": "แสดงยอดขายรวม, จำนวนรายการ, กำไรเบื้องต้น", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-002", "title": "แสดงยอดขายรายวัน/สัปดาห์/เดือน", "steps": "1. เปลี่ยนมุมมองเป็น Daily/Weekly/Monthly", "expected": "ข้อมูลเปลี่ยนตามช่วงเวลาที่เลือก", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-003", "title": "เปรียบเทียบยอดขาย", "steps": "1. เปรียบเทียบยอดขายวันนี้ vs เมื่อวาน", "expected": "แสดง % การเปลี่ยนแปลง ( tăng/giảm)", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DB-004", "title": "แสดงสินค้าใกล้หมด", "steps": "1. ดู Dashboard สินค้าใกล้หมด", "expected": "แสดงสินค้าที่ stock ต่ำกว่า Min", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-005", "title": "แสดงสินค้าหมดอายุ", "steps": "1. ดู Dashboard สินค้าหมดอายุ", "expected": "แสดงสินค้าที่ Lot หมดอายุ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DB-006", "title": "แสดงสินค้าขายดี Top 10", "steps": "1. ดู Dashboard สินค้าขายดี", "expected": "แสดง 10 อันดับสินค้าขายดี", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DB-007", "title": "อัพเดทข้อมูลแบบ Real-time", "steps": "1. เปิด Dashboard 2. ทำรายการขาย 3. ตรวจสอบ Dashboard", "expected": "ข้อมูล Dashboard อัพเดทอัตโนมัติ", "priority": "Medium", "precondition": "", "config": ""}], "Inventory||Items (ข้อมูลสินค้า)": [{"id": "TC-ITEM-001", "title": "เพิ่มสินค้าใหม่", "steps": "1. เปิดหน้า Items 2. กดเพิ่มใหม่ 3. กรอกข้อมูลสินค้าครบถ้วน 4. บันทึก", "expected": "สินค้าถูกสร้างสำเร็จ ปรากฏในรายการ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-ITEM-002", "title": "เพิ่มสินค้าที่มีรหัสซ้ำ", "steps": "1. เพิ่มสินค้ารหัส \"A001\" 2. พยายามเพิ่มสินค้ารหัส \"A001\" อีกครั้ง", "expected": "แสดง Error Message ไม่ให้บันทึกซ้ำ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-ITEM-003", "title": "แก้ไขข้อมูลสินค้า", "steps": "1. เลือกสินค้า 2. แก้ไขชื่อ/ราคา 3. บันทึก", "expected": "ข้อมูลอัพเดทสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-ITEM-004", "title": "ลบสินค้าที่ไม่มีธุรกรรม", "steps": "1. เลือกสินค้าที่ไม่เคยมีธุรกรรม 2. ลบ", "expected": "ลบสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-ITEM-005", "title": "ลบสินค้าที่มีธุรกรรมแล้ว", "steps": "1. เลือกสินค้าที่เคยมีธุรกรรม 2. ลบ", "expected": "BLOCK ไม่ให้ลบ หรือ Soft Delete", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-ITEM-006", "title": "ค้นหาสินค้าด้วย Barcode", "steps": "1. ค้นหาด้วยบาร์โค้ด", "expected": "พบสินค้าที่ตรงกัน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-ITEM-007", "title": "ค้นหาสินค้าด้วยชื่อ", "steps": "1. ค้นหาด้วยชื่อ (partial match)", "expected": "แสดงรายการที่ตรงกัน", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-ITEM-008", "title": "ค้นหาสินค้าด้วย ItemId", "steps": "1. ค้นหาด้วยรหัสสินค้า", "expected": "พบสินค้าที่ตรงกัน", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-ITEM-009", "title": "ตั้งค่า Tax Type", "steps": "1. เลือกสินค้า 2. ตั้งค่า Tax Type = VAT 7%", "expected": "สินค้าคำนวณ VAT 7% ในธุรกรรม", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-ITEM-010", "title": "ปิด/เปิดสถานะสินค้า", "steps": "1. เปลี่ยนสถานะสินค้าเป็น \"ไม่ใช้งาน\"", "expected": "สินค้าไม่ปรากฏในรายการค้นหาธุรกรรม", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-ITEM-011", "title": "บันทึกรูปภาพสินค้า", "steps": "1. เลือกสินค้า 2. เพิ่มรูปภาพ 3. บันทึก", "expected": "รูปภาพถูกบันทึกและแสดงในหน้าสินค้า", "priority": "Low", "precondition": "", "config": "`openpicture = 1` ใน system.ini"}], "Inventory||ItemTemplate (เทมเพลตสินค้า)": [{"id": "TC-TMPL-001", "title": "สร้างเทมเพลตสินค้า", "steps": "1. เปิด ItemTemplate 2. สร้างเทมเพลตใหม่ 3. เพิ่มสินค้าหลายรายการ 4. บันทึก", "expected": "เทมเพลตถูกสร้างสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-TMPL-002", "title": "แก้ไขเทมเพลต", "steps": "1. เลือกเทมเพลต 2. แก้ไขรายการสินค้า 3. บันทึก", "expected": "เทมเพลตอัพเดทสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-TMPL-003", "title": "คำนวณราคาเทมเพลต", "steps": "1. เพิ่มสินค้า A (ราคา 100) จำนวน 2 2. เพิ่มสินค้า B (ราคา 50) จำนวน 1", "expected": "ราคาเทมเพลต = 250", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-TMPL-004", "title": "ลบเทมเพลต", "steps": "1. เลือกเทมเพลต 2. ลบ", "expected": "เทมเพลตถูกลบ", "priority": "Medium", "precondition": "", "config": ""}], "Inventory||StockCount (ตรวจนับสินค้า)": [{"id": "TC-SC-001", "title": "ตรวจนับสินค้าปกติ", "steps": "1. เปิด StockCount 2. สร้างรายการตรวจนับ 3. ระบุ CountQty ทั้งหมด 4. บันทึก", "expected": "ระบบคำนวณ Diff อัตโนมัติ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SC-002", "title": "ตรวจนับแล้ว Diff = 0", "steps": "1. นับสินค้าได้เท่ากับ SystemQty", "expected": "Diff = 0, ไม่ต้องปรับ Stock", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SC-003", "title": "ตรวจนับแล้วมีสินค้าเกิน", "steps": "1. นับสินค้ามากกว่า SystemQty", "expected": "Diff > 0, ต้องปรับ Stock เพิ่ม", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SC-004", "title": "ตรวจนับแล้วสินค้าขาด", "steps": "1. นับสินค้าน้อยกว่า SystemQty", "expected": "Diff < 0, ต้องปรับ Stock ลด", "priority": "High", "precondition": "", "config": ""}], "Inventory||SerialCount (ตรวจนับ Serial)": [{"id": "TC-SNC-001", "title": "ตรวจนับ Serial Number", "steps": "1. เลือกสินค้าที่มี Serial 2. นับจำนวน Serial จริง 3. บันทึก", "expected": "ระบบบันทึกจำนวนนับจริงต่อ Serial", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SNC-002", "title": "ตรวจนับ Serial ที่หายไป", "steps": "1. สินค้ามี Serial A,B,C ในระบบ 2. นับได้แค่ A,B", "expected": "Serial C แสดง Status = \"ขาด\"", "priority": "High", "precondition": "", "config": ""}], "Inventory||LotCount (ตรวจนับ Lot)": [{"id": "TC-LC-001", "title": "ตรวจนับ Lot Number", "steps": "1. เลือกสินค้าที่มี Lot 2. นับจำนวน Lot จริง 3. บันทึก", "expected": "ระบบบันทึกจำนวน Lot จริง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-LC-002", "title": "ตรวจนับ Lot ที่หมดอายุ", "steps": "1. สินค้า Lot หมดอายุ 2. ตรวจนับ", "expected": "แสดง Status ว่าหมดอายุ", "priority": "Medium", "precondition": "", "config": ""}], "Inventory||StockAdjustment (ปรับปรุงยอดสินค้า)": [{"id": "TC-SA-001", "title": "ปรับเพิ่ม Stock", "steps": "1. เปิด StockAdjustment 2. เลือกสินค้า 3. ระบุ QtyAdjust มากกว่า QtyRemain 4. บันทึก", "expected": "Stock เพิ่มขึ้นตาม QtyAdjust", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SA-002", "title": "ปรับลด Stock", "steps": "1. เปิด StockAdjustment 2. เลือกสินค้า 3. ระบุ QtyAdjust น้อยกว่า QtyRemain 4. บันทึก", "expected": "Stock ลดลงตาม Diff", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SA-003", "title": "ปรับ Stock เป็น 0", "steps": "1. ตั้ง QtyAdjust = 0", "expected": "Stock กลายเป็น 0", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SA-004", "title": "ตรวจสอบ Diff อัตโนมัติ", "steps": "1. ป้อน QtyAdjust 2. ตรวจสอบ Diff", "expected": "Diff = QtyAdjust - QtyRemain (คำนวณอัตโนมัติ)", "priority": "High", "precondition": "", "config": ""}], "Inventory||PriceChange (เปลี่ยนแปลงราคา)": [{"id": "TC-PC-001", "title": "เปลี่ยนราคาสินค้าปกติ", "steps": "1. เปิด PriceChange 2. เลือกสินค้า 3. ใส่ราคาใหม่ 4. บันทึก", "expected": "ราคาสินค้าเปลี่ยนสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-PC-002", "title": "เปลี่ยนราคาหลายสินค้าพร้อมกัน", "steps": "1. เลือกสินค้าหลายรายการ 2. ตั้งราคาใหม่ 3. บันทึก", "expected": "ราคาเปลี่ยนทุกรายการ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-PC-003", "title": "ตั้งค่า Price Level", "steps": "1. เปลี่ยนราคาที่ Price Level ต่างกัน", "expected": "ราคาเปลี่ยนเฉพาะ Level ที่เลือก", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-PC-004", "title": "ตั้งค่า Discount", "steps": "1. ตั้งค่าส่วนลดรายการ 2. ตั้งค่าส่วนลดแถว 3. บันทึก", "expected": "ส่วนลดถูกบันทึกและใช้ในธุรกรรม", "priority": "Medium", "precondition": "", "config": ""}], "Inventory||ItemStockMinMax (ตั้งค่า Max/Min)": [{"id": "TC-MM-001", "title": "ตั้งค่า Max/Min สินค้า", "steps": "1. เลือกสินค้า 2. ตั้ง Max = 100, Min = 10 3. บันทึก", "expected": "ค่า Max/Min ถูกบันทึก", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-MM-002", "title": "Max น้อยกว่า Min", "steps": "1. ตั้ง Max = 10, Min = 100", "expected": "แสดง Warning หรือ Block", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-MM-003", "title": "ค้นหาสินค้าด้วย Level Group", "steps": "1. เลือก Level ต่างกัน 2. ค้นหาสินค้า", "expected": "แสดงสินค้าตาม Level ที่เลือก", "priority": "Medium", "precondition": "", "config": "`search_item_group_l1..l5` ใน system.ini"}], "Inventory||TransLocation (โอนย้ายระหว่างคลัง)": [{"id": "TC-TL-001", "title": "โอนสินค้าระหว่างคลังปกติ", "steps": "1. เลือกคลังต้นทาง A 2. เลือกคลังปลายทาง B 3. เลือกสินค้า จำนวน 10 4. บันทึก", "expected": "Stock A ลด 10, Stock B เพิ่ม 10", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-TL-002", "title": "โอนเกิน stock คลังต้นทาง", "steps": "1. Stock คลัง A = 5 2. พยายามโอน 10", "expected": "BLOCK ไม่ให้ทำรายการ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-TL-003", "title": "ตรวจสอบ Balance ทั้งสองคลัง", "steps": "1. ดู SourceLocationBalance 2. ดู DestLocationBalance", "expected": "แสดงจำนวนคงเหลือถูกต้อง", "priority": "High", "precondition": "", "config": ""}], "Inventory||DeviceDoc (เอกสารอุปกรณ์)": [{"id": "TC-DD-001", "title": "สร้างเอกสารอุปกรณ์", "steps": "1. เปิด DeviceDoc 2. เพิ่มสินค้า + Serial + Lot + ExpireDate 3. บันทึก", "expected": "เอกสารถูกสร้าง ข้อมูลครบถ้วน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DD-002", "title": "ตรวจสอบ Expire Date", "steps": "1. ป้อนวันหมดอายุที่ผ่านไปแล้ว", "expected": "แสดง Warning ว่าสินค้าหมดอายุ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DD-003", "title": "ตรวจสอบ Lot Number", "steps": "1. ป้อน Lot Number ที่ซ้ำกัน", "expected": "ตรวจสอบความถูกต้อง", "priority": "Medium", "precondition": "", "config": ""}], "Inventory||IStock (รายงานคลังสินค้า)": [{"id": "TC-IS-001", "title": "ดูยอดคงเหลือสินค้า", "steps": "1. เปิด IStockQuantityBalance 2. เลือกสาขา", "expected": "แสดงจำนวนคงเหลือถูกต้อง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-IS-002", "title": "ดูการเคลื่อนไหว Serial", "steps": "1. เปิด IStockSerialMovement 2. เลือกสินค้า", "expected": "แสดงประวัติการเคลื่อนไหว", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-IS-003", "title": "ดูธุรกรรมสินค้า", "steps": "1. เปิด IStockTransactionMaster 2. เลือกช่วงวันที่", "expected": "แสดงรายการธุรกรรมถูกต้อง", "priority": "Medium", "precondition": "", "config": ""}], "Inventory||Suite (จัดชุดสินค้า)": [{"id": "TC-SUITE-001", "title": "สร้างชุดสินค้า", "steps": "1. สร้างสินค้าหลัก 2. เพิ่มสินค้าย่อยหลายรายการ 3. บันทึก", "expected": "ชุดสินค้าถูกสร้างสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SUITE-002", "title": "ขายชุดสินค้า", "steps": "1. ขายสินค้าชุด (Suite) 2. ตรวจสอบ Stock สินค้าย่อย", "expected": "Stock สินค้าย่อยทุกรายการลดลง", "priority": "High", "precondition": "", "config": ""}], "Inventory||GroupItem (กลุ่มสินค้า)": [{"id": "TC-GI-001", "title": "จัดกลุ่มสินค้า 5 ระดับ", "steps": "1. สร้าง Level 1 2. สร้าง Level 2 ภายใต้ Level 1 3. ... ถึง Level 5", "expected": "กลุ่มสินค้ามี 5 ระดับชัดเจน", "priority": "High", "precondition": "", "config": ""}], "Inventory||CategoryConflict (ตรวจสอบความขัดแย้ง)": [{"id": "TC-CC-001", "title": "ตรวจสอบ Category Conflict", "steps": "1. เปิด CategoryConflict 2. ตรวจสอบสินค้า", "expected": "แสดงสินค้าที่มี Category ซ้ำ/ขัดแย้ง", "priority": "Low", "precondition": "", "config": ""}], "Inventory||SetItemControlledDrug (สินค้ายาควบคุม)": [{"id": "TC-CD-001", "title": "ตั้งค่าสินค้ายาควบคุม", "steps": "1. เลือกสินค้า 2. ตั้งค่าเป็น Controlled Drug", "expected": "สินค้าถูกทำเครื่องหมายเป็นยาควบคุม", "priority": "Medium", "precondition": "", "config": ""}], "Person||Customer (ลูกค้า)": [{"id": "TC-CUS-001", "title": "เพิ่มลูกค้าใหม่", "steps": "1. เปิดหน้า Customer 2. กดเพิ่มใหม่ 3. กรอกข้อมูลลูกค้าครบถ้วน 4. บันทึก", "expected": "ลูกค้าถูกสร้างสำเร็จ ปรากฏในรายการ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-CUS-002", "title": "แก้ไขข้อมูลลูกค้า", "steps": "1. เลือกลูกค้า 2. แก้ไขข้อมูล (ชื่อ, ที่อยู่, เบอร์โทร) 3. บันทึก", "expected": "ข้อมูลลูกค้าอัพเดทสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-CUS-003", "title": "ลบลูกค้าที่ไม่มีธุรกรรม", "steps": "1. เลือกลูกค้าที่ไม่เคยมีธุรกรรม 2. ลบ", "expected": "ลบสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-CUS-004", "title": "ลบลูกค้าที่มีธุรกรรมแล้ว", "steps": "1. เลือกลูกค้าที่เคยมีธุรกรรม 2. ลบ", "expected": "BLOCK ไม่ให้ลบ หรือ Soft Delete", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-CUS-005", "title": "ค้นหาลูกค้าด้วยชื่อ", "steps": "1. ค้นหาด้วยชื่อลูกค้า (partial match)", "expected": "แสดงรายการลูกค้าที่ตรงกัน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-CUS-006", "title": "ค้นหาลูกค้าด้วยรหัส", "steps": "1. ค้นหาด้วยรหัสลูกค้า", "expected": "พบลูกค้าที่ตรงกัน", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-CUS-007", "title": "เปลี่ยนกลุ่มลูกค้า", "steps": "1. เลือกลูกค้า 2. เปลี่ยน Category 3. บันทึก", "expected": "กลุ่มลูกค้าเปลี่ยนสำเร็จ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-CUS-008", "title": "ผูกบัญชีลูกค้า", "steps": "1. เลือกลูกค้า 2. เลือก Account Chart 3. บันทึก", "expected": "ลูกค้าผูกกับบัญชีสำเร็จ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-CUS-009", "title": "ตรวจสอบ Member Registration Mode", "steps": "1. ลงทะเบียนลูกค้าใหม่ 2. ตรวจสอบโหมดการลงทะเบียน", "expected": "ลงทะเบียนตาม Mode ที่กำหนด", "priority": "Medium", "precondition": "", "config": "`member_reg_mode = 0` ใน system.ini"}, {"id": "TC-CUS-010", "title": "ตรวจสอบ Member Registration Keypad", "steps": "1. ลงทะเบียนลูกค้าใหม่ 2. ตรวจสอบว่าใช้ Keypad หรือไม่", "expected": "ใช้ Keypad ตาม Mode ที่กำหนด", "priority": "Low", "precondition": "", "config": "`member_reg_keypad = 0` ใน system.ini"}], "Person||Staff (พนักงาน)": [{"id": "TC-STF-001", "title": "เพิ่มพนักงานใหม่", "steps": "1. เปิดหน้า Staff 2. กดเพิ่มใหม่ 3. กรอกข้อมูลพนักงานครบถ้วน 4. บันทึก", "expected": "พนักงานถูกสร้างสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-STF-002", "title": "แก้ไขข้อมูลพนักงาน", "steps": "1. เลือกพนักงาน 2. แก้ไขข้อมูล 3. บันทึก", "expected": "ข้อมูลอัพเดทสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-STF-003", "title": "ลบพนักงาน", "steps": "1. เลือกพนักงานที่ไม่ได้ใช้งาน 2. ลบ", "expected": "ลบสำเร็จ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-STF-004", "title": "กำหนด PIN พนักงาน", "steps": "1. เลือกพนักงาน 2. ตั้งค่า PIN 3. บันทึก", "expected": "PIN ถูกบันทึก ใช้เข้าระบบ POS ได้", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-STF-005", "title": "เข้าสู่ระบบด้วย PIN พนักงาน", "steps": "1. เปิด POS 2. ป้อน PIN พนักงาน", "expected": "เข้าสู่ระบบสำเร็จ แสดงชื่อพนักงาน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-STF-006", "title": "ตรวจสอบ Person Group", "steps": "1. ตรวจสอบกลุ่มพนักงาน", "expected": "แสดงกลุ่มพนักงานถูกต้อง", "priority": "Low", "precondition": "", "config": "`sys_person_group = 0` ใน system.ini"}], "Person||Supplier (ซัพพลายเออร์)": [{"id": "TC-SUP-001", "title": "เพิ่มซัพพลายเออร์ใหม่", "steps": "1. เปิดหน้า Supplier 2. กดเพิ่มใหม่ 3. กรอกข้อมูลครบถ้วน 4. บันทึก", "expected": "ซัพพลายเออร์ถูกสร้างสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SUP-002", "title": "แก้ไขข้อมูลซัพพลายเออร์", "steps": "1. เลือกซัพพลายเออร์ 2. แก้ไขข้อมูล 3. บันทึก", "expected": "ข้อมูลอัพเดทสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SUP-003", "title": "ลบซัพพลายเออร์", "steps": "1. เลือกซัพพลายเออร์ที่ไม่เคยมีธุรกรรม 2. ลบ", "expected": "ลบสำเร็จ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-SUP-004", "title": "ค้นหาซัพพลายเออร์", "steps": "1. ค้นหาด้วยชื่อ/รหัส", "expected": "แสดงรายการที่ตรงกัน", "priority": "Medium", "precondition": "", "config": ""}], "Person||Cross-Cutting Test Scenarios": [{"id": "TC-EXP-001", "title": "ส่งออกข้อมูลลูกค้า", "steps": "1. เปิด ExportCustomer 2. เลือกลูกค้า 3. ส่งออก", "expected": "ไฟล์ข้อมูลลูกค้าถูกสร้าง", "priority": "", "precondition": "", "config": ""}], "Transaction||TranPos (ขายหน้าร้าน)": [{"id": "TC-POS-001", "title": "ขายสินค้า 1 รายการ ปกติ", "steps": "1. เปิดหน้า TranPos 2. สแกน/ค้นหาสินค้า 3. ตรวจสอบราคาและจำนวน 4. กดยืนยันขาย", "expected": "สร้างธุรกรรมสำเร็จ ยอดรวมถูกต้อง", "priority": "High", "precondition": "มีสินค้าในระบบอย่างน้อย 1 รายการ ราคา > 0", "config": ""}, {"id": "TC-POS-002", "title": "ขายสินค้าหลายรายการ", "steps": "1. เพิ่มสินค้ารายการที่ 1 2. เพิ่มสินค้ารายการที่ 2 3. เพิ่มสินค้ารายการที่ 3 4. ตรวจสอบยอดรวม", "expected": "ยอดรวม = ราคา x จำนวน ของทุกรายการ", "priority": "High", "precondition": "มีสินค้าในระบบ 3 รายการขึ้นไป", "config": ""}, {"id": "TC-POS-003", "title": "แก้ไขจำนวนสินค้า", "steps": "1. เลือกสินค้าในตะกร้า 2. เปลี่ยนจำนวน 3. ตรวจสอบยอดรวม", "expected": "ยอดรวมเปลี่ยนตามจำนวนใหม่", "priority": "High", "precondition": "มีสินค้าในตะกร้าอย่างน้อย 1 รายการ", "config": ""}, {"id": "TC-POS-004", "title": "ลบสินค้าจากตะกร้า", "steps": "1. เลือกสินค้ารายการที่ 1 2. กดลบ 3. ตรวจสอบตะกร้า", "expected": "เหลือสินค้า 1 รายการ ยอดรวมถูกต้อง", "priority": "High", "precondition": "มีสินค้าในตะกร้า 2 รายการ", "config": ""}, {"id": "TC-POS-005", "title": "ขายสินค้าที่มี Tax 7%", "steps": "1. ขายสินค้าที่มี VAT 2. ตรวจสอบยอด Tax", "expected": "Tax = ยอดขาย x 7%", "priority": "High", "precondition": "ตั้งค่า tax_rate = 7 ใน TranPos", "config": ""}, {"id": "TC-POS-006", "title": "ขายสินค้าที่ไม่มีในสต็อก", "steps": "1. พยายามขายสินค้า", "expected": "แสดง warning หรือ BLOCK ไม่ให้ขาย", "priority": "Medium", "precondition": "สินค้ามี stock = 0", "config": ""}, {"id": "TC-POS-007", "title": "สแกนบาร์โค้ดสินค้า", "steps": "1. ใช้ barcode scanner สแกน", "expected": "สินค้าถูกเพิ่มลงตะกร้าอัตโนมัติ", "priority": "High", "precondition": "มีสินค้าที่มีบาร์โค้ดในระบบ", "config": ""}, {"id": "TC-POS-008", "title": "ค้นหาสินค้าด้วยชื่อ", "steps": "1. พิมพ์ \"น้ำ\" ในช่องค้นหา 2. เลือกจากผลลัพธ์", "expected": "แสดงรายการสินค้าที่ตรงกับคำค้น", "priority": "Medium", "precondition": "มีสินค้า \"น้ำเปล่า\" ในระบบ", "config": ""}, {"id": "TC-POS-009", "title": "พิมพ์ใบเสร็จ", "steps": "1. ยืนยันการขาย 2. เลือกพิมพ์ใบเสร็จ", "expected": "ใบเสร็จพิมพ์ออก receipt printer", "priority": "Medium", "precondition": "ทำรายการขายสำเร็จ", "config": ""}, {"id": "TC-POS-010", "title": "ปิด/ยกเลิกรายการขาย", "steps": "1. กดยกเลิกรายการ", "expected": "รายการถูกยกเลิก ไม่มีผลต่อ stock", "priority": "Medium", "precondition": "กำลังทำรายการขายค้างอยู่", "config": ""}], "Transaction||TranOut (ขายสินค้า)": [{"id": "TC-OUT-001", "title": "สร้างรายการขาย (Sales Invoice)", "steps": "1. เปิด TranOut 2. เลือกลูกค้า 3. เพิ่มสินค้า 4. บันทึก", "expected": "สร้าง Sales Invoice เลขที่ถูกต้อง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-OUT-002", "title": "ขายสินค้าหลายคลัง", "steps": "1. เลือกสินค้าจากคลัง A 2. เลือกสินค้าจากคลัง B 3. บันทึก", "expected": "Stock ลดถูกต้องตามคลัง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-OUT-003", "title": "ขายสินค้า VAT 7%", "steps": "1. เพิ่มสินค้าที่คิด VAT 2. ตรวจสอบยอด VAT", "expected": "VAT = (ราคาสินค้า x 7%) ถูกต้อง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-OUT-004", "title": "ขายสินค้าไม่มี VAT", "steps": "1. เพิ่มสินค้าที่ไม่คิด VAT 2. ตรวจสอบยอด", "expected": "ไม่มี VAT ในใบแจ้งหนี้", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-OUT-005", "title": "ขายสด (Cash Sale)", "steps": "1. ไม่เลือกลูกค้า (ใช้ Person ID 999) 2. ขายสินค้า 3. รับเงินสด", "expected": "สร้างรายการขายสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-OUT-006", "title": "ตรวจสอบ Service Charge", "steps": "1. ตั้งค่า service_charge_rate = 10% 2. ขายสินค้า 3. ตรวจสอบยอด Service Charge", "expected": "Service Charge คิดถูกต้อง", "priority": "Medium", "precondition": "", "config": ""}], "Transaction||TranIn (รับสินค้า)": [{"id": "TC-IN-001", "title": "รับสินค้าปกติ", "steps": "1. เปิด TranIn 2. เลือก PO 3. ระบุจำนวนรับ 4. บันทึก", "expected": "Stock เพิ่มตามจำนวนรับ, ต้นทุนถูกต้อง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-IN-002", "title": "รับสินค้าบางส่วน", "steps": "1. PO มี 10 ชิ้น 2. รับแค่ 5 ชิ้น 3. บันทึก", "expected": "Stock เพิ่ม 5 ชิ้น PO ยังค้าง 5 ชิ้น", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-IN-003", "title": "รับสินค้าเกินจำนวนสั่ง", "steps": "1. PO มี 10 ชิ้น 2. พยายามรับ 15 ชิ้น", "expected": "แสดง Warning หรือ Block", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-IN-004", "title": "รับสินค้าเข้าคลังต่างกัน", "steps": "1. เลือกรับเข้าคลัง A 2. บันทึก", "expected": "Stock คลัง A เพิ่มถูกต้อง", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranCnOut (ออกใบลดหนี้)": [{"id": "TC-CNOUT-001", "title": "ออกใบลดหนี้", "steps": "1. เปิด TranCnOut 2. เลือกลูกค้า 3. เลือกสินค้าที่ต้องการลดหนี้ 4. ระบุจำนวน/มูลค่า 5. บันทึก", "expected": "สร้าง Credit Note, ลดยอดหนี้ลูกค้า", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-CNOUT-002", "title": "ตรวจสอบ Stock หลังลดหนี้", "steps": "1. ออกใบลดหนี้สินค้า A จำนวน 2 2. ตรวจสอบ Stock", "expected": "Stock สินค้า A เพิ่ม 2 (คืนสินค้า)", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranCnIn (รับใบลดหนี้)": [{"id": "TC-CNIN-001", "title": "รับใบลดหนี้", "steps": "1. เปิด TranCnIn 2. เลือกซัพพลายเออร์ 3. เลือกสินค้า 4. บันทึก", "expected": "ลดยอดหนี้ซัพพลายเออร์, Stock ลดลง", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranTbOut (โอนสินค้าออก)": [{"id": "TC-TBOUT-001", "title": "โอนสินค้าระหว่างคลัง", "steps": "1. เปิด TranTbOut 2. เลือกคลังต้นทาง 3. เลือกคลังปลายทาง 4. เลือกสินค้า + จำนวน 5. บันทึก", "expected": "Stock ต้นทางลด, สร้างเอกสารโอน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-TBOUT-002", "title": "โอนสินค้าเกิน stock", "steps": "1. ลองโอนสินค้ามากกว่า stock ที่มี", "expected": "BLOCK ไม่ให้ทำรายการ", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranTbIn (รับสินค้าโอนเข้า)": [{"id": "TC-TBIN-001", "title": "รับสินค้าโอนเข้า", "steps": "1. เปิด TranTbIn 2. เลือกเอกสารโอน 3. บันทึกรับ", "expected": "Stock คลังปลายทางเพิ่ม", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranBnOut (ส่งสินค้าเบิก)": [{"id": "TC-BNOUT-001", "title": "ส่งสินค้าเบิก", "steps": "1. เปิด TranBnOut 2. เลือกสินค้า 3. ระบุจำนวน 4. บันทึก", "expected": "สร้างเอกสารเบิก, Stock ลด", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranBnIn (รับสินค้าเบิก)": [{"id": "TC-BNIN-001", "title": "รับสินค้าเบิก", "steps": "1. เปิด TranBnIn 2. เลือกเอกสารเบิก 3. บันทึกรับ", "expected": "รับสินค้าสำเร็จ", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranDpOut (จ่ายเงินมัดจำ)": [{"id": "TC-DPOUT-001", "title": "จ่ายเงินมัดจำ", "steps": "1. เปิด TranDpOut 2. เลือกลูกค้า 3. ระบุจำนวนเงิน 4. บันทึก", "expected": "สร้างเอกสารมัดจำ, บันทึกยอดจ่าย", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranDpIn (รับเงินมัดจำ)": [{"id": "TC-DPIN-001", "title": "รับเงินมัดจำ", "steps": "1. เปิด TranDpIn 2. เลือกลูกค้า 3. ระบุจำนวนเงิน 4. บันทึก", "expected": "บันทึกรับเงินมัดจำสำเร็จ", "priority": "High", "precondition": "", "config": ""}], "Transaction||TranTwOut / TranTwIn (เบิก/รับเบิก)": [{"id": "TC-TWOUT-001", "title": "เบิกจ่าย", "steps": "1. เปิด TranTwOut 2. เลือกสินค้า + จำนวน 3. บันทึก", "expected": "สร้างเอกสารเบิกจ่ายสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-TWIN-001", "title": "รับเบิก", "steps": "1. เปิด TranTwIn 2. เลือกเอกสารเบิกจ่าย 3. บันทึกรับ", "expected": "รับสินค้าสำเร็จ", "priority": "High", "precondition": "", "config": ""}], "Transaction||Notation (ใบแจ้งหนี้/ใบเสร็จ)": [{"id": "TC-NOT-001", "title": "สร้างใบแจ้งหนี้", "steps": "1. เปิด Notation 2. เลือกลูกค้า 3. เพิ่มสินค้า 4. บันทึก", "expected": "สร้างใบแจ้งหนี้สำเร็จ", "priority": "High", "precondition": "", "config": ""}], "Transaction||Credit Note / Deposit": [{"id": "TC-CN-001", "title": "Credit Note Out (ลดหนี้)", "steps": "", "expected": "", "priority": "", "precondition": "", "config": ""}, {"id": "TC-CN-002", "title": "Credit Note In (รับลดหนี้)", "steps": "", "expected": "", "priority": "", "precondition": "", "config": ""}, {"id": "TC-DEP-001", "title": "Deposit Transaction", "steps": "", "expected": "", "priority": "", "precondition": "", "config": ""}], "Promotion||Test Cases": [{"id": "TC-PMO-001", "title": "สร้างโปรโมชันใหม่", "steps": "1. เปิดหน้า Promotion 2. กดเพิ่มใหม่ 3. กรอกข้อมูลโปรโมชัน 4. บันทึก", "expected": "โปรโมชันถูกสร้างสำเร็จ สถานะ = Active", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-PMO-002", "title": "เปิด/ปิดโปรโมชัน", "steps": "1. เลือกโปรโมชัน 2. เปลี่ยนสถานะ IsOn", "expected": "โปรโมชันเปิด/ปิดสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-PMO-003", "title": "แก้ไขโปรโมชัน", "steps": "1. เลือกโปรโมชัน 2. แก้ไขข้อมูล 3. บันทึก", "expected": "ข้อมูลโปรโมชันอัพเดทสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-PMO-004", "title": "ลบโปรโมชัน", "steps": "1. เลือกโปรโมชันที่ยังไม่ได้ใช้ 2. ลบ", "expected": "โปรโมชันถูกลบ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-PMO-005", "title": "โปรโมชันส่วนลด %", "steps": "1. สร้างโปรโมชันส่วนลด 10% 2. ขายสินค้าที่เข้าเงื่อนไข 3. ตรวจสอบราคา", "expected": "ราคาสินค้าลด 10% อัตโนมัติ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-PMO-006", "title": "โปรโมชันส่วนลด เงินคงที่", "steps": "1. สร้างโปรโมชันส่วนลด 50 บาท 2. ขายสินค้าที่เข้าเงื่อนไข 3. ตรวจสอบราคา", "expected": "ราคาสินค้าลด 50 บาท", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-PMO-007", "title": "โปรโมชัน Buy X Get Y", "steps": "1. สร้างโปรโมชัน \"ซื้อ 3 แถม 1\" 2. ขายสินค้า 3 ชิ้น 3. ตรวจสอบ", "expected": "ได้รับสินค้า 4 ชิ้น จ่าย 3 ชิ้น", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-PMO-008", "title": "โปรโมชันตามช่วงเวลา", "steps": "1. สร้างโปรโมชันช่วง 1-30 ม.ค. 2. ตรวจสอบวันที่ 15 ม.ค. 3. ตรวจสอบวันที่ 15 ก.พ.", "expected": "ใช้โปรโมชันได้เฉพาะช่วงที่กำหนด", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-PMO-009", "title": "โปรโมชันสำหรับสมาชิก", "steps": "1. สร้างโปรโมชันสำหรับสมาชิก 2. ขายสินค้าด้วยสมาชิก 3. ขายสินค้าไม่มีสมาชิก", "expected": "สมาชิกได้รับส่วนลด ไม่ใช่สมาชิกไม่ได้รับ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-PMO-010", "title": "นับจำนวนการใช้โปรโมชัน", "steps": "1. ใช้โปรโมชัน 5 ครั้ง 2. ดูรายการโปรโมชัน", "expected": "จำนวน Used = 5", "priority": "Medium", "precondition": "", "config": ""}], "Settings||Terminal Settings": [{"id": "TC-SET-TRM-001", "title": "เปลี่ยน Terminal Number", "steps": "1. เปลี่ยน terminalno = P02 2. บันทึก 3. รีสตาร์ทระบบ", "expected": "Terminal ใหม่แสดง P02", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-TRM-002", "title": "เปลี่ยน POS ID", "steps": "1. เปลี่ยน posid 2. บันทึก", "expected": "POS ID เปลี่ยนสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-TRM-003", "title": "ตั้งค่า Cash Drawer Port", "steps": "1. เปลี่ยน cash_drawer_com_port 2. บันทึก", "expected": "Cash Drawer เชื่อมต่อผ่าน Port ที่กำหนด", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-SET-TRM-004", "title": "ตั้งค่า Printer TMU", "steps": "1. เปลี่ยน tmu_com_port 2. บันทึก", "expected": "Printer เชื่อมต่อผ่าน Port ที่กำหนด", "priority": "Medium", "precondition": "", "config": ""}], "Settings||System Settings": [{"id": "TC-SET-SYS-001", "title": "เปลี่ยนภาษาหลัก", "steps": "1. เปลี่ยน language = EN 2. รีสตาร์ทระบบ", "expected": "UI แสดงเป็นภาษาอังกฤษ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-SYS-002", "title": "เปลี่ยนฐานข้อมูล", "steps": "1. เปลี่ยน profile_string = SQL 2. ตั้งค่า SQL connection 3. รีสตาร์ทระบบ", "expected": "ระบบเชื่อมต่อ SQL Server สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-SYS-003", "title": "เปิด Auto Backup", "steps": "1. ตั้ง autobackup = 1 2. ทำธุรกรรม 3. ตรวจสอบ Backup", "expected": "Backup ถูกสร้างอัตโนมัติ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-SYS-004", "title": "เปิดระบบส่งอีเมล", "steps": "1. ตั้ง send_mail = YES 2. ทำธุรกรรม", "expected": "อีเมลถูกส่งอัตโนมัติ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-SET-SYS-005", "title": "เปลี่ยนทศนิยมสกุลเงิน", "steps": "1. เปลี่ยน currency_decimal_point = 3 2. แสดงราคาสินค้า", "expected": "ราคาแสดงทศนิยม 3 ตำแหน่ง", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-SET-SYS-006", "title": "ตั้งค่า OSK (On-Screen Keyboard)", "steps": "1. ตั้ง osk = 1 2. คลิกช่องกรอกข้อมูล", "expected": "Keyboard บนหน้าจอแสดงขึ้นมา", "priority": "Low", "precondition": "", "config": ""}], "Settings||Database Settings": [{"id": "TC-SET-DB-001", "title": "เชื่อมต่อ Firebird Local", "steps": "1. ตั้ง conn_mode = Local 2. ตั้ง db_type = Firebird 3. รีสตาร์ทระบบ", "expected": "เชื่อมต่อ Firebird Local สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-DB-002", "title": "เชื่อมต่อ Firebird LAN", "steps": "1. ตั้ง conn_mode = LAN 2. ตั้ง fb_lan_host, port 3. รีสตาร์ทระบบ", "expected": "เชื่อมต่อ Firebird LAN สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-DB-003", "title": "เชื่อมต่อ SQL Server", "steps": "1. ตั้ง db_type = SQL 2. ตั้ง sql_local_instance, database 3. รีสตาร์ทระบบ", "expected": "เชื่อมต่อ SQL Server สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-DB-004", "title": "เชื่อมต่อ PostgreSQL", "steps": "1. ตั้ง pg_local_host, port, database 2. รีสตาร์ทระบบ", "expected": "เชื่อมต่อ PostgreSQL สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-SET-DB-005", "title": "เชื่อมต่อด้วยรหัสผ่านผิด", "steps": "1. ป้อนรหัสผ่านผิด 2. พยายามเชื่อมต่อ", "expected": "แสดง Error Message", "priority": "High", "precondition": "", "config": ""}], "Settings||UI Settings": [{"id": "TC-SET-UI-001", "title": "เปลี่ยนเป็น Dark Mode", "steps": "1. ตั้ง DARKMODE = 1 2. รีสตาร์ทระบบ", "expected": "UI เปลี่ยนเป็น Dark Mode", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-SET-UI-002", "title": "เปลี่ยนกลับเป็น Light Mode", "steps": "1. ตั้ง DARKMODE = 0 2. รีสตาร์ทระบบ", "expected": "UI เปลี่ยนกลับเป็น Light Mode", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-SET-UI-003", "title": "เปลี่ยนภาษา UI", "steps": "1. เปลี่ยน LANGUAGE = EN 2. รีสตาร์ทระบบ", "expected": "UI แสดงเป็นภาษาอังกฤษ", "priority": "Medium", "precondition": "", "config": ""}], "Settings||Service Settings": [{"id": "TC-SET-SVC-001", "title": "เปิด Auto Start Service", "steps": "1. ตั้ง auto_start_service1 = YES 2. รีสตาร์ทระบบ", "expected": "Service เริ่มทำงานอัตโนมัติ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-SET-SVC-002", "title": "ตั้งค่า Interval Service", "steps": "1. เปลี่ยน interval 2. บันทึก", "expected": "Service ทำงานตาม interval ที่กำหนด", "priority": "Low", "precondition": "", "config": ""}], "Settings||Feature Settings": [{"id": "TC-SET-FTR-001", "title": "เปิด QR Code Due Date", "steps": "1. ตั้ง gb_qr_code_due_date = 1 2. พิมพ์ใบเสร็จ", "expected": "ใบเสร็จมี QR Code พร้อม Due Date", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-SET-FTR-002", "title": "ตั้งค่า Video Display", "steps": "1. ตั้ง display_open_vdo = 1 2. ตั้ง path vdo 3. เปิด POS", "expected": "Video Display ทำงาน", "priority": "Low", "precondition": "", "config": ""}], "Utility||Barcode Generator": [{"id": "TC-UTL-BC-001", "title": "พิมพ์บาร์โค้ดสินค้า", "steps": "1. เลือกสินค้า 2. เลือกรูปแบบ Label 3. ระบุจำนวน 4. พิมพ์", "expected": "บาร์โค้ดพิมพ์ออกครบถ้วน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-UTL-BC-002", "title": "พิมพ์บาร์โค้ดหลายสินค้า", "steps": "1. เลือกสินค้าหลายรายการ 2. พิมพ์บาร์โค้ด", "expected": "บาร์โค้ดทุกรายการถูกพิมพ์", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-UTL-BC-003", "title": "เปลี่ยนรูปแบบ Label", "steps": "1. เปลี่ยน form_name = BP01002 2. พิมพ์บาร์โค้ด", "expected": "บาร์โค้ดพิมพ์ในรูปแบบ 2.2x1.2", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-UTL-BC-004", "title": "ตั้งค่าความเข้ม/ความเร็ว", "steps": "1. เปลี่ยน darkness = 15 2. เปลี่ยน speed = 2.0 3. พิมพ์", "expected": "บาร์โค้ดพิมพ์เข้มขึ้น ช้าลง", "priority": "Low", "precondition": "", "config": ""}], "Utility||Data Export/Import": [{"id": "TC-UTL-EX-001", "title": "ส่งออกข้อมูลสินค้าเป็น Excel", "steps": "1. เลือกส่งออกข้อมูลสินค้า 2. เลือก Excel format 3. บันทึกไฟล์", "expected": "ไฟล์ Excel ถูกสร้าง ข้อมูลครบถ้วน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-UTL-EX-002", "title": "ส่งออกข้อมูลลูกค้าเป็น Excel", "steps": "1. เลือกส่งออกข้อมูลลูกค้า 2. เลือก Excel format 3. บันทึกไฟล์", "expected": "ไฟล์ Excel ถูกสร้าง ข้อมูลครบถ้วน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-UTL-EX-003", "title": "นำเข้าข้อมูลสินค้าจาก Excel", "steps": "1. เลือกนำเข้าข้อมูลสินค้า 2. เลือกไฟล์ Excel 3. ตรวจสอบข้อมูล 4. ยืนยันนำเข้า", "expected": "ข้อมูลสินค้าถูกนำเข้าสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-UTL-EX-004", "title": "นำเข้าข้อมูลจากไฟล์ที่มีข้อมูลผิด format", "steps": "1. เลือกไฟล์ที่ format ผิด 2. พยายามนำเข้า", "expected": "แสดง Error Message ระบุข้อมูลผิด", "priority": "Medium", "precondition": "", "config": ""}], "Utility||Data Maintenance": [{"id": "TC-UTL-DM-001", "title": "Backup ข้อมูล", "steps": "1. เปิด Data Maintenance 2. กด Backup 3. เลือกที่เก็บ 4. ยืนยัน", "expected": "ไฟล์ Backup ถูกสร้าง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-UTL-DM-002", "title": "Restore ข้อมูล", "steps": "1. เลือกไฟล์ Backup 2. กด Restore 3. ยืนยัน", "expected": "ข้อมูลถูก Restore สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-UTL-DM-003", "title": "Reindex ฐานข้อมูล", "steps": "1. เปิด Data Maintenance 2. กด Reindex", "expected": "Index ถูกสร้างใหม่ ระบบทำงานเร็วขึ้น", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-UTL-DM-004", "title": "ตรวจสอบความสมบูรณ์ของข้อมูล", "steps": "1. เปิด Data Maintenance 2. ตรวจสอบ Data Integrity", "expected": "แสดงผลการตรวจสอบ ไม่มี Error", "priority": "Medium", "precondition": "", "config": ""}], "Utility||System Tools": [{"id": "TC-UTL-ST-001", "title": "ตรวจสอบ Version ระบบ", "steps": "1. เปิด About/Version", "expected": "แสดง ProMaxx2 21.0.0-beta.1", "priority": "Low", "precondition": "", "config": ""}, {"id": "TC-UTL-ST-002", "title": "ตรวจสอบ License", "steps": "1. ดูข้อมูล License", "expected": "แสดงข้อมูล License ถูกต้อง", "priority": "Low", "precondition": "", "config": ""}], "Devices||Receipt Printer (TMU)": [{"id": "TC-DEV-PRN-001", "title": "เชื่อมต่อ Printer", "steps": "1. ตั้งค่า tmu_com_port 2. เชื่อมต่อ", "expected": "Printer เชื่อมต่อสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DEV-PRN-002", "title": "พิมพ์ใบเสร็จทดสอบ", "steps": "1. กดพิมพ์ทดสอบ 2. ตรวจสอบกระดาษ", "expected": "ใบเสร็จพิมพ์ออกครบถ้วน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DEV-PRN-003", "title": "พิมพ์ใบเสร็จภาษาไทย", "steps": "1. ทำรายการภาษาไทย 2. พิมพ์ใบเสร็จ", "expected": "ภาษาไทยพิมพ์ถูกต้อง ไม่เพี้ยน", "priority": "High", "precondition": "", "config": "`tmu_language_code = KU`, `thai_chk_tmu_termal = 1`"}, {"id": "TC-DEV-PRN-004", "title": "Cut Paper อัตโนมัติ", "steps": "1. พิมพ์ใบเสร็จ 2. ตรวจสอบการตัดกระดาษ", "expected": "กระดาษถูกตัดอัตโนมัติ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DEV-PRN-005", "title": "ตั้งค่า Character Code", "steps": "1. เปลี่ยน character_code 2. พิมพ์ทดสอบ", "expected": "ตัวอักษรพิมพ์ถูกต้องตาม Code Table", "priority": "Low", "precondition": "", "config": "`character_code = 1`"}], "Devices||Cash Drawer (ลิ้นชักเก็บเงิน)": [{"id": "TC-DEV-CD-001", "title": "เชื่อมต่อ Cash Drawer", "steps": "1. ตั้งค่า USB Port 2. เชื่อมต่อ", "expected": "Cash Drawer เชื่อมต่อสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DEV-CD-002", "title": "เปิดลิ้นชักอัตโนมัติ", "steps": "1. ทำรายการขายสด 2. ยืนยันการขาย", "expected": "ลิ้นชักเปิดอัตโนมัติ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DEV-CD-003", "title": "เปิดลิ้นชักด้วย PIN", "steps": "1. เปิดลิ้นชักด้วย PIN", "expected": "ลิ้นชักเปิด", "priority": "High", "precondition": "", "config": "`cash_drawer_send_type = PIN5`"}, {"id": "TC-DEV-CD-004", "title": "ตรวจสอบสถานะลิ้นชัก", "steps": "1. ปิดลิ้นชักไม่สนิท 2. ตรวจสอบสถานะ", "expected": "แสดงสถานะลิ้นชักเปิดอยู่", "priority": "Medium", "precondition": "", "config": "`status_drawer = 1`"}], "Devices||Customer Display (จอแสดงผลลูกค้า)": [{"id": "TC-DEV-CDP-001", "title": "เปิด Customer Display", "steps": "1. ตั้ง cus_dis_on = 1 2. เปิด POS", "expected": "Customer Display แสดงข้อความ Welcome", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DEV-CDP-002", "title": "แสดงราคาสินค้า", "steps": "1. สแกนสินค้า 2. ดู Customer Display", "expected": "แสดงชื่อสินค้าและราคา", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DEV-CDP-003", "title": "แสดงยอดรวม", "steps": "1. ขายสินค้าหลายรายการ 2. ดู Customer Display", "expected": "แสดงยอดรวม", "priority": "Medium", "precondition": "", "config": ""}], "Devices||EDC (Electronic Data Capture)": [{"id": "TC-DEV-EDC-001", "title": "เชื่อมต่อ EDC", "steps": "1. ตั้งค่า edc_port 2. เชื่อมต่อ", "expected": "EDC เชื่อมต่อสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DEV-EDC-002", "title": "รูดบัตรเครดิต", "steps": "1. ขายสินค้า 2. เลือกชำระด้วยบัตรเครดิต 3. รูดบัตร", "expected": "การชำระสำเร็จ EDC ยืนยัน", "priority": "High", "precondition": "", "config": ""}], "Devices||Scale (เครื่องชั่ง)": [{"id": "TC-DEV-SCL-001", "title": "เชื่อมต่อเครื่องชั่ง", "steps": "1. ตั้ง isusedweight = 1 2. เชื่อมต่อเครื่องชั่ง", "expected": "เครื่องชั่งเชื่อมต่อสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DEV-SCL-002", "title": "ชั่งสินค้าและพิมพ์บาร์โค้ด", "steps": "1. วางสินค้าบนเครื่องชั่ง 2. พิมพ์บาร์โค้ด", "expected": "บาร์โค้ดมีน้ำหนัก/ราคาถูกต้อง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DEV-SCL-003", "title": "ตั้งค่า Decimal Format", "steps": "1. เปลี่ยน decimal_format 2. ชั่งสินค้า", "expected": "น้ำหนักแสดงทศนิยมตามที่กำหนด", "priority": "Low", "precondition": "", "config": ""}], "Devices||Smart Card Reader": [{"id": "TC-DEV-SC-001", "title": "เชื่อมต่อ Smart Card Reader", "steps": "1. เชื่อมต่อ Smart Card Reader 2. ใส่บัตร Chip", "expected": "อ่านข้อมูลจากบัตรสำเร็จ", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DEV-SC-002", "title": "อ่านข้อมูลสมาชิกจากบัตร", "steps": "1. ใส่บัตรสมาชิก 2. อ่านข้อมูล", "expected": "แสดงข้อมูลสมาชิกถูกต้อง", "priority": "Medium", "precondition": "", "config": ""}], "Devices||Webcam": [{"id": "TC-DEV-WCM-001", "title": "เชื่อมต่อ Webcam", "steps": "1. ตั้ง ws_com_port 2. เปิด ws_on_off = 1", "expected": "Webcam เชื่อมต่อและแสดงภาพ", "priority": "Low", "precondition": "", "config": ""}], "Devices||Display Video": [{"id": "TC-DEV-VDO-001", "title": "แสดง Video บน Customer Display", "steps": "1. ตั้ง display_open_vdo = 1 2. ตั้ง path vdo 3. เปิด POS", "expected": "Video แสดงบน Customer Display", "priority": "Low", "precondition": "", "config": ""}], "Reporting||Daily Summary (สรุปยอดขายรายวัน)": [{"id": "TC-RPT-DS-001", "title": "สร้างรายงานสรุปยอดขายรายวัน", "steps": "1. เปิดหน้า Daily Summary 2. เลือกวันที่ 3. สร้างรายงาน", "expected": "รายงานแสดงยอดขายรวม, จำนวนรายการ, VAT, กำไร", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-DS-002", "title": "สรุปยอดขายวันที่ไม่มีธุรกรรม", "steps": "1. เลือกวันที่ที่ไม่มีธุรกรรม", "expected": "รายงานแสดงค่า 0 หรือข้อความ \"ไม่มีข้อมูล\"", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-RPT-DS-003", "title": "สรุปยอดขายหลายวัน", "steps": "1. เลือกช่วงวันที่ 2. สร้างรายงาน", "expected": "รายงานแสดงข้อมูลทุกวัน", "priority": "Medium", "precondition": "", "config": ""}], "Reporting||Sales Report (รายงานยอดขาย)": [{"id": "TC-RPT-SR-001", "title": "รายงานยอดขายสูงสุด-ต่ำสุด ตามมูลค่า", "steps": "1. เปิด Sales Report 2. เลือกรายการ \"ตามมูลค่าขาย\" 3. เลือกช่วงวันที่ 4. สร้างรายงาน", "expected": "รายงานแสดงสินค้าเรียงตามมูลค่าขาย สูงสุด-ต่ำสุด", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-SR-002", "title": "รายงานยอดขายสูงสุด-ต่ำสุด ตามจำนวน", "steps": "1. เลือกรายการ \"ตามจำนวนสินค้า\" 2. เลือกช่วงวันที่ 3. สร้างรายงาน", "expected": "รายงานแสดงสินค้าเรียงตามจำนวนขาย สูงสุด-ต่ำสุด", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-SR-003", "title": "Export เป็น PDF", "steps": "1. สร้างรายงาน 2. Export เป็น PDF", "expected": "ไฟล์ PDF ถูกสร้าง ข้อมูลครบถ้วน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-SR-004", "title": "Export เป็น Excel", "steps": "1. สร้างรายงาน 2. Export เป็น Excel", "expected": "ไฟล์ Excel ถูกสร้าง ข้อมูลครบถ้วน", "priority": "Medium", "precondition": "", "config": ""}], "Reporting||Profit Report (รายงานกำไร)": [{"id": "TC-RPT-PR-001", "title": "รายงานกำไรเบื้องต้น", "steps": "1. เปิด Profit Report 2. เลือกช่วงวันที่ 3. สร้างรายงาน", "expected": "รายงานแสดงยอดขาย, ต้นทุน, กำไรเบื้องต้น", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-PR-002", "title": "กำไรตามต้นทุนหลัก", "steps": "1. เลือกต้นทุนหลัก 2. สร้างรายงาน", "expected": "กำไรคำนวณจากต้นทุนหลักที่เลือก", "priority": "High", "precondition": "", "config": ""}], "Reporting||Email Report (ส่งรายงานทางอีเมล)": [{"id": "TC-RPT-EM-001", "title": "ตั้งค่า SMTP", "steps": "1. เปิด Email Config 2. กรอกข้อมูล SMTP 3. บันทึก", "expected": "การตั้งค่า SMTP ถูกบันทึก", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-EM-002", "title": "ส่งรายงานทางอีเมล", "steps": "1. สร้างรายงาน 2. เลือกส่งทางอีเมล 3. ป้อนอีเมลผู้รับ 4. ส่ง", "expected": "อีเมลถูกส่งสำเร็จ ผู้รับได้รับรายงาน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-EM-003", "title": "ส่งรายงานพร้อม CC", "steps": "1. ป้อน CC Email 2. ส่งรายงาน", "expected": "ผู้รับ CC ได้รับอีเมล", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-RPT-EM-004", "title": "ส่งรายงานด้วย Subject กำหนดเอง", "steps": "1. ตั้งค่า Subject กำหนดเอง 2. ส่งรายงาน", "expected": "อีเมลใช้ Subject ที่กำหนดเอง", "priority": "Low", "precondition": "", "config": "`use_system_subject = 0`, `custom_subject = \"รายงานวันจันทร์\"`"}], "Reporting||Receipt (ใบเสร็จ)": [{"id": "TC-RPT-RC-001", "title": "พิมพ์ใบเสร็จ", "steps": "1. ทำรายการขายสำเร็จ 2. พิมพ์ใบเสร็จ", "expected": "ใบเสร็จพิมพ์ออกครบถ้วน (วันที่, รายการ, ราคา, ยอดรวม)", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-RC-002", "title": "พิมพ์ใบเสร็จที่มี VAT", "steps": "1. ขายสินค้าที่คิด VAT 2. พิมพ์ใบเสร็จ", "expected": "ใบเสร็จแสดง VAT 7% ชัดเจน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-RPT-RC-003", "title": "พิมพ์ใบเสร็จที่มีส่วนลด", "steps": "1. ขายสินค้าที่มีส่วนลด 2. พิมพ์ใบเสร็จ", "expected": "ใบเสร็จแสดงส่วนลดและยอดสุทธิ", "priority": "Medium", "precondition": "", "config": ""}], "Reporting||Email System (send_mail)": [{"id": "TC-RPT-SM-001", "title": "เปิด/ปิดระบบส่งอีเมล", "steps": "1. เปลี่ยน send_mail = YES 2. ทำธุรกรรม 3. ตรวจสอบอีเมล", "expected": "อีเมลถูกส่งอัตโนมัติหลังทำธุรกรรม", "priority": "Medium", "precondition": "", "config": ""}], "Data & Database||Test Cases": [{"id": "TC-DB-CONN-001", "title": "เชื่อมต่อ Firebird Local", "steps": "1. ตั้ง conn_mode = Local 2. ตั้ง db_type = Firebird 3. รีสตาร์ทระบบ", "expected": "เชื่อมต่อสำเร็จ แสดงหน้าหลัก", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-CONN-002", "title": "เชื่อมต่อ Firebird LAN", "steps": "1. ตั้ง conn_mode = LAN 2. ตั้ง fb_lan_host, port, database 3. รีสตาร์ทระบบ", "expected": "เชื่อมต่อสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-CONN-003", "title": "เชื่อมต่อ SQL Server", "steps": "1. ตั้ง db_type = SQL 2. ตั้ง sql instance, database 3. รีสตาร์ทระบบ", "expected": "เชื่อมต่อสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-CONN-004", "title": "เชื่อมต่อ PostgreSQL", "steps": "1. ตั้ง pg host, port, database 2. รีสตาร์ทระบบ", "expected": "เชื่อมต่อสำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-CONN-005", "title": "เชื่อมต่อด้วยรหัสผ่านผิด", "steps": "1. ป้อนรหัสผ่านผิด", "expected": "แสดง Error \"Invalid username or password\"", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-CONN-006", "title": "เชื่อมต่อฐานข้อมูลที่ไม่มีอยู่", "steps": "1. ป้อน database path ผิด", "expected": "แสดง Error \"Database not found\"", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-ENC-001", "title": "ตรวจสอบการเข้ารหัสรหัสผ่าน", "steps": "1. ดูไฟล์ system.ini 2. ตรวจสอบค่ารหัสผ่าน", "expected": "รหัสผ่านถูกเข้ารหัส (AES) ไม่ใช่ Plain Text", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-ENC-002", "title": "เปลี่ยนรหัสผ่านฐานข้อมูล", "steps": "1. เปลี่ยนรหัสผ่านในระบบ 2. รีสตาร์ท 3. ล็อกอินใหม่", "expected": "ใช้รหัสผ่านใหม่ได้สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-DATA-001", "title": "INSERT ข้อมูล", "steps": "1. เพิ่มสินค้าใหม่ 2. ตรวจสอบใน DB", "expected": "ข้อมูลถูก INSERT ลงตารางถูกต้อง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-DATA-002", "title": "SELECT ข้อมูล", "steps": "1. ค้นหาสินค้า 2. ตรวจสอบผลลัพธ์", "expected": "ข้อมูลที่ SELECT มาถูกต้อง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-DATA-003", "title": "UPDATE ข้อมูล", "steps": "1. แก้ไขข้อมูลสินค้า 2. บันทึก 3. ตรวจสอบใน DB", "expected": "ข้อมูลถูก UPDATE ตรงกัน", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-DATA-004", "title": "DELETE ข้อมูล", "steps": "1. ลบสินค้า 2. ตรวจสอบใน DB", "expected": "ข้อมูลถูกลบ (Soft/Hard Delete ตาม design)", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-DATA-005", "title": "Transaction (Commit)", "steps": "1. ทำธุรกรรมที่มีหลาย INSERT 2. สำเร็จทั้งหมด", "expected": "ข้อมูลถูก COMMIT ทั้งหมด", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-DATA-006", "title": "Transaction (Rollback)", "steps": "1. ทำธุรกรรมที่มี ERROR 2. System จับ error ได้", "expected": "ข้อมูลถูก ROLLBACK ไม่มีผลก่อนหน้า", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-CONC-001", "title": "Concurrent Read", "steps": "1. เปิด POS 2 เครื่อง 2. อ่านข้อมูลสินค้าพร้อมกัน", "expected": "อ่านได้ทั้งคู่ ไม่ error", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-CONC-002", "title": "Concurrent Write", "steps": "1. เปิด POS 2 เครื่อง 2. ขายสินค้าตัวเดียวกันพร้อมกัน", "expected": "Stock ลดถูกต้อง ไม่ negative", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-CONC-003", "title": "Lock Conflict", "steps": "1. POS A แก้ไขสินค้าค้างอยู่ 2. POS B แก้ไขสินค้าตัวเดียวกัน", "expected": "แสดง Warning \"Record is being edited\"", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-BK-001", "title": "Backup ข้อมูล", "steps": "1. กด Backup 2. เลือกที่เก็บ 3. ยืนยัน", "expected": "ไฟล์ Backup ถูกสร้าง", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-BK-002", "title": "Restore ข้อมูล", "steps": "1. เลือกไฟล์ Backup 2. กด Restore 3. ยืนยัน", "expected": "ข้อมูลถูก Restore สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-BK-003", "title": "Auto Backup", "steps": "1. ทำธุรกรรมสำเร็จ 2. ตรวจสอบ Backup", "expected": "Backup ถูกสร้างอัตโนมัติ", "priority": "High", "precondition": "", "config": "`autobackup = 1`"}, {"id": "TC-DB-BK-004", "title": "Restore จากไฟล์เสีย", "steps": "1. เลือกไฟล์ Backup ที่เสียหาย 2. กด Restore", "expected": "แสดง Error \"Invalid backup file\"", "priority": "Medium", "precondition": "", "config": ""}, {"id": "TC-DB-MULTI-001", "title": "เปลี่ยนฐานข้อมูล Runtime", "steps": "1. ปิดระบบ 2. เปลี่ยน db_type 3. เปิดระบบใหม่", "expected": "ระบบเชื่อมต่อ DB ใหม่สำเร็จ", "priority": "High", "precondition": "", "config": ""}, {"id": "TC-DB-MULTI-002", "title": "ข้อมูลตรงกันทุก Database", "steps": "1. เพิ่มสินค้า 1 รายการ 2. เปลี่ยนไป Firebird 3. เปลี่ยนไป SQL Server 4. ตรวจสอบ", "expected": "ข้อมูลตรงกันทุก Database", "priority": "Medium", "precondition": "", "config": ""}], "Data & Database||Encryption Details": [{"id": "TC-DB-SEC-001", "title": "ตรวจสอบไม่มี Plain Text Password", "steps": "1. ค้นหาไฟล์ config ทั้งหมด 2. ค้นหาคำว่า password", "expected": "ไม่พบ Plain Text Password ในไฟล์ config", "priority": "High", "precondition": "", "config": ""}]};
+
+(function(){
+  const modal=document.getElementById('tc-modal');
+  const list=document.getElementById('tc-modal-list');
+  const title=document.getElementById('tc-modal-title');
+  const subtitle=document.getElementById('tc-modal-subtitle');
+  const search=document.getElementById('tc-search');
+  const totalPill=document.getElementById('tc-total-pill');
+  const highPill=document.getElementById('tc-high-pill');
+  const medPill=document.getElementById('tc-medium-pill');
+  const lowPill=document.getElementById('tc-low-pill');
+  let current=[];
+
+  const esc=(s='')=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+
+  function priorityClass(p){
+    const v=(p||'').toLowerCase();
+    if(v.includes('high')) return 'high';
+    if(v.includes('medium')) return 'medium';
+    if(v.includes('low')) return 'low';
+    return 'unknown';
+  }
+
+  function stats(cases){
+    let h=0,m=0,l=0;
+    cases.forEach(c=>{
+      const p=priorityClass(c.priority);
+      if(p==='high')h++; else if(p==='medium')m++; else if(p==='low')l++;
+    });
+    totalPill.textContent=cases.length+' Cases';
+    highPill.textContent=h+' High';
+    medPill.textContent=m+' Medium';
+    lowPill.textContent=l+' Low';
+  }
+
+  function render(cases){
+    stats(cases);
+    if(!cases.length){
+      list.innerHTML='<div class="tc-empty">ไม่พบ Test Case ที่ตรงกับคำค้นหา</div>';
+      return;
+    }
+    list.innerHTML=cases.map((c,i)=>`
+      <article class="tc-case" style="animation-delay:${Math.min(i*.035,.35)}s">
+        <div class="tc-case-head">
+          <div>
+            <span class="tc-case-id">${esc(c.id)}</span>
+            <div class="tc-case-title">${esc(c.title)}</div>
+          </div>
+          <span class="tc-priority ${priorityClass(c.priority)}">${esc(c.priority||'N/A')}</span>
+        </div>
+        <div class="tc-case-body">
+          ${c.precondition?`<div class="tc-field"><label>Precondition</label><div>${esc(c.precondition)}</div></div>`:''}
+          ${c.config?`<div class="tc-field"><label>Config</label><div>${esc(c.config)}</div></div>`:''}
+          <div class="tc-field full"><label>Steps</label><div>${esc(c.steps||'-')}</div></div>
+          <div class="tc-field full"><label>Expected Result</label><div>${esc(c.expected||'-')}</div></div>
+        </div>
+      </article>
+    `).join('');
+  }
+
+  function openModal(key){
+    current=TC_DATA[key]||[];
+    const parts=key.split('||');
+    title.textContent=parts[1]||'Test Cases';
+    subtitle.textContent=(parts[0]||'')+' • '+current.length+' Test Cases';
+    search.value='';
+    render(current);
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden','false');
+    document.body.classList.add('tc-modal-open');
+    setTimeout(()=>search.focus(),220);
+  }
+
+  function closeModal(){
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden','true');
+    document.body.classList.remove('tc-modal-open');
+  }
+
+  document.addEventListener('click',e=>{
+    const btn=e.target.closest('.tc-count-btn');
+    if(btn) openModal(btn.dataset.tcKey);
+    if(e.target.closest('[data-close-modal]')) closeModal();
+  });
+
+  search?.addEventListener('input',()=>{
+    const q=search.value.trim().toLowerCase();
+    if(!q) return render(current);
+    render(current.filter(c=>[
+      c.id,c.title,c.steps,c.expected,c.priority,c.precondition,c.config
+    ].join(' ').toLowerCase().includes(q)));
+  });
+
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape' && modal.classList.contains('open')) closeModal();
+  });
+})();
+</script>
+
+<script id="dynamic-start-date-script-v11">
+(function(){
+  const input=document.getElementById('project-start-date');
+  const reset=document.getElementById('reset-start-date');
+  const startLabel=document.getElementById('dynamic-start-label');
+  const endLabel=document.getElementById('dynamic-end-label');
+
+  const TH_MONTHS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+  function parseDate(v){
+    const [y,m,d]=v.split('-').map(Number);
+    return new Date(y,m-1,d,12,0,0,0);
+  }
+  function isoDate(d){
+    const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+  function thaiDate(d){
+    return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${d.getFullYear()+543}`;
+  }
+  function shortDate(d){ return `${d.getDate()}/${d.getMonth()+1}`; }
+  function isWeekday(d){ const x=d.getDay(); return x!==0 && x!==6; }
+  function normalizeStart(d){
+    const n=new Date(d);
+    while(!isWeekday(n)) n.setDate(n.getDate()+1);
+    return n;
+  }
+  function businessDaysFrom(start,count){
+    const days=[], d=new Date(start);
+    while(days.length<count){
+      if(isWeekday(d)) days.push(new Date(d));
+      d.setDate(d.getDate()+1);
+    }
+    return days;
+  }
+  function buildWeeks(days){
+    const weeks=[]; let cur=[];
+    const weekKey=d=>{
+      const x=new Date(d);
+      const day=(x.getDay()+6)%7;
+      x.setDate(x.getDate()-day+3);
+      const firstThu=new Date(x.getFullYear(),0,4);
+      return x.getFullYear()+'-'+Math.round(((x-firstThu)/86400000-3+(firstThu.getDay()+6)%7)/7);
+    };
+    days.forEach(d=>{
+      if(!cur.length || weekKey(d)===weekKey(cur[cur.length-1])) cur.push(d);
+      else { weeks.push(cur); cur=[d]; }
+    });
+    if(cur.length) weeks.push(cur);
+    return weeks;
+  }
+
+  function update(){
+    if(!input.value) return;
+    let start=normalizeStart(parseDate(input.value));
+    if(isoDate(start)!==input.value) input.value=isoDate(start);
+
+    const days=businessDaysFrom(start,30);
+    const weeks=buildWeeks(days);
+    const end=days[days.length-1];
+
+    startLabel.textContent=thaiDate(start);
+    endLabel.textContent=thaiDate(end);
+
+    // Hero badges: update first date badges if present
+    const badges=document.querySelectorAll('.hero-badges span');
+    if(badges[0]) badges[0].textContent='เริ่ม '+thaiDate(start);
+    if(badges[1]) badges[1].textContent='เป้าหมาย '+thaiDate(end);
+
+    document.body.classList.add('timeline-updating');
+
+    // Day header
+    const daySpans=document.querySelectorAll('.days span');
+    days.forEach((d,i)=>{ if(daySpans[i]) daySpans[i].textContent=d.getDate(); });
+
+    // Week header top
+    const weekWrap=document.querySelector('.weeks');
+    if(weekWrap){
+      weekWrap.innerHTML=weeks.map(w=>`<span style="grid-column:span ${w.length}">${shortDate(w[0])}–${shortDate(w[w.length-1])}</span>`).join('');
+    }
+
+    // Update every timeline task row based on offsets.
+    document.querySelectorAll('.tl-row[data-start-offset]').forEach(row=>{
+      const offset=Number(row.dataset.startOffset||0);
+      const duration=Number(row.dataset.duration||1);
+      const taskStart=days[Math.min(offset,days.length-1)];
+      const taskEnd=days[Math.min(offset+duration-1,days.length-1)];
+      const bar=row.querySelector('.tl-bar-grid .animated-bar');
+      if(bar){
+        bar.style.gridColumn=`${offset+1} / span ${duration}`;
+        const em=bar.querySelector('em');
+        if(em) em.textContent=`${shortDate(taskStart)}–${shortDate(taskEnd)}`;
+      }
+    });
+
+    // Week summary cards
+    document.querySelectorAll('.week-delivery-card[data-week-index]').forEach((card,i)=>{
+      const w=weeks[i];
+      if(!w){ card.style.display='none'; return; }
+      card.style.display='';
+      const h3=card.querySelector('.week-card-head h3');
+      if(h3) h3.textContent=`${shortDate(w[0])} – ${shortDate(w[w.length-1])}`;
+    });
+
+    // Week group headers
+    document.querySelectorAll('.week-group-header[data-week-index]').forEach((head,i)=>{
+      const w=weeks[i];
+      if(!w){ head.style.display='none'; return; }
+      head.style.display='';
+      const b=head.querySelector('b');
+      if(b) b.textContent=`${shortDate(w[0])} – ${shortDate(w[w.length-1])}`;
+    });
+
+    setTimeout(()=>document.body.classList.remove('timeline-updating'),80);
+  }
+
+  input?.addEventListener('change',update);
+  reset?.addEventListener('click',()=>{
+    input.value='2026-08-18';
+    update();
+  });
+
+  update();
+})();
+</script>
+
+<script id="bug-impact-simulator-script-v12">
+(function(){
+  const crit=document.getElementById('bug-critical');
+  const high=document.getElementById('bug-high');
+  const med=document.getElementById('bug-medium');
+  const low=document.getElementById('bug-low');
+  const cycle=document.getElementById('bug-cycle');
+  const useBuffer=document.getElementById('bug-use-buffer');
+
+  const effortEl=document.getElementById('bug-effort-hours');
+  const excessEl=document.getElementById('bug-excess-hours');
+  const daysEl=document.getElementById('bug-added-days');
+  const endEl=document.getElementById('bug-new-end-date');
+  const statusEl=document.getElementById('bug-impact-status');
+
+  const startInput=document.getElementById('project-start-date');
+
+  // Planned effort values from current plan
+  const BASE_MANUAL_HOURS = 287.3;
+  const PLANNED_HOURS_WITH_35 = 387.9;
+  const DEFECT_BUFFER_HOURS = PLANNED_HOURS_WITH_35 - BASE_MANUAL_HOURS; // ~100.6
+  let QA_DAILY_CAPACITY = 4 * 6; // dynamic; updated by qa-capacity-changed
+  const BASE_BUSINESS_DAYS = 30;
+
+  const TH_MONTHS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+  function n(el, fallback=0){
+    const v=Number(el?.value);
+    return Number.isFinite(v) ? Math.max(0,v) : fallback;
+  }
+
+  function parseDate(v){
+    const [y,m,d]=v.split('-').map(Number);
+    return new Date(y,m-1,d,12,0,0,0);
+  }
+
+  function isWeekday(d){
+    const day=d.getDay();
+    return day!==0 && day!==6;
+  }
+
+  function normalizeWeekday(d){
+    const x=new Date(d);
+    while(!isWeekday(x)) x.setDate(x.getDate()+1);
+    return x;
+  }
+
+  function addBusinessDays(start, days){
+    const d=normalizeWeekday(new Date(start));
+    let count=1;
+    while(count<days){
+      d.setDate(d.getDate()+1);
+      if(isWeekday(d)) count++;
+    }
+    return d;
+  }
+
+  function thaiDate(d){
+    return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${d.getFullYear()+543}`;
+  }
+
+  function calculate(){
+    const c=n(crit), h=n(high), m=n(med), l=n(low);
+    const cycles=Math.max(1,n(cycle,1));
+
+    const bugEffort=((c*4.5)+(h*3.0)+(m*1.5)+(l*0.75))*cycles;
+
+    let excess=bugEffort;
+    if(useBuffer?.checked){
+      excess=Math.max(0, bugEffort-DEFECT_BUFFER_HOURS);
+    }
+
+    const addedDays=excess>0 ? Math.ceil(excess/QA_DAILY_CAPACITY) : 0;
+
+    effortEl.textContent=bugEffort.toFixed(1)+' ชม.';
+    excessEl.textContent=excess.toFixed(1)+' ชม.';
+    daysEl.textContent=addedDays+' วันทำการ';
+
+    if(startInput?.value){
+      const start=normalizeWeekday(parseDate(startInput.value));
+      const newEnd=addBusinessDays(start, BASE_BUSINESS_DAYS+addedDays);
+      endEl.textContent=thaiDate(newEnd);
+    } else {
+      endEl.textContent='-';
+    }
+
+    if(bugEffort===0){
+      statusEl.textContent='ยังไม่มีผลกระทบต่อ Timeline';
+    }else if(addedDays===0){
+      statusEl.textContent='Bug Effort ยังอยู่ภายใน Buffer 35%';
+    }else if(c>0){
+      statusEl.textContent='มี Critical/Blocker — ควรทบทวน Release Gate เพิ่มเติม';
+    }else{
+      statusEl.textContent='Timeline เพิ่มตาม Excess Bug Effort';
+    }
+  }
+
+  [crit,high,med,low,cycle,useBuffer,startInput].forEach(el=>{
+    el?.addEventListener('input',calculate);
+    el?.addEventListener('change',calculate);
+  });
+
+
+  window.addEventListener('qa-capacity-changed',(e)=>{
+    if(e.detail?.daily){
+      QA_DAILY_CAPACITY=e.detail.daily;
+      calculate();
+    }
+  });
+
+  calculate();
+})();
+</script>
+
+<script id="configurable-capacity-filter-script-v13">
+(function(){
+  const qaInput=document.getElementById('qa-count-input');
+  const supportInput=document.getElementById('support-reserve-input');
+  const effectiveLabel=document.getElementById('effective-hours-label');
+  const capacityLabel=document.getElementById('daily-capacity-label');
+
+  const startInput=document.getElementById('project-start-date');
+  const dynamicEndLabel=document.getElementById('dynamic-end-label');
+
+  const bugAddedDaysEl=document.getElementById('bug-added-days');
+  const bugNewEndEl=document.getElementById('bug-new-end-date');
+
+  const TH_MONTHS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+  function parseDate(v){
+    const [y,m,d]=v.split('-').map(Number);
+    return new Date(y,m-1,d,12,0,0,0);
+  }
+  function isWeekday(d){const x=d.getDay();return x!==0&&x!==6}
+  function normalizeWeekday(d){
+    const x=new Date(d);
+    while(!isWeekday(x))x.setDate(x.getDate()+1);
+    return x;
+  }
+  function addBusinessDays(start,days){
+    const d=normalizeWeekday(new Date(start));
+    let count=1;
+    while(count<days){
+      d.setDate(d.getDate()+1);
+      if(isWeekday(d))count++;
+    }
+    return d;
+  }
+  function thaiDate(d){return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${d.getFullYear()+543}`}
+
+  const BASE_PLANNED_QA_HOURS=387.9;
+  const BASE_BUSINESS_DAYS=30;
+
+  function capacityValues(){
+    const qa=Math.max(1,Number(qaInput?.value||4));
+    const reserve=Math.min(90,Math.max(0,Number(supportInput?.value||25)));
+    const eff=8*(1-reserve/100);
+    const daily=qa*eff;
+    return {qa,reserve,eff,daily};
+  }
+
+  function recalcCapacity(){
+    const {qa,reserve,eff,daily}=capacityValues();
+    if(effectiveLabel)effectiveLabel.textContent=`${eff.toFixed(1)} ชม./คน/วัน`;
+    if(capacityLabel)capacityLabel.textContent=`${daily.toFixed(1)} QA-hours/วัน`;
+
+    // Recalculate base delivery length from same planned effort.
+    const newBaseDays=Math.max(1,Math.ceil(BASE_PLANNED_QA_HOURS/daily));
+
+    if(startInput?.value){
+      const start=normalizeWeekday(parseDate(startInput.value));
+      const end=addBusinessDays(start,newBaseDays);
+      if(dynamicEndLabel)dynamicEndLabel.textContent=thaiDate(end);
+
+      // Keep top hero badge goal synchronized
+      const badges=document.querySelectorAll('.hero-badges span');
+      if(badges[1])badges[1].textContent='เป้าหมาย '+thaiDate(end);
+
+      // Update working-days badge if present
+      if(badges[2])badges[2].textContent=newBaseDays+' วันทำการ';
+    }
+
+    // Notify bug simulator to recalc using the new daily capacity.
+    window.dispatchEvent(new CustomEvent('qa-capacity-changed',{detail:{qa,reserve,eff,daily,newBaseDays}}));
+  }
+
+  qaInput?.addEventListener('input',recalcCapacity);
+  supportInput?.addEventListener('input',recalcCapacity);
+  qaInput?.addEventListener('change',recalcCapacity);
+  supportInput?.addEventListener('change',recalcCapacity);
+
+  // Week card expand/collapse
+  document.addEventListener('click',e=>{
+    const btn=e.target.closest('.week-expand-btn');
+    const card=e.target.closest('.week-delivery-card');
+    if(!btn && !card)return;
+    const target=btn?.closest('.week-delivery-card')||card;
+    if(!target)return;
+    // Don't expand if user clicks links/inputs/buttons other than expand
+    if(e.target.closest('input,select,a') && !btn)return;
+
+    const wasExpanded=target.classList.contains('expanded');
+    document.querySelectorAll('.week-delivery-card.expanded').forEach(c=>{
+      c.classList.remove('expanded');
+      const b=c.querySelector('.week-expand-btn'); if(b)b.textContent='ขยาย';
+    });
+    if(!wasExpanded){
+      target.classList.add('expanded');
+      const b=target.querySelector('.week-expand-btn'); if(b)b.textContent='ย่อ';
+      setTimeout(()=>target.scrollIntoView({behavior:'smooth',block:'center'}),80);
+    }
+  });
+
+  // Gantt QA filter
+  const filterButtons=[...document.querySelectorAll('.qa-filter-btn')];
+  const filterLabel=document.getElementById('gantt-filter-label');
+
+  function applyFilter(filter){
+    document.querySelectorAll('.tl-row[data-owner]').forEach(row=>{
+      const owner=(row.dataset.owner||'').trim();
+      let show=true;
+      if(filter!=='ALL'){
+        if(filter==='QA 1-4'){
+          show=owner==='QA 1-4';
+        }else{
+          show=owner===filter || owner==='QA 1-4';
+        }
+      }
+      row.classList.toggle('qa-hidden',!show);
+    });
+
+    // Hide weekly group headers with zero visible rows until next week header
+    const children=[...document.querySelectorAll('.week-group-header, .tl-row[data-owner]')];
+    let currentHeader=null, visibleCount=0;
+    const flush=()=>{
+      if(currentHeader)currentHeader.classList.toggle('qa-hidden',visibleCount===0);
+    };
+    children.forEach(el=>{
+      if(el.classList.contains('week-group-header')){
+        flush();
+        currentHeader=el;
+        visibleCount=0;
+      }else if(!el.classList.contains('qa-hidden')){
+        visibleCount++;
+      }
+    });
+    flush();
+
+    filterButtons.forEach(b=>b.classList.toggle('active',b.dataset.qaFilter===filter));
+    if(filterLabel)filterLabel.textContent=filter==='ALL'?'All QA':filter;
+  }
+
+  filterButtons.forEach(btn=>{
+    btn.addEventListener('click',()=>applyFilter(btn.dataset.qaFilter||'ALL'));
+  });
+  applyFilter('ALL');
+
+  recalcCapacity();
+})();
+</script>
+<div id="week-zoom-backdrop" class="week-zoom-backdrop" aria-hidden="true"></div>
+<script id="week-zoom-animation-script-v14">
+(function(){
+  const backdrop=document.getElementById('week-zoom-backdrop');
+  let activeCard=null;
+  let placeholder=null;
+  let originalParent=null;
+  let originalNext=null;
+
+  function closeZoom(){
+    if(!activeCard)return;
+    const card=activeCard;
+    card.classList.add('zoom-closing');
+    backdrop?.classList.remove('show');
+    document.body.classList.remove('week-zoom-open');
+
+    setTimeout(()=>{
+      card.classList.remove('zoom-active','zoom-closing','expanded');
+      const btn=card.querySelector('.week-expand-btn');
+      if(btn)btn.textContent='ขยาย';
+
+      if(placeholder?.parentNode){
+        placeholder.parentNode.insertBefore(card,placeholder);
+        placeholder.remove();
+      }else if(originalParent){
+        if(originalNext)originalParent.insertBefore(card,originalNext);
+        else originalParent.appendChild(card);
+      }
+
+      activeCard=null;
+      placeholder=null;
+      originalParent=null;
+      originalNext=null;
+    },270);
+  }
+
+  function openZoom(card){
+    if(activeCard===card){closeZoom();return;}
+    if(activeCard)closeZoom();
+
+    originalParent=card.parentNode;
+    originalNext=card.nextSibling;
+    placeholder=document.createComment('week-card-placeholder');
+    originalParent.insertBefore(placeholder,card);
+
+    card.classList.remove('expanded');
+    card.classList.add('zoom-active');
+    document.body.appendChild(card);
+
+    activeCard=card;
+    document.body.classList.add('week-zoom-open');
+    backdrop?.classList.add('show');
+
+    const btn=card.querySelector('.week-expand-btn');
+    if(btn)btn.textContent='ย่อ';
+
+    requestAnimationFrame(()=>{
+      card.scrollTop=0;
+    });
+  }
+
+  document.addEventListener('click',e=>{
+    const btn=e.target.closest('.week-expand-btn');
+    const card=e.target.closest('.week-delivery-card');
+
+    if(btn || card){
+      if(e.target.closest('input,select,a') && !btn)return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      openZoom(btn?.closest('.week-delivery-card')||card);
+    }
+  },true);
+
+  backdrop?.addEventListener('click',closeZoom);
+
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape' && activeCard)closeZoom();
+  });
+})();
+</script>
+</body></html>

@@ -20,7 +20,16 @@ public sealed class IdentityRepository(QaDbContext db) : IIdentityRepository
         if (user is null) return null;
         var roles = await db.UserRoles.Where(x=>x.UserId==userId).Select(x=>x.Role.RoleCode).ToArrayAsync(ct);
         var permissions = await db.UserRoles.Where(x=>x.UserId==userId).SelectMany(x=>x.Role.RolePermissions).Select(x=>x.Permission.PermissionCode).Distinct().ToArrayAsync(ct);
-        return new(user.UserId, user.Username, user.DisplayName, user.Email, roles, permissions);
+        Guid[] assignedProjectIds;
+        try
+        {
+            assignedProjectIds = await db.ProjectUsers.Where(x=>x.UserId==userId).Select(x=>x.ProjectId).ToArrayAsync(ct);
+        }
+        catch
+        {
+            assignedProjectIds = Array.Empty<Guid>();
+        }
+        return new(user.UserId, user.Username, user.DisplayName, user.Email, roles, permissions, assignedProjectIds);
     }
     public Task SaveChangesAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
 }

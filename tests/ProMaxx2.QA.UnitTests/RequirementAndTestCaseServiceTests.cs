@@ -74,6 +74,8 @@ public sealed class RequirementAndTestCaseServiceTests
 
         public Task<IReadOnlyList<ProjectDto>> ListAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<ProjectDto>>([new(_projectId, "PMX2", "Project", null, "Active", null, true, DateTime.UtcNow)]);
 
+        public Task<IReadOnlyList<ProjectDto>> ListForUserAsync(Guid userId, CancellationToken ct) => Task.FromResult<IReadOnlyList<ProjectDto>>([new(_projectId, "PMX2", "Project", null, "Active", null, true, DateTime.UtcNow)]);
+
         public Task<ProjectDto?> GetAsync(Guid id, CancellationToken ct) => Task.FromResult<ProjectDto?>(new ProjectDto(id, "PMX2", "Project", null, "Active", null, true, DateTime.UtcNow));
 
         public Task<bool> ProjectCodeExistsAsync(string code, CancellationToken ct) => Task.FromResult(false);
@@ -93,6 +95,8 @@ public sealed class RequirementAndTestCaseServiceTests
         public Task AddModuleAsync(ProductModule module, CancellationToken ct) => Task.CompletedTask;
 
         public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
+
+        public Task AddProjectUserAsync(Guid userId, Guid projectId, CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class FakeRequirementRepository(IReadOnlyList<string> existingCodes) : IRequirementRepository
@@ -137,6 +141,10 @@ public sealed class RequirementAndTestCaseServiceTests
         public Task UnlinkAsync(Guid requirementId, Guid testCaseId, CancellationToken ct) => Task.CompletedTask;
 
         public Task<IReadOnlyList<RtmRow>> RtmAsync(Guid releaseId, CancellationToken ct) => Task.FromResult<IReadOnlyList<RtmRow>>([]);
+
+        public Task<IReadOnlyList<TestCaseRevisionDto>> RevisionsAsync(Guid testCaseId, CancellationToken ct) => Task.FromResult<IReadOnlyList<TestCaseRevisionDto>>([]);
+
+        public Task<IReadOnlyList<TestCaseRequirementDto>> RequirementsAsync(Guid testCaseId, CancellationToken ct) => Task.FromResult<IReadOnlyList<TestCaseRequirementDto>>([]);
 
         public Task SaveAsync(CancellationToken ct) => Task.CompletedTask;
     }

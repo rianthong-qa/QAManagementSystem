@@ -6,6 +6,8 @@ using ProMaxx2.QA.Domain.Requirements;
 using ProMaxx2.QA.Domain.TestManagement;
 using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Defects;
+using ProMaxx2.QA.Domain.Settings;
+using ProMaxx2.QA.Domain.Dashboard;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -24,6 +26,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<RequirementRevision> RequirementRevisions => Set<RequirementRevision>();
     public DbSet<TestCase> TestCases => Set<TestCase>();
     public DbSet<TestStep> TestSteps => Set<TestStep>();
+    public DbSet<TestCaseRevision> TestCaseRevisions => Set<TestCaseRevision>();
     public DbSet<RequirementTestCase> RequirementTestCases => Set<RequirementTestCase>();
     public DbSet<TestSuite> TestSuites => Set<TestSuite>();
     public DbSet<TestSuiteCase> TestSuiteCases => Set<TestSuiteCase>();
@@ -33,6 +36,10 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<TestExecution> TestExecutions => Set<TestExecution>();
     public DbSet<TestStepResult> TestStepResults => Set<TestStepResult>();
     public DbSet<Defect> Defects => Set<Defect>();
+    public DbSet<MasterOption> MasterOptions => Set<MasterOption>();
+    public DbSet<AiConfiguration> AiConfigurations => Set<AiConfiguration>();
+    public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
+    public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

@@ -1,6 +1,6 @@
-using System.Security.Claims;using Microsoft.AspNetCore.Authorization;using Microsoft.AspNetCore.Mvc;using ProMaxx2.QA.Application.Execution;using ProMaxx2.QA.Application.Projects;
+using System.Security.Claims;using Microsoft.AspNetCore.Authorization;using Microsoft.AspNetCore.Mvc;using ProMaxx2.QA.Application.Execution;using ProMaxx2.QA.Application.Projects;using ProMaxx2.QA.Api.Services;
 namespace ProMaxx2.QA.Api.Controllers;
-[ApiController,Route("api/v1"),Authorize(Policy="ExecutionRun")]
+[ApiController,Route("api/v1"),Authorize(Policy="ExecutionRun"),RequireProjectAccess]
 public sealed class TestCyclesController(TestCycleService service):ControllerBase
 {
  [HttpGet("test-environments")]public Task<IReadOnlyList<EnvironmentDto>>Environments([FromQuery]Guid?projectId,CancellationToken ct)=>service.EnvironmentsAsync(projectId,ct);[HttpPost("test-environments")]public async Task<ActionResult<EnvironmentDto>>CreateEnvironment(SaveEnvironmentRequest r,CancellationToken ct)=>Ok(await service.CreateEnvironmentAsync(r,ct));

@@ -1,0 +1,9 @@
+## Cloudflare Tunnel config sample
+# Replace TUNNEL_ID and paths with values from `cloudflared tunnel create` output
+tunnel: TUNNEL_ID
+credentials-file: C:\Users\<YOU>\.cloudflared\TUNNEL_ID.json
+
+ingress:
+  - hostname: api.example.com
+    service: http://localhost:5000
+  - service: http_status:404

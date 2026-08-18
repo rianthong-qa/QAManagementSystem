@@ -3,7 +3,7 @@ using ProMaxx2.QA.Domain.Identity;
 namespace ProMaxx2.QA.Application.Identity;
 
 public sealed record LoginRequest(string Username, string Password);
-public sealed record AuthenticatedUser(Guid UserId, string Username, string DisplayName, string? Email, IReadOnlyCollection<string> Roles, IReadOnlyCollection<string> Permissions);
+public sealed record AuthenticatedUser(Guid UserId, string Username, string DisplayName, string? Email, IReadOnlyCollection<string> Roles, IReadOnlyCollection<string> Permissions, IReadOnlyCollection<Guid> AssignedProjectIds);
 public sealed record LoginResponse(string AccessToken, int ExpiresIn, AuthenticatedUser User);
 
 public interface IIdentityRepository

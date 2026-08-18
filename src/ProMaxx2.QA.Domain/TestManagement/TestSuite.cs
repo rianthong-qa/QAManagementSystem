@@ -20,4 +20,5 @@ public sealed class TestSuiteCase
     private TestSuiteCase() { }
     public TestSuiteCase(Guid suiteId,Guid testCaseId,int sortOrder,bool isRequired){TestSuiteId=suiteId;TestCaseId=testCaseId;SortOrder=sortOrder;IsRequired=isRequired;}
     public Guid TestSuiteId{get;private set;} public Guid TestCaseId{get;private set;} public int SortOrder{get;private set;} public bool IsRequired{get;private set;} public TestSuite Suite{get;private set;}=null!; public TestCase TestCase{get;private set;}=null!;
+    public void Update(int sortOrder,bool isRequired){if(sortOrder<1)throw new ArgumentOutOfRangeException(nameof(sortOrder));SortOrder=sortOrder;IsRequired=isRequired;}
 }

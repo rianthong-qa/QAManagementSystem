@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddScoped<IExecutionRepository,ExecutionRepository>();
         services.AddScoped<IAdministrationRepository,AdministrationRepository>();
         services.AddScoped<IDashboardRepository,DashboardRepository>();
+        services.AddScoped<Identity.ProjectAccessService>();
         return services;
     }
 }

@@ -13,3 +13,7 @@ dist/
 TestResults/
 coverage/
 *.log
+.artifacts/
+cloudflared.exe
+cloudflared-route-output.txt
+cloudflared-create.txt

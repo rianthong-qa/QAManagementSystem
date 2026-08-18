@@ -8,10 +8,13 @@ public sealed record StepDto(int StepNo, string Action, string? TestData, string
 public sealed record TestCaseDto(Guid TestCaseId, Guid ProjectId, Guid ModuleId, string TestCaseCode, string Title, string? Objective, string? Preconditions, string Priority, string? TestType, bool AutomationCandidate, string Status, int RevisionNo, Guid? OwnerUserId, IReadOnlyList<StepDto> Steps);
 public sealed record CreateTestCaseRequest(Guid ProjectId, Guid ModuleId, string TestCaseCode, string Title, string? Objective, string? Preconditions, string Priority, string? TestType, bool AutomationCandidate, Guid? OwnerUserId, IReadOnlyList<StepDto> Steps);
 public sealed record ChangeTestCaseStatusRequest(string Status);
-public sealed record RtmRow(Guid RequirementId, string RequirementCode, string Title, string Priority, int TestCaseCount, string CoverageStatus, string Status);
+public sealed record RtmLinkedTestCase(Guid TestCaseId,string TestCaseCode,string Title,string Priority,string?TestType,string Status,int RevisionNo,string?CoverageType);
+public sealed record RtmRow(Guid RequirementId,Guid ModuleId,string ModuleName,string RequirementCode,string Title,string Priority,int TestCaseCount,string CoverageStatus,string Status,IReadOnlyList<RtmLinkedTestCase>TestCases);
 public sealed record CoverageSummary(int TotalRequirements, int Covered, int NotCovered, decimal CoveragePercent);
 public sealed record CreateTestCaseRevisionRequest(string Title, string? Objective, string? Preconditions, string ChangeReason, IReadOnlyList<StepDto> Steps);
 public sealed record UpdateTestCaseRequest(Guid ModuleId, string Title, string? Objective, string? Preconditions, string Priority, string? TestType, bool AutomationCandidate, Guid? OwnerUserId, string ChangeReason, IReadOnlyList<StepDto> Steps);
+public sealed record TestCaseRevisionDto(int RevisionNo,string ChangeReason,Guid?ChangedBy,string?ChangedByName,DateTime ChangedAt,IReadOnlyList<StepDto>Steps);
+public sealed record TestCaseRequirementDto(Guid RequirementId,string RequirementCode,string Title,string Status,string?CoverageType);
 
 public interface ITestCaseRepository
 {
@@ -24,6 +27,8 @@ public interface ITestCaseRepository
     Task LinkAsync(Guid requirementId, Guid testCaseId, string? coverageType, CancellationToken ct);
     Task UnlinkAsync(Guid requirementId, Guid testCaseId, CancellationToken ct);
     Task<IReadOnlyList<RtmRow>> RtmAsync(Guid releaseId, CancellationToken ct);
+    Task<IReadOnlyList<TestCaseRevisionDto>> RevisionsAsync(Guid testCaseId, CancellationToken ct);
+    Task<IReadOnlyList<TestCaseRequirementDto>> RequirementsAsync(Guid testCaseId, CancellationToken ct);
     Task SaveAsync(CancellationToken ct);
 }
 
@@ -37,6 +42,8 @@ public sealed class TestCaseService(ITestCaseRepository repository)
     }
 
     public Task<IReadOnlyList<TestCaseDto>> ListAsync(Guid? projectId, string? search, CancellationToken ct) => repository.ListAsync(projectId, search, ct);
+    public Task<IReadOnlyList<TestCaseRevisionDto>> RevisionsAsync(Guid id,CancellationToken ct)=>repository.RevisionsAsync(id,ct);
+    public Task<IReadOnlyList<TestCaseRequirementDto>> RequirementsAsync(Guid id,CancellationToken ct)=>repository.RequirementsAsync(id,ct);
 
     public async Task<TestCaseDto> GetAsync(Guid id, CancellationToken ct) => await repository.GetAsync(id, ct) ?? throw new EntityNotFoundException("Test case not found.");
 
@@ -50,6 +57,12 @@ public sealed class TestCaseService(ITestCaseRepository repository)
         await repository.AddAsync(e, ct);
         await repository.SaveAsync(ct);
         return (await repository.GetAsync(e.TestCaseId, ct))!;
+    }
+
+    public async Task<TestCaseDto> CloneAsync(Guid id, Guid? userId, CancellationToken ct)
+    {
+        var source = await GetAsync(id, ct);
+        return await CreateAsync(new(source.ProjectId,source.ModuleId,"",$"สำเนา - {source.Title}",source.Objective,source.Preconditions,source.Priority,source.TestType,source.AutomationCandidate,source.OwnerUserId,source.Steps),userId,ct);
     }
 
     public async Task<TestCaseDto> UpdateAsync(Guid id, UpdateTestCaseRequest r, Guid? userId, CancellationToken ct)

@@ -22,6 +22,43 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Dashboard.DashboardShare", b =>
+                {
+                    b.Property<Guid>("DashboardShareId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<Guid?>("BuildId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReleaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("DashboardShareId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("DashboardShares", (string)null);
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Defects.Defect", b =>
                 {
                     b.Property<Guid>("DefectId")
@@ -371,6 +408,28 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Permissions", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Identity.ProjectUser", b =>
+                {
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("AssignedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ProjectId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ProjectUsers", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Identity.Role", b =>
@@ -874,6 +933,82 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.ToTable("RequirementRevisions", (string)null);
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Settings.AiConfiguration", b =>
+                {
+                    b.Property<Guid>("AiConfigurationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApiKeyHint")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("BaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("EncryptedApiKey")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("AiConfigurationId");
+
+                    b.ToTable("AiConfigurations", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Settings.MasterOption", b =>
+                {
+                    b.Property<Guid>("MasterOptionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("MasterOptionId");
+
+                    b.HasIndex("Category", "Value")
+                        .IsUnique();
+
+                    b.ToTable("MasterOptions", (string)null);
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.TestManagement.RequirementTestCase", b =>
                 {
                     b.Property<Guid>("RequirementId")
@@ -979,6 +1114,41 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("TestCases", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestManagement.TestCaseRevision", b =>
+                {
+                    b.Property<Guid>("TestCaseRevisionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("ChangeReason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("ChangedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("RevisionNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TestCaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("TestCaseRevisionId");
+
+                    b.HasIndex("ChangedBy");
+
+                    b.HasIndex("TestCaseId", "RevisionNo")
+                        .IsUnique();
+
+                    b.ToTable("TestCaseRevisions", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.TestManagement.TestStep", b =>
@@ -1213,6 +1383,25 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Navigation("Execution");
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Identity.ProjectUser", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Projects.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Identity.RolePermission", b =>
                 {
                     b.HasOne("ProMaxx2.QA.Domain.Identity.Permission", "Permission")
@@ -1383,6 +1572,22 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestManagement.TestCaseRevision", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("ChangedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.TestManagement.TestCase", "TestCase")
+                        .WithMany("Revisions")
+                        .HasForeignKey("TestCaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("TestCase");
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.TestManagement.TestStep", b =>
                 {
                     b.HasOne("ProMaxx2.QA.Domain.TestManagement.TestCase", "TestCase")
@@ -1471,6 +1676,8 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.TestManagement.TestCase", b =>
                 {
+                    b.Navigation("Revisions");
+
                     b.Navigation("Steps");
                 });
 

@@ -17,6 +17,7 @@
 7. API_SPECIFICATION.md
 8. SCREEN_SPECIFICATION.md
 9. DEVELOPMENT_PLAN.md
+10. UI_DESIGN_SYSTEM.md (UI Single Source of Truth)
 
 ## Technology
 ASP.NET Core .NET 10 + SQL Server + REST API + Web Frontend + File/Object Storage
