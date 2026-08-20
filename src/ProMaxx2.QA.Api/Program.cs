@@ -61,6 +61,8 @@ builder.Services.AddScoped<AdministrationService>();
 builder.Services.AddScoped<RequirementAiService>();
 builder.Services.AddScoped<TestCaseAiService>();
 builder.Services.AddScoped<TestSuiteAiService>();
+builder.Services.AddScoped<TestCycleAiService>();
+builder.Services.AddScoped<DefectAutoCreateService>();
 builder.Services.AddScoped<SharedAiConfigurationService>();
 builder.Services.AddScoped<ProjectAccessContext>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");

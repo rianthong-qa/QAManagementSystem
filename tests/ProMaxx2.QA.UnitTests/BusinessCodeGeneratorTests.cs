@@ -13,6 +13,28 @@ public sealed class BusinessCodeGeneratorTests
     }
 
     [Fact]
+    public void Next_available_skips_existing_codes_sync()
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PMX2-MOD-001", "PMX2-MOD-002" };
+        var result = BusinessCodeGenerator.NextAvailable("PMX2-MOD", existing);
+        Assert.Equal("PMX2-MOD-003", result);
+    }
+
+    [Fact]
+    public void Next_available_returns_001_when_no_existing()
+    {
+        var result = BusinessCodeGenerator.NextAvailable("PMX2-MOD", []);
+        Assert.Equal("PMX2-MOD-001", result);
+    }
+
+    [Fact]
+    public void Next_available_normalizes_prefix()
+    {
+        var result = BusinessCodeGenerator.NextAvailable(" pmx2-mod ", []);
+        Assert.Equal("PMX2-MOD-001", result);
+    }
+
+    [Fact]
     public void Contextual_prefix_does_not_duplicate_project_code()
     {
         Assert.Equal("PMX2-MOD-001-TC", BusinessCodeGenerator.ContextualPrefix("PMX2", "PMX2-MOD-001", "TC"));

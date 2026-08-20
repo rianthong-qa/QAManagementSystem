@@ -1,3 +1,4 @@
+using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.Requirements;
 using ProMaxx2.QA.Application.TestManagement;
@@ -103,13 +104,15 @@ public sealed class RequirementAndTestCaseServiceTests
     {
         private readonly List<RequirementDto> _items = existingCodes.Select(code => new RequirementDto(Guid.NewGuid(), Guid.NewGuid(), null, Guid.NewGuid(), code, "Title", null, null, "P1", null, null, null, "Draft", 1, true, DateTime.UtcNow)).ToList();
 
-        public Task<IReadOnlyList<RequirementDto>> ListAsync(RequirementFilter filter, CancellationToken ct) => Task.FromResult<IReadOnlyList<RequirementDto>>(_items);
+        public Task<PagedResult<RequirementDto>> ListAsync(RequirementFilter filter, CancellationToken ct) => Task.FromResult(new PagedResult<RequirementDto>(_items.Count, _items));
 
         public Task<RequirementDto?> GetAsync(Guid id, CancellationToken ct) => Task.FromResult<RequirementDto?>(new RequirementDto(id, Guid.NewGuid(), null, Guid.NewGuid(), "PMX2-SALES-REQ-005", "Title", null, null, "P1", null, null, null, "Draft", 1, true, DateTime.UtcNow));
 
         public Task<Requirement?> FindAsync(Guid id, CancellationToken ct) => Task.FromResult<Requirement?>(null);
 
         public Task<bool> CodeExistsAsync(Guid projectId, string code, CancellationToken ct) => Task.FromResult(_items.Any(x => x.RequirementCode.Equals(code, StringComparison.OrdinalIgnoreCase)));
+
+        public Task<IReadOnlyList<string>> ListCodesAsync(Guid projectId, string prefix, CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(_items.Select(x => x.RequirementCode).ToList());
 
         public Task AddAsync(Requirement entity, CancellationToken ct) => Task.CompletedTask;
 
@@ -122,9 +125,9 @@ public sealed class RequirementAndTestCaseServiceTests
 
     private sealed class FakeTestCaseRepository(IReadOnlyList<string> existingCodes) : ITestCaseRepository
     {
-        private readonly List<TestCaseDto> _items = existingCodes.Select(code => new TestCaseDto(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), code, "Title", null, null, "P1", "Functional", false, "Draft", 1, null, [])).ToList();
+        private readonly List<TestCaseListDto> _items = existingCodes.Select(code => new TestCaseListDto(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), code, "Title", "P1", "Functional", false, "Draft", 1, null, 0)).ToList();
 
-        public Task<IReadOnlyList<TestCaseDto>> ListAsync(Guid? projectId, string? search, CancellationToken ct) => Task.FromResult<IReadOnlyList<TestCaseDto>>(_items);
+        public Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId, Guid? moduleId, string? priority, string? testType, string? status, bool? automation, string? search, int page, int size, CancellationToken ct) => Task.FromResult(new PagedResult<TestCaseListDto>(_items.Count, _items));
 
         public Task<TestCaseDto?> GetAsync(Guid id, CancellationToken ct) => Task.FromResult<TestCaseDto?>(new TestCaseDto(id, Guid.NewGuid(), Guid.NewGuid(), "PMX2-SALES-TC-005", "Title", null, null, "P1", "Functional", false, "Draft", 1, null, []));
 
@@ -136,11 +139,15 @@ public sealed class RequirementAndTestCaseServiceTests
 
         public void AddSteps(IEnumerable<TestStep> steps) { }
 
+        public Task<IReadOnlyList<string>> ListCodesAsync(Guid projectId, string prefix, CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>(_items.Select(x => x.TestCaseCode).ToList());
+
         public Task LinkAsync(Guid requirementId, Guid testCaseId, string? coverageType, CancellationToken ct) => Task.CompletedTask;
 
         public Task UnlinkAsync(Guid requirementId, Guid testCaseId, CancellationToken ct) => Task.CompletedTask;
 
-        public Task<IReadOnlyList<RtmRow>> RtmAsync(Guid releaseId, CancellationToken ct) => Task.FromResult<IReadOnlyList<RtmRow>>([]);
+        public Task<RtmListResultDto> RtmAsync(Guid releaseId, string? search, string? moduleId, string? coverage, string? status, int page, int size, CancellationToken ct) => Task.FromResult(new RtmListResultDto(new PagedResult<RtmRow>(0, []), new RtmSummaryDto(0, 0, 0, [])));
+
+        public Task<CoverageSummary> CoverageAsync(Guid releaseId, CancellationToken ct) => Task.FromResult(new CoverageSummary(0, 0, 0, 0));
 
         public Task<IReadOnlyList<TestCaseRevisionDto>> RevisionsAsync(Guid testCaseId, CancellationToken ct) => Task.FromResult<IReadOnlyList<TestCaseRevisionDto>>([]);
 

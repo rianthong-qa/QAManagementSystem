@@ -15,10 +15,13 @@ public sealed record CreateTestCaseRevisionRequest(string Title, string? Objecti
 public sealed record UpdateTestCaseRequest(Guid ModuleId, string Title, string? Objective, string? Preconditions, string Priority, string? TestType, bool AutomationCandidate, Guid? OwnerUserId, string ChangeReason, IReadOnlyList<StepDto> Steps);
 public sealed record TestCaseRevisionDto(int RevisionNo,string ChangeReason,Guid?ChangedBy,string?ChangedByName,DateTime ChangedAt,IReadOnlyList<StepDto>Steps);
 public sealed record TestCaseRequirementDto(Guid RequirementId,string RequirementCode,string Title,string Status,string?CoverageType);
+public sealed record TestCaseListDto(Guid TestCaseId,Guid ProjectId,Guid ModuleId,string TestCaseCode,string Title,string Priority,string?TestType,bool AutomationCandidate,string Status,int RevisionNo,Guid?OwnerUserId,int StepCount);
+public sealed record RtmSummaryDto(int Covered,int Partial,int NotCovered,IReadOnlyList<string>Statuses);
+public sealed record RtmListResultDto(PagedResult<RtmRow> Items,RtmSummaryDto Summary);
 
 public interface ITestCaseRepository
 {
-    Task<IReadOnlyList<TestCaseDto>> ListAsync(Guid? projectId, string? search, CancellationToken ct);
+    Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId,Guid? moduleId,string? priority,string? testType,string? status,bool? automation,string? search,int page,int size,CancellationToken ct);
     Task<TestCaseDto?> GetAsync(Guid id, CancellationToken ct);
     Task<TestCase?> FindAsync(Guid id, CancellationToken ct);
     Task<bool> CodeExistsAsync(Guid projectId, string code, CancellationToken ct);
@@ -26,7 +29,9 @@ public interface ITestCaseRepository
     void AddSteps(IEnumerable<TestStep> steps);
     Task LinkAsync(Guid requirementId, Guid testCaseId, string? coverageType, CancellationToken ct);
     Task UnlinkAsync(Guid requirementId, Guid testCaseId, CancellationToken ct);
-    Task<IReadOnlyList<RtmRow>> RtmAsync(Guid releaseId, CancellationToken ct);
+    Task<IReadOnlyList<string>> ListCodesAsync(Guid projectId,string prefix,CancellationToken ct);
+    Task<RtmListResultDto> RtmAsync(Guid releaseId,string? search,string? moduleId,string? coverage,string? status,int page,int size,CancellationToken ct);
+    Task<CoverageSummary> CoverageAsync(Guid releaseId,CancellationToken ct);
     Task<IReadOnlyList<TestCaseRevisionDto>> RevisionsAsync(Guid testCaseId, CancellationToken ct);
     Task<IReadOnlyList<TestCaseRequirementDto>> RequirementsAsync(Guid testCaseId, CancellationToken ct);
     Task SaveAsync(CancellationToken ct);
@@ -41,7 +46,7 @@ public sealed class TestCaseService(ITestCaseRepository repository)
         this.projectRepository = projectRepository;
     }
 
-    public Task<IReadOnlyList<TestCaseDto>> ListAsync(Guid? projectId, string? search, CancellationToken ct) => repository.ListAsync(projectId, search, ct);
+    public Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId,Guid? moduleId,string? priority,string? testType,string? status,bool? automation,string? search,int page,int size,CancellationToken ct) => repository.ListAsync(projectId,moduleId,priority,testType,status,automation,search,page,size,ct);
     public Task<IReadOnlyList<TestCaseRevisionDto>> RevisionsAsync(Guid id,CancellationToken ct)=>repository.RevisionsAsync(id,ct);
     public Task<IReadOnlyList<TestCaseRequirementDto>> RequirementsAsync(Guid id,CancellationToken ct)=>repository.RequirementsAsync(id,ct);
 
@@ -111,11 +116,12 @@ public sealed class TestCaseService(ITestCaseRepository repository)
         await repository.SaveAsync(ct);
     }
 
-    public Task<IReadOnlyList<RtmRow>> RtmAsync(Guid releaseId, CancellationToken ct) => repository.RtmAsync(releaseId, ct);
+    public Task<RtmListResultDto> RtmAsync(Guid releaseId,string? search,string? moduleId,string? coverage,string? status,int page,int size,CancellationToken ct) => repository.RtmAsync(releaseId,search,moduleId,coverage,status,page,size,ct);
 
     public async Task<CoverageSummary> CoverageAsync(Guid releaseId, CancellationToken ct)
     {
-        var rows = await repository.RtmAsync(releaseId, ct);
+        var result = await repository.RtmAsync(releaseId,null,null,null,null,1,int.MaxValue,ct);
+        var rows = result.Items.Rows;
         return new CoverageSummary(rows.Count, rows.Count(x => x.CoverageStatus.Equals("Covered", StringComparison.OrdinalIgnoreCase)), rows.Count(x => x.CoverageStatus.Equals("Not Covered", StringComparison.OrdinalIgnoreCase)), rows.Count == 0 ? 0 : Math.Round((decimal)rows.Count(x => x.CoverageStatus.Equals("Covered", StringComparison.OrdinalIgnoreCase)) / rows.Count * 100, 1));
     }
 
@@ -133,6 +139,7 @@ public sealed class TestCaseService(ITestCaseRepository repository)
             throw new EntityNotFoundException("Module not found.");
 
         var prefix = BusinessCodeGenerator.ContextualPrefix(project.ProjectCode, module.ModuleCode, "TC");
-        return await BusinessCodeGenerator.NextAvailableAsync(prefix, candidate => repository.CodeExistsAsync(r.ProjectId, candidate, ct));
+        var existing=await repository.ListCodesAsync(r.ProjectId,prefix,ct);
+        return BusinessCodeGenerator.NextAvailable(prefix,existing);
     }
 }

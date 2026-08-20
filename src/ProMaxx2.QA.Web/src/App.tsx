@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { Fragment as _F, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import "./App.css";
 import "./styles.css";
 import "./DragDrop.css";
@@ -42,6 +42,7 @@ type DashboardSummary = {
   modules: { moduleId: string; parentModuleId?: string; moduleCode?: string; moduleName: string; sortOrder?: number; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
   users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
   statusDistribution: { status: string; count: number; color: string }[];
+  defectSeverityDistribution: { severity: string; count: number; color: string }[];
 };
 const apiUrl = import.meta.env.VITE_API_URL ?? "/api/v1";
 
@@ -333,23 +334,25 @@ function Badge({
   return <span className={`badge ${effectiveTone}`}>{children}</span>;
 }
 
-type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string };
+type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string; projectId?:string; releaseId?:string|null; buildId?:string|null; moduleId?:string|null; description?:string|null; stepsToReproduce?:string|null; expectedResult?:string|null; actualResult?:string|null; assigneeUserId?:string|null; updatedAt?:string|null; createdByName?:string|null; updatedByName?:string|null; releaseCode?:string|null; buildNumber?:string|null; assigneeName?:string|null };
+type DefectActivityItem = { defectActivityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string };
+type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority: string; status: string; linkedAt: string };
+const defectSeverities = ["Critical", "High", "Medium", "Low"];
+const defectStatuses = ["Open", "In Progress", "Resolved", "Closed", "Rejected"];
+const defectSeverityTones: Record<string, string> = { Critical: "red", High: "yellow", Medium: "blue", Low: "green" };
+const defectStatusTones: Record<string, string> = { Open: "yellow", "In Progress": "blue", Resolved: "green", Closed: "green", Rejected: "gray" };
+const testCaseStatusTones: Record<string, string> = { Draft: "gray", Review: "yellow", Ready: "green", Deprecated: "red" };
+const defectActionLabels: Record<string, string> = { Created: "สร้าง", Updated: "แก้ไข", StatusChanged: "สถานะ", SeverityChanged: "Severity", Comment: "คอมเมนต์", TestLinked: "เชื่อมโยง Test Case", TestUnlinked: "ยกเลิก Test Case", BulkUpdated: "อัปเดตกลุ่ม", Deleted: "ลบ" };
 
-function QualityOverviewCharts({ data, projectId, releaseId, buildId }: { data: DashboardSummary; projectId?: string; releaseId?: string; buildId?: string }) {
-  const [defects, setDefects] = useState<DefectItem[]>([]);
-  const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
-  useEffect(() => {
-    if (!projectId) return;
-    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
-    fetch(`${apiUrl}/defects?${q}`, { headers }).then(r => r.ok ? r.json() : []).then(setDefects).catch(() => {});
-  }, [projectId, releaseId, buildId, headers]);
-
+function QualityOverviewCharts({ data }: { data: DashboardSummary }) {
   const statusDist = data.statusDistribution || [];
   const totalStatus = Math.max(1, statusDist.reduce((s, x) => s + x.count, 0));
 
+  const sevDist = data.defectSeverityDistribution || [];
   const sevOrder = ["Critical","High","Medium","Low"];
   const sevColor: Record<string, string> = { Critical: "#dc2626", High: "#f59e0b", Medium: "#2563eb", Low: "#94a3b8" };
-  const sevCounts = sevOrder.map(s => ({ sev: s, count: defects.filter(d => d.severity === s).length, color: sevColor[s] }));
+  const sevCounts = sevOrder.map(s => { const found = sevDist.find(x => x.severity === s); return { sev: s, count: found?.count ?? 0, color: sevColor[s] }; });
+  const totalDefects = sevCounts.reduce((s, x) => s + x.count, 0);
   const maxSev = Math.max(1, ...sevCounts.map(x => x.count));
 
   // Build conic gradient for donut
@@ -387,7 +390,7 @@ function QualityOverviewCharts({ data, projectId, releaseId, buildId }: { data: 
     <article className="card chart-card">
       <div className="chart-card-head">
         <h3>Defects by Severity</h3>
-        <span>{defects.length} Total</span>
+        <span>{totalDefects.toLocaleString()} Total</span>
       </div>
       <div className="chart-bars">
         {sevCounts.map(x => <div key={x.sev} className="bar-row">
@@ -399,7 +402,7 @@ function QualityOverviewCharts({ data, projectId, releaseId, buildId }: { data: 
           </div>
         </div>)}
       </div>
-      {defects.length === 0 && <p className="chart-empty">ยังไม่มีข้อมูล Defect</p>}
+      {totalDefects === 0 && <p className="chart-empty">ยังไม่มีข้อมูล Defect</p>}
     </article>
   </div>;
 }
@@ -415,7 +418,23 @@ function isWeekday(d: Date): boolean { const day = d.getDay(); return day >= 1 &
 function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 function sameDay(a: Date, b: Date): boolean { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 function fmtShort(d: Date): string { return `${d.getDate()}/${d.getMonth() + 1}`; }
-const TH_MONTHS = ["","ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+function fmtAgo(iso?: string | null): string {
+  if (!iso) return "-";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return "เมื่อสักครู่";
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${m} นาทีที่แล้ว`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} ชม.ที่แล้ว`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d} วันที่แล้ว`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo} เดือนที่แล้ว`;
+  return `${Math.floor(mo / 12)} ปีที่แล้ว`;
+}
+function defectAgeDays(createdAt: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000));
+}
 
 function ExecutiveTimeline({ projectId, releaseId, buildId }: { projectId?: string; releaseId?: string; buildId?: string }) {
   const [releases, setReleases] = useState<TimelineRelease[]>([]);
@@ -426,12 +445,12 @@ function ExecutiveTimeline({ projectId, releaseId, buildId }: { projectId?: stri
     const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
     Promise.all([
       fetch(`${apiUrl}/releases?${q}`, { headers }).then(r => r.ok ? r.json() : []),
-      fetch(`${apiUrl}/test-cycles?${q}`, { headers }).then(r => r.ok ? r.json() : []),
+      fetch(`${apiUrl}/test-cycles?${q}&page=1&size=100`, { headers }).then(r => r.ok ? r.json() : null),
     ]).then(([rel, cyc]) => {
       const aR = new Set(["Draft","Testing","Ready"]);
       const aC = new Set(["Draft","InProgress"]);
       setReleases((rel as TimelineRelease[]).filter(r => aR.has(r.status)));
-      setCycles((cyc as TimelineCycle[]).filter(c => aC.has(c.status)));
+      const cycleRows = cyc && typeof cyc === "object" && "items" in cyc ? (cyc as { items: { rows: TimelineCycle[] } }).items.rows : (cyc as TimelineCycle[] | null) ?? []; setCycles(cycleRows.filter(c => aC.has(c.status)));
     }).catch(() => {});
   }, [projectId, releaseId, buildId, headers]);
 
@@ -474,8 +493,6 @@ function ExecutiveTimeline({ projectId, releaseId, buildId }: { projectId?: stri
   weekGroups.forEach(wg => { wg.label = `${fmtShort(wg.start)} – ${fmtShort(wg.end)}`; });
 
   // Today column
-  const todayCol = dayIndex(todayTH);
-
   const cycleColor = (s: string) => s === "Completed" ? "#16a34a" : s === "InProgress" ? "#2563eb" : s === "Cancelled" ? "#94a3b8" : "#d97706";
   const releaseColor = (s: string) => s === "Released" ? "#16a34a" : s === "Ready" ? "#2563eb" : s === "Testing" ? "#d97706" : "#64748b";
 
@@ -548,6 +565,7 @@ function ExecutiveTimeline({ projectId, releaseId, buildId }: { projectId?: stri
 }
 
 function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, projectName }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string; projectName?: string }) {
+  const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [data, setData] = useState<DashboardSummary | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   useEffect(() => {
     setLoading(true); setError("");
@@ -608,54 +626,287 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
       ["Defect Quality", `${data.defectQuality}%`, `${data.openDefects} Open · Critical ${data.criticalDefects} · High ${data.highDefects}`, data.criticalDefects ? "red" : data.highDefects ? "yellow" : "green"],
       ["Release Blockers", data.openP0 + data.openP1, `P0 ${data.openP0} • P1 ${data.openP1}`, data.openP0 + data.openP1 ? "red" : "green"],
     ].map(x => <article className="card kpi" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small className={String(x[3])}>{x[2]}</small></article>)}</div>
-    <QualityOverviewCharts data={data} projectId={projectId} releaseId={releaseId} buildId={buildId} />
+    <QualityOverviewCharts data={data} />
     <ExecutiveTimeline projectId={projectId} releaseId={releaseId} buildId={buildId} />
     <article className="card" style={{padding:24}}>
-      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>Module Overview</h3>
+      <div className="module-overview-head"><h3 style={{margin:0,fontSize:16,fontWeight:800,color:"#1f2937"}}>Module Overview</h3><span style={{fontSize:12,color:"#697386"}}>{data.modules.reduce((s,m)=>s+m.testCases,0)} Test Cases</span></div>
       <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ลำดับ Module ตามโครงสร้างระบบ พร้อมจำนวน Test Case และสถานะ</p>
-      <div className="module-sequence">
-        {data.modules.filter(x => !x.parentModuleId).sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || (a.moduleCode ?? "").localeCompare(b.moduleCode ?? "")).map((m, i) => { const tc = Math.max(1, m.testCases); const pPct = Math.round(m.passed / tc * 100); const fPct = Math.round(m.failed / tc * 100); const bPct = Math.round(m.blocked / tc * 100); return <div className="module-card" key={m.moduleId}><div className="module-index">{String(i + 1).padStart(2, "0")}</div><div className="module-main"><div className="module-name">{m.moduleName}</div><div className="module-owner">{m.testCases} Test Cases · {m.health}</div></div><div className="module-stat"><b>{m.testCases}</b><span>Cases</span></div><div className="module-status-bar"><div className="status-bar-track"><span style={{width:`${pPct}%`,background:"#16a34a"}} /><span style={{width:`${fPct}%`,background:"#dc2626"}} /><span style={{width:`${bPct}%`,background:"#d97706"}} /></div><div className="status-bar-labels"><span className="sb-pass">{pPct}%</span><span className="sb-fail">{fPct}%</span><span className="sb-block">{bPct}%</span></div></div></div>; })}
+      <div className="module-tree-list">
+        {(() => { const rootModules = data.modules.filter(x => !x.parentModuleId).sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || (a.moduleCode ?? "").localeCompare(b.moduleCode ?? "")); const renderModule = (m: DashboardSummary["modules"][number], depth: number) => { const children = data.modules.filter(x => x.parentModuleId === m.moduleId).sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999)); const hasChildren = children.length > 0; const isExpanded = expandedModules.has(m.moduleId); const tc = Math.max(1, m.testCases); const pPct = Math.round(m.passed / tc * 100); const fPct = Math.round(m.failed / tc * 100); const bPct = Math.round(m.blocked / tc * 100); return <_F key={m.moduleId}><div className="module-tree-row" style={{paddingLeft: depth * 24}}>{hasChildren ? <button className="tree-expand-btn" onClick={() => setExpandedModules(prev => { const next = new Set(prev); if (next.has(m.moduleId)) next.delete(m.moduleId); else next.add(m.moduleId); return next; })}>{isExpanded ? "▾" : "▸"}</button> : <span className="tree-expand-spacer" />}<div className="module-tree-info"><div className="module-tree-name">{m.moduleName}<small>{m.testCases} Cases · {m.health}</small></div><div className="module-tree-bars"><div className="status-bar-track"><span style={{width:`${pPct}%`,background:"#16a34a"}} /><span style={{width:`${fPct}%`,background:"#dc2626"}} /><span style={{width:`${bPct}%`,background:"#d97706"}} /></div><div className="status-bar-labels"><span className="sb-pass">{pPct}%</span><span className="sb-fail">{fPct}%</span><span className="sb-block">{bPct}%</span></div></div></div></div>{isExpanded && children.map(child => renderModule(child, depth + 1))}</_F>; }; return rootModules.map(m => renderModule(m, 0)); })()}
       </div>
     </article>
-    <article className="card" style={{padding:24}}>
-      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>QA Performance</h3>
-      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ผลการดำเนินงานของผู้ทดสอบแต่ละคน</p>
-      <div className="qa-list">
-        {data.users.length ? data.users.map((u, i) => <div className="qa-card" key={u.userId}><div className="qa-icon">{i + 1}</div><div className="qa-body"><div className="qa-top"><b>{u.displayName}</b><span>{u.passRate}%</span></div><div className="qa-desc">{u.executions} Executions · {u.passed} Passed · {u.failed} Failed</div><div className="qa-progress"><span style={{width:`${u.passRate}%`}} /></div></div></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบ</p>}
-      </div>
-    </article>
-    <article className="card" style={{padding:24}}>
-      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>Module Effort Summary</h3>
-      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>สรุปข้อมูล Module พร้อม Coverage, Execution และ Pass Rate</p>
-      <div className="table-wrap" style={{overflowX:"auto"}}><table className="effort-table"><thead><tr><th>#</th><th>Module</th><th>Test Cases</th><th>Coverage</th><th>Execution</th><th>Pass Rate</th><th>Fail</th><th>Blocked</th><th>Status</th></tr></thead><tbody>
-        {data.modules.filter(x => !x.parentModuleId).sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999)).map((m, i) => <tr key={m.moduleId}><td><span className="order-no">{i + 1}</span></td><td><div className="m-title">{m.moduleName}</div></td><td><span className="count-pill">{m.testCases}</span></td><td><span className="metric-bar"><i style={{width:`${m.coveragePercent}%`}} /></span>{m.coveragePercent}%</td><td>{m.executionPercent}%</td><td><b className="metric-pass">{m.passRate}%</b></td><td><b className="metric-fail">{m.failed}</b></td><td><b className="metric-blocked">{m.blocked}</b></td><td><Badge tone={m.health === "Healthy" ? "green" : m.health === "Watch" ? "yellow" : "red"}>{m.health}</Badge></td></tr>)}
-      </tbody></table></div>
-    </article>
-    <article className="card" style={{padding:24}}>
-      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>Risks &amp; Blockers</h3>
-      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ความเสี่ยงและสิ่งกีดขวางที่ต้องติดตาม</p>
-      <div className="risks-grid">
-        {data.criticalDefects > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>Critical Defects</b><span>พบ Critical Defect ค้าง {data.criticalDefects} รายการ ต้องแก้ไขก่อน Release</span></div></div>}
-        {data.openP0 > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>P0 Blockers</b><span>พบ P0 ค้าง {data.openP0} รายการ เป็น Blocker สำหรับ Release</span></div></div>}
-        {data.highDefects > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>High Defects</b><span>พบ High Defect ค้าง {data.highDefects} รายการ ควรตรวจสอบและจัดลำดับ</span></div></div>}
-        {data.openP1 > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>P1 Issues</b><span>พบ P1 ค้าง {data.openP1} รายการ ตรวจสอบว่าต้องแก้ก่อน Release หรือไม่</span></div></div>}
-        {data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).length > 0 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>Low Coverage Modules</b><span>{data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).map(x => x.moduleName).join(", ")} มี Coverage ต่ำกว่า 50%</span></div></div>}
-        {data.requirementCoverage < 80 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>Low Requirement Coverage</b><span>Requirement Coverage อยู่ที่ {data.requirementCoverage}% ต่ำกว่าเกณฑ์ 80%</span></div></div>}
-        {data.criticalDefects === 0 && data.openP0 === 0 && data.highDefects === 0 && data.openP1 === 0 && <div className="risk-card" style={{background:"#f0fdf4",borderColor:"#bbf7d0"}}><div className="risk-icon" style={{background:"#dcfce7",color:"#16a34a"}}>✓</div><div className="risk-body"><b>No Critical Risks</b><span>ไม่พบ Critical Defect, P0 หรือ High Defect ค้าง — สถานะปกติ</span></div></div>}
-      </div>
-    </article>
+    <div className="dashboard-two-col">
+      <article className="card" style={{padding:24}}>
+        <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>QA Performance</h3>
+        <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ผลการดำเนินงานของผู้ทดสอบแต่ละคน</p>
+        <div className="qa-list">
+          {data.users.length ? data.users.map((u, i) => <div className="qa-card" key={u.userId}><div className="qa-icon">{i + 1}</div><div className="qa-body"><div className="qa-top"><b>{u.displayName}</b><span>{u.passRate}%</span></div><div className="qa-desc">{u.executions} Executions · {u.passed} Passed · {u.failed} Failed</div><div className="qa-progress"><span style={{width:`${u.passRate}%`}} /></div></div></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบ</p>}
+        </div>
+      </article>
+      <article className="card" style={{padding:24}}>
+        <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>Risks &amp; Blockers</h3>
+        <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ความเสี่ยงและสิ่งกีดขวางที่ต้องติดตาม</p>
+        <div className="risks-grid">
+          {data.criticalDefects > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>Critical Defects</b><span>พบ Critical Defect ค้าง {data.criticalDefects} รายการ ต้องแก้ไขก่อน Release</span></div></div>}
+          {data.openP0 > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>P0 Blockers</b><span>พบ P0 ค้าง {data.openP0} รายการ เป็น Blocker สำหรับ Release</span></div></div>}
+          {data.highDefects > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>High Defects</b><span>พบ High Defect ค้าง {data.highDefects} รายการ ควรตรวจสอบและจัดลำดับ</span></div></div>}
+          {data.openP1 > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>P1 Issues</b><span>พบ P1 ค้าง {data.openP1} รายการ ตรวจสอบว่าต้องแก้ก่อน Release หรือไม่</span></div></div>}
+          {data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).length > 0 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>Low Coverage Modules</b><span>{data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).map(x => x.moduleName).join(", ")} มี Coverage ต่ำกว่า 50%</span></div></div>}
+          {data.requirementCoverage < 80 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>Low Requirement Coverage</b><span>Requirement Coverage อยู่ที่ {data.requirementCoverage}% ต่ำกว่าเกณฑ์ 80%</span></div></div>}
+          {data.criticalDefects === 0 && data.openP0 === 0 && data.highDefects === 0 && data.openP1 === 0 && <div className="risk-card" style={{background:"#f0fdf4",borderColor:"#bbf7d0"}}><div className="risk-icon" style={{background:"#dcfce7",color:"#16a34a"}}>✓</div><div className="risk-body"><b>No Critical Risks</b><span>ไม่พบ Critical Defect, P0 หรือ High Defect ค้าง — สถานะปกติ</span></div></div>}
+        </div>
+      </article>
+    </div>
   </div>;
 }
 
-function DefectsPage({projectId,releaseId,buildId,search}:{projectId:string;releaseId:string;buildId:string;search:string}) {
-  const [items,setItems]=useState<DefectItem[]>([]),[loading,setLoading]=useState(true);
-  const headers=useMemo(()=>({"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}),[]);
-  const load=useCallback(()=>{if(!projectId){setItems([]);setLoading(false);return;}setLoading(true);const q=new URLSearchParams({projectId,...(releaseId&&{releaseId}),...(buildId&&{buildId}),...(search&&{search})});fetch(`${apiUrl}/defects?${q}`,{headers}).then(r=>r.ok?r.json():[]).then(setItems).finally(()=>setLoading(false));},[projectId,releaseId,buildId,search,headers]);
-  useEffect(load,[load]);
-  const save=async(item?:DefectItem)=>{const title=window.prompt("ชื่อ Defect",item?.title??"");if(!title)return;const severity=window.prompt("Severity: Critical, High, Medium, Low",item?.severity??"Medium");if(!severity)return;const status=window.prompt("Status: Open, In Progress, Resolved, Closed, Rejected",item?.status??"Open");if(!status)return;const response=await fetch(item?`${apiUrl}/defects/${item.defectId}`:`${apiUrl}/defects`,{method:item?"PUT":"POST",headers,body:JSON.stringify({projectId,releaseId:releaseId||null,buildId:buildId||null,moduleId:null,title,severity,status})});if(!response.ok){window.alert(await response.text());return;}load();};
-  const remove=async(item:DefectItem)=>{if(!window.confirm(`ลบ ${item.defectCode} ใช่หรือไม่?`))return;const response=await fetch(`${apiUrl}/defects/${item.defectId}`,{method:"DELETE",headers});if(response.ok)load();};
-  const tone=(value:string)=>value==="Critical"?"red":value==="High"?"yellow":value==="Low"?"blue":"green";
-  return <article className="card"><div className="table-tools"><span>{items.length} Defects ในขอบเขตที่เลือก</span><button className="btn primary" disabled={!projectId} onClick={()=>save()}>+ Defect</button></div><div className="table-wrap"><table><thead><tr><th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Created</th><th>จัดการ</th></tr></thead><tbody>{items.map(x=><tr key={x.defectId}><td><b>{x.defectCode}</b></td><td>{x.title}</td><td><Badge tone={tone(x.severity)}>{x.severity}</Badge></td><td>{x.status}</td><td>{new Date(x.createdAt).toLocaleDateString("th-TH")}</td><td><button className="action-button" onClick={()=>save(x)}>แก้ไข</button> <button className="action-button danger" onClick={()=>remove(x)}>ลบ</button></td></tr>)}{!loading&&!items.length&&<tr><td colSpan={6} className="muted-row">ยังไม่มี Defect ใน Project / Release / Build ที่เลือก</td></tr>}</tbody></table></div></article>;
+function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { projectId?: string; releaseId?: string; buildId?: string; search: string; canEdit?: boolean }) {
+  const [items, setItems] = useState<DefectItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [moduleFilter, setModuleFilter] = useState("");
+  const [severityFilter, setSeverityFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [modules, setModules] = useState<ModuleItem[]>([]);
+  const [users, setUsers] = useState<UserLookup[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [detail, setDetail] = useState<DefectItem | null>(null);
+  const [activities, setActivities] = useState<DefectActivityItem[]>([]);
+  const [linkedCases, setLinkedCases] = useState<DefectTestCaseItem[]>([]);
+  const [_detailLoading, setDetailLoading] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<DefectItem | null>(null);
+  const [formTitle, setFormTitle] = useState("");
+  const [formSeverity, setFormSeverity] = useState("Medium");
+  const [formStatus, setFormStatus] = useState("Open");
+  const [formModuleId, setFormModuleId] = useState("");
+  const [formDescription, setFormDescription] = useState("");
+  const [formStepsToReproduce, setFormStepsToReproduce] = useState("");
+  const [formExpectedResult, setFormExpectedResult] = useState("");
+  const [formActualResult, setFormActualResult] = useState("");
+  const [formAssigneeUserId, setFormAssigneeUserId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [reload, setReload] = useState(0);
+  const [summaryStats, setSummaryStats] = useState({ total: 0, open: 0, inProgress: 0, resolved: 0, critical: 0 });
+  const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+  const load = useCallback(() => {
+    if (!projectId) { setItems([]); setTotalCount(0); setLoading(false); setSummaryStats({ total: 0, open: 0, inProgress: 0, resolved: 0, critical: 0 }); return; }
+    setLoading(true); setError("");
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(search && { search }), ...(moduleFilter && { moduleId: moduleFilter }), ...(severityFilter && { severity: severityFilter }), ...(statusFilter && { status: statusFilter }), ...(assigneeFilter && { assigneeUserId: assigneeFilter }), page: String(page), size: String(pageSize) });
+    fetch(`${apiUrl}/defects?${q}`, { headers }).then(async r => {
+      if (!r.ok) throw new Error("โหลด Defect ไม่สำเร็จ");
+      const json = await r.json();
+      if (json && typeof json === "object" && "items" in json) {
+        const paged = json as { items: DefectItem[]; totalCount: number };
+        setItems(paged.items); setTotalCount(paged.totalCount);
+      } else if (Array.isArray(json)) {
+        setItems(json); setTotalCount(json.length);
+      } else { setItems([]); setTotalCount(0); }
+    }).catch(e => setError(e instanceof Error ? e.message : "โหลด Defect ไม่สำเร็จ")).finally(() => setLoading(false));
+  }, [projectId, releaseId, buildId, search, moduleFilter, severityFilter, statusFilter, assigneeFilter, page, pageSize, headers]);
+  useEffect(load, [load]);
+  useEffect(() => {
+    if (!projectId) { setSummaryStats({ total: 0, open: 0, inProgress: 0, resolved: 0, critical: 0 }); return; }
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
+    fetch(`${apiUrl}/defects/stats?${q}`, { headers }).then(r => r.ok ? r.json() : null).then(d => {
+      if (d && typeof d === "object") setSummaryStats({ total: d.total ?? 0, open: d.open ?? 0, inProgress: d.inProgress ?? 0, resolved: d.resolved ?? 0, critical: d.critical ?? 0 });
+    }).catch(() => {});
+  }, [projectId, releaseId, buildId, headers, reload]);
+  useEffect(() => {
+    if (!projectId) return;
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    Promise.all([
+      fetch(`${apiUrl}/projects/${projectId}/modules`, { headers: h }).then(r => r.ok ? r.json() : []),
+      fetch(`${apiUrl}/lookups/users`, { headers: h }).then(r => r.ok ? r.json() : []),
+    ]).then(([m, u]) => { setModules((m as ModuleItem[]).filter(x => x.isActive)); setUsers(u as UserLookup[]); }).catch(() => {});
+  }, [projectId]);
+  useEffect(() => { setPage(1); }, [moduleFilter, severityFilter, statusFilter, assigneeFilter]);
+  const openForm = (item?: DefectItem) => {
+    setEditing(item ?? null);
+    setFormTitle(item?.title ?? "");
+    setFormSeverity(item?.severity ?? "Medium");
+    setFormStatus(item?.status ?? "Open");
+    setFormModuleId(item?.moduleId ?? "");
+    setFormDescription(item?.description ?? "");
+    setFormStepsToReproduce(item?.stepsToReproduce ?? "");
+    setFormExpectedResult(item?.expectedResult ?? "");
+    setFormActualResult(item?.actualResult ?? "");
+    setFormAssigneeUserId(item?.assigneeUserId ?? "");
+    setFormOpen(true);
+  };
+  const saveForm = async () => {
+    setSaving(true); setError("");
+    try {
+      const body = { moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: formStepsToReproduce || null, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null };
+      const response = await fetch(editing ? `${apiUrl}/defects/${editing.defectId}` : `${apiUrl}/defects`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
+      if (!response.ok) { const p = await response.json().catch(() => null); throw new Error(p?.detail ?? "บันทึก Defect ไม่สำเร็จ"); }
+      setFormOpen(false);
+      setNotice(editing ? "แก้ไข Defect แล้ว" : "สร้าง Defect แล้ว");
+      setReload(x => x + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ"); } finally { setSaving(false); }
+  };
+  const removeDefect = async (item: DefectItem) => {
+    if (!window.confirm(`ลบ ${item.defectCode} ใช่หรือไม่?`)) return;
+    const response = await fetch(`${apiUrl}/defects/${item.defectId}`, { method: "DELETE", headers });
+    if (response.ok) { setNotice(`ลบ ${item.defectCode} แล้ว`); setReload(x => x + 1); }
+  };
+  const quickStatus = async (item: DefectItem, status: string) => {
+    const response = await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "POST", headers, body: JSON.stringify({ status }) });
+    if (response.ok) { setNotice(`เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1); }
+  };
+  const openDetail = async (item: DefectItem) => {
+    setDetail(item); setActivities([]); setLinkedCases([]); setCommentText(""); setDetailLoading(true);
+    try {
+      const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+      const [actRes, tcRes] = await Promise.all([
+        fetch(`${apiUrl}/defects/${item.defectId}/activities`, { headers: h }).then(r => r.ok ? r.json() : []),
+        fetch(`${apiUrl}/defects/${item.defectId}/test-cases`, { headers: h }).then(r => r.ok ? r.json() : []),
+      ]);
+      setActivities(Array.isArray(actRes) ? actRes : []);
+      setLinkedCases(Array.isArray(tcRes) ? tcRes : []);
+    } catch {} finally { setDetailLoading(false); }
+  };
+  const postComment = async () => {
+    if (!detail || !commentText.trim()) return;
+    const response = await fetch(`${apiUrl}/defects/${detail.defectId}/activities`, { method: "POST", headers, body: JSON.stringify({ actionType: "Comment", message: commentText.trim() }) });
+    if (response.ok) { setCommentText(""); openDetail(detail); }
+  };
+  const bulkStatus = async (status: string) => {
+    if (!selectedIds.length) return;
+    const response = await fetch(`${apiUrl}/defects/bulk-status`, { method: "POST", headers, body: JSON.stringify({ defectIds: selectedIds, status }) });
+    if (response.ok) { setNotice(`เปลี่ยนสถานะ ${selectedIds.length} รายการ`); setSelectedIds([]); setReload(x => x + 1); }
+  };
+  const exportCsv = () => {
+    const rows = [["Defect ID", "Title", "Severity", "Status", "Module", "Created", "Assignee"], ...items.map(x => [x.defectCode, x.title, x.severity, x.status, modules.find(m => m.moduleId === x.moduleId)?.moduleName ?? "", new Date(x.createdAt).toLocaleDateString("th-TH"), x.assigneeName ?? ""])];
+    const csv = "\ufeff" + rows.map(row => row.map(v => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = "defects.csv"; a.click(); URL.revokeObjectURL(url);
+  };
+  const toggleSelectAll = () => { setSelectedIds(selectedIds.length === items.length ? [] : items.map(x => x.defectId)); };
+  const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  if (loading && !items.length) return <article className="card empty"><p>กำลังโหลด Defect...</p></article>;
+  return <>
+    {error && <div className="inline-alert error"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
+    {notice && <div className="inline-alert success"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
+    <div className="kpi-grid">
+      <article className="card kpi"><span>Total</span><strong>{summaryStats.total}</strong><small>Defects</small></article>
+      <article className="card kpi"><span>Open</span><strong>{summaryStats.open}</strong><small className="yellow">ต้องแก้ไข</small></article>
+      <article className="card kpi"><span>In Progress</span><strong>{summaryStats.inProgress}</strong><small className="blue">กำลังแก้ไข</small></article>
+      <article className="card kpi"><span>Resolved</span><strong>{summaryStats.resolved}</strong><small className="green">แก้ไขแล้ว</small></article>
+      <article className="card kpi"><span>Critical</span><strong>{summaryStats.critical}</strong><small className={summaryStats.critical > 0 ? "red" : "green"}>สำคัญสูง</small></article>
+    </div>
+    <article className="card">
+      <div className="table-tools">
+        <div>
+          <select value={moduleFilter} onChange={e => setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{modules.map(m => <option key={m.moduleId} value={m.moduleId}>{m.moduleCode} · {m.moduleName}</option>)}</select>
+          <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value)}><option value="">ทุก Severity</option>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">ทุก Status</option>{defectStatuses.map(s => <option key={s}>{s}</option>)}</select>
+          <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option value="">ทุก Assignee</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
+        </div>
+        <div>
+          {selectedIds.length > 0 && <>
+            <button className="btn" onClick={() => bulkStatus("Resolved")}>Resolve ({selectedIds.length})</button>
+            <button className="btn" onClick={() => bulkStatus("Closed")}>Close ({selectedIds.length})</button>
+          </>}
+          <button className="btn" onClick={exportCsv}>Export</button>
+          {canEdit !== false && <button className="btn primary" disabled={!projectId} onClick={() => openForm()}>+ Defect</button>}
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr>
+            <th><input type="checkbox" checked={selectedIds.length === items.length && items.length > 0} onChange={toggleSelectAll} /></th>
+            <th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Module</th><th>Age</th><th>Created</th><th>จัดการ</th>
+          </tr></thead>
+          <tbody>
+            {items.map(x => <tr key={x.defectId}>
+              <td><input type="checkbox" checked={selectedIds.includes(x.defectId)} onChange={() => setSelectedIds(prev => prev.includes(x.defectId) ? prev.filter(id => id !== x.defectId) : [...prev, x.defectId])} /></td>
+              <td><button className="link-button" onClick={() => openDetail(x)}>{x.defectCode}</button></td>
+              <td>{x.title}</td>
+              <td><Badge tone={defectSeverityTones[x.severity] ?? "blue"}>{x.severity}</Badge></td>
+              <td><Badge tone={defectStatusTones[x.status] ?? "gray"}>{x.status}</Badge></td>
+              <td>{modules.find(m => m.moduleId === x.moduleId)?.moduleName ?? "-"}</td>
+              <td>{defectAgeDays(x.createdAt)} วัน</td>
+              <td>{fmtAgo(x.createdAt)}</td>
+              <td><div className="row-actions">
+                <button className="table-action" onClick={() => openDetail(x)}>ดู</button>
+                {canEdit !== false && <>
+                  <button className="table-action" onClick={() => openForm(x)}>แก้ไข</button>
+                  {x.status === "Open" && <button className="table-action" onClick={() => quickStatus(x, "In Progress")}>เริ่ม</button>}
+                  {x.status === "In Progress" && <button className="table-action" onClick={() => quickStatus(x, "Resolved")}>Resolve</button>}
+                  <button className="table-action danger-action" onClick={() => removeDefect(x)}>ลบ</button>
+                </>}
+              </div></td>
+            </tr>)}
+            {!loading && !items.length && <tr><td colSpan={9} className="muted-row">ยังไม่มี Defect ในขอบเขตที่เลือก</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="pagination">
+        <label>แสดง<select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}><option>10</option><option>20</option><option>50</option></select> รายการ</label>
+        <span>หน้า {Math.min(page, pageCount)} / {pageCount} ({totalCount} รายการ)</span>
+        <button className="btn" disabled={page <= 1} onClick={() => setPage(x => x - 1)}>ก่อนหน้า</button>
+        <button className="btn" disabled={page >= pageCount} onClick={() => setPage(x => x + 1)}>ถัดไป</button>
+      </div>
+    </article>
+    {formOpen && <div className="modal" onMouseDown={() => setFormOpen(false)}>
+      <div className="modal-box" onMouseDown={e => e.stopPropagation()}>
+        <div className="modal-head"><h2>{editing ? "แก้ไข" : "สร้าง"} Defect</h2><button onClick={() => setFormOpen(false)}>×</button></div>
+        <div className="form-grid">
+          <label className="full">Title<input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="ระบุชื่อ Defect" /></label>
+          <label>Module<select value={formModuleId} onChange={e => setFormModuleId(e.target.value)}><option value="">เลือก Module</option>{modules.map(m => <option key={m.moduleId} value={m.moduleId}>{m.moduleCode} · {m.moduleName}</option>)}</select></label>
+          <label>Severity<select value={formSeverity} onChange={e => setFormSeverity(e.target.value)}>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select></label>
+          <label>Status<select value={formStatus} onChange={e => setFormStatus(e.target.value)}>{defectStatuses.map(s => <option key={s}>{s}</option>)}</select></label>
+          <label>Assignee<select value={formAssigneeUserId} onChange={e => setFormAssigneeUserId(e.target.value)}><option value="">ไม่ระบุ</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>
+          <label className="full">Description<textarea rows={3} value={formDescription} onChange={e => setFormDescription(e.target.value)} placeholder="รายละเอียด Defect" /></label>
+          <label className="full">Steps to Reproduce<textarea rows={3} value={formStepsToReproduce} onChange={e => setFormStepsToReproduce(e.target.value)} /></label>
+          <label className="full">Expected Result<input value={formExpectedResult} onChange={e => setFormExpectedResult(e.target.value)} /></label>
+          <label className="full">Actual Result<input value={formActualResult} onChange={e => setFormActualResult(e.target.value)} /></label>
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={() => setFormOpen(false)}>ยกเลิก</button>
+          <button className="btn primary" disabled={saving || !formTitle.trim()} onClick={saveForm}>{saving ? "กำลังบันทึก..." : "บันทึก"}</button>
+        </div>
+      </div>
+    </div>}
+    {detail && <div className="modal" onMouseDown={() => setDetail(null)}>
+      <div className="modal-box" style={{ maxWidth: 800 }} onMouseDown={e => e.stopPropagation()}>
+        <div className="modal-head"><div><h2>{detail.defectCode}</h2><small>{detail.title}</small></div><button onClick={() => setDetail(null)}>×</button></div>
+        <div className="detail-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <span>Severity <Badge tone={defectSeverityTones[detail.severity]}>{detail.severity}</Badge></span>
+          <span>Status <Badge tone={defectStatusTones[detail.status]}>{detail.status}</Badge></span>
+          <span>Module <b>{modules.find(m => m.moduleId === detail.moduleId)?.moduleName ?? "-"}</b></span>
+          <span>Age <b>{defectAgeDays(detail.createdAt)} วัน</b></span>
+          <span>Created <b>{fmtAgo(detail.createdAt)}</b></span>
+          <span>Assignee <b>{detail.assigneeName ?? "ไม่ระบุ"}</b></span>
+        </div>
+        {detail.description && <section style={{ marginBottom: 16 }}><h4>Description</h4><p style={{ fontSize: 13, color: "#374151", lineHeight: 1.6 }}>{detail.description}</p></section>}
+        {detail.stepsToReproduce && <section style={{ marginBottom: 16 }}><h4>Steps to Reproduce</h4><p style={{ fontSize: 13, color: "#374151", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{detail.stepsToReproduce}</p></section>}
+        {canEdit !== false && <section style={{ marginBottom: 16 }}><h4>Quick Actions</h4><div className="row-actions" style={{ gap: 4 }}>
+          {detail.status !== "In Progress" && detail.status !== "Closed" && <button className="btn" onClick={() => { quickStatus(detail, "In Progress"); setDetail(null); }}>→ In Progress</button>}
+          {detail.status !== "Resolved" && detail.status !== "Closed" && <button className="btn" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}>✓ Resolve</button>}
+          {detail.status !== "Closed" && <button className="btn" onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}>Closed</button>}
+          <button className="btn" onClick={() => { openForm(detail); setDetail(null); }}>แก้ไข</button>
+        </div></section>}
+        <section style={{ marginBottom: 16 }}><h4>Linked Test Cases ({linkedCases.length})</h4>
+          {linkedCases.length ? <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{linkedCases.map(tc => <div key={tc.testCaseId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", background: "#f9fafb", borderRadius: 6 }}><b style={{ fontSize: 12 }}>{tc.testCaseCode}</b><span style={{ fontSize: 12, flex: 1 }}>{tc.title}</span><Badge tone={testCaseStatusTones[tc.status] ?? "gray"}>{tc.status}</Badge></div>)}</div> : <p style={{ fontSize: 12, color: "#9ca3af" }}>ยังไม่มี Test Case ที่เชื่อมโยง</p>}
+        </section>
+        <section style={{ marginBottom: 16 }}><h4>Activities ({activities.length})</h4>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
+            {activities.length ? activities.map(a => <div key={a.defectActivityId} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}><Badge tone="blue">{defectActionLabels[a.actionType] ?? a.actionType}</Badge><div style={{ flex: 1 }}><p style={{ fontSize: 12, margin: 0 }}>{a.message}</p><small style={{ fontSize: 10, color: "#9ca3af" }}>{a.actorName ?? "System"} · {fmtAgo(a.createdAt)}</small></div></div>) : <p style={{ fontSize: 12, color: "#9ca3af" }}>ยังไม่มี Activity</p>}
+          </div>
+          {canEdit !== false && <div style={{ display: "flex", gap: 8, marginTop: 8 }}><input style={{ flex: 1 }} value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="เพิ่มคอมเมนต์..." onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }} /><button className="btn primary" onClick={postComment} disabled={!commentText.trim()}>ส่ง</button></div>}
+        </section>
+        <div className="modal-actions"><button className="btn primary" onClick={() => setDetail(null)}>ปิด</button></div>
+      </div>
+    </div>}
+  </>;
 }
 
 function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecution = false }: { page: Page; search: string; projectId?: string; releaseId?: string; buildId?: string; canAssignExecution?: boolean }) {
@@ -5865,7 +6116,7 @@ function App() {
           ) : page === "system-monitor" ? (
             <SystemMonitorPage />
           ) : page === "defects" ? (
-            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} />
+            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("DEFECT.EDIT")} />
           ) : (
             <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} />
           )}

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(QaDbContext))]
-    partial class QaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260819163823_AddDefectActivitiesAndLinks")]
+    partial class AddDefectActivitiesAndLinks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -147,6 +150,65 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Defects", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Defects.DefectActivity", b =>
+                {
+                    b.Property<Guid>("DefectActivityId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid>("DefectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("DefectActivityId");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("DefectId");
+
+                    b.ToTable("DefectActivities", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Defects.DefectTestCaseLink", b =>
+                {
+                    b.Property<Guid>("DefectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TestCaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("DefectId", "TestCaseId");
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("TestCaseId");
+
+                    b.ToTable("DefectTestCaseLinks", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.TestCycle", b =>
@@ -1270,65 +1332,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.ToTable("TestSuiteCases", (string)null);
                 });
 
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Defects.DefectActivity", b =>
-                {
-                    b.Property<Guid>("DefectActivityId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWSEQUENTIALID()");
-
-                    b.Property<string>("ActionType")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<Guid?>("ActorUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasPrecision(0)
-                        .HasColumnType("datetime2(0)");
-
-                    b.Property<Guid>("DefectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.HasKey("DefectActivityId");
-
-                    b.HasIndex("ActorUserId");
-
-                    b.HasIndex("DefectId");
-
-                    b.ToTable("DefectActivities", (string)null);
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Defects.DefectTestCaseLink", b =>
-                {
-                    b.Property<Guid>("DefectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("TestCaseId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("LinkedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("DefectId", "TestCaseId");
-
-                    b.HasIndex("LinkedByUserId");
-
-                    b.HasIndex("TestCaseId");
-
-                    b.ToTable("DefectTestCaseLinks", (string)null);
-                });
-
             modelBuilder.Entity("ProMaxx2.QA.Domain.Defects.Defect", b =>
                 {
                     b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
@@ -1376,7 +1379,7 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
                         .WithMany()
-                        .HasForeignKey("LinkedByUserId")
+                        .HasForeignKey("CreatedBy")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("ProMaxx2.QA.Domain.Defects.Defect", null)

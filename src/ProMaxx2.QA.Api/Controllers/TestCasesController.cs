@@ -5,6 +5,7 @@ using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.TestManagement;
 using ClosedXML.Excel;
 using ProMaxx2.QA.Api.Services;
+using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Requirements;
 
 namespace ProMaxx2.QA.Api.Controllers;
@@ -14,7 +15,7 @@ public sealed class TestCasesController(TestCaseService service, ProjectService 
 {
     private sealed record TestCaseImportResult(int Imported,int Failed,IReadOnlyList<string>Errors);
     [HttpGet("test-cases")]
-    public Task<IReadOnlyList<TestCaseDto>> List([FromQuery] Guid? projectId, [FromQuery] string? search, CancellationToken ct) => service.ListAsync(projectId, search, ct);
+    public Task<PagedResult<TestCaseListDto>> List([FromQuery] Guid? projectId, [FromQuery] Guid? moduleId, [FromQuery] string? priority, [FromQuery] string? testType, [FromQuery] string? status, [FromQuery] bool? automation, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, moduleId, priority, testType, status, automation, search, page, size, ct);
 
     [HttpGet("test-cases/{id:guid}")]
     public async Task<ActionResult<TestCaseDto>> Get(Guid id, CancellationToken ct)
@@ -47,7 +48,7 @@ public sealed class TestCasesController(TestCaseService service, ProjectService 
     [HttpPost("test-cases/generate-ai"),Authorize(Policy="TestCaseEdit"),RequestSizeLimit(21_000_000)]
     public async Task<ActionResult<IReadOnlyList<GeneratedTestCase>>>GenerateAi([FromForm]string prompt,[FromForm]string?projectName,[FromForm]string?moduleName,[FromForm]Guid?moduleId,[FromForm]Guid?projectId,List<IFormFile>?files,CancellationToken ct)
     {
-        try{var uploads=files??[];if(uploads.Count>5)return BadRequest(Problem("ไฟล์แนบมากเกินไป","แนบไฟล์ได้ไม่เกิน 5 ไฟล์",400));if(uploads.Sum(x=>x.Length)>20_000_000)return BadRequest(Problem("ไฟล์แนบมีขนาดใหญ่เกินไป","ขนาดไฟล์รวมต้องไม่เกิน 20 MB",400));string[]allowed=[".pdf",".txt",".md",".csv",".docx",".xlsx",".png",".jpg",".jpeg",".webp"];var attachments=new List<RequirementAiAttachment>();foreach(var file in uploads){if(!allowed.Contains(Path.GetExtension(file.FileName).ToLowerInvariant()))return BadRequest(Problem("ชนิดไฟล์ไม่รองรับ",$"ไม่รองรับไฟล์ {Path.GetFileName(file.FileName)}",400));await using var memory=new MemoryStream();await file.CopyToAsync(memory,ct);attachments.Add(new(Path.GetFileName(file.FileName),file.ContentType,memory.ToArray()));}var requirementRows=moduleId.HasValue&&projectId.HasValue?await requirements.ListAsync(new(projectId,null,moduleId,null,null,null,null),ct):new List<ProMaxx2.QA.Application.Requirements.RequirementDto>();return Ok(await ai.GenerateAsync(prompt,projectName,moduleName,requirementRows,attachments,ct));}catch(ArgumentException ex){return BadRequest(Problem("ข้อมูลสำหรับ AI ไม่ครบ",ex.Message,400));}catch(InvalidOperationException ex){return StatusCode(ai.IsConfigured?502:503,Problem("AI Generate Test Case ไม่พร้อมใช้งาน",ex.Message,ai.IsConfigured?502:503));}catch(OperationCanceledException){return StatusCode(504,Problem("AI ใช้เวลาประมวลผลนานเกินไป","กรุณาลองใหม่อีกครั้ง หรือลดขนาดข้อมูล input",504));}catch(Exception ex){return StatusCode(500,Problem("AI Generate Test Case ไม่สำเร็จ",ex.InnerException?.Message??ex.Message,500));}
+        try{var uploads=files??[];if(uploads.Count>5)return BadRequest(Problem("ไฟล์แนบมากเกินไป","แนบไฟล์ได้ไม่เกิน 5 ไฟล์",400));if(uploads.Sum(x=>x.Length)>20_000_000)return BadRequest(Problem("ไฟล์แนบมีขนาดใหญ่เกินไป","ขนาดไฟล์รวมต้องไม่เกิน 20 MB",400));string[]allowed=[".pdf",".txt",".md",".csv",".docx",".xlsx",".png",".jpg",".jpeg",".webp"];var attachments=new List<RequirementAiAttachment>();foreach(var file in uploads){if(!allowed.Contains(Path.GetExtension(file.FileName).ToLowerInvariant()))return BadRequest(Problem("ชนิดไฟล์ไม่รองรับ",$"ไม่รองรับไฟล์ {Path.GetFileName(file.FileName)}",400));await using var memory=new MemoryStream();await file.CopyToAsync(memory,ct);attachments.Add(new(Path.GetFileName(file.FileName),file.ContentType,memory.ToArray()));}var requirementRows=moduleId.HasValue&&projectId.HasValue?(await requirements.ListAsync(new(projectId,null,moduleId,null,null,null,null,1,1000),ct)).Rows:new List<ProMaxx2.QA.Application.Requirements.RequirementDto>();return Ok(await ai.GenerateAsync(prompt,projectName,moduleName,requirementRows,attachments,ct));}catch(ArgumentException ex){return BadRequest(Problem("ข้อมูลสำหรับ AI ไม่ครบ",ex.Message,400));}catch(InvalidOperationException ex){return StatusCode(ai.IsConfigured?502:503,Problem("AI Generate Test Case ไม่พร้อมใช้งาน",ex.Message,ai.IsConfigured?502:503));}catch(OperationCanceledException){return StatusCode(504,Problem("AI ใช้เวลาประมวลผลนานเกินไป","กรุณาลองใหม่อีกครั้ง หรือลดขนาดข้อมูล input",504));}catch(Exception ex){return StatusCode(500,Problem("AI Generate Test Case ไม่สำเร็จ",ex.InnerException?.Message??ex.Message,500));}
     }
 
     [HttpGet("test-cases/import-template"), Authorize(Policy = "TestCaseEdit")]
@@ -180,7 +181,7 @@ public sealed class TestCasesController(TestCaseService service, ProjectService 
     public async Task<IActionResult> Unlink(Guid requirementId, Guid testCaseId, CancellationToken ct) { await service.UnlinkAsync(requirementId, testCaseId, ct); return NoContent(); }
 
     [HttpGet("releases/{releaseId:guid}/rtm")]
-    public Task<IReadOnlyList<RtmRow>> Rtm(Guid releaseId, CancellationToken ct) => service.RtmAsync(releaseId, ct);
+    public Task<RtmListResultDto> Rtm(Guid releaseId, CancellationToken ct, [FromQuery]string? search = null, [FromQuery]string? moduleId = null, [FromQuery]string? coverage = null, [FromQuery]string? status = null, [FromQuery]int page = 1, [FromQuery]int size = 20) => service.RtmAsync(releaseId, search, moduleId, coverage, status, page, size, ct);
 
     [HttpGet("releases/{releaseId:guid}/coverage-summary")]
     public Task<CoverageSummary> Coverage(Guid releaseId, CancellationToken ct) => service.CoverageAsync(releaseId, ct);

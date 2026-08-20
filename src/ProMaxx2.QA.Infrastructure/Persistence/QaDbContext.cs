@@ -36,6 +36,8 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<TestExecution> TestExecutions => Set<TestExecution>();
     public DbSet<TestStepResult> TestStepResults => Set<TestStepResult>();
     public DbSet<Defect> Defects => Set<Defect>();
+    public DbSet<DefectActivity> DefectActivities => Set<DefectActivity>();
+    public DbSet<DefectTestCaseLink> DefectTestCaseLinks => Set<DefectTestCaseLink>();
     public DbSet<MasterOption> MasterOptions => Set<MasterOption>();
     public DbSet<AiConfiguration> AiConfigurations => Set<AiConfiguration>();
     public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();

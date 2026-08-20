@@ -34,4 +34,16 @@ public static class BusinessCodeGenerator
             .Max()+1;
         return $"{prefix}-{next:000}";
     }
+
+    public static string NextAvailable(string prefix,IEnumerable<string> existing)
+    {
+        prefix=prefix.Trim().ToUpperInvariant();
+        var marker=prefix+"-";
+        var next=existing
+            .Where(x=>x.StartsWith(marker,StringComparison.OrdinalIgnoreCase))
+            .Select(x=>int.TryParse(x[marker.Length..],out var number)?number:0)
+            .DefaultIfEmpty(0)
+            .Max()+1;
+        return $"{prefix}-{next:000}";
+    }
 }
