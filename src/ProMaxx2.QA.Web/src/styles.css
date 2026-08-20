@@ -2825,6 +2825,16 @@ textarea::placeholder {
 .module-overview-total { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .module-overview-total strong { font-size: 20px; color: var(--primary); }
 .module-overview-total span { font-size: 11px; color: var(--muted); }
+.module-tree-list { display: flex; flex-direction: column; }
+.module-tree-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; transition: .15s; }
+.module-tree-row:hover { border-color: var(--primary); background: #f8faff; }
+.tree-expand-btn { width: 24px; height: 24px; border: 0; background: none; cursor: pointer; font-size: 12px; color: var(--muted); display: flex; align-items: center; justify-content: center; border-radius: 4px; flex-shrink: 0; }
+.tree-expand-btn:hover { background: #e5e7eb; color: var(--text); }
+.tree-expand-spacer { width: 24px; height: 24px; flex-shrink: 0; }
+.module-tree-info { flex: 1; min-width: 0; }
+.module-tree-name { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.module-tree-name small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+.module-tree-bars { display: flex; flex-direction: column; gap: 3px; }
 .module-card.tree-parent { cursor: pointer; }
 .module-card.tree-parent:hover { border-color: var(--primary); }
 .module-card.tree-parent.expanded { border-left: 3px solid var(--primary); }
