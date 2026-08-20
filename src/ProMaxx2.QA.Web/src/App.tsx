@@ -2300,6 +2300,8 @@ type RequirementItem = {
   isInScope: boolean;
   moduleId: string;
   releaseId?: string;
+  testCaseCount?: number;
+  createdAt?: string;
 };
 type RequirementRevisionItem = {
   revisionNo: number;
@@ -2374,12 +2376,14 @@ function RequirementsPage({
         if (!r.ok) throw new Error("โหลด Requirement ไม่สำเร็จ");
         return r.json();
       })
-      .then(async (data: RequirementItem[]) => {
-        setItems(data);
-        const releaseIds = [...new Set(data.map((x) => x.releaseId).filter((x): x is string => !!x))];
-        const rows = await Promise.all(releaseIds.map((id) => fetch(`${apiUrl}/releases/${id}/rtm`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } }).then((r) => r.ok ? r.json() : [])));
+      .then(async (data: RequirementItem[] | { items?: { rows: RequirementItem[] }; rows?: RequirementItem[] }) => {
+        const rows = Array.isArray(data) ? data : (data as { items?: { rows: RequirementItem[] } }).items?.rows ?? (data as { rows?: RequirementItem[] }).rows ?? [];
+        setItems(rows);
+        const releaseIds = [...new Set(rows.map((x) => x.releaseId).filter((x): x is string => !!x))];
+        const rtmRows = await Promise.all(releaseIds.map((id) => fetch(`${apiUrl}/releases/${id}/rtm`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } }).then((r) => r.ok ? r.json() : [])));
+        const rtmItems = rtmRows.map((r: unknown) => Array.isArray(r) ? r : (r as { items?: { rows: unknown[] } }).items?.rows ?? []).flat();
         const counts: Record<string, number> = {};
-        rows.flat().forEach((x: RtmItem) => { counts[x.requirementId] = x.testCaseCount; });
+        rtmItems.forEach((x: RtmItem) => { counts[x.requirementId] = x.testCaseCount; });
         setTestCaseCounts(counts);
       })
       .catch((e) => setError(e.message))
@@ -2388,7 +2392,10 @@ function RequirementsPage({
   useEffect(() => {
     fetch(`${apiUrl}/admin/users`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } })
       .then((r) => r.ok ? r.json() : [])
-      .then((data: AdminUser[]) => setUsers(data.filter((x) => x.isActive)));
+      .then((data: AdminUser[] | { items?: { rows: AdminUser[] } }) => {
+        const rows = Array.isArray(data) ? data : (data as { items?: { rows: AdminUser[] } }).items?.rows ?? [];
+        setUsers(rows.filter((x) => x.isActive));
+      });
   }, []);
   useEffect(() => {
     const authHeaders = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
@@ -3314,7 +3321,7 @@ function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: 
       setCases(caseRows);
     }).catch(() => setError("โหลดข้อมูลตัวกรอง RTM ไม่สำเร็จ"));
   }, [headers, projectId, refresh]);
-  useEffect(() => { if (!selectedRelease) { setItems([]); setLoading(false); return; } setLoading(true); setError(""); fetch(`${apiUrl}/releases/${selectedRelease}/rtm`, { headers }).then(r => r.ok ? r.json() : Promise.reject()).then(setItems).catch(() => setError("โหลด RTM ไม่สำเร็จ")).finally(() => setLoading(false)); }, [headers, selectedRelease, refresh, reload]);
+  useEffect(() => { if (!selectedRelease) { setItems([]); setLoading(false); return; } setLoading(true); setError(""); fetch(`${apiUrl}/releases/${selectedRelease}/rtm`, { headers }).then(r => r.ok ? r.json() : Promise.reject()).then((data: unknown) => { const rows = Array.isArray(data) ? data : (data as { items?: { rows: unknown[] } }).items?.rows ?? []; setItems(rows as RtmItem[]); }).catch(() => setError("โหลด RTM ไม่สำเร็จ")).finally(() => setLoading(false)); }, [headers, selectedRelease, refresh, reload]);
   const filtered = items.filter(x => (!moduleFilter || x.moduleId === moduleFilter) && (!coverageFilter || x.coverageStatus === coverageFilter) && (!statusFilter || x.status === statusFilter) && (!search || `${x.requirementCode} ${x.title} ${x.moduleName} ${x.testCases.map(t => t.testCaseCode).join(" ")}`.toLowerCase().includes(search.toLowerCase())));
   const moduleTreeOptions = useMemo(() => {
     const rows: { module: ModuleItem; depth: number }[] = [];
