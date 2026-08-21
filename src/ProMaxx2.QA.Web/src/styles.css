@@ -583,6 +583,9 @@ main {
   align-items: center;
 }
 
+select option.module-root-option { font-weight: 700; color: var(--text); }
+select option.module-child-option { color: #475467; }
+
 .context select,
 .table-tools select {
   border: 1px solid var(--line);
@@ -2573,6 +2576,7 @@ input[type="radio"] {
 .requirement-id-link { border: 0; background: transparent; padding: 0; color: #142f65; font: inherit; font-weight: 800; text-align: left; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; cursor: pointer; }
 .requirement-id-link:hover { color: var(--primary); text-decoration-color: currentColor; }
 .requirement-id-link:focus-visible { border-radius: 4px; outline: 3px solid rgba(36,87,214,.18); outline-offset: 3px; }
+.requirement-module { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .1px; }
 .requirement-detail-modal { width: min(820px, calc(100vw - 32px)); max-width: 820px; }
 .requirement-detail-modal .modal-head > div { min-width: 0; }
 .requirement-detail-modal .modal-head small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
