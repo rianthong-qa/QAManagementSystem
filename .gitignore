@@ -17,3 +17,6 @@ coverage/
 cloudflared.exe
 cloudflared-route-output.txt
 cloudflared-create.txt
+
+# Promaxx2 POS build (AUT binaries) - not part of this repo
+/ProMaxx2/
