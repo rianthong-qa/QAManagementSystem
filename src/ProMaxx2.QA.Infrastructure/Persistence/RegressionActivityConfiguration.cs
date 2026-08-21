@@ -1,0 +1,3 @@
+using Microsoft.EntityFrameworkCore;using Microsoft.EntityFrameworkCore.Metadata.Builders;using ProMaxx2.QA.Domain.Execution;
+namespace ProMaxx2.QA.Infrastructure.Persistence;
+public sealed class RegressionActivityConfiguration:IEntityTypeConfiguration<RegressionActivity>{public void Configure(EntityTypeBuilder<RegressionActivity>b){b.ToTable("RegressionActivities");b.HasKey(x=>x.RegressionActivityId);b.Property(x=>x.RegressionActivityId).HasDefaultValueSql("NEWSEQUENTIALID()");b.Property(x=>x.Action).HasMaxLength(50).IsRequired();b.Property(x=>x.Details).HasMaxLength(2000);b.Property(x=>x.CreatedAt).HasPrecision(0);b.HasIndex(x=>new{x.ReleaseId,x.CreatedAt});}}

@@ -7,6 +7,7 @@ import "./TestManagement.css";
 import "./Dashboard.css";
 import "./DashboardExecutive.css";
 import "./Rtm.css";
+import "./Regression.css";
 
 type Page =
   | "dashboard"
@@ -212,7 +213,7 @@ const viewPermission: Record<Page, string> = {
   "test-cycles": "EXECUTION.RUN",
   execution: "EXECUTION.RUN",
   defects: "DEFECT.EDIT",
-  regression: "TESTCASE.VIEW",
+  regression: "REGRESSION.VIEW",
   summary: "REPORT.EXPORT",
   risks: "RISK.APPROVE",
   signoff: "RELEASE.SIGNOFF",
@@ -335,8 +336,8 @@ function Badge({
 }
 
 type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string; projectId?:string; releaseId?:string|null; buildId?:string|null; moduleId?:string|null; description?:string|null; stepsToReproduce?:string|null; expectedResult?:string|null; actualResult?:string|null; assigneeUserId?:string|null; updatedAt?:string|null; createdByName?:string|null; updatedByName?:string|null; releaseCode?:string|null; buildNumber?:string|null; assigneeName?:string|null };
-type DefectActivityItem = { defectActivityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string };
-type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority: string; status: string; linkedAt: string };
+type DefectActivityItem = { activityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string; performedByUserId?: string | null; performedAt?: string };
+type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority?: string; status?: string; linkedAt?: string };
 const defectSeverities = ["Critical", "High", "Medium", "Low"];
 const defectStatuses = ["Open", "In Progress", "Resolved", "Closed", "Rejected"];
 const defectSeverityTones: Record<string, string> = { Critical: "red", High: "yellow", Medium: "blue", Low: "green" };
@@ -436,23 +437,33 @@ function defectAgeDays(createdAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000));
 }
 
-function ExecutiveTimeline({ projectId, releaseId, buildId }: { projectId?: string; releaseId?: string; buildId?: string }) {
+function ExecutiveTimeline({ projectId, releaseId, buildId, shareCode, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string }) {
   const [releases, setReleases] = useState<TimelineRelease[]>([]);
   const [cycles, setCycles] = useState<TimelineCycle[]>([]);
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   useEffect(() => {
+    const apply = (t: { releases?: TimelineRelease[]; cycles?: TimelineCycle[] } | null) => {
+      if (!t) return;
+      const aR = new Set(["Draft","Testing","Ready"]);
+      const aC = new Set(["Draft","InProgress"]);
+      setReleases((t.releases ?? []).filter(r => aR.has(r.status)));
+      setCycles((t.cycles ?? []).filter(c => aC.has(c.status)));
+    };
+    if (shareCode || shareToken) {
+      const url = shareCode ? `${apiUrl}/dashboard/shared/${encodeURIComponent(shareCode)}/timeline` : `${apiUrl}/dashboard/shared/timeline?token=${encodeURIComponent(shareToken ?? "")}`;
+      fetch(url).then(r => r.ok ? r.json() : null).then(apply).catch(() => {});
+      return;
+    }
     if (!projectId) return;
     const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
     Promise.all([
       fetch(`${apiUrl}/releases?${q}`, { headers }).then(r => r.ok ? r.json() : []),
       fetch(`${apiUrl}/test-cycles?${q}&page=1&size=100`, { headers }).then(r => r.ok ? r.json() : null),
     ]).then(([rel, cyc]) => {
-      const aR = new Set(["Draft","Testing","Ready"]);
-      const aC = new Set(["Draft","InProgress"]);
-      setReleases((rel as TimelineRelease[]).filter(r => aR.has(r.status)));
-      const cycleRows = cyc && typeof cyc === "object" && "items" in cyc ? (cyc as { items: { rows: TimelineCycle[] } }).items.rows : (cyc as TimelineCycle[] | null) ?? []; setCycles(cycleRows.filter(c => aC.has(c.status)));
+      const cycleRows = cyc && typeof cyc === "object" && "items" in cyc ? (cyc as { items: { rows: TimelineCycle[] } }).items.rows : (cyc as TimelineCycle[] | null) ?? [];
+      apply({ releases: rel as TimelineRelease[], cycles: cycleRows });
     }).catch(() => {});
-  }, [projectId, releaseId, buildId, headers]);
+  }, [projectId, releaseId, buildId, headers, shareCode, shareToken]);
 
   const todayTH = startOfDayTH(nowTH());
   const allDates: Date[] = [];
@@ -585,6 +596,51 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
     : data.requirementCoverage < 90 ? `Requirement Coverage ${data.requirementCoverage}% ต่ำกว่าเกณฑ์ 90%`
     : data.passRate < 90 ? `Pass Rate ${data.passRate}% ต่ำกว่าเกณฑ์ 90%`
     : "ผ่านเกณฑ์ P0/P1, Coverage, Pass Rate และ Defect";
+  const sortModules = (list: DashboardSummary["modules"]) => [...list].sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || (a.moduleCode ?? "").localeCompare(b.moduleCode ?? ""));
+  const rootModules = sortModules(data.modules.filter(x => !x.parentModuleId));
+  const childModules = new Map<string, DashboardSummary["modules"]>();
+  for (const m of data.modules) if (m.parentModuleId) { const list = childModules.get(m.parentModuleId) ?? []; list.push(m); childModules.set(m.parentModuleId, list); }
+  type ModuleRoll = { cases: number; executed: number; passed: number; failed: number; blocked: number; subs: number };
+  const rollup = new Map<string, ModuleRoll>();
+  const rollOf = (id: string): ModuleRoll => {
+    const cached = rollup.get(id);
+    if (cached) return cached;
+    const m = data.modules.find(x => x.moduleId === id);
+    const acc: ModuleRoll = { cases: m?.testCases ?? 0, executed: m?.executed ?? 0, passed: m?.passed ?? 0, failed: m?.failed ?? 0, blocked: m?.blocked ?? 0, subs: 0 };
+    for (const c of childModules.get(id) ?? []) { const r = rollOf(c.moduleId); acc.cases += r.cases; acc.executed += r.executed; acc.passed += r.passed; acc.failed += r.failed; acc.blocked += r.blocked; acc.subs += 1 + r.subs; }
+    rollup.set(id, acc);
+    return acc;
+  };
+  data.modules.forEach(m => rollOf(m.moduleId));
+  const totalCasesAll = data.modules.reduce((s,m) => s + m.testCases, 0);
+  const renderModule = (m: DashboardSummary["modules"][number], depth: number): ReactElement => {
+    const children = sortModules(childModules.get(m.moduleId) ?? []);
+    const hasChildren = children.length > 0;
+    const isExpanded = expandedModules.has(m.moduleId);
+    const agg = rollOf(m.moduleId);
+    const childCases = Math.max(0, agg.cases - m.testCases);
+    const den = Math.max(1, agg.executed);
+    const pPct = Math.round(agg.passed / den * 100);
+    const fPct = Math.round(agg.failed / den * 100);
+    const bPct = Math.round(agg.blocked / den * 100);
+    const healthClass = m.health.toLowerCase().replace(/\s+/g, "");
+    const hasSubCases = hasChildren && childCases > 0;
+    return <_F key={m.moduleId}>
+      <div className={"module-tree-row" + (hasChildren ? " has-children" : "")} style={{ paddingLeft: depth * 24 }}>
+        {hasChildren ? <button type="button" className={"tree-expand-btn" + (isExpanded ? " open" : "")} aria-expanded={isExpanded} aria-label={(isExpanded ? "ย่อ " : "ขยาย ") + m.moduleName} onClick={() => setExpandedModules(prev => { const next = new Set(prev); if (next.has(m.moduleId)) next.delete(m.moduleId); else next.add(m.moduleId); return next; })}>▸</button> : <span className="tree-expand-spacer" />}
+        <div className="module-tree-info">
+          <div className="module-tree-name">{m.moduleName}{m.moduleCode && <span className="module-code-chip">{m.moduleCode}</span>}<span className={`health-badge health-${healthClass}`}>{m.health}</span></div>
+          <small>{hasSubCases ? `${m.testCases.toLocaleString()} ในโมดูลนี้ + ${childCases.toLocaleString()} จาก ${agg.subs} Submodules` : `${m.testCases.toLocaleString()} Cases`}</small>
+          <div className="module-tree-bars">
+            <div className="status-bar-track">{agg.executed > 0 && <><span style={{width:`${pPct}%`,background:"#16a34a"}} /><span style={{width:`${fPct}%`,background:"#dc2626"}} /><span style={{width:`${bPct}%`,background:"#d97706"}} /></>}</div>
+            <div className="status-bar-labels">{agg.executed > 0 ? <><span className="sb-pass">Pass {pPct}%</span><span className="sb-fail">Fail {fPct}%</span><span className="sb-block">Blocked {bPct}%</span></> : <span className="sb-none">ยังไม่มีผล Execution</span>}</div>
+          </div>
+        </div>
+        <div className="module-cases-pill" title={hasSubCases ? `รวม ${agg.cases.toLocaleString()} Cases (${m.testCases.toLocaleString()} ในโมดูลนี้ + ${childCases.toLocaleString()} จาก Submodules)` : `${agg.cases.toLocaleString()} Cases`}><b>{agg.cases.toLocaleString()}</b><span>Cases</span></div>
+      </div>
+      {isExpanded && children.map(c => renderModule(c, depth + 1))}
+    </_F>;
+  };
   return <div className="executive-dashboard">
     <section className="exec-hero">
       <div className="exec-hero-accent" />
@@ -627,12 +683,21 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
       ["Release Blockers", data.openP0 + data.openP1, `P0 ${data.openP0} • P1 ${data.openP1}`, data.openP0 + data.openP1 ? "red" : "green"],
     ].map(x => <article className="card kpi" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small className={String(x[3])}>{x[2]}</small></article>)}</div>
     <QualityOverviewCharts data={data} />
-    <ExecutiveTimeline projectId={projectId} releaseId={releaseId} buildId={buildId} />
+    <ExecutiveTimeline projectId={projectId} releaseId={releaseId} buildId={buildId} shareCode={shareCode} shareToken={shareToken} />
     <article className="card" style={{padding:24}}>
-      <div className="module-overview-head"><h3 style={{margin:0,fontSize:16,fontWeight:800,color:"#1f2937"}}>Module Overview</h3><span style={{fontSize:12,color:"#697386"}}>{data.modules.reduce((s,m)=>s+m.testCases,0)} Test Cases</span></div>
-      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ลำดับ Module ตามโครงสร้างระบบ พร้อมจำนวน Test Case และสถานะ</p>
+      <div className="module-overview-head">
+        <div className="module-overview-title">
+          <h3>Module Overview</h3>
+          <p>โครงสร้าง Module แบบ Tree พร้อมจำนวน Test Case รวมทุก Submodule และสถานะการทดสอบ</p>
+        </div>
+        <div className="module-overview-total">
+          <strong>{totalCasesAll.toLocaleString()}</strong>
+          <span>Test Cases ทั้งหมด</span>
+          <small>{data.modules.length} Modules · {rootModules.length} Root</small>
+        </div>
+      </div>
       <div className="module-tree-list">
-        {(() => { const rootModules = data.modules.filter(x => !x.parentModuleId).sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || (a.moduleCode ?? "").localeCompare(b.moduleCode ?? "")); const renderModule = (m: DashboardSummary["modules"][number], depth: number) => { const children = data.modules.filter(x => x.parentModuleId === m.moduleId).sort((a,b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999)); const hasChildren = children.length > 0; const isExpanded = expandedModules.has(m.moduleId); const tc = Math.max(1, m.testCases); const pPct = Math.round(m.passed / tc * 100); const fPct = Math.round(m.failed / tc * 100); const bPct = Math.round(m.blocked / tc * 100); return <_F key={m.moduleId}><div className="module-tree-row" style={{paddingLeft: depth * 24}}>{hasChildren ? <button className="tree-expand-btn" onClick={() => setExpandedModules(prev => { const next = new Set(prev); if (next.has(m.moduleId)) next.delete(m.moduleId); else next.add(m.moduleId); return next; })}>{isExpanded ? "▾" : "▸"}</button> : <span className="tree-expand-spacer" />}<div className="module-tree-info"><div className="module-tree-name">{m.moduleName}<small>{m.testCases} Cases · {m.health}</small></div><div className="module-tree-bars"><div className="status-bar-track"><span style={{width:`${pPct}%`,background:"#16a34a"}} /><span style={{width:`${fPct}%`,background:"#dc2626"}} /><span style={{width:`${bPct}%`,background:"#d97706"}} /></div><div className="status-bar-labels"><span className="sb-pass">{pPct}%</span><span className="sb-fail">{fPct}%</span><span className="sb-block">{bPct}%</span></div></div></div></div>{isExpanded && children.map(child => renderModule(child, depth + 1))}</_F>; }; return rootModules.map(m => renderModule(m, 0)); })()}
+        {rootModules.map(m => renderModule(m, 0))}
       </div>
     </article>
     <div className="dashboard-two-col">
@@ -696,20 +761,28 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
   const [summaryStats, setSummaryStats] = useState({ total: 0, open: 0, inProgress: 0, resolved: 0, critical: 0 });
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   const load = useCallback(() => {
+    void reload; // refresh the list after create, edit, delete, or bulk updates
     if (!projectId) { setItems([]); setTotalCount(0); setLoading(false); setSummaryStats({ total: 0, open: 0, inProgress: 0, resolved: 0, critical: 0 }); return; }
     setLoading(true); setError("");
     const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(search && { search }), ...(moduleFilter && { moduleId: moduleFilter }), ...(severityFilter && { severity: severityFilter }), ...(statusFilter && { status: statusFilter }), ...(assigneeFilter && { assigneeUserId: assigneeFilter }), page: String(page), size: String(pageSize) });
     fetch(`${apiUrl}/defects?${q}`, { headers }).then(async r => {
       if (!r.ok) throw new Error("โหลด Defect ไม่สำเร็จ");
       const json = await r.json();
-      if (json && typeof json === "object" && "items" in json) {
-        const paged = json as { items: DefectItem[]; totalCount: number };
-        setItems(paged.items); setTotalCount(paged.totalCount);
-      } else if (Array.isArray(json)) {
-        setItems(json); setTotalCount(json.length);
-      } else { setItems([]); setTotalCount(0); }
+      const response = json && typeof json === "object" ? json as Record<string, unknown> : null;
+      const nestedItems = response?.items && typeof response.items === "object" ? response.items as Record<string, unknown> : null;
+      const rows = Array.isArray(json) ? json
+        : Array.isArray(response?.rows) ? response.rows
+        : Array.isArray(response?.items) ? response.items
+        : Array.isArray(nestedItems?.rows) ? nestedItems.rows
+        : [];
+      const total = Number(response?.total ?? response?.totalCount ?? nestedItems?.total ?? nestedItems?.totalCount ?? rows.length);
+      setItems(rows as DefectItem[]);
+      setTotalCount(Number.isFinite(total) ? total : rows.length);
+      if (typeof response?.open === "number") {
+        setSummaryStats({ total, open: response.open, inProgress: Number(response.inProgress ?? 0), resolved: Number(response.closed ?? 0), critical: rows.filter((x: DefectItem) => x.severity === "Critical").length });
+      }
     }).catch(e => setError(e instanceof Error ? e.message : "โหลด Defect ไม่สำเร็จ")).finally(() => setLoading(false));
-  }, [projectId, releaseId, buildId, search, moduleFilter, severityFilter, statusFilter, assigneeFilter, page, pageSize, headers]);
+  }, [projectId, releaseId, buildId, search, moduleFilter, severityFilter, statusFilter, assigneeFilter, page, pageSize, headers, reload]);
   useEffect(load, [load]);
   useEffect(() => {
     if (!projectId) { setSummaryStats({ total: 0, open: 0, inProgress: 0, resolved: 0, critical: 0 }); return; }
@@ -757,7 +830,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
     if (response.ok) { setNotice(`ลบ ${item.defectCode} แล้ว`); setReload(x => x + 1); }
   };
   const quickStatus = async (item: DefectItem, status: string) => {
-    const response = await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "POST", headers, body: JSON.stringify({ status }) });
+    const response = await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status }) });
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1); }
   };
   const openDetail = async (item: DefectItem) => {
@@ -768,18 +841,18 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
         fetch(`${apiUrl}/defects/${item.defectId}/activities`, { headers: h }).then(r => r.ok ? r.json() : []),
         fetch(`${apiUrl}/defects/${item.defectId}/test-cases`, { headers: h }).then(r => r.ok ? r.json() : []),
       ]);
-      setActivities(Array.isArray(actRes) ? actRes : []);
+      setActivities(Array.isArray(actRes) ? actRes.map((a: any) => ({ activityId: a.activityId ?? a.defectActivityId ?? "", actionType: a.actionType ?? a.activityType ?? "", message: a.message ?? a.description ?? "", actorUserId: a.actorUserId ?? a.performedByUserId ?? null, actorName: a.actorName ?? null, createdAt: a.createdAt ?? a.performedAt ?? "", performedAt: a.performedAt ?? a.createdAt ?? "" })) : []);
       setLinkedCases(Array.isArray(tcRes) ? tcRes : []);
     } catch {} finally { setDetailLoading(false); }
   };
   const postComment = async () => {
     if (!detail || !commentText.trim()) return;
-    const response = await fetch(`${apiUrl}/defects/${detail.defectId}/activities`, { method: "POST", headers, body: JSON.stringify({ actionType: "Comment", message: commentText.trim() }) });
+    const response = await fetch(`${apiUrl}/defects/${detail.defectId}/comments`, { method: "POST", headers, body: JSON.stringify({ body: commentText.trim() }) });
     if (response.ok) { setCommentText(""); openDetail(detail); }
   };
   const bulkStatus = async (status: string) => {
     if (!selectedIds.length) return;
-    const response = await fetch(`${apiUrl}/defects/bulk-status`, { method: "POST", headers, body: JSON.stringify({ defectIds: selectedIds, status }) });
+    const response = await fetch(`${apiUrl}/defects/bulk`, { method: "POST", headers, body: JSON.stringify({ ids: selectedIds, status }) });
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${selectedIds.length} รายการ`); setSelectedIds([]); setReload(x => x + 1); }
   };
   const exportCsv = () => {
@@ -794,7 +867,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
   return <>
     {error && <div className="inline-alert error"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
     {notice && <div className="inline-alert success"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
-    <div className="kpi-grid">
+    <div className="kpi-grid defect-summary-grid">
       <article className="card kpi"><span>Total</span><strong>{summaryStats.total}</strong><small>Defects</small></article>
       <article className="card kpi"><span>Open</span><strong>{summaryStats.open}</strong><small className="yellow">ต้องแก้ไข</small></article>
       <article className="card kpi"><span>In Progress</span><strong>{summaryStats.inProgress}</strong><small className="blue">กำลังแก้ไข</small></article>
@@ -895,11 +968,11 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
           <button className="btn" onClick={() => { openForm(detail); setDetail(null); }}>แก้ไข</button>
         </div></section>}
         <section style={{ marginBottom: 16 }}><h4>Linked Test Cases ({linkedCases.length})</h4>
-          {linkedCases.length ? <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{linkedCases.map(tc => <div key={tc.testCaseId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", background: "#f9fafb", borderRadius: 6 }}><b style={{ fontSize: 12 }}>{tc.testCaseCode}</b><span style={{ fontSize: 12, flex: 1 }}>{tc.title}</span><Badge tone={testCaseStatusTones[tc.status] ?? "gray"}>{tc.status}</Badge></div>)}</div> : <p style={{ fontSize: 12, color: "#9ca3af" }}>ยังไม่มี Test Case ที่เชื่อมโยง</p>}
+          {linkedCases.length ? <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{linkedCases.map(tc => <div key={tc.testCaseId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", background: "#f9fafb", borderRadius: 6 }}><b style={{ fontSize: 12 }}>{tc.testCaseCode}</b><span style={{ fontSize: 12, flex: 1 }}>{tc.title}</span><Badge tone={tc.status ? (testCaseStatusTones[tc.status] ?? "gray") : "gray"}>{tc.status ?? "-"}</Badge></div>)}</div> : <p style={{ fontSize: 12, color: "#9ca3af" }}>ยังไม่มี Test Case ที่เชื่อมโยง</p>}
         </section>
         <section style={{ marginBottom: 16 }}><h4>Activities ({activities.length})</h4>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
-            {activities.length ? activities.map(a => <div key={a.defectActivityId} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}><Badge tone="blue">{defectActionLabels[a.actionType] ?? a.actionType}</Badge><div style={{ flex: 1 }}><p style={{ fontSize: 12, margin: 0 }}>{a.message}</p><small style={{ fontSize: 10, color: "#9ca3af" }}>{a.actorName ?? "System"} · {fmtAgo(a.createdAt)}</small></div></div>) : <p style={{ fontSize: 12, color: "#9ca3af" }}>ยังไม่มี Activity</p>}
+            {activities.length ? activities.map(a => <div key={a.activityId} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}><Badge tone="blue">{defectActionLabels[a.actionType] ?? a.actionType}</Badge><div style={{ flex: 1 }}><p style={{ fontSize: 12, margin: 0 }}>{a.message ?? a.actionType}</p><small style={{ fontSize: 10, color: "#9ca3af" }}>{a.actorName ?? "System"} · {fmtAgo(a.performedAt ?? a.createdAt)}</small></div></div>) : <p style={{ fontSize: 12, color: "#9ca3af" }}>ยังไม่มี Activity</p>}
           </div>
           {canEdit !== false && <div style={{ display: "flex", gap: 8, marginTop: 8 }}><input style={{ flex: 1 }} value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="เพิ่มคอมเมนต์..." onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }} /><button className="btn primary" onClick={postComment} disabled={!commentText.trim()}>ส่ง</button></div>}
         </section>
@@ -909,9 +982,9 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
   </>;
 }
 
-function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecution = false }: { page: Page; search: string; projectId?: string; releaseId?: string; buildId?: string; canAssignExecution?: boolean }) {
+function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecution = false, canExport = false }: { page: Page; search: string; projectId?: string; releaseId?: string; buildId?: string; canAssignExecution?: boolean; canExport?: boolean }) {
   if (page === "execution") return <ExecutionWorkspacePage contextProjectId={projectId} contextReleaseId={releaseId} contextBuildId={buildId} />;
-  if (page === "test-cycles") return <TestCyclesPage search={search} canEdit={canAssignExecution} contextProjectId={projectId} contextReleaseId={releaseId} contextBuildId={buildId} />;
+  if (page === "test-cycles") return <TestCyclesPage search={search} canEdit={canAssignExecution} canExport={canExport} contextProjectId={projectId} contextReleaseId={releaseId} contextBuildId={buildId} />;
   if (page === "test-suites") {
     let canEdit = false;
     try {
@@ -1063,9 +1136,9 @@ function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecut
                     )}
                   </td>
                 ))}
-              </tr>
-            ))}
-          </tbody>
+                </tr>
+              ))}
+            </tbody>
         </table>
       </div>
     </article>
@@ -1718,6 +1791,8 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
     [error, setError] = useState(""),
     [reload, setReload] = useState(0),
     [modal, setModal] = useState<"release" | "build" | null>(null),
+    [releaseDetail, setReleaseDetail] = useState<ReleaseItem | null>(null),
+    [buildDetail, setBuildDetail] = useState<BuildItem | null>(null),
     [editRelease, setEditRelease] = useState<ReleaseItem | null>(null),
     [editBuild, setEditBuild] = useState<BuildItem | null>(null),
     [projectId, setProjectId] = useState(""),
@@ -1984,29 +2059,15 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
         </div>
         <div className="release-cards">
           {filteredReleases.map((x) => (
-            <button
-              key={x.releaseId}
-              className={selectedId === x.releaseId ? "active" : ""}
-              onClick={() => setSelectedId(x.releaseId)}
-            >
-              <span>{x.releaseCode}</span>
-              <b>Version {x.version}</b>
-              <small>
-                {x.releaseType || "-"} ·{" "}
-                {x.plannedReleaseDate
-                  ? new Date(x.plannedReleaseDate).toLocaleDateString("th-TH")
-                  : "ไม่ระบุวัน"}
-              </small>
-              <Badge
-                tone={
-                  x.status === "Ready" || x.status === "Released"
-                    ? "green"
-                    : "yellow"
-                }
-              >
-                {x.status}
-              </Badge>
-            </button>
+            <div key={x.releaseId} className={`release-card${selectedId === x.releaseId ? " active" : ""}`}>
+              <button className="release-card-select" aria-label={`เลือก ${x.releaseCode} Version ${x.version}`} aria-pressed={selectedId === x.releaseId} onClick={() => setSelectedId(x.releaseId)}>
+                <span>{x.releaseCode}</span>
+                <b>Version {x.version}</b>
+                <small><span>{x.releaseType || "ไม่ระบุประเภท"}</span><span>{x.plannedReleaseDate ? new Date(x.plannedReleaseDate).toLocaleDateString("th-TH") : "ไม่ระบุวัน"}</span></small>
+                <Badge tone={x.status === "Ready" || x.status === "Released" ? "green" : "yellow"}>{x.status}</Badge>
+              </button>
+              <button className="release-card-detail" aria-label={`ดูรายละเอียด ${x.releaseCode}`} onClick={() => setReleaseDetail(x)}>รายละเอียด <span aria-hidden="true">›</span></button>
+            </div>
           ))}
         </div>
       </article>
@@ -2016,14 +2077,17 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
             <h3>Builds {selected && <span>· {selected.releaseCode}</span>}</h3>
             <p>{filteredBuilds.length} Build ใน Release ที่เลือก</p>
           </div>
-          {canEdit && selected && (
+          {selected && (
             <div className="row-actions">
-              <button className="btn" onClick={() => openRelease(selected)}>
-                แก้ไข Release
+              <button className="btn" onClick={() => setReleaseDetail(selected)}>
+                รายละเอียด Release
               </button>
-              <button className="btn primary" onClick={() => openBuild()}>
-                + Build
-              </button>
+              {canEdit && <><button className="btn" onClick={() => openRelease(selected)}>
+                  แก้ไข Release
+                </button>
+                <button className="btn primary" onClick={() => openBuild()}>
+                  + Build
+                </button></>}
             </div>
           )}
         </div>
@@ -2045,7 +2109,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                 {filteredBuilds.map((x) => (
                   <tr key={x.buildId}>
                     <td>
-                      <b>{x.buildNumber}</b>
+                      <button className="release-build-link" onClick={() => setBuildDetail(x)}>{x.buildNumber}</button>
                       {x.isReleaseCandidate && <Badge tone="blue">RC</Badge>}
                     </td>
                     <td>{x.applicationVersion || "-"}</td>
@@ -2110,6 +2174,30 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
           </div>
         )}
       </article>
+      {releaseDetail && (
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="release-detail-title" onMouseDown={() => setReleaseDetail(null)}>
+          <div className="modal-box release-build-detail" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head"><div><h2 id="release-detail-title">รายละเอียด Release</h2><small>{releaseDetail.releaseCode}</small></div><button aria-label="ปิดรายละเอียด Release" onClick={() => setReleaseDetail(null)}>×</button></div>
+            <div className="release-detail-hero"><div><span className="release-detail-eyebrow">Release</span><b>{releaseDetail.releaseCode}</b><h3>Version {releaseDetail.version}</h3><div className="release-detail-badges"><Badge tone={releaseDetail.status === "Ready" || releaseDetail.status === "Released" ? "green" : "yellow"}>{releaseDetail.status}</Badge>{releaseDetail.releaseType && <Badge tone="blue">{releaseDetail.releaseType}</Badge>}</div></div><div className="release-date-card"><span aria-hidden="true">◫</span><small>Planned Release</small><b>{releaseDetail.plannedReleaseDate ? new Date(releaseDetail.plannedReleaseDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุวัน"}</b></div></div>
+            <div className="release-detail-meta"><div><span aria-hidden="true">P</span><small>Project<b>{projects.find((x) => x.projectId === releaseDetail.projectId)?.projectName || "-"}</b></small></div><div><span aria-hidden="true">#</span><small>Builds<b>{releaseDetail.releaseId === selectedId ? builds.length : "เลือก Release เพื่อดู"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{releaseDetail.status}</b></small></div></div>
+            <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">≡</span><div><h3>Release Scope</h3><small>ขอบเขตและเป้าหมายของ Release</small></div></div><p>{releaseDetail.scope || "ยังไม่ได้ระบุขอบเขตของ Release"}</p></section>
+            <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">▤</span><div><h3>Builds ใน Release</h3><small>รายการ Build ที่พร้อมใช้งาน</small></div></div>{releaseDetail.releaseId === selectedId && builds.length ? <div className="release-detail-builds">{builds.map((build) => <button key={build.buildId} onClick={() => { setReleaseDetail(null); setBuildDetail(build); }}><span><b>{build.buildNumber}</b><small>{build.applicationVersion || "ไม่ระบุ Application Version"}</small></span><span><Badge tone={build.status === "Ready" ? "green" : "yellow"}>{build.status}</Badge>{build.isReleaseCandidate && <Badge tone="blue">RC</Badge>}<i aria-hidden="true">›</i></span></button>)}</div> : <div className="release-detail-empty">ยังไม่มี Build ที่ใช้งานใน Release นี้</div>}</section>
+            <div className="modal-actions"><button className="btn" onClick={() => setReleaseDetail(null)}>ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = releaseDetail; setReleaseDetail(null); openRelease(item); }}>แก้ไข Release</button>}</div>
+          </div>
+        </div>
+      )}
+      {buildDetail && (
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="build-detail-title" onMouseDown={() => setBuildDetail(null)}>
+          <div className="modal-box release-build-detail build-read-detail" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head"><div><h2 id="build-detail-title">รายละเอียด Build</h2><small>{selected?.releaseCode || "Release"}</small></div><button aria-label="ปิดรายละเอียด Build" onClick={() => setBuildDetail(null)}>×</button></div>
+            <div className="build-detail-hero"><div><span className="release-detail-eyebrow">Build Number</span><h3>{buildDetail.buildNumber}</h3><div className="release-detail-badges"><Badge tone={buildDetail.status === "Ready" ? "green" : "yellow"}>{buildDetail.status}</Badge>{buildDetail.isReleaseCandidate && <Badge tone="blue">Release Candidate</Badge>}</div></div><div className="build-version-card"><small>Application Version</small><b>{buildDetail.applicationVersion || "-"}</b><span>Package {buildDetail.packageVersion || "-"}</span></div></div>
+            <div className="release-detail-meta build-detail-meta"><div><span aria-hidden="true">◫</span><small>Build Date<b>{buildDetail.buildDate ? new Date(buildDetail.buildDate).toLocaleDateString("th-TH") : "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">C</span><small>Commit Reference<b>{buildDetail.commitReference || "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{buildDetail.status}</b></small></div></div>
+            <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">+</span><div><h3>Change Notes</h3><small>รายการเปลี่ยนแปลงใน Build นี้</small></div></div><p>{buildDetail.changeNotes || "ไม่มี Change Notes"}</p></section>
+            <section className="release-detail-section known-issues"><div className="release-detail-heading"><span aria-hidden="true">!</span><div><h3>Known Issues</h3><small>ปัญหาที่ทราบและควรระวัง</small></div></div><p>{buildDetail.knownIssues || "ไม่พบ Known Issues"}</p></section>
+            <div className="modal-actions"><button className="btn" onClick={() => setBuildDetail(null)}>ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = buildDetail; setBuildDetail(null); openBuild(item); }}>แก้ไข Build</button>}</div>
+          </div>
+        </div>
+      )}
       {modal && (
         <div className="modal" onMouseDown={() => setModal(null)}>
           <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
@@ -2585,20 +2673,20 @@ function RequirementsPage({
       {viewing && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="requirement-detail-title" onMouseDown={() => setViewing(null)}>
         <div className="modal-box requirement-detail-modal" onMouseDown={(e) => e.stopPropagation()}>
           <div className="modal-head"><div><h2 id="requirement-detail-title">รายละเอียด Requirement</h2><small>{viewing.requirementCode}</small></div><button aria-label="ปิดหน้าต่างรายละเอียด" onClick={() => setViewing(null)}>×</button></div>
-          <div className="requirement-detail-title"><div><span>Requirement ID</span><b>{viewing.requirementCode}</b></div><h3>{viewing.title}</h3><div className="requirement-detail-badges"><Badge tone={viewing.priority === "P0" || viewing.priority === "P1" ? "red" : "blue"}>{viewing.priority}</Badge><Badge tone={viewing.status === "Approved" || viewing.status === "Implemented" ? "green" : "yellow"}>{viewing.status}</Badge><Badge tone={viewing.isInScope ? "green" : "red"}>{viewing.isInScope ? "In Scope" : "Out of Scope"}</Badge></div></div>
-          <dl className="requirement-detail-grid">
-            <div><dt>Project</dt><dd>{filterProjects.find((x) => x.projectId === viewing.projectId)?.projectName ?? "-"}</dd></div>
-            <div><dt>Module</dt><dd>{filterModules.find((x) => x.moduleId === viewing.moduleId)?.moduleName ?? "-"}</dd></div>
-            <div><dt>Release</dt><dd>{viewRelease ? `${viewRelease.releaseCode} · Version ${viewRelease.version}` : viewing.releaseId ? "กำลังโหลด..." : "ไม่ระบุ Release"}</dd></div>
-            <div><dt>Revision</dt><dd>Rev. {viewing.revisionNo}</dd></div>
-            <div><dt>Risk</dt><dd>{viewing.riskLevel || "ไม่ระบุ"}</dd></div>
-            <div><dt>Owner</dt><dd>{users.find((x) => x.userId === viewing.ownerUserId)?.displayName ?? "ไม่ระบุผู้รับผิดชอบ"}</dd></div>
-            <div className="full"><dt>Source</dt><dd>{viewing.source || "ไม่ระบุ"}</dd></div>
-            <div className="full detail-copy"><dt>Description</dt><dd>{viewing.description || "ไม่มีรายละเอียด"}</dd></div>
-            <div className="full detail-copy criteria"><dt>Acceptance Criteria</dt><dd>{viewing.acceptanceCriteria || "ไม่มี Acceptance Criteria"}</dd></div>
+          <div className="requirement-detail-title"><div className="requirement-detail-hero-copy"><span>Requirement</span><b>{viewing.requirementCode}</b><h3>{viewing.title}</h3><div className="requirement-detail-badges"><Badge tone={viewing.priority === "P0" || viewing.priority === "P1" ? "red" : "blue"}>{viewing.priority}</Badge><Badge tone={viewing.status === "Approved" || viewing.status === "Implemented" ? "green" : "yellow"}>{viewing.status}</Badge></div></div><div className={`requirement-scope-card ${viewing.isInScope ? "in-scope" : "out-scope"}`}><span aria-hidden="true">{viewing.isInScope ? "✓" : "–"}</span><div><small>Release Scope</small><b>{viewing.isInScope ? "In Scope" : "Out of Scope"}</b></div></div></div>
+          <dl className="requirement-detail-grid requirement-detail-meta">
+            <div><span className="requirement-meta-icon" aria-hidden="true">P</span><span><dt>Project</dt><dd>{filterProjects.find((x) => x.projectId === viewing.projectId)?.projectName ?? "-"}</dd></span></div>
+            <div><span className="requirement-meta-icon" aria-hidden="true">M</span><span><dt>Module</dt><dd>{filterModules.find((x) => x.moduleId === viewing.moduleId)?.moduleName ?? "-"}</dd></span></div>
+            <div><span className="requirement-meta-icon" aria-hidden="true">R</span><span><dt>Release</dt><dd>{viewRelease ? `${viewRelease.releaseCode} · Version ${viewRelease.version}` : viewing.releaseId ? "กำลังโหลด..." : "ไม่ระบุ Release"}</dd></span></div>
+            <div><span className="requirement-meta-icon" aria-hidden="true">#</span><span><dt>Revision</dt><dd>Rev. {viewing.revisionNo}</dd></span></div>
+            <div><span className="requirement-meta-icon risk" aria-hidden="true">!</span><span><dt>Risk</dt><dd>{viewing.riskLevel || "ไม่ระบุ"}</dd></span></div>
+            <div><span className="requirement-meta-icon" aria-hidden="true">O</span><span><dt>Owner</dt><dd>{users.find((x) => x.userId === viewing.ownerUserId)?.displayName ?? "ไม่ระบุผู้รับผิดชอบ"}</dd></span></div>
           </dl>
-          <div className="requirement-detail-status"><span className="information-icon" aria-hidden="true">i</span><div><b>{viewing.status} · {requirementStatusInformation.find((x) => x.value === viewing.status)?.label}</b><p>{requirementStatusInformation.find((x) => x.value === viewing.status)?.meaning}</p><small>{requirementStatusInformation.find((x) => x.value === viewing.status)?.impact}</small></div></div>
-          <div className="modal-actions"><button className="btn primary" onClick={() => setViewing(null)}>ปิด</button></div>
+          <section className="requirement-detail-section"><div className="requirement-section-heading"><span aria-hidden="true">S</span><div><h3>Source</h3><small>แหล่งที่มาของ Requirement</small></div></div><p className="requirement-detail-copy">{viewing.source || "ไม่ระบุแหล่งที่มา"}</p></section>
+          <section className="requirement-detail-section"><div className="requirement-section-heading"><span aria-hidden="true">D</span><div><h3>Description</h3><small>รายละเอียดและขอบเขตของความต้องการ</small></div></div><p className="requirement-detail-copy">{viewing.description || "ไม่มีรายละเอียด"}</p></section>
+          <section className="requirement-detail-section criteria"><div className="requirement-section-heading"><span aria-hidden="true">✓</span><div><h3>Acceptance Criteria</h3><small>เงื่อนไขที่ใช้ยืนยันว่า Requirement สำเร็จ</small></div></div><p className="requirement-detail-copy">{viewing.acceptanceCriteria || "ไม่มี Acceptance Criteria"}</p></section>
+          <div className={`requirement-detail-status status-${viewing.status.toLowerCase()}`}><span className="information-icon" aria-hidden="true">i</span><div><span className="requirement-status-label">สถานะปัจจุบัน</span><b>{viewing.status} · {requirementStatusInformation.find((x) => x.value === viewing.status)?.label}</b><p>{requirementStatusInformation.find((x) => x.value === viewing.status)?.meaning}</p><small>{requirementStatusInformation.find((x) => x.value === viewing.status)?.impact}</small></div></div>
+          <div className="modal-actions"><button className="btn" onClick={() => setViewing(null)}>ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = viewing; setViewing(null); openEdit(item); }}>แก้ไข Requirement</button>}</div>
         </div>
       </div>}
       {editing && (
@@ -2688,6 +2776,7 @@ function TestCasesPage({
     [modules, setModules] = useState<ModuleItem[]>([]),
     [filterModules,setFilterModules]=useState<ModuleItem[]>([]),
     [loading, setLoading] = useState(true),
+    [totalCount,setTotalCount]=useState(0),
     [reload, setReload] = useState(0),
     [form, setForm] = useState(false),
     [editing, setEditing] = useState<TestCaseItem | null>(null),
@@ -2721,6 +2810,11 @@ function TestCasesPage({
     [steps, setSteps] = useState([
       { stepNo: 1, action: "", testData: "", expectedResult: "" },
     ]);
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -2731,9 +2825,8 @@ function TestCasesPage({
     };
     setLoading(true); setError("");
     const readJson=(url:string)=>fetch(url,{headers:h}).then(async r=>{if(!r.ok)throw new Error((await r.text())||`HTTP ${r.status}`);return r.json();});
-    Promise.all([readJson(`${apiUrl}/test-cases`),readJson(`${apiUrl}/projects`),readJson(`${apiUrl}/lookups/users`)])
-      .then(([cases, projectData, userData]) => {
-        setItems(cases);
+    Promise.all([readJson(`${apiUrl}/projects`),readJson(`${apiUrl}/lookups/users`)])
+      .then(([projectData, userData]) => {
         setUsers(userData);
         const activeProjects = (projectData as ProjectItem[]).filter(
           (x) => x.isActive,
@@ -2745,6 +2838,31 @@ function TestCasesPage({
       }).catch(e=>setError(e instanceof Error?e.message:"โหลดข้อมูล Test Case ไม่สำเร็จ"))
       .finally(() => setLoading(false));
   }, [reload]);
+  useEffect(() => {
+    const h = {
+      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+    };
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), size: String(pageSize) });
+    if (projectFilter) params.set("projectId", projectFilter);
+    if (moduleFilter) params.set("moduleId", moduleFilter);
+    if (statusFilter) params.set("status", statusFilter);
+    if (priorityFilter) params.set("priority", priorityFilter);
+    if (typeFilter) params.set("testType", typeFilter);
+    if (automationFilter) params.set("automation", automationFilter === "yes" ? "true" : "false");
+    if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+    fetch(`${apiUrl}/test-cases?${params}`, { headers: h })
+      .then(async r => { if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`); return r.json(); })
+      .then((body) => {
+        if (cancelled) return;
+        setItems(Array.isArray(body) ? body : body?.rows ?? []);
+        setTotalCount(Array.isArray(body) ? body.length : body?.total ?? 0);
+      })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "โหลดข้อมูล Test Case ไม่สำเร็จ"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [reload, page, pageSize, projectFilter, moduleFilter, statusFilter, priorityFilter, typeFilter, automationFilter, debouncedSearch]);
   useEffect(() => {
     if (!projectId) {
       setModules([]);
@@ -2905,7 +3023,7 @@ function TestCasesPage({
     }
     setConfirmDelete(null);setNotice(`ลบ ${item.testCaseCode} แล้ว`);setReload((x) => x + 1);
   };
-  const openDetail=async(item:TestCaseItem)=>{setDetail(item);setDetailRequirements([]);setRevisions([]);try{const h={Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`};const read=(url:string)=>fetch(url,{headers:h}).then(r=>r.ok?r.json():[]);const [reqs,history]=await Promise.all([read(`${apiUrl}/test-cases/${item.testCaseId}/requirements`),read(`${apiUrl}/test-cases/${item.testCaseId}/revisions`)]);setDetailRequirements(Array.isArray(reqs)?reqs:[]);setRevisions(Array.isArray(history)?history:[]);}catch{}};
+  const openDetail=async(item:TestCaseItem)=>{try{const h={Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`};const read=(url:string)=>fetch(url,{headers:h}).then(r=>r.ok?r.json():null);const [full,reqs,history]=await Promise.all([read(`${apiUrl}/test-cases/${item.testCaseId}`),read(`${apiUrl}/test-cases/${item.testCaseId}/requirements`),read(`${apiUrl}/test-cases/${item.testCaseId}/revisions`)]);setDetail(full?{...item,...full}:item);setDetailRequirements(Array.isArray(reqs)?reqs:[]);setRevisions(Array.isArray(history)?history:[]);}catch{setDetail(item);}};
   const cloneCase=async(item:TestCaseItem)=>{try{const r=await fetch(`${apiUrl}/test-cases/${item.testCaseId}/clone`,{method:"POST",headers});if(!r.ok)throw new Error("คัดลอก Test Case ไม่สำเร็จ");setNotice(`สร้างสำเนาจาก ${item.testCaseCode} แล้ว`);setReload(x=>x+1);}catch(e){setError(e instanceof Error?e.message:"คัดลอกไม่สำเร็จ");}};
   const importFile=async(file:File)=>{setImporting(true);setError("");try{const data=new FormData();data.append("file",file);data.append("projectId",projectFilter||projects[0]?.projectId||"");const r=await fetch(`${apiUrl}/test-cases/import`,{method:"POST",headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`},body:data});if(!r.ok)throw new Error((await r.text())||"นำเข้าข้อมูลไม่สำเร็จ");const result=await r.json();setNotice(`นำเข้าสำเร็จ ${result.imported} รายการ${result.failed?` ไม่สำเร็จ ${result.failed} รายการ`:""}`);setReload(x=>x+1);}catch(e){setError(e instanceof Error?e.message:"นำเข้าข้อมูลไม่สำเร็จ");}finally{setImporting(false);}};
   const downloadImportTemplate=async()=>{const selectedProjectId=projectFilter||projects[0]?.projectId||"";if(!selectedProjectId){setError("กรุณาเลือก Project ก่อนดาวน์โหลด Template");return;}setTemplateDownloading(true);setError("");try{const response=await fetch(`${apiUrl}/test-cases/import-template?projectId=${selectedProjectId}`,{headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}});if(!response.ok){const problem=await response.json().catch(()=>null);throw new Error(problem?.detail??"ดาวน์โหลด Template ไม่สำเร็จ");}const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="TestCase_Import_Template.xlsx";link.click();URL.revokeObjectURL(url);}catch(e){setError(e instanceof Error?e.message:"ดาวน์โหลด Template ไม่สำเร็จ");}finally{setTemplateDownloading(false);}};
@@ -2925,21 +3043,15 @@ function TestCasesPage({
   };
   const removeCaseAiDraft=(index:number)=>setCaseAiDrafts(drafts=>{const next=drafts.filter((_,i)=>i!==index);if(next.length===0){setTestCaseAiModal(false);}return next;});
   const saveAllCaseDrafts=async()=>{if(!caseAiDrafts.length)return;setTestCaseAiGenerating(true);setTestCaseAiError("");try{let created=0;for(const draft of caseAiDrafts){const priority=testCasePriorities.some(x=>x.value===draft.priority)?draft.priority:(testCasePriorities[0]?.value??"");const testType=testCaseTypes.some(x=>x.value===draft.testType)?draft.testType:(testCaseTypes[0]?.value??"");const res=await fetch(`${apiUrl}/test-cases`,{method:"POST",headers,body:JSON.stringify({projectId,moduleId,testCaseCode:"",title:draft.title,objective:draft.objective,preconditions:draft.preconditions,priority,testType,automationCandidate:draft.automationCandidate,ownerUserId:null,steps:draft.steps.map((x,i)=>({stepNo:i+1,action:x.action,testData:x.testData??"",expectedResult:x.expectedResult}))})});if(!res.ok){const problem=await res.json().catch(()=>null);throw new Error(`สร้าง Test Case "${draft.title}" ไม่สำเร็จ: ${problem?.detail??""}`);}await res.json();created++;}setCaseAiDrafts([]);setTestCaseAiModal(false);setReload(x=>x+1);}catch(e){setTestCaseAiError(e instanceof Error?e.message:"บันทึก Test Case ไม่สำเร็จ");}finally{setTestCaseAiGenerating(false);}};
-  if (loading)
+  if (loading && !items.length)
     return (
       <article className="card empty">
         <p>กำลังโหลด Test Case...</p>
       </article>
     );
-  const rows = items.filter(
-    (x) =>
-      `${x.testCaseCode} ${x.title} ${x.testType ?? ""} ${x.status}`
-        .toLowerCase()
-        .includes(search.toLowerCase()) &&
-      (!statusFilter || x.status === statusFilter) && (!projectFilter||x.projectId===projectFilter) && (!moduleFilter||x.moduleId===moduleFilter) && (!priorityFilter||x.priority===priorityFilter) && (!typeFilter||x.testType===typeFilter) && (!automationFilter||(automationFilter==="yes"?x.automationCandidate:!x.automationCandidate)),
-  );
-  const pageCount=Math.max(1,Math.ceil(rows.length/pageSize));
-  const pagedRows=rows.slice((Math.min(page,pageCount)-1)*pageSize,Math.min(page,pageCount)*pageSize);
+  const rows = items;
+  const pageCount=Math.max(1,Math.ceil(totalCount/pageSize));
+  const pagedRows=rows;
   const moduleFilterGroups=projects.filter(project=>!projectFilter||project.projectId===projectFilter).map(project=>{
     const projectModules=filterModules.filter(module=>module.projectId===project.projectId);
     const ordered:{module:ModuleItem;depth:number}[]=[];
@@ -2956,7 +3068,7 @@ function TestCasesPage({
         {notice&&<div className="inline-alert success"><span>{notice}</span><button onClick={()=>setNotice("")}>×</button></div>}
         <div className="testcase-toolbar">
           <div className="testcase-toolbar-head">
-            <div className="testcase-result-count"><strong>{rows.length}</strong><span>Test Cases</span></div>
+            <div className="testcase-result-count"><strong>{totalCount.toLocaleString()}</strong><span>Test Cases</span></div>
             <div className="testcase-toolbar-actions">
               {canEdit&&<button className="btn ai-button" onClick={openTestCaseAi}><span aria-hidden="true">✦</span> AI Generate</button>}
               {canEdit&&<button className="btn" disabled={templateDownloading||projects.length===0} onClick={downloadImportTemplate}>{templateDownloading?"กำลังดาวน์โหลด...":"↓ Template"}</button>}
@@ -3019,7 +3131,7 @@ function TestCasesPage({
                   </td>
                   <td data-label="Type">{x.testType ?? "-"}</td>
                   <td data-label="Revision">Rev. {x.revisionNo}</td>
-                  <td data-label="Steps">{x.steps.length}</td>
+                  <td data-label="Steps">{(x as any).steps?.length ?? (x as any).stepCount ?? 0}</td>
                   <td data-label="Status">
                     <Badge tone={x.status === "Ready" ? "green" : "yellow"}>
                       {x.status}
@@ -3046,6 +3158,7 @@ function TestCasesPage({
                   )}
                 </tr>
               ))}
+              {!pagedRows.length && !loading && <tr><td colSpan={canEdit ? 8 : 7}><div className="empty"><p>ไม่พบ Test Case ตามตัวกรองที่เลือก</p></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -3300,6 +3413,82 @@ function TestCasesPage({
     </>
   );
 }
+type RegressionMetrics = { impactedModules:number;recommendedCases:number;regressionCycles:number;totalCycleCases:number;executedCases:number;passedCases:number;failedCases:number;progressPercent:number;passRate:number;openDefects:number;overallStatus:string };
+type RegressionCase = { testCaseId:string;testCaseCode:string;title:string;moduleId:string;moduleName:string;priority:string;testType?:string;revisionNo:number;status:string;lastResult?:string;impactType:string;reason:string;isRequired:boolean;riskScore:number };
+type RegressionImpact = { releaseId:string;buildId:string;metrics:RegressionMetrics;cases:RegressionCase[];page:number;pageSize:number;totalItems:number;totalPages:number;allCaseIds?:string[] };
+type RegressionEnvironment = { testEnvironmentId:string;projectId:string;environmentName:string;isActive:boolean };
+type RegressionHistory = {regressionAnalysisId:string;releaseId:string;buildId:string;buildNumber:string;impactedModules:number;recommendedCases:number;minimumPriority:string;changeNotes?:string;analyzedByName?:string;analyzedAt:string};
+type RegressionBuildMetrics = {buildId:string;buildNumber:string;totalCases:number;executedCases:number;passedCases:number;failedCases:number;blockedCases:number;notRunCases:number;passRate:number};
+type RegressionBaseline = {baseline:RegressionBuildMetrics;target:RegressionBuildMetrics;executedDelta:number;passedDelta:number;failedDelta:number;passRateDelta:number};
+type RegressionActivity = {regressionActivityId:string;action:string;details?:string;actorName?:string;createdAt:string};
+type RegressionProfile = {id:string;name:string;visibility?:string;isOwner?:boolean;minimumPriority:string;includeSharedDependencies:boolean;databaseChange:boolean;apiChange:boolean;calculationChange:boolean;permissionChange:boolean;installerChange:boolean;defectFix:boolean;directImpactWeight:number;historicalDefectWeight:number;criticalPriorityWeight:number;sharedDependencyWeight:number};
+type RegressionSchedule = {regressionScheduleId:string;releaseId:string;regressionProfileId?:string;name:string;isActive:boolean;createdAt:string};
+type RegressionNotification = {regressionScheduleId:string;buildId:string;buildNumber:string;scheduleName:string;message:string;createdAt:string};
+function RegressionPage({projectId,releaseId,buildId,search,canEdit,onOpenCycle}:{projectId?:string;releaseId?:string;buildId?:string;search:string;canEdit:boolean;onOpenCycle:(page:"test-cycles"|"execution",cycleId:string)=>void}){
+  const [releases,setReleases]=useState<ReleaseItem[]>([]),[builds,setBuilds]=useState<BuildItem[]>([]),[modules,setModules]=useState<ModuleItem[]>([]),[environments,setEnvironments]=useState<RegressionEnvironment[]>([]),[cycles,setCycles]=useState<TestCycleItem[]>([]);
+  const [selectedRelease,setSelectedRelease]=useState(releaseId??""),[selectedBuild,setSelectedBuild]=useState(buildId??""),[changedModules,setChangedModules]=useState<string[]>([]),[minimumPriority,setMinimumPriority]=useState("P1"),[shared,setShared]=useState(true),[databaseChange,setDatabaseChange]=useState(false),[apiChange,setApiChange]=useState(false),[calculationChange,setCalculationChange]=useState(false),[permissionChange,setPermissionChange]=useState(false),[installerChange,setInstallerChange]=useState(false),[defectFix,setDefectFix]=useState(false),[sharedComponents,setSharedComponents]=useState(""),[changeNotes,setChangeNotes]=useState("");
+  const [impact,setImpact]=useState<RegressionImpact|null>(null),[selectedCases,setSelectedCases]=useState<string[]>([]),[loading,setLoading]=useState(false),[initialLoading,setInitialLoading]=useState(true),[error,setError]=useState(""),[success,setSuccess]=useState(""),[impactFilter,setImpactFilter]=useState(""),[moduleFilter,setModuleFilter]=useState(""),[priorityFilter,setPriorityFilter]=useState("");
+  const [caseDetail,setCaseDetail]=useState<TestCaseItem|null>(null),[caseDetailLoading,setCaseDetailLoading]=useState(false);
+  const [history,setHistory]=useState<RegressionHistory[]>([]),[baselineBuild,setBaselineBuild]=useState(""),[baseline,setBaseline]=useState<RegressionBaseline|null>(null),[resultFilter,setResultFilter]=useState(""),[defectOnly,setDefectOnly]=useState(false);
+  const [activities,setActivities]=useState<RegressionActivity[]>([]),[pageSize,setPageSize]=useState(50),[profileName,setProfileName]=useState(""),[profileVisibility,setProfileVisibility]=useState("Private"),[selectedProfileId,setSelectedProfileId]=useState(""),[profiles,setProfiles]=useState<RegressionProfile[]>([]),[schedules,setSchedules]=useState<RegressionSchedule[]>([]),[notifications,setNotifications]=useState<RegressionNotification[]>([]),[scheduleName,setScheduleName]=useState("Regression เมื่อมี Build ใหม่"),[directImpactWeight,setDirectImpactWeight]=useState(40),[historicalDefectWeight,setHistoricalDefectWeight]=useState(30),[criticalPriorityWeight,setCriticalPriorityWeight]=useState(20),[sharedDependencyWeight,setSharedDependencyWeight]=useState(10);
+  const [suiteModal,setSuiteModal]=useState(false),[suiteName,setSuiteName]=useState(""),[suiteDescription,setSuiteDescription]=useState(""),[riskTier,setRiskTier]=useState("High"),[createCycle,setCreateCycle]=useState(true),[environmentId,setEnvironmentId]=useState(""),[cycleName,setCycleName]=useState(""),[startDate,setStartDate]=useState(""),[endDate,setEndDate]=useState(""),[existingCycle,setExistingCycle]=useState(""),[saving,setSaving]=useState(false);
+  const headers=useMemo(()=>({"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}),[]);
+  const read=useCallback(async(url:string)=>{const r=await fetch(url,{headers});if(!r.ok)throw new Error("โหลดข้อมูล Regression ไม่สำเร็จ");return r.json();},[headers]);
+  useEffect(()=>{setSelectedRelease(releaseId??"")},[releaseId]);useEffect(()=>{setSelectedBuild(buildId??"")},[buildId]);
+  useEffect(()=>{if(!projectId){setInitialLoading(false);return}setInitialLoading(true);Promise.all([read(`${apiUrl}/releases?projectId=${projectId}`),read(`${apiUrl}/projects/${projectId}/modules`),read(`${apiUrl}/test-environments?projectId=${projectId}`),read(`${apiUrl}/test-cycles?projectId=${projectId}&size=100`)]).then(([releaseRows,moduleRows,environmentRows,cycleRows])=>{setReleases(Array.isArray(releaseRows)?releaseRows:[]);setModules((Array.isArray(moduleRows)?moduleRows:[]).filter((x:ModuleItem)=>x.isActive));setEnvironments((Array.isArray(environmentRows)?environmentRows:[]).filter((x:RegressionEnvironment)=>x.isActive));setCycles(((cycleRows?.items?.rows??cycleRows?.items??[]) as TestCycleItem[]).filter(x=>x.cycleType==="Regression"));}).catch(e=>setError(e.message)).finally(()=>setInitialLoading(false));},[projectId,read]);
+  useEffect(()=>{const active=releases.filter(x=>x.status!=="Cancelled");if(active.length===releases.length)return;setReleases(active);if(selectedRelease&&!active.some(x=>x.releaseId===selectedRelease)){setSelectedRelease(active[0]?.releaseId??"");setSelectedBuild("");setImpact(null)}},[releases,selectedRelease]);
+  useEffect(()=>{if(!selectedRelease){setBuilds([]);return}read(`${apiUrl}/releases/${selectedRelease}/builds`).then(rows=>setBuilds((Array.isArray(rows)?rows:[]).filter((x:BuildItem)=>x.isActive))).catch(e=>setError(e.message));},[selectedRelease,read]);
+  useEffect(()=>{if(!selectedRelease){setHistory([]);return}read(`${apiUrl}/releases/${selectedRelease}/regression-history`).then(setHistory).catch(e=>setError(e.message));},[selectedRelease,read,impact]);
+  useEffect(()=>{if(!selectedRelease){setActivities([]);return}read(`${apiUrl}/releases/${selectedRelease}/regression-activities?size=20`).then(setActivities).catch(e=>setError(e.message));},[selectedRelease,read,impact,success]);
+  useEffect(()=>{if(!projectId)return;Promise.all([read(`${apiUrl}/projects/${projectId}/regression-profiles`),read(`${apiUrl}/projects/${projectId}/regression-schedules`),read(`${apiUrl}/projects/${projectId}/regression-notifications`)]).then(([profileRows,scheduleRows,notificationRows])=>{setProfiles((profileRows as {regressionProfileId:string;name:string;visibility:string;isOwner:boolean;settingsJson:string}[]).map(x=>({id:x.regressionProfileId,name:x.name,visibility:x.visibility,isOwner:x.isOwner,...JSON.parse(x.settingsJson)})));setSchedules(scheduleRows);setNotifications(notificationRows)}).catch(e=>setError(e.message));},[projectId,read,success]);
+  useEffect(()=>{if(!selectedRelease||!selectedBuild||!baselineBuild||baselineBuild===selectedBuild){setBaseline(null);return}read(`${apiUrl}/releases/${selectedRelease}/regression-baseline?baselineBuildId=${baselineBuild}&targetBuildId=${selectedBuild}`).then(setBaseline).catch(e=>setError(e.message));},[selectedRelease,selectedBuild,baselineBuild,read]);
+  useEffect(()=>{if(builds.length&&!builds.some(x=>x.buildId===selectedBuild))setSelectedBuild(builds[0].buildId)},[builds,selectedBuild]);
+  const analyze=async(page=1,recordAnalysis=true)=>{if(!selectedRelease||!selectedBuild){setError("กรุณาเลือก Release และ Build");return}setLoading(true);setError("");setSuccess("");try{const r=await fetch(`${apiUrl}/releases/${selectedRelease}/regression-impact`,{method:"POST",headers,body:JSON.stringify({buildId:selectedBuild,changedModuleIds:changedModules,includeSharedDependencies:shared,minimumPriority,databaseChange,apiChange,calculationChange,permissionChange,installerChange,defectFix,sharedComponents,changeNotes,page,pageSize,directImpactWeight,historicalDefectWeight,criticalPriorityWeight,sharedDependencyWeight,recordAnalysis})});if(!r.ok){const p=await r.json().catch(()=>null);throw new Error(p?.detail??"วิเคราะห์ Regression Impact ไม่สำเร็จ")}const data=await r.json() as RegressionImpact;setImpact(data);setSelectedCases(current=>recordAnalysis?data.cases.filter(x=>x.isRequired).map(x=>x.testCaseId):[...new Set([...current,...data.cases.filter(x=>x.isRequired).map(x=>x.testCaseId)])]);}catch(e){setError(e instanceof Error?e.message:"วิเคราะห์ไม่สำเร็จ")}finally{setLoading(false)}};
+  const currentSettings=()=>({minimumPriority,includeSharedDependencies:shared,databaseChange,apiChange,calculationChange,permissionChange,installerChange,defectFix,directImpactWeight,historicalDefectWeight,criticalPriorityWeight,sharedDependencyWeight});
+  const saveProfile=async()=>{const name=profileName.trim();if(!name||!projectId)return;const settings=currentSettings();setSaving(true);try{const r=await fetch(`${apiUrl}/regression-profiles`,{method:"POST",headers,body:JSON.stringify({projectId,name,visibility:profileVisibility,settingsJson:JSON.stringify(settings)})});if(!r.ok)throw new Error("บันทึก Regression Profile ไม่สำเร็จ");const row=await r.json();setProfiles(current=>[{id:row.regressionProfileId,name,visibility:profileVisibility,isOwner:true,...settings},...current]);setSelectedProfileId(row.regressionProfileId);setProfileName("");setSuccess(`บันทึก Profile “${name}” ลงฐานข้อมูลแล้ว`)}catch(e){setError(e instanceof Error?e.message:"บันทึก Profile ไม่สำเร็จ")}finally{setSaving(false)}};
+  const updateProfile=async()=>{const name=profileName.trim();const profile=profiles.find(x=>x.id===selectedProfileId);if(!profile?.isOwner||!name)return;setSaving(true);try{const settings=currentSettings();const r=await fetch(`${apiUrl}/regression-profiles/${profile.id}`,{method:"PUT",headers,body:JSON.stringify({name,visibility:profileVisibility,settingsJson:JSON.stringify(settings)})});if(!r.ok)throw new Error("อัปเดต Regression Profile ไม่สำเร็จ");setProfiles(current=>current.map(x=>x.id===profile.id?{...x,name,visibility:profileVisibility,...settings}:x));setSuccess(`อัปเดต Profile “${name}” แล้ว`)}catch(e){setError(e instanceof Error?e.message:"อัปเดต Profile ไม่สำเร็จ")}finally{setSaving(false)}};
+  const applyProfile=(id:string)=>{const p=profiles.find(x=>x.id===id);if(!p)return;setMinimumPriority(p.minimumPriority);setShared(p.includeSharedDependencies);setDatabaseChange(p.databaseChange);setApiChange(p.apiChange);setCalculationChange(p.calculationChange);setPermissionChange(p.permissionChange);setInstallerChange(p.installerChange);setDefectFix(p.defectFix);setDirectImpactWeight(p.directImpactWeight);setHistoricalDefectWeight(p.historicalDefectWeight);setCriticalPriorityWeight(p.criticalPriorityWeight);setSharedDependencyWeight(p.sharedDependencyWeight);if(p.isOwner){setProfileName(p.name);setProfileVisibility(p.visibility??"Private")}setImpact(null);setSuccess(`ใช้ Profile “${p.name}” แล้ว`)};
+  const deleteProfile=async()=>{if(!selectedProfileId||!window.confirm("ยืนยันลบ Regression Profile นี้?"))return;const r=await fetch(`${apiUrl}/regression-profiles/${selectedProfileId}`,{method:"DELETE",headers});if(!r.ok){setError("ลบ Profile ไม่สำเร็จหรือคุณไม่ใช่เจ้าของ");return}setProfiles(current=>current.filter(x=>x.id!==selectedProfileId));setSelectedProfileId("");setSuccess("ลบ Regression Profile แล้ว")};
+  const acknowledgeNotification=async(item:RegressionNotification)=>{if(!canEdit)return;setSaving(true);try{const r=await fetch(`${apiUrl}/regression-schedules/${item.regressionScheduleId}/acknowledge/${item.buildId}`,{method:"POST",headers});if(!r.ok)throw new Error();setNotifications(current=>current.filter(x=>!(x.regressionScheduleId===item.regressionScheduleId&&x.buildId===item.buildId)));setSuccess("รับทราบการแจ้งเตือนแล้ว")}catch{setError("รับทราบการแจ้งเตือนไม่สำเร็จ")}finally{setSaving(false)}};
+  const removeSchedule=async(id:string)=>{if(!window.confirm("ยืนยันปิด Scheduled Regression นี้?"))return;setSaving(true);try{const r=await fetch(`${apiUrl}/regression-schedules/${id}`,{method:"DELETE",headers});if(!r.ok)throw new Error();setSchedules(current=>current.filter(x=>x.regressionScheduleId!==id));setNotifications(current=>current.filter(x=>x.regressionScheduleId!==id));setSuccess("ปิด Scheduled Regression แล้ว")}catch{setError("ปิด Schedule ไม่สำเร็จหรือคุณไม่ใช่เจ้าของ")}finally{setSaving(false)}};
+  const selectAllPages=async()=>{if(!selectedRelease||!selectedBuild)return;setLoading(true);try{const r=await fetch(`${apiUrl}/releases/${selectedRelease}/regression-impact`,{method:"POST",headers,body:JSON.stringify({buildId:selectedBuild,changedModuleIds:changedModules,includeSharedDependencies:shared,minimumPriority,databaseChange,apiChange,calculationChange,permissionChange,installerChange,defectFix,sharedComponents,changeNotes,page:1,pageSize,directImpactWeight,historicalDefectWeight,criticalPriorityWeight,sharedDependencyWeight,recordAnalysis:false,includeAllCaseIds:true})});if(!r.ok)throw new Error();const data=await r.json() as RegressionImpact;setSelectedCases(data.allCaseIds??[]);setSuccess(`เลือก Test Case ทั้งหมด ${data.totalItems} รายการจากทุกหน้าแล้ว`)}catch{setError("เลือก Test Case ทั้งหมดไม่สำเร็จ")}finally{setLoading(false)}};
+  const exportAllPages=async()=>{if(!impact)return;setLoading(true);try{const all:RegressionCase[]=[];for(let page=1;page<=impact.totalPages;page++){const r=await fetch(`${apiUrl}/releases/${selectedRelease}/regression-impact`,{method:"POST",headers,body:JSON.stringify({buildId:selectedBuild,changedModuleIds:changedModules,includeSharedDependencies:shared,minimumPriority,databaseChange,apiChange,calculationChange,permissionChange,installerChange,defectFix,sharedComponents,changeNotes,page,pageSize:200,directImpactWeight,historicalDefectWeight,criticalPriorityWeight,sharedDependencyWeight,recordAnalysis:false})});if(!r.ok)throw new Error();const data=await r.json() as RegressionImpact;all.push(...data.cases);if(page===1&&data.totalPages!==impact.totalPages){page=0;(impact as RegressionImpact).totalPages=data.totalPages;all.length=0}}const headings=["Test Case Code","Title","Module","Priority","Impact Type","Risk Score","Last Result","Reason"];const escape=(v:string)=>`"${v.replaceAll('"','""')}"`;const body="\ufeff"+[headings,...all.map(x=>[x.testCaseCode,x.title,x.moduleName,x.priority,x.impactType,String(x.riskScore),x.lastResult||"Not Run",x.reason])].map(row=>row.map(escape).join(",")).join("\r\n");const url=URL.createObjectURL(new Blob([body],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="Regression_All_Pages.csv";a.click();URL.revokeObjectURL(url)}catch{setError("Export รายงานทุกหน้าไม่สำเร็จ")}finally{setLoading(false)}};
+  const saveSchedule=async()=>{if(!selectedRelease||!projectId)return;setSaving(true);try{const r=await fetch(`${apiUrl}/regression-schedules`,{method:"POST",headers,body:JSON.stringify({releaseId:selectedRelease,regressionProfileId:selectedProfileId||null,name:scheduleName})});if(!r.ok)throw new Error();const row=await r.json();setSchedules(current=>[...current,row]);setSuccess("เปิด Scheduled Regression สำหรับ Build ใหม่แล้ว")}catch{setError("สร้าง Scheduled Regression ไม่สำเร็จ")}finally{setSaving(false)}};
+  const visibleCases=useMemo(()=>{const term=search.trim().toLowerCase();return(impact?.cases??[]).filter(x=>(!impactFilter||x.impactType===impactFilter)&&(!moduleFilter||x.moduleId===moduleFilter)&&(!priorityFilter||x.priority===priorityFilter)&&(!resultFilter||(x.lastResult||"Not Run")===resultFilter)&&(!defectOnly||x.impactType==="Historical Defect")&&(!term||`${x.testCaseCode} ${x.title} ${x.moduleName}`.toLowerCase().includes(term)))},[impact,impactFilter,moduleFilter,priorityFilter,resultFilter,defectOnly,search]);
+  const toggleCase=(id:string)=>setSelectedCases(current=>current.includes(id)?current.filter(x=>x!==id):[...current,id]);
+  const openCaseDetail=async(item:RegressionCase)=>{setCaseDetailLoading(true);setError("");try{setCaseDetail(await read(`${apiUrl}/test-cases/${item.testCaseId}`) as TestCaseItem);}catch(e){setError(e instanceof Error?e.message:"โหลดรายละเอียด Test Case ไม่สำเร็จ")}finally{setCaseDetailLoading(false)}};
+  const downloadRegression=(format:"csv"|"xls")=>{if(!impact)return;const rows=visibleCases.map(x=>[x.testCaseCode,x.title,x.moduleName,x.priority,x.impactType,x.lastResult||"Not Run",x.reason]);const headings=["Test Case Code","Title","Module","Priority","Impact Type","Last Result","Reason"];const escape=(value:string)=>`"${value.replaceAll('"','""')}"`;let body:string,mime:string,file:string;if(format==="csv"){body="\ufeff"+[headings,...rows].map(row=>row.map(escape).join(",")).join("\r\n");mime="text/csv;charset=utf-8";file="Regression_Report.csv";}else{body=`<html><head><meta charset="utf-8"></head><body><table><thead><tr>${headings.map(x=>`<th>${x}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(x=>`<td>${x.replaceAll("&","&amp;").replaceAll("<","&lt;")}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;mime="application/vnd.ms-excel";file="Regression_Report.xls";}const url=URL.createObjectURL(new Blob([body],{type:mime}));const a=document.createElement("a");a.href=url;a.download=file;a.click();URL.revokeObjectURL(url)};
+  const toggleVisible=()=>setSelectedCases(current=>visibleCases.every(x=>current.includes(x.testCaseId))?current.filter(id=>!visibleCases.some(x=>x.testCaseId===id)):[...new Set([...current,...visibleCases.map(x=>x.testCaseId)])]);
+  const openSuite=()=>{const rel=releases.find(x=>x.releaseId===selectedRelease);setSuiteName(`${rel?.releaseCode??"Release"} Regression`);setCycleName(`${rel?.releaseCode??"Release"} Regression Cycle`);setSuiteDescription(changeNotes);setEnvironmentId(environments[0]?.testEnvironmentId??"");setSuiteModal(true)};
+  const generateSuite=async()=>{if(!selectedCases.length||!suiteName.trim())return;setSaving(true);setError("");try{const suiteResponse=await fetch(`${apiUrl}/regression-suites/generate`,{method:"POST",headers,body:JSON.stringify({releaseId:selectedRelease,suiteName,description:suiteDescription,riskTier,testCaseIds:selectedCases})});if(!suiteResponse.ok){const p=await suiteResponse.json().catch(()=>null);throw new Error(p?.detail??"สร้าง Regression Suite ไม่สำเร็จ")}const suite=await suiteResponse.json();let message=`สร้าง ${suite.suiteCode} พร้อม ${suite.caseCount} Test Cases แล้ว`;if(createCycle){if(!environmentId)throw new Error("กรุณาเลือก Environment ก่อนสร้าง Cycle");const cycleResponse=await fetch(`${apiUrl}/test-cycles`,{method:"POST",headers,body:JSON.stringify({projectId,releaseId:selectedRelease,buildId:selectedBuild,environmentId,testSuiteId:suite.testSuiteId,cycleCode:"",cycleName:cycleName||suiteName,cycleType:"Regression",startDate:startDate||null,endDate:endDate||null,ownerUserId:null,notes:suiteDescription,populateFromSuite:true,requiredOnly:false})});if(!cycleResponse.ok){const p=await cycleResponse.json().catch(()=>null);throw new Error(p?.detail??"สร้าง Regression Cycle ไม่สำเร็จ")}const cycle=await cycleResponse.json();message+=` และสร้าง ${cycle.cycleCode} แล้ว`;setCycles(current=>[cycle,...current]);}setSuccess(message);setSuiteModal(false);await analyze();}catch(e){setError(e instanceof Error?e.message:"บันทึกไม่สำเร็จ")}finally{setSaving(false)}};
+  const addToCycle=async()=>{if(!existingCycle||!selectedCases.length)return;setSaving(true);setError("");try{const r=await fetch(`${apiUrl}/test-cycles/${existingCycle}/add-impact-cases`,{method:"POST",headers,body:JSON.stringify({testCaseIds:selectedCases})});if(!r.ok)throw new Error("เพิ่ม Impact Cases เข้า Cycle ไม่สำเร็จ");setSuccess(`เพิ่ม ${selectedCases.length} Test Cases เข้า Regression Cycle แล้ว`);setExistingCycle("");await analyze();}catch(e){setError(e instanceof Error?e.message:"บันทึกไม่สำเร็จ")}finally{setSaving(false)}};
+  const metrics=impact?.metrics??{impactedModules:0,recommendedCases:0,regressionCycles:0,totalCycleCases:0,executedCases:0,passedCases:0,failedCases:0,progressPercent:0,passRate:0,openDefects:0,overallStatus:"Not Started"};
+  if(initialLoading)return <article className="card regression-empty"><p>กำลังโหลด Regression workspace...</p></article>;
+  return <div className="regression-page">
+    <section className="regression-summary" aria-label="Regression summary"><article><span className="regression-summary-icon blue">M</span><div><small>Impacted Modules</small><b>{metrics.impactedModules}</b><span>Module ที่เปลี่ยนแปลง</span></div></article><article><span className="regression-summary-icon violet">TC</span><div><small>Recommended Cases</small><b>{metrics.recommendedCases}</b><span>{selectedCases.length} รายการที่เลือก</span></div></article><article><span className="regression-summary-icon green">%</span><div><small>Regression Progress</small><b>{metrics.progressPercent}%</b><span>{metrics.executedCases}/{metrics.totalCycleCases} Executed</span></div></article><article><span className="regression-summary-icon amber">✓</span><div><small>Pass Rate</small><b>{metrics.passRate}%</b><span>{metrics.failedCases} Failed/Blocked</span></div></article><article><span className="regression-summary-icon red">!</span><div><small>Open Defects</small><b>{metrics.openDefects}</b><span className={`regression-health ${metrics.overallStatus.toLowerCase().replaceAll(" ","-")}`}>{metrics.overallStatus}</span></div></article></section>
+    <section className="regression-dashboard-grid"><article className="card regression-trend"><div className="regression-section-head"><div><span className="regression-title-icon">↗</span><div><h2>Regression Trend</h2><p>จำนวน Test Case ที่ระบบแนะนำจากการวิเคราะห์ 6 ครั้งล่าสุด</p></div></div></div><div className="regression-trend-bars">{history.slice(0,6).reverse().map(x=>{const max=Math.max(1,...history.slice(0,6).map(h=>h.recommendedCases));return <div key={x.regressionAnalysisId}><span style={{height:`${Math.max(8,x.recommendedCases*100/max)}%`}} title={`${x.recommendedCases} cases`}></span><small>{x.buildNumber}</small><b>{x.recommendedCases}</b></div>})}{history.length===0&&<p className="regression-helper">ยังไม่มีข้อมูลแนวโน้ม</p>}</div></article><article className="card regression-activity"><div className="regression-section-head"><div><span className="regression-title-icon">⌁</span><div><h2>Recent Activity</h2><p>กิจกรรม Regression ล่าสุดของ Release</p></div></div><Badge tone="blue">{activities.length}</Badge></div><div className="regression-activity-list">{activities.slice(0,6).map(x=><div key={x.regressionActivityId}><span></span><p><b>{x.action}</b><small>{x.details||"-"} · {x.actorName||"System"}</small></p><time>{new Date(x.createdAt).toLocaleString("th-TH",{dateStyle:"short",timeStyle:"short"})}</time></div>)}{activities.length===0&&<p className="regression-helper">ยังไม่มีกิจกรรม</p>}</div></article></section>
+    <section className="card regression-schedule"><div className="regression-section-head"><div><span className="regression-title-icon">◷</span><div><h2>Scheduled Regression</h2><p>เตรียม Regression อัตโนมัติและแจ้งเตือนเมื่อมี Active Build ใหม่</p></div></div><Badge tone={notifications.length?"yellow":"green"}>{notifications.length} Notifications</Badge></div>{notifications.length>0&&<div className="regression-notifications">{notifications.map(x=><div key={`${x.regressionScheduleId}-${x.buildId}`}><span>!</span><p><b>{x.message}</b><small>{x.scheduleName} · {new Date(x.createdAt).toLocaleString("th-TH")}</small></p><button className="btn" disabled={!canEdit||saving} onClick={()=>acknowledgeNotification(x)}>รับทราบ</button></div>)}</div>}<div className="regression-schedule-form"><input aria-label="ชื่อ Scheduled Regression" value={scheduleName} onChange={e=>setScheduleName(e.target.value)}/><select aria-label="Profile สำหรับ Scheduled Regression" value={selectedProfileId} onChange={e=>{setSelectedProfileId(e.target.value);applyProfile(e.target.value)}}><option value="">ไม่ใช้ Profile</option>{profiles.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><button className="btn primary" disabled={!selectedRelease||!scheduleName.trim()||saving} onClick={saveSchedule}>เปิด Schedule</button></div>{schedules.length>0&&<ul className="regression-schedule-list">{schedules.map(x=><li key={x.regressionScheduleId}><span><b>{x.name}</b><small>{releases.find(r=>r.releaseId===x.releaseId)?.releaseCode??"-"} · เปิดใช้งานอยู่</small></span><button className="btn danger" disabled={!canEdit||saving} onClick={()=>removeSchedule(x.regressionScheduleId)}>ปิด Schedule</button></li>)}</ul>}</section>
+    <section className="regression-phase-grid"><article className="card regression-baseline"><div className="regression-section-head"><div><span className="regression-title-icon">Δ</span><div><h2>Baseline Comparison</h2><p>เปรียบเทียบผล Regression ของ Target Build กับ Build ก่อนหน้า</p></div></div></div><label>Baseline Build<select value={baselineBuild} onChange={e=>setBaselineBuild(e.target.value)}><option value="">เลือก Build สำหรับเปรียบเทียบ</option>{builds.filter(x=>x.buildId!==selectedBuild).map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber} · {x.applicationVersion||"-"}</option>)}</select></label>{baseline?<div className="regression-compare"><div><small>Executed</small><b>{baseline.target.executedCases}</b><span className={baseline.executedDelta>=0?"positive":"negative"}>{baseline.executedDelta>=0?"+":""}{baseline.executedDelta}</span></div><div><small>Passed</small><b>{baseline.target.passedCases}</b><span className={baseline.passedDelta>=0?"positive":"negative"}>{baseline.passedDelta>=0?"+":""}{baseline.passedDelta}</span></div><div><small>Failed</small><b>{baseline.target.failedCases+baseline.target.blockedCases}</b><span className={baseline.failedDelta<=0?"positive":"negative"}>{baseline.failedDelta>=0?"+":""}{baseline.failedDelta}</span></div><div><small>Pass Rate</small><b>{baseline.target.passRate}%</b><span className={baseline.passRateDelta>=0?"positive":"negative"}>{baseline.passRateDelta>=0?"+":""}{baseline.passRateDelta}%</span></div></div>:<p className="regression-helper">{builds.length<2?"Release นี้ยังไม่มี Build อื่นสำหรับเปรียบเทียบ":"เลือก Baseline Build เพื่อดูแนวโน้ม"}</p>}</article><article className="card regression-history"><div className="regression-section-head"><div><span className="regression-title-icon">↺</span><div><h2>Regression History</h2><p>ประวัติการวิเคราะห์ Impact ล่าสุด</p></div></div><Badge tone="blue">{history.length}</Badge></div>{history.length?<div className="regression-history-list">{history.slice(0,6).map(x=><div key={x.regressionAnalysisId}><span><b>Build {x.buildNumber}</b><small>{new Date(x.analyzedAt).toLocaleString("th-TH")} · {x.analyzedByName||"System"}</small></span><span><b>{x.recommendedCases}</b><small>Cases · {x.impactedModules} Modules · {x.minimumPriority}</small></span>{x.changeNotes&&<p>{x.changeNotes}</p>}</div>)}</div>:<p className="regression-helper">ยังไม่มีประวัติการวิเคราะห์สำหรับ Release นี้</p>}</article></section>
+    {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>setError("")}>×</button></div>}{success&&<div className="inline-alert success"><span>{success}</span><button onClick={()=>setSuccess("")}>×</button></div>}
+    <section className="card regression-analysis"><div className="regression-section-head"><div><span className="regression-title-icon">◎</span><div><h2>Impact Analysis</h2><p>ระบุส่วนที่เปลี่ยนแปลงเพื่อค้นหา Test Case ที่ควร Regression</p></div></div><button className="btn primary" disabled={loading||!selectedBuild} onClick={()=>analyze()}>{loading?"กำลังวิเคราะห์...":"วิเคราะห์ Impact"}</button></div>
+      <div className="regression-profile-bar"><select aria-label="Regression Profile" value={selectedProfileId} onChange={e=>{setSelectedProfileId(e.target.value);applyProfile(e.target.value)}}><option value="">เลือก Profile / Template</option>{profiles.map(x=><option key={x.id} value={x.id}>{x.name}{x.isOwner?"":" (Shared)"}</option>)}</select><input aria-label="ชื่อ Regression Profile" value={profileName} onChange={e=>setProfileName(e.target.value)} placeholder="ชื่อ Profile"/><select aria-label="การมองเห็น Regression Profile" value={profileVisibility} onChange={e=>setProfileVisibility(e.target.value)}><option value="Private">Owner / Private</option><option value="Shared">Shared with Team</option></select><button className="btn" disabled={!profileName.trim()||saving} onClick={saveProfile}>บันทึกใหม่</button><button className="btn" disabled={!profiles.find(x=>x.id===selectedProfileId)?.isOwner||!profileName.trim()||saving} onClick={updateProfile}>อัปเดต Profile</button><button className="btn danger" disabled={!selectedProfileId} onClick={deleteProfile}>ลบ Profile</button></div>
+      <div className="regression-context-grid"><label>Release<select value={selectedRelease} onChange={e=>{setSelectedRelease(e.target.value);setImpact(null)}}><option value="">เลือก Release</option>{releases.filter(x=>!projectId||x.projectId===projectId).map(x=><option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}</select></label><label>Target Build<select value={selectedBuild} onChange={e=>{setSelectedBuild(e.target.value);setImpact(null)}}><option value="">เลือก Build</option>{builds.map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber} · {x.applicationVersion||"-"}</option>)}</select></label><label>Minimum Priority<select value={minimumPriority} onChange={e=>setMinimumPriority(e.target.value)}><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label></div>
+      <div className="regression-analysis-grid"><div className="regression-module-picker"><div className="regression-field-title"><b>Changed Modules</b><small>เลือกได้มากกว่า 1 Module</small></div><div className="regression-module-options">{modules.map(x=><label key={x.moduleId} className={changedModules.includes(x.moduleId)?"selected":""}><input type="checkbox" checked={changedModules.includes(x.moduleId)} onChange={()=>setChangedModules(v=>v.includes(x.moduleId)?v.filter(id=>id!==x.moduleId):[...v,x.moduleId])}/><span><b>{x.moduleCode}</b><small>{x.moduleName}</small></span></label>)}</div></div><div className="regression-change-panel"><div className="regression-field-title"><b>Change Impact</b><small>เลือกประเภทการเปลี่ยนแปลงที่เกี่ยวข้อง</small></div><div className="regression-impact-options">{[["Database / Schema",databaseChange,setDatabaseChange],["API Contract",apiChange,setApiChange],["Calculation",calculationChange,setCalculationChange],["Permission",permissionChange,setPermissionChange],["Update / Installer",installerChange,setInstallerChange],["Defect Fix",defectFix,setDefectFix]] .map(([label,value,setter])=><label key={label as string}><input type="checkbox" checked={value as boolean} onChange={e=>(setter as (v:boolean)=>void)(e.target.checked)}/><span>{label as string}</span></label>)}</div><label>Shared Components<input value={sharedComponents} onChange={e=>setSharedComponents(e.target.value)} placeholder="เช่น Auth, Pricing, Shared Library"/></label><label className="regression-shared-check"><input type="checkbox" checked={shared} onChange={e=>setShared(e.target.checked)}/><span>รวม Shared Dependencies และ Critical P0/P1</span></label></div></div>
+      <label className="regression-notes">Change Notes<textarea rows={3} value={changeNotes} onChange={e=>setChangeNotes(e.target.value)} placeholder="สรุปสิ่งที่เปลี่ยนแปลง เพื่อใช้เป็นบริบทของ Suite และ Cycle"/></label>
+      <details className="regression-risk-config"><summary>ตั้งค่า Risk Score</summary><p>กำหนดน้ำหนักเพื่อจัดลำดับ Test Case ที่มีความเสี่ยงสูงก่อน (คะแนนสูงสุด 100)</p><div>{[["Direct Impact",directImpactWeight,setDirectImpactWeight],["Historical Defect",historicalDefectWeight,setHistoricalDefectWeight],["Critical P0/P1",criticalPriorityWeight,setCriticalPriorityWeight],["Shared Dependency",sharedDependencyWeight,setSharedDependencyWeight]].map(([label,value,setter])=><label key={label as string}><span>{label as string}<b>{value as number}</b></span><input type="range" min="0" max="60" step="5" value={value as number} onChange={e=>(setter as (v:number)=>void)(Number(e.target.value))}/></label>)}</div></details>
+    </section>
+    <section className="card regression-results"><div className="regression-section-head"><div><span className="regression-title-icon">⇄</span><div><h2>Recommended Test Cases</h2><p>{impact?`${impact.cases.length} รายการจากผลวิเคราะห์ · แสดง ${visibleCases.length} · เลือกแล้ว ${selectedCases.length} รายการ`:"เริ่มจากเลือก Module หรือประเภทการเปลี่ยนแปลง แล้วกดวิเคราะห์ Impact"}</p></div></div>{impact&&<div className="regression-result-actions"><button className="btn" onClick={()=>downloadRegression("csv")}>Export CSV</button><button className="btn" onClick={()=>downloadRegression("xls")}>Export Excel</button><button className="btn" onClick={toggleVisible}>{visibleCases.length&&visibleCases.every(x=>selectedCases.includes(x.testCaseId))?"ยกเลิกที่แสดง":"เลือกทั้งหมดที่แสดง"}</button></div>}</div>
+      {impact&&<div className="regression-server-actions"><button className="btn" disabled={loading} onClick={selectAllPages}>เลือกทั้งหมดทุกหน้า ({impact.totalItems})</button><button className="btn" disabled={loading} onClick={exportAllPages}>Export ทุกหน้าพร้อม Risk</button></div>}
+      {impact&&<div className="regression-filters"><select aria-label="กรอง Impact Type" value={impactFilter} onChange={e=>setImpactFilter(e.target.value)}><option value="">ทุก Impact Type</option>{[...new Set(impact.cases.map(x=>x.impactType))].map(x=><option key={x}>{x}</option>)}</select><select aria-label="กรอง Module" value={moduleFilter} onChange={e=>setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{[...new Map(impact.cases.map(x=>[x.moduleId,x.moduleName])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select><select aria-label="กรอง Priority" value={priorityFilter} onChange={e=>setPriorityFilter(e.target.value)}><option value="">ทุก Priority</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select><select aria-label="กรอง Last Result" value={resultFilter} onChange={e=>setResultFilter(e.target.value)}><option value="">ทุก Last Result</option><option>Fail</option><option>Blocked</option><option>Not Run</option><option>Pass</option></select><label className="regression-defect-filter"><input type="checkbox" checked={defectOnly} onChange={e=>setDefectOnly(e.target.checked)}/><span>เคยพบ Defect</span></label></div>}
+      {!impact?<div className="regression-empty"><span>◎</span><b>ยังไม่มีผลการวิเคราะห์</b><p>ระบบจะแนะนำ Direct Impact, Shared Dependency, Critical P0/P1 และ Historical Defect Cases</p></div>:visibleCases.length===0?<div className="regression-empty"><span>⌕</span><b>ไม่พบ Test Case ตามตัวกรอง</b><p>ลองเปลี่ยน Impact Type, Module หรือ Priority</p></div>:<div className="regression-case-list">{visibleCases.map(x=><div key={x.testCaseId} className={`regression-case ${selectedCases.includes(x.testCaseId)?"selected":""}`}><input aria-label={`เลือก ${x.testCaseCode} ${x.title}`} type="checkbox" checked={selectedCases.includes(x.testCaseId)} onChange={()=>toggleCase(x.testCaseId)}/><span className="regression-case-main"><span className="regression-case-code"><button className="regression-case-link" disabled={caseDetailLoading} onClick={()=>openCaseDetail(x)} aria-label={`ดูรายละเอียด ${x.testCaseCode}`}>{x.testCaseCode}</button><Badge tone={x.priority==="P0"||x.priority==="P1"?"red":"blue"}>{x.priority}</Badge>{x.isRequired&&<Badge tone="yellow">Required</Badge>}<Badge tone={x.riskScore>=60?"red":x.riskScore>=30?"yellow":"blue"}>Risk {x.riskScore}</Badge></span><strong>{x.title}</strong><small>{x.moduleName} · {x.testType||"ไม่ระบุประเภท"} · Rev. {x.revisionNo}</small></span><span className="regression-case-impact"><Badge tone={x.impactType==="Direct Impact"?"blue":x.impactType==="Historical Defect"?"red":"yellow"}>{x.impactType}</Badge><small>{x.reason}</small></span><span className="regression-last-result"><small>Last Result</small><b className={(x.lastResult||"not-run").toLowerCase()}>{x.lastResult||"Not Run"}</b></span></div>)}</div>}
+      {impact&&impact.totalPages>1&&<nav className="regression-pagination" aria-label="หน้ารายการ Recommended Test Cases"><span>หน้า {impact.page} / {impact.totalPages} · ทั้งหมด {impact.totalItems} รายการ</span><label>ต่อหน้า<select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setTimeout(()=>analyze(1,false),0)}}><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option></select></label><button className="btn" disabled={loading||impact.page<=1} onClick={()=>analyze(impact.page-1,false)}>ก่อนหน้า</button><button className="btn" disabled={loading||impact.page>=impact.totalPages} onClick={()=>analyze(impact.page+1,false)}>ถัดไป</button></nav>}
+    </section>
+    {impact&&selectedCases.length>0&&<div className="regression-selection-bar"><div><b>{selectedCases.length}</b><span>Test Cases ที่เลือก</span></div><div className="regression-existing-cycle"><select aria-label="Regression Cycle ที่มีอยู่" value={existingCycle} onChange={e=>setExistingCycle(e.target.value)}><option value="">เพิ่มเข้า Regression Cycle ที่มีอยู่</option>{cycles.filter(x=>x.releaseId===selectedRelease&&x.buildId===selectedBuild).map(x=><option key={x.testCycleId} value={x.testCycleId}>{x.cycleCode} · {x.cycleName}</option>)}</select><button className="btn" disabled={!existingCycle||saving||!canEdit} onClick={addToCycle}>เพิ่มเข้า Cycle</button>{existingCycle&&<><button className="btn" onClick={()=>onOpenCycle("test-cycles",existingCycle)}>เปิด Cycle</button><button className="btn" onClick={()=>onOpenCycle("execution",existingCycle)}>เปิด Execution</button></>}</div><button className="btn primary" disabled={!canEdit} onClick={openSuite}>สร้าง Regression Suite / Cycle</button></div>}
+    {suiteModal&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-suite-title" onMouseDown={()=>!saving&&setSuiteModal(false)}><div className="modal-box regression-suite-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-suite-title">สร้าง Regression Suite</h2><small>{selectedCases.length} Test Cases ที่เลือก</small></div><button disabled={saving} onClick={()=>setSuiteModal(false)}>×</button></div><div className="form-grid"><label className="full">Suite Name<input value={suiteName} onChange={e=>setSuiteName(e.target.value)}/></label><label>Risk Tier<select value={riskTier} onChange={e=>setRiskTier(e.target.value)}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></label><label className="full">Description<textarea rows={3} value={suiteDescription} onChange={e=>setSuiteDescription(e.target.value)}/></label></div><label className="regression-create-cycle"><input type="checkbox" checked={createCycle} onChange={e=>setCreateCycle(e.target.checked)}/><span><b>สร้าง Regression Cycle ต่อทันที</b><small>ระบบจะนำ Test Case ทั้งหมดใน Suite เข้า Cycle</small></span></label>{createCycle&&<div className="form-grid regression-cycle-fields"><label className="full">Cycle Name<input value={cycleName} onChange={e=>setCycleName(e.target.value)}/></label><label>Environment<select value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map(x=><option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label><label>Start Date<input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></label><label>End Date<input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/></label></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={()=>setSuiteModal(false)}>ยกเลิก</button><button className="btn primary" disabled={saving||!suiteName.trim()||(createCycle&&!environmentId)} onClick={generateSuite}>{saving?"กำลังสร้าง...":createCycle?"สร้าง Suite และ Cycle":"สร้าง Suite"}</button></div></div></div>}
+    {caseDetail&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-case-detail-title" onMouseDown={()=>setCaseDetail(null)}><div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-case-detail-title">{caseDetail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleName||"-"}</small></div><button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setCaseDetail(null)}>×</button></div><div className="tc-detail-hero"><h3>{caseDetail.title}</h3><div className="tc-detail-badges"><Badge tone={caseDetail.priority==="P0"||caseDetail.priority==="P1"?"red":"blue"}>{caseDetail.priority}</Badge><Badge tone={caseDetail.status==="Ready"?"green":caseDetail.status==="Deprecated"?"yellow":"blue"}>{caseDetail.status}</Badge>{caseDetail.testType&&<Badge tone="yellow">{caseDetail.testType}</Badge>}</div></div><div className="tc-detail-meta"><div className="tc-detail-meta-item"><span>Revision</span><b>Rev. {caseDetail.revisionNo}</b></div><div className="tc-detail-meta-item"><span>Module</span><b>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleCode||"-"}</b></div><div className="tc-detail-meta-item"><span>Execution Type</span><b>{caseDetail.automationCandidate?"Automation Candidate":"Manual"}</b></div></div><section className="tc-detail-section"><h3>Objective</h3><p className="tc-detail-body">{caseDetail.objective||"ไม่ระบุวัตถุประสงค์"}</p></section>{caseDetail.preconditions&&<section className="tc-detail-section"><h3>Preconditions</h3><p className="tc-detail-body">{caseDetail.preconditions}</p></section>}<section className="tc-detail-section"><h3>Test Steps ({caseDetail.steps?.length??0})</h3><div className="tc-detail-steps">{(caseDetail.steps??[]).map(x=><div key={x.stepNo} className="tc-detail-step"><div className="tc-detail-step-no">{x.stepNo}</div><div className="tc-detail-step-body"><div className="tc-detail-step-action"><strong>Action</strong><p>{x.action}</p></div>{x.testData&&<div className="tc-detail-step-data"><strong>Test Data</strong><p>{x.testData}</p></div>}<div className="tc-detail-step-expect"><strong>Expected Result</strong><p>{x.expectedResult}</p></div></div></div>)}</div></section><div className="modal-actions"><button className="btn primary" onClick={()=>setCaseDetail(null)}>ปิด</button></div></div></div>}
+  </div>
+}
+
 type RtmLinkedCase = { testCaseId: string; testCaseCode: string; title: string; priority: string; testType?: string; status: string; revisionNo: number; coverageType?: string };
 type RtmItem = { requirementId: string; moduleId: string; moduleName: string; requirementCode: string; title: string; priority: string; testCaseCount: number; coverageStatus: string; status: string; testCases: RtmLinkedCase[] };
 function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: number; projectId?: string; releaseId?: string; search: string; canEdit: boolean }) {
@@ -3315,10 +3504,11 @@ function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: 
       readJson(`${apiUrl}/releases`),
       projectId ? readJson(`${apiUrl}/projects/${projectId}/modules`) : Promise.resolve([]),
       readJson(`${apiUrl}/test-cases${projectId ? `?projectId=${projectId}` : ""}`),
-    ]).then(([releaseRows, moduleRows, caseRows]) => {
+    ]).then(([releaseRows, moduleRows, caseData]) => {
       setReleases(releaseRows);
       setModules((moduleRows as ModuleItem[]).filter(x => x.isActive));
-      setCases(caseRows);
+      const tcRows = Array.isArray(caseData) ? caseData : (caseData as { items?: { rows: unknown[] } })?.items?.rows ?? (caseData as { rows?: unknown[] })?.rows ?? [];
+      setCases(tcRows as TestCaseItem[]);
     }).catch(() => setError("โหลดข้อมูลตัวกรอง RTM ไม่สำเร็จ"));
   }, [headers, projectId, refresh]);
   useEffect(() => { if (!selectedRelease) { setItems([]); setLoading(false); return; } setLoading(true); setError(""); fetch(`${apiUrl}/releases/${selectedRelease}/rtm`, { headers }).then(r => r.ok ? r.json() : Promise.reject()).then((data: unknown) => { const rows = Array.isArray(data) ? data : (data as { items?: { rows: unknown[] } }).items?.rows ?? []; setItems(rows as RtmItem[]); }).catch(() => setError("โหลด RTM ไม่สำเร็จ")).finally(() => setLoading(false)); }, [headers, selectedRelease, refresh, reload]);
@@ -3349,7 +3539,7 @@ function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: 
     <article className="card"><div className="table-tools rtm-tools"><div><select value={selectedRelease} onChange={e => setSelectedRelease(e.target.value)}><option value="">เลือก Release</option>{releases.filter(x => !projectId || x.projectId === projectId).map(x => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}</select><select value={moduleFilter} onChange={e => setModuleFilter(e.target.value)} aria-label="กรองตาม Module"><option value="">ทุก Module</option>{moduleTreeOptions.map(({ module, depth }) => <option key={module.moduleId} value={module.moduleId}>{depth ? `${"　".repeat(depth)}└ ` : "▾ "}{module.moduleCode} · {module.moduleName}</option>)}</select><select value={coverageFilter} onChange={e => setCoverageFilter(e.target.value)}><option value="">ทุก Coverage</option><option>Covered</option><option>Partial</option><option>Not Covered</option></select><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">ทุก Status</option>{[...new Set(items.map(x => x.status))].map(x => <option key={x}>{x}</option>)}</select></div><button className="btn" onClick={exportCsv}>Export CSV</button></div>{error && <div className="inline-error">{error}</div>}
       <div className="table-wrap"><table className="rtm-table"><thead><tr><th>Requirement</th><th>Title</th><th>Priority</th><th>Test Cases</th><th>Coverage</th><th>Status</th><th>จัดการ</th></tr></thead><tbody>{filtered.map(x => <tr key={x.requirementId}><td data-label="Requirement"><button className="link-button" onClick={() => setDetail(x)}>{x.requirementCode}</button><small className="rtm-module">{x.moduleName}</small></td><td data-label="Title">{x.title}</td><td data-label="Priority">{x.priority}</td><td data-label="Test Cases">{x.testCaseCount}</td><td data-label="Coverage"><Badge tone={x.coverageStatus === "Covered" ? "green" : x.coverageStatus === "Partial" ? "yellow" : "red"}>{x.coverageStatus}</Badge></td><td data-label="Status">{x.status}</td><td data-label="จัดการ"><div className="row-actions"><button className="btn" onClick={() => setDetail(x)}>รายละเอียด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(x);setLinkModuleFilter(x.moduleId);setSelectedCase("");setCoverageType("Direct")}}>จัดการ Link</button>}</div></td></tr>)}</tbody></table></div>
     </article>
-    {detail && <div className="modal" onMouseDown={() => setDetail(null)}><div className="modal-box rtm-detail" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>{detail.requirementCode}</h2><small>{detail.moduleName}</small></div><button onClick={() => setDetail(null)}>×</button></div><h3>{detail.title}</h3><div className="detail-grid"><span>Priority<b>{detail.priority}</b></span><span>Status<b>{detail.status}</b></span><span>Coverage<b>{detail.coverageStatus}</b></span><span>Test Cases<b>{detail.testCaseCount}</b></span></div><h3>Test Cases ที่เชื่อมโยง</h3><div className="rtm-linked-list">{detail.testCases.length ? detail.testCases.map(t => <button key={t.testCaseId} onClick={() => setCaseDetail(t)}><b>{t.testCaseCode}</b><span>{t.title}</span><Badge tone={t.status === "Ready" ? "green" : "yellow"}>{t.status}</Badge></button>) : <p className="muted">ยังไม่มี Test Case ที่เชื่อมโยง</p>}</div></div></div>}
+    {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="rtm-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box rtm-detail" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2 id="rtm-detail-title">รายละเอียด RTM</h2><small>{detail.requirementCode} · {detail.moduleName}</small></div><button aria-label="ปิดหน้าต่างรายละเอียด RTM" onClick={() => setDetail(null)}>×</button></div><div className="rtm-detail-hero"><div className="rtm-detail-hero-copy"><span className="rtm-detail-eyebrow">Requirement</span><b className="rtm-detail-code">{detail.requirementCode}</b><h3>{detail.title}</h3><div className="rtm-detail-badges"><Badge tone={detail.priority === "P0" || detail.priority === "P1" ? "red" : "blue"}>{detail.priority}</Badge><Badge tone={detail.status === "Approved" || detail.status === "Implemented" ? "green" : "yellow"}>{detail.status}</Badge></div></div><div className={`rtm-coverage-summary ${detail.coverageStatus.toLowerCase().replaceAll(" ", "-")}`}><span>Coverage</span><b>{detail.coverageStatus}</b><small>{detail.testCaseCount} Test Case{detail.testCaseCount === 1 ? "" : "s"}</small></div></div><div className="rtm-detail-meta"><div><span className="rtm-meta-icon" aria-hidden="true">M</span><span>Module<b>{detail.moduleName || "ไม่ระบุ"}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">#</span><span>Linked Test Cases<b>{detail.testCaseCount}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">✓</span><span>Traceability<b>{detail.coverageStatus}</b></span></div></div><section className="rtm-detail-section"><div className="rtm-section-heading"><div><span className="rtm-section-icon" aria-hidden="true">⇄</span><span><h3>Test Cases ที่เชื่อมโยง</h3><small>ตรวจสอบความครอบคลุมและชนิดการเชื่อมโยง</small></span></div><span className="rtm-linked-count">{detail.testCases.length} รายการ</span></div><div className="rtm-linked-list rtm-detail-linked-list">{detail.testCases.length ? detail.testCases.map((t, index) => <button key={t.testCaseId} onClick={() => setCaseDetail(t)}><span className="rtm-case-index">{String(index + 1).padStart(2, "0")}</span><span className="rtm-case-copy"><b>{t.testCaseCode}</b><span>{t.title}</span><small>{t.testType || "ไม่ระบุประเภท"} · Rev. {t.revisionNo}</small></span><span className="rtm-case-status"><Badge tone={t.status === "Ready" ? "green" : t.status === "Deprecated" ? "red" : "yellow"}>{t.status}</Badge>{t.coverageType && <small>{t.coverageType}</small>}<i aria-hidden="true">›</i></span></button>) : <div className="rtm-detail-empty"><span aria-hidden="true">⇄</span><b>ยังไม่มี Test Case ที่เชื่อมโยง</b><p>Requirement นี้ยังไม่ถูกครอบคลุม กรุณาเพิ่ม Test Case Link เพื่อให้ตรวจสอบ Traceability ได้</p></div>}</div></section><div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}>ปิด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(detail);setLinkModuleFilter(detail.moduleId);setSelectedCase("");setCoverageType("Direct");setDetail(null)}}>จัดการ Link</button>}</div></div></div>}
     {caseDetail && <div className="modal nested-modal" onMouseDown={() => setCaseDetail(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><h2>{caseDetail.testCaseCode}</h2><button onClick={() => setCaseDetail(null)}>×</button></div><h3>{caseDetail.title}</h3><div className="detail-grid"><span>Priority<b>{caseDetail.priority}</b></span><span>Type<b>{caseDetail.testType || "-"}</b></span><span>Status<b>{caseDetail.status}</b></span><span>Revision<b>Rev. {caseDetail.revisionNo}</b></span><span>Link Type<b>{caseDetail.coverageType || "Direct"}</b></span></div></div></div>}
     {linking && <div className="modal" onMouseDown={() => setLinking(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>จัดการ Test Case Link</h2><small>{linking.requirementCode}</small></div><button onClick={() => setLinking(null)}>×</button></div><div className="rtm-linked-list editable">{linking.testCases.map(t => <div key={t.testCaseId}><button onClick={() => setCaseDetail(t)}><b>{t.testCaseCode}</b><span>{t.title}</span></button><button className="btn danger" disabled={busy} onClick={() => saveLink(t)}>ยกเลิก Link</button></div>)}</div><div className="form-grid rtm-link-form"><label className="full">Module<select className="rtm-link-module-filter" value={linkModuleFilter} onChange={e=>{setLinkModuleFilter(e.target.value);setSelectedCase("")}}><option value="">ทุก Module</option>{moduleTreeOptions.map(({module,depth})=><option className={depth===0?"module-root-option":"module-child-option"} key={module.moduleId} value={module.moduleId}>{depth?`${"　".repeat(depth)}└ `:"▾ "}{module.moduleCode} · {module.moduleName}</option>)}</select></label><label>Test Case <small>{linkableCases.length} รายการ</small><select value={selectedCase} onChange={e => setSelectedCase(e.target.value)}><option value="">{linkableCases.length?"เลือก Test Case":"ไม่พบ Test Case ใน Module นี้"}</option>{linkableCases.map(t => <option key={t.testCaseId} value={t.testCaseId}>{t.testCaseCode} · {t.title}</option>)}</select></label><label>Coverage Type<select value={coverageType} onChange={e => setCoverageType(e.target.value)}><option>Direct</option><option>Indirect</option></select></label></div><div className="modal-actions"><button className="btn" onClick={() => setLinking(null)}>ปิด</button><button className="btn primary" disabled={busy || !selectedCase} onClick={() => saveLink()}>{busy ? "กำลังบันทึก..." : "เพิ่ม Link"}</button></div></div></div>}
   </>;
@@ -3395,7 +3585,7 @@ type TestCycleItem = {
   executedCount: number;
   progressPercent: number;
 };
-function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, contextBuildId }: { search: string; canEdit: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
+function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextReleaseId, contextBuildId }: { search: string; canEdit: boolean; canExport: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
   const masterOptions = useMasterOptions(), cycleTypes = masterOptions("TestCycleType");
   const [items, setItems] = useState<TestCycleItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
@@ -3406,7 +3596,15 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
     [reload, setReload] = useState(0),
     [form, setForm] = useState(false),
     [editing, setEditing] = useState<TestCycleItem | null>(null),
-    [saving, setSaving] = useState(false);
+    [detail, setDetail] = useState<TestCycleItem | null>(null),
+    [saving, setSaving] = useState(false),
+    [loading, setLoading] = useState(true),
+    [exporting, setExporting] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [totalCount, setTotalCount] = useState(0),
+    [page, setPage] = useState(1),
+    [pageSize, setPageSize] = useState(20);
   const [projectId, setProjectId] = useState(""),
     [releaseId, setReleaseId] = useState(""),
     [buildId, setBuildId] = useState(""),
@@ -3431,15 +3629,14 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
       const response = await fetch(url, { headers: h });
       if (!response.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (${response.status})`);
       const data: unknown = await response.json();
-      return Array.isArray(data) ? (data as T[]) : [];
+      return Array.isArray(data) ? (data as T[]) : (data as any)?.items?.rows ?? (data as any)?.rows ?? [];
     };
     Promise.all([
-      readList<TestCycleItem>(`${apiUrl}/test-cycles`),
       readList<ProjectItem>(`${apiUrl}/projects`),
       readList<CycleRelease>(`${apiUrl}/releases`),
       readList<CycleEnvironment>(`${apiUrl}/test-environments`),
       readList<TestSuiteItem>(`${apiUrl}/test-suites`),
-    ]).then(async ([c, p, r, e, s]) => {
+    ]).then(async ([p, r, e, s]) => {
       const activeProjects = (p as ProjectItem[]).filter((x) => x.isActive);
       const activeReleases = (r as CycleRelease[]).filter(
         (x) => x.status !== "Released" && x.status !== "Cancelled",
@@ -3455,7 +3652,6 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
           }),
         ),
       );
-      setItems(c);
       setProjects(activeProjects);
       setReleases(activeReleases);
       setEnvironments(e);
@@ -3467,7 +3663,6 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
           : activeProjects[0]?.projectId || "",
       );
     }).catch(() => {
-      setItems([]);
       setProjects([]);
       setReleases([]);
       setBuilds([]);
@@ -3475,6 +3670,32 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
       setSuites([]);
     });
   }, [reload]);
+  useEffect(() => {
+    const query = new URLSearchParams({ page: String(page), size: String(pageSize) });
+    if (contextProjectId) query.set("projectId", contextProjectId);
+    if (contextReleaseId) query.set("releaseId", contextReleaseId);
+    if (contextBuildId) query.set("buildId", contextBuildId);
+    if (search.trim()) query.set("search", search.trim());
+    setLoading(true);
+    setError("");
+    fetch(`${apiUrl}/test-cycles?${query}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } })
+      .then(async response => {
+        if (!response.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${response.status})`);
+        const data = await response.json();
+        const container = data?.items ?? data;
+        const rows = Array.isArray(container?.rows) ? container.rows : Array.isArray(container) ? container : [];
+        setItems(rows);
+        setTotalCount(Number(container?.total ?? rows.length));
+      })
+      .catch(reason => { setItems([]); setTotalCount(0); setError(reason instanceof Error ? reason.message : "โหลด Test Cycle ไม่สำเร็จ"); })
+      .finally(() => setLoading(false));
+  }, [contextProjectId, contextReleaseId, contextBuildId, search, page, pageSize, reload]);
+  useEffect(() => { setPage(1); }, [contextProjectId, contextReleaseId, contextBuildId, search]);
+  useEffect(()=>{const target=localStorage.getItem("qa.targetCycleId");if(!target)return;fetch(`${apiUrl}/test-cycles/${target}`,{headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}}).then(r=>r.ok?r.json():null).then((cycle:TestCycleItem|null)=>{if(cycle)setDetail(cycle);localStorage.removeItem("qa.targetCycleId")}).catch(()=>localStorage.removeItem("qa.targetCycleId"))},[]);
+  useEffect(() => {
+    const lastPage = Math.max(1, Math.ceil(totalCount / pageSize));
+    if (page > lastPage) setPage(lastPage);
+  }, [page, pageSize, totalCount]);
   const projectReleases = useMemo(
       () => releases.filter((x) => x.projectId === projectId),
       [releases, projectId],
@@ -3515,12 +3736,12 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
   }, [form, editing, projectId, projects, items]);
   const openForm = (cycle?: TestCycleItem) => {
     setEditing(cycle ?? null);
-    setProjectId(cycle?.projectId ?? projects[0]?.projectId ?? "");
-    setReleaseId(cycle?.releaseId ?? "");
-    setBuildId(cycle?.buildId ?? "");
+    setProjectId(cycle?.projectId ?? contextProjectId ?? projects[0]?.projectId ?? "");
+    setReleaseId(cycle?.releaseId ?? contextReleaseId ?? "");
+    setBuildId(cycle?.buildId ?? contextBuildId ?? "");
     setEnvironmentId(cycle?.environmentId ?? "");
     setSuiteId(cycle?.testSuiteId ?? "");
-    const targetProjectId = cycle?.projectId ?? projects[0]?.projectId ?? "";
+    const targetProjectId = cycle?.projectId ?? contextProjectId ?? projects[0]?.projectId ?? "";
     const project = projects.find((x) => x.projectId === targetProjectId);
     setCode(
       cycle?.cycleCode ??
@@ -3536,6 +3757,7 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
     setNotes(cycle?.notes ?? "");
     setForm(true);
   };
+  const openDetail = (cycle: TestCycleItem) => setDetail(cycle);
   const save = async () => {
     setSaving(true);
     try {
@@ -3567,9 +3789,10 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
         throw new Error(p.detail ?? "บันทึกไม่สำเร็จ");
       }
       setForm(false);
+      setNotice(editing ? "แก้ไข Test Cycle แล้ว" : "สร้าง Test Cycle แล้ว");
       setReload((x) => x + 1);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      setError(e instanceof Error ? e.message : "บันทึก Test Cycle ไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
@@ -3593,16 +3816,20 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
       setEnvironmentName("");
       setEnvironmentId(result.testEnvironmentId);
       setReload((x) => x + 1);
+    } catch {
+      setError("สร้าง Environment ไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
   };
   const changeStatus = async (cycle: TestCycleItem, status: string) => {
-    await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}/status`, {
+    const response = await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}/status`, {
       method: "POST",
       headers,
       body: JSON.stringify({ status }),
     });
+    if (!response.ok) { setError(`เปลี่ยนสถานะ ${cycle.cycleCode} ไม่สำเร็จ`); return; }
+    setNotice(`เปลี่ยนสถานะ ${cycle.cycleCode} แล้ว`);
     setReload((x) => x + 1);
   };
   const remove = async (cycle: TestCycleItem) => {
@@ -3612,10 +3839,41 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
       headers,
     });
     if (!response.ok) {
-      window.alert("ลบ Test Cycle ไม่สำเร็จ");
+      setError("ลบ Test Cycle ไม่สำเร็จ");
       return;
     }
+    setNotice(`ลบ ${cycle.cycleCode} แล้ว`);
     setReload((x) => x + 1);
+  };
+  const exportCsv = async () => {
+    setExporting(true); setError("");
+    try {
+      const exported: TestCycleItem[] = [];
+      const exportSize = 100;
+      let exportPage = 1;
+      let total = 0;
+      do {
+        const query = new URLSearchParams({ page: String(exportPage), size: String(exportSize) });
+        if (contextProjectId) query.set("projectId", contextProjectId);
+        if (contextReleaseId) query.set("releaseId", contextReleaseId);
+        if (contextBuildId) query.set("buildId", contextBuildId);
+        if (search.trim()) query.set("search", search.trim());
+        const response = await fetch(`${apiUrl}/test-cycles?${query}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
+        if (!response.ok) throw new Error(`ส่งออก Test Cycle ไม่สำเร็จ (${response.status})`);
+        const data = await response.json();
+        const container = data?.items ?? data;
+        const batch = Array.isArray(container?.rows) ? container.rows as TestCycleItem[] : [];
+        total = Number(container?.total ?? batch.length);
+        exported.push(...batch);
+        exportPage += 1;
+      } while (exported.length < total);
+      const csvRows = [["Cycle Code", "Name", "Release", "Build", "Environment", "Type", "Executed", "Cases", "Progress", "Status"], ...exported.map(item => [item.cycleCode, item.cycleName, item.releaseCode, item.buildNumber, item.environmentName, item.cycleType ?? "", item.executedCount, item.caseCount, `${item.progressPercent}%`, item.status])];
+      const csv = "\ufeff" + csvRows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a"); link.href = url; link.download = "test-cycles.csv"; link.click(); URL.revokeObjectURL(url);
+      setNotice(`ส่งออก ${exported.length} Test Cycles แล้ว`);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "ส่งออก Test Cycle ไม่สำเร็จ"); }
+    finally { setExporting(false); }
   };
   const rows = items.filter((x) =>
     (!contextProjectId || x.projectId === contextProjectId) &&
@@ -3625,16 +3883,22 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
+  const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
   return (
     <>
       <article className="card">
+        {error && <div className="inline-alert error" role="alert"><span>{error}</span><button onClick={() => { setError(""); setReload(value => value + 1); }}>ลองใหม่</button></div>}
+        {notice && <div className="inline-alert success" role="status"><span>{notice}</span><button aria-label="ปิดข้อความ" onClick={() => setNotice("")}>×</button></div>}
         <div className="table-tools">
-          <span>{rows.length} Test Cycles</span>
-          {canEdit && (
+          <span>{totalCount.toLocaleString()} Test Cycles</span>
+          <div>
+            {canExport && <button className="btn" disabled={exporting || loading || totalCount === 0} onClick={exportCsv}>{exporting ? "กำลัง Export..." : "Export CSV"}</button>}
+            {canEdit && (
             <button className="btn primary" onClick={() => openForm()}>
               + สร้าง Test Cycle
             </button>
-          )}
+            )}
+          </div>
         </div>
         <div className="table-wrap">
           <table>
@@ -3651,10 +3915,12 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
               </tr>
             </thead>
             <tbody>
+              {loading && <tr><td className="empty-cell" colSpan={canEdit ? 8 : 7}><div className="empty-state"><span aria-hidden="true">…</span><b>กำลังโหลด Test Cycle...</b></div></td></tr>}
+              {!loading && !error && rows.length === 0 && <tr><td className="empty-cell" colSpan={canEdit ? 8 : 7}><div className="empty-state"><span aria-hidden="true">◎</span><b>ไม่พบ Test Cycle</b><small>ลองเปลี่ยน Project, Release, Build หรือคำค้นหา</small></div></td></tr>}
               {rows.map((x) => (
                 <tr key={x.testCycleId}>
                   <td>
-                    <b>{x.cycleCode}</b>
+                    <button className="link-button" onClick={() => openDetail(x)}>{x.cycleCode}</button>
                   </td>
                   <td>{x.cycleName}</td>
                   <td>
@@ -3723,7 +3989,54 @@ function TestCyclesPage({ search, canEdit, contextProjectId, contextReleaseId, c
             </tbody>
           </table>
         </div>
+        <div className="pagination">
+          <label>แสดง<select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}><option>10</option><option>20</option><option>50</option></select> รายการ</label>
+          <span>หน้า {Math.min(page, pageCount)} / {pageCount} ({totalCount.toLocaleString()} รายการ)</span>
+          <button className="btn" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}>ก่อนหน้า</button>
+          <button className="btn" disabled={loading || page >= pageCount} onClick={() => setPage(value => value + 1)}>ถัดไป</button>
+        </div>
       </article>
+      {detail && (
+        <div className="modal" role="presentation" onMouseDown={() => setDetail(null)}>
+          <div className="modal-box cycle-modal cycle-detail-modal" role="dialog" aria-modal="true" aria-labelledby="cycle-detail-title" onMouseDown={event => event.stopPropagation()}>
+            <div className="modal-head">
+              <div><span className="cycle-detail-eyebrow">TEST CYCLE</span><h2 id="cycle-detail-title">{detail.cycleCode}</h2><small>{projects.find(project => project.projectId === detail.projectId)?.projectName ?? "-"}</small></div>
+              <button aria-label="ปิดรายละเอียด Test Cycle" onClick={() => setDetail(null)}>×</button>
+            </div>
+            <section className="cycle-detail-hero">
+              <div><h3>{detail.cycleName}</h3><p>{detail.releaseCode} <span aria-hidden="true">•</span> Build {detail.buildNumber}</p></div>
+              <div className="cycle-detail-badges"><Badge tone={detail.status === "Completed" || detail.status === "Closed" ? "green" : detail.status === "Cancelled" ? "red" : "yellow"}>{detail.status}</Badge>{detail.cycleType && <Badge tone="blue">{detail.cycleType}</Badge>}</div>
+            </section>
+            <section className="cycle-detail-progress" aria-label={`ดำเนินการแล้ว ${detail.progressPercent}%`}>
+              <div className="cycle-detail-progress-head"><div><span>Execution Progress</span><strong>{detail.progressPercent}%</strong></div><small>{detail.executedCount.toLocaleString()} จาก {detail.caseCount.toLocaleString()} Test Cases</small></div>
+              <div className="cycle-detail-progress-track"><span style={{ width: `${Math.min(100, Math.max(0, detail.progressPercent))}%` }} /></div>
+              <div className="cycle-detail-progress-stats"><span><b>{detail.executedCount.toLocaleString()}</b>ดำเนินการแล้ว</span><span><b>{Math.max(0, detail.caseCount - detail.executedCount).toLocaleString()}</b>คงเหลือ</span><span><b>{detail.caseCount.toLocaleString()}</b>ทั้งหมด</span></div>
+            </section>
+            <section className="cycle-detail-section">
+              <h3>ข้อมูลการทดสอบ</h3>
+              <dl className="cycle-detail-grid">
+                <div><dt><span aria-hidden="true">◫</span> Release</dt><dd>{detail.releaseCode || "-"}</dd></div>
+                <div><dt><span aria-hidden="true">#</span> Build</dt><dd>{detail.buildNumber || "-"}</dd></div>
+                <div><dt><span aria-hidden="true">◎</span> Environment</dt><dd>{detail.environmentName || "-"}</dd></div>
+                <div className="wide"><dt><span aria-hidden="true">▤</span> Test Suite</dt><dd>{detail.suiteName || "ไม่ระบุ Suite"}</dd></div>
+              </dl>
+            </section>
+            <section className="cycle-detail-section">
+              <h3>กำหนดการ</h3>
+              <div className="cycle-detail-timeline">
+                <div><span aria-hidden="true">S</span><small>Start Date</small><b>{detail.startDate ? new Date(detail.startDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ"}</b></div>
+                <i aria-hidden="true" />
+                <div><span aria-hidden="true">E</span><small>End Date</small><b>{detail.endDate ? new Date(detail.endDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ"}</b></div>
+              </div>
+            </section>
+            <section className="cycle-detail-notes"><div aria-hidden="true">i</div><span><b>Notes</b><p>{detail.notes || "ไม่มี Notes สำหรับ Test Cycle นี้"}</p></span></section>
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setDetail(null)}>ปิด</button>
+              {canEdit && <button className="btn primary" onClick={() => { const cycle = detail; setDetail(null); openForm(cycle); }}>แก้ไข</button>}
+            </div>
+          </div>
+        </div>
+      )}
       {form && (
         <div className="modal" onMouseDown={() => setForm(false)}>
           <div
@@ -3936,9 +4249,10 @@ type ExecutionWorkspace = {
 };
 function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBuildId }: { contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
   const [cycles, setCycles] = useState<TestCycleItem[]>([]),
-    [cycleId, setCycleId] = useState(""),
+    [cycleId, setCycleId] = useState(()=>localStorage.getItem("qa.targetCycleId")??""),
     [workspace, setWorkspace] = useState<ExecutionWorkspace | null>(null),
     [selectedId, setSelectedId] = useState(""),
+    [caseDetail, setCaseDetail] = useState<ExecutionCase | null>(null),
     [stepStatuses, setStepStatuses] = useState<Record<number, string>>({}),
     [stepActuals, setStepActuals] = useState<Record<number, string>>({}),
     [actual, setActual] = useState(""),
@@ -3959,11 +4273,12 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       .then(async (r) => {
         if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
         const data: unknown = await r.json();
-        return Array.isArray(data) ? (data as TestCycleItem[]) : [];
+        return Array.isArray(data) ? (data as TestCycleItem[]) : (data as any)?.items?.rows ?? [];
       })
       .then((data: TestCycleItem[]) => {
         setCycles(data);
-        setCycleId((current) => current || data[0]?.testCycleId || "");
+        setCycleId((current) => data.some(x=>x.testCycleId===current)?current:(data[0]?.testCycleId||""));
+        localStorage.removeItem("qa.targetCycleId");
       })
       .catch(() => {
         setCycles([]);
@@ -3989,9 +4304,21 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
         );
       });
   }, [cycleId, reload]);
+  useEffect(() => {
+    if (!selectedId || !cycleId) { setCaseDetail(null); return; }
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    fetch(`${apiUrl}/test-cycles/${cycleId}/cases/${selectedId}`, { headers: h })
+      .then(r => r.ok ? r.json() : null)
+      .then((data) => setCaseDetail(data))
+      .catch(() => setCaseDetail(null));
+  }, [selectedId, cycleId, reload]);
   const selected = useMemo(
-    () => workspace?.cases.find((x) => x.testCycleCaseId === selectedId),
-    [workspace, selectedId],
+    () => {
+      const base = workspace?.cases.find((x) => x.testCycleCaseId === selectedId);
+      if (!base) return undefined;
+      return caseDetail && caseDetail.testCycleCaseId === selectedId ? { ...base, ...caseDetail } : { ...base, steps: [], history: [] };
+    },
+    [workspace, selectedId, caseDetail],
   );
   const executionStats = useMemo(() => {
     const cases = workspace?.cases ?? [];
@@ -4423,10 +4750,10 @@ function TestSuitesPage({
         r.json(),
       ),
     ]).then(([s, p, t]) => {
-      setItems(s);
+      setItems(Array.isArray(s) ? s : (s as any)?.rows ?? []);
       const activeProjects = (p as ProjectItem[]).filter((x) => x.isActive);
       setProjects(activeProjects);
-      setTestCases(t);
+      setTestCases(Array.isArray(t) ? t : (t as any)?.rows ?? []);
       setProjectId((current) => current || activeProjects[0]?.projectId || "");
     });
   }, [reload]);
@@ -4556,6 +4883,15 @@ function TestSuitesPage({
     }
     setReload((x) => x + 1);
   };
+  const fetchFullSuite = async (item: TestSuiteItem): Promise<TestSuiteItem> => {
+    try {
+      const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+      const full = await fetch(`${apiUrl}/test-suites/${item.testSuiteId}`, { headers: h }).then(r => r.ok ? r.json() : null);
+      return full ? { ...item, ...full } : { ...item, cases: [] };
+    } catch { return { ...item, cases: [] }; }
+  };
+  const openSuiteDetail = async (item: TestSuiteItem) => { const full = await fetchFullSuite(item); setDetail(full); };
+  const openSuiteManaging = async (item: TestSuiteItem) => { const full = await fetchFullSuite(item); setManaging(full); setChecked([]); setCaseSearch(""); setCaseModuleFilter(""); setCasePriorityFilter(""); setCaseTypeFilter(""); setCaseStatusFilter(""); setAddRequired(true); setError(""); };
   const rows = items.filter(
     (x) =>
       (!projectFilter || x.projectId === projectFilter) &&
@@ -4606,7 +4942,7 @@ function TestSuitesPage({
               {rows.map((x) => (
                 <tr key={x.testSuiteId}>
                   <td data-label="Suite Code">
-                    <button className="link-button" onClick={() => setDetail(x)}>{x.suiteCode}</button>
+                    <button className="link-button" onClick={() => openSuiteDetail(x)}>{x.suiteCode}</button>
                   </td>
                   <td data-label="Suite Name">{x.suiteName}</td>
                   <td data-label="Type">{x.suiteType ?? "-"}</td>
@@ -4615,7 +4951,7 @@ function TestSuitesPage({
                       {x.riskTier ?? "-"}
                     </Badge>
                   </td>
-                  <td data-label="Case Count">{x.cases.length}</td>
+                  <td data-label="Case Count">{(x as any).cases?.length ?? (x as any).caseCount ?? 0}</td>
                   <td data-label="Test Cycles">{x.cycleCount}</td>
                   <td data-label="Status">
                     <Badge tone={x.isActive ? "green" : "red"}>
@@ -4627,7 +4963,7 @@ function TestSuitesPage({
                       <div className="row-actions">
                         <button
                           className="table-action"
-                          onClick={() => setDetail(x)}
+                          onClick={() => openSuiteDetail(x)}
                         >
                           รายละเอียด
                         </button>
@@ -4639,17 +4975,7 @@ function TestSuitesPage({
                         </button>
                         <button
                           className="table-action"
-                          onClick={() => {
-                            setManaging(x);
-                            setChecked([]);
-                            setCaseSearch("");
-                            setCaseModuleFilter("");
-                            setCasePriorityFilter("");
-                            setCaseTypeFilter("");
-                            setCaseStatusFilter("");
-                            setAddRequired(true);
-                            setError("");
-                          }}
+                          onClick={() => openSuiteManaging(x)}
                         >
                           จัด Test Case
                         </button>
@@ -5022,7 +5348,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
         (r) => r.json(),
       ),
     ]).then(([u, r, p]) => {
-      setUsers(u);
+      setUsers(Array.isArray(u) ? u : u?.items?.rows ?? []);
       setRoles(r);
       setPermissions(p);
       if (r.length) {
@@ -5789,13 +6115,13 @@ function App() {
     Promise.all([
       fetch(`${apiUrl}/projects/${targetProjectId}/modules`, { headers: h }).then((r) => r.ok ? r.json() : []),
       fetch(`${apiUrl}/projects/${targetProjectId}/releases`, { headers: h }).then((r) => r.ok ? r.json() : []),
-      fetch(`${apiUrl}/admin/users`, { headers: h }).then((r) => r.ok ? r.json() : []),
-    ]).then(([moduleData, releaseData, userData]: [ModuleItem[], ReleaseItem[], AdminUser[]]) => {
-      const activeModules = moduleData.filter((x) => x.isActive);
-      const activeReleases = releaseData.filter((x) => x.status !== "Cancelled");
+      fetch(`${apiUrl}/admin/users`, { headers: h }).then(async (r) => { if (!r.ok) return []; const d = await r.json(); return Array.isArray(d) ? d : d?.items?.rows ?? []; }),
+    ]).then(([moduleData, releaseData, userData]: [ModuleItem[], ReleaseItem[], unknown[]]) => {
+      const activeModules = (moduleData as ModuleItem[]).filter((x) => x.isActive);
+      const activeReleases = (releaseData as ReleaseItem[]).filter((x) => x.status !== "Cancelled");
       setCreateModules(activeModules);
       setCreateReleases(activeReleases);
-      setCreateRequirementUsers(userData.filter((x) => x.isActive));
+      setCreateRequirementUsers((userData as any[]).filter((x) => x.isActive));
       setCreateModuleId((current) => activeModules.some((x) => x.moduleId === current) ? current : (activeModules[0]?.moduleId ?? ""));
       setCreateReleaseId((current) => activeReleases.some((x) => x.releaseId === current) ? current : (contextReleaseId && activeReleases.some((x) => x.releaseId === contextReleaseId) ? contextReleaseId : (activeReleases[0]?.releaseId ?? "")));
     });
@@ -5831,6 +6157,7 @@ function App() {
     setPage(id);
     setMenu(false);
   };
+  const openRegressionCycle=(target:"test-cycles"|"execution",cycleId:string)=>{localStorage.setItem("qa.targetCycleId",cycleId);go(target)};
   const logout = () => {
     localStorage.removeItem("qa.accessToken");
     localStorage.removeItem("qa.user");
@@ -5858,10 +6185,10 @@ function App() {
     }
     setSaving(true);
     try {
-      const headers = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
-      };
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
       let url = `${apiUrl}/projects`,
         body: object = {
           projectCode: "",
@@ -6087,7 +6414,7 @@ function App() {
                   placeholder="ค้นหา..."
                 />
               </label>
-              {can("REPORT.EXPORT") && <button className="btn">Export</button>}
+              {can("REPORT.EXPORT") && page !== "test-cycles" && <button className="btn">Export</button>}
               {page === "dashboard" && <button className="btn share-btn" onClick={shareDashboard}>↗ แชร์ Dashboard</button>}
               {page === "requirements"&&can("REQUIREMENT.EDIT")&&<button className="btn ai-button" onClick={()=>{setCreateProjectId(contextProjectId);setCreateModuleId("");setCreateReleaseId(contextReleaseId);setRequirementAiPrompt("");setRequirementAiFiles([]);setRequirementAiError("");setRequirementAiModal(true)}}><span aria-hidden="true">✦</span> AI Generate</button>}
               {canCreate && (
@@ -6116,6 +6443,8 @@ function App() {
             <TestCasesPage search={search} canEdit={can("TESTCASE.EDIT")} contextProjectId={contextProjectId} />
           ) : page === "rtm" ? (
             <RtmPage refresh={refresh} projectId={contextProjectId} releaseId={contextReleaseId} search={search} canEdit={can("TESTCASE.EDIT")} />
+          ) : page === "regression" ? (
+            <RegressionPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("REGRESSION.MANAGE")} onOpenCycle={openRegressionCycle} />
           ) : page === "users" ? (
             <AdministrationPage refresh={refresh} allProjects={contextProjects} />
           ) : page === "settings" ? (
@@ -6125,7 +6454,7 @@ function App() {
           ) : page === "defects" ? (
             <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("DEFECT.EDIT")} />
           ) : (
-            <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} />
+            <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} />
           )}
         </div>
       </main>

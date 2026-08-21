@@ -8,16 +8,16 @@ namespace ProMaxx2.QA.Infrastructure.Persistence;
 public static class DatabaseInitializer
 {
     private static readonly string[] RoleCodes = ["SYS_ADMIN","QA_LEAD","QA_TESTER","DEVELOPER","PRODUCT_OWNER","RELEASE_OWNER","VIEWER"];
-    private static readonly string[] PermissionCodes = ["PROJECT.VIEW","PROJECT.EDIT","REQUIREMENT.VIEW","REQUIREMENT.EDIT","TESTCASE.VIEW","TESTCASE.EDIT","EXECUTION.RUN","EXECUTION.ASSIGN","DEFECT.CREATE","DEFECT.EDIT","DEFECT.RESOLVE","RISK.APPROVE","RELEASE.SIGNOFF","REPORT.EXPORT","ADMIN.USER","ADMIN.PERMISSION"];
+    private static readonly string[] PermissionCodes = ["PROJECT.VIEW","PROJECT.EDIT","REQUIREMENT.VIEW","REQUIREMENT.EDIT","TESTCASE.VIEW","TESTCASE.EDIT","REGRESSION.VIEW","REGRESSION.MANAGE","EXECUTION.RUN","EXECUTION.ASSIGN","DEFECT.VIEW","DEFECT.CREATE","DEFECT.EDIT","DEFECT.RESOLVE","RISK.APPROVE","RELEASE.SIGNOFF","REPORT.EXPORT","ADMIN.USER","ADMIN.PERMISSION"];
     private static readonly IReadOnlyDictionary<string,string[]> DefaultRolePermissions = new Dictionary<string,string[]>
     {
         ["SYS_ADMIN"] = PermissionCodes,
-        ["QA_LEAD"] = ["PROJECT.VIEW","PROJECT.EDIT","REQUIREMENT.VIEW","REQUIREMENT.EDIT","TESTCASE.VIEW","TESTCASE.EDIT","EXECUTION.RUN","EXECUTION.ASSIGN","DEFECT.CREATE","DEFECT.EDIT","REPORT.EXPORT"],
-        ["QA_TESTER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","TESTCASE.VIEW","TESTCASE.EDIT","EXECUTION.RUN","DEFECT.CREATE","DEFECT.EDIT"],
-        ["DEVELOPER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","TESTCASE.VIEW","DEFECT.EDIT","DEFECT.RESOLVE"],
-        ["PRODUCT_OWNER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","REQUIREMENT.EDIT","REPORT.EXPORT"],
-        ["RELEASE_OWNER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","TESTCASE.VIEW","RELEASE.SIGNOFF","REPORT.EXPORT"],
-        ["VIEWER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","TESTCASE.VIEW"]
+        ["QA_LEAD"] = ["PROJECT.VIEW","PROJECT.EDIT","REQUIREMENT.VIEW","REQUIREMENT.EDIT","TESTCASE.VIEW","TESTCASE.EDIT","REGRESSION.VIEW","REGRESSION.MANAGE","EXECUTION.RUN","EXECUTION.ASSIGN","DEFECT.VIEW","DEFECT.CREATE","DEFECT.EDIT","REPORT.EXPORT"],
+        ["QA_TESTER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","TESTCASE.VIEW","TESTCASE.EDIT","REGRESSION.VIEW","EXECUTION.RUN","DEFECT.VIEW","DEFECT.CREATE","DEFECT.EDIT"],
+        ["DEVELOPER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","TESTCASE.VIEW","DEFECT.VIEW","DEFECT.EDIT","DEFECT.RESOLVE"],
+        ["PRODUCT_OWNER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","REQUIREMENT.EDIT","DEFECT.VIEW","REPORT.EXPORT"],
+        ["RELEASE_OWNER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","TESTCASE.VIEW","REGRESSION.VIEW","DEFECT.VIEW","RELEASE.SIGNOFF","REPORT.EXPORT"],
+        ["VIEWER"] = ["PROJECT.VIEW","REQUIREMENT.VIEW","TESTCASE.VIEW","REGRESSION.VIEW","DEFECT.VIEW"]
     };
 
     public static async Task InitializeDatabaseAsync(this IServiceProvider services, string? adminPassword, CancellationToken cancellationToken = default)
@@ -26,6 +26,7 @@ public static class DatabaseInitializer
         await db.Database.MigrateAsync(cancellationToken);
         if (!await db.Roles.AnyAsync(cancellationToken)) { db.Roles.AddRange(RoleCodes.Select(x=>new Role(x,x.Replace('_',' ')))); await db.SaveChangesAsync(cancellationToken); }
         if (!await db.Permissions.AnyAsync(cancellationToken)) { db.Permissions.AddRange(PermissionCodes.Select(x=>new Permission(x,x,x.Split('.')[0]))); await db.SaveChangesAsync(cancellationToken); }
+        else { var existing=await db.Permissions.Select(x=>x.PermissionCode).ToListAsync(cancellationToken); var missing=PermissionCodes.Where(x=>!existing.Contains(x)).ToList(); if(missing.Count>0){db.Permissions.AddRange(missing.Select(x=>new Permission(x,x,x.Split('.')[0])));await db.SaveChangesAsync(cancellationToken);} }
         foreach(var mapping in DefaultRolePermissions)
         {
             var role=await db.Roles.SingleAsync(x=>x.RoleCode==mapping.Key,cancellationToken);

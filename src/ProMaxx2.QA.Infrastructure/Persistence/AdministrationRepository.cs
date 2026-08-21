@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;using ProMaxx2.QA.Application.Identity;using ProMaxx2.QA.Domain.Identity;
+using Microsoft.EntityFrameworkCore;using ProMaxx2.QA.Application.Common;using ProMaxx2.QA.Application.Identity;using ProMaxx2.QA.Domain.Identity;
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 public sealed class AdministrationRepository(QaDbContext db):IAdministrationRepository
 {

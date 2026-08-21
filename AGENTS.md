@@ -1,5 +1,9 @@
 # Repository Instructions
 
+## อ่านก่อนเริ่มงานทุกครั้ง (MANDATORY)
+
+ก่อนเริ่มทำงานใด ๆ ใน repository นี้ (โค้ด เอกสาร หรือ config) ต้องอ่าน `Document/02-Developer-Blueprint/SYSTEM_OVERVIEW.md` **ทั้งไฟล์ก่อนเสมอ** เพื่อทำความเข้าใจภาพรวมระบบ สถาปัตยกรรม วิธี build/run/restart และข้อจำกัดของ environment
+
 ## UI work
 
 ก่อนสร้าง แก้ไข หรือรีวิว UI ใด ๆ ใน repository นี้ ต้องอ่าน `Document/02-Developer-Blueprint/UI_DESIGN_SYSTEM.md` ทั้งไฟล์และใช้เป็นหลักในการตัดสินใจ

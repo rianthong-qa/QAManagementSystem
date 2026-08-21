@@ -81,6 +81,8 @@ public sealed class RequirementAndTestCaseServiceTests
 
         public Task<bool> ProjectCodeExistsAsync(string code, CancellationToken ct) => Task.FromResult(false);
 
+        public Task<IReadOnlyList<string>> ListProjectCodesAsync(string prefix, CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>([]);
+
         public Task AddAsync(Project project, CancellationToken ct) => Task.CompletedTask;
 
         public Task<Project?> FindAsync(Guid id, CancellationToken ct) => Task.FromResult<Project?>(new Project("PMX2", "Project", null, null, null));
@@ -90,6 +92,8 @@ public sealed class RequirementAndTestCaseServiceTests
         public Task<IReadOnlyList<ProductModule>> ListModuleEntitiesAsync(Guid projectId, CancellationToken ct) => Task.FromResult<IReadOnlyList<ProductModule>>([]);
 
         public Task<bool> ModuleCodeExistsAsync(Guid projectId, string code, CancellationToken ct) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<string>> ListModuleCodesAsync(Guid projectId, string prefix, CancellationToken ct) => Task.FromResult<IReadOnlyList<string>>([]);
 
         public Task<ProductModule?> FindModuleAsync(Guid id, CancellationToken ct) => Task.FromResult<ProductModule?>(id == _moduleId ? new ProductModule(_projectId, "SALES", "Sales", null, null, null, null) : null);
 
@@ -102,11 +106,11 @@ public sealed class RequirementAndTestCaseServiceTests
 
     private sealed class FakeRequirementRepository(IReadOnlyList<string> existingCodes) : IRequirementRepository
     {
-        private readonly List<RequirementDto> _items = existingCodes.Select(code => new RequirementDto(Guid.NewGuid(), Guid.NewGuid(), null, Guid.NewGuid(), code, "Title", null, null, "P1", null, null, null, "Draft", 1, true, DateTime.UtcNow)).ToList();
+        private readonly List<RequirementDto> _items = existingCodes.Select(code => new RequirementDto(Guid.NewGuid(), Guid.NewGuid(), null, Guid.NewGuid(), code, "Title", null, null, "P1", null, null, null, "Draft", 1, true, DateTime.UtcNow, 0)).ToList();
 
         public Task<PagedResult<RequirementDto>> ListAsync(RequirementFilter filter, CancellationToken ct) => Task.FromResult(new PagedResult<RequirementDto>(_items.Count, _items));
 
-        public Task<RequirementDto?> GetAsync(Guid id, CancellationToken ct) => Task.FromResult<RequirementDto?>(new RequirementDto(id, Guid.NewGuid(), null, Guid.NewGuid(), "PMX2-SALES-REQ-005", "Title", null, null, "P1", null, null, null, "Draft", 1, true, DateTime.UtcNow));
+        public Task<RequirementDto?> GetAsync(Guid id, CancellationToken ct) => Task.FromResult<RequirementDto?>(new RequirementDto(id, Guid.NewGuid(), null, Guid.NewGuid(), "PMX2-SALES-REQ-005", "Title", null, null, "P1", null, null, null, "Draft", 1, true, DateTime.UtcNow, 0));
 
         public Task<Requirement?> FindAsync(Guid id, CancellationToken ct) => Task.FromResult<Requirement?>(null);
 

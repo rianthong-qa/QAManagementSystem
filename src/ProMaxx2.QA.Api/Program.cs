@@ -63,6 +63,7 @@ builder.Services.AddScoped<TestCaseAiService>();
 builder.Services.AddScoped<TestSuiteAiService>();
 builder.Services.AddScoped<TestCycleAiService>();
 builder.Services.AddScoped<DefectAutoCreateService>();
+builder.Services.AddScoped<DefectActivityService>();
 builder.Services.AddScoped<SharedAiConfigurationService>();
 builder.Services.AddScoped<ProjectAccessContext>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
@@ -78,9 +79,12 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RequirementView",p=>p.RequireClaim("permission","REQUIREMENT.VIEW"))
     .AddPolicy("RequirementEdit",p=>p.RequireClaim("permission","REQUIREMENT.EDIT"))
     .AddPolicy("TestCaseView",p=>p.RequireClaim("permission","TESTCASE.VIEW"))
-    .AddPolicy("TestCaseEdit",p=>p.RequireClaim("permission","TESTCASE.EDIT"));
-builder.Services.AddAuthorizationBuilder().AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"));
-builder.Services.AddAuthorizationBuilder().AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"));
+    .AddPolicy("TestCaseEdit",p=>p.RequireClaim("permission","TESTCASE.EDIT"))
+    .AddPolicy("RegressionView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","REGRESSION.VIEW")))
+    .AddPolicy("RegressionManage",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","REGRESSION.MANAGE")))
+    .AddPolicy("DefectView",p=>p.RequireClaim("permission","DEFECT.VIEW"))
+    .AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"))
+    .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"));
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
 if (allowedOrigins == null || allowedOrigins.Length == 0)
 {

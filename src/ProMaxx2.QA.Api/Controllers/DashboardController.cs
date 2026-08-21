@@ -37,6 +37,33 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
         return Ok(await dashboard.GetAsync(share.ProjectId,share.ReleaseId,share.BuildId,ct));
     }
 
+    [HttpGet("shared/{code}/timeline")]
+    [AllowAnonymous]
+    public async Task<ActionResult<DashboardTimeline>> GetShortSharedTimeline(string code,CancellationToken ct)
+    {
+        var share=await dashboard.FindShareAsync(code,ct);
+        if(share is null)return Unauthorized(new ProblemDetails{Title="Dashboard share link is invalid or expired."});
+        return Ok(await dashboard.GetTimelineAsync(share.ProjectId,share.ReleaseId,share.BuildId,ct));
+    }
+
+    [HttpGet("shared/timeline")]
+    [AllowAnonymous]
+    public async Task<ActionResult<DashboardTimeline>> GetSharedTimeline([FromQuery] string token, CancellationToken ct)
+    {
+        try
+        {
+            var parts = _shareProtector.Unprotect(token).Split('|');
+            if (parts.Length != 4 || !long.TryParse(parts[3], out var unix) || DateTimeOffset.FromUnixTimeSeconds(unix) <= DateTimeOffset.UtcNow)
+                return Unauthorized(new ProblemDetails { Title = "Dashboard share link has expired." });
+            Guid? Parse(string value) => Guid.TryParse(value, out var id) ? id : null;
+            return Ok(await dashboard.GetTimelineAsync(Parse(parts[0]), Parse(parts[1]), Parse(parts[2]), ct));
+        }
+        catch
+        {
+            return Unauthorized(new ProblemDetails { Title = "Dashboard share link is invalid." });
+        }
+    }
+
     [HttpGet("shared")]
     [AllowAnonymous]
     public async Task<ActionResult<DashboardSummary>> GetShared([FromQuery] string token, CancellationToken ct)

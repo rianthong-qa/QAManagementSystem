@@ -562,7 +562,26 @@ Server:
 
 ## 21. Regression
 
-### GET `/releases/{releaseId}/regression-impact`
+### POST `/releases/{releaseId}/regression-impact`
+
+รองรับ `page` (เริ่มที่ 1), `pageSize` (10–200), น้ำหนัก `directImpactWeight`, `historicalDefectWeight`, `criticalPriorityWeight`, `sharedDependencyWeight` และ `recordAnalysis`; response ส่ง `page`, `pageSize`, `totalItems`, `totalPages` พร้อม `riskScore` ราย Test Case โดยเรียงความเสี่ยงสูงก่อน
+### GET `/releases/{releaseId}/regression-history?size=20`
+
+แสดงเฉพาะประวัติที่อ้างอิง Build ซึ่งยัง Active (`Build.IsActive = true`)
+
+### Regression Phase 4
+
+- `GET /projects/{projectId}/regression-profiles` อ่าน Profile ของเจ้าของและ Profile แบบ Shared
+- `POST /regression-profiles` บันทึก Profile พร้อม `visibility` และ `settingsJson`
+- `PUT /regression-profiles/{id}` แก้ไขชื่อ/Visibility/SettingsJson ของ Profile โดยเจ้าของหรือ SYS_ADMIN เท่านั้น
+- `DELETE /regression-profiles/{id}` ปิดใช้งาน Profile โดยเจ้าของหรือ SYS_ADMIN
+- `GET /projects/{projectId}/regression-schedules` และ `POST /regression-schedules` จัดการ Scheduled Regression
+- `DELETE /regression-schedules/{id}` ปิดใช้งาน Schedule โดยเจ้าของหรือ SYS_ADMIN
+- `GET /projects/{projectId}/regression-notifications` แจ้ง Active Build ใหม่ที่ตรงกับ Schedule
+- `POST /regression-schedules/{scheduleId}/acknowledge/{buildId}` ยืนยันการรับแจ้งเตือน
+- `regression-impact` รองรับ `includeAllCaseIds=true` เพื่อเลือก Test Case ครบทุกหน้าจาก Server
+### GET `/releases/{releaseId}/regression-activities?size=50`
+### GET `/releases/{releaseId}/regression-baseline?baselineBuildId={id}&targetBuildId={id}`
 ### POST `/regression-suites/generate`
 ### POST `/test-cycles/{cycleId}/add-impact-cases`
 
@@ -577,6 +596,21 @@ Generate:
   "minimumPriority": "P1"
 }
 ```
+
+`regression-impact` รับ Build, Module ที่เปลี่ยนแปลง, minimum priority และ change flags
+เพื่อคืน Metrics พร้อม Recommended Test Cases แยกเป็น Direct Impact, Shared Dependency,
+Critical P0/P1 และ Historical Defect Cases
+
+ทุกครั้งที่วิเคราะห์สำเร็จ ระบบบันทึก Regression History พร้อม Build, จำนวน Module/Case,
+Minimum Priority, Change Notes, ผู้วิเคราะห์ และเวลา ส่วน `regression-baseline` เปรียบเทียบ
+Executed, Passed, Failed/Blocked, Not Run และ Pass Rate จาก Regression Cycle ของสอง Build
+
+Regression API ใช้สิทธิ์ `REGRESSION.VIEW` สำหรับอ่าน History/Baseline/Activity และ
+`REGRESSION.MANAGE` สำหรับวิเคราะห์ Impact, สร้าง Suite และเพิ่ม Case เข้า Cycle;
+การวิเคราะห์, สร้าง Suite และเพิ่ม Case เข้า Cycle จะบันทึก Activity audit พร้อมผู้ดำเนินการและเวลา
+
+`regression-suites/generate` สร้าง Test Suite ชนิด Regression จาก Test Case ที่เลือก
+และ `add-impact-cases` เพิ่มรายการที่เลือกเข้า Regression Cycle เดิมโดยไม่สร้างรายการซ้ำ
 
 ---
 
