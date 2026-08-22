@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
+    <ProjectReference Include="..\..\src\Promaxx2.Automation.Core\Promaxx2.Automation.Core.csproj" />
+    <ProjectReference Include="..\..\src\Promaxx2.Automation.Hub\Promaxx2.Automation.Hub.csproj" />
+    <ProjectReference Include="..\..\src\Promaxx2.Automation.Pages.App\Promaxx2.Automation.Pages.App.csproj" />
+    <ProjectReference Include="..\..\src\Promaxx2.Automation.Pages.Pos\Promaxx2.Automation.Pages.Pos.csproj" />
+  </ItemGroup>
+</Project>

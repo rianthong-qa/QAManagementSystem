@@ -27,6 +27,7 @@ public static class DependencyInjection
         services.AddScoped<ITestSuiteRepository,TestSuiteRepository>();
         services.AddScoped<ITestCycleRepository,TestCycleRepository>();
         services.AddScoped<IExecutionRepository,ExecutionRepository>();
+        services.AddScoped<IAutomationRunRepository,AutomationRunRepository>();
         services.AddScoped<IAdministrationRepository,AdministrationRepository>();
         services.AddScoped<IDashboardRepository,DashboardRepository>();
         services.AddScoped<Identity.ProjectAccessService>();

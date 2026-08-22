@@ -5,9 +5,11 @@ using ProMaxx2.QA.Application.Projects;
 namespace ProMaxx2.QA.Application.TestManagement;
 
 public sealed record StepDto(int StepNo, string Action, string? TestData, string ExpectedResult);
-public sealed record TestCaseDto(Guid TestCaseId, Guid ProjectId, Guid ModuleId, string TestCaseCode, string Title, string? Objective, string? Preconditions, string Priority, string? TestType, bool AutomationCandidate, string Status, int RevisionNo, Guid? OwnerUserId, IReadOnlyList<StepDto> Steps);
+public sealed record TestCaseDto(Guid TestCaseId, Guid ProjectId, Guid ModuleId, string TestCaseCode, string Title, string? Objective, string? Preconditions, string Priority, string? TestType, bool AutomationCandidate, string Status, int RevisionNo, Guid? OwnerUserId, IReadOnlyList<StepDto> Steps, string? AutomationTarget = null);
 public sealed record CreateTestCaseRequest(Guid ProjectId, Guid ModuleId, string TestCaseCode, string Title, string? Objective, string? Preconditions, string Priority, string? TestType, bool AutomationCandidate, Guid? OwnerUserId, IReadOnlyList<StepDto> Steps);
 public sealed record ChangeTestCaseStatusRequest(string Status);
+public sealed record SetAutomationTargetRequest(string? TargetApp);
+public sealed record SetAutomationCandidateRequest(bool AutomationCandidate);
 public sealed record RtmLinkedTestCase(Guid TestCaseId,string TestCaseCode,string Title,string Priority,string?TestType,string Status,int RevisionNo,string?CoverageType);
 public sealed record RtmRow(Guid RequirementId,Guid ModuleId,string ModuleName,string RequirementCode,string Title,string Priority,int TestCaseCount,string CoverageStatus,string Status,IReadOnlyList<RtmLinkedTestCase>TestCases);
 public sealed record CoverageSummary(int TotalRequirements, int Covered, int NotCovered, decimal CoveragePercent);
@@ -15,7 +17,7 @@ public sealed record CreateTestCaseRevisionRequest(string Title, string? Objecti
 public sealed record UpdateTestCaseRequest(Guid ModuleId, string Title, string? Objective, string? Preconditions, string Priority, string? TestType, bool AutomationCandidate, Guid? OwnerUserId, string ChangeReason, IReadOnlyList<StepDto> Steps);
 public sealed record TestCaseRevisionDto(int RevisionNo,string ChangeReason,Guid?ChangedBy,string?ChangedByName,DateTime ChangedAt,IReadOnlyList<StepDto>Steps);
 public sealed record TestCaseRequirementDto(Guid RequirementId,string RequirementCode,string Title,string Status,string?CoverageType);
-public sealed record TestCaseListDto(Guid TestCaseId,Guid ProjectId,Guid ModuleId,string TestCaseCode,string Title,string Priority,string?TestType,bool AutomationCandidate,string Status,int RevisionNo,Guid?OwnerUserId,int StepCount);
+public sealed record TestCaseListDto(Guid TestCaseId,Guid ProjectId,Guid ModuleId,string TestCaseCode,string Title,string Priority,string?TestType,bool AutomationCandidate,string Status,int RevisionNo,Guid?OwnerUserId,int StepCount,string? AutomationTarget=null);
 public sealed record RtmSummaryDto(int Covered,int Partial,int NotCovered,IReadOnlyList<string>Statuses);
 public sealed record RtmListResultDto(PagedResult<RtmRow> Items,RtmSummaryDto Summary);
 
@@ -94,6 +96,22 @@ public sealed class TestCaseService(ITestCaseRepository repository)
         e.ChangeStatus(status, userId);
         await repository.SaveAsync(ct);
         return (await repository.GetAsync(id, ct))!;
+    }
+
+    public async Task<TestCaseDto> SetAutomationTargetAsync(Guid id,string? targetApp,Guid?userId,CancellationToken ct)
+    {
+        var e=await repository.FindAsync(id,ct)??throw new EntityNotFoundException("Test case not found.");
+        e.SetAutomationTarget(targetApp,userId);
+        await repository.SaveAsync(ct);
+        return (await repository.GetAsync(id,ct))!;
+    }
+
+    public async Task<TestCaseDto> SetAutomationCandidateAsync(Guid id,bool automationCandidate,Guid?userId,CancellationToken ct)
+    {
+        var e=await repository.FindAsync(id,ct)??throw new EntityNotFoundException("Test case not found.");
+        e.SetAutomationCandidate(automationCandidate,userId);
+        await repository.SaveAsync(ct);
+        return (await repository.GetAsync(id,ct))!;
     }
 
     public async Task DeleteAsync(Guid id, Guid? userId, CancellationToken ct)

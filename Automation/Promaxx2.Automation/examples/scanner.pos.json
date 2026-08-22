@@ -1,0 +1,11 @@
+{
+  "targetApp": "pos",
+  "build": "1.0.0-beta.2",
+  "login": true,
+  "screens": [
+    {
+      "name": "POS Home",
+      "navigation": []
+    }
+  ]
+}

@@ -1173,3 +1173,31 @@ Component ที่ควรมี reusable:
 - Notification
 - Import/Export
 - Advanced Analytics
+
+## Automation Trigger & Queue (2026-08-22)
+
+- อยู่บนหน้า Automation และใช้ Project/Release/Build context จาก Topbar
+- ปุ่ม `+ สั่งรัน Automation` แสดงเฉพาะผู้มี `EXECUTION.RUN` และ disabled จนเลือก Release/Build
+- Modal รับ Target, optional Test Cycle ที่ยังเปิดและอยู่ใน Build เดียวกัน และหมายเหตุไม่เกิน 1,000 ตัวอักษร
+- รายการแสดง Queued/Claimed/Running/Completed/Failed/Cancelled, โปรแกรมเป้าหมาย, Runner, Cycle, เวลาสั่ง, หมายเหตุและ error
+- ยกเลิกได้เฉพาะ Queued/Claimed; Desktop เป็นแถวสรุปและ Mobile เป็น card หนึ่งคอลัมน์
+
+### Automation — Windows Runner Agents
+
+- แสดงเหนือ Trigger & Queue เป็น card grid พร้อม Online/Offline, Idle/Busy, runner/machine, version, POS/APP capabilities และ heartbeat ล่าสุด
+- Empty state ระบุว่า worker จะลงทะเบียนอัตโนมัติเมื่อเริ่มทำงาน
+- Desktop ใช้ auto-fit card ขั้นต่ำ 220px; Mobile ≤760px เป็นหนึ่งคอลัมน์และไม่มี page-level horizontal scroll
+
+### Automation — Scheduling & Retry
+
+- Section แสดงจำนวน alerts, ปุ่ม `+ เพิ่ม Schedule` และรายการ active schedule พร้อม Next Run/attempt limit
+- ปุ่มเพิ่มเปิด Unified modal ซึ่งรับ Name, Target, Pack, Daily/Weekdays, เวลา UTC และ Attempts 1–5; ต้องเลือก Release/Build ก่อนเปิดและบันทึก
+- ฟอร์มใน modal ใช้ form control มาตรฐานเดียวกับหน้าอื่น และ stack เป็นหนึ่งคอลัมน์บน Mobile ≤760px
+- Alert ยุบไว้ก่อนเพื่อลดความหนาแน่นของหน้า ผู้ใช้กดดูรายละเอียดได้; แยก Warning สำหรับ retry queued และ Error สำหรับ terminal failed พร้อม ErrorType และ attempt count
+
+### Automation Workspace — UI Revision
+
+- ส่วนบนเป็น Automation Control Center hero แสดงจำนวน Runner Online, งาน active, Schedule active และปุ่มสั่งรันทันที
+- KPI 5 ใบแสดง Candidate, Ready, POS, Master Data และ Route ที่ต้องตรวจสอบ ตามด้วย sticky section navigation
+- ลำดับเนื้อหา: Flow guide → Runner → Scheduling/Alerts → Queue → Quality Gate → Candidate table → Run History
+- Desktop เน้นข้อมูลแบบ dashboard; Mobile เปลี่ยน KPI, section header, modal form, queue, candidate table และ run result เป็น card/คอลัมน์เดียว

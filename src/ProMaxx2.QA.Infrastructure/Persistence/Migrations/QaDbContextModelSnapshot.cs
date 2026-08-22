@@ -206,6 +206,389 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.ToTable("DefectTestCaseLinks", (string)null);
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationQualityGateRun", b =>
+                {
+                    b.Property<Guid>("AutomationQualityGateRunId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BaselineBuild")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("BuildId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ChangedCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CurrentBuild")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Messages")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("NewDuplicateCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("NewMissingCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ReleaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("RemovedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RunnerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TargetApp")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("AutomationQualityGateRunId");
+
+                    b.HasIndex("ProjectId", "BuildId", "TargetApp", "CompletedAt");
+
+                    b.ToTable("AutomationQualityGateRuns", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationQueueJob", b =>
+                {
+                    b.Property<Guid>("AutomationQueueJobId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("AutomationRunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BuildId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("ClaimedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("ErrorType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime?>("LeaseExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LeaseToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("MaxAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(3);
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Pack")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Smoke");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ReleaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("RequestedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RunnerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("SourceScheduleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TargetApp")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<Guid?>("TestCycleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("AutomationQueueJobId");
+
+                    b.HasIndex("ProjectId", "BuildId", "RequestedAt");
+
+                    b.HasIndex("Status", "TargetApp", "RequestedAt");
+
+                    b.ToTable("AutomationQueueJobs", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationRun", b =>
+                {
+                    b.Property<Guid>("AutomationRunId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("BuildId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("FailedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PassedCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ReleaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RunnerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TargetApp")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<Guid?>("TestCycleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("TotalCount")
+                        .HasColumnType("int");
+
+                    b.HasKey("AutomationRunId");
+
+                    b.HasIndex("TestCycleId");
+
+                    b.HasIndex("ProjectId", "CompletedAt");
+
+                    b.ToTable("AutomationRuns", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationRunCase", b =>
+                {
+                    b.Property<Guid>("AutomationRunCaseId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AutomationRunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("DurationMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("EvidencePath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TestCaseCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("TestCaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("TestExecutionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("AutomationRunCaseId");
+
+                    b.HasIndex("AutomationRunId");
+
+                    b.HasIndex("TestExecutionId")
+                        .IsUnique()
+                        .HasFilter("[TestExecutionId] IS NOT NULL");
+
+                    b.ToTable("AutomationRunCases", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationRunnerAgent", b =>
+                {
+                    b.Property<Guid>("AutomationRunnerAgentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Capabilities")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("CurrentJobId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("LastHeartbeatAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("MachineName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("RegisteredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RunnerName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("AutomationRunnerAgentId");
+
+                    b.HasIndex("ProjectId", "LastHeartbeatAt");
+
+                    b.HasIndex("ProjectId", "RunnerName")
+                        .IsUnique();
+
+                    b.ToTable("AutomationRunnerAgents", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationSchedule", b =>
+                {
+                    b.Property<Guid>("AutomationScheduleId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BuildId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Frequency")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastQueuedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("MaxAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<DateTime>("NextRunAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Pack")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ReleaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<TimeOnly>("RunAtUtc")
+                        .HasColumnType("time");
+
+                    b.Property<string>("TargetApp")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("AutomationScheduleId");
+
+                    b.HasIndex("ProjectId", "IsActive", "NextRunAt");
+
+                    b.ToTable("AutomationSchedules", (string)null);
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.RegressionActivity", b =>
                 {
                     b.Property<Guid>("RegressionActivityId")
@@ -1287,6 +1670,9 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<bool>("AutomationCandidate")
                         .HasColumnType("bit");
 
+                    b.Property<string>("AutomationTarget")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasPrecision(0)
                         .HasColumnType("datetime2(0)");
@@ -1540,6 +1926,34 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TestCaseId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationRun", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Execution.TestCycle", "Cycle")
+                        .WithMany()
+                        .HasForeignKey("TestCycleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Cycle");
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationRunCase", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Execution.AutomationRun", "Run")
+                        .WithMany("Results")
+                        .HasForeignKey("AutomationRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Execution.TestExecution", "Execution")
+                        .WithOne()
+                        .HasForeignKey("ProMaxx2.QA.Domain.Execution.AutomationRunCase", "TestExecutionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Execution");
+
+                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.TestCycle", b =>
@@ -1894,6 +2308,11 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Navigation("Suite");
 
                     b.Navigation("TestCase");
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AutomationRun", b =>
+                {
+                    b.Navigation("Results");
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.TestCycle", b =>

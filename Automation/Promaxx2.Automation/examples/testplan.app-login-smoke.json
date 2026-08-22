@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAtUtc": "2026-08-22T00:00:00Z",
+  "releaseCode": "PROMAXX2",
+  "buildNumber": "1.0.0-beta.2",
+  "cases": [
+    {
+      "testCaseCode": "TC-APP-LOGIN-001",
+      "targetApp": "app",
+      "title": "เข้าสู่ระบบ Master Data ด้วยข้อมูลผู้ใช้ที่ถูกต้อง",
+      "priority": "P0",
+      "module": "Master Data Login",
+      "prerequisites": [
+        "กำหนด AUT_APP_EXE, AUT_APP_USERNAME และ AUT_APP_PASSWORD"
+      ],
+      "steps": [
+        {
+          "stepNo": 1,
+          "action": "เปิด Promaxxs.App และกรอกชื่อผู้ใช้/รหัสผ่าน",
+          "data": "อ่านจาก environment variables",
+          "expected": "Login panel ปิดและเข้าสู่หน้าหลักสำเร็จ"
+        }
+      ]
+    }
+  ]
+}

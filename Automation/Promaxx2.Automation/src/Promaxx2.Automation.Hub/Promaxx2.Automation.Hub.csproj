@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Promaxx2.Automation.Core\Promaxx2.Automation.Core.csproj" />
+  </ItemGroup>
+</Project>

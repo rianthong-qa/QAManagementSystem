@@ -3,6 +3,22 @@
 > แผนพัฒนา Test Automation สำหรับ **Promaxx2 Suite (Desktop WPF/.NET 10)** — ประกอบด้วย **Promaxxs.App.exe** (งานจัดการข้อมูล Master) และ **PromaxxsPos.exe** (งานเปิดบิลขาย) — โดยใช้ข้อมูลจาก **QA Hub**
 > เอกสารนี้ครอบคลุม: การเลือกเครื่องมือ, สถาปัตยกรรม, Phase 0–5 แบบละเอียด และแผนรองรับการเข้ารหัสไฟล์ (Encryption Readiness)
 
+## สถานะการดำเนินงาน
+
+| Phase | สถานะ | หมายเหตุ |
+|---|---|---|
+| 0 Foundation | 🔄 In Progress (2026-08-22) | Solution `Automation/Promaxx2.Automation` (FlaUI.UIA3 + NUnit, net10.0) build ผ่าน + Exporter CLI (`whoami`/`export`) + Runner CLI (`run`/`inspect`) + unit test 5 ผ่าน; Test Plan schema 1.1 เก็บ `projectId`/`testCaseId`; Runner discover implementation จาก `TestCaseCode`, publish ผลเข้า QA Hub อัตโนมัติหลังรัน และ case ที่ยังไม่ implement ถูกส่งเป็น Skipped; Selector Contract draft ที่ `SELECTOR_CONTRACT.md` — **ค้างรอ:** QA tag AutomationCandidate/Ready (0.1) และ Dev อนุมัติ contract (0.3) |
+| 1 PoC Smoke Set | 🔄 In Progress (2026-08-22) | `inspect` รอข้าม splash และ dump UIA tree จริงได้; smoke จริง **2 cases** ครบ routing ทั้งสอง AUT: `TC-LOGIN-001` (`pos`) และ `TC-APP-LOGIN-001` (`app`) ทำ interaction/assertion/screenshot-on-fail ครบ; stability run แต่ละ case ผ่าน **5/5 (100%)**, runtime ~6–7 วินาที — **ค้างรอ:** ขยาย P0 smoke set ให้ครบ 10–15 cases |
+| QA Hub Automation UI | ✅ Run History Ready (2026-08-22) | เพิ่มเมนู Automation แยก, KPI/readiness queue, บันทึก `AutomationTarget` (`pos`/`app`) ต่อ Test Case และ Automation Run History API/UI แล้ว; Runner เชื่อม `POST /api/v1/automation/runs?projectId=...` แล้ว ขั้นถัดไปคือผูกผลกับ Execution/Cycle |
+| Runner Result Publisher | ✅ Implemented (2026-08-22) | คำสั่ง `run` login และส่ง Passed/Failed/Skipped, duration, error, screenshot evidence เข้า Run History โดยอัตโนมัติ; ใช้ `--no-publish` เมื่อต้องการ offline — การทดสอบกับบัญชีจริงยังค้างเพราะ QA Hub ตอบ 401 ต่อ credential ที่ได้รับ |
+| Automation → Execution/Cycle | ✅ Implemented (2026-08-22) | Export/Run รองรับ `--cycle <guid>`; เมื่อ publish ระบบสร้าง immutable `TestExecution`, map Passed→Pass/Failed→Fail/Skipped/Blocked, อัปเดต Cycle Case และเก็บ FK `AutomationRunCase.TestExecutionId`; ตรวจ Project/Release/Build/Cycle และปฏิเสธ Cycle ที่ปิดแล้ว |
+| AutomationId Scanner | ✅ Implemented + Runtime Verified (2026-08-22) | คำสั่ง `scan` เปิด AUT, login, เดินหน้าจอตาม safe navigation manifest, เก็บ UIA tree ต่อ screen, ตรวจ actionable control ที่ ID ว่าง/ID ซ้ำ, diff baseline และสร้าง JSON + Markdown registry; รันจริงแล้ว: POS 2 screens/171 elements พบ missing 42, duplicate 0; App 9 screens/1,104 elements พบ missing 108, duplicate 20 — findings ต้องส่งให้ Dev เติม/แก้ ID ก่อนขยาย navigation ระดับหน้ารายการ |
+| Evidence + Run Detail | ✅ Implemented (2026-08-22) | Runner อัปโหลด screenshot หลัง publish โดยผูก `AutomationRunCaseId`; API จำกัด 10 MB และชนิด PNG/JPG/WEBP/TXT/LOG/JSON, เก็บนอก web root และบังคับ JWT+Project access ตอนอ่าน; หน้า Automation เปิด Run Detail แสดง status/duration/error/evidence และลิงก์ Execution แบบ responsive |
+| AutomationId Quality Gate | ✅ Implemented + Initial Baseline Captured (2026-08-22) | เก็บ baseline เริ่มต้น `1.0.0-beta.2` แยก POS/App, policy บล็อก new missing/duplicate/removed/changed ID, รองรับ allowlist, JSON/JUnit output และสคริปต์ `run-quality-gate.ps1` สำหรับ scan+gate ทั้งสอง AUT; self-check baseline ปัจจุบันผ่านทั้งคู่ และ unit test รวม 7 ผ่าน — รอ QA/Dev อนุมัติ baseline ร่วมกับ Selector Contract |
+| Quality Gate → QA Hub Build/Release | ✅ Implemented (2026-08-22) | Runner publish ผล Gate ของ POS/App พร้อม finding counts เข้า QA Hub โดยผูก Project/Release/Build; หน้า Automation แสดง Passed/Failed/Pending ตาม Build ที่เลือก และ backend บล็อกการตั้ง Build เป็น `Passed` หรือ Release Candidate จนกว่าผลล่าสุดของทั้งสอง AUT จะผ่าน |
+| Automation Trigger & Queue | ✅ Implemented (2026-08-22) | หน้า Automation สร้างงานตาม Project/Release/Build, target และ Test Cycle ได้; Queue ใช้ atomic claim + lease token ป้องกัน Runner รับงานซ้ำ, ติดตาม `Queued → Claimed → Running → Completed/Failed` และยกเลิกงานที่ยังไม่เริ่มได้; Runner คำสั่ง `worker` poll งาน, export เฉพาะ Ready case ที่ route ตรง target, รันและ publish ผลกลับอัตโนมัติ |
+| 2–5 | ⏳ Pending | — |
+
 ---
 
 ## 1. บริบทและเป้าหมาย
@@ -90,6 +106,13 @@
 | PageObjects | selector + interaction แยกต่อ **App** (`Pages.App.*` / `Pages.Pos.*`) และต่อ Module ภายใน app (Inventory/Transaction/Person/Settings...) |
 
 > **หลักการแบ่งชุดทดสอบ:** case กลุ่ม Master Data → ทดสอบบน `Promaxxs.App.exe`; case กลุ่มขาย/บิล/สต๊อก → ทดสอบบน `PromaxxsPos.exe` โดยอ้าง master data ที่เตรียมไว้; test plan จึงต้องระบุว่าแต่ละ case "รันบน app ไหน" (field `targetApp: app|pos` ใน JSON)
+
+| ประเภทงาน | Executable | `targetApp` | ตัวอย่าง |
+|---|---|---|---|
+| POS / งานขาย | `PromaxxsPos.exe` | `pos` | Login POS, เปิดบิล, รับชำระเงิน, ยกเลิกบิล |
+| Master Data | `Promaxxs.App.exe` | `app` | สินค้า, ราคา, โปรโมชั่น, คู่ค้า/ลูกค้า, การตั้งค่าหลัก |
+
+> Exporter บังคับระบุ `--app pos` หรือ `--app app` และไม่มีค่า default เพื่อป้องกัน Master Data ถูก route ไป `PromaxxsPos.exe` โดยไม่ตั้งใจ หาก test plan มีทั้งสองประเภท ให้ export/merge โดยรักษา `targetApp` ราย case
 
 ---
 
@@ -308,3 +331,31 @@ Promaxx2.Automation/
 ├── Promaxx2.Automation.Tests/       # NUnit + FlaUI (smoke/regression)
 └── Promaxx2.Automation.Runner/      # CLI entry point
 ```
+
+## 10. Windows Runner Agent Management (ดำเนินการแล้ว 2026-08-22)
+
+- Worker ลงทะเบียนและส่ง heartbeat ก่อน poll และทุก 20 วินาทีระหว่างทำงาน พร้อม machine, version, capability `pos|app`, Idle/Busy และงานปัจจุบัน
+- QA Hub แสดง Online เมื่อ heartbeat ล่าสุดไม่เกิน 60 วินาที มิฉะนั้นเป็น Offline
+- Queue lease มีอายุ 2 นาทีและ heartbeat ต่ออายุอัตโนมัติ งานที่ lease หมดจะกลับเข้า Queue; ครบ 3 attempts แล้วยังหมดอายุจะเป็น Failed
+- `install-worker-task.ps1` ติดตั้ง Scheduled Task แบบ Interactive/AtLogOn เพราะ FlaUI/UIA ต้องมี desktop session
+- Migration `20260821232831_AddAutomationRunnerAgents` เพิ่ม agent registry, `LeaseExpiresAt` และ `AttemptCount`
+
+ส่วนถัดไป: Automation Scheduling & Retry Policy สำหรับตั้งเวลารัน smoke/regression, จำกัด retry ตามประเภท error และแจ้งเตือนเมื่อผิดพลาด
+
+## 11. Automation Scheduling & Retry Policy (ดำเนินการแล้ว 2026-08-22)
+
+- Schedule ผูก Project/Release/Build, target `pos|app`, pack `Smoke|Regression`, ความถี่ Daily/Weekdays, เวลา UTC และ attempts 1–5
+- QA Hub materialize งานที่ถึงเวลาเมื่อ Runner heartbeat/poll โดยเลื่อน `NextRunAt` ใน transaction เดียว ลดโอกาสสร้างงานซ้ำ
+- Retry เฉพาะ `Infrastructure`, `Timeout`, `ApplicationStart`; `Assertion` และ `Configuration` เป็น terminal failure
+- หน้า Automation แสดง schedule, รอบถัดไป, retry policy และ in-app alerts สำหรับงาน retry/failed
+- Migration: `20260821233750_AddAutomationSchedulesAndRetryPolicy` และ `20260821233905_BackfillAutomationQueueRetryDefaults`
+
+ส่วนถัดไป: Automation Pack Management & P0 Coverage เพื่อเลือก Test Suite/Cases ต่อ schedule และขยาย smoke pack ของ POS/Master Data
+
+### Automation Workspace UI Refresh (2026-08-22)
+
+- ปรับหน้า Automation เป็น Control Center ที่แสดง operational health และ quick action ก่อนรายละเอียด
+- เพิ่ม sticky section navigation และปรับ visual hierarchy ของ KPI, Runner, Schedule, Queue, Gate, Candidate และ History
+- Responsive ครอบคลุม Desktop/Tablet/Mobile โดยไม่มี page-level horizontal scroll; ตาราง Candidate เปลี่ยนเป็น card บน mobile
+- ปรับ Scheduling ให้สร้างผ่าน Unified modal, ยุบ Alerts ไว้ก่อน และเพิ่ม empty state เพื่อลดความหนาแน่นของหน้า
+- ทำ input/select/textarea ใน Schedule, Trigger Queue และ Candidate table ให้ใช้ขนาด ขอบ focus ring และ disabled state ตาม UI Design System เดียวกับหน้าอื่น

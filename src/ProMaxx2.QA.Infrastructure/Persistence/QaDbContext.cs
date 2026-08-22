@@ -46,6 +46,12 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AiConfiguration> AiConfigurations => Set<AiConfiguration>();
     public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
     public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
+    public DbSet<AutomationRun> AutomationRuns => Set<AutomationRun>();
+    public DbSet<AutomationRunCase> AutomationRunCases => Set<AutomationRunCase>();
+    public DbSet<AutomationQualityGateRun> AutomationQualityGateRuns => Set<AutomationQualityGateRun>();
+    public DbSet<AutomationQueueJob> AutomationQueueJobs => Set<AutomationQueueJob>();
+    public DbSet<AutomationRunnerAgent> AutomationRunnerAgents => Set<AutomationRunnerAgent>();
+    public DbSet<AutomationSchedule> AutomationSchedules => Set<AutomationSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

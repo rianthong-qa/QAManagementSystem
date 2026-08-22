@@ -1,0 +1,39 @@
+{
+  "targetApp": "app",
+  "build": "1.0.0-beta.2",
+  "login": true,
+  "screens": [
+    {
+      "name": "Dashboard",
+      "navigation": [{ "automationId": "Dashboard" }]
+    },
+    {
+      "name": "Inventory",
+      "navigation": [{ "automationId": "Inventory" }]
+    },
+    {
+      "name": "Person",
+      "navigation": [{ "automationId": "Person" }]
+    },
+    {
+      "name": "Purchase",
+      "navigation": [{ "automationId": "Transaction_Purchase" }]
+    },
+    {
+      "name": "Transaction",
+      "navigation": [{ "automationId": "Transaction" }]
+    },
+    {
+      "name": "Utility",
+      "navigation": [{ "automationId": "Utility" }]
+    },
+    {
+      "name": "Settings",
+      "navigation": [{ "automationId": "Settings" }]
+    },
+    {
+      "name": "Reporting",
+      "navigation": [{ "automationId": "Reporting" }]
+    }
+  ]
+}

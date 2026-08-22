@@ -1,0 +1,1265 @@
+{
+  "schemaVersion": "1.0",
+  "targetApp": "pos",
+  "build": "1.0.0-beta.2",
+  "executable": "H:\\APP\\QAManagementSystem\\ProMaxx2\\1.0.0-beta.2\\PromaxxsPos.exe",
+  "scannedAtUtc": "2026-08-21T19:30:19.2509038Z",
+  "screens": [
+    {
+      "name": "Login",
+      "elements": [
+        {
+          "automationId": "",
+          "name": "ProMaxxs POS",
+          "className": "Window",
+          "controlType": "Window",
+          "path": "0000/Window"
+        },
+        {
+          "automationId": "LoginOverlay",
+          "name": "",
+          "className": "PosLoginOverlay",
+          "controlType": "Custom",
+          "path": "0001/Custom"
+        },
+        {
+          "automationId": "",
+          "name": "\uF17E",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0002/Text"
+        },
+        {
+          "automationId": "",
+          "name": "ProMaxxs POS",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0003/Text"
+        },
+        {
+          "automationId": "TxtBranchInfo",
+          "name": "v1.0.0-beta.2",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0004/Text"
+        },
+        {
+          "automationId": "TxtLoginHeading",
+          "name": "\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0005/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uF0D3",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0006/Text"
+        },
+        {
+          "automationId": "TxtEmpId",
+          "name": "\u003Credacted\u003E",
+          "className": "TextBox",
+          "controlType": "Edit",
+          "path": "0007/Edit"
+        },
+        {
+          "automationId": "PlaceholderEmpId",
+          "name": "\u0E23\u0E2B\u0E31\u0E2A\u0E1E\u0E19\u0E31\u0E01\u0E07\u0E32\u0E19",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0008/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uE899",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0009/Text"
+        },
+        {
+          "automationId": "PwdBox",
+          "name": "\u003Credacted\u003E",
+          "className": "PasswordBox",
+          "controlType": "Edit",
+          "path": "0010/Edit"
+        },
+        {
+          "automationId": "PlaceholderPassword",
+          "name": "\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0011/Text"
+        },
+        {
+          "automationId": "BtnTogglePwd",
+          "name": "\uE8F4",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0012/Button"
+        },
+        {
+          "automationId": "EyeIcon",
+          "name": "\uE8F4",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0013/Text"
+        },
+        {
+          "automationId": "BtnKeyboardToggle",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0014/Button"
+        },
+        {
+          "automationId": "BtnSignIn",
+          "name": "\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0015/Button"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0016/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Image",
+          "controlType": "Image",
+          "path": "0017/Image"
+        },
+        {
+          "automationId": "",
+          "name": "SeniorSoft \u00AE",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0018/Text"
+        },
+        {
+          "automationId": "BtnDbSettings",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0019/Button"
+        },
+        {
+          "automationId": "BtnLangChrome",
+          "name": "EN",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0020/Button"
+        },
+        {
+          "automationId": "BtnDarkMode",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0021/Button"
+        },
+        {
+          "automationId": "BtnClose",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0022/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "ToastControl",
+          "controlType": "Custom",
+          "path": "0023/Custom"
+        },
+        {
+          "automationId": "ToastIcon",
+          "name": "",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0024/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0025/Button"
+        },
+        {
+          "automationId": "ToastText",
+          "name": "",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0026/Text"
+        }
+      ],
+      "missingAutomationIds": [
+        "Button:  (0025/Button)"
+      ],
+      "duplicateAutomationIds": []
+    },
+    {
+      "name": "POS Home",
+      "elements": [
+        {
+          "automationId": "",
+          "name": "ProMaxxs POS",
+          "className": "Window",
+          "controlType": "Window",
+          "path": "0000/Window"
+        },
+        {
+          "automationId": "PosContent",
+          "name": "",
+          "className": "Pos1View",
+          "controlType": "Custom",
+          "path": "0001/Custom"
+        },
+        {
+          "automationId": "BtnLangChrome",
+          "name": "EN",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0002/Button"
+        },
+        {
+          "automationId": "BtnDarkMode",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0003/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0004/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0005/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0006/Button"
+        },
+        {
+          "automationId": "",
+          "name": "s",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0007/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u003Credacted\u003E",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0008/Text"
+        },
+        {
+          "automationId": "TxtClock",
+          "name": "02:30:18 22/08/2026",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0009/Text"
+        },
+        {
+          "automationId": "",
+          "name": "S",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0010/Text"
+        },
+        {
+          "automationId": "",
+          "name": "ProMaxx  POS",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0011/Text"
+        },
+        {
+          "automationId": "",
+          "name": "POS:1110000AA",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0012/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uEF6E",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0013/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "ComboBox",
+          "controlType": "ComboBox",
+          "path": "0014/ComboBox"
+        },
+        {
+          "automationId": "",
+          "name": "\uE8D1",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0015/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "ComboBox",
+          "controlType": "ComboBox",
+          "path": "0016/ComboBox"
+        },
+        {
+          "automationId": "",
+          "name": "\uE9EF",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0017/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u003Credacted\u003E",
+          "className": "TextBox",
+          "controlType": "Edit",
+          "path": "0018/Edit"
+        },
+        {
+          "automationId": "",
+          "name": "\uEBCC",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0019/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u003Credacted\u003E",
+          "className": "TextBox",
+          "controlType": "Edit",
+          "path": "0020/Edit"
+        },
+        {
+          "automationId": "TabBtnScan",
+          "name": "",
+          "className": "RadioButton",
+          "controlType": "RadioButton",
+          "path": "0021/RadioButton"
+        },
+        {
+          "automationId": "",
+          "name": "\uE70C",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0022/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E2A\u0E41\u0E01\u0E19\u0E1A\u0E32\u0E23\u0E4C\u0E42\u0E04\u0E49\u0E14",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0023/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E22\u0E34\u0E07/\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E23\u0E2B\u0E31\u0E2A\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0024/Text"
+        },
+        {
+          "automationId": "TabBtnFav",
+          "name": "",
+          "className": "RadioButton",
+          "controlType": "RadioButton",
+          "path": "0025/RadioButton"
+        },
+        {
+          "automationId": "",
+          "name": "\uF09A",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0026/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E42\u0E1B\u0E23\u0E14",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0027/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E40\u0E21\u0E19\u0E39\u0E42\u0E1B\u0E23\u0E14",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0028/Text"
+        },
+        {
+          "automationId": "TabBtnSearch",
+          "name": "",
+          "className": "RadioButton",
+          "controlType": "RadioButton",
+          "path": "0029/RadioButton"
+        },
+        {
+          "automationId": "",
+          "name": "\uEF7A",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0030/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0031/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E04\u0E49\u0E19\u0E0A\u0E37\u0E48\u0E2D / \u0E23\u0E2B\u0E31\u0E2A / \u0E1A\u0E32\u0E23\u0E4C\u0E42\u0E04\u0E49\u0E14",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0032/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0033/Button"
+        },
+        {
+          "automationId": "",
+          "name": "\uE70C",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0034/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E2A\u0E41\u0E01\u0E19\u0E1A\u0E32\u0E23\u0E4C\u0E42\u0E04\u0E49\u0E14",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0035/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uEA0B",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0036/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E42\u0E2B\u0E21\u0E14\u0E2A\u0E41\u0E01\u0E19\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0037/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uF206",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0038/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2A\u0E41\u0E01\u0E19\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0039/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E22\u0E34\u0E07\u0E1A\u0E32\u0E23\u0E4C\u0E42\u0E04\u0E49\u0E14 \u0E2B\u0E23\u0E37\u0E2D\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E23\u0E2B\u0E31\u0E2A\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E14\u0E49\u0E32\u0E19\u0E25\u0E48\u0E32\u0E07\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E25\u0E07\u0E1A\u0E34\u0E25",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0040/Text"
+        },
+        {
+          "automationId": "ScanCodeBox",
+          "name": "\u003Credacted\u003E",
+          "className": "TextBox",
+          "controlType": "Edit",
+          "path": "0041/Edit"
+        },
+        {
+          "automationId": "",
+          "name": "\uE9EF",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0042/Text"
+        },
+        {
+          "automationId": "TxtQty",
+          "name": "\u003Credacted\u003E",
+          "className": "TextBox",
+          "controlType": "Edit",
+          "path": "0043/Edit"
+        },
+        {
+          "automationId": "",
+          "name": "1",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0044/Button"
+        },
+        {
+          "automationId": "",
+          "name": "1",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0045/Text"
+        },
+        {
+          "automationId": "",
+          "name": "2",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0046/Button"
+        },
+        {
+          "automationId": "",
+          "name": "2",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0047/Text"
+        },
+        {
+          "automationId": "",
+          "name": "3",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0048/Button"
+        },
+        {
+          "automationId": "",
+          "name": "3",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0049/Text"
+        },
+        {
+          "automationId": "",
+          "name": "4",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0050/Button"
+        },
+        {
+          "automationId": "",
+          "name": "4",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0051/Text"
+        },
+        {
+          "automationId": "",
+          "name": "5",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0052/Button"
+        },
+        {
+          "automationId": "",
+          "name": "5",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0053/Text"
+        },
+        {
+          "automationId": "",
+          "name": "6",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0054/Button"
+        },
+        {
+          "automationId": "",
+          "name": "6",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0055/Text"
+        },
+        {
+          "automationId": "",
+          "name": "7",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0056/Button"
+        },
+        {
+          "automationId": "",
+          "name": "7",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0057/Text"
+        },
+        {
+          "automationId": "",
+          "name": "8",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0058/Button"
+        },
+        {
+          "automationId": "",
+          "name": "8",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0059/Text"
+        },
+        {
+          "automationId": "",
+          "name": "9",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0060/Button"
+        },
+        {
+          "automationId": "",
+          "name": "9",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0061/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u00D7\u0E08\u0E33\u0E19\u0E27\u0E19",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0062/Button"
+        },
+        {
+          "automationId": "",
+          "name": "\u00D7\u0E08\u0E33\u0E19\u0E27\u0E19",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0063/Text"
+        },
+        {
+          "automationId": "",
+          "name": "0",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0064/Button"
+        },
+        {
+          "automationId": "",
+          "name": "0",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0065/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uE14A",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0066/Button"
+        },
+        {
+          "automationId": "",
+          "name": "\uE14A",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0067/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0068/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0069/Button"
+        },
+        {
+          "automationId": "",
+          "name": "F7",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0070/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uE854",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0071/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E40\u0E1E\u0E34\u0E48\u0E21",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0072/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0073/Button"
+        },
+        {
+          "automationId": "",
+          "name": "F8",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0074/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uF0BE",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0075/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0076/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0077/Button"
+        },
+        {
+          "automationId": "",
+          "name": "\uF04B",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0078/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E40\u0E0A\u0E47\u0E04\u0E23\u0E32\u0E04\u0E32",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0079/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0080/Button"
+        },
+        {
+          "automationId": "",
+          "name": "Ctrl\u002BM",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0081/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uEA5F",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0082/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E04\u0E33\u0E19\u0E27\u0E13\u0E42\u0E1B\u0E23\u0E42\u0E21\u0E0A\u0E31\u0E48\u0E19",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0083/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0084/Button"
+        },
+        {
+          "automationId": "",
+          "name": "F12",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0085/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uE638",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0086/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14\u0E04\u0E39\u0E1B\u0E2D\u0E07",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0087/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0088/Button"
+        },
+        {
+          "automationId": "",
+          "name": "Ctrl\u002BO",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0089/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uF106",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0090/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E04\u0E49\u0E19\u0E1A\u0E38\u0E04\u0E04\u0E25",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0091/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0092/Button"
+        },
+        {
+          "automationId": "",
+          "name": "Ctrl\u002BDel",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0093/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uE92E",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0094/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E25\u0E1A\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0095/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0096/Button"
+        },
+        {
+          "automationId": "",
+          "name": "Ctrl\u002BK",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0097/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uE888",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0098/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0099/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0100/Button"
+        },
+        {
+          "automationId": "",
+          "name": "\uEB70",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0101/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E2A\u0E48\u0E07\u0E40\u0E07\u0E34\u0E19",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0102/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0103/Button"
+        },
+        {
+          "automationId": "",
+          "name": "\uF17E",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0104/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E1B\u0E34\u0E14\u0E01\u0E30",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0105/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0106/Button"
+        },
+        {
+          "automationId": "",
+          "name": "F9",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0107/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uE8AD",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0108/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E1E\u0E34\u0E21\u0E1E\u0E4C",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0109/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Thumb",
+          "controlType": "Thumb",
+          "path": "0110/Thumb"
+        },
+        {
+          "automationId": "",
+          "name": "\uE8CC",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0111/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E02\u0E32\u0E22",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0112/Text"
+        },
+        {
+          "automationId": "",
+          "name": "XXOS6908000001",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0113/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48 1",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0114/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uF0D3",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0115/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0116/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E23\u0E30\u0E1A\u0E38\u0E2A\u0E21\u0E32\u0E0A\u0E34\u0E01",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0117/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0118/Button"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0119/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\uE8CC",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0120/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E43\u0E19\u0E1A\u0E34\u0E25",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0121/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E21\u0E39\u0E25\u0E04\u0E48\u0E32\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 (1 \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23)",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0122/Text"
+        },
+        {
+          "automationId": "",
+          "name": "0.00",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0123/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14\u0E42\u0E1B\u0E23\u0E42\u0E21\u0E0A\u0E31\u0E48\u0E19",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0124/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u22120.00",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0125/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E20\u0E32\u0E29\u0E35\u0E21\u0E39\u0E25\u0E04\u0E48\u0E32\u0E40\u0E1E\u0E34\u0E48\u0E21 (\u0E23\u0E27\u0E21\u0E43\u0E19)",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0126/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u003Credacted\u003E",
+          "className": "TextBox",
+          "controlType": "Edit",
+          "path": "0127/Edit"
+        },
+        {
+          "automationId": "",
+          "name": "%",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0128/Text"
+        },
+        {
+          "automationId": "",
+          "name": "0.00",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0129/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E04\u0E48\u0E32\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0130/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u003Credacted\u003E",
+          "className": "TextBox",
+          "controlType": "Edit",
+          "path": "0131/Edit"
+        },
+        {
+          "automationId": "",
+          "name": "0.00",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0132/Text"
+        },
+        {
+          "automationId": "",
+          "name": "\u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0133/Text"
+        },
+        {
+          "automationId": "",
+          "name": "0.00 \u0E3F",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0134/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0135/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0136/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0137/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0138/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0139/Button"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "ToastControl",
+          "controlType": "Custom",
+          "path": "0140/Custom"
+        },
+        {
+          "automationId": "ToastIcon",
+          "name": "",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0141/Text"
+        },
+        {
+          "automationId": "",
+          "name": "",
+          "className": "Button",
+          "controlType": "Button",
+          "path": "0142/Button"
+        },
+        {
+          "automationId": "ToastText",
+          "name": "",
+          "className": "TextBlock",
+          "controlType": "Text",
+          "path": "0143/Text"
+        }
+      ],
+      "missingAutomationIds": [
+        "Button:  (0004/Button)",
+        "Button:  (0005/Button)",
+        "Button:  (0006/Button)",
+        "ComboBox:  (0014/ComboBox)",
+        "ComboBox:  (0016/ComboBox)",
+        "Edit: \u003Credacted\u003E (0018/Edit)",
+        "Edit: \u003Credacted\u003E (0020/Edit)",
+        "Button:  (0033/Button)",
+        "Button: 1 (0044/Button)",
+        "Button: 2 (0046/Button)",
+        "Button: 3 (0048/Button)",
+        "Button: 4 (0050/Button)",
+        "Button: 5 (0052/Button)",
+        "Button: 6 (0054/Button)",
+        "Button: 7 (0056/Button)",
+        "Button: 8 (0058/Button)",
+        "Button: 9 (0060/Button)",
+        "Button: \u00D7\u0E08\u0E33\u0E19\u0E27\u0E19 (0062/Button)",
+        "Button: 0 (0064/Button)",
+        "Button: \uE14A (0066/Button)",
+        "Button:  (0068/Button)",
+        "Button:  (0069/Button)",
+        "Button:  (0073/Button)",
+        "Button:  (0077/Button)",
+        "Button:  (0080/Button)",
+        "Button:  (0084/Button)",
+        "Button:  (0088/Button)",
+        "Button:  (0092/Button)",
+        "Button:  (0096/Button)",
+        "Button:  (0100/Button)",
+        "Button:  (0103/Button)",
+        "Button:  (0106/Button)",
+        "Button: \u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19 (0118/Button)",
+        "Edit: \u003Credacted\u003E (0127/Edit)",
+        "Edit: \u003Credacted\u003E (0131/Edit)",
+        "Button:  (0135/Button)",
+        "Button:  (0136/Button)",
+        "Button:  (0137/Button)",
+        "Button:  (0138/Button)",
+        "Button:  (0139/Button)",
+        "Button:  (0142/Button)"
+      ],
+      "duplicateAutomationIds": []
+    }
+  ],
+  "diff": null
+}

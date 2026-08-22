@@ -30,6 +30,15 @@ public sealed class TestCasesController(TestCaseService service, ProjectService 
     [HttpGet("test-cases/{id:guid}/requirements")]
     public Task<IReadOnlyList<TestCaseRequirementDto>> Requirements(Guid id, CancellationToken ct) => service.RequirementsAsync(id, ct);
 
+    [HttpPatch("test-cases/{id:guid}/automation-target"), Authorize(Policy = "TestCaseEdit")]
+    public async Task<ActionResult<TestCaseDto>> SetAutomationTarget(Guid id,SetAutomationTargetRequest request,CancellationToken ct)
+    {
+        try{return Ok(await service.SetAutomationTargetAsync(id,request.TargetApp,UserId(),ct));}
+        catch(EntityNotFoundException){return NotFound();}
+        catch(InvalidOperationException ex){return BadRequest(Problem("กำหนด Automation Target ไม่ได้",ex.Message,400));}
+        catch(ArgumentException ex){return BadRequest(Problem("Automation Target ไม่ถูกต้อง",ex.Message,400));}
+    }
+
     [HttpPost("test-cases"), Authorize(Policy = "TestCaseEdit")]
     public async Task<ActionResult<TestCaseDto>> Create(CreateTestCaseRequest request, CancellationToken ct)
     {
@@ -161,6 +170,13 @@ public sealed class TestCasesController(TestCaseService service, ProjectService 
         try { return Ok(await service.StatusAsync(id, request.Status, UserId(), ct)); }
         catch (EntityNotFoundException) { return NotFound(); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return BadRequest(Problem("เปลี่ยนสถานะไม่ได้", ex.Message, 400)); }
+    }
+
+    [HttpPost("test-cases/{id:guid}/automation"), Authorize(Policy = "TestCaseEdit")]
+    public async Task<ActionResult<TestCaseDto>> SetAutomationCandidate(Guid id, SetAutomationCandidateRequest request, CancellationToken ct)
+    {
+        try { return Ok(await service.SetAutomationCandidateAsync(id, request.AutomationCandidate, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
     }
 
     [HttpDelete("test-cases/{id:guid}"), Authorize(Policy = "TestCaseEdit")]

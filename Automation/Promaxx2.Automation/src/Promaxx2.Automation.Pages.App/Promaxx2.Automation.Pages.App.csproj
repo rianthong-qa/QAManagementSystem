@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FlaUI.Core" Version="5.0.0" />
+    <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
+    <ProjectReference Include="..\Promaxx2.Automation.Core\Promaxx2.Automation.Core.csproj" />
+  </ItemGroup>
+</Project>

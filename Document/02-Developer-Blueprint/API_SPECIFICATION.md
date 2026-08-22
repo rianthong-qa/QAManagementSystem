@@ -837,3 +837,28 @@ Filter:
 - Access Token
 - Secret
 - Sensitive Test Data แบบ Plain Text
+
+## Automation Trigger & Queue (2026-08-22)
+
+ทุก endpoint ใช้ JWT, permission `EXECUTION.RUN` และ Project access:
+
+- `GET /api/v1/automation/queue?projectId=&buildId=&take=` — ประวัติ Queue; ไม่คืน lease token
+- `POST /api/v1/automation/queue?projectId=` — สร้างงานด้วย `projectId`, `releaseId`, `buildId`, optional `testCycleId`, `targetApp: pos|app`, optional `notes`
+- `POST /api/v1/automation/queue/claim?projectId=` — Runner claim งานเก่าสุดด้วย `runnerName` และ `targetApps`; คืน `204` เมื่อไม่มีงาน หรือคืนงานพร้อม lease token
+- `POST /api/v1/automation/queue/{jobId}/status?projectId=` — Runner ส่ง `leaseToken`, `status`, optional `errorMessage`/`automationRunId`
+- `DELETE /api/v1/automation/queue/{jobId}?projectId=` — ยกเลิกได้เฉพาะสถานะ Queued/Claimed
+
+### Automation Runner Agents
+
+- `GET /api/v1/automation/agents?projectId=` — คืน agent พร้อม `connectivity`, state, capabilities และ heartbeat ล่าสุด
+- `POST /api/v1/automation/agents/heartbeat?projectId=` — ลงทะเบียน/อัปเดต agent และต่ออายุ lease เมื่อส่ง `currentJobId` + `leaseToken`
+- Payload มี `runnerName`, `machineName`, `version`, `capabilities: [pos|app]`, `state: Idle|Busy` และข้อมูล lease แบบ optional
+- Queue DTO เพิ่ม `leaseExpiresAt`/`attemptCount`; lease token ยังคงคืนเฉพาะ claim response
+
+### Automation Scheduling & Retry
+
+- `GET/POST /api/v1/automation/schedules?projectId=` — ดู/สร้าง recurring schedule
+- `DELETE /api/v1/automation/schedules/{scheduleId}?projectId=` — ปิด schedule แบบ soft disable
+- `GET /api/v1/automation/notifications?projectId=` — alerts จาก retry queued และ terminal failed
+- Schedule payload: project/release/build, name, targetApp, pack, frequency `Daily|Weekdays`, `runAtUtc`, `maxAttempts` 1–5
+- Queue status update เพิ่ม `errorType`; retry ได้เฉพาะ Infrastructure, Timeout และ ApplicationStart
