@@ -1,0 +1,15 @@
+.signoff-page{display:grid;gap:16px;min-width:0}
+.signoff-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.signoff-toolbar .signoff-selects{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.signoff-toolbar select{border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:#fff;color:var(--text);font:inherit;font-size:13px}
+.gate-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.gate-cell{background:#fafcff;border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:4px;min-width:0}
+.gate-cell small{color:var(--muted);font-size:11px;font-weight:700}
+.gate-cell b{font-size:20px;line-height:1}
+.gate-cell span{color:var(--muted);font-size:11px}
+.signoff-decision{display:inline-flex;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
+.signoff-decision.go{background:#eaf8f1;color:#168b58}
+.signoff-decision.conditional{background:#fff5d9;color:#9a6d00}
+.signoff-decision.nogo{background:#fdecec;color:#c83a3a}
+@media(max-width:900px){.gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.gate-grid{grid-template-columns:1fr}.signoff-toolbar{flex-direction:column;align-items:stretch}}

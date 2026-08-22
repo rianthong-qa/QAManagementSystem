@@ -8,6 +8,7 @@ using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Domain.Settings;
 using ProMaxx2.QA.Domain.Dashboard;
+using ProMaxx2.QA.Domain.Governance;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -52,6 +53,8 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationQueueJob> AutomationQueueJobs => Set<AutomationQueueJob>();
     public DbSet<AutomationRunnerAgent> AutomationRunnerAgents => Set<AutomationRunnerAgent>();
     public DbSet<AutomationSchedule> AutomationSchedules => Set<AutomationSchedule>();
+    public DbSet<RiskAcceptance> RiskAcceptances => Set<RiskAcceptance>();
+    public DbSet<ReleaseSignoff> ReleaseSignoffs => Set<ReleaseSignoff>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

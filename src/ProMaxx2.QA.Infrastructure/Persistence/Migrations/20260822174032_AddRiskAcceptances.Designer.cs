@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(QaDbContext))]
-    partial class QaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260822174032_AddRiskAcceptances")]
+    partial class AddRiskAcceptances
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1007,49 +1010,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasIndex("TestExecutionId");
 
                     b.ToTable("TestStepResults", (string)null);
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Governance.ReleaseSignoff", b =>
-                {
-                    b.Property<Guid>("ReleaseSignoffId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWSEQUENTIALID()");
-
-                    b.Property<Guid>("BuildId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasPrecision(0)
-                        .HasColumnType("datetime2(0)");
-
-                    b.Property<string>("Decision")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<Guid>("ReleaseId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("SignoffByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("SignoffType")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.HasKey("ReleaseSignoffId");
-
-                    b.HasIndex("BuildId");
-
-                    b.HasIndex("ReleaseId");
-
-                    b.ToTable("ReleaseSignoffs", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Governance.RiskAcceptance", b =>
@@ -2213,21 +2173,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Execution");
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Governance.ReleaseSignoff", b =>
-                {
-                    b.HasOne("ProMaxx2.QA.Domain.Releases.Build", null)
-                        .WithMany()
-                        .HasForeignKey("BuildId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ProMaxx2.QA.Domain.Releases.Release", null)
-                        .WithMany()
-                        .HasForeignKey("ReleaseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Governance.RiskAcceptance", b =>

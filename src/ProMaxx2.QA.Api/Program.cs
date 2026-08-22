@@ -14,6 +14,7 @@ using ProMaxx2.QA.Application.TestManagement;
 using ProMaxx2.QA.Application.Execution;
 using ProMaxx2.QA.Api.Services;
 using ProMaxx2.QA.Application.Common;
+using ProMaxx2.QA.Application.Governance;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers(options => options.Filters.Add<ProjectAccessFilter>());
@@ -51,6 +52,9 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<ReleaseService>();
+builder.Services.AddScoped<TestSummaryService>();
+builder.Services.AddScoped<RiskAcceptanceService>();
+builder.Services.AddScoped<ReleaseSignoffService>();
 builder.Services.AddScoped<RequirementService>();
 builder.Services.AddScoped<TestCaseService>();
 builder.Services.AddScoped<TestSuiteService>();
@@ -87,7 +91,9 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RegressionManage",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","REGRESSION.MANAGE")))
     .AddPolicy("DefectView",p=>p.RequireClaim("permission","DEFECT.VIEW"))
     .AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"))
-    .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"));
+    .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"))
+    .AddPolicy("RiskApprove",p=>p.RequireClaim("permission","RISK.APPROVE"))
+    .AddPolicy("ReleaseSignoff",p=>p.RequireClaim("permission","RELEASE.SIGNOFF"));
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
 if (allowedOrigins == null || allowedOrigins.Length == 0)
 {

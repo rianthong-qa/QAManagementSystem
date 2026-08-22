@@ -6,6 +6,7 @@ using ProMaxx2.QA.Infrastructure.Identity;
 using ProMaxx2.QA.Infrastructure.Persistence;
 using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.Releases;
+using ProMaxx2.QA.Application.Governance;
 using ProMaxx2.QA.Application.Requirements;
 using ProMaxx2.QA.Application.TestManagement;
 using ProMaxx2.QA.Application.Execution;
@@ -30,6 +31,8 @@ public static class DependencyInjection
         services.AddScoped<IAutomationRunRepository,AutomationRunRepository>();
         services.AddScoped<IAdministrationRepository,AdministrationRepository>();
         services.AddScoped<IDashboardRepository,DashboardRepository>();
+        services.AddScoped<IRiskAcceptanceRepository,RiskAcceptanceRepository>();
+        services.AddScoped<IReleaseSignoffRepository,ReleaseSignoffRepository>();
         services.AddScoped<Identity.ProjectAccessService>();
         return services;
     }

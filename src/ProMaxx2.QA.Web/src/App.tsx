@@ -9,6 +9,9 @@ import "./DashboardExecutive.css";
 import "./Rtm.css";
 import "./Regression.css";
 import "./Automation.css";
+import "./TestSummary.css";
+import "./RiskAcceptance.css";
+import "./ReleaseSignoff.css";
 import { exportPlanAction, writeBackAction, formatThaiDateTime } from "./automationHelpers";
 
 type Page =
@@ -6116,6 +6119,288 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
   );
 }
 
+type TestSummaryStatusSlice = { status: string; count: number; color: string };
+type TestSummarySeveritySlice = { severity: string; count: number; color: string };
+type TestSummaryData = { totalRequirements: number; coveredRequirements: number; requirementCoverage: number; totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number; openP0: number; openP1: number; overallScore: number | null; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string; statusDistribution: TestSummaryStatusSlice[]; defectSeverityDistribution: TestSummarySeveritySlice[]; generatedAt: string };
+type TestSummaryEnv = { testEnvironmentId: string; projectId: string; environmentName: string; baseUrl?: string; isActive: boolean };
+type TestSummaryNarrative = { knownIssues: string; remainingRisks: string; qaRecommendation: string };
+
+function TestSummaryPage({ projectId, releaseId: contextReleaseId, canExport, onOpenSignoff }: { projectId?: string; releaseId?: string; buildId?: string; canExport: boolean; onOpenSignoff?: () => void }) {
+  const [releases, setReleases] = useState<ReleaseItem[]>([]);
+  const [releaseId, setReleaseId] = useState(contextReleaseId ?? "");
+  const [summary, setSummary] = useState<TestSummaryData | null>(null);
+  const [release, setRelease] = useState<ReleaseItem | null>(null);
+  const [envs, setEnvs] = useState<TestSummaryEnv[]>([]);
+  const [narrative, setNarrative] = useState<TestSummaryNarrative>({ knownIssues: "", remainingRisks: "", qaRecommendation: "" });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+  const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => (r.ok ? r.json() : Promise.resolve(null))), [headers]);
+  useEffect(() => { if (!projectId) return; getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])); }, [projectId, getJson]);
+  useEffect(() => { if (contextReleaseId && !releaseId && releases.some((x) => x.releaseId === contextReleaseId)) setReleaseId(contextReleaseId); }, [contextReleaseId, releaseId, releases]);
+  const derive = (s: TestSummaryData | null): TestSummaryNarrative => {
+    if (!s) return { knownIssues: "", remainingRisks: "", qaRecommendation: "" };
+    const issues = [`P0 ที่ยังไม่ผ่าน/ถูกบล็อก: ${s.openP0}`, `P1 ที่ยังไม่ผ่าน/ถูกบล็อก: ${s.openP1}`, `ข้อบกพร่องที่ยังเปิด: ${s.openDefects} (วิกฤต ${s.criticalDefects} / สูง ${s.highDefects})`].filter((x) => !x.endsWith(": 0")).join(" · ") || "ไม่มีข้อบกพร่องหรือเคสค้างที่ต้องติดตาม";
+    const risks: string[] = [];
+    if (s.requirementCoverage < 90) risks.push(`ความครอบคลุม ${s.requirementCoverage}% ต่ำกว่าเกณฑ์`);
+    if (s.passRate < 90) risks.push(`อัตราผ่าน ${s.passRate}% ต่ำกว่าเกณฑ์`);
+    if (s.openP1 > 0 || s.highDefects > 0) risks.push("มี P1/High ค้างที่ควรประเมินก่อนวาง");
+    if (s.criticalDefects > 0 || s.openP0 > 0) risks.push("ยังมีข้อบกพร่องวิกฤตที่ต้องแก้ก่อนปล่อย");
+    const recText = s.recommendedDecision === "NO-GO" ? "ไม่พร้อมวาง Release — ยังมี P0/วิกฤตหรือ Coverage/Pass rate ไม่ผ่านเกณฑ์ ต้องแก้และทดสอบซ้ำก่อน Sign-off" : s.recommendedDecision === "CONDITIONAL GO" ? "พร้อมแบบมีเงื่อนไข — วาง Release ได้โดยมีเงื่อนไขให้ติดตาม/ปิดความเสี่ยงที่เหลือตามแผน" : s.recommendedDecision === "GO" ? "พร้อมวาง Release — ผ่านเกณฑ์คุณภาพและความครอบคลุมที่กำหนด" : "ยังไม่มีข้อมูลเพียงพอสำหรับการประเมิน กรุณารัน Test ให้ครบและบันทึกผลก่อนสรุป";
+    return { knownIssues: issues, remainingRisks: risks.length ? risks.join(" · ") : "ไม่พบความเสี่ยงคงค้างที่เกินเกณฑ์", qaRecommendation: recText };
+  };
+  const load = useCallback(async (regenerate: boolean) => {
+    if (!projectId || !releaseId) { setSummary(null); setRelease(null); return; }
+    setLoading(true); setError("");
+    try {
+      const [ts, envList] = await Promise.all([
+        getJson(`${apiUrl}/releases/${releaseId}/test-summary`),
+        getJson(`${apiUrl}/master-settings/environments`),
+      ]);
+      const data = (ts as { release: ReleaseItem; summary: TestSummaryData } | null);
+      setSummary(data?.summary ?? null);
+      setRelease((data?.release as ReleaseItem | null) ?? null);
+      setEnvs(Array.isArray(envList) ? (envList as TestSummaryEnv[]).filter((e) => e.projectId === projectId) : []);
+      const persisted = (() => { try { return JSON.parse(localStorage.getItem(`qa.testSummaryNarrative.${releaseId}`) ?? "null"); } catch { return null; } })() as TestSummaryNarrative | null;
+      setNarrative(regenerate || !persisted ? derive(data?.summary ?? null) : { ...persisted, ...(persisted.knownIssues || persisted.remainingRisks || persisted.qaRecommendation ? {} : derive(data?.summary ?? null)) });
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลด Test Summary ไม่สำเร็จ"); } finally { setLoading(false); }
+  }, [projectId, releaseId, getJson]);
+  useEffect(() => { load(false); }, [load]);
+  useEffect(() => { try { localStorage.setItem(`qa.testSummaryNarrative.${releaseId}`, JSON.stringify(narrative)); } catch { /* ignore */ } }, [releaseId, narrative]);
+  const exportCsv = () => {
+    if (!summary) return;
+    const rows: [string, string | number][] = [
+      ["Release", `${release?.releaseCode ?? ""} ${release?.version ?? ""}`.trim()],
+      ["Status", release?.status ?? ""],
+      ["Requirement Coverage", `${summary.requirementCoverage}%`],
+      ["Total Test Cases", summary.totalCases],
+      ["Executed", summary.executedCases],
+      ["Execution Progress", `${summary.executionProgress}%`],
+      ["Passed", summary.passedCases],
+      ["Pass Rate", `${summary.passRate}%`],
+      ["Open P0 / P1", `${summary.openP0} / ${summary.openP1}`],
+      ["Open Defects", summary.openDefects],
+      ["Critical Defects", summary.criticalDefects],
+      ["High Defects", summary.highDefects],
+      ["Defect Quality", summary.defectQuality],
+      ["Recommended Decision", summary.recommendedDecision],
+      ["Known Issues", narrative.knownIssues],
+      ["Remaining Risks", narrative.remainingRisks],
+      ["QA Recommendation", narrative.qaRecommendation],
+    ];
+    const csv = "\uFEFF" + rows.map(([k, v]) => `"${String(k).replaceAll('"', '""')}","${String(v).replaceAll('"', '""')}"`).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `test-summary-${release?.releaseCode || releaseId}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+  const exportExcel = () => {
+    if (!summary) return;
+    const s = summary, r = release;
+    const esc = (v: string) => v.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    const row = (cells: string[]) => `<tr>${cells.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`;
+    const body = `<table border="1"><thead><tr><th colspan="2">Test Summary — ${esc(r ? `${r.releaseCode} · ${r.version}` : "")}</th></tr></thead><tbody>${row(["Status", r?.status ?? ""])}${row(["Requirement Coverage", `${s.requirementCoverage}%`])}${row(["Total / Executed", `${s.totalCases} / ${s.executedCases}`])}${row(["Pass Rate", `${s.passRate}%`])}${row(["Open P0 / P1", `${s.openP0} / ${s.openP1}`])}${row(["Open Defects", String(s.openDefects)])}${row(["Critical / High", `${s.criticalDefects} / ${s.highDefects}`])}${row(["Defect Quality", String(s.defectQuality)])}${row(["Recommended Decision", s.recommendedDecision])}${row(["Known Issues", narrative.knownIssues])}${row(["Remaining Risks", narrative.remainingRisks])}${row(["QA Recommendation", narrative.qaRecommendation])}</tbody></table>`;
+    const html = `<html><head><meta charset="utf-8"></head><body>${body}</body></html>`;
+    const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `test-summary-${r?.releaseCode || releaseId}.xls`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+  return (
+    <article className="test-summary">
+      <header className="test-summary-head">
+        <div className="ts-select">
+          <label>Release</label>
+          <select aria-label="เลือก Release" value={releaseId} onChange={(e) => setReleaseId(e.target.value)}>
+            <option value="">เลือก Release</option>
+            {releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}
+          </select>
+        </div>
+        <div>
+          {canExport && <button className="btn" disabled={!summary} onClick={exportCsv}>⤓ Export CSV</button>}
+          {canExport && <button className="btn" disabled={!summary} onClick={exportExcel}>⤓ Export Excel</button>}
+          <button className="btn primary" disabled={!releaseId || loading} onClick={() => load(true)}>{loading ? "กำลังโหลด..." : "✦ Generate / Regenerate"}</button>
+          {onOpenSignoff && <button className="btn" disabled={!summary} onClick={onOpenSignoff}>ไปหน้า Sign-off</button>}
+        </div>
+      </header>
+      {error && <div className="inline-alert error"><span>{error}</span></div>}
+      {loading && !summary ? <div className="empty"><p>กำลังโหลด Test Summary...</p></div> : !release ? <div className="empty"><p>เลือก Release เพื่อดูสรุปผลการทดสอบ</p></div> : (
+        <>
+          <section className="card">
+            <div className="test-summary-card">
+              <div className="test-summary-head">
+                <div><span className="ts-badge"><Badge tone={summary?.recommendedDecision === "GO" ? "green" : summary?.recommendedDecision === "CONDITIONAL GO" ? "yellow" : "red"}>{summary?.recommendedDecision ?? "NO DATA"}</Badge></span></div>
+                <div className="test-summary-env">{envs.length ? envs.map((e) => <span key={e.testEnvironmentId}>{e.environmentName}</span>) : <span>ไม่ระบุ Environment</span>}</div>
+              </div>
+              <div className="test-summary-exec">
+                <div><small>Pass Rate</small><b>{summary?.passRate ?? 0}%</b><span>{summary?.passedCases}/{summary?.executedCases} Passed</span></div>
+                <div><small>Requirement Coverage</small><b>{summary?.requirementCoverage ?? 0}%</b><span>{summary?.coveredRequirements}/{summary?.totalRequirements} Covered</span></div>
+                <div><small>Execution Progress</small><b>{summary?.executionProgress ?? 0}%</b><span>{summary?.executedCases}/{summary?.totalCases} Executed</span></div>
+                <div><small>Defect Quality</small><b>{summary?.defectQuality ?? 0}</b><span>{summary?.openDefects} Open</span></div>
+              </div>
+              <div className="ts-progress">
+                <div className="ts-progress-row"><span>Execution</span><b>{summary?.executedCases ?? 0} / {summary?.totalCases ?? 0}</b></div>
+                <div className="ts-bar"><i style={{ width: `${summary?.executionProgress ?? 0}%` }} /></div>
+                <div className="ts-progress-row"><span>Pass Rate</span><b>{summary?.passRate ?? 0}%</b></div>
+                <div className="ts-bar"><i className="green" style={{ width: `${summary?.passRate ?? 0}%` }} /></div>
+                <div className="ts-legend">{(summary?.statusDistribution ?? []).map((x) => <span key={x.status}><i style={{ background: x.color }} />{x.status} · {x.count}</span>)}</div>
+              </div>
+            </div>
+          </section>
+          <div className="test-summary-grid">
+            <section className="card"><div className="test-summary-card"><h3 style={{ margin: 0 }}>Metrics</h3><dl className="ts-kv">
+              <div><dt>Requirement Coverage</dt><dd>{summary?.requirementCoverage ?? 0}%</dd></div>
+              <div><dt>Total / Executed Cases</dt><dd>{summary?.totalCases ?? 0} / {summary?.executedCases ?? 0}</dd></div>
+              <div><dt>Passed</dt><dd>{summary?.passedCases ?? 0}</dd></div>
+              <div><dt>Open P0 / P1</dt><dd>{summary?.openP0 ?? 0} / {summary?.openP1 ?? 0}</dd></div>
+              <div><dt>Open Defects</dt><dd>{summary?.openDefects ?? 0}</dd></div>
+              <div><dt>Critical / High Defects</dt><dd>{summary?.criticalDefects ?? 0} / {summary?.highDefects ?? 0}</dd></div>
+              <div><dt>Overall Score</dt><dd>{summary?.overallScore ?? "-"}</dd></div>
+            </dl></div></section>
+            <section className="card"><div className="test-summary-card"><h3 style={{ margin: 0 }}>Defect Severity</h3><div className="ts-legend" style={{ marginBottom: 8 }}>{(summary?.defectSeverityDistribution ?? []).map((x) => <span key={x.severity}><i style={{ background: x.color }} />{x.severity} · {x.count}</span>)}</div><dl className="ts-kv">
+              <div><dt>Total Defects</dt><dd>{summary?.totalDefects ?? 0}</dd></div>
+              <div><dt>Open</dt><dd>{summary?.openDefects ?? 0}</dd></div>
+              <div><dt>Critical / High</dt><dd>{summary?.criticalDefects ?? 0} / {summary?.highDefects ?? 0}</dd></div>
+              <div><dt>Defect Quality</dt><dd>{summary?.defectQuality ?? 0} / 100</dd></div>
+            </dl></div></section>
+          </div>
+          <section className="card"><div className="test-summary-narrative">
+            <label>รายละเอียด / ขอบเขต (Scope)</label><textarea value={release?.scope ?? ""} readOnly style={{ background: "#f8fafc" }} aria-label="Release Scope" />
+            <label>Known Issues / ปัญหาที่ทราบ<textarea value={narrative.knownIssues} onChange={(e) => setNarrative((n) => ({ ...n, knownIssues: e.target.value }))} /></label>
+            <label>Remaining Risks / ความเสี่ยงคงเหลือ<textarea value={narrative.remainingRisks} onChange={(e) => setNarrative((n) => ({ ...n, remainingRisks: e.target.value }))} /></label>
+            <label>QA Recommendation / คำแนะนำ<textarea value={narrative.qaRecommendation} onChange={(e) => setNarrative((n) => ({ ...n, qaRecommendation: e.target.value }))} /></label>
+            <span className="test-summary-note">ข้อความ Known Issues / Risks / QA Recommendation ปรับได้และ Auto-generate จากข้อมูล ปุ่ม Generate จะรีเซ็ตกลับเป็นค่าแนะนำ · ส่งต่อ Sign-off ที่หน้า Release Sign-off</span>
+          </div></section>
+        </>
+      )}
+    </article>
+  );
+}
+
+type RiskItem = { riskAcceptanceId: string; projectId: string; releaseId: string; defectId?: string | null; riskCode: string; title: string; issue: string; impact: string; probability: string; riskLevel: string; status: string; workaround?: string | null; targetFix?: string | null; qaRecommendation?: string | null; ownerUserId?: string | null; ownerName?: string | null; releaseCode?: string | null; releaseVersion?: string | null; defectCode?: string | null; createdAt: string; reviewDate?: string | null; reviewComment?: string | null; reviewedByName?: string | null };
+type RiskDefectOption = { defectId: string; label: string };
+
+function RiskAcceptancePage({ projectId, releaseId: contextReleaseId, canEdit, canApprove }: { projectId?: string; releaseId?: string; canEdit: boolean; canApprove: boolean }) {
+  const [items, setItems] = useState<RiskItem[]>([]);
+  const [releases, setReleases] = useState<ReleaseItem[]>([]);
+  const [users, setUsers] = useState<UserLookup[]>([]);
+  const [defects, setDefects] = useState<RiskDefectOption[]>([]);
+  const [releaseFilter, setReleaseFilter] = useState(contextReleaseId ?? "");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<RiskItem | null>(null);
+  const [detail, setDetail] = useState<RiskItem | null>(null);
+  const [decision, setDecision] = useState<{ kind: "approve" | "reject"; item: RiskItem } | null>(null);
+  const [decisionComment, setDecisionComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ releaseId: "", defectId: "", title: "", issue: "", impact: "Medium", probability: "Medium", workaround: "", targetFix: "", qaRecommendation: "", ownerUserId: "" });
+  const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+  const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => (r.ok ? r.json() : Promise.resolve(null))), [headers]);
+  const reload = useCallback(async () => { if (!projectId) return; setLoading(true); setError(""); try { const data = await getJson(`${apiUrl}/risk-acceptances?projectId=${projectId}`); setItems(Array.isArray(data) ? data : []); } catch (e) { setError(e instanceof Error ? e.message : "โหลด Risk ไม่สำเร็จ"); } finally { setLoading(false); } }, [projectId, getJson]);
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { if (!projectId) return; getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])); getJson(`${apiUrl}/lookups/users`).then((u) => setUsers(Array.isArray(u) ? u : [])); }, [projectId, getJson]);
+  useEffect(() => { if (contextReleaseId && !releaseFilter) setReleaseFilter(contextReleaseId); }, [contextReleaseId, releaseFilter]);
+  useEffect(() => { const rid = form.releaseId || releaseFilter; if (!rid || !projectId) { setDefects([]); return; } getJson(`${apiUrl}/defects?projectId=${projectId}&releaseId=${rid}&page=1&size=100`).then((d) => { const rows = Array.isArray(d) ? d : d?.rows ?? []; setDefects((rows as { defectId: string; defectCode?: string; title?: string }[]).map((x) => ({ defectId: x.defectId, label: `${x.defectCode ?? ""} · ${x.title ?? ""}`.trim() }))); }); }, [projectId, form.releaseId, releaseFilter, getJson]);
+  const openCreate = () => { setEditing(null); setForm({ releaseId: releaseFilter || "", defectId: "", title: "", issue: "", impact: "Medium", probability: "Medium", workaround: "", targetFix: "", qaRecommendation: "", ownerUserId: "" }); setFormOpen(true); };
+  const openEdit = (item: RiskItem) => { setEditing(item); setForm({ releaseId: item.releaseId, defectId: item.defectId ?? "", title: item.title, issue: item.issue, impact: item.impact, probability: item.probability, workaround: item.workaround ?? "", targetFix: item.targetFix ?? "", qaRecommendation: item.qaRecommendation ?? "", ownerUserId: item.ownerUserId ?? "" }); setFormOpen(true); };
+  const save = async () => { if (!form.title.trim() || !form.releaseId) { setError("กรุณากรอก Title และเลือก Release"); return; } setSaving(true); setError(""); try { const body = JSON.stringify({ projectId, releaseId: form.releaseId, defectId: form.defectId || null, title: form.title, issue: form.issue, impact: form.impact, probability: form.probability, workaround: form.workaround || null, targetFix: form.targetFix || null, qaRecommendation: form.qaRecommendation || null, ownerUserId: form.ownerUserId || null }); const r = editing ? await fetch(`${apiUrl}/risk-acceptances/${editing.riskAcceptanceId}`, { method: "PUT", headers, body: JSON.stringify({ title: form.title, issue: form.issue, impact: form.impact, probability: form.probability, workaround: form.workaround || null, targetFix: form.targetFix || null, qaRecommendation: form.qaRecommendation || null, ownerUserId: form.ownerUserId || null }) }) : await fetch(`${apiUrl}/risk-acceptances`, { method: "POST", headers, body }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "บันทึก Risk ไม่สำเร็จ"); } setFormOpen(false); reload(); } catch (e) { setError(e instanceof Error ? e.message : "บันทึก Risk ไม่สำเร็จ"); } finally { setSaving(false); } };
+  const act = async (id: string, action: string, comment?: string) => { setSaving(true); setError(""); try { const r = await fetch(`${apiUrl}/risk-acceptances/${id}/${action}`, { method: "POST", headers, body: JSON.stringify({ comment: comment ?? null }) }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ดำเนินการไม่สำเร็จ"); } setDecision(null); setDetail(null); reload(); } catch (e) { setError(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ"); } finally { setSaving(false); } };
+  const remove = async (item: RiskItem) => { if (!window.confirm(`ยืนยันการลบ ${item.riskCode} ใช่หรือไม่?`)) return; setSaving(true); try { const r = await fetch(`${apiUrl}/risk-acceptances/${item.riskAcceptanceId}`, { method: "DELETE", headers }); if (!r.ok) throw new Error("ลบ Risk ไม่สำเร็จ"); setDetail(null); reload(); } catch (e) { setError(e instanceof Error ? e.message : "ลบ Risk ไม่สำเร็จ"); } finally { setSaving(false); } };
+  const filtered = items.filter((x) => (!releaseFilter || x.releaseId === releaseFilter) && (!statusFilter || x.status === statusFilter));
+  const levelClass = (l: string) => (l === "High" ? "high" : l === "Low" ? "low" : "medium");
+  const statusTone = (s: string) => ({ Approved: "green", Rejected: "red", Submitted: "blue", Closed: "yellow", Draft: "yellow" } as Record<string, string>)[s] ?? "blue";
+  const filters: [string, string][] = [["", "ทุกสถานะ"], ["Draft", "Draft"], ["Submitted", "Submitted"], ["Approved", "Approved"], ["Rejected", "Rejected"], ["Closed", "Closed"]];
+
+  return (
+    <article className="risk-page">
+      <div className="risk-toolbar">
+        <div className="risk-filters">
+          <select aria-label="Release" value={releaseFilter} onChange={(e) => setReleaseFilter(e.target.value)}><option value="">ทุก Release</option>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select>
+          <select aria-label="สถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>{filters.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          <span className="count-pill">{filtered.length} รายการ</span>
+        </div>
+        {canEdit && <button className="btn primary" onClick={openCreate}>+ เพิ่ม Risk Acceptance</button>}
+      </div>
+      {error && <div className="inline-alert error"><span>{error}</span></div>}
+      <div className="card">
+        {loading && !items.length ? <div className="empty"><p>กำลังโหลด Risk Acceptance...</p></div> : !filtered.length ? <div className="empty"><p>ยังไม่มีรายการ Risk Acceptance</p></div> : (
+          <div className="table-wrap"><table><thead><tr><th>Risk ID</th><th>Title</th><th>Release</th><th>Impact</th><th>Probability</th><th>Risk Level</th><th>Owner</th><th>Status</th><th>Review Date</th></tr></thead><tbody>{filtered.map((x) => <tr key={x.riskAcceptanceId}><td><button className="link-button" onClick={() => setDetail(x)}>{x.riskCode}</button></td><td>{x.title}</td><td>{x.releaseCode ? `${x.releaseCode} · ${x.releaseVersion}` : "-"}</td><td>{x.impact}</td><td>{x.probability}</td><td><span className={`risk-level ${levelClass(x.riskLevel)}`}>{x.riskLevel}</span></td><td>{x.ownerName || "-"}</td><td><Badge tone={statusTone(x.status)}>{x.status}</Badge></td><td>{x.reviewDate ? formatThaiDateTime(x.reviewDate) : "-"}</td></tr>)}</tbody></table></div>
+        )}
+      </div>
+      {formOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-form-title" onMouseDown={() => !saving && setFormOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-form-title">{editing ? "แก้ไข Risk Acceptance" : "เพิ่ม Risk Acceptance"}</h2><small>{editing ? editing.riskCode : "ประเมินและบันทึกความเสี่ยงของ Release"}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setFormOpen(false)}>×</button></div><div className="form-grid"><label>Release<select value={form.releaseId} onChange={(e) => setForm((f) => ({ ...f, releaseId: e.target.value, defectId: "" }))}>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select></label><label>Defect ที่อ้างอิง<select value={form.defectId} onChange={(e) => setForm((f) => ({ ...f, defectId: e.target.value }))}><option value="">ไม่ระบุ</option>{defects.map((d) => <option key={d.defectId} value={d.defectId}>{d.label}</option>)}</select></label><label className="full">Title<input value={form.title} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="สรุปความเสี่ยง" /></label><label className="full">Issue<input value={form.issue} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, issue: e.target.value }))} placeholder="รายละเอียดปัญหา" /></label><label>Impact<select value={form.impact} onChange={(e) => setForm((f) => ({ ...f, impact: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label>Probability<select value={form.probability} onChange={(e) => setForm((f) => ({ ...f, probability: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label className="full">Workaround<textarea value={form.workaround} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, workaround: e.target.value }))} /></label><label className="full">Target Fix<textarea value={form.targetFix} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, targetFix: e.target.value }))} /></label><label className="full">QA Recommendation<textarea value={form.qaRecommendation} maxLength={4000} onChange={(e) => setForm((f) => ({ ...f, qaRecommendation: e.target.value }))} /></label><label className="full">Owner<select value={form.ownerUserId} onChange={(e) => setForm((f) => ({ ...f, ownerUserId: e.target.value }))}><option value="">ไม่ระบุ</option>{users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setFormOpen(false)}>ยกเลิก</button><button className="btn primary" disabled={saving || !form.title.trim() || !form.releaseId} onClick={save}>{saving ? "กำลังบันทึก..." : "บันทึก"}</button></div></div></div>}
+      {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-detail-title" onMouseDown={() => !saving && setDetail(null)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-detail-title">{detail.riskCode}</h2><small>{detail.releaseCode ? `${detail.releaseCode} · ${detail.releaseVersion}` : ""}</small></div><button aria-label="ปิดรายละเอียด" disabled={saving} onClick={() => setDetail(null)}>×</button></div><div className="risk-detail"><div className="risk-detail-hero"><div><h3>{detail.title}</h3><small>{detail.defectCode ? `Linked Defect: ${detail.defectCode}` : "ไม่ผูก Defect"}</small></div><span className={`risk-level ${levelClass(detail.riskLevel)}`}>{detail.riskLevel}</span></div><div className="risk-grid"><div className="risk-field"><span>Impact</span><b>{detail.impact}</b></div><div className="risk-field"><span>Probability</span><b>{detail.probability}</b></div><div className="risk-field"><span>Owner</span><b>{detail.ownerName || "-"}</b></div><div className="risk-field"><span>Status</span><Badge tone={statusTone(detail.status)}>{detail.status}</Badge></div></div><div className="risk-field"><span>Issue</span><b>{detail.issue || "-"}</b></div>{detail.workaround && <div className="risk-field"><span>Workaround</span><b>{detail.workaround}</b></div>}{detail.targetFix && <div className="risk-field"><span>Target Fix</span><b>{detail.targetFix}</b></div>}{detail.qaRecommendation && <div className="risk-field"><span>QA Recommendation</span><b>{detail.qaRecommendation}</b></div>}{detail.reviewComment && <div className="risk-field"><span>Review Comment ({detail.reviewedByName || "ผู้ประเมิน"})</span><b>{detail.reviewComment}</b></div>}</div><div className="modal-actions"><div className="risk-actions">{detail.status === "Draft" && canEdit && <button className="btn" disabled={saving} onClick={() => { setDetail(null); openEdit(detail); }}>แก้ไข</button>}{detail.status === "Draft" && canEdit && <button className="btn danger" disabled={saving} onClick={() => remove(detail)}>ลบ</button>}{detail.status === "Draft" && <button className="btn primary" disabled={saving} onClick={() => act(detail.riskAcceptanceId, "submit")}>{saving ? "กำลัง..." : "Submit"}</button>}{detail.status === "Submitted" && canApprove && <button className="btn primary" disabled={saving} onClick={() => setDecision({ kind: "approve", item: detail })}>อนุมัติ</button>}{detail.status === "Submitted" && canApprove && <button className="btn danger" disabled={saving} onClick={() => setDecision({ kind: "reject", item: detail })}>ปฏิเสธ</button>}</div><button className="btn" disabled={saving} onClick={() => setDetail(null)}>ปิด</button></div></div></div>}
+      {decision && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-decision-title" onMouseDown={() => !saving && setDecision(null)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-decision-title">{decision.kind === "approve" ? "อนุมัติ Risk" : "ปฏิเสธ Risk"}</h2><small>{decision.item.riskCode}</small></div><button aria-label="ปิด" disabled={saving} onClick={() => setDecision(null)}>×</button></div><label className="full" style={{ display: "grid", gap: 6 }}>Comment<textarea rows={3} autoFocus value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)} placeholder="เหตุผล/เงื่อนไข" /></label><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDecision(null)}>ยกเลิก</button><button className={"btn " + (decision.kind === "approve" ? "primary" : "danger")} disabled={saving} onClick={() => act(decision.item.riskAcceptanceId, decision.kind, decisionComment)}>{saving ? "กำลัง..." : decision.kind === "approve" ? "ยืนยันอนุมัติ" : "ยืนยันปฏิเสธ"}</button></div></div></div>}
+    </article>
+  );
+}
+
+type ReleaseGateData = { smokePassed: boolean; openP0: number; p1Blockers: number; requirementCoverage: number; regressionPassRate: number; updateTestPassed: boolean; approvedRisks: number; recommendedDecision: string };
+type SignoffItem = { releaseSignoffId: string; releaseId: string; buildId: string; buildNumber: string; signoffType: string; decision: string; comment?: string | null; signoffBy?: string | null; createdAt: string };
+
+function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff }: { projectId?: string; releaseId?: string; canSignoff: boolean }) {
+  const [releases, setReleases] = useState<ReleaseItem[]>([]);
+  const [releaseId, setReleaseId] = useState(contextReleaseId ?? "");
+  const [builds, setBuilds] = useState<BuildItem[]>([]);
+  const [buildId, setBuildId] = useState("");
+  const [gate, setGate] = useState<ReleaseGateData | null>(null);
+  const [signoffs, setSignoffs] = useState<SignoffItem[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [decision, setDecision] = useState("GO");
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+  const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => (r.ok ? r.json() : Promise.resolve(null))), [headers]);
+  useEffect(() => { if (!projectId) return; getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])); }, [projectId, getJson]);
+  useEffect(() => { if (contextReleaseId && !releaseId) setReleaseId(contextReleaseId); }, [contextReleaseId, releaseId]);
+  useEffect(() => { if (!releaseId) { setBuilds([]); setBuildId(""); return; } getJson(`${apiUrl}/releases/${releaseId}/builds`).then((b) => { const list = Array.isArray(b) ? b : []; setBuilds(list); if (list.length && !buildId) setBuildId(list[0].buildId); }); }, [releaseId, buildId, getJson]);
+  useEffect(() => { if (!releaseId) { setGate(null); setSignoffs([]); return; } setLoading(true); getJson(`${apiUrl}/releases/${releaseId}/release-gate${buildId ? `?buildId=${buildId}` : ""}`).then((g) => setGate((g as ReleaseGateData) ?? null)).finally(() => setLoading(false)); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])); }, [releaseId, buildId, getJson]);
+  const submit = async () => { if (!buildId) { setError("กรุณาเลือก Build"); return; } setSaving(true); setError(""); try { const r = await fetch(`${apiUrl}/releases/${releaseId}/signoffs`, { method: "POST", headers, body: JSON.stringify({ buildId, signoffType: "QA", decision, comment: comment || null }) }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Sign-off ไม่สำเร็จ"); } setModalOpen(false); setComment(""); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])); } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Sign-off ไม่สำเร็จ"); } finally { setSaving(false); } };
+  const decisionClass = (d: string) => d === "GO" ? "go" : d === "CONDITIONAL_GO" ? "conditional" : "nogo";
+  const gateLabels: { key: keyof ReleaseGateData; label: string; hint: (d: ReleaseGateData) => string }[] = [
+    { key: "smokePassed", label: "Smoke Test", hint: (d) => d.smokePassed ? "ผ่าน" : "ยังไม่ผ่าน/ไม่มีข้อมูล" },
+    { key: "requirementCoverage", label: "Requirement Coverage", hint: (d) => `${d.requirementCoverage}% Covered` },
+    { key: "regressionPassRate", label: "Regression / Pass Rate", hint: (d) => `${d.regressionPassRate}% Pass` },
+    { key: "approvedRisks", label: "Approved Risks", hint: (d) => `${d.approvedRisks} รายการ` },
+  ];
+  return (
+    <article className="signoff-page">
+      <div className="signoff-toolbar">
+        <div className="signoff-selects">
+          <select aria-label="Release" value={releaseId} onChange={(e) => { setReleaseId(e.target.value); setBuildId(""); }}><option value="">เลือก Release</option>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select>
+          <select aria-label="Build" value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber} · {b.applicationVersion || "-"}</option>)}</select>
+        </div>
+        {canSignoff && <button className="btn primary" disabled={!releaseId || !buildId} onClick={() => { setDecision("GO"); setComment(""); setModalOpen(true); }}>+ สร้าง Sign-off</button>}
+      </div>
+      {error && <div className="inline-alert error"><span>{error}</span></div>}
+      {loading && !gate ? <div className="empty"><p>กำลังโหลด Release Gate...</p></div> : !releaseId ? <div className="empty"><p>เลือก Release เพื่อดู Release Gate</p></div> : (
+        <>
+          <section className="card">
+            <div className="test-summary-head">
+              <div><h3 style={{ margin: 0 }}>Release Gate Panel</h3><small style={{ color: "var(--muted)" }}>ตรวจสอบเกณฑ์ก่อน Sign-off ตามขั้นตอน Release Governance</small></div>
+              {gate && <span className={`signoff-decision ${decisionClass(gate.recommendedDecision)}`}>{gate.recommendedDecision.replaceAll("_", " ")}</span>}
+            </div>
+            <div className="gate-grid">
+              {gateLabels.map((g) => <div className="gate-cell" key={g.key}><small>{g.label}</small><b>{typeof gate?.[g.key] === "boolean" ? (gate?.[g.key] ? "Pass" : "Fail") : String(gate?.[g.key] ?? "–")}</b><span>{gate ? g.hint(gate) : "…"}</span></div>)}
+            </div>
+            {gate && <div className="ts-progress" style={{ marginTop: 12 }}><div className="ts-progress-row"><span>P0 ยังไม่ผ่าน/ถูกบล็อก</span><b>{gate.openP0}</b></div><div className="ts-progress-row"><span>P1 Blocker</span><b>{gate.p1Blockers}</b></div><div className="ts-progress-row"><span>Update Test Passed</span><b>{gate.updateTestPassed ? "Passed" : "Not passed"}</b></div></div>}
+          </section>
+          <section className="card">
+            <div className="test-summary-head"><div><h3 style={{ margin: 0 }}>Sign-off History</h3></div><span className="count-pill">{signoffs.length} รายการ</span></div>
+            {signoffs.length ? <div className="table-wrap"><table><thead><tr><th>Build</th><th>Type</th><th>Decision</th><th>Sign-off By</th><th>Comment</th><th>Date</th></tr></thead><tbody>{signoffs.map((x) => <tr key={x.releaseSignoffId}><td>{x.buildNumber}</td><td>{x.signoffType}</td><td><span className={`signoff-decision ${decisionClass(x.decision)}`}>{x.decision.replaceAll("_", " ")}</span></td><td>{x.signoffBy || "-"}</td><td>{x.comment || "-"}</td><td>{formatThaiDateTime(x.createdAt)}</td></tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มีรายการ Sign-off</p></div>}
+          </section>
+        </>
+      )}
+      {modalOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="signoff-form-title" onMouseDown={() => !saving && setModalOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}>×</button></div><div className="form-grid"><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder="เหตุผล/เงื่อนไขประกอบการตัดสินใจ" /></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}>ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? "กำลังบันทึก..." : "ยืนยัน Sign-off"}</button></div></div></div>}
+    </article>
+  );
+}
+
 function App() {
   const shareParams = new URLSearchParams(window.location.search);
   const shareCode = shareParams.get("s") ?? "";
@@ -6635,6 +6920,12 @@ function App() {
             <SystemMonitorPage />
           ) : page === "defects" ? (
             <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("DEFECT.EDIT")} />
+          ) : page === "summary" ? (
+            <TestSummaryPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canExport={can("REPORT.EXPORT")} onOpenSignoff={() => setPage("signoff")} />
+          ) : page === "risks" ? (
+            <RiskAcceptancePage projectId={contextProjectId} releaseId={contextReleaseId} canEdit={can("PROJECT.EDIT")} canApprove={can("RISK.APPROVE")} />
+          ) : page === "signoff" ? (
+            <ReleaseSignoffPage projectId={contextProjectId} releaseId={contextReleaseId} canSignoff={can("RELEASE.SIGNOFF")} />
           ) : (
             <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} />
           )}
