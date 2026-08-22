@@ -9,18 +9,4 @@ public sealed class ProjectAccessService(QaDbContext db)
   => await db.ProjectUsers.AsNoTracking().Where(x => x.UserId == userId).Select(x => x.ProjectId).ToArrayAsync(ct);
  public async Task<bool> HasAccessAsync(Guid userId, Guid projectId, CancellationToken ct)
   => await db.ProjectUsers.AnyAsync(x => x.UserId == userId && x.ProjectId == projectId, ct);
- public async Task<Guid[]> GetAllProjectIdsAsync(CancellationToken ct)
-  => await db.Projects.AsNoTracking().Where(x => x.IsActive).Select(x => x.ProjectId).ToArrayAsync(ct);
- public async Task AutoAssignAllProjectsAsync(Guid userId, CancellationToken ct)
- {
-  var all = await GetAllProjectIdsAsync(ct);
-  if (all.Length == 0) return;
-  var existing = await db.ProjectUsers.Where(x => x.UserId == userId).Select(x => x.ProjectId).ToArrayAsync(ct);
-  var toAdd = all.Except(existing).ToArray();
-  if (toAdd.Length > 0)
-  {
-   db.ProjectUsers.AddRange(toAdd.Select(pid => new Domain.Identity.ProjectUser(pid, userId, null)));
-   await db.SaveChangesAsync(ct);
-  }
- }
 }

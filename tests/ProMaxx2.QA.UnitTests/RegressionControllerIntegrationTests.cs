@@ -86,7 +86,7 @@ public sealed class RegressionControllerIntegrationTests
         var response = await controller.AddImpactCases(cycle.TestCycleId, new AddImpactCasesRequest([selectedCase.TestCaseId]), CancellationToken.None);
         Assert.IsType<NoContentResult>(response);
         Assert.Single(await db.TestCycleCases.Where(x => x.TestCycleId == cycle.TestCycleId).ToListAsync());
-        var execution = new ExecutionService(new ExecutionRepository(db));
+        var execution = new ExecutionService(new ExecutionRepository(db, new ProMaxx2.QA.Application.Common.ProjectAccessContext { AllowedProjectIds = [cycle.ProjectId] }));
         var workspace = await execution.WorkspaceAsync(cycle.TestCycleId, CancellationToken.None);
         Assert.Equal("REG-CYCLE-001", workspace.CycleCode);
         Assert.Equal(data.TestCase.TestCaseId, Assert.Single(workspace.Cases).TestCaseId);

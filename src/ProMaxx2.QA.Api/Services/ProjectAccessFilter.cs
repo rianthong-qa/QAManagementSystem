@@ -22,11 +22,6 @@ public sealed class ProjectAccessFilter(ProjectAccessService access, ProjectAcce
   projectCtx.CurrentUserId = userId.Value;
 
   var allowed = await access.GetAllowedProjectIdsAsync(userId.Value, context.HttpContext.RequestAborted);
-  if (allowed.Length == 0)
-  {
-   await access.AutoAssignAllProjectsAsync(userId.Value, context.HttpContext.RequestAborted);
-   allowed = await access.GetAllowedProjectIdsAsync(userId.Value, context.HttpContext.RequestAborted);
-  }
   projectCtx.AllowedProjectIds = allowed;
 
   if (TryGetProjectId(context, out var projectId))
@@ -36,6 +31,11 @@ public sealed class ProjectAccessFilter(ProjectAccessService access, ProjectAcce
     context.Result = new ForbidResult();
     return;
    }
+  }
+  else if (allowed.Length == 0)
+  {
+   context.Result = new ForbidResult();
+   return;
   }
 
   await next();

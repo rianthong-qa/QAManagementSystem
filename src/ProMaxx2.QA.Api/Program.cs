@@ -68,7 +68,9 @@ builder.Services.AddScoped<DefectActivityService>();
 builder.Services.AddScoped<SharedAiConfigurationService>();
 builder.Services.AddScoped<ProjectAccessContext>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
-if (Encoding.UTF8.GetByteCount(jwt.Key) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Use a secret store outside Development.");
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "";
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Set it via an environment variable or secret store — do not commit a signing key.");
+if (!builder.Environment.IsDevelopment() && jwtKey.Contains("development-only-key-change-before-production", StringComparison.Ordinal)) throw new InvalidOperationException("Jwt:Key is the development placeholder — configure a production signing key via environment/secret store.");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer=true, ValidIssuer=jwt.Issuer, ValidateAudience=true, ValidAudience=jwt.Audience, ValidateLifetime=true, ValidateIssuerSigningKey=true, IssuerSigningKey=new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key)), ClockSkew=TimeSpan.FromSeconds(30) };
