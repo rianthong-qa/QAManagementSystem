@@ -137,8 +137,29 @@ public sealed class QaHubClient : IDisposable
                ?? throw new InvalidOperationException($"Empty response from GET {relativeUrl}.");
     }
 
+    public async Task<IReadOnlyList<CycleCaseMap>> GetCycleCaseMapAsync(Guid cycleId, CancellationToken ct = default)
+    {
+        var ws = await GetAsync<CycleWorkspaceDto>($"test-cycles/{cycleId}/execution", ct);
+        return ws.Cases;
+    }
+
+    public async Task WriteBackExecutionAsync(Guid cycleCaseId, string status, string? actualResult, string? comment, CancellationToken ct = default)
+    {
+        using var resp = await _http.PostAsJsonAsync(
+            $"test-cycle-cases/{cycleCaseId}/executions",
+            new WriteBackExecutionRequest(status, actualResult, comment, Array.Empty<object>()),
+            Json.ApiOptions, ct);
+        if (!resp.IsSuccessStatusCode)
+            throw new HttpRequestException($"QA Hub rejected write-back execution ({(int)resp.StatusCode}): {await resp.Content.ReadAsStringAsync(ct)}", null, resp.StatusCode);
+    }
+
     public void Dispose() => _http.Dispose();
 }
 
 /// <summary>ผลลัพธ์ export — cases + mapping moduleId → "CODE · Name"</summary>
 public sealed record TestPlanSource(IReadOnlyList<TestCaseDto> Cases, IReadOnlyDictionary<Guid, string> Modules);
+
+/// <summary>Workspace ของ Test Cycle ใช้แมป testCaseId → testCycleCaseId สำหรับ write-back</summary>
+public sealed record CycleWorkspaceDto(IReadOnlyList<CycleCaseMap> Cases);
+public sealed record CycleCaseMap(Guid TestCycleCaseId, Guid TestCaseId);
+public sealed record WriteBackExecutionRequest(string Status, string? ActualResult, string? Comment, IReadOnlyList<object> StepResults);

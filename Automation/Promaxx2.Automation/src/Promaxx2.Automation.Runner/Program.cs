@@ -47,6 +47,7 @@ try
     return args[0].ToLowerInvariant() switch
     {
         "whoami" => await RunWhoamiAsync(config),
+        "projects" => await RunProjectsAsync(config, args.Skip(1).ToArray()),
         "export" => await RunExportAsync(config, args.Skip(1).ToArray()),
         "run" => await RunSmokeAsync(config, args.Skip(1).ToArray()),
         "inspect" => RunInspect(args.Skip(1).ToArray()),
@@ -76,6 +77,30 @@ static async Task<int> RunWhoamiAsync(AppConfig config)
     var u = client.User!;
     Console.WriteLine($"{u.DisplayName} ({u.Username}) · roles: {string.Join(", ", u.Roles)}");
     Console.WriteLine($"projects assigned: {u.AssignedProjectIds.Count}");
+    return 0;
+}
+
+static async Task<int> RunProjectsAsync(AppConfig config, string[] args)
+{
+    string? code = null;
+    for (var i = 0; i < args.Length; i++)
+        switch (args[i])
+        {
+            case "--code": code = Value(args, ref i); break;
+            default: return Fail($"Unknown option \"{args[i]}\".");
+        }
+    using var client = new QaHubClient(config);
+    await LoginAsync(client, config);
+    var projects = await client.ListProjectsAsync();
+    if (!string.IsNullOrWhiteSpace(code))
+    {
+        var match = projects.FirstOrDefault(p => p.ProjectCode.Equals(code, StringComparison.OrdinalIgnoreCase) || p.ProjectId.ToString() == code);
+        if (match is null) { Console.Error.WriteLine($"No project found for \"{code}\"."); return 1; }
+        Console.WriteLine(match.ProjectId);
+        return 0;
+    }
+    if (projects.Count == 0) { Console.WriteLine("No projects assigned."); return 0; }
+    foreach (var p in projects) Console.WriteLine($"{p.ProjectId}  {p.ProjectCode}  {p.ProjectName}");
     return 0;
 }
 
@@ -271,6 +296,27 @@ static async Task<int> RunSmokeAsync(AppConfig config, string[] args,Action<Guid
             await hub.UploadAutomationEvidenceAsync(plan.ProjectId.Value,published.AutomationRunId,remote.AutomationRunCaseId,result.ScreenshotPath!);
             Console.WriteLine($"Evidence uploaded: {result.TestCaseCode}");
         }
+        var implemented=results.Count(r=>r.ErrorMessage!="Not implemented");var notImplemented=results.Count(r=>r.ErrorMessage=="Not implemented");
+        Console.WriteLine($"Coverage: {implemented}/{results.Count} cases implemented{(notImplemented>0?$", {notImplemented} Skipped (ยังไม่ implement)":"")}");
+        if ((cycleOverride ?? plan.TestCycleId) is { } writebackCycleId)
+        {
+            try
+            {
+                var map=await hub.GetCycleCaseMapAsync(writebackCycleId);
+                var byCase=map.GroupBy(x=>x.TestCaseId).ToDictionary(g=>g.Key,g=>g.First().TestCycleCaseId);
+                var wrote=0;
+                for(var i=0;i<results.Count;i++)
+                {
+                    var result=results[i];var testCaseId=executedCases[i].TestCaseId;
+                    if(testCaseId is null||!byCase.TryGetValue(testCaseId.Value,out var cycleCaseId))continue;
+                    var status=result.Passed?"Pass":result.ErrorMessage=="Not implemented"?"Skipped":"Fail";
+                    await hub.WriteBackExecutionAsync(cycleCaseId,status,result.Passed?null:result.ErrorMessage,$"Automation write-back: {Environment.MachineName}");
+                    wrote++;
+                }
+                Console.WriteLine($"Write-back to Test Cycle {writebackCycleId}: {wrote} execution(s).");
+            }
+            catch(Exception wbEx){Console.WriteLine($"[WRITE-BACK WARNING] {wbEx.Message}");}
+        }
     }
 
     return results.All(r => r.Passed) ? 0 : 1;
@@ -278,22 +324,25 @@ static async Task<int> RunSmokeAsync(AppConfig config, string[] args,Action<Guid
 
 static async Task<int> RunWorkerAsync(AppConfig config,string[] args)
 {
-    Guid projectId=Guid.Empty;var once=false;var pollSeconds=10;var targets=new List<string>{"pos","app"};var workDir="queue-work";
-    for(var i=0;i<args.Length;i++)switch(args[i]){case "--project":projectId=Guid.TryParse(Value(args,ref i),out var id)?id:throw new ArgumentException("--project must be a GUID.");break;case "--once":once=true;break;case "--poll":pollSeconds=Math.Clamp(int.Parse(Value(args,ref i)),2,300);break;case "--targets":targets=Value(args,ref i).Split(',').Select(x=>x.Trim().ToLowerInvariant()).ToList();break;case "--work-dir":workDir=Value(args,ref i);break;default:return Fail($"Unknown option \"{args[i]}\".");}
+    Guid projectId=Guid.Empty;var once=false;var pollSeconds=10;var targets=new List<string>{"pos","app"};var workDir="queue-work";var logPath="";
+    for(var i=0;i<args.Length;i++)switch(args[i]){case "--project":projectId=Guid.TryParse(Value(args,ref i),out var id)?id:throw new ArgumentException("--project must be a GUID.");break;case "--once":once=true;break;case "--poll":pollSeconds=Math.Clamp(int.Parse(Value(args,ref i)),2,300);break;case "--targets":targets=Value(args,ref i).Split(',').Select(x=>x.Trim().ToLowerInvariant()).ToList();break;case "--work-dir":workDir=Value(args,ref i);break;case "--log":logPath=Value(args,ref i);break;default:return Fail($"Unknown option \"{args[i]}\".");}
     if(projectId==Guid.Empty)return Fail("--project is required for worker.");foreach(var target in targets)TestPlanMapper.ValidateTargetApp(target);
+    if(string.IsNullOrWhiteSpace(logPath))logPath=Path.Combine(workDir,"worker.log");
+    void Log(string msg){Console.WriteLine(msg);try{File.AppendAllText(logPath,$"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {msg}{Environment.NewLine}");}catch{/* ignore */}}
     using var hub=new QaHubClient(config);await LoginAsync(hub,config);Directory.CreateDirectory(workDir);var runnerName=Environment.MachineName;var runnerVersion=typeof(Program).Assembly.GetName().Version?.ToString()??"dev";
+    Log($"Worker started: project={projectId} targets={string.Join(',',targets)} machine={runnerName} v={runnerVersion} log={logPath}");
     do
     {
-        await hub.HeartbeatRunnerAsync(projectId,runnerName,runnerVersion,targets);var job=await hub.ClaimQueueJobAsync(projectId,runnerName,targets);if(job is null){if(once){Console.WriteLine("No queued automation job.");return 0;}await Task.Delay(TimeSpan.FromSeconds(pollSeconds));continue;}
-        Console.WriteLine($"Claimed {job.AutomationQueueJobId} ({job.TargetApp})");
-        using var heartbeatStop=new CancellationTokenSource();var heartbeat=Task.Run(async()=>{while(!heartbeatStop.IsCancellationRequested){try{await Task.Delay(TimeSpan.FromSeconds(20),heartbeatStop.Token);await hub.HeartbeatRunnerAsync(projectId,runnerName,runnerVersion,targets,job,heartbeatStop.Token);}catch(OperationCanceledException)when(heartbeatStop.IsCancellationRequested){break;}catch(Exception ex){Console.Error.WriteLine($"[HEARTBEAT WARNING] {ex.Message}");}}});
+        await hub.HeartbeatRunnerAsync(projectId,runnerName,runnerVersion,targets);var job=await hub.ClaimQueueJobAsync(projectId,runnerName,targets);if(job is null){if(once){Log("No queued automation job.");return 0;}await Task.Delay(TimeSpan.FromSeconds(pollSeconds));continue;}
+        Log($"Claimed {job.AutomationQueueJobId} ({job.TargetApp})");
+        using var heartbeatStop=new CancellationTokenSource();var heartbeat=Task.Run(async()=>{while(!heartbeatStop.IsCancellationRequested){try{await Task.Delay(TimeSpan.FromSeconds(20),heartbeatStop.Token);await hub.HeartbeatRunnerAsync(projectId,runnerName,runnerVersion,targets,job,heartbeatStop.Token);}catch(OperationCanceledException)when(heartbeatStop.IsCancellationRequested){break;}catch(Exception ex){Log($"[HEARTBEAT WARNING] {ex.Message}");}}});
         try
         {
-            await hub.UpdateQueueJobAsync(job,"Running");var source=await hub.ExportCasesAsync(job.ProjectId,"Ready",null,true);source=new TestPlanSource(source.Cases.Where(x=>x.AutomationTarget==job.TargetApp).ToList(),source.Modules);if(source.Cases.Count==0)throw new InvalidOperationException($"No Ready automation cases routed to {job.TargetApp}.");
+            await hub.UpdateQueueJobAsync(job,"Running");Log($"Job {job.AutomationQueueJobId} Running ...");var source=await hub.ExportCasesAsync(job.ProjectId,"Ready",null,true);source=new TestPlanSource(source.Cases.Where(x=>x.AutomationTarget==job.TargetApp).ToList(),source.Modules);if(source.Cases.Count==0)throw new InvalidOperationException($"No Ready automation cases routed to {job.TargetApp}.");
             var plan=TestPlanMapper.ToTestPlan(source,job.TargetApp) with{TestCycleId=job.TestCycleId};var jobDir=Path.Combine(workDir,job.AutomationQueueJobId.ToString("N"));Directory.CreateDirectory(jobDir);var planPath=Path.Combine(jobDir,"testplan.json");var resultPath=Path.Combine(jobDir,"run-results.json");await TestPlanWriter.WriteAsync(plan,planPath);Guid? runId=null;
-            var runArgs=new List<string>{"--plan",planPath,"--target-app",job.TargetApp,"--release",job.ReleaseId.ToString(),"--build",job.BuildId.ToString(),"--out",resultPath};if(job.TestCycleId.HasValue){runArgs.Add("--cycle");runArgs.Add(job.TestCycleId.Value.ToString());}var exitCode=await RunSmokeAsync(config,runArgs.ToArray(),id=>runId=id);await hub.UpdateQueueJobAsync(job,exitCode==0?"Completed":"Failed",exitCode==0?null:$"Automation exited with code {exitCode}.",runId,exitCode==0?null:"Assertion");heartbeatStop.Cancel();await heartbeat;if(once)return exitCode;
+            var runArgs=new List<string>{"--plan",planPath,"--target-app",job.TargetApp,"--release",job.ReleaseId.ToString(),"--build",job.BuildId.ToString(),"--out",resultPath};if(job.TestCycleId.HasValue){runArgs.Add("--cycle");runArgs.Add(job.TestCycleId.Value.ToString());}var exitCode=await RunSmokeAsync(config,runArgs.ToArray(),id=>runId=id);await hub.UpdateQueueJobAsync(job,exitCode==0?"Completed":"Failed",exitCode==0?null:$"Automation exited with code {exitCode}.",runId,exitCode==0?null:"Assertion");heartbeatStop.Cancel();await heartbeat;Log($"Job {job.AutomationQueueJobId} -> {(exitCode==0?"Completed":"Failed")}");if(once)return exitCode;
         }
-        catch(Exception ex){heartbeatStop.Cancel();await heartbeat;var errorType=ex is TimeoutException?"Timeout":ex is HttpRequestException?"Infrastructure":ex.Message.Contains("start",StringComparison.OrdinalIgnoreCase)||ex.Message.Contains("launch",StringComparison.OrdinalIgnoreCase)?"ApplicationStart":"Configuration";try{await hub.UpdateQueueJobAsync(job,"Failed",ex.Message,errorType:errorType);}catch(Exception updateEx){Console.Error.WriteLine($"[QUEUE STATUS WARNING] {updateEx.Message}");}Console.Error.WriteLine($"[QUEUE ERROR] {ex.Message}");if(once)return 1;}
+        catch(Exception ex){heartbeatStop.Cancel();await heartbeat;var errorType=ex is TimeoutException?"Timeout":ex is HttpRequestException?"Infrastructure":ex.Message.Contains("start",StringComparison.OrdinalIgnoreCase)||ex.Message.Contains("launch",StringComparison.OrdinalIgnoreCase)?"ApplicationStart":"Configuration";try{await hub.UpdateQueueJobAsync(job,"Failed",ex.Message,errorType:errorType);}catch(Exception updateEx){Log($"[QUEUE STATUS WARNING] {updateEx.Message}");}Log($"[QUEUE ERROR] {ex.Message}");if(once)return 1;}
     }while(true);
 }
 
