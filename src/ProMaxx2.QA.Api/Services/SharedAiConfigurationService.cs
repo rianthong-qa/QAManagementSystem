@@ -13,7 +13,7 @@ public sealed class AiNotConfiguredException(string message) : InvalidOperationE
 
 public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtectionProvider protectionProvider, IConfiguration fallbackConfiguration, IHttpClientFactory clients)
 {
-    private static readonly string[] Providers = ["OpenAI", "Google", "Anthropic", "OpenRouter", "Local"];
+    private static readonly string[] Providers = ["OpenAI", "Google", "Anthropic", "OpenRouter", "Local", "opencode"];
     private const string OpenRouterBaseUrl = "https://openrouter.ai/api/v1";
     private readonly IDataProtector protector = protectionProvider.CreateProtector("ProMaxx2.QA.AiConfiguration.ApiKey.v1");
     private string currentModel = "gpt-5-mini";
@@ -27,6 +27,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         {
             if (!setting.IsEnabled) { IsConfigured = false; throw new AiNotConfiguredException("AI ถูกปิดใช้งานใน Setting Center"); }
             if (setting.Provider == "Local" && string.IsNullOrWhiteSpace(setting.BaseUrl)) { IsConfigured = false; throw new AiNotConfiguredException("กรุณาระบุ Base URL สำหรับ AI Local"); }
+            if (setting.Provider == "opencode" && string.IsNullOrWhiteSpace(setting.BaseUrl)) { IsConfigured = false; throw new AiNotConfiguredException("กรุณาระบุ Base URL สำหรับ opencode"); }
             if (setting.Provider == "OpenRouter" && string.IsNullOrWhiteSpace(setting.BaseUrl)) { IsConfigured = false; throw new AiNotConfiguredException("กรุณาระบุ Base URL สำหรับ OpenRouter"); }
             var key = string.Empty;
             if (!string.IsNullOrWhiteSpace(setting.EncryptedApiKey))
@@ -34,7 +35,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
                 try { key = protector.Unprotect(setting.EncryptedApiKey); }
                 catch { IsConfigured = false; throw new AiNotConfiguredException("ไม่สามารถอ่าน API key ที่เข้ารหัสไว้ได้ กรุณาบันทึก API key ใหม่"); }
             }
-            if (setting.Provider != "Local" && string.IsNullOrWhiteSpace(key)) { IsConfigured = false; throw new AiNotConfiguredException($"กรุณาตั้งค่า API key สำหรับ {setting.Provider}"); }
+            if (setting.Provider != "Local" && setting.Provider != "opencode" && string.IsNullOrWhiteSpace(key)) { IsConfigured = false; throw new AiNotConfiguredException($"กรุณาตั้งค่า API key สำหรับ {setting.Provider}"); }
             currentModel = setting.Model; IsConfigured = true;
             var baseUrl = setting.Provider == "OpenRouter" ? (string.IsNullOrWhiteSpace(setting.BaseUrl) ? OpenRouterBaseUrl : setting.BaseUrl) : setting.BaseUrl;
             return new(setting.Provider, key, setting.Model, baseUrl);
@@ -58,7 +59,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         {
             "Google" => await SendGoogleAsync(runtime, instructions, content, schema, ct),
             "Anthropic" => await SendAnthropicAsync(runtime, instructions, content, schema, ct),
-            "Local" or "OpenRouter" => await SendOpenAiCompatibleAsync(runtime, instructions, content, schema, ct),
+            "Local" or "OpenRouter" or "opencode" => await SendOpenAiCompatibleAsync(runtime, instructions, content, schema, ct),
             _ => await SendOpenAiAsync(runtime, openAiPayload, ct)
         };
     }
@@ -74,7 +75,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
                 try { key = protector.Unprotect(setting.EncryptedApiKey); } catch { throw new AiNotConfiguredException("ไม่สามารถอ่าน API key ที่บันทึกไว้ได้"); }
             else if (provider == "OpenAI") key = fallbackConfiguration["OpenAI:ApiKey"] ?? "";
         }
-        if (provider != "Local" && provider != "OpenRouter" && string.IsNullOrWhiteSpace(key)) throw new AiNotConfiguredException($"กรุณากรอก API key ของ {provider} เพื่อโหลด Model");
+        if (provider != "Local" && provider != "OpenRouter" && provider != "opencode" && string.IsNullOrWhiteSpace(key)) throw new AiNotConfiguredException($"กรุณากรอก API key ของ {provider} เพื่อโหลด Model");
         var url = provider switch { "OpenAI" => "https://api.openai.com/v1/models", "Google" => "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", "Anthropic" => "https://api.anthropic.com/v1/models?limit=1000", "OpenRouter" => $"{RequireLocalUrl(baseUrl ?? OpenRouterBaseUrl)}/models", _ => $"{RequireLocalUrl(baseUrl)}/models" };
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (provider == "Google") request.Headers.Add("x-goog-api-key", key);

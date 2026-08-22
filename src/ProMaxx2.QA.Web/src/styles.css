@@ -1209,7 +1209,14 @@ button.icon-button:hover {
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
+
+.permission-filter { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: 0 10px; color: var(--muted); flex: 1 1 180px; max-width: 320px; }
+.permission-filter input { border: 0; outline: 0; padding: 9px 0; width: 100%; font: inherit; background: transparent; }
+.permission-filter:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(36, 87, 214, 0.12); }
+.perm-group-icon { display: inline-grid; place-items: center; min-width: 26px; height: 22px; padding: 0 6px; border-radius: 6px; background: #eaf0ff; color: var(--primary); font-size: 9px; font-weight: 800; margin-right: 8px; vertical-align: middle; }
+.permission-groups h4 span.count-pill { margin-left: 8px; vertical-align: middle; }
 
 .admin-search {
   display: flex;
@@ -2905,7 +2912,11 @@ textarea::placeholder {
 .master-ai-body { padding: 16px 18px 18px; }
 .master-ai-note { display: flex; gap: 8px; margin-bottom: 14px; border: 1px solid #cfe0ff; border-radius: 10px; background: #f4f8ff; padding: 11px 13px; color: var(--muted); font-size: 12px; }
 .master-ai-note b { flex: 0 0 auto; color: var(--primary); }
-.master-ai-form { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)) auto auto; gap: 12px; align-items: end; }
+.master-ai-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+.master-ai-provider-label { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.master-ai-provider-badge { display: inline-flex; align-items: center; border: 1px solid #b5c7f8; background: #eef3ff; color: var(--primary); border-radius: 999px; padding: 2px 9px; font-size: 10px; font-weight: 800; }
+.master-ai-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.master-ai-hint { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .master-ai-form label:not(.master-ai-toggle) { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .master-ai-form input:not([type="checkbox"]) { width: 100%; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: 9px 11px; color: var(--text); font: inherit; font-weight: 400; transition: border-color .15s ease, box-shadow .15s ease, background .15s ease; }
 .master-ai-form input:not([type="checkbox"]):focus { border-color: var(--primary); outline: 0; box-shadow: 0 0 0 3px rgba(36, 87, 214, .12); }
@@ -2919,8 +2930,8 @@ textarea::placeholder {
 .master-ai-form .master-model-error { margin-top: 2px; color: var(--red); font-size: 10px; line-height: 1.35; }
 .master-ai-toggle { display: flex; min-height: 40px; align-items: center; gap: 8px; color: var(--text); font-size: 12px; font-weight: 600; }
 .master-ai-toggle input { width: 18px; height: 18px; accent-color: var(--primary); }
-@media (max-width: 1100px) { .master-ai-form { grid-template-columns: 1fr 1fr; } .master-ai-form label:nth-child(3) { grid-column: 1 / -1; } }
-@media (max-width: 760px) { .master-ai-configuration { grid-column: 1; } .master-ai-form { grid-template-columns: 1fr; } .master-ai-form label:nth-child(3) { grid-column: 1; } .master-ai-form .btn { width: 100%; } .master-ai-note { flex-direction: column; } }
+@media (max-width: 1100px) { .master-settings-page { grid-template-columns: 1fr; } .master-ai-form { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 760px) { .master-ai-configuration { grid-column: 1; } .master-ai-form { grid-template-columns: 1fr; } .master-ai-actions { grid-column: 1; flex-direction: column; align-items: stretch; } .master-ai-form label:not(.master-ai-toggle) { grid-column: 1; } .master-ai-form .btn { width: 100%; } .master-ai-note { flex-direction: column; } }
 .master-setting-form { display: grid; grid-template-columns: 1.2fr 1fr 1fr 110px auto; gap: 10px; align-items: end; }
 .master-setting-form label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
 .master-setting-form input, .master-setting-form select { width: 100%; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: 9px 11px; font: inherit; }
