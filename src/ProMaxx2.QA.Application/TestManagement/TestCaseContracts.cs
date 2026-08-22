@@ -20,10 +20,12 @@ public sealed record TestCaseRequirementDto(Guid RequirementId,string Requiremen
 public sealed record TestCaseListDto(Guid TestCaseId,Guid ProjectId,Guid ModuleId,string TestCaseCode,string Title,string Priority,string?TestType,bool AutomationCandidate,string Status,int RevisionNo,Guid?OwnerUserId,int StepCount,string? AutomationTarget=null);
 public sealed record RtmSummaryDto(int Covered,int Partial,int NotCovered,IReadOnlyList<string>Statuses);
 public sealed record RtmListResultDto(PagedResult<RtmRow> Items,RtmSummaryDto Summary);
+public sealed record AutomationCandidateSummaryDto(int Total,int Ready,int Pos,int App,int Review);
 
 public interface ITestCaseRepository
 {
-    Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId,Guid? moduleId,string? priority,string? testType,string? status,bool? automation,string? search,int page,int size,CancellationToken ct);
+    Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId,Guid? moduleId,string? priority,string? testType,string? status,bool? automation,string? search,string? automationTarget,string? sortBy,int page,int size,CancellationToken ct);
+    Task<AutomationCandidateSummaryDto> AutomationSummaryAsync(Guid projectId, CancellationToken ct);
     Task<TestCaseDto?> GetAsync(Guid id, CancellationToken ct);
     Task<TestCase?> FindAsync(Guid id, CancellationToken ct);
     Task<bool> CodeExistsAsync(Guid projectId, string code, CancellationToken ct);
@@ -48,7 +50,8 @@ public sealed class TestCaseService(ITestCaseRepository repository)
         this.projectRepository = projectRepository;
     }
 
-    public Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId,Guid? moduleId,string? priority,string? testType,string? status,bool? automation,string? search,int page,int size,CancellationToken ct) => repository.ListAsync(projectId,moduleId,priority,testType,status,automation,search,page,size,ct);
+    public Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId,Guid? moduleId,string? priority,string? testType,string? status,bool? automation,string? search,string? automationTarget,string? sortBy,int page,int size,CancellationToken ct) => repository.ListAsync(projectId,moduleId,priority,testType,status,automation,search,automationTarget,sortBy,page,size,ct);
+    public Task<AutomationCandidateSummaryDto> AutomationSummaryAsync(Guid projectId,CancellationToken ct)=>repository.AutomationSummaryAsync(projectId,ct);
     public Task<IReadOnlyList<TestCaseRevisionDto>> RevisionsAsync(Guid id,CancellationToken ct)=>repository.RevisionsAsync(id,ct);
     public Task<IReadOnlyList<TestCaseRequirementDto>> RequirementsAsync(Guid id,CancellationToken ct)=>repository.RequirementsAsync(id,ct);
 

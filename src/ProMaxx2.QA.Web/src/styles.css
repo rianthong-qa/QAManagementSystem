@@ -220,6 +220,12 @@ body {
   color: #b0bac7;
 }
 
+.login-password-wrap{position:relative;width:100%}
+.login-password-wrap input{width:100%}
+.login-password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:1;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:#e7edf6;color:var(--primary);font:600 12px/1 inherit;padding:8px 11px;border-radius:9px;cursor:pointer;white-space:nowrap;transition:all .15s ease}
+.login-password-toggle:hover{background:#dbe7ff;border-color:#9db5f5}
+.login-password-toggle:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+
 .remember {
   font-size: 12px;
   color: var(--muted);
