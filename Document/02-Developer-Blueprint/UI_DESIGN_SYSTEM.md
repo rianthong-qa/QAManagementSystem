@@ -254,6 +254,12 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-08-23
+
+- หน้า Automation ปรับ UX ให้ใช้งานง่ายขึ้น (workflow-first): เพิ่ม **Step Guide Strip** (`.automation-steps`, pattern เดียวกับ `.regression-steps`) แสดง 3 ขั้นตอน — ① กำหนดเป้าหมาย Test Case ② สั่งรันหรือตั้งตาราง ③ ติดตามผลการรัน — โดยขั้นที่เสร็จแล้วแสดง `✓` (`.done`), ขั้นที่กำลังทำอยู่ highlight (`.active`) พร้อม `aria-current="step"`; คลิกขั้น 1–2 `scrollIntoView` ไปยัง section Candidates/Queue, ขั้น 3 เปิด Run History view; ค่า done/active คำนวณจากสถานะจริง (`review===0`, มีคิว/Schedule, มีประวัติรัน); ใช้ `.automation-step-no` (วงกลมเลข/✓) + `.automation-step-text` (หัวข้อ + คำอธิบาย) และ stack เป็นคอลัมน์เดียวบน ≤760px; แทนที่ `.automation-section-nav` แบบ anchor ราบ และตัด `.automation-guide` ที่ซ้ำซ้อนทิ้ง (flow แสดงผ่าน step strip แล้ว)
+- ย่อ section ที่เป็น "monitoring" ให้ยุบได้: Ready Runner (`automation-agents`), Automation Scheduling (`automation-schedules`) และ AutomationId Quality Gate (`automation-gate`) เปลี่ยนจาก `<section>` แบบขยายเสมอ เป็น `<details className="automation-monitor">` เริ่มต้นปิด (แสดงเฉพาะหัวการ์ด/สถานะสรุป) เพื่อลดความยาวหน้าและไม่ให้แย่งความสนใจจากงานหลัก (Automation Candidates + Trigger & Queue ที่ยังขยายเต็ม); header เดิมย้ายมาเป็น `<summary>` (ซ่อน marker เนทีฟ + chevron ▸ หมุน 90° เมื่อ open), คง `#automation-*-title` id ไว้; `aria-labelledby` ของ section เปลี่ยนเป็น `aria-label` บน `<details>`; เปิดปิดด้วย native `<details>` ไม่ต้องใช้ JS
+- คง KPI summary และ hero ไว้; ตรวจ Desktop + Mobile (≤760px step 1 คอลัมน์, monitor stack) ไม่เกิด horizontal scroll ระดับหน้า
+
 ### 2026-08-22
 
 - หน้า Automation ปรับโครงสร้างเป็น Workflow-first: เรียง section ตามลำดับการทำงานจริง คือ Automation Candidates (กำหนดเป้าหมาย) → Windows Runner Agents → Automation Trigger & Queue → Automation Scheduling → AutomationId Quality Gate → Run History โดยย้าย Candidates ขึ้นก่อน Runner/Queue และลบ anchor แยกให้ใช้ `id="automation-candidates"` บน section เดียวกับ nav; ปรับ `.automation-section-nav` ให้เรียงลิงก์ตามลำดับเดียวกัน
