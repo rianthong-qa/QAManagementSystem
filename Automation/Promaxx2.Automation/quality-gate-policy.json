@@ -1,8 +1,0 @@
-{
-  "maxNewMissingAutomationIds": 0,
-  "maxNewDuplicateAutomationIds": 0,
-  "maxRemovedAutomationIds": 0,
-  "maxChangedAutomationIds": 0,
-  "allowedRemoved": [],
-  "allowedChanged": []
-}

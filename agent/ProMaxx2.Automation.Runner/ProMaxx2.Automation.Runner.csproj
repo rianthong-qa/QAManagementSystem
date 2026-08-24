@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>ProMaxx2.Automation.Runner</AssemblyName>
+    <RootNamespace>ProMaxx2.Automation.Runner</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ProMaxx2.Automation.Core\ProMaxx2.Automation.Core.csproj" />
+    <ProjectReference Include="..\ProMaxx2.Automation.Hub\ProMaxx2.Automation.Hub.csproj" />
+  </ItemGroup>
+</Project>

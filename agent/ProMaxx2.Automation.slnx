@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="ProMaxx2.Automation.Core/ProMaxx2.Automation.Core.csproj" />
+  <Project Path="ProMaxx2.Automation.Hub/ProMaxx2.Automation.Hub.csproj" />
+  <Project Path="ProMaxx2.Automation.Runner/ProMaxx2.Automation.Runner.csproj" />
+  <Project Path="ProMaxx2.Automation.AgentGui/ProMaxx2.Automation.AgentGui.csproj" />
+</Solution>

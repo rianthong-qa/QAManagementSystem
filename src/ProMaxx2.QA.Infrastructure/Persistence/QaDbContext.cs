@@ -9,6 +9,7 @@ using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Domain.Settings;
 using ProMaxx2.QA.Domain.Dashboard;
 using ProMaxx2.QA.Domain.Governance;
+using ProMaxx2.QA.Domain.Automation;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -47,14 +48,18 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AiConfiguration> AiConfigurations => Set<AiConfiguration>();
     public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
     public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
-    public DbSet<AutomationRun> AutomationRuns => Set<AutomationRun>();
-    public DbSet<AutomationRunCase> AutomationRunCases => Set<AutomationRunCase>();
-    public DbSet<AutomationQualityGateRun> AutomationQualityGateRuns => Set<AutomationQualityGateRun>();
-    public DbSet<AutomationQueueJob> AutomationQueueJobs => Set<AutomationQueueJob>();
-    public DbSet<AutomationRunnerAgent> AutomationRunnerAgents => Set<AutomationRunnerAgent>();
-    public DbSet<AutomationSchedule> AutomationSchedules => Set<AutomationSchedule>();
     public DbSet<RiskAcceptance> RiskAcceptances => Set<RiskAcceptance>();
     public DbSet<ReleaseSignoff> ReleaseSignoffs => Set<ReleaseSignoff>();
+    public DbSet<AutomationCase> AutomationCases => Set<AutomationCase>();
+    public DbSet<AutomationVersion> AutomationVersions => Set<AutomationVersion>();
+    public DbSet<AutomationAction> AutomationActions => Set<AutomationAction>();
+    public DbSet<AutomationObject> AutomationObjects => Set<AutomationObject>();
+    public DbSet<AutomationAgent> AutomationAgents => Set<AutomationAgent>();
+    public DbSet<AutomationAgentCapability> AutomationAgentCapabilities => Set<AutomationAgentCapability>();
+    public DbSet<AutomationExecution> AutomationExecutions => Set<AutomationExecution>();
+    public DbSet<AutomationStepResult> AutomationStepResults => Set<AutomationStepResult>();
+    public DbSet<AutomationJob> AutomationJobs => Set<AutomationJob>();
+    public DbSet<AutomationEvidence> AutomationEvidences => Set<AutomationEvidence>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

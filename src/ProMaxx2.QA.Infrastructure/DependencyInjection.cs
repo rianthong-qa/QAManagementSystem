@@ -11,6 +11,7 @@ using ProMaxx2.QA.Application.Requirements;
 using ProMaxx2.QA.Application.TestManagement;
 using ProMaxx2.QA.Application.Execution;
 using ProMaxx2.QA.Application.Dashboard;
+using ProMaxx2.QA.Application.Automation;
 
 namespace ProMaxx2.QA.Infrastructure;
 
@@ -28,11 +29,11 @@ public static class DependencyInjection
         services.AddScoped<ITestSuiteRepository,TestSuiteRepository>();
         services.AddScoped<ITestCycleRepository,TestCycleRepository>();
         services.AddScoped<IExecutionRepository,ExecutionRepository>();
-        services.AddScoped<IAutomationRunRepository,AutomationRunRepository>();
         services.AddScoped<IAdministrationRepository,AdministrationRepository>();
         services.AddScoped<IDashboardRepository,DashboardRepository>();
         services.AddScoped<IRiskAcceptanceRepository,RiskAcceptanceRepository>();
         services.AddScoped<IReleaseSignoffRepository,ReleaseSignoffRepository>();
+        services.AddScoped<IAutomationRepository,AutomationRepository>();
         services.AddScoped<Identity.ProjectAccessService>();
         return services;
     }

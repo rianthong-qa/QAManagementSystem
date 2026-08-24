@@ -3,7 +3,7 @@ using ProMaxx2.QA.Domain.Governance;
 namespace ProMaxx2.QA.Application.Governance;
 
 public sealed record ReleaseSignoffDto(Guid ReleaseSignoffId, Guid ReleaseId, Guid BuildId, string BuildNumber, string SignoffType, string Decision, string? Comment, string? SignoffBy, DateTime CreatedAt);
-public sealed record ReleaseGateDto(bool SmokePassed, int OpenP0, int P1Blockers, decimal RequirementCoverage, decimal RegressionPassRate, bool UpdateTestPassed, int ApprovedRisks, string RecommendedDecision);
+public sealed record ReleaseGateDto(int OpenP0, int P1Blockers, decimal RequirementCoverage, decimal RegressionPassRate, bool UpdateTestPassed, int ApprovedRisks, string RecommendedDecision);
 public sealed record CreateReleaseSignoffRequest(Guid BuildId, string SignoffType, string Decision, string? Comment);
 
 public interface IReleaseSignoffRepository

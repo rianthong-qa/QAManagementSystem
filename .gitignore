@@ -22,3 +22,8 @@ cloudflared-create.txt
 
 # Promaxx2 POS build (AUT binaries) - not part of this repo
 /ProMaxx2/
+
+# Agent build outputs + local secrets
+agent/publish/
+agent/**/agent-config.json
+publish/

@@ -15,6 +15,7 @@ using ProMaxx2.QA.Application.Execution;
 using ProMaxx2.QA.Api.Services;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Governance;
+using ProMaxx2.QA.Application.Automation;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers(options => options.Filters.Add<ProjectAccessFilter>());
@@ -60,7 +61,10 @@ builder.Services.AddScoped<TestCaseService>();
 builder.Services.AddScoped<TestSuiteService>();
 builder.Services.AddScoped<TestCycleService>();
 builder.Services.AddScoped<ExecutionService>();
-builder.Services.AddScoped<AutomationRunService>();
+builder.Services.AddScoped<AutomationCaseService>();
+builder.Services.AddScoped<AutomationAgentService>();
+builder.Services.AddScoped<AutomationAiService>();
+builder.Services.AddScoped<AutomationDefectService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<AdministrationService>();
 builder.Services.AddScoped<RequirementAiService>();
@@ -71,7 +75,6 @@ builder.Services.AddScoped<DefectAutoCreateService>();
 builder.Services.AddScoped<DefectActivityService>();
 builder.Services.AddScoped<SharedAiConfigurationService>();
 builder.Services.AddScoped<ProjectAccessContext>();
-builder.Services.AddHostedService<AutomationScheduleWorker>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "";
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Set it via an environment variable or secret store — do not commit a signing key.");
@@ -94,7 +97,15 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"))
     .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"))
     .AddPolicy("RiskApprove",p=>p.RequireClaim("permission","RISK.APPROVE"))
-    .AddPolicy("ReleaseSignoff",p=>p.RequireClaim("permission","RELEASE.SIGNOFF"));
+    .AddPolicy("ReleaseSignoff",p=>p.RequireClaim("permission","RELEASE.SIGNOFF"))
+    .AddPolicy("AutomationView",p=>p.RequireClaim("permission","AUTOMATION.VIEW"))
+    .AddPolicy("AutomationEdit",p=>p.RequireClaim("permission","AUTOMATION.EDIT"))
+    .AddPolicy("AutomationValidate",p=>p.RequireClaim("permission","AUTOMATION.VALIDATE"))
+    .AddPolicy("AutomationApprove",p=>p.RequireClaim("permission","AUTOMATION.APPROVE"))
+    .AddPolicy("AutomationExecute",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","AUTOMATION.EXECUTE")||c.User.HasClaim("permission","EXECUTION.RUN")))
+    .AddPolicy("AutomationManage",p=>p.RequireClaim("permission","AUTOMATION.MANAGE"))
+    .AddPolicy("AutomationGenerateAi",p=>p.RequireClaim("permission","AUTOMATION.GENERATEAI"))
+    .AddPolicy("AutomationEvidence",p=>p.RequireClaim("permission","AUTOMATION.VIEWEVIDENCE"));
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
 if (allowedOrigins == null || allowedOrigins.Length == 0)
 {

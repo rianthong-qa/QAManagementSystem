@@ -1,0 +1,368 @@
+using Microsoft.EntityFrameworkCore;
+using ProMaxx2.QA.Application.Automation;
+using ProMaxx2.QA.Domain.Automation;
+
+namespace ProMaxx2.QA.Infrastructure.Persistence;
+
+public sealed class AutomationRepository(QaDbContext db) : IAutomationRepository
+{
+    public async Task<IReadOnlyList<AutomationCaseDto>> ListCasesAsync(Guid projectId, string? search, int take, CancellationToken ct)
+    {
+        var q = db.AutomationCases.AsNoTracking().Where(x => !x.IsDeleted && x.TestCase.ProjectId == projectId);
+        if (!string.IsNullOrWhiteSpace(search)) q = q.Where(x => x.AutomationCode.Contains(search) || x.TestCase.TestCaseCode.Contains(search) || x.TestCase.Title.Contains(search));
+        var rows = await q.OrderByDescending(x => x.CreatedAt).Take(take)
+            .Select(x => new { x.AutomationCaseId, x.TestCaseId, TestCaseCode = x.TestCase.TestCaseCode, TestCaseTitle = x.TestCase.Title, x.AutomationCode, x.AutomationType, x.Status, x.CurrentVersionNo, VersionCount = x.Versions.Count, x.OwnerUserId, OwnerName = x.OwnerUserId != null ? db.Users.Where(u => u.UserId == x.OwnerUserId).Select(u => u.DisplayName).FirstOrDefault() : null, x.IsAiGenerated, x.CreatedAt })
+            .ToListAsync(ct);
+        return rows.Select(r => new AutomationCaseDto(r.AutomationCaseId, r.TestCaseId, r.TestCaseCode, r.TestCaseTitle, r.AutomationCode, r.AutomationType, r.Status, r.CurrentVersionNo, r.VersionCount, r.OwnerUserId, r.OwnerName, r.IsAiGenerated, r.CreatedAt)).ToList();
+    }
+
+    public async Task<AutomationCaseDto?> GetCaseAsync(Guid id, Guid projectId, CancellationToken ct)
+    {
+        var r = await db.AutomationCases.AsNoTracking().Where(x => x.AutomationCaseId == id && !x.IsDeleted && x.TestCase.ProjectId == projectId)
+            .Select(x => new { x.AutomationCaseId, x.TestCaseId, TestCaseCode = x.TestCase.TestCaseCode, TestCaseTitle = x.TestCase.Title, x.AutomationCode, x.AutomationType, x.Status, x.CurrentVersionNo, VersionCount = x.Versions.Count, x.OwnerUserId, x.IsAiGenerated, x.CreatedAt })
+            .SingleOrDefaultAsync(ct);
+        if (r is null) return null;
+        return new AutomationCaseDto(r.AutomationCaseId, r.TestCaseId, r.TestCaseCode, r.TestCaseTitle, r.AutomationCode, r.AutomationType, r.Status, r.CurrentVersionNo, r.VersionCount, r.OwnerUserId, null, r.IsAiGenerated, r.CreatedAt);
+    }
+
+    public Task<AutomationCase?> FindCaseAsync(Guid id, Guid projectId, CancellationToken ct)
+        => db.AutomationCases.Include(x => x.Versions).SingleOrDefaultAsync(x => x.AutomationCaseId == id && !x.IsDeleted && x.TestCase.ProjectId == projectId, ct);
+
+    public Task<AutomationCase?> FindCaseByIdAsync(Guid id, CancellationToken ct)
+        => db.AutomationCases.SingleOrDefaultAsync(x => x.AutomationCaseId == id && !x.IsDeleted, ct);
+
+    public Task<bool> CodeExistsAsync(Guid projectId, string code, CancellationToken ct)
+        => db.AutomationCases.AnyAsync(x => !x.IsDeleted && x.AutomationCode == code && x.TestCase.ProjectId == projectId, ct);
+
+    public Task AddCaseAsync(AutomationCase entity, CancellationToken ct) => db.AutomationCases.AddAsync(entity, ct).AsTask();
+
+    public async Task<IReadOnlyList<AutomationVersionDto>> ListVersionsAsync(Guid caseId, CancellationToken ct)
+        => await db.AutomationVersions.AsNoTracking().Where(x => x.AutomationCaseId == caseId).OrderByDescending(x => x.VersionNo)
+            .Select(x => new AutomationVersionDto(x.AutomationVersionId, x.AutomationCaseId, x.VersionNo, x.TestCaseRevisionNo, x.DslVersion, x.DslJson, x.GeneratedByAi, x.AiProvider, x.AiModel, x.AiConfidence, x.ValidationStatus, x.ValidationErrors, x.ApprovedBy, x.ApprovedAt, x.ChangeReason, x.CreatedAt)).ToListAsync(ct);
+
+    public Task<AutomationVersion?> FindVersionAsync(Guid versionId, CancellationToken ct)
+        => db.AutomationVersions.SingleOrDefaultAsync(x => x.AutomationVersionId == versionId, ct);
+
+    public Task AddVersionAsync(AutomationVersion entity, CancellationToken ct) => db.AutomationVersions.AddAsync(entity, ct).AsTask();
+
+    public async Task<IReadOnlyList<AutomationActionDto>> ListActionsAsync(CancellationToken ct)
+        => await db.AutomationActions.AsNoTracking().OrderBy(x => x.Category).ThenBy(x => x.ActionCode)
+            .Select(x => new AutomationActionDto(x.AutomationActionId, x.ActionCode, x.ActionName, x.Category, x.Description, x.ParameterSchemaJson, x.HandlerKey, x.MinimumAgentVersion, x.IsActive)).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<string>> ListActionCodesAsync(CancellationToken ct)
+        => await db.AutomationActions.AsNoTracking().Where(x => x.IsActive).Select(x => x.ActionCode).ToListAsync(ct);
+
+    public Task<AutomationAction?> FindActionAsync(Guid id, CancellationToken ct)
+        => db.AutomationActions.SingleOrDefaultAsync(x => x.AutomationActionId == id, ct);
+
+    public Task<AutomationAction?> FindActionByCodeAsync(string code, CancellationToken ct)
+        => db.AutomationActions.SingleOrDefaultAsync(x => x.ActionCode == code.Trim().ToUpperInvariant(), ct);
+
+    public Task AddActionAsync(AutomationAction entity, CancellationToken ct) => db.AutomationActions.AddAsync(entity, ct).AsTask();
+
+    public async Task<IReadOnlyList<AutomationObjectDto>> ListObjectsAsync(Guid projectId, string? search, CancellationToken ct)
+    {
+        var q = db.AutomationObjects.AsNoTracking().Where(x => x.ProjectId == projectId);
+        if (!string.IsNullOrWhiteSpace(search)) q = q.Where(x => x.ObjectCode.Contains(search) || x.ObjectName.Contains(search) || x.ScreenCode.Contains(search));
+        return await q.OrderBy(x => x.ApplicationCode).ThenBy(x => x.ScreenCode).ThenBy(x => x.ObjectCode)
+            .Select(x => new AutomationObjectDto(x.AutomationObjectId, x.ProjectId, x.ModuleId, x.Module != null ? x.Module.ModuleCode : null, x.Module != null ? x.Module.ModuleName : null, x.ApplicationCode, x.ScreenCode, x.ObjectCode, x.ObjectName, x.ControlType, x.AutomationId, x.SelectorJson, x.ObjectVersion, x.IsActive)).ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<string>> ListObjectKeysAsync(Guid projectId, CancellationToken ct)
+        => await db.AutomationObjects.AsNoTracking().Where(x => x.ProjectId == projectId && x.IsActive).Select(x => x.ScreenCode + "." + x.ObjectCode).Distinct().ToListAsync(ct);
+
+    public Task<AutomationObject?> FindObjectAsync(Guid id, Guid projectId, CancellationToken ct)
+        => db.AutomationObjects.SingleOrDefaultAsync(x => x.AutomationObjectId == id && x.ProjectId == projectId, ct);
+
+    public Task AddObjectAsync(AutomationObject entity, CancellationToken ct) => db.AutomationObjects.AddAsync(entity, ct).AsTask();
+
+    public Task<AutomationAgent?> FindAgentByCodeAsync(string agentCode, CancellationToken ct)
+        => db.AutomationAgents.Include(x => x.Capabilities).SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
+
+    public async Task<IReadOnlyList<AutomationAgentDto>> ListAgentsAsync(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var agents = await db.AutomationAgents.AsNoTracking().Where(x => !x.IsDeleted).ToListAsync(ct);
+        return agents.Select(x => new AutomationAgentDto(x.AgentId, x.AgentCode, x.MachineName, x.AgentVersion, x.OperatingSystem, x.Architecture, x.Status, x.LastHeartbeatAt, x.CurrentExecutionId, x.RegisteredAt, x.IsEnabled, !x.IsEnabled ? "Disabled" : now - x.LastHeartbeatAt <= TimeSpan.FromSeconds(60) ? "Online" : "Offline", x.Capabilities.Select(c => c.CapabilityCode).ToList())).ToList();
+    }
+
+    public Task AddAgentAsync(AutomationAgent entity, CancellationToken ct) => db.AutomationAgents.AddAsync(entity, ct).AsTask();
+
+    public async Task<AutomationExecutionDto?> GetExecutionAsync(Guid id, Guid projectId, CancellationToken ct)
+    {
+        var r = await db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationExecutionId == id && x.AutomationCase.TestCase.ProjectId == projectId)
+            .Select(x => new { x.AutomationExecutionId, x.AutomationCaseId, AutomationCode = x.AutomationCase.AutomationCode, x.AutomationVersionId, VersionNo = x.AutomationVersion.VersionNo, x.TestExecutionId, x.DefectId, x.TargetApp, x.AgentId, AgentCode = x.Agent != null ? x.Agent.AgentCode : null, x.BuildId, BuildNumber = x.Build.BuildNumber, x.EnvironmentId, EnvironmentName = x.Environment.EnvironmentName, x.JobId, x.Status, x.StartedAt, x.CompletedAt, x.DurationMs, x.FailureType, x.ErrorCode, x.ErrorMessage })
+            .SingleOrDefaultAsync(ct);
+        if (r is null) return null;
+        var steps = await db.AutomationStepResults.AsNoTracking().Where(s => s.AutomationExecutionId == id).OrderBy(s => s.StepNo)
+            .Select(s => new AutomationStepResultDto(s.AutomationStepResultId, s.StepNo, s.ActionCode, s.Status, s.StartedAt, s.CompletedAt, s.DurationMs, s.ActualResult, s.ErrorCode, s.ErrorMessage)).ToListAsync(ct);
+        var evidence = await ListEvidenceAsync(id, ct);
+        return new AutomationExecutionDto(r.AutomationExecutionId, r.AutomationCaseId, r.AutomationCode, r.AutomationVersionId, r.VersionNo, r.TestExecutionId, r.DefectId, r.TargetApp, r.AgentId, r.AgentCode, r.BuildId, r.BuildNumber, r.EnvironmentId, r.EnvironmentName, r.JobId, r.Status, r.StartedAt, r.CompletedAt, r.DurationMs, r.FailureType, r.ErrorCode, r.ErrorMessage, steps, evidence);
+    }
+
+    public Task<AutomationExecution?> FindExecutionAsync(Guid id, CancellationToken ct)
+        => db.AutomationExecutions.Include(x => x.StepResults).Include(x => x.AutomationCase).ThenInclude(x => x.TestCase).SingleOrDefaultAsync(x => x.AutomationExecutionId == id, ct);
+
+    public Task AddExecutionAsync(AutomationExecution entity, CancellationToken ct) => db.AutomationExecutions.AddAsync(entity, ct).AsTask();
+
+    public Task<AutomationJob?> FindJobByExecutionAsync(Guid executionId, CancellationToken ct)
+        => db.AutomationJobs.SingleOrDefaultAsync(x => x.AutomationExecutionId == executionId, ct);
+
+    public Task AddJobAsync(AutomationJob entity, CancellationToken ct) => db.AutomationJobs.AddAsync(entity, ct).AsTask();
+
+    public Task<AutomationJob?> FindJobAsync(Guid jobId, CancellationToken ct)
+        => db.AutomationJobs.SingleOrDefaultAsync(x => x.JobId == jobId, ct);
+
+    public async Task<AutomationJobPackageDto?> ClaimNextJobAsync(string agentCode, string agentVersion, IReadOnlyList<string> capabilities, string targetApp, CancellationToken ct)
+    {
+        var agent = await db.AutomationAgents.Include(x => x.Capabilities).SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
+        if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;
+        await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct) : null;
+        var q = db.AutomationJobs.Where(x => x.Status == "Queued");
+        var target = targetApp?.Trim() ?? "WindowsUI";
+        if (target != "WindowsUI")
+        {
+            q = q.Where(j => j.AutomationExecution.AutomationCase.AutomationType == target || j.AutomationExecution.AutomationCase.AutomationType == "WindowsUI");
+        }
+        var job = await q.OrderBy(x => x.Priority).ThenBy(x => x.QueuedAt).FirstOrDefaultAsync(ct);
+        if (job is null) { if (transaction is not null) await transaction.CommitAsync(ct); return null; }
+        job.Assign(agent.AgentId);
+        var execution = await db.AutomationExecutions.Include(x => x.AutomationCase).ThenInclude(x => x.TestCase).Include(x => x.AutomationVersion).SingleOrDefaultAsync(x => x.AutomationExecutionId == job.AutomationExecutionId, ct) ?? throw new InvalidOperationException("Execution for job not found.");
+        execution.Start(agent.AgentId, DateTime.UtcNow);
+        agent.SetCurrentExecution(execution.AutomationExecutionId);
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+
+        var build = await db.Builds.AsNoTracking().Where(b => b.BuildId == execution.BuildId).Select(b => new { b.BuildNumber }).SingleAsync(ct);
+        var env = await db.TestEnvironments.AsNoTracking().Where(e => e.TestEnvironmentId == execution.EnvironmentId).Select(e => e.EnvironmentName).SingleAsync(ct);
+        var actions = await ListActionCodesAsync(ct);
+        var objects = await ListObjectsAsync(execution.AutomationCase.TestCase.ProjectId, null, ct);
+        return new AutomationJobPackageDto(job.JobId, execution.AutomationExecutionId, execution.AutomationCaseId, execution.AutomationCase.AutomationCode, execution.AutomationVersionId, execution.AutomationVersion.VersionNo, execution.AutomationVersion.DslVersion, execution.AutomationVersion.DslJson, execution.BuildId, build.BuildNumber, execution.EnvironmentId, env, actions, objects);
+    }
+
+    public async Task<IReadOnlyList<AutomationJobDto>> ListJobsAsync(Guid? projectId, Guid? buildId, int take, CancellationToken ct)
+    {
+        var q = db.AutomationJobs.AsNoTracking();
+        if (projectId.HasValue) q = q.Where(j => j.AutomationExecution.AutomationCase.TestCase.ProjectId == projectId);
+        if (buildId.HasValue) q = q.Where(j => j.AutomationExecution.BuildId == buildId);
+        return await q.OrderByDescending(j => j.QueuedAt).Take(take)
+            .Select(j => new AutomationJobDto(j.JobId, j.AutomationExecutionId, j.Priority, j.RequestedAgentId, j.AssignedAgentId, j.AssignedAgent != null ? j.AssignedAgent.AgentCode : null, j.Status, j.QueuedAt, j.AssignedAt, j.StartedAt, j.CompletedAt, j.RetryCount, j.LastError)).ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<AutomationExecutionDto>> ListExecutionsAsync(Guid projectId, Guid? buildId, int take, CancellationToken ct)
+    {
+        var rows = await db.AutomationExecutions.AsNoTracking()
+            .Where(x => x.AutomationCase.TestCase.ProjectId == projectId && (!buildId.HasValue || x.BuildId == buildId))
+            .OrderByDescending(x => x.CreatedAt).Take(take)
+            .Select(x => new { x.AutomationExecutionId, x.AutomationCaseId, AutomationCode = x.AutomationCase.AutomationCode, x.AutomationVersionId, VersionNo = x.AutomationVersion.VersionNo, x.TestExecutionId, x.DefectId, x.TargetApp, x.AgentId, AgentCode = x.Agent != null ? x.Agent.AgentCode : null, x.BuildId, BuildNumber = x.Build.BuildNumber, x.EnvironmentId, EnvironmentName = x.Environment.EnvironmentName, x.JobId, x.Status, x.StartedAt, x.CompletedAt, x.DurationMs, x.FailureType, x.ErrorCode, x.ErrorMessage })
+            .ToListAsync(ct);
+        var ids = rows.Select(r => r.AutomationExecutionId).ToList();
+        var steps = await db.AutomationStepResults.AsNoTracking().Where(s => ids.Contains(s.AutomationExecutionId)).OrderBy(s => s.StepNo)
+            .Select(s => new AutomationStepResultDto(s.AutomationStepResultId, s.StepNo, s.ActionCode, s.Status, s.StartedAt, s.CompletedAt, s.DurationMs, s.ActualResult, s.ErrorCode, s.ErrorMessage)).ToListAsync(ct);
+        return rows.Select(r => new AutomationExecutionDto(r.AutomationExecutionId, r.AutomationCaseId, r.AutomationCode, r.AutomationVersionId, r.VersionNo, r.TestExecutionId, r.DefectId, r.TargetApp, r.AgentId, r.AgentCode, r.BuildId, r.BuildNumber, r.EnvironmentId, r.EnvironmentName, r.JobId, r.Status, r.StartedAt, r.CompletedAt, r.DurationMs, r.FailureType, r.ErrorCode, r.ErrorMessage, [])).ToList();
+    }
+
+    public Task AddStepResultAsync(AutomationStepResult entity, CancellationToken ct) => db.AutomationStepResults.AddAsync(entity, ct).AsTask();
+
+    public async Task<AutomationDashboardDto> GetDashboardAsync(Guid projectId, CancellationToken ct)
+    {
+        var today = DateTime.UtcNow.Date;
+        var totalTestCases = await db.TestCases.AsNoTracking().CountAsync(x => x.ProjectId == projectId && !x.IsDeleted, ct);
+        var candidates = await db.TestCases.AsNoTracking().CountAsync(x => x.ProjectId == projectId && !x.IsDeleted && x.AutomationCandidate, ct);
+        var autoCases = await db.AutomationCases.AsNoTracking().CountAsync(x => !x.IsDeleted && x.TestCase.ProjectId == projectId, ct);
+        var ready = await db.AutomationCases.AsNoTracking().CountAsync(x => !x.IsDeleted && x.TestCase.ProjectId == projectId && x.Status == "Ready", ct);
+        var maintenance = await db.AutomationCases.AsNoTracking().CountAsync(x => !x.IsDeleted && x.TestCase.ProjectId == projectId && x.Status == "MaintenanceRequired", ct);
+        var running = await db.AutomationExecutions.AsNoTracking().CountAsync(x => x.AutomationCase.TestCase.ProjectId == projectId && x.Status == "Running", ct);
+        var passToday = await db.AutomationExecutions.AsNoTracking().CountAsync(x => x.AutomationCase.TestCase.ProjectId == projectId && x.Status == "Passed" && x.CompletedAt != null && x.CompletedAt.Value.Date == today, ct);
+        var failToday = await db.AutomationExecutions.AsNoTracking().CountAsync(x => x.AutomationCase.TestCase.ProjectId == projectId && x.Status == "Failed" && x.CompletedAt != null && x.CompletedAt.Value.Date == today, ct);
+        var avgDuration = await db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationCase.TestCase.ProjectId == projectId && x.DurationMs.HasValue && (x.Status == "Passed" || x.Status == "Failed")).Select(x => (double?)x.DurationMs).AverageAsync(ct);
+        var now = DateTime.UtcNow;
+        var agents = await db.AutomationAgents.AsNoTracking().Where(x => !x.IsDeleted).ToListAsync(ct);
+        var agentsOnline = agents.Count(x => x.IsEnabled && now - x.LastHeartbeatAt <= TimeSpan.FromSeconds(60));
+        var readyCoverage = totalTestCases == 0 ? 0 : Math.Round(ready * 100m / totalTestCases, 1);
+        var candidateCoverage = totalTestCases == 0 ? 0 : Math.Round(candidates * 100m / totalTestCases, 1);
+        return new AutomationDashboardDto(totalTestCases, candidates, autoCases, ready, maintenance, running, passToday, failToday, avgDuration is null ? (long?)null : (long)Math.Round(avgDuration.Value), agentsOnline, agents.Count, readyCoverage, candidateCoverage);
+    }
+
+    public Task<AutomationStepResult?> FindStepResultAsync(Guid stepResultId, Guid executionId, CancellationToken ct)
+        => db.AutomationStepResults.SingleOrDefaultAsync(x => x.AutomationStepResultId == stepResultId && x.AutomationExecutionId == executionId, ct);
+
+    public async Task AttachStepEvidenceAsync(Guid executionId, int stepNo, string path, CancellationToken ct)
+    {
+        var result = await db.AutomationStepResults.SingleOrDefaultAsync(x => x.AutomationExecutionId == executionId && x.StepNo == stepNo, ct);
+        if (result is null) throw new InvalidOperationException("Step result not found.");
+        result.AttachEvidence(path);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public Task AddEvidenceAsync(AutomationEvidence entity, CancellationToken ct) => db.AutomationEvidences.AddAsync(entity, ct).AsTask();
+
+    public async Task<IReadOnlyList<AutomationEvidenceDto>> ListEvidenceAsync(Guid executionId, CancellationToken ct)
+        => await db.AutomationEvidences.AsNoTracking().Where(x => x.AutomationExecutionId == executionId).OrderBy(x => x.CapturedAt)
+            .Select(x => new AutomationEvidenceDto(x.AutomationEvidenceId, x.StepNo, x.EvidenceType, x.FilePath, x.CapturedBy, x.CapturedAt)).ToListAsync(ct);
+
+    public Task<AutomationEvidence?> FindEvidenceAsync(Guid evidenceId, Guid executionId, CancellationToken ct)
+        => db.AutomationEvidences.SingleOrDefaultAsync(x => x.AutomationEvidenceId == evidenceId && x.AutomationExecutionId == executionId, ct);
+
+    public Task SaveChangesAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
+}
+
+public sealed class AutomationCaseConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationCase>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationCase> b)
+    {
+        b.ToTable("AutomationCases");
+        b.HasKey(x => x.AutomationCaseId);
+        b.Property(x => x.AutomationCode).HasMaxLength(60);
+        b.Property(x => x.AutomationType).HasMaxLength(30);
+        b.Property(x => x.Status).HasMaxLength(30);
+        b.HasOne(x => x.TestCase).WithMany().HasForeignKey(x => x.TestCaseId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
+        b.HasMany(x => x.Versions).WithOne().HasForeignKey(x => x.AutomationCaseId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Cascade);
+        b.HasIndex(x => x.AutomationCode).IsUnique();
+        b.HasIndex(x => new { x.TestCaseId, x.IsDeleted });
+    }
+}
+
+public sealed class AutomationVersionConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationVersion>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationVersion> b)
+    {
+        b.ToTable("AutomationVersions");
+        b.HasKey(x => x.AutomationVersionId);
+        b.Property(x => x.DslVersion).HasMaxLength(10);
+        b.Property(x => x.DslJson).HasColumnType("nvarchar(max)");
+        b.Property(x => x.ValidationStatus).HasMaxLength(20);
+        b.Property(x => x.ValidationErrors).HasColumnType("nvarchar(max)");
+        b.Property(x => x.AiProvider).HasMaxLength(50);
+        b.Property(x => x.AiModel).HasMaxLength(100);
+        b.HasIndex(x => new { x.AutomationCaseId, x.VersionNo });
+    }
+}
+
+public sealed class AutomationActionConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationAction>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationAction> b)
+    {
+        b.ToTable("AutomationActions");
+        b.HasKey(x => x.AutomationActionId);
+        b.Property(x => x.ActionCode).HasMaxLength(60);
+        b.Property(x => x.ActionName).HasMaxLength(120);
+        b.Property(x => x.Category).HasMaxLength(40);
+        b.Property(x => x.Description).HasMaxLength(500);
+        b.Property(x => x.ParameterSchemaJson).HasColumnType("nvarchar(max)");
+        b.Property(x => x.HandlerKey).HasMaxLength(60);
+        b.Property(x => x.MinimumAgentVersion).HasMaxLength(20);
+        b.HasIndex(x => x.ActionCode).IsUnique();
+    }
+}
+
+public sealed class AutomationObjectConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationObject>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationObject> b)
+    {
+        b.ToTable("AutomationObjects");
+        b.HasKey(x => x.AutomationObjectId);
+        b.Property(x => x.ApplicationCode).HasMaxLength(30);
+        b.Property(x => x.ScreenCode).HasMaxLength(80);
+        b.Property(x => x.ObjectCode).HasMaxLength(120);
+        b.Property(x => x.ObjectName).HasMaxLength(160);
+        b.Property(x => x.ControlType).HasMaxLength(40);
+        b.Property(x => x.AutomationId).HasMaxLength(200);
+        b.Property(x => x.SelectorJson).HasColumnType("nvarchar(max)");
+        b.HasIndex(x => new { x.ProjectId, x.ApplicationCode, x.ScreenCode, x.ObjectCode });
+    }
+}
+
+public sealed class AutomationAgentConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationAgent>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationAgent> b)
+    {
+        b.ToTable("AutomationAgents");
+        b.HasKey(x => x.AgentId);
+        b.Property(x => x.AgentCode).HasMaxLength(60);
+        b.Property(x => x.MachineName).HasMaxLength(120);
+        b.Property(x => x.AgentVersion).HasMaxLength(30);
+        b.Property(x => x.OperatingSystem).HasMaxLength(60);
+        b.Property(x => x.Architecture).HasMaxLength(20);
+        b.Property(x => x.Status).HasMaxLength(20);
+        b.HasMany(x => x.Capabilities).WithOne(x => x.Agent).HasForeignKey(x => x.AgentId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Cascade);
+        b.HasIndex(x => x.AgentCode).IsUnique();
+        b.HasIndex(x => new { x.Status, x.LastHeartbeatAt });
+    }
+}
+
+public sealed class AutomationAgentCapabilityConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationAgentCapability>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationAgentCapability> b)
+    {
+        b.ToTable("AutomationAgentCapabilities");
+        b.HasKey(x => new { x.AgentId, x.CapabilityCode });
+        b.Property(x => x.CapabilityCode).HasMaxLength(40);
+        b.Property(x => x.CapabilityVersion).HasMaxLength(20);
+    }
+}
+
+public sealed class AutomationExecutionConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationExecution>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationExecution> b)
+    {
+        b.ToTable("AutomationExecutions");
+        b.HasKey(x => x.AutomationExecutionId);
+        b.Property(x => x.Status).HasMaxLength(20);
+        b.Property(x => x.FailureType).HasMaxLength(40);
+        b.Property(x => x.ErrorCode).HasMaxLength(40);
+        b.Property(x => x.ErrorMessage).HasMaxLength(2000);
+        b.Property(x => x.RequestedBy).HasMaxLength(120);
+        b.HasOne(x => x.AutomationCase).WithMany().HasForeignKey(x => x.AutomationCaseId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
+        b.HasOne(x => x.AutomationVersion).WithMany().HasForeignKey(x => x.AutomationVersionId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
+        b.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
+        b.HasOne(x => x.Build).WithMany().HasForeignKey(x => x.BuildId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
+        b.HasOne(x => x.Environment).WithMany().HasForeignKey(x => x.EnvironmentId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
+        b.HasMany(x => x.StepResults).WithOne(x => x.Execution).HasForeignKey(x => x.AutomationExecutionId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.AutomationCaseId, x.CreatedAt });
+    }
+}
+
+public sealed class AutomationStepResultConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationStepResult>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationStepResult> b)
+    {
+        b.ToTable("AutomationStepResults");
+        b.HasKey(x => x.AutomationStepResultId);
+        b.Property(x => x.ActionCode).HasMaxLength(60);
+        b.Property(x => x.Status).HasMaxLength(20);
+        b.Property(x => x.ActualResult).HasMaxLength(1000);
+        b.Property(x => x.ErrorCode).HasMaxLength(40);
+        b.Property(x => x.ErrorMessage).HasMaxLength(2000);
+        b.Property(x => x.EvidencePath).HasMaxLength(1000);
+        b.HasIndex(x => new { x.AutomationExecutionId, x.StepNo });
+    }
+}
+
+public sealed class AutomationJobConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationJob>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationJob> b)
+    {
+        b.ToTable("AutomationJobs");
+        b.HasKey(x => x.JobId);
+        b.Property(x => x.Status).HasMaxLength(20);
+        b.Property(x => x.LastError).HasMaxLength(2000);
+        b.HasOne(x => x.AutomationExecution).WithOne().HasForeignKey<AutomationJob>(x => x.AutomationExecutionId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
+        b.HasOne(x => x.AssignedAgent).WithMany().HasForeignKey(x => x.AssignedAgentId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.Status, x.Priority, x.QueuedAt });
+    }
+}
+
+public sealed class AutomationEvidenceConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationEvidence>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationEvidence> b)
+    {
+        b.ToTable("AutomationEvidences");
+        b.HasKey(x => x.AutomationEvidenceId);
+        b.Property(x => x.EvidenceType).HasMaxLength(30);
+        b.Property(x => x.FilePath).HasMaxLength(1000);
+        b.Property(x => x.CapturedBy).HasMaxLength(100);
+        b.HasOne(x => x.Execution).WithMany().HasForeignKey(x => x.AutomationExecutionId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.AutomationExecutionId, x.EvidenceType });
+    }
+}
