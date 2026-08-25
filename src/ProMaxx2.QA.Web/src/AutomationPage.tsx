@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { formatThaiDateTime } from "./dateTime";
 import {
   automationCaseTone as caseStatusTone,
@@ -43,15 +43,26 @@ type AutomationStepResultItem = {
   actualResult?: string; errorCode?: string; errorMessage?: string; evidencePath?: string;
 };
 type AutomationExecutionItem = {
-  automationExecutionId: string; automationCaseId: string; automationCode: string; automationVersionId: string; versionNo: number; testExecutionId?: string; defectId?: string; targetApp?: string;
+  automationExecutionId: string; automationCaseId: string; automationCode: string; testCaseCode?: string; testCaseTitle?: string; automationVersionId: string; versionNo: number; testExecutionId?: string; defectId?: string; targetApp?: string;
   agentId?: string; agentCode?: string; buildId: string; buildNumber: string; environmentId: string; environmentName: string; jobId?: string; status: string;
   startedAt?: string; completedAt?: string; durationMs?: number; failureType?: string; errorCode?: string; errorMessage?: string; stepResults: AutomationStepResultItem[];
   evidence?: AutomationEvidenceItem[];
 };
 type AutomationEvidenceItem = { automationEvidenceId: string; stepNo?: number; evidenceType: string; filePath: string; capturedBy?: string; capturedAt: string };
-type TestCandidate = { testCaseId: string; testCaseCode: string; title: string; priority: string; status: string; moduleId: string };
+type TestCandidate = { testCaseId: string; testCaseCode: string; title: string; priority: string; status: string; moduleId: string; automationCandidate?: boolean; testType?: string };
+type TestCaseDetailItem = {
+  testCaseId: string; projectId: string; moduleId: string; testCaseCode: string; title: string;
+  objective?: string; preconditions?: string; priority: string; testType?: string; automationCandidate: boolean; status: string;
+  revisionNo: number; ownerUserId?: string;
+  steps: { stepNo: number; action: string; testData?: string; expectedResult: string }[];
+};
 type BuildOption = { buildId: string; buildNumber: string; applicationVersion?: string; status: string };
 type EnvironmentOption = { testEnvironmentId: string; environmentName: string; isActive: boolean };
+type AutomationDashboardItem = {
+  totalTestCases: number; automationCandidates: number; automationCases: number; ready: number; maintenanceRequired: number;
+  needsReview: number; inProgress: number; running: number; passToday: number; failToday: number; averageDurationMs?: number;
+  agentsOnline: number; agentsTotal: number; readyCoverage: number; candidateCoverage: number;
+};
 
 function Badge({ children, tone = "blue" }: { children: React.ReactNode; tone?: string }) {
   return <span className={`badge ${tone}`}>{children}</span>;
@@ -95,12 +106,40 @@ const sampleDsl = JSON.stringify({
   ],
 }, null, 2);
 
+const splitTaskText = (text: string) => {
+  const idx = text.indexOf("—");
+  return idx > -1 ? [text.slice(0, idx).trim(), text.slice(idx + 1).trim()] : [text, ""];
+};
+
+const formatDuration = (ms?: number) => {
+  if (ms == null) return "-";
+  const s = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+};
+
+const taskClass = (text: string, tab: string) => {
+  if (/Fail/i.test(text)) return "red";
+  if (/Maintenance/i.test(text)) return "orange";
+  if (tab === "suites" || tab === "manage" || tab === "agents") return "green";
+  return "blue";
+};
+
+const taskIcon = (tab: string) => (tab === "execution" ? "!" : tab === "suites" ? "▶" : tab === "manage" || tab === "agents" ? "◉" : "▤");
+
 export function AutomationPage({
   projectId, releaseId, buildId, canEdit, canValidate, canApprove, canRun, canManage, canViewEvidence, canGenerateAi,
 }: {
   projectId?: string; releaseId?: string; buildId?: string; canView: boolean; canEdit: boolean; canValidate: boolean; canApprove: boolean; canRun: boolean; canManage: boolean; canViewEvidence: boolean; canGenerateAi: boolean;
 }) {
   const [tab, setTab] = useState("dashboard");
+  const [headSearch, setHeadSearch] = useState("");
+  const [caseStatusFilter, setCaseStatusFilter] = useState("all");
+  const [caseTargetFilter, setCaseTargetFilter] = useState("all");
+  const [casePage, setCasePage] = useState(1);
+  const [execFilter, setExecFilter] = useState("all");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
@@ -112,6 +151,7 @@ export function AutomationPage({
   const [agents, setAgents] = useState<AutomationAgentItem[]>([]);
   const [jobs, setJobs] = useState<AutomationJobItem[]>([]);
   const [executions, setExecutions] = useState<AutomationExecutionItem[]>([]);
+  const [dash, setDash] = useState<AutomationDashboardItem | null>(null);
 
   const [selectedCase, setSelectedCase] = useState<AutomationCaseItem | null>(null);
   const [versions, setVersions] = useState<AutomationVersionItem[]>([]);
@@ -128,6 +168,17 @@ export function AutomationPage({
   const [newVersionError, setNewVersionError] = useState("");
   const [createSearch, setCreateSearch] = useState("");
   const [createPickSteps, setCreatePickSteps] = useState<{ stepNo: number; action: string; testData?: string; expectedResult: string }[]>([]);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardPriority, setWizardPriority] = useState("");
+  const [wizardPage, setWizardPage] = useState(1);
+  const [wizardType, setWizardType] = useState("WindowsUI");
+  const [wizardNote, setWizardNote] = useState("");
+  const [createDetail, setCreateDetail] = useState<TestCaseDetailItem | null>(null);
+  const [aiConf, setAiConf] = useState<number | null>(null);
+  const [valErrors, setValErrors] = useState("");
+  const [validatedOk, setValidatedOk] = useState(false);
+  const [createdCode, setCreatedCode] = useState("");
+  const [createdStatus, setCreatedStatus] = useState("Draft");
 
   const [actionModal, setActionModal] = useState(false);
   const [objectModal, setObjectModal] = useState(false);
@@ -148,7 +199,7 @@ export function AutomationPage({
   const pid = projectId ?? "";
 
   useEffect(() => {
-    if (!pid) { setCases([]); setObjects([]); setExecutions([]); return; }
+    if (!pid) { setCases([]); setObjects([]); setExecutions([]); setDash(null); return; }
     const h = { Authorization: `Bearer ${token()}` };
     setError("");
     Promise.all([
@@ -158,14 +209,16 @@ export function AutomationPage({
       fetch(`${apiUrl}/automation/executions?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&take=200`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
       fetch(`${apiUrl}/automation/agents`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
       fetch(`${apiUrl}/automation/actions`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${apiUrl}/automation/dashboard?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
     ])
-      .then(([c, o, j, e, a, ac]) => {
+      .then(([c, o, j, e, a, ac, d]) => {
         setCases(Array.isArray(c) ? c : []);
         setObjects(Array.isArray(o) ? o : []);
         setJobs(Array.isArray(j) ? j : []);
         setExecutions(Array.isArray(e) ? e : []);
         setAgents(Array.isArray(a) ? a : []);
         setActions(Array.isArray(ac) ? ac : []);
+        setDash(d && typeof d === "object" && d.automationCases != null ? d : null);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "โหลดข้อมูล Automation ไม่สำเร็จ"));
   }, [pid, buildId, reload]);
@@ -183,12 +236,7 @@ export function AutomationPage({
 
   const openCreate = async () => {
     setCreateModal(true);
-    setCreatePick(null);
-    setCreatePickSteps([]);
-    setCreatedCaseId("");
-    setNewVersionError("");
-    setNewDsl(sampleDsl);
-    setCreateSearch("");
+    resetWizard();
     setError("");
     try {
       const [tc, md] = await Promise.all([
@@ -203,36 +251,67 @@ export function AutomationPage({
     }
   };
 
-  const pickCandidate = async (c: TestCandidate) => {
-    setCreatePick(c);
+  const resetWizard = () => {
+    setCreatePick(null);
+    setCreateDetail(null);
     setCreatePickSteps([]);
     setCreatedCaseId("");
+    setCreatedCode("");
+    setCreatedStatus("Draft");
     setNewVersionError("");
+    setNewDsl(sampleDsl);
+    setCreateSearch("");
+    setCreateModuleFilter("");
+    setWizardPriority("");
+    setWizardPage(1);
+    setWizardType("WindowsUI");
+    setWizardNote("");
+    setAiConf(null);
+    setValErrors("");
+    setValidatedOk(false);
+    setWizardStep(1);
+  };
+
+  const pickCandidate = async (c: TestCandidate) => {
+    setCreatePick(c);
+    setCreateDetail(null);
+    setCreatePickSteps([]);
+    setCreatedCaseId("");
+    setCreatedCode("");
+    setNewVersionError("");
+    setValErrors("");
+    setValidatedOk(false);
+    setAiConf(null);
     setNewDsl(sampleDsl);
     try {
       const r = await fetch(`${apiUrl}/test-cases/${c.testCaseId}`, { headers: { Authorization: `Bearer ${token()}` } });
       const d = r.ok ? await r.json() : null;
+      setCreateDetail(d && typeof d === "object" ? d : null);
       setCreatePickSteps(Array.isArray(d?.steps) ? d.steps : []);
     } catch {
       setCreatePickSteps([]);
     }
   };
 
-  const createCase = async (testCaseId: string) => {
+  const createCase = async (testCaseId: string, automationType = "WindowsUI"): Promise<{ id: string; code: string; status: string } | null> => {
     setCreateBusy(true);
     setError("");
     setNewVersionError("");
     try {
-      const r = await fetch(`${apiUrl}/automation/cases?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ testCaseId, automationType: "WindowsUI", ownerUserId: null }) });
+      const r = await fetch(`${apiUrl}/automation/cases?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ testCaseId, automationType, ownerUserId: null }) });
       if (!r.ok) {
         const p = await r.json().catch(() => null);
         throw new Error(p?.detail ?? "สร้าง Automation Case ไม่สำเร็จ");
       }
       const created = await r.json();
       setCreatedCaseId(created.automationCaseId);
-      setNotice("สร้าง Automation Case แล้ว — เขียนหรือ Generate DSL ต่อได้เลยในหน้านี้");
+      setCreatedCode(created.automationCode ?? "");
+      setCreatedStatus(created.status ?? "Draft");
+      setNotice("สร้าง Automation Case แล้ว — เขียนหรือ Generate DSL ต่อได้เลย");
+      return { id: created.automationCaseId, code: created.automationCode ?? "", status: created.status ?? "Draft" };
     } catch (e) {
       setError(e instanceof Error ? e.message : "สร้าง Automation Case ไม่สำเร็จ");
+      return null;
     } finally {
       setCreateBusy(false);
     }
@@ -242,6 +321,8 @@ export function AutomationPage({
     if (!createdCaseId) return;
     setCreateBusy(true);
     setNewVersionError("");
+    setValErrors("");
+    setValidatedOk(false);
     try {
       const r = await fetch(`${apiUrl}/automation/cases/${createdCaseId}/generate?projectId=${pid}`, { method: "POST", headers });
       if (!r.ok) {
@@ -250,6 +331,8 @@ export function AutomationPage({
       }
       const v = await r.json();
       setNewDsl(v.dslJson);
+      setAiConf(v.aiConfidence != null ? v.aiConfidence : null);
+      setCreatedStatus("NeedsReview");
       setNotice(`AI สร้าง DSL แล้ว (confidence ${v.aiConfidence != null ? `${Math.round(v.aiConfidence * 100)}%` : "-"}) — ตรวจแล้วกด Validate`);
     } catch (e) {
       setNewVersionError(e instanceof Error ? e.message : "Generate AI ไม่สำเร็จ");
@@ -262,8 +345,10 @@ export function AutomationPage({
     if (!createdCaseId) return;
     setCreateBusy(true);
     setNewVersionError("");
+    setValErrors("");
+    setValidatedOk(false);
     try {
-      const r = await fetch(`${apiUrl}/automation/cases/${createdCaseId}/versions?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ dslJson: newDsl, changeReason: "สร้างครั้งแรกจากหน้าสร้าง" }) });
+      const r = await fetch(`${apiUrl}/automation/cases/${createdCaseId}/versions?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ dslJson: newDsl, changeReason: wizardNote.trim() || "สร้างครั้งแรกจาก Wizard" }) });
       if (!r.ok) {
         const p = await r.json().catch(() => null);
         throw new Error(p?.detail ?? "สร้าง Version ไม่สำเร็จ");
@@ -271,8 +356,14 @@ export function AutomationPage({
       const v = await r.json();
       const vr = await fetch(`${apiUrl}/automation/versions/${v.automationVersionId}/validate?projectId=${pid}`, { method: "POST", headers });
       const vd = await vr.json();
-      if (vd.validationStatus !== "Valid") throw new Error(vd.validationErrors || "Validate ไม่ผ่าน");
-      setCreateModal(false);
+      if (vd.validationStatus !== "Valid") {
+        const msg = vd.validationErrors || "Validate ไม่ผ่าน";
+        setValErrors(msg);
+        throw new Error(msg);
+      }
+      setValidatedOk(true);
+      setCreatedStatus("Validated");
+      setWizardStep(4);
       setReload((x) => x + 1);
       setNotice("สร้าง Automation Case + Version และ Validate ผ่านแล้ว — ไปที่ Automation Cases เพื่อตรวจ/อนุมัติ/สั่งรัน");
     } catch (e) {
@@ -428,6 +519,34 @@ export function AutomationPage({
     }
   };
 
+  const cancelExecution = async (x: AutomationExecutionItem) => {
+    if (!window.confirm(`ยืนยันยกเลิก Execution "${x.automationCode}" ?`)) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/executions/${x.automationExecutionId}/cancel?projectId=${pid}`, { method: "POST", headers });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ยกเลิกไม่สำเร็จ"); }
+      const updated = await r.json();
+      if (execDetail?.automationExecutionId === x.automationExecutionId) setExecDetail(updated);
+      setReload((v) => v + 1);
+      setNotice(`ยกเลิก ${x.automationCode} แล้ว`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "ยกเลิกไม่สำเร็จ");
+    }
+  };
+
+  const rerunExecution = async (x: AutomationExecutionItem) => {
+    if (!window.confirm(`สั่งรัน "${x.automationCode}" ซ้ำ?\nRev ${x.versionNo} · Build ${x.buildNumber} · ${x.environmentName}`)) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/cases/${x.automationCaseId}/run?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ versionId: x.automationVersionId, buildId: x.buildId, environmentId: x.environmentId, agentId: null, priority: 5 }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สั่งรันซ้ำไม่สำเร็จ"); }
+      setReload((v) => v + 1);
+      setNotice(`ส่งรันซ้ำ ${x.automationCode} เข้าคิวแล้ว — Agent จะรับงานตามลำดับ`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "สั่งรันซ้ำไม่สำเร็จ");
+    }
+  };
+
   const toggleAgent = async (a: AutomationAgentItem, enable: boolean) => {
     setError("");
     try {
@@ -528,23 +647,106 @@ export function AutomationPage({
   const failToday = executions.filter((x) => x.status === "Failed").length;
   const agentsOnline = agents.filter((x) => x.connectivity === "Online").length;
   const coverage = automationCoverage(cases);
+  const kTotal = dash?.automationCases ?? totalCandidates;
+  const kReady = dash?.ready ?? ready;
+  const kMaintenance = dash?.maintenanceRequired ?? maintenance;
+  const kNeedsReview = dash?.needsReview ?? needsReview;
+  const kInProgress = dash?.inProgress ?? inProgress;
+  const kRunning = dash?.running ?? running;
+  const kPassToday = dash?.passToday ?? passToday;
+  const kFailToday = dash?.failToday ?? failToday;
+  const kAgentsOnline = dash?.agentsOnline ?? agentsOnline;
+  const kAgentsTotal = dash?.agentsTotal ?? agents.length;
+  const kReadyCoverage = dash?.readyCoverage ?? coverage;
+
+  const goCases = (status: string) => { setCaseStatusFilter(status); setCaseTargetFilter("all"); setCasePage(1); setTab("cases"); };
+  const goExecutionWithStatus = (status: string) => { setExecFilter(status); setTab("execution"); };
+
+  const metrics = [
+    { label: "Automation Cases", value: kTotal, note: "ทั้งหมด", tone: "blue", icon: "◇", go: () => goCases("all") },
+    { label: "Ready", value: kReady, note: `${kReadyCoverage}% coverage`, tone: "green", icon: "✓", go: () => goCases("Ready") },
+    { label: "Maintenance", value: kMaintenance, note: "ต้องแก้ DSL / Object", tone: "orange", icon: "⌕", go: () => goCases("MaintenanceRequired") },
+    { label: "Running", value: kRunning, note: "กำลังทำงาน", tone: "purple", icon: "▶", go: () => goExecutionWithStatus("Running") },
+    { label: "Failed", value: kFailToday, note: "ต้องตรวจสอบ", tone: "red", icon: "×", go: () => goExecutionWithStatus("Failed") },
+    { label: "Agents Online", value: `${kAgentsOnline} / ${kAgentsTotal}`, note: "พร้อมใช้งาน", tone: "cyan", icon: "♙", go: () => { setManageTab("agents"); setTab("manage"); } },
+  ] as { label: string; value: number | string; note: string; tone: string; icon: string; go: () => void }[];
+
+  const headQuery = headSearch.trim().toLowerCase();
+  const filteredCases = cases.filter((c) => (!headQuery || c.automationCode.toLowerCase().includes(headQuery) || c.testCaseCode.toLowerCase().includes(headQuery) || c.testCaseTitle.toLowerCase().includes(headQuery)) && (caseStatusFilter === "all" || c.status === caseStatusFilter) && (caseTargetFilter === "all" || c.automationType === caseTargetFilter));
+  const casePageSize = 15;
+  const casePageCount = Math.max(1, Math.ceil(filteredCases.length / casePageSize));
+  const pagedCases = filteredCases.slice((casePage - 1) * casePageSize, casePage * casePageSize);
+  useEffect(() => setCasePage(1), [headSearch, caseStatusFilter, caseTargetFilter]);
+
+  const hasActiveWork = kRunning > 0 || jobs.some((j) => j.status === "Queued" || j.status === "Assigned" || j.status === "Running");
+  useEffect(() => {
+    if (!hasActiveWork) return;
+    const t = setInterval(() => { if (!document.hidden) setReload((v) => v + 1); }, 15000);
+    return () => clearInterval(t);
+  }, [hasActiveWork]);
+
+  const modName = createModules.find((m) => m.moduleId === createPick?.moduleId)?.moduleName;
+  const hasAutomation = createPick ? existingTestCaseIds.has(createPick.testCaseId) : false;
+  const preconditionsList = createDetail?.preconditions ? createDetail.preconditions.split(/\r?\n|\|/).map((s) => s.trim()).filter(Boolean) : [];
+  const lastStepExpected = createDetail?.steps?.length ? createDetail.steps[createDetail.steps.length - 1].expectedResult : "";
+  const wizardList = candidates.filter((c) => {
+    const q = createSearch.trim().toLowerCase();
+    return (!q || c.testCaseCode.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)) && (!createModuleFilter || c.moduleId === createModuleFilter) && (!wizardPriority || c.priority === wizardPriority);
+  });
+  const wizardPageSize = 8;
+  const wizardPageCount = Math.max(1, Math.ceil(wizardList.length / wizardPageSize));
+  const wizardPaged = wizardList.slice((wizardPage - 1) * wizardPageSize, wizardPage * wizardPageSize);
+  useEffect(() => setWizardPage(1), [createSearch, createModuleFilter, wizardPriority]);
+  const readyChecks = [
+    { ok: createDetail?.status === "Ready", text: "Test Case อยู่ในสถานะ Ready" },
+    { ok: !!createDetail?.objective?.trim(), text: "มี Objective" },
+    { ok: !!createDetail?.moduleId, text: "ระบุ Module แล้ว" },
+    { ok: (createDetail?.steps?.length ?? 0) > 0, text: `มี Test Steps (${createDetail?.steps?.length ?? 0} ขั้นตอน) สำหรับ AI Interpreter` },
+  ];
+  const dslSteps = parseDslSteps(newDsl);
+  const dslActions = dslSteps.length;
+  const dslAssertions = dslSteps.filter((s) => s.action.startsWith("EXPECT_")).length;
+  const valErrCount = validatedOk ? 0 : (valErrors ? valErrors.split("\n").filter((l) => l.trim()).length : "—");
+
+  const openCreatedCase = () => {
+    setCreateModal(false);
+    setTab("cases");
+    if (createdCaseId && createPick) {
+      openCase({ automationCaseId: createdCaseId, testCaseId: createPick.testCaseId, testCaseCode: createPick.testCaseCode, testCaseTitle: createPick.title, automationCode: createdCode, automationType: wizardType, status: createdStatus, currentVersionNo: 1, versionCount: 1, ownerName: undefined, isAiGenerated: aiConf != null, createdAt: new Date().toISOString() });
+    }
+  };
+  const caseByExecId = useMemo(() => { const m = new Map<string, AutomationCaseItem>(); cases.forEach((c) => m.set(c.automationCaseId, c)); return m; }, [cases]);
+  const primaryAgent = agents.find((a) => a.connectivity === "Online") ?? agents[0];
+  const healthPct = kAgentsTotal ? Math.round((kAgentsOnline / kAgentsTotal) * 100) : 0;
+
+  const exportCases = () => {
+    const rows: string[][] = [["Automation Code", "Test Case Code", "Test Case Title", "Target App", "Status", "Version", "Owner"]];
+    cases.forEach((c) => rows.push([c.automationCode, c.testCaseCode, c.testCaseTitle, c.automationType, c.status, `Rev ${c.currentVersionNo}`, c.ownerName ?? "-"]));
+    const csv = "\ufeff" + rows.map((row) => row.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "automation-cases.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const workflowSteps = [
-    { t: "สร้าง Automation Case", d: totalCandidates ? `มี ${totalCandidates} case` : "ยังไม่มี — สร้างจาก Test Case ที่เป็น Candidate", done: totalCandidates > 0, tab: "cases" },
-    { t: "เขียน DSL / Generate AI", d: inProgress ? `มี ${inProgress} case กำลังเขียน DSL` : "DSL ครบแล้ว", done: inProgress === 0 && totalCandidates > 0, tab: "cases" },
-    { t: "Validate + อนุมัติ → Ready", d: ready ? `Ready ${ready} case` : "ยังไม่มี case พร้อมรัน", done: ready > 0, tab: "cases" },
-    { t: "รันผ่าน Agent", d: agentsOnline ? `${agentsOnline} agent online` : "ยังไม่มี agent online", done: agentsOnline > 0, tab: "suites" },
-    { t: "ตรวจผล / Evidence / Defect", d: executions.length ? `รันแล้ว ${executions.length} ครั้ง` : "ยังไม่มีผลรัน", done: executions.length > 0, tab: "execution" },
-  ] as { t: string; d: string; done: boolean; tab: string }[];
+    { t: "สร้าง Automation Case", d: kTotal ? `มี ${kTotal} case` : "ยังไม่มี — สร้างจาก Test Case", done: kTotal > 0, tab: "cases", icon: "▧" },
+    { t: "Generate DSL / AI", d: kInProgress ? `มี ${kInProgress} case กำลังเขียน DSL` : "DSL ครบแล้ว", done: kInProgress === 0 && kTotal > 0, tab: "cases", icon: "✦" },
+    { t: "Validate", d: kReady ? `Ready ${kReady} case` : "ยังไม่มี case พร้อมรัน", done: kReady > 0, tab: "cases", icon: "⬟" },
+    { t: "Run Agent", d: kAgentsOnline ? `${kAgentsOnline} agent online` : "ยังไม่มี agent online", done: kAgentsOnline > 0, tab: "cases", icon: "▣" },
+    { t: "Evidence / Result", d: executions.length || kPassToday || kFailToday ? `ผ่าน ${kPassToday} / Fail ${kFailToday}` : "ยังไม่มีผลรัน", done: executions.length > 0, tab: "execution", icon: "⌁" },
+  ] as { t: string; d: string; done: boolean; tab: string; icon: string }[];
   const activeWorkflowStep = workflowSteps.findIndex((s) => !s.done);
 
   const nextActions: { text: string; btn: string; tab: string }[] = [];
-  if (totalCandidates === 0) nextActions.push({ text: "ยังไม่มี Automation Case — เริ่มจากสร้าง Case จาก Test Case ที่เป็น Automation Candidate", btn: "สร้าง Automation Case", tab: "cases" });
-  if (needsReview > 0) nextActions.push({ text: `มี ${needsReview} case ต้องตรวจสอบ DSL (AI ต้องการ Human Review) — เปิดรายละเอียดแล้ว Validate/อนุมัติ`, btn: "ไปตรวจ DSL", tab: "cases" });
-  if (ready > 0 && agentsOnline === 0) nextActions.push({ text: "มี case พร้อมรัน แต่ยังไม่มี Agent Online — เริ่ม agent\\run-agent.ps1 บนเครื่องทดสอบ", btn: "ดู Agents", tab: "agents" });
-  if (ready > 0 && agentsOnline > 0) nextActions.push({ text: `พร้อมรัน ${ready} case — เลือก Build/Environment แล้วรันเดี่ยวหรือรันเป็น Regression Suite`, btn: "ไป Regression Suites", tab: "suites" });
-  if (failToday > 0) nextActions.push({ text: `มี Fail วันนี้ ${failToday} ครั้ง — ตรวจผล/Evidence และจำแนก Fail ก่อนสร้าง Defect`, btn: "ไป Execution", tab: "execution" });
-  if (executions.length > 0 && failToday === 0) nextActions.push({ text: "ผลล่าสุดผ่านทั้งหมด — ดูประวัติและ Evidence ในหน้า Execution", btn: "ไป Execution", tab: "execution" });
+  if (kTotal === 0) nextActions.push({ text: "ยังไม่มี Automation Case — เริ่มจากสร้าง Case จาก Test Case ที่เป็น Automation Candidate", btn: "สร้าง Automation Case", tab: "cases" });
+  if (kNeedsReview > 0) nextActions.push({ text: `มี ${kNeedsReview} case ต้องตรวจสอบ DSL (AI ต้องการ Human Review) — เปิดรายละเอียดแล้ว Validate/อนุมัติ`, btn: "ไปตรวจ DSL", tab: "cases" });
+  if (kReady > 0 && kAgentsOnline === 0) nextActions.push({ text: "มี case พร้อมรัน แต่ยังไม่มี Agent Online — เริ่ม agent\\run-agent.ps1 บนเครื่องทดสอบ", btn: "ดู Agents", tab: "manage" });
+  if (kReady > 0 && kAgentsOnline > 0) nextActions.push({ text: `พร้อมรัน ${kReady} case — เลือก Build/Environment แล้วรันเดี่ยวหรือรันเป็น Regression Suite`, btn: "ไป Regression Suites", tab: "cases" });
+  if (kFailToday > 0) nextActions.push({ text: `มี Fail วันนี้ ${kFailToday} ครั้ง — ตรวจผล/Evidence และจำแนก Fail ก่อนสร้าง Defect`, btn: "ไป Execution", tab: "execution" });
+  if (executions.length > 0 && kFailToday === 0) nextActions.push({ text: "ผลล่าสุดผ่านทั้งหมด — ดูประวัติและ Evidence ในหน้า Execution", btn: "ไป Execution", tab: "execution" });
 
   const tabs = [
     { id: "dashboard", label: "ภาพรวม", icon: "◉" },
@@ -555,45 +757,111 @@ export function AutomationPage({
 
   return <article className="automation-page">
     {!pid ? <div className="empty"><p>เลือก Project เพื่อดู Automation Workspace</p></div> : <>
-      <div className="automation-head">
-        <div className="automation-head-title"><h1>Automation</h1><p>สร้าง Automation Case → เขียน/Generate DSL → Validate/อนุมัติ → รันผ่าน Agent → ตรวจผล</p></div>
-        <div className="automation-head-status">
-          <span className={agentsOnline ? "is-ready" : "is-warning"}><i />{agentsOnline} Agent Online</span>
-          <span><i />{running} กำลังรัน</span>
-          <span><i />{jobs.filter((j) => j.status === "Queued").length} ในคิว</span>
-          {canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}
+      <section className="automation-page-head">
+        <div className="automation-page-actions">
+          <div className="automation-search"><input aria-label="ค้นหา Automation Case" placeholder="ค้นหา Automation Case..." value={headSearch} onChange={(e) => setHeadSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") setTab("cases"); }} /></div>
+          <button className="btn" type="button" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล" onClick={() => setReload((v) => v + 1)}>↻ <span className="automation-hide-mobile">รีเฟรช</span></button>
+          <button className="btn" type="button" disabled={!cases.length} onClick={exportCases}>↥ Export</button>
+          {canEdit && <button className="btn primary" type="button" onClick={openCreate}>＋ สร้าง Automation Case</button>}
         </div>
-      </div>
+      </section>
       <nav className="automation-tabs" aria-label="Automation Module"><div className="automation-tabs-inner">{tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}><span aria-hidden="true">{t.icon}</span>{t.label}</button>)}</div></nav>
       {error && <div className="inline-alert error"><span>{error}</span></div>}
       {notice && <div className="inline-alert success"><span>{notice}</span></div>}
-      {tab === "dashboard" && <nav className="automation-steps" aria-label="ขั้นตอนการทำงาน Automation">{workflowSteps.map((s, i) => <button key={i} type="button" className={s.done ? "done" : i === activeWorkflowStep ? "active" : ""} aria-current={!s.done && i === activeWorkflowStep ? "step" : undefined} onClick={() => setTab(s.tab)}><span className="automation-step-no" aria-hidden="true">{s.done ? "✓" : String(i + 1)}</span><span className="automation-step-text"><b>{s.t}</b><small>{s.d}</small></span></button>)}</nav>}
 
       {tab === "dashboard" && <section className="automation-dashboard" aria-label="Automation Dashboard">
-        <div className="automation-kpis">
-          <div><small>Automation Cases</small><strong>{totalCandidates}</strong><span>ทั้งหมด</span></div>
-          <div><small>Ready</small><strong>{ready}</strong><span>{coverage}% coverage</span></div>
-          <div className={maintenance ? "needs-review" : ""}><small>Maintenance</small><strong>{maintenance}</strong><span>ต้องซ่อม DSL/Object</span></div>
-          <div><small>Running</small><strong>{running}</strong><span>งานระหว่างรัน</span></div>
-          <div><small>Pass</small><strong>{passToday}</strong><span>ผ่านแล้ว</span></div>
-          <div><small>Fail</small><strong>{failToday}</strong><span>ไม่ผ่าน</span></div>
-          <div><small>Agents Online</small><strong>{agentsOnline}/{agents.length}</strong><span>พร้อมรับงาน</span></div>
+        <div className="automation-metrics" aria-label="Automation KPI">
+          {metrics.map((m) => <button key={m.label} type="button" className="automation-metric" aria-label={`${m.label}: ${m.value}`} onClick={() => m.go()}>
+            <span className={`automation-metric-ico m-${m.tone}`} aria-hidden="true">{m.icon}</span>
+            <span className="automation-metric-body"><span className="automation-metric-label">{m.label}</span><strong>{m.value}</strong><span className="automation-metric-note">{m.note}</span></span>
+            <span className="automation-metric-go" aria-hidden="true">›</span>
+          </button>)}
         </div>
-        {nextActions.length > 0 && <section className="automation-next-steps" aria-label="ขั้นตอนถัดไป">
-          <div className="automation-section-head"><h3>ขั้นตอนถัดไป</h3></div>
-          {nextActions.map((a, i) => <div key={i} className="automation-next-step"><span className="automation-step-no" aria-hidden="true">{i + 1}</span><p>{a.text}</p><button className="btn" onClick={() => setTab(a.tab)}>{a.btn}</button></div>)}
-        </section>}
-        <div className="automation-dashboard-grid">
-          <article className="card">
-            <div className="automation-section-head"><h3>ผลการรันล่าสุด</h3><button className="btn" onClick={() => setTab("execution")}>ดูทั้งหมด</button></div>
-            {executions.length ? <div className="automation-run-links">{executions.slice(0, 8).map((x) => <div key={x.automationExecutionId} className="automation-run-link"><span className="automation-run-link-main"><b>{x.automationCode}</b><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge><time>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</time></span><button type="button" className="table-action" onClick={() => setExecDetail(x)}>ดูรายละเอียด</button></div>)}</div> : <div className="empty"><p>ยังไม่มีประวัติการรัน</p><small>สร้าง Automation Case แล้วรันผ่าน Agent — ผลจะแสดงที่นี่</small><button className="btn" onClick={() => setTab("cases")}>ไปสร้าง Automation Case</button></div>}
-          </article>
+
+        <section className="automation-flow-card" aria-label="ขั้นตอนการทำงาน Automation">
+          <div className="automation-flow">
+            {workflowSteps.map((s, i) => <Fragment key={s.t}>
+              <button type="button" className={"automation-flow-step" + (s.done ? " done" : i === activeWorkflowStep ? " active" : "")} aria-current={!s.done && i === activeWorkflowStep ? "step" : undefined} onClick={() => setTab(s.tab)}>
+                <span className="automation-flow-icon" aria-hidden="true">{s.icon}{s.done && <span className="automation-flow-badge">✓</span>}</span>
+                <span className="automation-flow-text"><strong>{s.t}</strong><small>{s.d}</small></span>
+              </button>
+              {i < workflowSteps.length - 1 && <span className="automation-flow-arrow" aria-hidden="true">→</span>}
+            </Fragment>)}
+          </div>
+        </section>
+
+        <div className="automation-two-col">
+          <section className="automation-panel">
+            <div className="automation-panel-head"><h2>สิ่งที่ต้องดำเนินการ</h2></div>
+            {nextActions.length ? <div className="automation-task-list">{nextActions.map((a, i) => { const [title, desc] = splitTaskText(a.text); return <button key={i} type="button" className="automation-task" onClick={() => setTab(a.tab)}><span className={`automation-task-icon ${taskClass(a.text, a.tab)}`} aria-hidden="true">{taskIcon(a.tab)}</span><span className="automation-task-body"><strong>{title}</strong>{desc && <p>{desc}</p>}</span><span className="automation-task-go" aria-hidden="true">›</span></button>; })}</div> : <div className="empty"><p>ไม่มีรายการที่ต้องดำเนินการ</p><small>ทุกอย่างพร้อม — สร้างและรัน Automation Case ได้เลย</small></div>}
+          </section>
+          <section className="automation-panel">
+            <div className="automation-panel-head"><h2>Agent Status</h2>{agents.length > 0 && <button className="automation-panel-link" onClick={() => setTab("manage")}>ดูทั้งหมด</button>}</div>
+            {primaryAgent ? <div className="automation-agent-card">
+              <div>
+                <div className="automation-agent-status"><span className="automation-online-dot" />{primaryAgent.agentCode}<span className="automation-primary-tag">Primary</span></div>
+                <div className="automation-agent-meta">
+                  <div className="k">PC Name</div><div>{primaryAgent.machineName}</div>
+                  <div className="k">OS</div><div>{primaryAgent.operatingSystem}</div>
+                  <div className="k">Agent Version</div><div>{primaryAgent.agentVersion}</div>
+                  <div className="k">Last Heartbeat</div><div>{formatThaiDateTime(primaryAgent.lastHeartbeatAt)}</div>
+                  <div className="k">Running Jobs</div><div>{primaryAgent.currentExecutionId ? 1 : 0}</div>
+                </div>
+              </div>
+              <div className="automation-health">
+                <div><div className="automation-ring" style={{ "--health": `${healthPct}%` } as React.CSSProperties}><strong>{healthPct}%</strong></div><span>Health</span></div>
+              </div>
+            </div> : <div className="empty"><p>ยังไม่มี Agent ลงทะเบียน</p><small>รัน <code>agent\\run-agent.ps1</code> บนเครื่อง Windows เพื่อเริ่ม Agent</small></div>}
+          </section>
         </div>
+
+        <section className="automation-panel automation-result-panel">
+          <div className="automation-panel-head"><h2>ผลการรันล่าสุด</h2><button className="automation-panel-link" onClick={() => setTab("execution")}>ดูทั้งหมด</button></div>
+          {executions.length ? <>
+            <div className="automation-table-wrap">
+              <table className="automation-recent-table">
+                <thead><tr><th>Automation Case</th><th>Linked Test Case</th><th>Result</th><th>Agent</th><th>Execution Time</th><th>Duration</th><th></th></tr></thead>
+                <tbody>{executions.slice(0, 5).map((x) => { const c = caseByExecId.get(x.automationCaseId); const tcCode = x.testCaseCode ?? c?.testCaseCode; const tcTitle = x.testCaseTitle ?? c?.testCaseTitle; return <tr key={x.automationExecutionId}>
+                  <td><span className="automation-case-code">{x.automationCode}</span>{tcTitle && <span className="automation-subline">{tcTitle}</span>}</td>
+                  <td>{tcCode ? <><strong>{tcCode}</strong>{tcTitle && <span className="automation-subline">{tcTitle}</span>}</> : <span className="automation-subline">-</span>}</td>
+                  <td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td>
+                  <td>{x.agentCode ?? "-"}</td>
+                  <td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td>
+                  <td>{formatDuration(x.durationMs)}</td>
+                  <td><div className="automation-row-actions">
+                    <button type="button" className="automation-more" title="ดูรายละเอียด / Evidence / Defect" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>
+                    {canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => rerunExecution(x)}>▶</button>}
+                    {canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => cancelExecution(x)}>✕</button>}
+                  </div></td>
+                </tr>; })}</tbody>
+              </table>
+            </div>
+            {executions.length > 5 && <div className="automation-table-footer"><button type="button" onClick={() => setTab("execution")}>ดูผลการรันทั้งหมด ›</button></div>}
+          </> : <div className="empty"><p>ยังไม่มีประวัติการรัน</p><small>สร้าง Automation Case แล้วรันผ่าน Agent — ผลจะแสดงที่นี่</small>{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div>}
+        </section>
       </section>}
 
       {tab === "cases" && <section className="automation-cases" aria-label="Automation Cases">
         <header className="automation-section-head"><div><h2>Automation Cases</h2><p>หนึ่ง Test Case → หนึ่ง Automation Case พร้อม Version (DSL) หลายเวอร์ชัน</p></div><div className="automation-cases-actions">{canRun && <button className="btn" onClick={() => setBatchModal(true)}>▶ รันเป็นกลุ่ม</button>}{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div></header>
-        {cases.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th></th></tr></thead><tbody>{cases.map((c) => <tr key={c.automationCaseId}><td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td><button className="table-action" onClick={() => openCase(c)}>รายละเอียด</button></td></tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Automation Case</p><small>สร้างจาก Test Case ที่เป็น Automation Candidate — จากนั้นเขียน DSL / Generate AI → Validate → อนุมัติ → พร้อมรัน</small>{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div>}
+        {cases.length ? <>
+          <div className="automation-case-toolbar">
+            <select aria-label="กรองสถานะ" value={caseStatusFilter} onChange={(e) => setCaseStatusFilter(e.target.value)}>
+              <option value="all">ทุกสถานะ</option>
+              {["Draft", "NeedsReview", "Validated", "Approved", "Ready", "Running", "MaintenanceRequired"].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select aria-label="กรอง Target App" value={caseTargetFilter} onChange={(e) => setCaseTargetFilter(e.target.value)}>
+              <option value="all">ทุก Target App</option>
+              <option value="Pos">Pos · PromaxxsPos.exe</option>
+              <option value="App">App · Promaxxs.App.exe</option>
+              <option value="WindowsUI">WindowsUI · generic</option>
+            </select>
+            {(caseStatusFilter !== "all" || caseTargetFilter !== "all" || headSearch.trim()) && <button type="button" className="table-action" onClick={() => { setCaseStatusFilter("all"); setCaseTargetFilter("all"); setHeadSearch(""); }}>ล้างตัวกรอง</button>}
+          </div>
+          {(headSearch.trim() || caseStatusFilter !== "all" || caseTargetFilter !== "all") && <div className="automation-search-hint">แสดง {filteredCases.length} จาก {cases.length} รายการ{headSearch.trim() ? ` · ค้นหา "${headSearch}"` : ""}{caseStatusFilter !== "all" ? ` · สถานะ ${caseStatusFilter}` : ""}{caseTargetFilter !== "all" ? ` · Target ${caseTargetFilter}` : ""} — <button type="button" className="table-action" onClick={() => { setHeadSearch(""); setCaseStatusFilter("all"); setCaseTargetFilter("all"); }}>ล้างทั้งหมด</button></div>}
+          {pagedCases.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th></th></tr></thead><tbody>{pagedCases.map((c) => <tr key={c.automationCaseId}><td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td><button className="table-action" onClick={() => openCase(c)}>รายละเอียด</button></td></tr>)}</tbody></table></div>
+            : <div className="empty"><p>ไม่พบ Automation Case ที่ตรงเงื่อนไข</p><small>ลองเปลี่ยนคำค้นหาหรือตัวกรองด้านบน</small></div>}
+          {filteredCases.length > casePageSize && <Pager page={casePage} count={casePageCount} total={filteredCases.length} pageSize={casePageSize} onPrev={() => setCasePage((p) => Math.max(1, p - 1))} onNext={() => setCasePage((p) => Math.min(casePageCount, p + 1))} />}
+        </> : <div className="empty"><p>ยังไม่มี Automation Case</p><small>สร้างจาก Test Case ที่เป็น Automation Candidate — จากนั้นเขียน DSL / Generate AI → Validate → อนุมัติ → พร้อมรัน</small>{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div>}
       <div className="automation-status-legend" role="note" aria-label="ความหมายสถานะ"><span><i className="legend-dot legend-draft" />Draft — ยังไม่มี DSL</span><span><i className="legend-dot legend-review" />NeedsReview — AI สร้างแล้ว รอตรวจ</span><span><i className="legend-dot legend-ready" />Ready — พร้อมรัน</span><span><i className="legend-dot legend-maint" />MaintenanceRequired — ต้องซ่อม DSL/Object</span></div>
       </section>}
 
@@ -604,39 +872,183 @@ export function AutomationPage({
         {manageTab === "agents" && <AgentsSection agents={agents} agentsOnline={agentsOnline} canManage={canManage} onToggle={toggleAgent} onDelete={deleteAgent} />}
       </section>}
 
-      {tab === "execution" && <ExecutionTab jobs={jobs} executions={executions} setExecDetail={setExecDetail} />}
+      {tab === "execution" && <ExecutionTab jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} />}
     </>}
 
-    {createModal && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-create-title" onMouseDown={() => !createBusy && setCreateModal(false)}><div className="modal-box automation-create-modal" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2 id="automation-create-title">สร้าง Automation Case</h2><small>เลือก Test Case ทางซ้าย → สร้าง Case + เขียน DSL ทางขวา จบในหน้าเดียว</small></div><button aria-label="ปิด" disabled={createBusy} onClick={() => setCreateModal(false)}>×</button></div>
-      <div className="automation-create-body">
-        <div className="automation-create-left">
-          <div className="automation-create-step-title"><span className="automation-step-no" aria-hidden="true">1</span><b>เลือก Test Case</b></div>
-          <div className="automation-create-filters">
-            {createModules.length > 0 && <select aria-label="กรอง Module" value={createModuleFilter} onChange={(e) => setCreateModuleFilter(e.target.value)}><option value="">ทุก Module</option>{moduleTreeOptions(createModules)}</select>}
-            <input aria-label="ค้นหา Test Case" placeholder="ค้นหา Code / ชื่อ..." value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
-          </div>
-          {(() => { const q = createSearch.trim().toLowerCase(); const list = (createModuleFilter ? candidates.filter((c) => c.moduleId === createModuleFilter) : candidates).filter((c) => !q || c.testCaseCode.toLowerCase().includes(q) || c.title.toLowerCase().includes(q)); return list.length ? <div className="automation-candidate-pick">{list.map((c) => { const has = existingTestCaseIds.has(c.testCaseId); return <button key={c.testCaseId} type="button" className={"automation-candidate-row" + (has ? " is-taken" : "") + (createPick?.testCaseId === c.testCaseId ? " is-selected" : "")} disabled={createBusy || has} title={has ? "Test Case นี้มี Automation Case แล้ว" : undefined} onClick={() => pickCandidate(c)}><b>{c.testCaseCode}</b><span>{c.title}</span>{has ? <Badge tone="gray">มี Case แล้ว</Badge> : <Badge tone={c.priority === "P0" ? "red" : "blue"}>{c.priority}</Badge>}</button>; })}</div> : <div className="empty"><p>ไม่พบ Test Case ที่ตรงเงื่อนไข</p><small>เปิดหน้า Test Case และทำเครื่องหมาย Automation Candidate ก่อน</small></div>; })()}
-        </div>
-        <div className="automation-create-right">
-          {!createPick ? <div className="empty"><p>ยังไม่ได้เลือก Test Case</p><small>คลิก Test Case ทางซ้ายเพื่อเริ่ม</small></div> : <>
-            <div className="automation-create-step-title"><span className="automation-step-no" aria-hidden="true">2</span><b>สร้าง Case + เขียน DSL</b></div>
-            {!createdCaseId && <div className="automation-create-pick"><div className="automation-create-pick-info"><b>{createPick.testCaseCode}</b><span>{createPick.title}</span></div><button className="btn primary" disabled={createBusy} onClick={() => createCase(createPick.testCaseId)}>{createBusy ? "กำลังสร้าง..." : "สร้าง Automation Case"}</button></div>}
-            {createPickSteps.length > 0 && <details className="automation-create-steps"><summary>ดูขั้นตอนของ Test Case ({createPickSteps.length})</summary><ol>{createPickSteps.map((s) => <li key={s.stepNo}><b>{s.stepNo}. {s.action}</b>{s.testData ? <span>ข้อมูล: {s.testData}</span> : null}<span>คาดหวัง: {s.expectedResult}</span></li>)}</ol></details>}
-            {createdCaseId && <>
-              {newVersionError && <div className="inline-alert error"><span>{newVersionError}</span></div>}
-              <div className="automation-version-create-actions">
-                {canGenerateAi && <button type="button" className="btn primary" disabled={createBusy} onClick={generateAiForNewCase}>{createBusy ? "AI กำลังสร้าง..." : "✦ Generate AI"}</button>}
-                <button type="button" className="btn" disabled={createBusy} onClick={() => setNewDsl(sampleDsl)}>โหลดตัวอย่าง</button>
-                <button type="button" className="btn" disabled={createBusy || !newDsl.trim()} onClick={createNewVersionAndValidate}>{createBusy ? "กำลังบันทึก..." : "สร้าง Version + Validate"}</button>
-              </div>
-              <textarea rows={10} value={newDsl} onChange={(e) => setNewDsl(e.target.value)} spellCheck={false} aria-label="DSL JSON" />
-              <p className="muted-text">Validate ผ่าน = ครบขั้นตอน — ไปที่ Automation Cases เพื่อ ตรวจ/อนุมัติ/สั่งรัน ต่อ</p>
-            </>}
-          </>}
-        </div>
+    {createModal && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-create-title" onMouseDown={() => !createBusy && wizardStep !== 4 && setCreateModal(false)}><div className="modal-box automation-create-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div className="acw-head"><span className="acw-head-icon" aria-hidden="true">⚙</span><div><h2 id="automation-create-title">สร้าง Automation Case</h2><small>Wizard สำหรับเลือก Test Case ตรวจสอบรายละเอียด สร้าง DSL และบันทึก Automation Case</small></div></div><button aria-label="ปิด" disabled={createBusy} onClick={() => setCreateModal(false)}>×</button></div>
+
+      <div className="acw-stepper" aria-label="ขั้นตอนการสร้าง Automation Case">
+        {["เลือก Test Case", "ตรวจสอบรายละเอียด", "สร้าง Automation Case", "เสร็จสิ้น"].map((label, i) => {
+          const n = i + 1;
+          return <div key={n} className={"acw-step" + (n === wizardStep ? " active" : n < wizardStep ? " done" : "")}><span className="acw-num" aria-hidden="true">{n < wizardStep ? "✓" : n}</span>{label}</div>;
+        })}
       </div>
-      <div className="modal-actions"><button className="btn" disabled={createBusy} onClick={() => setCreateModal(false)}>ปิด</button></div>
+
+      <div className="acw-body">
+        {wizardStep === 1 && <div className="acw-grid">
+          <section className="acw-left">
+            <div className="acw-section-head"><div><h2>เลือก Test Case</h2><p>ค้นหาและเลือก Test Case ที่ต้องการสร้าง Automation Case</p></div><button type="button" className="btn" title="รีเฟรชรายการ" aria-label="รีเฟรชรายการ" disabled={createBusy} onClick={openCreate}>↻</button></div>
+            <div className="acw-filters">
+              {createModules.length > 0 && <select aria-label="กรอง Module" value={createModuleFilter} onChange={(e) => setCreateModuleFilter(e.target.value)}><option value="">ทุก Module</option>{moduleTreeOptions(createModules)}</select>}
+              <input aria-label="ค้นหา Test Case" placeholder="ค้นหา Code / ชื่อ..." value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
+              <select aria-label="กรอง Priority" value={wizardPriority} onChange={(e) => setWizardPriority(e.target.value)}><option value="">ทุก Priority</option><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></select>
+            </div>
+            {wizardList.length ? <>
+              <div className="acw-table-wrap">
+                <table className="acw-table">
+                  <colgroup><col style={{ width: 42 }} /><col style={{ width: 185 }} /><col /><col style={{ width: 85 }} /><col style={{ width: 115 }} /><col style={{ width: 90 }} /></colgroup>
+                  <thead><tr><th aria-label="เลือก"></th><th>Test Case</th><th>ชื่อ Test Case</th><th>Priority</th><th>สถานะ</th><th>Automation</th></tr></thead>
+                  <tbody>{wizardPaged.map((c) => { const taken = existingTestCaseIds.has(c.testCaseId); const sel = createPick?.testCaseId === c.testCaseId; return <tr key={c.testCaseId} className={(sel ? " is-selected" : "") + (taken ? " is-taken" : "")} onClick={() => { if (!taken && !createBusy) pickCandidate(c); }} aria-disabled={taken} title={taken ? "Test Case นี้มี Automation Case แล้ว" : undefined}>
+                    <td><span className="acw-radio" aria-hidden="true" /></td>
+                    <td><span className="acw-code">{c.testCaseCode}</span></td>
+                    <td><span className="acw-ellipsis">{c.title}</span></td>
+                    <td><span className={`badge acw-badge ${c.priority === "P0" ? "p0" : "p1"}`}>{c.priority}</span></td>
+                    <td>{taken ? <span className="badge has">มี Case แล้ว</span> : <span className="badge none">ยังไม่มี Case</span>}</td>
+                    <td>{c.automationCandidate ? <span className="acw-cand">✓ พร้อม</span> : <span className="acw-muted">—</span>}</td>
+                  </tr>; })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="acw-table-footer">
+                <span>แสดง {wizardList.length ? (wizardPage - 1) * wizardPageSize + 1 : 0}–{Math.min(wizardPage * wizardPageSize, wizardList.length)} จาก {wizardList.length} รายการ</span>
+                <div className="acw-pages">
+                  <button type="button" className="acw-page-btn" disabled={wizardPage <= 1} onClick={() => setWizardPage((p) => Math.max(1, p - 1))} aria-label="หน้าก่อนหน้า">‹</button>
+                  {wizardPageCount > 1 && Array.from({ length: wizardPageCount }, (_, i) => i + 1).map((n) => <button key={n} type="button" className={"acw-page-btn" + (n === wizardPage ? " on" : "")} onClick={() => setWizardPage(n)}>{n}</button>)}
+                  <button type="button" className="acw-page-btn" disabled={wizardPage >= wizardPageCount} onClick={() => setWizardPage((p) => Math.min(wizardPageCount, p + 1))} aria-label="หน้าถัดไป">›</button>
+                </div>
+              </div>
+            </> : <div className="acw-empty"><div><strong>ไม่พบ Test Case ที่ตรงเงื่อนไข</strong>เปิดหน้า Test Case และทำเครื่องหมาย Automation Candidate ก่อน</div></div>}
+          </section>
+          <aside className="acw-right">
+            <div className="acw-section-head"><div><h2>รายละเอียด Test Case</h2><p>ตรวจสอบข้อมูลก่อนสร้าง Automation Case</p></div></div>
+            {!createPick || !createDetail ? <div className="acw-card"><div className="acw-empty"><div><strong>ยังไม่ได้เลือก Test Case</strong>คลิก Test Case ทางซ้ายเพื่อเริ่ม</div></div></div>
+              : <div className="acw-card">
+                  <div className="acw-detail-top"><div><span className="acw-detail-code">{createPick.testCaseCode}</span><div className="acw-detail-title">{createPick.title}</div></div><span className={`badge acw-badge ${createPick.priority === "P0" ? "p0" : "p1"}`}>{createPick.priority}</span></div>
+                  <div className="acw-meta">
+                    <div className="key">Module</div><div>{modName ?? "—"}</div>
+                    <div className="key">Test Type</div><div>{createDetail.testType ?? "—"}</div>
+                    <div className="key">สถานะ</div><div>{hasAutomation ? "มี Automation Case แล้ว" : "ยังไม่มี Automation Case"}</div>
+                    <div className="key">Automation Candidate</div><div>{createDetail.automationCandidate ? "พร้อมใช้งาน Automation" : "แนะนำให้ทำ Automation"}</div>
+                  </div>
+                  <div className="acw-divider" />
+                  <div className="acw-text-block">
+                    <h3>Objective</h3><p>{createDetail.objective || "—"}</p>
+                    <h3>Preconditions</h3>{preconditionsList.length ? <ul>{preconditionsList.map((p, i) => <li key={i}>{p}</li>)}</ul> : <p>—</p>}
+                    <h3>Expected Result (ย่อ)</h3><p>{lastStepExpected || "—"}</p>
+                  </div>
+                </div>}
+            <div className="acw-hint"><h3>เมื่อสร้าง Automation Case</h3><ul><li>ระบบจะสร้าง Automation Case และ DSL เบื้องต้นให้</li><li>สามารถแก้ไข DSL ก่อน Run ได้</li><li>ต้องตรวจสอบและอนุมัติก่อนใช้งานจริง</li></ul></div>
+          </aside>
+        </div>}
+
+        {wizardStep === 2 && <div className="acw-review">
+          <div className="acw-review-col">
+            <div className="acw-card">
+              <div className="acw-section-head"><div><h2>ตรวจสอบรายละเอียด Test Case</h2><p>ข้อมูลจาก Test Management ที่ AI จะนำไปใช้ Generate Automation</p></div><span className="badge ai">AI Input</span></div>
+              <div className="acw-meta">
+                <div className="key">Test Case</div><div><strong>{createPick?.testCaseCode}</strong></div>
+                <div className="key">ชื่อ</div><div>{createPick?.title}</div>
+                <div className="key">Module</div><div>{modName ?? "—"}</div>
+                <div className="key">Priority</div><div>{createPick?.priority}</div>
+                <div className="key">Test Type</div><div>{createDetail?.testType ?? "—"}</div>
+                <div className="key">สถานะ</div><div>{createDetail?.status ?? "—"}</div>
+              </div>
+              <div className="acw-divider" />
+              <div className="acw-text-block">
+                <h3>Objective</h3><p>{createDetail?.objective || "—"}</p>
+                <h3>Preconditions</h3>{preconditionsList.length ? <ul>{preconditionsList.map((p, i) => <li key={i}>{p}</li>)}</ul> : <p>—</p>}
+              </div>
+            </div>
+            <div className="acw-card">
+              <div className="acw-section-head"><div><h2>Test Steps</h2><p>ขั้นตอนที่ระบบจะส่งให้ AI เพื่อแปลงเป็น Automation DSL</p></div><span className="badge ready">{createPickSteps.length} Steps</span></div>
+              {createPickSteps.length ? <div className="acw-step-list">{createPickSteps.map((s) => <div key={s.stepNo} className="acw-step-item"><span className="acw-step-no">{s.stepNo}</span><div><strong>{s.action}</strong>{s.testData ? <div className="acw-desc">ข้อมูล: {s.testData}</div> : null}<div className="acw-desc">Expected: {s.expectedResult}</div></div></div>)}</div> : <div className="acw-empty"><div><strong>ไม่มี Test Steps</strong>เปิดหน้า Test Case เพื่อเพิ่มขั้นตอนก่อนสร้าง Automation</div></div>}
+            </div>
+          </div>
+          <div className="acw-review-col">
+            <div className="acw-card">
+              <div className="acw-section-head"><div><h2>Automation Readiness</h2><p>ตรวจสอบความพร้อมก่อน Generate</p></div></div>
+              <div className="acw-check-list">
+                {readyChecks.map((ch, i) => <div key={i} className="acw-check-row"><span className={ch.ok ? "ok" : "warn"} aria-hidden="true">{ch.ok ? "✓" : "!"}</span>{ch.text}</div>)}
+                <div className="acw-check-row"><span className="warn" aria-hidden="true">!</span>Object Repository จะตรวจสอบหลัง Generate DSL</div>
+              </div>
+            </div>
+            <div className="acw-card">
+              <div className="acw-section-head"><div><h2>ตั้งค่าการสร้าง Automation</h2><p>กำหนดค่าที่ใช้สำหรับ Automation Case ใหม่</p></div></div>
+              <div className="acw-form-grid">
+                <label className="field full">Automation Type
+                  <select value={wizardType} onChange={(e) => setWizardType(e.target.value)}><option value="WindowsUI">WindowsUI · generic</option><option value="Pos">Pos · PromaxxsPos.exe</option><option value="App">App · Promaxxs.App.exe</option></select>
+                  <span className="help">Target Application ที่ Agent จะใช้รัน</span>
+                </label>
+                <label className="field full">หมายเหตุสำหรับ AI
+                  <textarea rows={3} value={wizardNote} onChange={(e) => setWizardNote(e.target.value)} placeholder="เช่น ให้ตรวจข้อความแจ้งเตือนและตรวจสอบข้อมูลในฐานข้อมูลหลังบันทึก" />
+                  <span className="help">ใช้เป็น changeReason ของ Version แรก</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>}
+
+        {wizardStep === 3 && <div className="acw-builder">
+          {newVersionError && <div className="inline-alert error"><span>{newVersionError}</span></div>}
+          <div className="acw-card">
+            <div className="acw-section-head"><div><h2>Automation Case</h2><p>ตรวจสอบข้อมูล Automation ก่อนอนุมัติ</p></div><span className="badge ai">{aiConf != null ? "AI Generated" : "Manual DSL"}</span></div>
+            <div className="acw-form-grid">
+              <label className="field full">Automation Code<input value={createdCode} readOnly /></label>
+              <label className="field full">Automation Name<input value={`Automation - ${createPick?.title ?? ""}`} readOnly /></label>
+              <label className="field">Linked Test Case<input value={createPick?.testCaseCode ?? ""} readOnly /></label>
+              <label className="field">Version<input value="1.0" readOnly /></label>
+              <label className="field">Status<span className="acw-status"><Badge tone={caseStatusTone[createdStatus] ?? "blue"}>{createdStatus}</Badge></span></label>
+              <label className="field">Agent Target<span className="acw-status">{wizardType} · Windows Agent</span></label>
+            </div>
+            <div className="acw-divider" />
+            <div className="acw-summary-box">
+              <div className="acw-summary-item"><div className="n">{dslActions}</div><div className="l">Actions</div></div>
+              <div className="acw-summary-item"><div className="n">{dslAssertions}</div><div className="l">Assertions</div></div>
+              <div className="acw-summary-item"><div className="n">{aiConf != null ? `${Math.round(aiConf * 100)}%` : "—"}</div><div className="l">AI Confidence</div></div>
+              <div className="acw-summary-item"><div className="n">{valErrCount}</div><div className="l">Validation Error</div></div>
+            </div>
+            <div className="acw-action-bar">
+              {validatedOk ? <><span className="chip">✓ Action Library</span><span className="chip">✓ Parameter Schema</span><span className="chip">✓ Object Mapping</span><span className="chip">✓ Test Data</span></> : <span className="chip">! ยังไม่ผ่าน Validation</span>}
+            </div>
+          </div>
+          <div className="acw-card">
+            <div className="acw-section-head"><div><h2>Automation DSL</h2><p>ภาษากลางที่ Agent จะนำไป Execute กับ ProMaxx2 Windows</p></div>{canGenerateAi && <button type="button" className="btn" disabled={createBusy} onClick={generateAiForNewCase}>{createBusy ? "AI กำลังสร้าง..." : "↻ Generate AI"}</button>}</div>
+            <textarea className="acw-dsl" rows={14} value={newDsl} onChange={(e) => setNewDsl(e.target.value)} spellCheck={false} aria-label="DSL JSON" />
+            <div className="acw-action-bar">
+              <button type="button" className="btn" disabled={createBusy} onClick={() => { setNewDsl(sampleDsl); setValErrors(""); setValidatedOk(false); }}>โหลดตัวอย่าง</button>
+            </div>
+            <div className="acw-note">{valErrors ? <span className="warn">✕ Validate Error: {valErrors}</span> : <span className="ok">✓ สถานะ: {validatedOk ? "Validate ผ่าน — พร้อมบันทึก" : "DSL พร้อมตรวจสอบ — กด 'บันทึก + Validate'"}</span>}</div>
+          </div>
+        </div>}
+
+        {wizardStep === 4 && <div className="acw-success-screen">
+          <div className="acw-success-card">
+            <div className="acw-success-icon" aria-hidden="true">✓</div>
+            <h2>สร้าง Automation Case สำเร็จ</h2>
+            <p>Automation Case ถูกสร้างและผูกกับ Test Case เรียบร้อยแล้ว พร้อมนำไป Validate และ Run ผ่าน Windows Agent</p>
+            <div className="acw-result-grid">
+              <div className="acw-result-item"><div className="k">Automation Case</div><div className="v">{createdCode}</div></div>
+              <div className="acw-result-item"><div className="k">Linked Test Case</div><div className="v">{createPick?.testCaseCode}</div></div>
+              <div className="acw-result-item"><div className="k">Status</div><div className="v"><Badge tone={caseStatusTone[createdStatus] ?? "blue"}>{createdStatus}</Badge></div></div>
+              <div className="acw-result-item"><div className="k">Execution Target</div><div className="v">{wizardType} · Windows Agent</div></div>
+            </div>
+            <div className="acw-action-bar acw-center">
+              <button type="button" className="btn" onClick={openCreatedCase}>ดู Automation Case</button>
+              <button type="button" className="btn" onClick={() => setCreateModal(false)}>ไปหน้า Automation</button>
+              <button type="button" className="btn acw-btn-success" onClick={resetWizard}>สร้าง Case เพิ่ม</button>
+            </div>
+          </div>
+        </div>}
+      </div>
+
+      {wizardStep < 4 && <div className="modal-actions">
+        <button className="btn" disabled={createBusy} onClick={() => setCreateModal(false)}>ยกเลิก</button>
+        {wizardStep > 1 && <button className="btn" disabled={createBusy} onClick={() => setWizardStep((s) => s - 1)}>‹ ย้อนกลับ</button>}
+        {wizardStep === 1 && <button className="btn primary" disabled={createBusy || !createPick} onClick={() => setWizardStep(2)}>ถัดไป ›</button>}
+        {wizardStep === 2 && <button className="btn primary" disabled={createBusy || !createPick} onClick={async () => { const r = await createCase(createPick?.testCaseId ?? "", wizardType); if (r) setWizardStep(3); }}>{createBusy ? "กำลังสร้าง..." : "สร้าง Automation ›"}</button>}
+        {wizardStep === 3 && <button className="btn primary" disabled={createBusy || !newDsl.trim()} onClick={createNewVersionAndValidate}>{createBusy ? "กำลังบันทึก..." : "บันทึก + Validate ›"}</button>}
+      </div>}
     </div></div>}
 
     {selectedCase && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-case-detail-title" onMouseDown={() => setSelectedCase(null)}><div className="modal-box automation-case-detail" onMouseDown={(e) => e.stopPropagation()}>
@@ -657,6 +1069,8 @@ export function AutomationPage({
         <span>จบ {formatThaiDateTime(execDetail.completedAt)}</span>
         {execDetail.durationMs != null && <span>{(execDetail.durationMs / 1000).toFixed(2)} วิ</span>}
         {execDetail.errorCode && <Badge tone="red">{execDetail.errorCode}</Badge>}
+        {canRun && (execDetail.status === "Running" || execDetail.status === "Queued") && <button type="button" className="btn danger automation-detail-action" onClick={() => cancelExecution(execDetail)}>✕ ยกเลิก</button>}
+        {canRun && execDetail.status !== "Running" && execDetail.status !== "Queued" && <button type="button" className="btn automation-detail-action" onClick={() => rerunExecution(execDetail)}>▶ รันซ้ำ</button>}
       </div>
       {execDetail.errorMessage && <div className="inline-alert error"><span>{execDetail.errorMessage}</span></div>}
       {execDetail.testExecutionId && <p className="muted-text">สร้าง TestExecution (ExecutionType = Automation) แล้ว</p>}
@@ -903,11 +1317,11 @@ function AgentsSection({ agents, agentsOnline, canManage, onToggle, onDelete }: 
   </section>;
 }
 
-function ExecutionTab({ jobs, executions, setExecDetail }: {
+function ExecutionTab({ jobs, executions, setExecDetail, execFilter, setExecFilter, canRun, onCancel, onRerun }: {
   jobs: AutomationJobItem[]; executions: AutomationExecutionItem[]; setExecDetail: (v: AutomationExecutionItem | null) => void;
+  execFilter: string; setExecFilter: (v: string) => void; canRun: boolean; onCancel: (x: AutomationExecutionItem) => void; onRerun: (x: AutomationExecutionItem) => void;
 }) {
   const [execSearch, setExecSearch] = useState("");
-  const [execFilter, setExecFilter] = useState("all");
   const [execPage, setExecPage] = useState(1);
   const [jobPage, setJobPage] = useState(1);
   const pageSize = 15;
@@ -950,7 +1364,7 @@ function ExecutionTab({ jobs, executions, setExecDetail }: {
             {["Passed", "Failed", "Running", "Queued", "Blocked", "Cancelled", "Timeout", "AgentLost"].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        {pagedExec.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Target</th><th>Agent</th><th>Status</th><th>Duration</th><th>เวลา</th><th></th></tr></thead><tbody>{pagedExec.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className="automation-exec-tr"><td><b>{x.automationCode}</b><small>Rev {x.versionNo} · {x.buildNumber}</small></td><td><Badge tone={x.targetApp === "Pos" ? "blue" : x.targetApp === "App" ? "purple" : "gray"}>{x.targetApp ?? "WindowsUI"}</Badge></td><td>{x.agentCode ?? "-"}</td><td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td><td>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)}s` : "-"}</td><td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td><td><button className="table-action" onClick={(e) => { e.stopPropagation(); setExecDetail(x); }}>ดู</button></td></tr>)}</tbody></table></div> : <div className="empty"><p>{execSearch || execFilter !== "all" ? "ไม่พบผลการรันที่ตรงเงื่อนไข" : "ยังไม่มีประวัติการรัน"}</p></div>}
+        {pagedExec.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Target</th><th>Agent</th><th>Status</th><th>Duration</th><th>เวลา</th><th></th></tr></thead><tbody>{pagedExec.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className="automation-exec-tr"><td><b>{x.automationCode}</b><small>Rev {x.versionNo} · {x.buildNumber}</small></td><td><Badge tone={x.targetApp === "Pos" ? "blue" : x.targetApp === "App" ? "purple" : "gray"}>{x.targetApp ?? "WindowsUI"}</Badge></td><td>{x.agentCode ?? "-"}</td><td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td><td>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)}s` : "-"}</td><td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td><td onClick={(e) => e.stopPropagation()}><div className="automation-row-actions"><button type="button" className="automation-more" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>{canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => onRerun(x)}>▶</button>}{canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => onCancel(x)}>✕</button>}</div></td></tr>)}</tbody></table></div> : <div className="empty"><p>{execSearch || execFilter !== "all" ? "ไม่พบผลการรันที่ตรงเงื่อนไข" : "ยังไม่มีประวัติการรัน"}</p></div>}
         {filteredExec.length > pageSize && <Pager page={execPage} count={execPageCount} total={filteredExec.length} pageSize={pageSize} onPrev={() => setExecPage((p) => Math.max(1, p - 1))} onNext={() => setExecPage((p) => Math.min(execPageCount, p + 1))} />}
       </article>
     </div>

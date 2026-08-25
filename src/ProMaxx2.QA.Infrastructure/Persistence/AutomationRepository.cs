@@ -91,13 +91,13 @@ public sealed class AutomationRepository(QaDbContext db) : IAutomationRepository
     public async Task<AutomationExecutionDto?> GetExecutionAsync(Guid id, Guid projectId, CancellationToken ct)
     {
         var r = await db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationExecutionId == id && x.AutomationCase.TestCase.ProjectId == projectId)
-            .Select(x => new { x.AutomationExecutionId, x.AutomationCaseId, AutomationCode = x.AutomationCase.AutomationCode, x.AutomationVersionId, VersionNo = x.AutomationVersion.VersionNo, x.TestExecutionId, x.DefectId, x.TargetApp, x.AgentId, AgentCode = x.Agent != null ? x.Agent.AgentCode : null, x.BuildId, BuildNumber = x.Build.BuildNumber, x.EnvironmentId, EnvironmentName = x.Environment.EnvironmentName, x.JobId, x.Status, x.StartedAt, x.CompletedAt, x.DurationMs, x.FailureType, x.ErrorCode, x.ErrorMessage })
+            .Select(x => new { x.AutomationExecutionId, x.AutomationCaseId, AutomationCode = x.AutomationCase.AutomationCode, TestCaseCode = x.AutomationCase.TestCase.TestCaseCode, TestCaseTitle = x.AutomationCase.TestCase.Title, x.AutomationVersionId, VersionNo = x.AutomationVersion.VersionNo, x.TestExecutionId, x.DefectId, x.TargetApp, x.AgentId, AgentCode = x.Agent != null ? x.Agent.AgentCode : null, x.BuildId, BuildNumber = x.Build.BuildNumber, x.EnvironmentId, EnvironmentName = x.Environment.EnvironmentName, x.JobId, x.Status, x.StartedAt, x.CompletedAt, x.DurationMs, x.FailureType, x.ErrorCode, x.ErrorMessage })
             .SingleOrDefaultAsync(ct);
         if (r is null) return null;
         var steps = await db.AutomationStepResults.AsNoTracking().Where(s => s.AutomationExecutionId == id).OrderBy(s => s.StepNo)
             .Select(s => new AutomationStepResultDto(s.AutomationStepResultId, s.StepNo, s.ActionCode, s.Status, s.StartedAt, s.CompletedAt, s.DurationMs, s.ActualResult, s.ErrorCode, s.ErrorMessage)).ToListAsync(ct);
         var evidence = await ListEvidenceAsync(id, ct);
-        return new AutomationExecutionDto(r.AutomationExecutionId, r.AutomationCaseId, r.AutomationCode, r.AutomationVersionId, r.VersionNo, r.TestExecutionId, r.DefectId, r.TargetApp, r.AgentId, r.AgentCode, r.BuildId, r.BuildNumber, r.EnvironmentId, r.EnvironmentName, r.JobId, r.Status, r.StartedAt, r.CompletedAt, r.DurationMs, r.FailureType, r.ErrorCode, r.ErrorMessage, steps, evidence);
+        return new AutomationExecutionDto(r.AutomationExecutionId, r.AutomationCaseId, r.AutomationCode, r.TestCaseCode, r.TestCaseTitle, r.AutomationVersionId, r.VersionNo, r.TestExecutionId, r.DefectId, r.TargetApp, r.AgentId, r.AgentCode, r.BuildId, r.BuildNumber, r.EnvironmentId, r.EnvironmentName, r.JobId, r.Status, r.StartedAt, r.CompletedAt, r.DurationMs, r.FailureType, r.ErrorCode, r.ErrorMessage, steps, evidence);
     }
 
     public Task<AutomationExecution?> FindExecutionAsync(Guid id, CancellationToken ct)
@@ -154,12 +154,12 @@ public sealed class AutomationRepository(QaDbContext db) : IAutomationRepository
         var rows = await db.AutomationExecutions.AsNoTracking()
             .Where(x => x.AutomationCase.TestCase.ProjectId == projectId && (!buildId.HasValue || x.BuildId == buildId))
             .OrderByDescending(x => x.CreatedAt).Take(take)
-            .Select(x => new { x.AutomationExecutionId, x.AutomationCaseId, AutomationCode = x.AutomationCase.AutomationCode, x.AutomationVersionId, VersionNo = x.AutomationVersion.VersionNo, x.TestExecutionId, x.DefectId, x.TargetApp, x.AgentId, AgentCode = x.Agent != null ? x.Agent.AgentCode : null, x.BuildId, BuildNumber = x.Build.BuildNumber, x.EnvironmentId, EnvironmentName = x.Environment.EnvironmentName, x.JobId, x.Status, x.StartedAt, x.CompletedAt, x.DurationMs, x.FailureType, x.ErrorCode, x.ErrorMessage })
+            .Select(x => new { x.AutomationExecutionId, x.AutomationCaseId, AutomationCode = x.AutomationCase.AutomationCode, TestCaseCode = x.AutomationCase.TestCase.TestCaseCode, TestCaseTitle = x.AutomationCase.TestCase.Title, x.AutomationVersionId, VersionNo = x.AutomationVersion.VersionNo, x.TestExecutionId, x.DefectId, x.TargetApp, x.AgentId, AgentCode = x.Agent != null ? x.Agent.AgentCode : null, x.BuildId, BuildNumber = x.Build.BuildNumber, x.EnvironmentId, EnvironmentName = x.Environment.EnvironmentName, x.JobId, x.Status, x.StartedAt, x.CompletedAt, x.DurationMs, x.FailureType, x.ErrorCode, x.ErrorMessage })
             .ToListAsync(ct);
         var ids = rows.Select(r => r.AutomationExecutionId).ToList();
         var steps = await db.AutomationStepResults.AsNoTracking().Where(s => ids.Contains(s.AutomationExecutionId)).OrderBy(s => s.StepNo)
             .Select(s => new AutomationStepResultDto(s.AutomationStepResultId, s.StepNo, s.ActionCode, s.Status, s.StartedAt, s.CompletedAt, s.DurationMs, s.ActualResult, s.ErrorCode, s.ErrorMessage)).ToListAsync(ct);
-        return rows.Select(r => new AutomationExecutionDto(r.AutomationExecutionId, r.AutomationCaseId, r.AutomationCode, r.AutomationVersionId, r.VersionNo, r.TestExecutionId, r.DefectId, r.TargetApp, r.AgentId, r.AgentCode, r.BuildId, r.BuildNumber, r.EnvironmentId, r.EnvironmentName, r.JobId, r.Status, r.StartedAt, r.CompletedAt, r.DurationMs, r.FailureType, r.ErrorCode, r.ErrorMessage, [])).ToList();
+        return rows.Select(r => new AutomationExecutionDto(r.AutomationExecutionId, r.AutomationCaseId, r.AutomationCode, r.TestCaseCode, r.TestCaseTitle, r.AutomationVersionId, r.VersionNo, r.TestExecutionId, r.DefectId, r.TargetApp, r.AgentId, r.AgentCode, r.BuildId, r.BuildNumber, r.EnvironmentId, r.EnvironmentName, r.JobId, r.Status, r.StartedAt, r.CompletedAt, r.DurationMs, r.FailureType, r.ErrorCode, r.ErrorMessage, [])).ToList();
     }
 
     public Task AddStepResultAsync(AutomationStepResult entity, CancellationToken ct) => db.AutomationStepResults.AddAsync(entity, ct).AsTask();
@@ -172,6 +172,8 @@ public sealed class AutomationRepository(QaDbContext db) : IAutomationRepository
         var autoCases = await db.AutomationCases.AsNoTracking().CountAsync(x => !x.IsDeleted && x.TestCase.ProjectId == projectId, ct);
         var ready = await db.AutomationCases.AsNoTracking().CountAsync(x => !x.IsDeleted && x.TestCase.ProjectId == projectId && x.Status == "Ready", ct);
         var maintenance = await db.AutomationCases.AsNoTracking().CountAsync(x => !x.IsDeleted && x.TestCase.ProjectId == projectId && x.Status == "MaintenanceRequired", ct);
+        var needsReview = await db.AutomationCases.AsNoTracking().CountAsync(x => !x.IsDeleted && x.TestCase.ProjectId == projectId && x.Status == "NeedsReview", ct);
+        var inProgress = await db.AutomationCases.AsNoTracking().CountAsync(x => !x.IsDeleted && x.TestCase.ProjectId == projectId && (x.Status == "Draft" || x.Status == "NeedsReview" || x.Status == "Validated" || x.Status == "Approved"), ct);
         var running = await db.AutomationExecutions.AsNoTracking().CountAsync(x => x.AutomationCase.TestCase.ProjectId == projectId && x.Status == "Running", ct);
         var passToday = await db.AutomationExecutions.AsNoTracking().CountAsync(x => x.AutomationCase.TestCase.ProjectId == projectId && x.Status == "Passed" && x.CompletedAt != null && x.CompletedAt.Value.Date == today, ct);
         var failToday = await db.AutomationExecutions.AsNoTracking().CountAsync(x => x.AutomationCase.TestCase.ProjectId == projectId && x.Status == "Failed" && x.CompletedAt != null && x.CompletedAt.Value.Date == today, ct);
@@ -181,7 +183,7 @@ public sealed class AutomationRepository(QaDbContext db) : IAutomationRepository
         var agentsOnline = agents.Count(x => x.IsEnabled && now - x.LastHeartbeatAt <= TimeSpan.FromSeconds(60));
         var readyCoverage = totalTestCases == 0 ? 0 : Math.Round(ready * 100m / totalTestCases, 1);
         var candidateCoverage = totalTestCases == 0 ? 0 : Math.Round(candidates * 100m / totalTestCases, 1);
-        return new AutomationDashboardDto(totalTestCases, candidates, autoCases, ready, maintenance, running, passToday, failToday, avgDuration is null ? (long?)null : (long)Math.Round(avgDuration.Value), agentsOnline, agents.Count, readyCoverage, candidateCoverage);
+        return new AutomationDashboardDto(totalTestCases, candidates, autoCases, ready, maintenance, needsReview, inProgress, running, passToday, failToday, avgDuration is null ? (long?)null : (long)Math.Round(avgDuration.Value), agentsOnline, agents.Count, readyCoverage, candidateCoverage);
     }
 
     public Task<AutomationStepResult?> FindStepResultAsync(Guid stepResultId, Guid executionId, CancellationToken ct)

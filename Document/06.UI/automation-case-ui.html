@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProMaxx2 QA Hub - Automation Case Wizard</title>
+<style>
+:root{
+  --bg:#f5f7fb;--surface:#fff;--border:#dfe5ee;--text:#1f2937;--muted:#6b7280;
+  --blue:#2563eb;--blue2:#1d4ed8;--blueSoft:#eff6ff;--green:#16a34a;--greenSoft:#ecfdf3;
+  --red:#dc2626;--redSoft:#fef2f2;--orange:#ea580c;--orangeSoft:#fff7ed;--purple:#7c3aed;--purpleSoft:#f5f3ff;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",Tahoma,sans-serif;background:var(--bg);color:var(--text)}
+button,input,select,textarea{font:inherit}
+.page{padding:24px}
+.shell{max-width:1480px;margin:auto;background:var(--surface);border:1px solid var(--border);border-radius:20px;overflow:hidden;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+.header,.footer{display:flex;align-items:center;justify-content:space-between;padding:20px 24px}
+.header{border-bottom:1px solid var(--border)} .footer{border-top:1px solid var(--border)}
+.titleWrap{display:flex;gap:12px}.icon{width:42px;height:42px;border-radius:12px;background:var(--blueSoft);display:grid;place-items:center;color:var(--blue);font-size:22px}
+h1{margin:0;font-size:24px}.sub{font-size:13px;color:var(--muted);margin-top:4px}
+.btn{min-height:40px;padding:0 14px;border:1px solid var(--border);border-radius:10px;background:#fff;font-weight:600;cursor:pointer}
+.btn:hover{background:#f8fafc}.btnPrimary{background:var(--blue);color:#fff;border-color:var(--blue);min-width:130px}.btnPrimary:hover{background:var(--blue2)}
+.btnSuccess{background:var(--green);color:#fff;border-color:var(--green)} .btn:disabled{opacity:.45;cursor:not-allowed}
+.stepper{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:18px 24px;background:#fcfdff;border-bottom:1px solid var(--border)}
+.step{display:flex;align-items:center;gap:10px;color:#8a94a6;font-size:13px;font-weight:600;position:relative}
+.num{width:34px;height:34px;border-radius:50%;border:1px solid #cfd7e3;display:grid;place-items:center;background:#fff;z-index:1}
+.step.active{color:var(--blue)} .step.active .num{background:var(--blue);color:#fff;border-color:var(--blue)}
+.step.done{color:var(--green)} .step.done .num{background:var(--green);color:#fff;border-color:var(--green)}
+.panel{display:none}.panel.active{display:block}
+.content{min-height:690px}
+.grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(360px,.95fr)}
+.left,.right{padding:20px}.left{border-right:1px solid var(--border)}
+.sectionHead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}.sectionHead h2{margin:0;font-size:18px}.desc{font-size:12px;color:var(--muted);margin-top:4px}
+.filters{display:grid;grid-template-columns:180px minmax(250px,1fr) 150px;gap:10px;margin-bottom:14px}
+select,input,textarea{width:100%;border:1px solid var(--border);border-radius:9px;background:#fff;padding:10px 12px;outline:none}
+select,input{min-height:42px}.field label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}.field .help{font-size:11px;color:var(--muted);margin-top:5px}
+select:focus,input:focus,textarea:focus{border-color:#8bb0ff;box-shadow:0 0 0 3px rgba(37,99,235,.08)}
+.tableWrap{border:1px solid var(--border);border-radius:12px;overflow:hidden}table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{background:#f8fafc;color:#475569;text-align:left;font-size:12px;padding:11px 10px;border-bottom:1px solid var(--border)}
+td{padding:10px;font-size:12px;border-bottom:1px solid #edf1f5}tbody tr{cursor:pointer}tbody tr:hover{background:#f8fbff}.selected{background:var(--blueSoft)!important;box-shadow:inset 3px 0 0 var(--blue)}
+.radio{width:18px;height:18px;border:1px solid #b9c3d1;border-radius:50%;display:grid;place-items:center}.selected .radio::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--blue)}
+.code{color:var(--blue2);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ellipsis{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700}
+.p0{background:var(--redSoft);color:var(--red)} .p1{background:var(--blueSoft);color:var(--blue2)} .has{background:var(--greenSoft);color:var(--green)} .none{background:var(--orangeSoft);color:var(--orange)}
+.ai{background:var(--purpleSoft);color:var(--purple)} .ready{background:var(--greenSoft);color:var(--green)}
+.tableFooter{display:flex;justify-content:space-between;align-items:center;padding-top:12px;color:var(--muted);font-size:12px}.pages{display:flex;gap:6px}.pageBtn{width:34px;height:34px;border:1px solid var(--border);border-radius:8px;background:#fff}.pageBtn.on{background:var(--blue);color:#fff}
+.card{border:1px solid var(--border);border-radius:12px;padding:16px;background:#fff}.empty{min-height:440px;display:grid;place-items:center;text-align:center;color:var(--muted)}.empty strong{display:block;color:var(--text);margin-bottom:6px}
+.detailTop{display:flex;justify-content:space-between;gap:12px}.detailCode{color:var(--blue2);font-weight:800;font-size:16px}.detailTitle{margin:6px 0 14px;font-weight:700}
+.meta{display:grid;grid-template-columns:150px 1fr;gap:10px 16px;font-size:13px}.key{color:var(--muted)}
+.divider{border-top:1px solid var(--border);margin:14px 0}.textBlock h3{font-size:13px;margin:12px 0 6px}.textBlock p,.textBlock li{font-size:12px;line-height:1.55}.textBlock ul{padding-left:18px}
+.hint{margin-top:12px;padding:14px;border:1px solid #cfe0ff;background:linear-gradient(180deg,#f7fbff,#eef5ff);border-radius:12px;font-size:12px}.hint h3{margin:0 0 8px;color:var(--blue2);font-size:14px}.hint ul{list-style:none;margin:0;padding:0;display:grid;gap:7px}.hint li::before{content:"✓";color:var(--blue);font-weight:800;margin-right:8px}
+.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.full{grid-column:1/-1}
+.reviewLayout{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;padding:20px}.reviewCol{display:grid;gap:14px}
+.stepList{display:grid;gap:10px}.stepItem{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--border);border-radius:10px;background:#fff}.stepNo{width:30px;height:30px;border-radius:8px;background:var(--blueSoft);color:var(--blue);font-weight:800;display:grid;place-items:center}
+.dsl{background:#0f172a;color:#dbeafe;border-radius:12px;padding:16px;font-family:Consolas,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;min-height:290px;overflow:auto}
+.checkRow{display:flex;align-items:center;gap:8px;font-size:12px}.ok{color:var(--green);font-weight:700}.warn{color:var(--orange);font-weight:700}
+.builder{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:18px}.builder .card{min-height:100%}
+.actionBar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:#fff;font-size:12px}
+.summaryBox{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.summaryItem{padding:12px;border:1px solid var(--border);border-radius:10px;background:#fafcff}.summaryItem .n{font-size:20px;font-weight:800}.summaryItem .l{font-size:11px;color:var(--muted)}
+.successScreen{min-height:690px;display:grid;place-items:center;padding:40px}.successCard{max-width:820px;width:100%;text-align:center;border:1px solid var(--border);border-radius:18px;padding:32px;background:#fff}.successIcon{width:76px;height:76px;border-radius:50%;background:var(--greenSoft);color:var(--green);font-size:38px;display:grid;place-items:center;margin:0 auto 14px}.successCard h2{margin:0 0 8px}.successCard p{color:var(--muted);font-size:13px}.resultGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;margin:24px 0}.resultItem{padding:14px;border:1px solid var(--border);border-radius:10px}.resultItem .k{font-size:11px;color:var(--muted)}.resultItem .v{font-size:14px;font-weight:700;margin-top:4px}
+.footerNav{display:flex;justify-content:space-between;align-items:center;width:100%}.footerLeft,.footerRight{display:flex;gap:8px}
+.note{font-size:11px;color:var(--muted);margin-top:8px}
+@media(max-width:1000px){.grid,.reviewLayout,.builder{grid-template-columns:1fr}.left{border-right:0;border-bottom:1px solid var(--border)}.filters,.formGrid{grid-template-columns:1fr}.stepper{grid-template-columns:1fr 1fr}.summaryBox{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.page{padding:0}.shell{border-radius:0}.stepper{display:none}.left,.right,.reviewLayout,.builder{padding:14px}.tableWrap{overflow:auto}table{min-width:760px}.meta{grid-template-columns:120px 1fr}.resultGrid,.summaryBox{grid-template-columns:1fr}.header{padding:16px}.footer{padding:14px}}
+</style>
+</head>
+<body>
+<div class="page"><div class="shell">
+<header class="header">
+  <div class="titleWrap"><div class="icon">⚙</div><div><h1>สร้าง Automation Case</h1><div class="sub">Wizard สำหรับเลือก Test Case ตรวจสอบรายละเอียด สร้าง DSL และบันทึก Automation Case</div></div></div>
+  <div><button class="btn">? ช่วยเหลือ</button> <button class="btn">×</button></div>
+</header>
+
+<div class="stepper" id="stepper">
+  <div class="step active" data-step="1"><span class="num">1</span>เลือก Test Case</div>
+  <div class="step" data-step="2"><span class="num">2</span>ตรวจสอบรายละเอียด</div>
+  <div class="step" data-step="3"><span class="num">3</span>สร้าง Automation Case</div>
+  <div class="step" data-step="4"><span class="num">4</span>เสร็จสิ้น</div>
+</div>
+
+<div class="content">
+<section class="panel active" id="panel1">
+  <div class="grid">
+    <section class="left">
+      <div class="sectionHead"><div><h2>เลือก Test Case</h2><div class="desc">ค้นหาและเลือก Test Case ที่ต้องการสร้าง Automation Case</div></div><button class="btn">↻</button></div>
+      <div class="filters">
+        <select id="moduleFilter"><option value="">ทุก Module</option><option>Dashboard</option><option>Sales</option><option>Inventory</option></select>
+        <input id="searchInput" placeholder="ค้นหา Code / ชื่อ Test Case">
+        <select id="priorityFilter"><option value="">ทุก Priority</option><option>P0</option><option>P1</option></select>
+      </div>
+      <div class="tableWrap">
+        <table>
+          <colgroup><col style="width:42px"><col style="width:185px"><col><col style="width:85px"><col style="width:110px"><col style="width:95px"></colgroup>
+          <thead><tr><th></th><th>Test Case</th><th>ชื่อ Test Case</th><th>Priority</th><th>สถานะ</th><th>Automation</th></tr></thead>
+          <tbody id="testCaseBody"></tbody>
+        </table>
+      </div>
+      <div class="tableFooter"><div id="summary"></div><div class="pages"><button class="pageBtn">‹</button><button class="pageBtn on">1</button><button class="pageBtn">2</button><button class="pageBtn">3</button><button class="pageBtn">›</button></div></div>
+    </section>
+
+    <aside class="right">
+      <div class="sectionHead"><div><h2>รายละเอียด Test Case</h2><div class="desc">ตรวจสอบข้อมูลก่อนสร้าง Automation Case</div></div></div>
+      <div class="card" id="detailPanel"><div class="empty"><div><strong>ยังไม่ได้เลือก Test Case</strong>คลิก Test Case ทางซ้ายเพื่อเริ่ม</div></div></div>
+      <div class="hint"><h3>เมื่อสร้าง Automation Case</h3><ul><li>ระบบจะสร้าง Automation Case และ DSL เบื้องต้นให้</li><li>สามารถแก้ไข DSL ก่อน Run ได้</li><li>ต้องตรวจสอบและอนุมัติก่อนใช้งานจริง</li></ul></div>
+    </aside>
+  </div>
+</section>
+
+<section class="panel" id="panel2">
+  <div class="reviewLayout">
+    <div class="reviewCol">
+      <div class="card">
+        <div class="sectionHead"><div><h2>ตรวจสอบรายละเอียด Test Case</h2><div class="desc">ข้อมูลจาก Test Management ที่ AI จะนำไปใช้ Generate Automation</div></div><span class="badge ai">AI Input</span></div>
+        <div id="reviewMeta" class="meta"></div>
+        <div class="divider"></div>
+        <div class="textBlock">
+          <h3>Objective</h3><p id="reviewObjective"></p>
+          <h3>Preconditions</h3><ul id="reviewPreconditions"></ul>
+          <h3>Expected Result</h3><p id="reviewExpected"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sectionHead"><div><h2>Test Steps</h2><div class="desc">ขั้นตอนที่ระบบจะส่งให้ AI เพื่อแปลงเป็น Automation DSL</div></div><span class="badge ready" id="stepCountBadge"></span></div>
+        <div class="stepList" id="reviewSteps"></div>
+      </div>
+    </div>
+
+    <div class="reviewCol">
+      <div class="card">
+        <div class="sectionHead"><div><h2>Automation Readiness</h2><div class="desc">ตรวจสอบความพร้อมก่อน Generate</div></div></div>
+        <div style="display:grid;gap:12px">
+          <div class="checkRow"><span class="ok">✓</span> Test Case อยู่ในสถานะ Ready</div>
+          <div class="checkRow"><span class="ok">✓</span> มี Expected Result</div>
+          <div class="checkRow"><span class="ok">✓</span> ระบุ Module แล้ว</div>
+          <div class="checkRow"><span class="ok">✓</span> มี Test Steps สำหรับ AI Interpreter</div>
+          <div class="checkRow"><span class="warn">!</span> Object Repository จะตรวจสอบหลัง Generate DSL</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="sectionHead"><div><h2>ตั้งค่าการสร้าง Automation</h2><div class="desc">กำหนดค่าที่ใช้สำหรับ Automation Case ใหม่</div></div></div>
+        <div class="formGrid">
+          <div class="field full"><label>Automation Case Name</label><input id="automationName"><div class="help">ชื่อสามารถแก้ไขได้ก่อนบันทึก</div></div>
+          <div class="field"><label>Automation Type</label><select id="automationType"><option>AI Generated</option><option>Manual DSL</option></select></div>
+          <div class="field"><label>Target Application</label><select><option>ProMaxx2 Windows</option></select></div>
+          <div class="field"><label>Execution Mode</label><select><option>Windows Agent</option><option>Local Preview</option></select></div>
+          <div class="field"><label>Priority</label><select id="automationPriority"><option>P0</option><option>P1</option><option>P2</option></select></div>
+          <div class="field full"><label>หมายเหตุสำหรับ AI</label><textarea rows="4" placeholder="เช่น ให้ตรวจข้อความแจ้งเตือนและตรวจสอบข้อมูลในฐานข้อมูลหลังบันทึก"></textarea></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="panel3">
+  <div class="builder">
+    <div class="card">
+      <div class="sectionHead"><div><h2>Automation Case</h2><div class="desc">ตรวจสอบข้อมูล Automation ก่อนอนุมัติ</div></div><span class="badge ai">AI Generated</span></div>
+      <div class="formGrid">
+        <div class="field full"><label>Automation Code</label><input id="automationCode" value="AUT-PMX2-MOD-011-TC-006"></div>
+        <div class="field full"><label>Automation Name</label><input id="builderName"></div>
+        <div class="field"><label>Linked Test Case</label><input id="linkedTestCase" readonly></div>
+        <div class="field"><label>Version</label><input value="1.0" readonly></div>
+        <div class="field"><label>Status</label><select><option>Needs Review</option><option>Validated</option><option>Ready</option></select></div>
+        <div class="field"><label>Agent Target</label><select><option>Any Available Agent</option><option>QA-PC01</option><option>QA-PC02</option></select></div>
+      </div>
+      <div class="divider"></div>
+      <div class="summaryBox">
+        <div class="summaryItem"><div class="n" id="sumActions">7</div><div class="l">Actions</div></div>
+        <div class="summaryItem"><div class="n">2</div><div class="l">Assertions</div></div>
+        <div class="summaryItem"><div class="n">96%</div><div class="l">AI Confidence</div></div>
+        <div class="summaryItem"><div class="n">0</div><div class="l">Validation Error</div></div>
+      </div>
+      <div class="actionBar">
+        <span class="chip">✓ Action Library</span>
+        <span class="chip">✓ Parameter Schema</span>
+        <span class="chip">✓ Object Mapping</span>
+        <span class="chip">✓ Test Data</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sectionHead"><div><h2>Automation DSL</h2><div class="desc">ภาษากลางที่ Agent จะนำไป Execute กับ ProMaxx2 Windows</div></div><div><button class="btn" id="regenerateBtn">↻ Regenerate</button></div></div>
+      <div class="dsl" id="dslBox"></div>
+      <div class="actionBar">
+        <button class="btn" id="editDslBtn">แก้ไข DSL</button>
+        <button class="btn" id="validateBtn">Validate</button>
+      </div>
+      <div class="note" id="validationMessage">สถานะ: DSL พร้อมตรวจสอบ</div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="panel4">
+  <div class="successScreen">
+    <div class="successCard">
+      <div class="successIcon">✓</div>
+      <h2>สร้าง Automation Case สำเร็จ</h2>
+      <p>Automation Case ถูกสร้างและผูกกับ Test Case เรียบร้อยแล้ว พร้อมนำไป Validate และ Run ผ่าน Windows Agent</p>
+      <div class="resultGrid">
+        <div class="resultItem"><div class="k">Automation Case</div><div class="v" id="successCode"></div></div>
+        <div class="resultItem"><div class="k">Linked Test Case</div><div class="v" id="successTestCase"></div></div>
+        <div class="resultItem"><div class="k">Status</div><div class="v"><span class="badge ready">Ready for Review</span></div></div>
+        <div class="resultItem"><div class="k">Execution Target</div><div class="v">ProMaxx2 Windows Agent</div></div>
+      </div>
+      <div class="actionBar" style="justify-content:center">
+        <button class="btn">ดู Automation Case</button>
+        <button class="btn">ไปหน้า Automation Dashboard</button>
+        <button class="btn btnSuccess" id="createAnother">สร้าง Case เพิ่ม</button>
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+
+<footer class="footer" id="wizardFooter">
+  <div class="footerNav">
+    <div class="footerLeft"><button class="btn" id="cancelBtn">ยกเลิก</button><button class="btn" id="backBtn" style="display:none">‹ ย้อนกลับ</button></div>
+    <div class="footerRight"><button class="btn btnPrimary" id="nextBtn" disabled>ถัดไป ›</button></div>
+  </div>
+</footer>
+</div></div>
+
+<script>
+const cases=[
+{code:"PMX2-MOD-011-TC-001",title:"ตรวจสอบ Dashboard แสดงข้อมูลครบถ้วน",module:"Dashboard",priority:"P1",has:true,auto:true},
+{code:"PMX2-MOD-011-TC-005",title:"ตรวจสอบ KPI ยอดขายประจำวัน",module:"Dashboard",priority:"P1",has:true,auto:true},
+{code:"PMX2-MOD-011-TC-006",title:"ตรวจสอบ KPI จำนวนบิลวันนี้",module:"Dashboard",priority:"P0",has:false,auto:false},
+{code:"PMX2-MOD-011-TC-007",title:"ตรวจสอบ KPI ยอดขายรายเดือน",module:"Dashboard",priority:"P1",has:true,auto:true},
+{code:"PMX2-MOD-011-TC-008",title:"ตรวจสอบ KPI สินค้าขายดี 10 อันดับ",module:"Dashboard",priority:"P1",has:true,auto:true},
+{code:"PMX2-MOD-011-TC-009",title:"ตรวจสอบเปอร์เซ็นต์ KPI เป้าหมาย",module:"Dashboard",priority:"P1",has:true,auto:true},
+{code:"PMX2-MOD-011-TC-010",title:"ตรวจสอบกราฟยอดขายรายสัปดาห์",module:"Dashboard",priority:"P0",has:false,auto:false},
+{code:"PMX2-MOD-011-TC-011",title:"ตรวจสอบสัดส่วนยอดขายตามช่องทาง",module:"Dashboard",priority:"P1",has:false,auto:false},
+{code:"PMX2-MOD-011-TC-012",title:"ตรวจสอบแนวโน้มยอดขายรายปี",module:"Dashboard",priority:"P1",has:false,auto:false},
+{code:"PMX2-MOD-011-TC-013",title:"ตรวจสอบ Time Zone และรูปแบบวันที่",module:"Dashboard",priority:"P0",has:false,auto:false},
+{code:"PMX2-MOD-015-TC-001",title:"ตรวจสอบการเข้าสู่ระบบและสิทธิ์",module:"Sales",priority:"P0",has:false,auto:false},
+{code:"PMX2-MOD-015-TC-002",title:"ตรวจสอบการแสดงผลเมนูตามสิทธิ์",module:"Sales",priority:"P1",has:true,auto:true}
+];
+const detailTemplate={
+ objective:"ตรวจสอบว่าระบบแสดงผล KPI จำนวนบิลวันนี้ได้ถูกต้องตามข้อมูลจริงในระบบ",
+ pre:["เข้าสู่ระบบด้วย User ที่มีสิทธิ์เข้าถึง Dashboard","ระบบมีข้อมูลรายการขายของวันที่ปัจจุบัน","ฐานข้อมูลและ Service อยู่ในสถานะพร้อมใช้งาน"],
+ expected:"จำนวนบิลที่แสดงบน Dashboard ต้องตรงกับจำนวนรายการขายของวันที่ปัจจุบันจากข้อมูลจริง",
+ steps:[
+  ["เปิดหน้า Dashboard","หน้า Dashboard แสดงผลสำเร็จ"],
+  ["ตรวจสอบ KPI จำนวนบิลวันนี้","แสดงจำนวนบิลเป็นตัวเลข"],
+  ["อ่านค่าจำนวนบิลที่แสดง","สามารถอ่านค่าจาก UI ได้"],
+  ["ตรวจสอบจำนวนบิลจากฐานข้อมูล","ได้จำนวนรายการขายของวันนี้"],
+  ["เปรียบเทียบค่า UI กับฐานข้อมูล","ค่าทั้งสองต้องเท่ากัน"]
+ ]
+};
+let selected=null,currentStep=1;
+const body=document.getElementById("testCaseBody"),detail=document.getElementById("detailPanel"),next=document.getElementById("nextBtn"),back=document.getElementById("backBtn");
+function filtered(){
+ const q=document.getElementById("searchInput").value.toLowerCase(),m=document.getElementById("moduleFilter").value,p=document.getElementById("priorityFilter").value;
+ return cases.filter(x=>(!q||x.code.toLowerCase().includes(q)||x.title.toLowerCase().includes(q))&&(!m||x.module===m)&&(!p||x.priority===p));
+}
+function render(){
+ const list=filtered();
+ body.innerHTML=list.map(x=>`<tr data-code="${x.code}" class="${selected===x.code?'selected':''}">
+ <td><span class="radio"></span></td><td><div class="code">${x.code}</div></td><td><div class="ellipsis">${x.title}</div></td>
+ <td><span class="badge ${x.priority.toLowerCase()}">${x.priority}</span></td>
+ <td><span class="badge ${x.has?'has':'none'}">${x.has?'มี Case แล้ว':'ยังไม่มี Case'}</span></td><td>${x.auto?'✓ พร้อม':'—'}</td></tr>`).join("");
+ document.getElementById("summary").textContent=`แสดง 1 - ${list.length} จาก ${list.length} รายการ`;
+ [...body.querySelectorAll("tr")].forEach(r=>r.onclick=()=>{selected=r.dataset.code;render();showDetail(cases.find(x=>x.code===selected));});
+}
+function showDetail(x){
+ detail.innerHTML=`<div class="detailTop"><div><div class="detailCode">${x.code}</div><div class="detailTitle">${x.title}</div></div><span class="badge ${x.priority.toLowerCase()}">${x.priority}</span></div>
+ <div class="meta"><div class="key">Module</div><div>${x.module}</div><div class="key">Test Type</div><div>Functional</div><div class="key">Owner</div><div>QA Team</div><div class="key">สถานะ</div><div>${x.has?'มี Automation Case แล้ว':'ยังไม่มี Automation Case'}</div><div class="key">Automation Candidate</div><div>${x.auto?'พร้อมใช้งาน Automation':'แนะนำให้ทำ Automation'}</div></div>
+ <div class="divider"></div><div class="textBlock"><h3>Objective</h3><p>${detailTemplate.objective}</p><h3>Preconditions</h3><ul>${detailTemplate.pre.map(v=>`<li>${v}</li>`).join("")}</ul><h3>Expected Result (ย่อ)</h3><p>${detailTemplate.expected}</p></div>`;
+ next.disabled=false;
+}
+function prepareReview(){
+ const x=cases.find(v=>v.code===selected);
+ document.getElementById("reviewMeta").innerHTML=`<div class="key">Test Case</div><div><strong>${x.code}</strong></div><div class="key">ชื่อ</div><div>${x.title}</div><div class="key">Module</div><div>${x.module}</div><div class="key">Priority</div><div>${x.priority}</div><div class="key">Test Type</div><div>Functional</div><div class="key">Owner</div><div>QA Team</div>`;
+ document.getElementById("reviewObjective").textContent=detailTemplate.objective;
+ document.getElementById("reviewExpected").textContent=detailTemplate.expected;
+ document.getElementById("reviewPreconditions").innerHTML=detailTemplate.pre.map(v=>`<li>${v}</li>`).join("");
+ document.getElementById("reviewSteps").innerHTML=detailTemplate.steps.map((s,i)=>`<div class="stepItem"><div class="stepNo">${i+1}</div><div><strong>${s[0]}</strong><div class="desc" style="margin-top:5px">Expected: ${s[1]}</div></div></div>`).join("");
+ document.getElementById("stepCountBadge").textContent=`${detailTemplate.steps.length} Steps`;
+ document.getElementById("automationName").value=`Automation - ${x.title}`;
+ document.getElementById("automationPriority").value=x.priority;
+}
+function prepareBuilder(){
+ const x=cases.find(v=>v.code===selected);
+ const name=document.getElementById("automationName").value || `Automation - ${x.title}`;
+ document.getElementById("builderName").value=name;
+ document.getElementById("linkedTestCase").value=x.code;
+ document.getElementById("automationCode").value="AUT-"+x.code;
+ document.getElementById("dslBox").textContent=`OPEN_SCREEN Dashboard
+
+READ_VALUE KPI_TODAY_BILL_COUNT -> ui_bill_count
+
+DB_QUERY COUNT_TODAY_SALES -> db_bill_count
+
+EXPECT_NOT_NULL ui_bill_count
+EXPECT_NOT_NULL db_bill_count
+
+EXPECT_EQUAL ui_bill_count db_bill_count
+
+CAPTURE_SCREENSHOT "KPI_TODAY_BILL_COUNT"
+
+SAVE_RESULT`;
+}
+function showStep(n){
+ currentStep=n;
+ document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
+ document.getElementById("panel"+n).classList.add("active");
+ document.querySelectorAll(".step").forEach(s=>{
+  const sn=Number(s.dataset.step); s.classList.remove("active","done");
+  if(sn<n)s.classList.add("done"); else if(sn===n)s.classList.add("active");
+ });
+ back.style.display=n>1 && n<4 ? "" : "none";
+ document.getElementById("cancelBtn").style.display=n===4?"none":"";
+ if(n===1){next.textContent="ถัดไป ›";next.disabled=!selected}
+ if(n===2){prepareReview();next.textContent="สร้าง Automation ›";next.disabled=false}
+ if(n===3){prepareBuilder();next.textContent="บันทึก Automation Case ›";next.disabled=false}
+ if(n===4){
+  document.getElementById("wizardFooter").style.display="none";
+  document.getElementById("successCode").textContent=document.getElementById("automationCode").value;
+  document.getElementById("successTestCase").textContent=selected;
+ }
+ window.scrollTo({top:0,behavior:"smooth"});
+}
+["searchInput","moduleFilter","priorityFilter"].forEach(id=>document.getElementById(id).addEventListener(id==="searchInput"?"input":"change",render));
+next.onclick=()=>{if(currentStep===1&&!selected)return;showStep(currentStep+1)};
+back.onclick=()=>showStep(currentStep-1);
+document.getElementById("validateBtn").onclick=()=>{document.getElementById("validationMessage").innerHTML='<span class="ok">✓ Validation Passed</span> — Action, Parameter และ Object Mapping พร้อมใช้งาน';};
+document.getElementById("regenerateBtn").onclick=()=>{document.getElementById("validationMessage").textContent="AI สร้าง DSL ใหม่เรียบร้อยแล้ว กรุณา Validate อีกครั้ง";};
+document.getElementById("editDslBtn").onclick=()=>alert("Prototype: จุดนี้สามารถเปลี่ยนเป็น Code Editor เช่น Monaco Editor ได้");
+document.getElementById("createAnother").onclick=()=>{selected=null;document.getElementById("wizardFooter").style.display="";showStep(1);render();detail.innerHTML='<div class="empty"><div><strong>ยังไม่ได้เลือก Test Case</strong>คลิก Test Case ทางซ้ายเพื่อเริ่ม</div></div>';};
+render();
+</script>
+</body>
+</html>

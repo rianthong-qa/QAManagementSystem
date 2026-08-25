@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ProMaxx2 QA Hub - Automation UX/UI Spec</title>
+<style>
+:root{
+  --bg:#f6f8fc;
+  --surface:#ffffff;
+  --surface-soft:#f8fafc;
+  --nav:#112238;
+  --nav-hover:#183559;
+  --nav-active:#2563eb;
+  --border:#e2e8f0;
+  --border-strong:#d4dce8;
+  --text:#162033;
+  --muted:#6b7280;
+
+  --primary:#2563eb;
+  --primary-700:#1d4ed8;
+  --primary-soft:#edf4ff;
+
+  --success:#16a34a;
+  --success-soft:#ecfdf3;
+
+  --warning:#f59e0b;
+  --warning-soft:#fff7e8;
+
+  --danger:#dc2626;
+  --danger-soft:#fef2f2;
+
+  --cyan:#0ea5a4;
+  --cyan-soft:#ebffff;
+
+  --purple:#7c3aed;
+  --purple-soft:#f5f3ff;
+
+  --radius-sm:8px;
+  --radius-md:12px;
+  --radius-lg:16px;
+
+  --shadow-sm:0 2px 8px rgba(15,23,42,.04);
+  --shadow-md:0 8px 24px rgba(15,23,42,.06);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  font-family:"Segoe UI",Tahoma,Arial,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+button,input{font:inherit}
+a{text-decoration:none;color:inherit}
+.app{
+  display:grid;
+  grid-template-columns:220px minmax(0,1fr);
+  min-height:100vh;
+}
+
+/* SIDEBAR */
+.sidebar{
+  background:linear-gradient(180deg,#102238 0%,#132945 100%);
+  color:#fff;
+  padding:16px 12px;
+  position:sticky;
+  top:0;
+  height:100vh;
+  overflow:auto;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:2px 4px 16px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.brand-icon{
+  width:42px;height:42px;border-radius:12px;
+  background:linear-gradient(135deg,#2f6ef8,#2451cf);
+  display:grid;place-items:center;font-weight:800;
+}
+.brand strong{display:block;font-size:14px}
+.brand span{display:block;font-size:10px;color:#c8d4e5;margin-top:3px}
+.group-title{
+  margin:18px 7px 8px;
+  font-size:9px;
+  letter-spacing:.08em;
+  color:#91a5bf;
+  text-transform:uppercase;
+}
+.nav-item{
+  min-height:38px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:7px 9px;
+  border-radius:9px;
+  color:#e8eef7;
+  font-size:11px;
+  margin-bottom:3px;
+}
+.nav-item:hover{background:var(--nav-hover)}
+.nav-item.active{
+  background:linear-gradient(135deg,#3169e8,#225be4);
+  box-shadow:0 5px 14px rgba(37,99,235,.22);
+}
+.nav-ico{
+  width:20px;height:20px;
+  border-radius:6px;
+  background:rgba(255,255,255,.1);
+  display:grid;place-items:center;
+  font-size:10px;
+  flex:0 0 auto;
+}
+
+/* MAIN */
+.main{min-width:0}
+.topbar{
+  height:68px;
+  background:#fff;
+  border-bottom:1px solid var(--border);
+  padding:0 22px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+.top-left,.top-right{display:flex;align-items:center;gap:10px}
+.menu-btn{
+  width:38px;height:38px;border:1px solid var(--border);border-radius:10px;background:#fff;cursor:pointer;
+}
+.context-chip{
+  min-width:115px;
+  padding:8px 12px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:#fff;
+}
+.context-chip .k{font-size:8px;color:var(--muted);font-weight:700}
+.context-chip .v{font-size:11px;font-weight:700;margin-top:3px}
+.blocker{
+  padding:7px 11px;
+  border-radius:999px;
+  background:var(--success-soft);
+  color:#166534;
+  font-size:10px;
+  font-weight:700;
+}
+.avatar{
+  width:34px;height:34px;border-radius:50%;
+  background:#eef4ff;color:var(--primary);
+  display:grid;place-items:center;
+  font-size:10px;font-weight:800;
+}
+.user small{display:block;font-size:9px;color:var(--muted)}
+.user strong{display:block;font-size:10px}
+
+.content{
+  padding:20px 22px 32px;
+}
+.page-head{
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+  align-items:flex-start;
+  margin-bottom:14px;
+}
+.page-head h1{margin:0;font-size:26px}
+.page-head p{margin:5px 0 0;color:var(--muted);font-size:11px}
+.page-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.search{position:relative}
+.search input{
+  width:245px;
+  height:40px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:0 36px 0 12px;
+  outline:none;
+}
+.search:after{
+  content:"⌕";
+  position:absolute;
+  right:12px;top:9px;color:#94a3b8;
+}
+.btn{
+  height:40px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:#fff;
+  padding:0 14px;
+  font-size:11px;
+  font-weight:700;
+  cursor:pointer;
+}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-700)}
+
+.metrics{
+  display:grid;
+  grid-template-columns:repeat(6,1fr);
+  gap:12px;
+  margin-bottom:16px;
+}
+.metric{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:14px;
+  min-height:120px;
+  padding:16px;
+  display:grid;
+  grid-template-columns:48px 1fr 20px;
+  gap:10px;
+  align-items:center;
+  box-shadow:var(--shadow-sm);
+}
+.metric-ico{
+  width:46px;height:46px;border-radius:50%;
+  display:grid;place-items:center;
+  font-size:22px;font-weight:800;
+}
+.m-blue{background:var(--primary-soft);color:var(--primary)}
+.m-green{background:var(--success-soft);color:var(--success)}
+.m-orange{background:var(--warning-soft);color:var(--warning)}
+.m-purple{background:var(--purple-soft);color:var(--purple)}
+.m-red{background:var(--danger-soft);color:var(--danger)}
+.m-cyan{background:var(--cyan-soft);color:var(--cyan)}
+.metric-label{font-size:10px;font-weight:700}
+.metric-value{font-size:24px;font-weight:800;line-height:1;margin:5px 0}
+.metric-note{font-size:9px;color:var(--muted)}
+.metric-go{color:#94a3b8;font-size:20px}
+
+/* FLOW */
+.flow-card{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:18px;
+  box-shadow:var(--shadow-sm);
+  margin-bottom:16px;
+}
+.flow{
+  display:grid;
+  grid-template-columns:1fr 42px 1fr 42px 1fr 42px 1fr 42px 1fr;
+  align-items:center;
+  gap:0;
+}
+.flow-step{
+  display:flex;align-items:center;gap:10px;min-width:0
+}
+.flow-icon{
+  width:50px;height:50px;border-radius:50%;
+  border:2px solid #dbe7ff;
+  background:#fff;
+  color:var(--primary);
+  display:grid;place-items:center;
+  font-size:20px;
+  position:relative;
+  flex:0 0 auto;
+}
+.flow-badge{
+  position:absolute;
+  top:-5px;right:-3px;
+  width:20px;height:20px;border-radius:50%;
+  background:var(--primary);color:#fff;
+  display:grid;place-items:center;
+  font-size:9px;font-weight:800;
+}
+.flow-step strong{font-size:11px;display:block}
+.flow-step span{font-size:9px;color:var(--muted);display:block;margin-top:4px}
+.arrow{text-align:center;color:#9aa7b8;font-size:24px}
+
+/* TASK + AGENT */
+.two-col{
+  display:grid;
+  grid-template-columns:1.2fr .8fr;
+  gap:14px;
+  margin-bottom:16px;
+}
+.panel{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:14px;
+  box-shadow:var(--shadow-sm);
+}
+.panel-head{
+  padding:14px 16px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  border-bottom:1px solid var(--border);
+}
+.panel-head h2{margin:0;font-size:14px}
+.panel-head a{font-size:10px;color:var(--primary);font-weight:800}
+.task-list{padding:4px 14px 10px}
+.task{
+  min-height:66px;
+  display:grid;
+  grid-template-columns:34px 1fr 34px 18px;
+  gap:10px;
+  align-items:center;
+  border-bottom:1px solid #eef2f7;
+}
+.task:last-child{border-bottom:0}
+.task-icon{
+  width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:800
+}
+.task strong{font-size:11px}
+.task p{margin:3px 0 0;font-size:9px;color:var(--muted)}
+.count{
+  min-width:28px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:10px;font-weight:800
+}
+.count.red{background:var(--danger-soft);color:var(--danger)}
+.count.orange{background:var(--warning-soft);color:var(--warning)}
+.count.green{background:var(--success-soft);color:var(--success)}
+
+.agent{
+  padding:15px 16px 17px;
+  display:grid;
+  grid-template-columns:1fr 150px;
+  gap:16px;
+}
+.agent-status{
+  display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;margin-bottom:14px
+}
+.online-dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.primary-tag{
+  padding:3px 9px;border-radius:999px;background:var(--primary-soft);color:var(--primary);font-size:9px
+}
+.agent-meta{
+  display:grid;
+  grid-template-columns:100px 1fr;
+  gap:9px 12px;
+  font-size:10px;
+}
+.agent-meta .k{color:#475569;font-weight:700}
+.health{
+  border-left:1px solid var(--border);
+  display:grid;place-items:center;text-align:center
+}
+.ring{
+  width:82px;height:82px;border-radius:50%;
+  background:conic-gradient(var(--success) 0 78%,#dfe5ec 78% 100%);
+  display:grid;place-items:center;
+  position:relative;
+}
+.ring:before{
+  content:"";position:absolute;inset:9px;border-radius:50%;background:#fff
+}
+.ring strong{position:relative;font-size:17px}
+.health span{font-size:9px;color:var(--success);font-weight:700;margin-top:6px}
+
+/* TABLE */
+.result-panel{overflow:hidden}
+.table-wrap{overflow:auto}
+table{width:100%;border-collapse:collapse;min-width:920px}
+thead th{
+  text-align:left;
+  padding:10px 14px;
+  font-size:9px;
+  color:#475569;
+  background:#fafbfc;
+  border-bottom:1px solid var(--border);
+}
+tbody td{
+  padding:11px 14px;
+  font-size:10px;
+  border-bottom:1px solid #edf1f6;
+  vertical-align:middle;
+}
+tbody tr:last-child td{border-bottom:0}
+.case-code{font-weight:800;color:var(--primary)}
+.subline{display:block;color:var(--muted);font-size:9px;margin-top:3px}
+.badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:4px 9px;border-radius:7px;font-size:9px;font-weight:800;
+}
+.badge.fail{background:var(--danger-soft);color:var(--danger)}
+.badge.pass{background:var(--success-soft);color:var(--success)}
+.more{
+  width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:#fff;cursor:pointer
+}
+.table-footer{
+  padding:12px 16px;
+  border-top:1px solid var(--border);
+  text-align:center;
+}
+.table-footer button{
+  border:1px solid var(--border);
+  background:#fff;border-radius:8px;
+  padding:8px 14px;color:var(--primary);
+  font-size:10px;font-weight:800;cursor:pointer
+}
+
+/* DEV SPEC */
+.spec{
+  margin-top:24px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:14px;
+  box-shadow:var(--shadow-sm);
+}
+.spec-head{
+  padding:18px 20px;
+  border-bottom:1px solid var(--border);
+}
+.spec-head h2{margin:0;font-size:17px}
+.spec-head p{margin:5px 0 0;font-size:10px;color:var(--muted)}
+.spec-grid{
+  padding:18px 20px;
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:14px;
+}
+.spec-card{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:14px;
+  background:#fcfdff;
+}
+.spec-card h3{margin:0 0 9px;font-size:12px}
+.spec-card ul{margin:0;padding-left:17px}
+.spec-card li{font-size:10px;line-height:1.65;color:#475569}
+.tokens{
+  display:flex;flex-wrap:wrap;gap:7px;margin-top:10px
+}
+.token{
+  padding:5px 8px;border-radius:8px;border:1px solid var(--border);font-size:9px;background:#fff
+}
+.state-table{
+  width:100%;min-width:0
+}
+.state-table th,.state-table td{font-size:9px;padding:7px 8px}
+.state-table th{background:#f8fafc}
+
+@media(max-width:1280px){
+  .metrics{grid-template-columns:repeat(3,1fr)}
+  .flow{grid-template-columns:1fr;gap:10px}
+  .arrow{transform:rotate(90deg)}
+  .two-col{grid-template-columns:1fr}
+}
+@media(max-width:900px){
+  .app{grid-template-columns:1fr}
+  .sidebar{display:none}
+  .topbar{height:auto;min-height:64px;align-items:flex-start;flex-direction:column;padding:12px 14px}
+  .top-left,.top-right{flex-wrap:wrap}
+  .content{padding:14px}
+  .page-head{flex-direction:column}
+  .page-actions{width:100%}
+  .search{flex:1;min-width:200px}
+  .search input{width:100%}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+  .agent{grid-template-columns:1fr}
+  .health{border-left:0;border-top:1px solid var(--border);padding-top:16px}
+  .spec-grid{grid-template-columns:1fr}
+}
+@media(max-width:560px){
+  .metrics{grid-template-columns:1fr}
+  .context-chip{min-width:100px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">QA</div>
+      <div>
+        <strong>ProMaxx2 QA Hub</strong>
+        <span>Quality Assurance Management</span>
+      </div>
+    </div>
+
+    <div class="group-title">ภาพรวม</div>
+    <a class="nav-item" href="#"><span class="nav-ico">⌂</span>Dashboard</a>
+    <a class="nav-item" href="#"><span class="nav-ico">P</span>Project / Module</a>
+    <a class="nav-item" href="#"><span class="nav-ico">▣</span>Release / Build</a>
+
+    <div class="group-title">Requirement & Test Design</div>
+    <a class="nav-item" href="#"><span class="nav-ico">R</span>Requirement</a>
+    <a class="nav-item" href="#"><span class="nav-ico">≋</span>RTM</a>
+    <a class="nav-item" href="#"><span class="nav-ico">TC</span>Test Case</a>
+    <a class="nav-item" href="#"><span class="nav-ico">▤</span>Test Suite</a>
+
+    <div class="group-title">Test Execution</div>
+    <a class="nav-item" href="#"><span class="nav-ico">◎</span>Test Cycle</a>
+    <a class="nav-item" href="#"><span class="nav-ico">▶</span>Execution Workspace</a>
+    <a class="nav-item" href="#"><span class="nav-ico">!</span>Defect</a>
+    <a class="nav-item" href="#"><span class="nav-ico">↻</span>Regression</a>
+    <a class="nav-item active" href="#"><span class="nav-ico">A</span>Automation</a>
+
+    <div class="group-title">Release Governance</div>
+    <a class="nav-item" href="#"><span class="nav-ico">Σ</span>Test Summary</a>
+    <a class="nav-item" href="#"><span class="nav-ico">△</span>Risk Acceptance</a>
+    <a class="nav-item" href="#"><span class="nav-ico">✓</span>Release Sign-off</a>
+
+    <div class="group-title">Administration</div>
+    <a class="nav-item" href="#"><span class="nav-ico">⚙</span>System Setting</a>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="top-left">
+        <button class="menu-btn" type="button">☰</button>
+        <div class="context-chip"><div class="k">PROJECT</div><div class="v">ProMaxx2</div></div>
+        <div class="context-chip"><div class="k">RELEASE</div><div class="v">PMX2-REL-003</div></div>
+        <div class="context-chip"><div class="k">BUILD</div><div class="v">Build 0.0-beta.1</div></div>
+      </div>
+
+      <div class="top-right">
+        <div class="blocker">● 0 Blockers</div>
+        <div class="avatar">134</div>
+        <div class="user"><strong>เหรียญทอง เจือบุญ</strong><small>System Administrator</small></div>
+        <button class="btn" type="button">↪ ออกจากระบบ</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <section class="page-head">
+        <div>
+          <h1>Automation</h1>
+          <p>Automation Module — สร้าง Automation Case, DSL, Action Library, Agent และติดตามผลการรัน</p>
+        </div>
+        <div class="page-actions">
+          <div class="search"><input type="text" placeholder="ค้นหา Automation Case..." aria-label="ค้นหา Automation Case"></div>
+          <button class="btn" type="button">↥ Export</button>
+          <button class="btn btn-primary" type="button" id="createCaseBtn">＋ สร้าง Automation Case</button>
+        </div>
+      </section>
+
+      <section class="metrics" aria-label="Automation KPI">
+        <div class="metric">
+          <div class="metric-ico m-blue">◇</div>
+          <div><div class="metric-label">Automation Cases</div><div class="metric-value">11</div><div class="metric-note">ทั้งหมด</div></div>
+          <div class="metric-go">›</div>
+        </div>
+        <div class="metric">
+          <div class="metric-ico m-green">✓</div>
+          <div><div class="metric-label">Ready</div><div class="metric-value">5</div><div class="metric-note">45% coverage</div></div>
+          <div class="metric-go">›</div>
+        </div>
+        <div class="metric">
+          <div class="metric-ico m-orange">⌕</div>
+          <div><div class="metric-label">Maintenance</div><div class="metric-value">5</div><div class="metric-note">ต้องแก้ DSL / Object</div></div>
+          <div class="metric-go">›</div>
+        </div>
+        <div class="metric">
+          <div class="metric-ico m-purple">▶</div>
+          <div><div class="metric-label">Running</div><div class="metric-value">0</div><div class="metric-note">กำลังทำงาน</div></div>
+          <div class="metric-go">›</div>
+        </div>
+        <div class="metric">
+          <div class="metric-ico m-red">×</div>
+          <div><div class="metric-label">Failed</div><div class="metric-value">23</div><div class="metric-note">ต้องตรวจสอบ</div></div>
+          <div class="metric-go">›</div>
+        </div>
+        <div class="metric">
+          <div class="metric-ico m-cyan">♙</div>
+          <div><div class="metric-label">Agents Online</div><div class="metric-value">1 / 1</div><div class="metric-note">พร้อมใช้งาน</div></div>
+          <div class="metric-go">›</div>
+        </div>
+      </section>
+
+      <section class="flow-card">
+        <div class="flow">
+          <div class="flow-step">
+            <div class="flow-icon">▧<span class="flow-badge">1</span></div>
+            <div><strong>สร้าง Automation Case</strong><span>11 Case</span></div>
+          </div>
+          <div class="arrow">→</div>
+
+          <div class="flow-step">
+            <div class="flow-icon">✦<span class="flow-badge">2</span></div>
+            <div><strong>Generate DSL / AI</strong><span>11 Case</span></div>
+          </div>
+          <div class="arrow">→</div>
+
+          <div class="flow-step">
+            <div class="flow-icon">⬟<span class="flow-badge">3</span></div>
+            <div><strong>Validate</strong><span>Ready 5 Case</span></div>
+          </div>
+          <div class="arrow">→</div>
+
+          <div class="flow-step">
+            <div class="flow-icon" style="color:#64748b;border-color:#e2e8f0">▣</div>
+            <div><strong>Run Agent</strong><span>0 กำลังรัน</span></div>
+          </div>
+          <div class="arrow">→</div>
+
+          <div class="flow-step">
+            <div class="flow-icon" style="color:#64748b;border-color:#e2e8f0">⌁</div>
+            <div><strong>Evidence / Result</strong><span>ผ่าน 12 / Fail 23</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h2>สิ่งที่ต้องดำเนินการ</h2><a href="#">ดูทั้งหมด</a></div>
+          <div class="task-list">
+            <div class="task">
+              <div class="task-icon" style="background:var(--danger-soft);color:var(--danger)">!</div>
+              <div><strong>มี 23 Execution ที่ Fail</strong><p>ตรวจสอบ Evidence และ Defect</p></div>
+              <div class="count red">23</div><div>›</div>
+            </div>
+            <div class="task">
+              <div class="task-icon" style="background:var(--warning-soft);color:var(--warning)">⌕</div>
+              <div><strong>มี 5 Automation Case ที่ต้อง Maintenance</strong><p>อัปเดต Object หรือ DSL ให้พร้อมใช้งาน</p></div>
+              <div class="count orange">5</div><div>›</div>
+            </div>
+            <div class="task">
+              <div class="task-icon" style="background:var(--success-soft);color:var(--success)">▶</div>
+              <div><strong>มี 5 Automation Case พร้อม Run</strong><p>สามารถส่งรันด้วย Agent ได้ทันที</p></div>
+              <div class="count green">5</div><div>›</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Agent Status</h2><a href="#">ดูทั้งหมด</a></div>
+          <div class="agent">
+            <div>
+              <div class="agent-status"><span class="online-dot"></span>QA-AGENT-01 <span class="primary-tag">Primary</span></div>
+              <div class="agent-meta">
+                <div class="k">PC Name</div><div>QA-PC01</div>
+                <div class="k">OS</div><div>Windows 11 Pro 23H2</div>
+                <div class="k">Agent Version</div><div>1.0.3</div>
+                <div class="k">Last Heartbeat</div><div>23/8/2569 11:00:35</div>
+                <div class="k">Running Jobs</div><div>0</div>
+              </div>
+            </div>
+            <div class="health">
+              <div>
+                <div class="ring"><strong>100%</strong></div>
+                <span>Health</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel result-panel">
+        <div class="panel-head"><h2>ผลการรันล่าสุด</h2><a href="#">ดูทั้งหมด</a></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Automation Case</th>
+                <th>Linked Test Case</th>
+                <th>Result</th>
+                <th>Agent</th>
+                <th>Execution Time</th>
+                <th>Duration</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="case-code">AUT-PMX2-MOD-011-TC-008</span><span class="subline">ตรวจสอบ Dashboard แสดงข้อมูลครบถ้วน</span></td>
+                <td><strong>PMX2-MOD-011-TC-008</strong><span class="subline">ตรวจสอบ Dashboard</span></td>
+                <td><span class="badge fail">Failed</span></td>
+                <td>QA-AGENT-01</td>
+                <td>23/8/2569 11:00:04</td>
+                <td>00:08:12</td>
+                <td><button class="more" type="button">⋮</button></td>
+              </tr>
+              <tr>
+                <td><span class="case-code">AUT-PMX2-MOD-015-TC-004</span><span class="subline">ตรวจสอบการเข้าถึงเมนูบุคคล</span></td>
+                <td><strong>PMX2-MOD-015-TC-004</strong><span class="subline">ตรวจสอบการเข้าถึงเมนู</span></td>
+                <td><span class="badge fail">Failed</span></td>
+                <td>QA-AGENT-01</td>
+                <td>23/8/2569 10:19:48</td>
+                <td>00:06:35</td>
+                <td><button class="more" type="button">⋮</button></td>
+              </tr>
+              <tr>
+                <td><span class="case-code">AUT-PMX2-MOD-098-TC-001</span><span class="subline">ตรวจสอบเปอร์เซ็นต์ KPI เป้าหมาย</span></td>
+                <td><strong>PMX2-MOD-098-TC-001</strong><span class="subline">ตรวจสอบเปอร์เซ็นต์ KPI</span></td>
+                <td><span class="badge fail">Failed</span></td>
+                <td>QA-AGENT-01</td>
+                <td>23/8/2569 10:19:35</td>
+                <td>00:05:51</td>
+                <td><button class="more" type="button">⋮</button></td>
+              </tr>
+              <tr>
+                <td><span class="case-code">AUT-PMX2-MOD-015-TC-002</span><span class="subline">ตรวจสอบการแสดงผลเมนู</span></td>
+                <td><strong>PMX2-MOD-015-TC-002</strong><span class="subline">ตรวจสอบการแสดงผลเมนู</span></td>
+                <td><span class="badge pass">Passed</span></td>
+                <td>QA-AGENT-01</td>
+                <td>23/8/2569 08:57:55</td>
+                <td>00:03:22</td>
+                <td><button class="more" type="button">⋮</button></td>
+              </tr>
+              <tr>
+                <td><span class="case-code">AUT-PMX2-MOD-015-TC-003</span><span class="subline">ตรวจสอบการสร้างผู้ใช้งาน</span></td>
+                <td><strong>PMX2-MOD-015-TC-003</strong><span class="subline">ตรวจสอบการสร้างผู้ใช้งาน</span></td>
+                <td><span class="badge pass">Passed</span></td>
+                <td>QA-AGENT-01</td>
+                <td>23/8/2569 08:57:53</td>
+                <td>00:04:18</td>
+                <td><button class="more" type="button">⋮</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer"><button type="button">ดูผลการรันทั้งหมด ›</button></div>
+      </section>
+
+      <section class="spec">
+        <div class="spec-head">
+          <h2>UX/UI Development Specification</h2>
+          <p>รายละเอียดสำหรับนำดีไซน์นี้ไปพัฒนาใน ProMaxx2 QA Hub</p>
+        </div>
+
+        <div class="spec-grid">
+          <div class="spec-card">
+            <h3>1. Visual Hierarchy</h3>
+            <ul>
+              <li>หัวหน้าหน้า + Primary Action ต้องเห็นก่อน KPI</li>
+              <li>KPI ใช้สำหรับ Summary เท่านั้น ไม่ใส่รายละเอียดเชิงลึก</li>
+              <li>Workflow แสดงเป็นเส้นทาง 5 ขั้นตอน ไม่ใช้ Card ซ้ำหลายชั้น</li>
+              <li>Action Required ใช้สีสถานะเพื่อบอกความเร่งด่วน</li>
+              <li>Recent Execution เป็นส่วนหลักด้านล่างสำหรับงานประจำวันของ QA</li>
+            </ul>
+          </div>
+
+          <div class="spec-card">
+            <h3>2. Design Tokens</h3>
+            <ul>
+              <li>Primary: #2563EB</li>
+              <li>Success: #16A34A</li>
+              <li>Warning: #F59E0B</li>
+              <li>Danger: #DC2626</li>
+              <li>Surface: #FFFFFF / Background: #F6F8FC</li>
+              <li>Border: #E2E8F0</li>
+              <li>Radius หลัก: 12–16px</li>
+            </ul>
+            <div class="tokens">
+              <span class="token">Primary Action</span>
+              <span class="token">Status Color</span>
+              <span class="token">Soft Background</span>
+              <span class="token">Neutral Border</span>
+            </div>
+          </div>
+
+          <div class="spec-card">
+            <h3>3. Component Structure</h3>
+            <ul>
+              <li>AutomationPageHeader</li>
+              <li>AutomationMetricCard</li>
+              <li>AutomationWorkflow</li>
+              <li>AutomationActionList</li>
+              <li>AgentStatusCard</li>
+              <li>AutomationExecutionTable</li>
+              <li>StatusBadge / EmptyState / LoadingState</li>
+            </ul>
+          </div>
+
+          <div class="spec-card">
+            <h3>4. Responsive Rules</h3>
+            <ul>
+              <li>≥1280px: KPI 6 Columns, Action + Agent 2 Columns</li>
+              <li>900–1279px: KPI 3 Columns, Section อื่นเรียง 1 Column</li>
+              <li>&lt;900px: ซ่อน Sidebar และใช้ Drawer/Menu</li>
+              <li>&lt;560px: KPI 1 Column และ Table ใช้ Horizontal Scroll</li>
+            </ul>
+          </div>
+
+          <div class="spec-card">
+            <h3>5. Interaction</h3>
+            <ul>
+              <li>กด KPI → ไปหน้ารายการที่ Filter ตามสถานะ</li>
+              <li>กด Workflow Step → ไปหน้า Stage ที่เกี่ยวข้อง</li>
+              <li>กด Action Required → เปิดรายการ Maintenance / Failed / Ready</li>
+              <li>กด Agent → เปิด Agent Detail / Heartbeat / Capability</li>
+              <li>กด Row Action → View Detail / Evidence / Re-run / Create Defect</li>
+            </ul>
+          </div>
+
+          <div class="spec-card">
+            <h3>6. Status & State</h3>
+            <table class="state-table">
+              <thead><tr><th>State</th><th>UI</th><th>Behavior</th></tr></thead>
+              <tbody>
+                <tr><td>Ready</td><td>Green</td><td>Run ได้</td></tr>
+                <tr><td>Running</td><td>Purple/Blue</td><td>Disable duplicate run</td></tr>
+                <tr><td>Maintenance</td><td>Orange</td><td>บังคับ Review DSL/Object</td></tr>
+                <tr><td>Failed</td><td>Red</td><td>เปิด Evidence/Defect Action</td></tr>
+                <tr><td>Agent Offline</td><td>Gray/Red</td><td>Disable Run</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="spec-card">
+            <h3>7. API/Data Mapping</h3>
+            <ul>
+              <li>KPI: GET /api/automation/dashboard/summary</li>
+              <li>Actions: GET /api/automation/dashboard/actions</li>
+              <li>Agent: GET /api/automation/agents/status</li>
+              <li>Recent Runs: GET /api/automation/executions?limit=5</li>
+              <li>Create Case: POST /api/automation/cases</li>
+            </ul>
+          </div>
+
+          <div class="spec-card">
+            <h3>8. UX Acceptance Criteria</h3>
+            <ul>
+              <li>ผู้ใช้รู้ได้ภายใน 5 วินาทีว่ามี Case/Fail/Agent เท่าไร</li>
+              <li>Action ที่ต้องทำต้องมองเห็นโดยไม่ Scroll บน Desktop</li>
+              <li>Primary Action “สร้าง Automation Case” ต้องเห็นชัดที่สุด</li>
+              <li>สีต้องไม่เป็นตัวสื่อสถานะเพียงอย่างเดียว ต้องมี Label</li>
+              <li>Table ต้องรองรับ Loading, Empty, Error และ Pagination</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+const createBtn = document.getElementById("createCaseBtn");
+createBtn.addEventListener("click", () => {
+  alert("UX Prototype: เชื่อมปุ่มนี้ไปหน้า Create Automation Case Wizard");
+});
+
+document.querySelectorAll(".more").forEach(btn => {
+  btn.addEventListener("click", () => {
+    alert("Row Actions: ดูรายละเอียด / Evidence / Re-run / Create Defect");
+  });
+});
+</script>
+</body>
+</html>

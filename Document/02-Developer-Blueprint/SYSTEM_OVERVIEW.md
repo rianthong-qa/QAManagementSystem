@@ -113,7 +113,7 @@ git diff --check     # ห้ามมี trailing whitespace
 | `02-Developer-Blueprint/SCREEN_SPECIFICATION.md` | สเปกหน้าจอ |
 | `02-Developer-Blueprint/SQL_SERVER_SCHEMA.md` | Schema ฐานข้อมูล |
 | `01-System-Blueprint/` | REQUIREMENTS / DATABASE_DESIGN / WORKFLOW |
-| `03-Architecture-and-Plan/` | แผนสถาปัตยกรรม + `AUTOMATION_PLAN.md` (แผน Test Automation ของ Promaxx2 POS แบบ Phase 0–5 + Encryption Readiness) |
+| `03-Architecture-and-Plan/` | แผนสถาปัตยกรรม + `AUTOMATION_PLAN.md` (แผน Test Automation ของ Promaxx2 POS แบบ Phase 0–5 + Encryption Readiness) + `SELECTOR_CONTRACT.md` + `AUTOMATIONID_IMPLEMENTATION_GUIDE.md` (คู่มือใส่ AutomationId ให้ทีม Dev) |
 | `05-Module/` | เอกสารรายโมดูล |
 
 ## 8. สถานะงานล่าสุด (2026-08-21)
