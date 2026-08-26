@@ -83,7 +83,8 @@ Request:
 ```json
 {
   "username": "qa01",
-  "password": "********"
+  "password": "********",
+  "rememberMe": false
 }
 ```
 
@@ -92,7 +93,7 @@ Response:
 ```json
 {
   "accessToken": "...",
-  "expiresIn": 3600,
+  "expiresIn": 86400,
   "user": {
     "userId": "...",
     "displayName": "QA 01",
@@ -100,6 +101,8 @@ Response:
   }
 }
 ```
+
+> `rememberMe` (optional, default `false`) — เมื่อ `true` ระบบจะออก JWT แบบอายุยาว (ค่าเริ่มต้น 30 วัน ตั้งได้ที่ `Jwt:RememberMeDays`) เพื่อให้ผู้ใช้ยังคงเข้าสู่ระบบได้แม้ปิดเบราว์เซอร์ เมื่อ `false` (ค่าเริ่มต้น) token มีอายุตาม `Jwt:ExpiresMinutes` (ค่าเริ่มต้น 24 ชั่วโมง / 1440 นาที)
 
 ### GET `/auth/me`
 คืน User + Roles + Permissions

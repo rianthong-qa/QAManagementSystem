@@ -149,7 +149,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
     }
 
-    private async Task<string> SendAsync(HttpRequestMessage request, string provider, CancellationToken ct) { using var client = clients.CreateClient(); client.Timeout = TimeSpan.FromMinutes(5); using var response = await client.SendAsync(request, ct); var body = await response.Content.ReadAsStringAsync(ct); if (!response.IsSuccessStatusCode) throw new InvalidOperationException($"{provider} ตอบกลับไม่สำเร็จ ({(int)response.StatusCode})"); return body; }
+    private async Task<string> SendAsync(HttpRequestMessage request, string provider, CancellationToken ct) { using var client = clients.CreateClient(); client.Timeout = TimeSpan.FromMinutes(5); using var response = await client.SendAsync(request, ct); var body = await response.Content.ReadAsStringAsync(ct); if (!response.IsSuccessStatusCode) throw new InvalidOperationException($"{provider} ตอบกลับไม่สำเร็จ ({(int)response.StatusCode}): {body}"); return body; }
     private static StringContent Json(object value) => new(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json");
     private static string GuessMime(string? name) => Path.GetExtension(name)?.ToLowerInvariant() switch { ".pdf" => "application/pdf", ".txt" => "text/plain", ".csv" => "text/csv", ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp", _ => "application/octet-stream" };
 

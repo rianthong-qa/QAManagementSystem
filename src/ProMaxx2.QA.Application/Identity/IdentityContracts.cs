@@ -2,7 +2,7 @@ using ProMaxx2.QA.Domain.Identity;
 
 namespace ProMaxx2.QA.Application.Identity;
 
-public sealed record LoginRequest(string Username, string Password);
+public sealed record LoginRequest(string Username, string Password, bool RememberMe = false);
 public sealed record AuthenticatedUser(Guid UserId, string Username, string DisplayName, string? Email, IReadOnlyCollection<string> Roles, IReadOnlyCollection<string> Permissions, IReadOnlyCollection<Guid> AssignedProjectIds);
 public sealed record LoginResponse(string AccessToken, int ExpiresIn, AuthenticatedUser User);
 
@@ -21,7 +21,7 @@ public interface IPasswordService
 
 public interface ITokenService
 {
-    LoginResponse Create(AuthenticatedUser user);
+    LoginResponse Create(AuthenticatedUser user, bool rememberMe = false);
 }
 
 public sealed class InvalidCredentialsException : Exception
@@ -39,6 +39,6 @@ public sealed class AuthenticationService(IIdentityRepository repository, IPassw
         user.RecordLogin();
         await repository.SaveChangesAsync(cancellationToken);
         var profile = await repository.GetProfileAsync(user.UserId, cancellationToken) ?? throw new InvalidCredentialsException();
-        return tokens.Create(profile);
+        return tokens.Create(profile, request.RememberMe);
     }
 }

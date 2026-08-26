@@ -5996,6 +5996,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
 function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
   const [username, setUsername] = useState(""),
     [password, setPassword] = useState(""),
+    [rememberMe, setRememberMe] = useState(false),
     [showPassword, setShowPassword] = useState(false),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(false);
@@ -6007,7 +6008,7 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
       const response = await fetch(`${apiUrl}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, rememberMe: rememberMe }),
       });
       if (!response.ok) throw new Error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
       const data = await response.json();
@@ -6077,7 +6078,7 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
           </div>
         </label>
         <label className="remember">
-          <input type="checkbox" /> จดจำการเข้าสู่ระบบ
+          <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} /> จดจำการเข้าสู่ระบบ
         </label>
         <button className="btn primary login-button" disabled={loading}>
           {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}

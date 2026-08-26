@@ -20,7 +20,7 @@
 | Frontend | React 19 + TypeScript + Vite | SPA หลักอยู่ในไฟล์เดียว `src/ProMaxx2.QA.Web/src/App.tsx` (~6,600+ บรรทัด) + `styles.css` |
 | Backend | ASP.NET Core (.NET 10) Web API | Clean Architecture 4 projects |
 | Database | SQL Server LocalDB (`(localdb)\mssqllocaldb`, DB `ProMaxx2QA`) | EF Core + Migrations |
-| Auth | JWT Bearer (Issuer `ProMaxx2.QA`, expiry 60 นาที) | token เก็บ localStorage key `qa.accessToken`, ใช้ permission keys เช่น `PROJECT.VIEW`, `TESTCASE.VIEW`, `EXECUTION.RUN`, `DEFECT.EDIT` |
+| Auth | JWT Bearer (Issuer `ProMaxx2.QA`, expiry 24 ชั่วโมง, Remember Me 30 วัน) | token เก็บ localStorage key `qa.accessToken`, ใช้ permission keys เช่น `PROJECT.VIEW`, `TESTCASE.VIEW`, `EXECUTION.RUN`, `DEFECT.EDIT` |
 | AI | OpenAI-compatible API (`gpt-5-mini`) | ใช้ generate requirement / test case / test suite |
 
 ### โครงสร้าง Solution (`src/`)

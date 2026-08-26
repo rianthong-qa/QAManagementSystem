@@ -45,14 +45,15 @@ public sealed class PasswordService : IPasswordService
     }
 }
 
-public sealed class JwtOptions { public const string Section="Jwt"; public string Issuer {get;init;}="ProMaxx2.QA"; public string Audience {get;init;}="ProMaxx2.QA.Web"; public string Key {get;init;}=string.Empty; public int ExpiresMinutes {get;init;}=60; }
+public sealed class JwtOptions { public const string Section="Jwt"; public string Issuer {get;init;}="ProMaxx2.QA"; public string Audience {get;init;}="ProMaxx2.QA.Web"; public string Key {get;init;}=string.Empty; public int ExpiresMinutes {get;init;}=60; public int RememberMeDays {get;init;}=30; }
 public sealed class TokenService(IOptions<JwtOptions> options) : ITokenService
 {
-    public LoginResponse Create(AuthenticatedUser user)
+    public LoginResponse Create(AuthenticatedUser user, bool rememberMe = false)
     {
         var value=options.Value; var claims=new List<Claim>{new(JwtRegisteredClaimNames.Sub,user.UserId.ToString()),new(JwtRegisteredClaimNames.UniqueName,user.Username),new("display_name",user.DisplayName)};
         claims.AddRange(user.Roles.Select(x=>new Claim(ClaimTypes.Role,x))); claims.AddRange(user.Permissions.Select(x=>new Claim("permission",x)));
-        var expires=DateTime.UtcNow.AddMinutes(value.ExpiresMinutes); var token=new JwtSecurityToken(value.Issuer,value.Audience,claims,expires:expires,signingCredentials:new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(value.Key)),SecurityAlgorithms.HmacSha256));
-        return new(new JwtSecurityTokenHandler().WriteToken(token), value.ExpiresMinutes*60, user);
+        var lifetime=rememberMe ? TimeSpan.FromDays(value.RememberMeDays) : TimeSpan.FromMinutes(value.ExpiresMinutes);
+        var expires=DateTime.UtcNow.Add(lifetime); var token=new JwtSecurityToken(value.Issuer,value.Audience,claims,expires:expires,signingCredentials:new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(value.Key)),SecurityAlgorithms.HmacSha256));
+        return new(new JwtSecurityTokenHandler().WriteToken(token), (int)lifetime.TotalSeconds, user);
     }
 }
