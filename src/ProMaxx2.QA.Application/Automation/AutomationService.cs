@@ -11,6 +11,10 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     public Task<IReadOnlyList<AutomationCaseDto>> ListCasesAsync(Guid projectId, string? search, int take, CancellationToken ct)
         => repository.ListCasesAsync(projectId, search, Math.Clamp(take, 1, 200), ct);
 
+    /// <summary>AUT-P2-001.</summary>
+    public Task<PagedResult<AutomationCaseDto>> ListCasesPagedAsync(Guid projectId, string? search, string? status, string? automationTarget, string? sortBy, int page, int size, CancellationToken ct)
+        => repository.ListCasesPagedAsync(projectId, search, status, automationTarget, sortBy, page, size, ct);
+
     public async Task<AutomationCaseDto> GetCaseAsync(Guid id, Guid projectId, CancellationToken ct)
         => await repository.GetCaseAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
 
@@ -479,6 +483,13 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
 
     public Task<IReadOnlyList<AutomationJobDto>> ListJobsAsync(Guid? projectId, Guid? buildId, int take, CancellationToken ct) => repository.ListJobsAsync(projectId, buildId, Math.Clamp(take, 1, 200), ct);
     public Task<IReadOnlyList<AutomationExecutionDto>> ListExecutionsAsync(Guid projectId, Guid? buildId, int take, CancellationToken ct) => repository.ListExecutionsAsync(projectId, buildId, Math.Clamp(take, 1, 200), ct);
+
+    /// <summary>AUT-P2-001.</summary>
+    public Task<PagedResult<AutomationJobDto>> ListJobsPagedAsync(Guid? projectId, Guid? buildId, string? status, string? sortBy, int page, int size, CancellationToken ct)
+        => repository.ListJobsPagedAsync(projectId, buildId, status, sortBy, page, size, ct);
+    /// <summary>AUT-P2-001.</summary>
+    public Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, string? status, string? search, string? sortBy, int page, int size, CancellationToken ct)
+        => repository.ListExecutionsPagedAsync(projectId, buildId, status, search, sortBy, page, size, ct);
 
     public async Task<AutomationJobPackageDto?> ClaimNextJobAsync(ClaimJobRequest r, CancellationToken ct)
     {

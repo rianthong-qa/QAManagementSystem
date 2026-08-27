@@ -304,11 +304,15 @@ export function AutomationPage({
     if (!pid) { setCases([]); setObjects([]); setExecutions([]); setDash(null); return; }
     const h = { Authorization: `Bearer ${token()}` };
     setError("");
+    // Cases/jobs/executions here deliberately stay a flat "up to 200" load (AUT-P2-001 kept this shared, cross-
+    // cutting fetch as-is) — it feeds dashboard KPIs, CSV export, and the batch-run/suite case pickers, none of
+    // which need true pagination. The three endpoints now always return a PagedResult ({total, rows}) — see
+    // AutomationCasesTab/ExecutionTab below for the components that fetch real server-paginated pages of their own.
     Promise.all([
-      fetch(`${apiUrl}/automation/cases?projectId=${pid}&take=200`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${apiUrl}/automation/cases?projectId=${pid}&page=1&size=200`, { headers: h }).then((r) => (r.ok ? r.json() : { rows: [] })),
       fetch(`${apiUrl}/automation/objects?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/jobs?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&take=200`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/executions?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&take=200`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${apiUrl}/automation/jobs?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&page=1&size=200`, { headers: h }).then((r) => (r.ok ? r.json() : { rows: [] })),
+      fetch(`${apiUrl}/automation/executions?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&page=1&size=200`, { headers: h }).then((r) => (r.ok ? r.json() : { rows: [] })),
       fetch(`${apiUrl}/automation/agents`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
       fetch(`${apiUrl}/automation/actions`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
       fetch(`${apiUrl}/automation/dashboard?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
@@ -316,10 +320,10 @@ export function AutomationPage({
       fetch(`${apiUrl}/automation/settings/retry-policy`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([c, o, j, e, a, ac, d, fk, rp]) => {
-        setCases(Array.isArray(c) ? c : []);
+        setCases(Array.isArray(c?.rows) ? c.rows : []);
         setObjects(Array.isArray(o) ? o : []);
-        setJobs(Array.isArray(j) ? j : []);
-        setExecutions(Array.isArray(e) ? e : []);
+        setJobs(Array.isArray(j?.rows) ? j.rows : []);
+        setExecutions(Array.isArray(e?.rows) ? e.rows : []);
         setAgents(Array.isArray(a) ? a : []);
         setActions(Array.isArray(ac) ? ac : []);
         setDash(d && typeof d === "object" && d.automationCases != null ? d : null);
@@ -838,12 +842,25 @@ export function AutomationPage({
     { label: "Agents Online", value: `${kAgentsOnline} / ${kAgentsTotal}`, note: "พร้อมใช้งาน", tone: "cyan", icon: "♙", go: () => { setManageTab("agents"); setTab("manage"); } },
   ] as { label: string; value: number | string; note: string; tone: string; icon: string; go: () => void }[];
 
-  const headQuery = headSearch.trim().toLowerCase();
-  const filteredCases = cases.filter((c) => (!headQuery || c.automationCode.toLowerCase().includes(headQuery) || c.testCaseCode.toLowerCase().includes(headQuery) || c.testCaseTitle.toLowerCase().includes(headQuery)) && (caseStatusFilter === "all" || c.status === caseStatusFilter) && (caseTargetFilter === "all" || c.automationType === caseTargetFilter));
+  // AUT-P2-001: the Cases table is server-paginated for real (separate fetch from the shared "up to 200" load
+  // above) — filters/sort become query params instead of a client-side .filter(), and only the current page's rows
+  // ever reach the browser.
   const casePageSize = 15;
-  const casePageCount = Math.max(1, Math.ceil(filteredCases.length / casePageSize));
-  const pagedCases = filteredCases.slice((casePage - 1) * casePageSize, casePage * casePageSize);
-  useEffect(() => setCasePage(1), [headSearch, caseStatusFilter, caseTargetFilter]);
+  const [casesPaged, setCasesPaged] = useState<{ total: number; rows: AutomationCaseItem[] }>({ total: 0, rows: [] });
+  const [caseSortBy, setCaseSortBy] = useState("created");
+  const casePageCount = Math.max(1, Math.ceil(casesPaged.total / casePageSize));
+  useEffect(() => setCasePage(1), [headSearch, caseStatusFilter, caseTargetFilter, caseSortBy]);
+  useEffect(() => {
+    if (!pid) { setCasesPaged({ total: 0, rows: [] }); return; }
+    const qs = new URLSearchParams({ projectId: pid, page: String(casePage), size: String(casePageSize), sortBy: caseSortBy });
+    if (headSearch.trim()) qs.set("search", headSearch.trim());
+    if (caseStatusFilter !== "all") qs.set("status", caseStatusFilter);
+    if (caseTargetFilter !== "all") qs.set("automationTarget", caseTargetFilter);
+    fetch(`${apiUrl}/automation/cases?${qs}`, { headers })
+      .then((r) => (r.ok ? r.json() : { total: 0, rows: [] }))
+      .then((d) => setCasesPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }))
+      .catch(() => setCasesPaged({ total: 0, rows: [] }));
+  }, [pid, casePage, casePageSize, headSearch, caseStatusFilter, caseTargetFilter, caseSortBy, headers, reload]);
 
   const hasActiveWork = kRunning > 0 || jobs.some((j) => j.status === "Queued" || j.status === "Assigned" || j.status === "Running");
   useEffect(() => {
@@ -1037,12 +1054,17 @@ export function AutomationPage({
               <option value="App">App · Promaxxs.App.exe</option>
               <option value="WindowsUI">WindowsUI · generic</option>
             </select>
+            <select aria-label="เรียงตาม" value={caseSortBy} onChange={(e) => setCaseSortBy(e.target.value)}>
+              <option value="created">ล่าสุดก่อน</option>
+              <option value="code">Code (A→Z)</option>
+              <option value="status">สถานะ</option>
+            </select>
             {(caseStatusFilter !== "all" || caseTargetFilter !== "all" || headSearch.trim()) && <button type="button" className="table-action" onClick={() => { setCaseStatusFilter("all"); setCaseTargetFilter("all"); setHeadSearch(""); }}>ล้างตัวกรอง</button>}
           </div>
-          {(headSearch.trim() || caseStatusFilter !== "all" || caseTargetFilter !== "all") && <div className="automation-search-hint">แสดง {filteredCases.length} จาก {cases.length} รายการ{headSearch.trim() ? ` · ค้นหา "${headSearch}"` : ""}{caseStatusFilter !== "all" ? ` · สถานะ ${caseStatusFilter}` : ""}{caseTargetFilter !== "all" ? ` · Target ${caseTargetFilter}` : ""} — <button type="button" className="table-action" onClick={() => { setHeadSearch(""); setCaseStatusFilter("all"); setCaseTargetFilter("all"); }}>ล้างทั้งหมด</button></div>}
-          {pagedCases.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th></th></tr></thead><tbody>{pagedCases.map((c) => <tr key={c.automationCaseId}><td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td><button className="table-action" onClick={() => openCase(c)}>รายละเอียด</button></td></tr>)}</tbody></table></div>
+          {(headSearch.trim() || caseStatusFilter !== "all" || caseTargetFilter !== "all") && <div className="automation-search-hint">แสดง {casesPaged.total.toLocaleString()} รายการที่ตรงเงื่อนไข{headSearch.trim() ? ` · ค้นหา "${headSearch}"` : ""}{caseStatusFilter !== "all" ? ` · สถานะ ${caseStatusFilter}` : ""}{caseTargetFilter !== "all" ? ` · Target ${caseTargetFilter}` : ""} — <button type="button" className="table-action" onClick={() => { setHeadSearch(""); setCaseStatusFilter("all"); setCaseTargetFilter("all"); }}>ล้างทั้งหมด</button></div>}
+          {casesPaged.rows.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th></th></tr></thead><tbody>{casesPaged.rows.map((c) => <tr key={c.automationCaseId}><td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td><button className="table-action" onClick={() => openCase(c)}>รายละเอียด</button></td></tr>)}</tbody></table></div>
             : <div className="empty"><p>ไม่พบ Automation Case ที่ตรงเงื่อนไข</p><small>ลองเปลี่ยนคำค้นหาหรือตัวกรองด้านบน</small></div>}
-          {filteredCases.length > casePageSize && <Pager page={casePage} count={casePageCount} total={filteredCases.length} pageSize={casePageSize} onPrev={() => setCasePage((p) => Math.max(1, p - 1))} onNext={() => setCasePage((p) => Math.min(casePageCount, p + 1))} />}
+          {casesPaged.total > casePageSize && <Pager page={casePage} count={casePageCount} total={casesPaged.total} pageSize={casePageSize} onPrev={() => setCasePage((p) => Math.max(1, p - 1))} onNext={() => setCasePage((p) => Math.min(casePageCount, p + 1))} />}
         </> : <div className="empty"><p>ยังไม่มี Automation Case</p><small>สร้างจาก Test Case ที่เป็น Automation Candidate — จากนั้นเขียน DSL / Generate AI → Validate → อนุมัติ → พร้อมรัน</small>{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div>}
       <div className="automation-status-legend" role="note" aria-label="ความหมายสถานะ"><span><i className="legend-dot legend-draft" />Draft — ยังไม่มี DSL</span><span><i className="legend-dot legend-review" />NeedsReview — AI สร้างแล้ว รอตรวจ</span><span><i className="legend-dot legend-ready" />Ready — พร้อมรัน</span><span><i className="legend-dot legend-maint" />MaintenanceRequired — ต้องซ่อม DSL/Object</span></div>
       </section>}
@@ -1063,7 +1085,7 @@ export function AutomationPage({
         {manageTab === "retry" && <RetryPolicyTab policy={retryPolicy} canManage={canManage} busy={maintenanceBusy} onSave={updateRetryPolicy} />}
       </section>}
 
-      {tab === "execution" && <ExecutionTab jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} />}
+      {tab === "execution" && <ExecutionTab projectId={pid} buildId={buildId} headers={headers} jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} reload={reload} />}
 
       {tab === "failures" && <FailureDashboardTab projectId={pid} releaseId={releaseId} agents={agents} headers={headers} setExecDetail={setExecDetail} />}
     </>}
@@ -1742,29 +1764,54 @@ function AgentsSection({ agents, agentsOnline, canManage, onToggle, onDelete }: 
   </section>;
 }
 
-function ExecutionTab({ jobs, executions, setExecDetail, execFilter, setExecFilter, canRun, onCancel, onRerun }: {
-  jobs: AutomationJobItem[]; executions: AutomationExecutionItem[]; setExecDetail: (v: AutomationExecutionItem | null) => void;
-  execFilter: string; setExecFilter: (v: string) => void; canRun: boolean; onCancel: (x: AutomationExecutionItem) => void; onRerun: (x: AutomationExecutionItem) => void;
+function ExecutionTab({ projectId, buildId, headers, jobs, executions, setExecDetail, execFilter, setExecFilter, canRun, onCancel, onRerun, reload }: {
+  projectId: string; buildId?: string; headers: Record<string, string>; jobs: AutomationJobItem[]; executions: AutomationExecutionItem[]; setExecDetail: (v: AutomationExecutionItem | null) => void;
+  execFilter: string; setExecFilter: (v: string) => void; canRun: boolean; onCancel: (x: AutomationExecutionItem) => void; onRerun: (x: AutomationExecutionItem) => void; reload: number;
 }) {
+  // AUT-P2-001: Job Queue and Run History are server-paginated for real — their own fetch, own page/filter/sort
+  // state, hitting the same paged endpoints as the shared "up to 200" load above. The `jobs`/`executions` props
+  // (that shared, capped state) are kept ONLY for the KPI strip below, which is a cross-cutting summary, not a list
+  // to page through — per the confirmed scope, KPIs/export/pickers stay on the flat shared load.
   const [execSearch, setExecSearch] = useState("");
   const [execPage, setExecPage] = useState(1);
   const [jobPage, setJobPage] = useState(1);
   const pageSize = 15;
+  const [jobsPaged, setJobsPaged] = useState<{ total: number; rows: AutomationJobItem[] }>({ total: 0, rows: [] });
+  const [execPaged, setExecPaged] = useState<{ total: number; rows: AutomationExecutionItem[] }>({ total: 0, rows: [] });
 
   const queuedJobs = jobs.filter((j) => j.status === "Queued");
-  const filteredExec = executions.filter((x) => (execFilter === "all" || x.status === execFilter) && (!execSearch.trim() || x.automationCode.toLowerCase().includes(execSearch.trim().toLowerCase()) || (x.agentCode ?? "").toLowerCase().includes(execSearch.trim().toLowerCase())));
-  const execPageCount = Math.max(1, Math.ceil(filteredExec.length / pageSize));
-  const pagedExec = filteredExec.slice((execPage - 1) * pageSize, execPage * pageSize);
-  const jobPageCount = Math.max(1, Math.ceil(jobs.length / pageSize));
-  const pagedJobs = jobs.slice((jobPage - 1) * pageSize, jobPage * pageSize);
+  const jobPageCount = Math.max(1, Math.ceil(jobsPaged.total / pageSize));
+  const execPageCount = Math.max(1, Math.ceil(execPaged.total / pageSize));
   const kpiRunning = executions.filter((e) => e.status === "Running").length;
   const kpiPassed = executions.filter((e) => e.status === "Passed").length;
   const kpiFailed = executions.filter((e) => e.status === "Failed").length;
   useEffect(() => setExecPage(1), [execSearch, execFilter]);
-  useEffect(() => setJobPage(1), [jobs.length]);
+  useEffect(() => setJobPage(1), [buildId]);
+
+  useEffect(() => {
+    if (!projectId) { setJobsPaged({ total: 0, rows: [] }); return; }
+    const qs = new URLSearchParams({ projectId, page: String(jobPage), size: String(pageSize) });
+    if (buildId) qs.set("buildId", buildId);
+    fetch(`${apiUrl}/automation/jobs?${qs}`, { headers })
+      .then((r) => (r.ok ? r.json() : { total: 0, rows: [] }))
+      .then((d) => setJobsPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }))
+      .catch(() => setJobsPaged({ total: 0, rows: [] }));
+  }, [projectId, buildId, jobPage, headers, reload]);
+
+  useEffect(() => {
+    if (!projectId) { setExecPaged({ total: 0, rows: [] }); return; }
+    const qs = new URLSearchParams({ projectId, page: String(execPage), size: String(pageSize) });
+    if (buildId) qs.set("buildId", buildId);
+    if (execFilter !== "all") qs.set("status", execFilter);
+    if (execSearch.trim()) qs.set("search", execSearch.trim());
+    fetch(`${apiUrl}/automation/executions?${qs}`, { headers })
+      .then((r) => (r.ok ? r.json() : { total: 0, rows: [] }))
+      .then((d) => setExecPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }))
+      .catch(() => setExecPaged({ total: 0, rows: [] }));
+  }, [projectId, buildId, execPage, execFilter, execSearch, headers, reload]);
 
   return <section className="automation-execution" aria-label="Automation Execution">
-    <header className="automation-section-head"><div><h2>Execution Queue & Run History</h2><p>ติดตามงานที่ Agent รับไปรัน และผลลัพธ์ทั้งหมด — รองรับข้อมูลจำนวนมากด้วยค้นหา/กรอง/แบ่งหน้า</p></div></header>
+    <header className="automation-section-head"><div><h2>Execution Queue & Run History</h2><p>ติดตามงานที่ Agent รับไปรัน และผลลัพธ์ทั้งหมด — รองรับข้อมูลจำนวนมากด้วยค้นหา/กรอง/แบ่งหน้าฝั่ง Server</p></div></header>
     <div className="automation-kpis">
       <div><small>Queued</small><strong>{queuedJobs.length}</strong><span>รอ Agent รับ</span></div>
       <div><small>Running</small><strong>{kpiRunning}</strong><span>กำลังรัน</span></div>
@@ -1774,14 +1821,14 @@ function ExecutionTab({ jobs, executions, setExecDetail, execFilter, setExecFilt
     </div>
     <div className="automation-exec-grid">
       <article className="card">
-        <div className="automation-section-head"><h3>Job Queue ({jobs.length})</h3><span className="muted-text">{queuedJobs.length} queued</span></div>
-        {jobs.length ? <>
-          <div className="automation-exec-list">{pagedJobs.map((j) => <div key={j.jobId} className="automation-queue-list"><article><div className="automation-queue-main"><Badge tone={jobStatusTone[j.status] ?? "blue"}>{j.status}</Badge><b>P{j.priority}</b><span>{j.assignedAgentCode ?? "รอ Agent"}</span>{j.retryCount > 0 && <Badge tone="orange">Retry {j.retryCount}</Badge>}</div><div><time dateTime={j.queuedAt}>{formatThaiDateTime(j.queuedAt)}</time>{j.lastError && <small className="queue-error">{j.lastError}</small>}</div></article></div>)}</div>
-          <Pager page={jobPage} count={jobPageCount} total={jobs.length} pageSize={pageSize} onPrev={() => setJobPage((p) => Math.max(1, p - 1))} onNext={() => setJobPage((p) => Math.min(jobPageCount, p + 1))} />
+        <div className="automation-section-head"><h3>Job Queue ({jobsPaged.total.toLocaleString()})</h3><span className="muted-text">{queuedJobs.length} queued</span></div>
+        {jobsPaged.rows.length ? <>
+          <div className="automation-exec-list">{jobsPaged.rows.map((j) => <div key={j.jobId} className="automation-queue-list"><article><div className="automation-queue-main"><Badge tone={jobStatusTone[j.status] ?? "blue"}>{j.status}</Badge><b>P{j.priority}</b><span>{j.assignedAgentCode ?? "รอ Agent"}</span>{j.retryCount > 0 && <Badge tone="orange">Retry {j.retryCount}</Badge>}</div><div><time dateTime={j.queuedAt}>{formatThaiDateTime(j.queuedAt)}</time>{j.lastError && <small className="queue-error">{j.lastError}</small>}</div></article></div>)}</div>
+          <Pager page={jobPage} count={jobPageCount} total={jobsPaged.total} pageSize={pageSize} onPrev={() => setJobPage((p) => Math.max(1, p - 1))} onNext={() => setJobPage((p) => Math.min(jobPageCount, p + 1))} />
         </> : <div className="empty"><p>ไม่มีงานในคิว</p></div>}
       </article>
       <article className="card">
-        <div className="automation-section-head"><h3>Run History ({filteredExec.length})</h3></div>
+        <div className="automation-section-head"><h3>Run History ({execPaged.total.toLocaleString()})</h3></div>
         <div className="automation-run-toolbar">
           <input aria-label="ค้นหาด้วยรหัสหรือ Agent" placeholder="ค้นหา Code / Agent..." value={execSearch} onChange={(e) => setExecSearch(e.target.value)} />
           <select aria-label="กรองสถานะ" value={execFilter} onChange={(e) => setExecFilter(e.target.value)}>
@@ -1789,8 +1836,8 @@ function ExecutionTab({ jobs, executions, setExecDetail, execFilter, setExecFilt
             {["Passed", "Failed", "Running", "Queued", "Blocked", "Cancelled", "Timeout", "AgentLost"].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        {pagedExec.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Target</th><th>Agent</th><th>Status</th><th>Duration</th><th>เวลา</th><th></th></tr></thead><tbody>{pagedExec.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className="automation-exec-tr"><td><b>{x.automationCode}</b><small>Rev {x.versionNo} · {x.buildNumber}</small></td><td><Badge tone={x.targetApp === "Pos" ? "blue" : x.targetApp === "App" ? "purple" : "gray"}>{x.targetApp ?? "WindowsUI"}</Badge></td><td>{x.agentCode ?? "-"}</td><td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td><td>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)}s` : "-"}</td><td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td><td onClick={(e) => e.stopPropagation()}><div className="automation-row-actions"><button type="button" className="automation-more" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>{canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => onRerun(x)}>▶</button>}{canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => onCancel(x)}>✕</button>}</div></td></tr>)}</tbody></table></div> : <div className="empty"><p>{execSearch || execFilter !== "all" ? "ไม่พบผลการรันที่ตรงเงื่อนไข" : "ยังไม่มีประวัติการรัน"}</p></div>}
-        {filteredExec.length > pageSize && <Pager page={execPage} count={execPageCount} total={filteredExec.length} pageSize={pageSize} onPrev={() => setExecPage((p) => Math.max(1, p - 1))} onNext={() => setExecPage((p) => Math.min(execPageCount, p + 1))} />}
+        {execPaged.rows.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Target</th><th>Agent</th><th>Status</th><th>Duration</th><th>เวลา</th><th></th></tr></thead><tbody>{execPaged.rows.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className="automation-exec-tr"><td><b>{x.automationCode}</b><small>Rev {x.versionNo} · {x.buildNumber}</small></td><td><Badge tone={x.targetApp === "Pos" ? "blue" : x.targetApp === "App" ? "purple" : "gray"}>{x.targetApp ?? "WindowsUI"}</Badge></td><td>{x.agentCode ?? "-"}</td><td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td><td>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)}s` : "-"}</td><td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td><td onClick={(e) => e.stopPropagation()}><div className="automation-row-actions"><button type="button" className="automation-more" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>{canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => onRerun(x)}>▶</button>}{canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => onCancel(x)}>✕</button>}</div></td></tr>)}</tbody></table></div> : <div className="empty"><p>{execSearch || execFilter !== "all" ? "ไม่พบผลการรันที่ตรงเงื่อนไข" : "ยังไม่มีประวัติการรัน"}</p></div>}
+        {execPaged.total > pageSize && <Pager page={execPage} count={execPageCount} total={execPaged.total} pageSize={pageSize} onPrev={() => setExecPage((p) => Math.max(1, p - 1))} onNext={() => setExecPage((p) => Math.min(execPageCount, p + 1))} />}
       </article>
     </div>
   </section>;

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Application.Automation;
+using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Domain.Automation;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
@@ -14,6 +15,28 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
             .Select(x => new { x.AutomationCaseId, x.TestCaseId, TestCaseCode = x.TestCase.TestCaseCode, TestCaseTitle = x.TestCase.Title, x.AutomationCode, x.AutomationType, x.Status, x.CurrentVersionNo, VersionCount = x.Versions.Count, x.OwnerUserId, OwnerName = x.OwnerUserId != null ? db.Users.Where(u => u.UserId == x.OwnerUserId).Select(u => u.DisplayName).FirstOrDefault() : null, x.IsAiGenerated, x.CreatedAt, x.MaintenanceReason, x.MaintenanceOwnerUserId, x.MaintenanceOpenedAt, x.IsQuarantined, x.QuarantineReason, x.QuarantineOwnerUserId, x.QuarantineExpiresAt })
             .ToListAsync(ct);
         return rows.Select(r => new AutomationCaseDto(r.AutomationCaseId, r.TestCaseId, r.TestCaseCode, r.TestCaseTitle, r.AutomationCode, r.AutomationType, r.Status, r.CurrentVersionNo, r.VersionCount, r.OwnerUserId, r.OwnerName, r.IsAiGenerated, r.CreatedAt, r.MaintenanceReason, r.MaintenanceOwnerUserId, r.MaintenanceOpenedAt, r.IsQuarantined, r.QuarantineReason, r.QuarantineOwnerUserId, r.QuarantineExpiresAt)).ToList();
+    }
+
+    public async Task<PagedResult<AutomationCaseDto>> ListCasesPagedAsync(Guid projectId, string? search, string? status, string? automationTarget, string? sortBy, int page, int size, CancellationToken ct)
+    {
+        var q = db.AutomationCases.AsNoTracking().Where(x => !x.IsDeleted && x.TestCase.ProjectId == projectId);
+        if (!string.IsNullOrWhiteSpace(search)) q = q.Where(x => x.AutomationCode.Contains(search) || x.TestCase.TestCaseCode.Contains(search) || x.TestCase.Title.Contains(search));
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status);
+        if (!string.IsNullOrWhiteSpace(automationTarget)) q = q.Where(x => x.AutomationType == automationTarget);
+        var total = await q.CountAsync(ct);
+        var p = Math.Max(1, page);
+        var s = Math.Clamp(size, 1, 200);
+        var ordered = sortBy switch
+        {
+            "code" => q.OrderBy(x => x.AutomationCode),
+            "status" => q.OrderBy(x => x.Status).ThenByDescending(x => x.CreatedAt),
+            _ => q.OrderByDescending(x => x.CreatedAt),
+        };
+        var rows = await ordered.Skip((p - 1) * s).Take(s)
+            .Select(x => new { x.AutomationCaseId, x.TestCaseId, TestCaseCode = x.TestCase.TestCaseCode, TestCaseTitle = x.TestCase.Title, x.AutomationCode, x.AutomationType, x.Status, x.CurrentVersionNo, VersionCount = x.Versions.Count, x.OwnerUserId, OwnerName = x.OwnerUserId != null ? db.Users.Where(u => u.UserId == x.OwnerUserId).Select(u => u.DisplayName).FirstOrDefault() : null, x.IsAiGenerated, x.CreatedAt, x.MaintenanceReason, x.MaintenanceOwnerUserId, x.MaintenanceOpenedAt, x.IsQuarantined, x.QuarantineReason, x.QuarantineOwnerUserId, x.QuarantineExpiresAt })
+            .ToListAsync(ct);
+        var items = rows.Select(r => new AutomationCaseDto(r.AutomationCaseId, r.TestCaseId, r.TestCaseCode, r.TestCaseTitle, r.AutomationCode, r.AutomationType, r.Status, r.CurrentVersionNo, r.VersionCount, r.OwnerUserId, r.OwnerName, r.IsAiGenerated, r.CreatedAt, r.MaintenanceReason, r.MaintenanceOwnerUserId, r.MaintenanceOpenedAt, r.IsQuarantined, r.QuarantineReason, r.QuarantineOwnerUserId, r.QuarantineExpiresAt)).ToList();
+        return new PagedResult<AutomationCaseDto>(total, items);
     }
 
     public async Task<AutomationCaseDto?> GetCaseAsync(Guid id, Guid projectId, CancellationToken ct)
@@ -173,6 +196,47 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
             .Select(x => new { x.AutomationExecutionId, x.AutomationCaseId, AutomationCode = x.AutomationCase.AutomationCode, TestCaseCode = x.AutomationCase.TestCase.TestCaseCode, TestCaseTitle = x.AutomationCase.TestCase.Title, x.AutomationVersionId, VersionNo = x.AutomationVersion.VersionNo, x.TestExecutionId, x.DefectId, x.TargetApp, x.AgentId, AgentCode = x.Agent != null ? x.Agent.AgentCode : null, x.BuildId, BuildNumber = x.Build.BuildNumber, x.EnvironmentId, EnvironmentName = x.Environment.EnvironmentName, x.JobId, x.Status, x.StartedAt, x.CompletedAt, x.DurationMs, x.FailureType, x.ErrorCode, x.ErrorMessage, x.ClassifiedFailureType, x.ClassifiedRecommendation, x.RetryOfExecutionId, x.RetryCount })
             .ToListAsync(ct);
         return rows.Select(r => new AutomationExecutionDto(r.AutomationExecutionId, r.AutomationCaseId, r.AutomationCode, r.TestCaseCode, r.TestCaseTitle, r.AutomationVersionId, r.VersionNo, r.TestExecutionId, r.DefectId, r.TargetApp, r.AgentId, r.AgentCode, r.BuildId, r.BuildNumber, r.EnvironmentId, r.EnvironmentName, r.JobId, r.Status, r.StartedAt, r.CompletedAt, r.DurationMs, r.FailureType, r.ErrorCode, r.ErrorMessage, [], [], r.ClassifiedFailureType, r.ClassifiedRecommendation, r.RetryOfExecutionId, r.RetryCount)).ToList();
+    }
+
+    public async Task<PagedResult<AutomationJobDto>> ListJobsPagedAsync(Guid? projectId, Guid? buildId, string? status, string? sortBy, int page, int size, CancellationToken ct)
+    {
+        var q = db.AutomationJobs.AsNoTracking();
+        if (projectId.HasValue) q = q.Where(j => j.AutomationExecution.AutomationCase.TestCase.ProjectId == projectId);
+        if (buildId.HasValue) q = q.Where(j => j.AutomationExecution.BuildId == buildId);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(j => j.Status == status);
+        var total = await q.CountAsync(ct);
+        var p = Math.Max(1, page);
+        var s = Math.Clamp(size, 1, 200);
+        var ordered = sortBy switch
+        {
+            "status" => q.OrderBy(j => j.Status).ThenByDescending(j => j.QueuedAt),
+            _ => q.OrderByDescending(j => j.QueuedAt),
+        };
+        var items = await ordered.Skip((p - 1) * s).Take(s)
+            .Select(j => new AutomationJobDto(j.JobId, j.AutomationExecutionId, j.Priority, j.RequestedAgentId, j.AssignedAgentId, j.AssignedAgent != null ? j.AssignedAgent.AgentCode : null, j.Status, j.QueuedAt, j.AssignedAt, j.StartedAt, j.CompletedAt, j.RetryCount, j.LastError)).ToListAsync(ct);
+        return new PagedResult<AutomationJobDto>(total, items);
+    }
+
+    public async Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, string? status, string? search, string? sortBy, int page, int size, CancellationToken ct)
+    {
+        var q = db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationCase.TestCase.ProjectId == projectId);
+        if (buildId.HasValue) q = q.Where(x => x.BuildId == buildId);
+        if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status);
+        if (!string.IsNullOrWhiteSpace(search)) q = q.Where(x => x.AutomationCase.AutomationCode.Contains(search) || (x.Agent != null && x.Agent.AgentCode.Contains(search)));
+        var total = await q.CountAsync(ct);
+        var p = Math.Max(1, page);
+        var s = Math.Clamp(size, 1, 200);
+        var ordered = sortBy switch
+        {
+            "status" => q.OrderBy(x => x.Status).ThenByDescending(x => x.CreatedAt),
+            "duration" => q.OrderByDescending(x => x.DurationMs),
+            _ => q.OrderByDescending(x => x.CreatedAt),
+        };
+        var rows = await ordered.Skip((p - 1) * s).Take(s)
+            .Select(x => new { x.AutomationExecutionId, x.AutomationCaseId, AutomationCode = x.AutomationCase.AutomationCode, TestCaseCode = x.AutomationCase.TestCase.TestCaseCode, TestCaseTitle = x.AutomationCase.TestCase.Title, x.AutomationVersionId, VersionNo = x.AutomationVersion.VersionNo, x.TestExecutionId, x.DefectId, x.TargetApp, x.AgentId, AgentCode = x.Agent != null ? x.Agent.AgentCode : null, x.BuildId, BuildNumber = x.Build.BuildNumber, x.EnvironmentId, EnvironmentName = x.Environment.EnvironmentName, x.JobId, x.Status, x.StartedAt, x.CompletedAt, x.DurationMs, x.FailureType, x.ErrorCode, x.ErrorMessage, x.ClassifiedFailureType, x.ClassifiedRecommendation, x.RetryOfExecutionId, x.RetryCount })
+            .ToListAsync(ct);
+        var items = rows.Select(r => new AutomationExecutionDto(r.AutomationExecutionId, r.AutomationCaseId, r.AutomationCode, r.TestCaseCode, r.TestCaseTitle, r.AutomationVersionId, r.VersionNo, r.TestExecutionId, r.DefectId, r.TargetApp, r.AgentId, r.AgentCode, r.BuildId, r.BuildNumber, r.EnvironmentId, r.EnvironmentName, r.JobId, r.Status, r.StartedAt, r.CompletedAt, r.DurationMs, r.FailureType, r.ErrorCode, r.ErrorMessage, [], [], r.ClassifiedFailureType, r.ClassifiedRecommendation, r.RetryOfExecutionId, r.RetryCount)).ToList();
+        return new PagedResult<AutomationExecutionDto>(total, items);
     }
 
     public async Task<IReadOnlyList<AutomationExecutionDto>> ListFailedExecutionsAsync(Guid projectId, DateTime? from, DateTime? to, Guid? buildId, Guid? agentId, string? failureType, int take, CancellationToken ct)

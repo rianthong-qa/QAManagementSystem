@@ -1,3 +1,4 @@
+using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Domain.Automation;
 
 namespace ProMaxx2.QA.Application.Automation;
@@ -66,6 +67,11 @@ public sealed record AutomationJobPackageDto(Guid JobId, Guid AutomationExecutio
 public interface IAutomationRepository
 {
     Task<IReadOnlyList<AutomationCaseDto>> ListCasesAsync(Guid projectId, string? search, int take, CancellationToken ct);
+    /// <summary>AUT-P2-001: real server-side page/size/filter/sort for the Automation Cases table — a sibling of
+    /// <see cref="ListCasesAsync"/> rather than a replacement, since that one is also used internally (duplicate-code
+    /// check in <c>AutomationCaseService.CreateAsync</c>) and by the shared cross-cutting page load (dashboard KPIs,
+    /// batch-run/suite case pickers) that needs a flat "up to N" list, not a UI page.</summary>
+    Task<PagedResult<AutomationCaseDto>> ListCasesPagedAsync(Guid projectId, string? search, string? status, string? automationTarget, string? sortBy, int page, int size, CancellationToken ct);
     Task<AutomationCaseDto?> GetCaseAsync(Guid id, Guid projectId, CancellationToken ct);
     Task<AutomationCase?> FindCaseAsync(Guid id, Guid projectId, CancellationToken ct);
     Task<AutomationCase?> FindCaseByIdAsync(Guid id, CancellationToken ct);
@@ -101,6 +107,13 @@ public interface IAutomationRepository
     Task<AutomationJobPackageDto?> ClaimNextJobAsync(string agentCode, string agentVersion, IReadOnlyList<string> capabilities, string targetApp, CancellationToken ct);
     Task<IReadOnlyList<AutomationJobDto>> ListJobsAsync(Guid? projectId, Guid? buildId, int take, CancellationToken ct);
     Task<IReadOnlyList<AutomationExecutionDto>> ListExecutionsAsync(Guid projectId, Guid? buildId, int take, CancellationToken ct);
+    /// <summary>AUT-P2-001: real server-side page/size/filter/sort for the Job Queue table — sibling of
+    /// <see cref="ListJobsAsync"/>, same rationale as <see cref="ListCasesPagedAsync"/>.</summary>
+    Task<PagedResult<AutomationJobDto>> ListJobsPagedAsync(Guid? projectId, Guid? buildId, string? status, string? sortBy, int page, int size, CancellationToken ct);
+    /// <summary>AUT-P2-001: real server-side page/size/filter/sort for the Execution table — sibling of
+    /// <see cref="ListExecutionsAsync"/>, same rationale as <see cref="ListCasesPagedAsync"/>. <paramref name="search"/>
+    /// preserves the existing Run History "search by code/agent" UX that used to be client-side only.</summary>
+    Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, string? status, string? search, string? sortBy, int page, int size, CancellationToken ct);
     Task<AutomationDashboardDto> GetDashboardAsync(Guid projectId, CancellationToken ct);
     Task AddStepResultAsync(AutomationStepResult entity, CancellationToken ct);
     Task<AutomationStepResult?> FindStepResultAsync(Guid stepResultId, Guid executionId, CancellationToken ct);

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.StaticFiles;
 using ProMaxx2.QA.Application.Automation;
+using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.TestManagement;
 using ProMaxx2.QA.Api.Services;
@@ -18,8 +19,12 @@ public sealed class AutomationController(
     ITestCaseRepository testCases,
     IWebHostEnvironment environment) : ControllerBase
 {
-    [HttpGet("cases")] public Task<IReadOnlyList<AutomationCaseDto>> ListCases([FromQuery] Guid projectId, [FromQuery] string? search, [FromQuery] int take = 100, CancellationToken ct = default)
-        => cases.ListCasesAsync(projectId, search, take, ct);
+    /// <summary>AUT-P2-001: real server-side page/size/filter/sort — <c>page</c>/<c>size</c> default to a single
+    /// page of 200 so existing callers that just want "up to 200 flat" (dashboard KPIs, batch-run/suite case
+    /// pickers) keep working unchanged by simply reading <c>.Rows</c> off the response.</summary>
+    [HttpGet("cases")] public Task<PagedResult<AutomationCaseDto>> ListCases([FromQuery] Guid projectId, [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? automationTarget,
+        [FromQuery] string? sortBy, [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
+        => cases.ListCasesPagedAsync(projectId, search, status, automationTarget, sortBy, page, size, ct);
 
     [HttpGet("cases/{id:guid}")] public async Task<ActionResult<AutomationCaseDto>> GetCase(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
     {
@@ -224,11 +229,15 @@ public sealed class AutomationController(
         catch (EntityNotFoundException) { return NotFound(); }
     }
 
-    [HttpGet("jobs")] public Task<IReadOnlyList<AutomationJobDto>> ListJobs([FromQuery] Guid? projectId, [FromQuery] Guid? buildId, [FromQuery] int take = 100, CancellationToken ct = default)
-        => agentService.ListJobsAsync(projectId, buildId, take, ct);
+    /// <summary>AUT-P2-001: see remark on <c>ListCases</c> — same "default page 1/size 200 keeps flat callers
+    /// working via .Rows" rationale.</summary>
+    [HttpGet("jobs")] public Task<PagedResult<AutomationJobDto>> ListJobs([FromQuery] Guid? projectId, [FromQuery] Guid? buildId, [FromQuery] string? status, [FromQuery] string? sortBy,
+        [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
+        => agentService.ListJobsPagedAsync(projectId, buildId, status, sortBy, page, size, ct);
 
-    [HttpGet("executions")] public Task<IReadOnlyList<AutomationExecutionDto>> ListExecutions([FromQuery] Guid projectId, [FromQuery] Guid? buildId, [FromQuery] int take = 100, CancellationToken ct = default)
-        => agentService.ListExecutionsAsync(projectId, buildId, take, ct);
+    [HttpGet("executions")] public Task<PagedResult<AutomationExecutionDto>> ListExecutions([FromQuery] Guid projectId, [FromQuery] Guid? buildId, [FromQuery] string? status, [FromQuery] string? search, [FromQuery] string? sortBy,
+        [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
+        => agentService.ListExecutionsPagedAsync(projectId, buildId, status, search, sortBy, page, size, ct);
 
     [HttpGet("executions/{id:guid}")] public async Task<ActionResult<AutomationExecutionDto>> GetExecution(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
     {
