@@ -47,7 +47,7 @@ public sealed class FirebirdDbValidator : IDbValidator
             foreach (var (key, value) in r.Parameters)
             {
                 var p = cmd.CreateParameter();
-                p.ParameterName = key.StartsWith("@") ? key : "@" + key;
+                p.ParameterName = DbAssertionComparer.NormalizeParameterName(key);
                 p.Value = value;
                 cmd.Parameters.Add(p);
             }
@@ -60,44 +60,13 @@ public sealed class FirebirdDbValidator : IDbValidator
             }
             sw.Stop();
             var actualText = actual?.ToString()?.Trim() ?? "";
-            return Task.FromResult(new DbValidationResult(Compare(actualText, r.Expected), actualText, r.Query, null, sw.ElapsedMilliseconds));
+            return Task.FromResult(new DbValidationResult(DbAssertionComparer.Compare(actualText, r.Expected), actualText, r.Query, null, sw.ElapsedMilliseconds));
         }
         catch (Exception ex)
         {
             sw.Stop();
             return Task.FromResult(new DbValidationResult(false, "", r.Query, ex.Message, sw.ElapsedMilliseconds));
         }
-    }
-
-    private static bool Compare(string actual, string expected)
-    {
-        var exp = expected.Trim();
-        var ops = new[] { ">=", "<=", "!=", ">", "<", "=" };
-        foreach (var op in ops)
-        {
-            if (!exp.StartsWith(op, StringComparison.Ordinal)) continue;
-            var rest = exp[op.Length..].Trim();
-            if (decimal.TryParse(actual, NumberStyles.Any, CultureInfo.InvariantCulture, out var aNum)
-                && decimal.TryParse(rest, NumberStyles.Any, CultureInfo.InvariantCulture, out var eNum))
-            {
-                return op switch
-                {
-                    ">=" => aNum >= eNum,
-                    "<=" => aNum <= eNum,
-                    "!=" => aNum != eNum,
-                    ">" => aNum > eNum,
-                    "<" => aNum < eNum,
-                    _ => aNum == eNum,
-                };
-            }
-            return actual.Equals(rest, StringComparison.OrdinalIgnoreCase);
-        }
-        if (decimal.TryParse(actual, NumberStyles.Any, CultureInfo.InvariantCulture, out var aNum2)
-            && decimal.TryParse(exp, NumberStyles.Any, CultureInfo.InvariantCulture, out var eNum2))
-            return aNum2 == eNum2;
-        if (exp.Equals("true", StringComparison.OrdinalIgnoreCase)) return actual == "1" || actual.Equals("true", StringComparison.OrdinalIgnoreCase);
-        if (exp.Equals("false", StringComparison.OrdinalIgnoreCase)) return actual == "0" || actual.Equals("false", StringComparison.OrdinalIgnoreCase);
-        return actual.Equals(exp, StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -123,7 +92,7 @@ public sealed class SqlServerDbValidator : IDbValidator
             foreach (var (key, value) in r.Parameters)
             {
                 var p = cmd.CreateParameter();
-                p.ParameterName = key.StartsWith("@") ? key : "@" + key;
+                p.ParameterName = DbAssertionComparer.NormalizeParameterName(key);
                 p.Value = value;
                 cmd.Parameters.Add(p);
             }
@@ -136,7 +105,7 @@ public sealed class SqlServerDbValidator : IDbValidator
             }
             sw.Stop();
             var actualText = actual?.ToString()?.Trim() ?? "";
-            return Task.FromResult(new DbValidationResult(actualText.Equals(r.Expected.Trim(), StringComparison.OrdinalIgnoreCase), actualText, r.Query, null, sw.ElapsedMilliseconds));
+            return Task.FromResult(new DbValidationResult(DbAssertionComparer.Compare(actualText, r.Expected), actualText, r.Query, null, sw.ElapsedMilliseconds));
         }
         catch (Exception ex)
         {
