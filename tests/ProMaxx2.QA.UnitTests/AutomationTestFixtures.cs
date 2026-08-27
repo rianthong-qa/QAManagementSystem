@@ -57,6 +57,30 @@ internal static class AutomationTestFixtures
         return new AutomationScheduleService(repo, repo);
     }
 
+    public static AutomationBuildTriggerService BuildTriggerService(QaDbContext db)
+    {
+        var repo = new AutomationRepository(db);
+        return new AutomationBuildTriggerService(repo, repo, AgentService(db));
+    }
+
+    /// <summary>A real <c>ReleaseService</c> wired with a real <see cref="AutomationBuildTriggerService"/> (AUT-P1-007),
+    /// so tests can exercise Build-creation/Mark-RC through the actual production wiring instead of seeding
+    /// Build/Release directly via EF like <see cref="SeedBaselineAsync"/> does.</summary>
+    public static ProMaxx2.QA.Application.Releases.ReleaseService ReleaseServiceWithBuildTrigger(QaDbContext db, Guid projectId)
+    {
+        var releaseRepo = new ReleaseRepository(db, new ProjectAccessContext { AllowedProjectIds = [projectId] });
+        return new ProMaxx2.QA.Application.Releases.ReleaseService(releaseRepo, ProjectRepository(db, projectId), BuildTriggerService(db));
+    }
+
+    /// <summary>A real <c>AutomationWebhookService</c> wired with a real <see cref="ReleaseServiceWithBuildTrigger"/>
+    /// (AUT-P1-008), so a webhook-created Build goes through the exact same production chain as one created via the
+    /// Automation Suite/Schedule/Build Trigger features already covered elsewhere.</summary>
+    public static AutomationWebhookService WebhookService(QaDbContext db, Guid projectId)
+    {
+        var repo = new AutomationRepository(db);
+        return new AutomationWebhookService(repo, ReleaseServiceWithBuildTrigger(db, projectId));
+    }
+
     public const string SampleDsl = """
         {"dslVersion":"1.0","automationType":"WindowsUI","steps":[{"stepNo":1,"action":"LOGIN","parameters":{"userRef":"QA_STANDARD_USER"}},{"stepNo":2,"action":"SAVE_DOCUMENT","parameters":{}}]}
         """;

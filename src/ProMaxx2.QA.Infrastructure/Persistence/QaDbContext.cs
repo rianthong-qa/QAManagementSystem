@@ -67,6 +67,10 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationSuiteRevision> AutomationSuiteRevisions => Set<AutomationSuiteRevision>();
     public DbSet<AutomationSchedule> AutomationSchedules => Set<AutomationSchedule>();
     public DbSet<AutomationScheduleRun> AutomationScheduleRuns => Set<AutomationScheduleRun>();
+    public DbSet<AutomationBuildTriggerPolicy> AutomationBuildTriggerPolicies => Set<AutomationBuildTriggerPolicy>();
+    public DbSet<AutomationBuildTriggerRun> AutomationBuildTriggerRuns => Set<AutomationBuildTriggerRun>();
+    public DbSet<AutomationWebhookToken> AutomationWebhookTokens => Set<AutomationWebhookToken>();
+    public DbSet<AutomationWebhookDelivery> AutomationWebhookDeliveries => Set<AutomationWebhookDelivery>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

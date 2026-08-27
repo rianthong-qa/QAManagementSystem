@@ -65,6 +65,8 @@ builder.Services.AddScoped<AutomationCaseService>();
 builder.Services.AddScoped<AutomationSuiteService>();
 builder.Services.AddScoped<AutomationScheduleService>();
 builder.Services.AddHostedService<AutomationScheduleWorker>(); // AUT-P1-006: polls and fires due Automation Schedules
+builder.Services.AddScoped<AutomationBuildTriggerService>();
+builder.Services.AddScoped<AutomationWebhookService>();
 builder.Services.AddScoped<AutomationAgentService>();
 builder.Services.AddScoped<AutomationAiService>();
 builder.Services.AddScoped<AutomationDefectService>();

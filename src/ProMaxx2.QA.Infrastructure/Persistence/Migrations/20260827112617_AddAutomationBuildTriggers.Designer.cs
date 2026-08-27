@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(QaDbContext))]
-    partial class QaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260827112617_AddAutomationBuildTriggers")]
+    partial class AddAutomationBuildTriggers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1016,99 +1019,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasIndex("AutomationCaseId", "VersionNo");
 
                     b.ToTable("AutomationVersions", (string)null);
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationWebhookDelivery", b =>
-                {
-                    b.Property<Guid>("AutomationWebhookDeliveryId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("AutomationWebhookTokenId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("BuildId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("ReceivedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("RequestId")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.HasKey("AutomationWebhookDeliveryId");
-
-                    b.HasIndex("AutomationWebhookTokenId");
-
-                    b.HasIndex("ProjectId", "RequestId");
-
-                    b.ToTable("AutomationWebhookDeliveries", (string)null);
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationWebhookToken", b =>
-                {
-                    b.Property<Guid>("AutomationWebhookTokenId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LastUsedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("RevokedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("TokenPrefix")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.HasKey("AutomationWebhookTokenId");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.HasIndex("ProjectId", "IsActive");
-
-                    b.ToTable("AutomationWebhookTokens", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Dashboard.DashboardShare", b =>
@@ -2971,26 +2881,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .WithMany("Versions")
                         .HasForeignKey("AutomationCaseId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationWebhookDelivery", b =>
-                {
-                    b.HasOne("ProMaxx2.QA.Domain.Automation.AutomationWebhookToken", "Token")
-                        .WithMany()
-                        .HasForeignKey("AutomationWebhookTokenId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Token");
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationWebhookToken", b =>
-                {
-                    b.HasOne("ProMaxx2.QA.Domain.Projects.Project", null)
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

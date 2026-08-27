@@ -65,6 +65,13 @@ type AutomationScheduleDetailItem = {
   agentId?: string; agentCode?: string; priority: number; isActive: boolean; nextRunAtUtc: string; lastRunAtUtc?: string; createdBy?: string; createdAt: string; updatedAt?: string;
 };
 type AutomationScheduleRunItem = { automationScheduleRunId: string; automationScheduleId: string; firedAtUtc: string; status: string; executionsCreated: number; skippedCount: number; errorMessage?: string };
+type AutomationBuildTriggerPolicyItem = {
+  automationBuildTriggerPolicyId: string; projectId: string; automationSuiteId: string; suiteCode: string; suiteName: string; pack: string;
+  environmentId: string; environmentName: string; agentId?: string; agentCode?: string; priority: number; isActive: boolean; createdAt: string; updatedAt?: string;
+};
+type AutomationBuildTriggerRunItem = { automationBuildTriggerRunId: string; automationBuildTriggerPolicyId: string; buildId: string; buildNumber: string; firedAtUtc: string; status: string; executionsCreated: number; skippedCount: number; errorMessage?: string };
+type AutomationWebhookTokenItem = { automationWebhookTokenId: string; projectId: string; name: string; tokenPrefix: string; isActive: boolean; lastUsedAtUtc?: string; createdBy?: string; createdAt: string; revokedAt?: string };
+type AutomationWebhookDeliveryItem = { automationWebhookDeliveryId: string; projectId: string; automationWebhookTokenId: string; tokenName: string; requestId: string; receivedAtUtc: string; buildId?: string; buildNumber?: string; status: string; errorMessage?: string };
 type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
 type CountByKeyItem = { key: string; count: number };
 type FailureBreakdownItem = { totalFailed: number; byFailureType: CountByKeyItem[]; byBuild: CountByKeyItem[]; byAgent: CountByKeyItem[]; byAutomationCase: CountByKeyItem[] };
@@ -890,6 +897,8 @@ export function AutomationPage({
     { id: "cases", label: "Automation Cases", icon: "▤" },
     { id: "suites", label: "Automation Suite", icon: "▶" },
     { id: "schedules", label: "Schedule", icon: "◷" },
+    { id: "buildTriggers", label: "Build Trigger", icon: "⚡" },
+    { id: "webhooks", label: "Webhook", icon: "🔗" },
     { id: "execution", label: "Execution", icon: "▶" },
     { id: "failures", label: "Failure Dashboard", icon: "!" },
     { id: "manage", label: "การจัดการ", icon: "⚙" },
@@ -1014,6 +1023,8 @@ export function AutomationPage({
 
       {tab === "suites" && <AutomationSuiteTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} cases={cases} />}
       {tab === "schedules" && <AutomationScheduleTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} agents={agents} />}
+      {tab === "buildTriggers" && <AutomationBuildTriggerTab projectId={pid} headers={headers} canEdit={canEdit} agents={agents} />}
+      {tab === "webhooks" && <AutomationWebhookTab projectId={pid} headers={headers} canEdit={canEdit} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
@@ -2217,6 +2228,210 @@ function ScheduleFormModal({ projectId, releaseId, headers, agents, schedule, bu
       <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
     </div>
     <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+  </div></div>;
+}
+
+const packTone = (pack: string) => (pack === "Smoke" ? "blue" : "purple");
+
+function AutomationBuildTriggerTab({ projectId, headers, canEdit, agents }: {
+  projectId: string; headers: Record<string, string>; canEdit: boolean; agents: AutomationAgentItem[];
+}) {
+  const [policies, setPolicies] = useState<AutomationBuildTriggerPolicyItem[]>([]);
+  const [reload, setReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [createModal, setCreateModal] = useState(false);
+  const [editPolicy, setEditPolicy] = useState<AutomationBuildTriggerPolicyItem | null>(null);
+  const [runHistory, setRunHistory] = useState<{ label: string; runs: AutomationBuildTriggerRunItem[] } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`${apiUrl}/automation/build-triggers?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((p) => setPolicies(Array.isArray(p) ? p : [])).catch(() => setError("โหลด Build Trigger ไม่สำเร็จ"));
+  }, [projectId, headers, reload]);
+
+  const createPolicy = async (body: Record<string, unknown>) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/build-triggers?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify(body) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Build Trigger ไม่สำเร็จ"); }
+      setCreateModal(false); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Build Trigger ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const updatePolicy = async (id: string, body: Record<string, unknown>) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/build-triggers/${id}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify(body) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Build Trigger ไม่สำเร็จ"); }
+      setEditPolicy(null); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Build Trigger ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const toggleActive = async (row: AutomationBuildTriggerPolicyItem) => {
+    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Build Trigger "${row.pack} · ${row.suiteCode}"?`)) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/build-triggers/${row.automationBuildTriggerPolicyId}/${row.isActive ? "deactivate" : "activate"}?projectId=${projectId}`, { method: "POST", headers });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เปลี่ยนสถานะไม่สำเร็จ"); }
+      setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "เปลี่ยนสถานะไม่สำเร็จ"); }
+  };
+
+  const openRunHistory = async (row: AutomationBuildTriggerPolicyItem) => {
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/build-triggers/${row.automationBuildTriggerPolicyId}/runs?projectId=${projectId}`, { headers });
+      if (!r.ok) throw new Error("โหลดประวัติการรันไม่สำเร็จ");
+      setRunHistory({ label: `${row.pack} · ${row.suiteCode}`, runs: await r.json() });
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลดประวัติการรันไม่สำเร็จ"); }
+  };
+
+  return <section className="automation-cases" aria-label="Automation Build Trigger">
+    <header className="automation-section-head"><div><h2>Build Trigger (AUT-P1-007)</h2><p>Build ใหม่รัน Suite อัตโนมัติตาม policy — Smoke รันทุก Build ใหม่, Regression รันเมื่อ Build ถูกตั้งเป็น Release Candidate</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Policy</button>}</header>
+    {error && <div className="inline-alert error"><span>{error}</span></div>}
+    {policies.length ? <div className="table-wrap"><table><thead><tr><th>Pack</th><th>Suite</th><th>Environment</th><th>Agent</th><th>Priority</th><th>สถานะ</th><th></th></tr></thead><tbody>{policies.map((p) => <tr key={p.automationBuildTriggerPolicyId}>
+      <td><Badge tone={packTone(p.pack)}>{p.pack}</Badge></td>
+      <td>{p.suiteCode}</td>
+      <td>{p.environmentName}</td>
+      <td>{p.agentCode ?? "Agent ใดก็ได้"}</td>
+      <td>{p.priority}</td>
+      <td><Badge tone={p.isActive ? "green" : "gray"}>{p.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
+      <td>{canEdit && <button type="button" className="table-action" onClick={() => setEditPolicy(p)}>แก้ไข</button>}<button type="button" className="table-action" onClick={() => openRunHistory(p)}>ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${p.isActive ? " danger" : ""}`} onClick={() => toggleActive(p)}>{p.isActive ? "ปิด" : "เปิด"}</button>}</td>
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Build Trigger Policy</p><small>ตั้ง policy ให้ Build ใหม่รัน Smoke/Regression Suite อัตโนมัติโดยไม่ต้องสั่งรันเอง</small></div>}
+
+    {createModal && <BuildTriggerFormModal projectId={projectId} headers={headers} agents={agents} busy={busy} onClose={() => setCreateModal(false)} onSave={createPolicy} />}
+    {editPolicy && <BuildTriggerFormModal projectId={projectId} headers={headers} agents={agents} busy={busy} policy={editPolicy} onClose={() => setEditPolicy(null)} onSave={(body) => updatePolicy(editPolicy.automationBuildTriggerPolicyId, body)} />}
+
+    {runHistory && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-build-trigger-run-history-title" onMouseDown={() => setRunHistory(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-build-trigger-run-history-title">ประวัติการรัน — {runHistory.label}</h2><small>{runHistory.runs.length} รายการ — ล่าสุดก่อน</small></div><button aria-label="ปิด" onClick={() => setRunHistory(null)}>×</button></div>
+      {runHistory.runs.length ? <div className="automation-result-list">{runHistory.runs.map((r) => <div key={r.automationBuildTriggerRunId} className="automation-failure-row">
+        <b><Badge tone={r.status === "Succeeded" ? "green" : r.status === "NoReadyCases" ? "yellow" : "red"}>{r.status}</Badge> Build {r.buildNumber} · {formatThaiDateTime(r.firedAtUtc)}</b>
+        <span>สร้าง Execution {r.executionsCreated} รายการ{r.skippedCount > 0 && ` · ข้าม ${r.skippedCount} รายการ`}</span>
+        {r.errorMessage && <span>{r.errorMessage}</span>}
+      </div>)}</div> : <div className="empty"><p>ยังไม่เคยถูกรันจาก Policy นี้</p></div>}
+      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}>ปิดหน้าต่าง</button></div>
+    </div></div>}
+  </section>;
+}
+
+function BuildTriggerFormModal({ projectId, headers, agents, policy, busy, onClose, onSave }: {
+  projectId: string; headers: Record<string, string>; agents: AutomationAgentItem[]; policy?: AutomationBuildTriggerPolicyItem; busy: boolean; onClose: () => void; onSave: (body: Record<string, unknown>) => void;
+}) {
+  const isEdit = !!policy;
+  const [suites, setSuites] = useState<{ automationSuiteId: string; suiteCode: string; suiteName: string }[]>([]);
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
+  const [automationSuiteId, setAutomationSuiteId] = useState(policy?.automationSuiteId ?? "");
+  const [pack, setPack] = useState(policy?.pack ?? "Smoke");
+  const [environmentId, setEnvironmentId] = useState(policy?.environmentId ?? "");
+  const [agentId, setAgentId] = useState(policy?.agentId ?? "");
+  const [priority, setPriority] = useState(policy?.priority ?? 5);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      fetch(`${apiUrl}/automation/suites?projectId=${projectId}&isActive=true`, { headers }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
+    ]).then(([su, e]) => {
+      if (!mounted) return;
+      setSuites(Array.isArray(su) ? su : []);
+      setEnvironments(Array.isArray(e) ? (e as EnvironmentOption[]).filter((x) => x.isActive) : []);
+    }).catch(() => { /* selects just render empty — the inline error banner elsewhere already covers fetch failures for this tab */ });
+    return () => { mounted = false; };
+  }, [projectId, headers]);
+
+  const canSave = automationSuiteId && environmentId;
+  const save = () => onSave({ automationSuiteId, pack, environmentId, agentId: agentId || null, priority });
+
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-build-trigger-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-build-trigger-form-title">{isEdit ? "แก้ไข Build Trigger Policy" : "สร้าง Build Trigger Policy"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="form-grid">
+      <label className="full">Automation Suite<select value={automationSuiteId} onChange={(e) => setAutomationSuiteId(e.target.value)}><option value="">เลือก Suite</option>{suites.map((s) => <option key={s.automationSuiteId} value={s.automationSuiteId}>{s.suiteCode} · {s.suiteName}</option>)}</select></label>
+      <label>Pack<select value={pack} onChange={(e) => setPack(e.target.value)}><option value="Smoke">Smoke (รันทุก Build ใหม่)</option><option value="Regression">Regression (รันเมื่อตั้งเป็น Release Candidate)</option></select></label>
+      <label>Environment<select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Env</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
+      <label>Agent (ไม่บังคับ)<select value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">Agent ใดก็ได้</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select></label>
+      <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
+    </div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+  </div></div>;
+}
+
+function AutomationWebhookTab({ projectId, headers, canEdit }: { projectId: string; headers: Record<string, string>; canEdit: boolean }) {
+  const [tokens, setTokens] = useState<AutomationWebhookTokenItem[]>([]);
+  const [deliveries, setDeliveries] = useState<AutomationWebhookDeliveryItem[]>([]);
+  const [reload, setReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [createModal, setCreateModal] = useState(false);
+  const [newToken, setNewToken] = useState<{ name: string; plainTextToken: string } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`${apiUrl}/automation/webhook-tokens?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((t) => setTokens(Array.isArray(t) ? t : [])).catch(() => setError("โหลด Webhook Token ไม่สำเร็จ"));
+    fetch(`${apiUrl}/automation/webhook-tokens/deliveries?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((d) => setDeliveries(Array.isArray(d) ? d : [])).catch(() => setError("โหลดประวัติ Webhook ไม่สำเร็จ"));
+  }, [projectId, headers, reload]);
+
+  const createToken = async (name: string) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/webhook-tokens?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ name }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Token ไม่สำเร็จ"); }
+      const result: { token: AutomationWebhookTokenItem; plainTextToken: string } = await r.json();
+      setCreateModal(false); setReload((v) => v + 1);
+      setNewToken({ name: result.token.name, plainTextToken: result.plainTextToken });
+    } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Token ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const revokeToken = async (row: AutomationWebhookTokenItem) => {
+    if (!window.confirm(`เพิกถอน Token "${row.name}"? ระบบ CI/CD ที่ใช้ Token นี้จะเรียก webhook ไม่ได้อีก`)) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/webhook-tokens/${row.automationWebhookTokenId}/revoke?projectId=${projectId}`, { method: "POST", headers });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เพิกถอน Token ไม่สำเร็จ"); }
+      setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "เพิกถอน Token ไม่สำเร็จ"); }
+  };
+
+  return <section className="automation-cases" aria-label="Automation Webhook">
+    <header className="automation-section-head"><div><h2>CI/CD Webhook (AUT-P1-008)</h2><p>ให้ CI/CD ยิง Build เข้ามาสร้างอัตโนมัติผ่าน webhook ที่ authenticate ด้วย Token — trigger Smoke/Regression ต่อเนื่องจาก Build Trigger ได้ทันที</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Token</button>}</header>
+    {error && <div className="inline-alert error"><span>{error}</span></div>}
+    <h3>Webhook Token</h3>
+    {tokens.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>Token</th><th>สร้างเมื่อ</th><th>ใช้ล่าสุด</th><th>สถานะ</th><th></th></tr></thead><tbody>{tokens.map((t) => <tr key={t.automationWebhookTokenId}>
+      <td><b>{t.name}</b></td>
+      <td><code>{t.tokenPrefix}…</code></td>
+      <td>{formatThaiDateTime(t.createdAt)}</td>
+      <td>{t.lastUsedAtUtc ? formatThaiDateTime(t.lastUsedAtUtc) : "ยังไม่เคยใช้"}</td>
+      <td><Badge tone={t.isActive ? "green" : "gray"}>{t.isActive ? "ใช้งานได้" : "เพิกถอนแล้ว"}</Badge></td>
+      <td>{canEdit && t.isActive && <button type="button" className="table-action danger" onClick={() => revokeToken(t)}>เพิกถอน</button>}</td>
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Webhook Token</p><small>สร้าง Token ให้ระบบ CI/CD ใช้ authenticate ตอนยิง webhook เข้ามาสร้าง Build</small></div>}
+
+    <h3>ประวัติการเรียก Webhook</h3>
+    {deliveries.length ? <div className="table-wrap"><table><thead><tr><th>Token</th><th>Request ID</th><th>Build</th><th>สถานะ</th><th>เวลา</th></tr></thead><tbody>{deliveries.map((d) => <tr key={d.automationWebhookDeliveryId}>
+      <td>{d.tokenName}</td>
+      <td><code>{d.requestId}</code></td>
+      <td>{d.buildNumber ?? "-"}</td>
+      <td><Badge tone={d.status === "Created" ? "green" : d.status === "Duplicate" ? "yellow" : "red"}>{d.status}</Badge>{d.errorMessage && <small>{d.errorMessage}</small>}</td>
+      <td>{formatThaiDateTime(d.receivedAtUtc)}</td>
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่เคยมี webhook เรียกเข้ามา</p></div>}
+
+    {createModal && <WebhookTokenFormModal busy={busy} onClose={() => setCreateModal(false)} onSave={createToken} />}
+    {newToken && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-webhook-new-token-title" onMouseDown={() => setNewToken(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-webhook-new-token-title">สร้าง Token "{newToken.name}" สำเร็จ</h2></div><button aria-label="ปิด" onClick={() => setNewToken(null)}>×</button></div>
+      <div className="inline-alert">⚠ คัดลอก Token นี้เก็บไว้ตอนนี้ — ระบบจะไม่แสดง Token เต็มให้ดูอีกครั้ง</div>
+      <p><code>{newToken.plainTextToken}</code></p>
+      <p>ใส่ header <code>X-Webhook-Token</code> เวลายิงมาที่ <code>POST /api/v1/webhooks/automation/builds</code> พร้อม <code>releaseId</code>/<code>buildNumber</code>/<code>requestId</code> (idempotency key ป้องกัน trigger ซ้ำ)</p>
+      <div className="modal-actions"><button className="btn primary" onClick={() => setNewToken(null)}>คัดลอกแล้ว ปิดหน้าต่าง</button></div>
+    </div></div>}
+  </section>;
+}
+
+function WebhookTokenFormModal({ busy, onClose, onSave }: { busy: boolean; onClose: () => void; onSave: (name: string) => void }) {
+  const [name, setName] = useState("");
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-webhook-token-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-webhook-token-form-title">สร้าง Webhook Token</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="form-grid">
+      <label className="full">ชื่อ (สำหรับระบุ เช่นชื่อระบบ CI/CD)<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Jenkins Nightly" /></label>
+    </div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !name.trim()} onClick={() => onSave(name.trim())}>{busy ? "กำลังสร้าง..." : "สร้าง"}</button></div>
   </div></div>;
 }
 
