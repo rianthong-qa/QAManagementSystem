@@ -4,7 +4,7 @@ public static class AutomationFailureClassifier
 {
     public static AutomationFailureClassificationDto Classify(AutomationExecutionDto execution)
     {
-        if (execution.Status != "Failed") return new("NotFailed", false, "None", "Execution ยังไม่ Fail");
+        if (execution.Status is not ("Failed" or "Timeout" or "AgentLost")) return new("NotFailed", false, "None", "Execution ยังไม่ Fail");
         var code = string.IsNullOrWhiteSpace(execution.ErrorCode) ? "" : execution.ErrorCode.Trim();
         var failedSteps = execution.StepResults.Where(s => s.Status == "Fail").ToList();
         var firstStepCode = failedSteps.Select(s => s.ErrorCode?.Trim()).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ?? "";

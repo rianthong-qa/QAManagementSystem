@@ -258,6 +258,14 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-08-26 (Automation Action/Object Management)
+
+- หน้า Automation แท็บการจัดการเพิ่ม row actions **แก้ไข/เปิด/ปิด** สำหรับ Action Library และ Object Repository ตามสิทธิ์ `AUTOMATION.MANAGE`; modal เดิมรองรับทั้ง create/edit โดย Action Code คงที่เมื่อแก้ไข, แก้ Parameter Schema JSON/Handler Key/Minimum Agent Version ได้ และ Object แก้ Business Key/AutomationId/Selector JSON พร้อมแสดง Object Version; การเปิด–ปิดต้อง confirm, ระหว่างบันทึก action ถูก disabled, invalid JSON แสดง inline page error; ตารางยังเลื่อนภายใน `.table-wrap` และ modal ใช้ Unified modal responsive เดิม
+
+### 2026-08-26 (Automation Object Import)
+
+- หน้า Automation แท็บ Object Repository เพิ่ม `Import Scanner` ตามสิทธิ์ `AUTOMATION.MANAGE`; ใช้ Unified modal pattern เดิม รองรับ paste/upload JSON หรือ CSV จาก UI Inspector/AutomationId Scanner, ต้องกด Preview Diff ก่อน import, แสดงสถานะต่อแถว Ready/DuplicateKey/DuplicateAutomationId/Invalid, เลือกเฉพาะแถว Ready ได้ และตาราง preview ต้องอยู่ใน `.table-wrap` เพื่อไม่สร้าง page-level horizontal scroll
+
 ### 2026-08-25 (Dashboard share: แสดงชื่อ Project)
 
 - **หน้า Dashboard (รวมโหมดแชร์) แสดงชื่อ Project แทน "Release Readiness Dashboard"**: root cause — hero title (`exec-hero-title`) ใช้ `projectName || "Release Readiness Dashboard"` โดยโหมดปกติส่ง `projectName` จาก context แต่**โหมดแชร์ไม่ส่ง prop นี้** เลย fallback เป็นข้อความคงที่; **แก้ที่ backend** — เพิ่ม field `ProjectName` ใน `DashboardSummary` (`DashboardService.cs` record) และ populate ใน `DashboardRepository.GetAsync` (query `ProjectName` จาก `ProjectId` ที่ resolve แล้ว — ใช้ได้ทั้ง mode ปกติและ share เพราะ share เรียก endpoint เดียวกัน), frontend เพิ่ม `projectName?` ใน type `DashboardSummary` + เปลี่ยน hero title เป็น `projectName || data.projectName || "Release Readiness Dashboard"`; ทดสอบยืนยัน summary คืน `projectName='ProMaxx2'`; restart API ตาม §4

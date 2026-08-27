@@ -36,8 +36,14 @@ public sealed class AutomationObject
     public DateTime? UpdatedAt { get; private set; }
     public Projects.ProductModule? Module { get; private set; }
 
-    public void Update(string objectName, string controlType, string? automationId, string selectorJson)
+    public void Update(Guid? moduleId, string applicationCode, string screenCode, string objectCode, string objectName, string controlType, string? automationId, string selectorJson)
     {
+        if (string.IsNullOrWhiteSpace(screenCode) || string.IsNullOrWhiteSpace(objectCode) || string.IsNullOrWhiteSpace(objectName) || string.IsNullOrWhiteSpace(controlType))
+            throw new ArgumentException("Screen code, object code, object name and control type are required.");
+        ModuleId = moduleId;
+        ApplicationCode = string.IsNullOrWhiteSpace(applicationCode) ? "Promaxx2" : applicationCode.Trim();
+        ScreenCode = screenCode.Trim();
+        ObjectCode = objectCode.Trim().ToUpperInvariant();
         ObjectName = objectName.Trim();
         ControlType = controlType.Trim();
         AutomationId = automationId?.Trim();

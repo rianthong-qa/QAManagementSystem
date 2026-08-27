@@ -15,6 +15,7 @@ public sealed class AutomationAction
         HandlerKey = string.IsNullOrWhiteSpace(handlerKey) ? ActionCode : handlerKey.Trim();
         MinimumAgentVersion = minimumAgentVersion?.Trim();
         IsActive = true;
+        RetrySafety = "Unsafe";
         CreatedAt = DateTime.UtcNow;
     }
     public Guid AutomationActionId { get; private set; }
@@ -26,17 +27,26 @@ public sealed class AutomationAction
     public string HandlerKey { get; private set; } = string.Empty;
     public string? MinimumAgentVersion { get; private set; }
     public bool IsActive { get; private set; }
+    public string RetrySafety { get; private set; } = "Unsafe";
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
 
-    public void Update(string actionName, string category, string? description, string parameterSchemaJson, string? minimumAgentVersion, bool isActive)
+    public void Update(string actionName, string category, string? description, string parameterSchemaJson, string handlerKey, string? minimumAgentVersion, bool isActive, string? retrySafety = null)
     {
+        if (string.IsNullOrWhiteSpace(actionName) || string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(handlerKey))
+            throw new ArgumentException("Action name, category and handler key are required.");
         ActionName = actionName.Trim();
         Category = category.Trim();
         Description = description?.Trim();
         ParameterSchemaJson = string.IsNullOrWhiteSpace(parameterSchemaJson) ? "{}" : parameterSchemaJson;
+        HandlerKey = handlerKey.Trim();
         MinimumAgentVersion = minimumAgentVersion?.Trim();
         IsActive = isActive;
+        if (retrySafety is not null)
+        {
+            if (retrySafety is not ("Safe" or "Unsafe" or "Conditional")) throw new ArgumentException("Retry safety must be Safe, Unsafe or Conditional.");
+            RetrySafety = retrySafety;
+        }
         UpdatedAt = DateTime.UtcNow;
     }
 }

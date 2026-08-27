@@ -3,24 +3,50 @@ using ProMaxx2.QA.Domain.Automation;
 namespace ProMaxx2.QA.Application.Automation;
 
 public sealed record CreateAutomationCaseRequest(Guid TestCaseId, string AutomationType, Guid? OwnerUserId);
-public sealed record AutomationCaseDto(Guid AutomationCaseId, Guid TestCaseId, string TestCaseCode, string TestCaseTitle, string AutomationCode, string AutomationType, string Status, int CurrentVersionNo, int VersionCount, Guid? OwnerUserId, string? OwnerName, bool IsAiGenerated, DateTime CreatedAt);
+public sealed record AutomationCaseDto(Guid AutomationCaseId, Guid TestCaseId, string TestCaseCode, string TestCaseTitle, string AutomationCode, string AutomationType, string Status, int CurrentVersionNo, int VersionCount, Guid? OwnerUserId, string? OwnerName, bool IsAiGenerated, DateTime CreatedAt,
+    string? MaintenanceReason = null, Guid? MaintenanceOwnerUserId = null, DateTime? MaintenanceOpenedAt = null,
+    bool IsQuarantined = false, string? QuarantineReason = null, Guid? QuarantineOwnerUserId = null, DateTime? QuarantineExpiresAt = null);
 public sealed record AutomationVersionDto(Guid AutomationVersionId, Guid AutomationCaseId, int VersionNo, int TestCaseRevisionNo, string DslVersion, string DslJson, bool GeneratedByAi, string? AiProvider, string? AiModel, double? AiConfidence, string ValidationStatus, string? ValidationErrors, Guid? ApprovedBy, DateTime? ApprovedAt, string? ChangeReason, DateTime CreatedAt);
 public sealed record CreateAutomationVersionRequest(string DslJson, string? ChangeReason);
 
 public sealed record CreateAutomationActionRequest(string ActionCode, string ActionName, string Category, string? Description, string ParameterSchemaJson, string? MinimumAgentVersion);
-public sealed record UpdateAutomationActionRequest(string ActionName, string Category, string? Description, string ParameterSchemaJson, string? MinimumAgentVersion, bool IsActive);
-public sealed record AutomationActionDto(Guid AutomationActionId, string ActionCode, string ActionName, string Category, string? Description, string ParameterSchemaJson, string HandlerKey, string? MinimumAgentVersion, bool IsActive);
+public sealed record UpdateAutomationActionRequest(string ActionName, string Category, string? Description, string ParameterSchemaJson, string HandlerKey, string? MinimumAgentVersion, bool IsActive, string? RetrySafety = null);
+public sealed record AutomationActionDto(Guid AutomationActionId, string ActionCode, string ActionName, string Category, string? Description, string ParameterSchemaJson, string HandlerKey, string? MinimumAgentVersion, bool IsActive, string RetrySafety = "Unsafe");
 
 public sealed record CreateAutomationObjectRequest(Guid ProjectId, Guid? ModuleId, string ApplicationCode, string ScreenCode, string ObjectCode, string ObjectName, string ControlType, string? AutomationId, string SelectorJson);
-public sealed record UpdateAutomationObjectRequest(string ObjectName, string ControlType, string? AutomationId, string SelectorJson);
+public sealed record UpdateAutomationObjectRequest(Guid? ModuleId, string ApplicationCode, string ScreenCode, string ObjectCode, string ObjectName, string ControlType, string? AutomationId, string SelectorJson);
 public sealed record AutomationObjectDto(Guid AutomationObjectId, Guid ProjectId, Guid? ModuleId, string? ModuleCode, string? ModuleName, string ApplicationCode, string ScreenCode, string ObjectCode, string ObjectName, string ControlType, string? AutomationId, string SelectorJson, int ObjectVersion, bool IsActive);
+public sealed record ImportAutomationObjectsRequest(Guid ProjectId, IReadOnlyList<AutomationObjectImportItem> Items);
+public sealed record AutomationObjectImportItem(Guid? ModuleId, string ApplicationCode, string ScreenCode, string ObjectCode, string ObjectName, string ControlType, string? AutomationId, string SelectorJson);
+public sealed record AutomationObjectImportRowDto(string BusinessKey, string? AutomationId, string Status, string Message, AutomationObjectDto? Object);
+public sealed record AutomationObjectImportResultDto(int Imported, int Skipped, IReadOnlyList<AutomationObjectImportRowDto> Rows);
+
+public sealed record RequestObjectVerificationRequest(IReadOnlyList<Guid> ObjectIds, Guid? AgentId);
+public sealed record AutomationObjectVerificationDto(Guid AutomationObjectVerificationId, Guid AutomationObjectId, string ObjectCode, string ScreenCode, string? ExpectedAutomationId, string ExpectedControlType, string? ActualAutomationId, string? ActualControlType, string Status, Guid? AssignedAgentId, string? AssignedAgentCode, DateTime RequestedAt, DateTime? CompletedAt, string? Message);
+public sealed record VerificationObjectItemDto(Guid VerificationId, string ObjectCode, string ApplicationCode, string ScreenCode, string? ExpectedAutomationId, string ExpectedControlType);
+public sealed record VerificationBatchPackageDto(IReadOnlyList<VerificationObjectItemDto> Items);
+public sealed record ClaimVerificationBatchRequest(string AgentCode);
+public sealed record ReportVerificationResultRequest(Guid VerificationId, string Status, string? ActualAutomationId, string? ActualControlType, string? Message);
+
+public sealed record AssignMaintenanceOwnerRequest(Guid OwnerUserId);
+public sealed record ResolveMaintenanceRequest(string? ResolutionNote);
+
+public sealed record CountByKeyDto(string Key, int Count);
+public sealed record FailureBreakdownDto(int TotalFailed, IReadOnlyList<CountByKeyDto> ByFailureType, IReadOnlyList<CountByKeyDto> ByBuild, IReadOnlyList<CountByKeyDto> ByAgent, IReadOnlyList<CountByKeyDto> ByAutomationCase);
+
+public sealed record RetryPolicyDto(int MaxAttempts, int BackoffSeconds, bool Enabled, DateTime? UpdatedAt);
+public sealed record UpdateRetryPolicyRequest(int MaxAttempts, int BackoffSeconds, bool Enabled);
+
+public sealed record FlakyCandidateDto(Guid AutomationCaseId, string AutomationCode, int RecentRuns, int Transitions, DateTime LastExecutedAt);
+public sealed record QuarantineCaseRequest(string Reason, Guid? OwnerUserId, DateTime? ExpiresAt);
 
 public sealed record RegisterAgentRequest(string AgentCode, string MachineName, string AgentVersion, string OperatingSystem, string Architecture, IReadOnlyList<string> Capabilities);
 public sealed record AgentHeartbeatRequest(string AgentCode, string MachineName, string AgentVersion, string Status, Guid? CurrentExecutionId);
 public sealed record AutomationAgentDto(Guid AgentId, string AgentCode, string MachineName, string AgentVersion, string OperatingSystem, string Architecture, string Status, DateTime LastHeartbeatAt, Guid? CurrentExecutionId, DateTime RegisteredAt, bool IsEnabled, string Connectivity, IReadOnlyList<string> Capabilities);
 
 public sealed record CreateAutomationExecutionRequest(Guid BuildId, Guid EnvironmentId, Guid? AgentId, int Priority);
-public sealed record AutomationExecutionDto(Guid AutomationExecutionId, Guid AutomationCaseId, string AutomationCode, string TestCaseCode, string TestCaseTitle, Guid AutomationVersionId, int VersionNo, Guid? TestExecutionId, Guid? DefectId, string TargetApp, Guid? AgentId, string? AgentCode, Guid BuildId, string BuildNumber, Guid EnvironmentId, string EnvironmentName, Guid? JobId, string Status, DateTime? StartedAt, DateTime? CompletedAt, long? DurationMs, string? FailureType, string? ErrorCode, string? ErrorMessage, IReadOnlyList<AutomationStepResultDto> StepResults, IReadOnlyList<AutomationEvidenceDto> Evidence = null!);
+public sealed record AutomationExecutionDto(Guid AutomationExecutionId, Guid AutomationCaseId, string AutomationCode, string TestCaseCode, string TestCaseTitle, Guid AutomationVersionId, int VersionNo, Guid? TestExecutionId, Guid? DefectId, string TargetApp, Guid? AgentId, string? AgentCode, Guid BuildId, string BuildNumber, Guid EnvironmentId, string EnvironmentName, Guid? JobId, string Status, DateTime? StartedAt, DateTime? CompletedAt, long? DurationMs, string? FailureType, string? ErrorCode, string? ErrorMessage, IReadOnlyList<AutomationStepResultDto> StepResults, IReadOnlyList<AutomationEvidenceDto> Evidence = null!,
+    string? ClassifiedFailureType = null, string? ClassifiedRecommendation = null, Guid? RetryOfExecutionId = null, int RetryCount = 0);
 public sealed record AutomationFailureClassificationDto(string FailureType, bool IsProductDefectCandidate, string Recommendation, string? Detail);
 public sealed record CreateAutomationDefectRequest(string? Classification, string? Severity, string? Title, string? Description);
 public sealed record AutomationStepResultDto(Guid AutomationStepResultId, int StepNo, string ActionCode, string Status, DateTime StartedAt, DateTime CompletedAt, long DurationMs, string? ActualResult, string? ErrorCode, string? ErrorMessage);
@@ -57,6 +83,8 @@ public interface IAutomationRepository
     Task<IReadOnlyList<AutomationObjectDto>> ListObjectsAsync(Guid projectId, string? search, CancellationToken ct);
     Task<IReadOnlyList<string>> ListObjectKeysAsync(Guid projectId, CancellationToken ct);
     Task<AutomationObject?> FindObjectAsync(Guid id, Guid projectId, CancellationToken ct);
+    Task<bool> ObjectKeyExistsAsync(Guid projectId, string applicationCode, string screenCode, string objectCode, Guid? excludeId, CancellationToken ct);
+    Task<bool> ObjectAutomationIdExistsAsync(Guid projectId, string applicationCode, string automationId, Guid? excludeId, CancellationToken ct);
     Task AddObjectAsync(AutomationObject entity, CancellationToken ct);
 
     Task<AutomationAgent?> FindAgentByCodeAsync(string agentCode, CancellationToken ct);
@@ -79,5 +107,20 @@ public interface IAutomationRepository
     Task AddEvidenceAsync(AutomationEvidence entity, CancellationToken ct);
     Task<IReadOnlyList<AutomationEvidenceDto>> ListEvidenceAsync(Guid executionId, CancellationToken ct);
     Task<AutomationEvidence?> FindEvidenceAsync(Guid evidenceId, Guid executionId, CancellationToken ct);
+
+    Task<IReadOnlyList<AutomationObjectVerificationDto>> ListVerificationsAsync(Guid projectId, Guid? objectId, CancellationToken ct);
+    Task AddVerificationsAsync(IReadOnlyList<AutomationObjectVerification> items, CancellationToken ct);
+    Task<VerificationBatchPackageDto?> ClaimVerificationBatchAsync(string agentCode, CancellationToken ct);
+    Task<AutomationObjectVerification?> FindVerificationAsync(Guid id, CancellationToken ct);
+
+    Task<FailureBreakdownDto> GetFailureBreakdownAsync(Guid projectId, DateTime? from, DateTime? to, Guid? buildId, Guid? agentId, string? failureType, CancellationToken ct);
+    Task<IReadOnlyList<AutomationExecutionDto>> ListFailedExecutionsAsync(Guid projectId, DateTime? from, DateTime? to, Guid? buildId, Guid? agentId, string? failureType, int take, CancellationToken ct);
+
+    Task<RetryPolicyDto> GetRetryPolicyAsync(CancellationToken ct);
+    Task UpdateRetryPolicyAsync(int maxAttempts, int backoffSeconds, bool enabled, Guid? userId, CancellationToken ct);
+    Task<IReadOnlyList<string>> GetUnsafeActionCodesAsync(IEnumerable<string> actionCodes, CancellationToken ct);
+
+    Task<IReadOnlyList<FlakyCandidateDto>> GetFlakyCandidatesAsync(Guid projectId, int lookback, CancellationToken ct);
+
     Task SaveChangesAsync(CancellationToken ct);
 }

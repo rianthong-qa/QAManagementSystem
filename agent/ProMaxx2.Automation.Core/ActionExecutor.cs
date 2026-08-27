@@ -59,8 +59,23 @@ public sealed class ActionExecutor
         {
             var shot = await CaptureFailScreenshot(driver);
             var evidence = shot is not null ? (IReadOnlyList<EvidenceAttachment>)[new EvidenceAttachment(shot, $"step{step.StepNo}.png", "Screenshot")] : null;
-            return new StepOutcome(false, null, "AUT-UI-003", $"{step.Action}: {ex.Message}", null, startedAt, DateTime.UtcNow, evidence);
+            return new StepOutcome(false, null, ExtractErrorCode(ex.Message), $"{step.Action}: {ex.Message}", null, startedAt, DateTime.UtcNow, evidence);
         }
+    }
+
+    /// <summary>
+    /// Several helpers here throw with a specific code embedded at the end of the message, e.g.
+    /// "Object '...' not found in Object Repository (AUT-UI-001)." or "AUT_DB_DATABASE is not configured (AUT-DB-001)."
+    /// Extract that code so the server's failure classifier (which branches on ErrorCode) actually sees it, instead
+    /// of every exception collapsing to the generic AUT-UI-003 fallback.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex ErrorCodePattern = new(@"\(AUT-[A-Z]+-\d{3}\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static string ExtractErrorCode(string? message)
+    {
+        if (string.IsNullOrEmpty(message)) return "AUT-UI-003";
+        var match = ErrorCodePattern.Match(message);
+        return match.Success ? match.Value.Trim('(', ')') : "AUT-UI-003";
     }
 
     private async Task<bool> DispatchAsync(string action, DslStep step, IActionContext ctx) => action switch

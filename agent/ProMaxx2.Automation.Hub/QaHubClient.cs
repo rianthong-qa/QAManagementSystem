@@ -13,6 +13,9 @@ public sealed record JobPackage(
 
 public sealed record AgentInfo(Guid AgentId, string AgentCode, string Status, string Connectivity, IReadOnlyList<string> Capabilities);
 
+public sealed record VerificationObjectItem(Guid VerificationId, string ObjectCode, string ApplicationCode, string ScreenCode, string? ExpectedAutomationId, string ExpectedControlType);
+public sealed record VerificationBatchPackage(IReadOnlyList<VerificationObjectItem> Items);
+
 public sealed class QaHubClient : IDisposable
 {
     private readonly HttpClient _http = new();
@@ -130,6 +133,27 @@ public sealed class QaHubClient : IDisposable
             failureType,
             errorCode,
             errorMessage
+        }, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<VerificationBatchPackage?> ClaimVerificationBatchAsync(CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/verifications/claim", new { agentCode = _config.AgentCode }, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<VerificationBatchPackage>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+    }
+
+    public async Task ReportVerificationResultAsync(Guid verificationId, string status, string? actualAutomationId, string? actualControlType, string? message, CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/verifications/result", new
+        {
+            verificationId,
+            status,
+            actualAutomationId,
+            actualControlType,
+            message
         }, ct);
         response.EnsureSuccessStatusCode();
     }

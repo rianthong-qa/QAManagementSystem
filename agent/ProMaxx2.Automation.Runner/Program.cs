@@ -13,6 +13,11 @@ if (args is { Length: > 0 } && args[0].Equals("trylogin", StringComparison.Ordin
     return await RunTryLoginAsync(args);
 }
 
+if (args is { Length: > 0 } && args[0].Equals("verify", StringComparison.OrdinalIgnoreCase))
+{
+    return await RunVerifyAsync(args);
+}
+
 var config = AgentConfig.FromEnvironment();
 
 if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
@@ -162,6 +167,66 @@ static async Task<int> RunInspectAsync(string[] args)
     return 0;
 }
 
+static async Task<int> RunVerifyAsync(string[] args)
+{
+    string? exe = null, processName = null;
+    var timeout = 30;
+    var settle = 8;
+    for (var i = 1; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--exe": exe = args[++i]; break;
+            case "--process": processName = args[++i]; break;
+            case "--timeout": timeout = int.TryParse(args[++i], out var t) ? t : 30; break;
+            case "--wait": settle = int.TryParse(args[++i], out var s) ? s : 8; break;
+        }
+    }
+    if (string.IsNullOrWhiteSpace(exe) && string.IsNullOrWhiteSpace(processName))
+    {
+        Console.Error.WriteLine("Usage: Runner verify --exe <path> [--process <name>] [--timeout <sec>] [--wait <sec>]");
+        return 2;
+    }
+
+    var config = AgentConfig.FromEnvironment();
+    if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
+    {
+        Console.Error.WriteLine("Missing QAHUB_USERNAME / QAHUB_PASSWORD. ตั้งค่าก่อนรัน (ดู set-agent-env.ps1)");
+        return 2;
+    }
+
+    using var client = new QaHubClient(config);
+    if (!await client.LoginAsync(CancellationToken.None))
+    {
+        Console.Error.WriteLine($"Login ไป QA Hub ล้มเหลว ({config.HubBaseUrl}). ตรวจ Username/Password และสิทธิ์ AUTOMATION.EXECUTE");
+        return 2;
+    }
+    await client.RegisterAsync(CancellationToken.None);
+
+    var batch = await client.ClaimVerificationBatchAsync(CancellationToken.None);
+    if (batch is null || batch.Items.Count == 0)
+    {
+        Console.WriteLine("[verify] ไม่มี Object รอตรวจสอบสำหรับ Agent นี้");
+        return 0;
+    }
+    Console.WriteLine($"[verify] claimed {batch.Items.Count} object(s) to verify — scanning {(exe ?? processName)}...");
+
+    var scan = await UiInspector.InspectAsync(exe ?? "", processName, timeout, settle, null, CancellationToken.None);
+    var counts = new Dictionary<string, int>();
+    foreach (var item in batch.Items)
+    {
+        var outcome = scan is null
+            ? new VerifierOutcome("Error", null, null, "Could not find or launch the application's main window.")
+            : ObjectVerifier.Verify(scan, item.ExpectedAutomationId, item.ExpectedControlType);
+        counts[outcome.Status] = counts.GetValueOrDefault(outcome.Status) + 1;
+        Console.WriteLine($"  {item.ScreenCode}.{item.ObjectCode} ({item.ExpectedAutomationId ?? "-"}) => {outcome.Status}{(outcome.Message is null ? "" : $" — {outcome.Message}")}");
+        try { await client.ReportVerificationResultAsync(item.VerificationId, outcome.Status, outcome.ActualAutomationId, outcome.ActualControlType, outcome.Message, CancellationToken.None); }
+        catch (Exception ex) { Console.Error.WriteLine($"  report FAILED for {item.ObjectCode}: {ex.Message}"); }
+    }
+    Console.WriteLine("[verify] summary: " + string.Join(", ", counts.Select(kv => $"{kv.Key}={kv.Value}")));
+    return 0;
+}
+
 static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, AgentConfig config, CancellationToken ct)
 {
     var processName = Path.GetFileNameWithoutExtension(string.IsNullOrWhiteSpace(config.AutExe) ? "PromaxxsPos" : config.AutExe);
@@ -192,6 +257,7 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
         }
 
         var overall = true;
+        StepOutcome? failedStep = null;
         foreach (var step in dsl.Steps.OrderBy(s => s.StepNo))
         {
             var outcome = await executor.ExecuteAsync(step, driver, ct);
@@ -205,6 +271,7 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
             if (!outcome.Passed)
             {
                 overall = false;
+                failedStep = outcome;
                 foreach (var remaining in dsl.Steps.Where(s => s.StepNo > step.StepNo))
                 {
                     var now = DateTime.UtcNow;
@@ -216,9 +283,12 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
 
         await driver.CloseAsync();
         var status = overall ? "Passed" : "Failed";
-        var failureType = overall ? null : "AssertionFailure";
-        var errorCode = overall ? null : "AUT-UI-003";
-        var errorMessage = overall ? null : "One or more automation steps failed.";
+        // Forward the failed step's actual ErrorCode/ErrorMessage instead of a hardcoded "AUT-UI-003" — the server's
+        // AutomationFailureClassifier branches on ErrorCode (AUT-DB-*/AUT-APP-*/AUT-AGENT-* etc. drive Retry vs
+        // MaintenanceRequired vs QAReview), so a hardcoded generic code made every real failure look the same to it.
+        var failureType = overall ? null : "AutomationFailure";
+        var errorCode = overall ? null : (failedStep?.ErrorCode ?? "AUT-UI-003");
+        var errorMessage = overall ? null : (failedStep?.ErrorMessage ?? "One or more automation steps failed.");
         log.AppendLine($"Result: {status} in {(DateTime.UtcNow - started).TotalSeconds:0.0}s");
         await client.CompleteAsync(package.AutomationExecutionId, status, failureType, errorCode, errorMessage, ct);
         await UploadLogAsync(client, package, log, ct);

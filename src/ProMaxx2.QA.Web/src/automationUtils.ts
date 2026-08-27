@@ -38,6 +38,7 @@ export const automationJobTone: Record<string, string> = {
   Queued: "gray", Assigned: "blue", Running: "blue", Passed: "green", Failed: "red", Blocked: "yellow", Cancelled: "gray", Timeout: "yellow", AgentLost: "red",
 };
 export const automationVersionTone: Record<string, string> = { Pending: "gray", Valid: "green", Invalid: "red" };
+export const automationVerificationTone: Record<string, string> = { Pending: "gray", Assigned: "blue", Found: "green", NotFound: "red", Duplicate: "orange", ControlTypeMismatch: "yellow", Error: "gray" };
 
 export function automationCoverage(cases: { status: string }[]): number {
   const total = cases.length;

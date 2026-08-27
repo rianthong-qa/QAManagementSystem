@@ -46,6 +46,7 @@ public sealed class AutomationJob
     public void Complete(string status, string? error)
     {
         if (status is not ("Passed" or "Failed" or "Blocked" or "Cancelled" or "Timeout" or "AgentLost")) throw new ArgumentException("Invalid job status.");
+        if (Status is "Passed" or "Failed" or "Blocked" or "Cancelled" or "Timeout" or "AgentLost") throw new InvalidOperationException("Job is already completed.");
         Status = status;
         CompletedAt = DateTime.UtcNow;
         LastError = error?.Trim();

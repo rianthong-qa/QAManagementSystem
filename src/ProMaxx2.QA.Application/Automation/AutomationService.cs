@@ -117,6 +117,7 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     public async Task<AutomationActionDto> CreateActionAsync(CreateAutomationActionRequest r, CancellationToken ct)
     {
         if (await repository.FindActionByCodeAsync(r.ActionCode, ct) is not null) throw new ArgumentException("Action code already exists.");
+        ValidateJson(r.ParameterSchemaJson, "Parameter schema");
         var entity = new AutomationAction(r.ActionCode, r.ActionName, r.Category, r.Description, r.ParameterSchemaJson, r.ActionCode, r.MinimumAgentVersion);
         await repository.AddActionAsync(entity, ct);
         await repository.SaveChangesAsync(ct);
@@ -125,7 +126,8 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     public async Task<AutomationActionDto> UpdateActionAsync(Guid id, UpdateAutomationActionRequest r, CancellationToken ct)
     {
         var entity = await repository.FindActionAsync(id, ct) ?? throw new EntityNotFoundException("Action not found.");
-        entity.Update(r.ActionName, r.Category, r.Description, r.ParameterSchemaJson, r.MinimumAgentVersion, r.IsActive);
+        ValidateJson(r.ParameterSchemaJson, "Parameter schema");
+        entity.Update(r.ActionName, r.Category, r.Description, r.ParameterSchemaJson, r.HandlerKey, r.MinimumAgentVersion, r.IsActive, r.RetrySafety);
         await repository.SaveChangesAsync(ct);
         return (await repository.ListActionsAsync(ct)).Single(x => x.AutomationActionId == id);
     }
@@ -134,6 +136,9 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     public async Task<AutomationObjectDto> CreateObjectAsync(CreateAutomationObjectRequest r, CancellationToken ct)
     {
         if (r.ProjectId == Guid.Empty) throw new ArgumentException("Project is required.");
+        ValidateJson(r.SelectorJson, "Selector");
+        if (await repository.ObjectKeyExistsAsync(r.ProjectId, r.ApplicationCode, r.ScreenCode, r.ObjectCode, null, ct)) throw new ArgumentException("Object business key already exists.");
+        if (!string.IsNullOrWhiteSpace(r.AutomationId) && await repository.ObjectAutomationIdExistsAsync(r.ProjectId, r.ApplicationCode, r.AutomationId, null, ct)) throw new ArgumentException("AutomationId already exists.");
         var entity = new AutomationObject(r.ProjectId, r.ModuleId, r.ApplicationCode, r.ScreenCode, r.ObjectCode, r.ObjectName, r.ControlType, r.AutomationId, r.SelectorJson);
         await repository.AddObjectAsync(entity, ct);
         await repository.SaveChangesAsync(ct);
@@ -142,9 +147,72 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     public async Task<AutomationObjectDto> UpdateObjectAsync(Guid id, Guid projectId, UpdateAutomationObjectRequest r, CancellationToken ct)
     {
         var entity = await repository.FindObjectAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Object not found.");
-        entity.Update(r.ObjectName, r.ControlType, r.AutomationId, r.SelectorJson);
+        ValidateJson(r.SelectorJson, "Selector");
+        if (await repository.ObjectKeyExistsAsync(projectId, r.ApplicationCode, r.ScreenCode, r.ObjectCode, id, ct)) throw new ArgumentException("Object business key already exists.");
+        if (!string.IsNullOrWhiteSpace(r.AutomationId) && await repository.ObjectAutomationIdExistsAsync(projectId, r.ApplicationCode, r.AutomationId, id, ct)) throw new ArgumentException("AutomationId already exists.");
+        entity.Update(r.ModuleId, r.ApplicationCode, r.ScreenCode, r.ObjectCode, r.ObjectName, r.ControlType, r.AutomationId, r.SelectorJson);
         await repository.SaveChangesAsync(ct);
         return (await repository.ListObjectsAsync(projectId, entity.ObjectCode, ct)).Single(x => x.AutomationObjectId == id);
+    }
+
+    public async Task<AutomationObjectImportResultDto> ImportObjectsAsync(ImportAutomationObjectsRequest r, CancellationToken ct)
+    {
+        if (r.ProjectId == Guid.Empty) throw new ArgumentException("Project is required.");
+        if (r.Items.Count == 0) throw new ArgumentException("Import items are required.");
+        if (r.Items.Count > 500) throw new ArgumentException("Import supports up to 500 objects per batch.");
+
+        var rows = new List<AutomationObjectImportRowDto>();
+        var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenAutomationIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in r.Items)
+        {
+            var app = string.IsNullOrWhiteSpace(item.ApplicationCode) ? "Promaxx2" : item.ApplicationCode.Trim();
+            var screen = string.IsNullOrWhiteSpace(item.ScreenCode) ? "Default" : item.ScreenCode.Trim();
+            var code = item.ObjectCode?.Trim().ToUpperInvariant() ?? "";
+            var key = $"{app}.{screen}.{code}";
+            var automationId = item.AutomationId?.Trim();
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(item.ObjectName) || string.IsNullOrWhiteSpace(item.ControlType))
+                    throw new ArgumentException("Object code, object name and control type are required.");
+                ValidateJson(item.SelectorJson, "Selector");
+
+                if (!seenKeys.Add(key))
+                {
+                    rows.Add(new AutomationObjectImportRowDto(key, automationId, "Skipped", "Duplicate business key in import batch.", null));
+                    continue;
+                }
+                if (!string.IsNullOrWhiteSpace(automationId) && !seenAutomationIds.Add($"{app}.{automationId}"))
+                {
+                    rows.Add(new AutomationObjectImportRowDto(key, automationId, "Skipped", "Duplicate AutomationId in import batch.", null));
+                    continue;
+                }
+                if (await repository.ObjectKeyExistsAsync(r.ProjectId, app, screen, code, null, ct))
+                {
+                    rows.Add(new AutomationObjectImportRowDto(key, automationId, "Skipped", "Business key already exists.", null));
+                    continue;
+                }
+                if (!string.IsNullOrWhiteSpace(automationId) && await repository.ObjectAutomationIdExistsAsync(r.ProjectId, app, automationId, null, ct))
+                {
+                    rows.Add(new AutomationObjectImportRowDto(key, automationId, "Skipped", "AutomationId already exists.", null));
+                    continue;
+                }
+
+                var entity = new AutomationObject(r.ProjectId, item.ModuleId, app, screen, code, item.ObjectName, item.ControlType, automationId, item.SelectorJson);
+                await repository.AddObjectAsync(entity, ct);
+                rows.Add(new AutomationObjectImportRowDto(key, automationId, "Imported", "Imported.", null));
+            }
+            catch (ArgumentException ex)
+            {
+                rows.Add(new AutomationObjectImportRowDto(key, automationId, "Skipped", ex.Message, null));
+            }
+        }
+
+        await repository.SaveChangesAsync(ct);
+        var imported = rows.Count(x => x.Status == "Imported");
+        return new AutomationObjectImportResultDto(imported, rows.Count - imported, rows);
     }
     public async Task<AutomationObjectDto> SetObjectActiveAsync(Guid id, Guid projectId, bool active, CancellationToken ct)
     {
@@ -152,6 +220,68 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
         entity.SetActive(active);
         await repository.SaveChangesAsync(ct);
         return (await repository.ListObjectsAsync(projectId, entity.ObjectCode, ct)).Single(x => x.AutomationObjectId == id);
+    }
+
+    public async Task<IReadOnlyList<AutomationObjectVerificationDto>> RequestObjectVerificationAsync(Guid projectId, RequestObjectVerificationRequest r, Guid? userId, CancellationToken ct)
+    {
+        if (r.ObjectIds is null || r.ObjectIds.Count == 0) throw new ArgumentException("กรุณาเลือก Object อย่างน้อย 1 รายการ");
+        var items = new List<AutomationObjectVerification>();
+        foreach (var objectId in r.ObjectIds.Distinct())
+        {
+            var obj = await repository.FindObjectAsync(objectId, projectId, ct) ?? throw new EntityNotFoundException("Object not found.");
+            var verification = new AutomationObjectVerification(obj.AutomationObjectId, r.AgentId, userId);
+            items.Add(verification);
+        }
+        await repository.AddVerificationsAsync(items, ct);
+        await repository.SaveChangesAsync(ct);
+        return await repository.ListVerificationsAsync(projectId, null, ct);
+    }
+
+    public Task<IReadOnlyList<AutomationObjectVerificationDto>> ListVerificationsAsync(Guid projectId, Guid? objectId, CancellationToken ct)
+        => repository.ListVerificationsAsync(projectId, objectId, ct);
+
+    public async Task<AutomationCaseDto> AssignMaintenanceOwnerAsync(Guid caseId, Guid projectId, Guid ownerUserId, CancellationToken ct)
+    {
+        var caseEntity = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+        caseEntity.AssignMaintenanceOwner(ownerUserId);
+        await repository.SaveChangesAsync(ct);
+        return await repository.GetCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+    }
+
+    public async Task<AutomationCaseDto> ResolveMaintenanceAsync(Guid caseId, Guid projectId, string? resolutionNote, Guid? userId, CancellationToken ct)
+    {
+        var caseEntity = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+        caseEntity.ResolveMaintenance(userId);
+        if (!string.IsNullOrWhiteSpace(resolutionNote))
+        {
+            var latest = (await repository.ListVersionsAsync(caseId, ct)).OrderByDescending(x => x.VersionNo).FirstOrDefault();
+            if (latest is not null)
+            {
+                var version = await repository.FindVersionAsync(latest.AutomationVersionId, ct);
+                version?.RecordChangeReason($"Maintenance resolved: {resolutionNote.Trim()}");
+            }
+        }
+        await repository.SaveChangesAsync(ct);
+        return await repository.GetCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+    }
+
+    public Task<IReadOnlyList<FlakyCandidateDto>> GetFlakyCandidatesAsync(Guid projectId, CancellationToken ct)
+        => repository.GetFlakyCandidatesAsync(projectId, 5, ct);
+
+    public async Task<AutomationCaseDto> QuarantineCaseAsync(Guid caseId, Guid projectId, QuarantineCaseRequest r, CancellationToken ct)
+    {
+        var caseEntity = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+        caseEntity.Quarantine(r.Reason, r.OwnerUserId, r.ExpiresAt);
+        await repository.SaveChangesAsync(ct);
+        return await repository.GetCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+    }
+
+    public async Task<AutomationCaseDto> UnquarantineCaseAsync(Guid caseId, Guid projectId, CancellationToken ct)
+    {
+        var caseEntity = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+        caseEntity.Unquarantine();
+        await repository.SaveChangesAsync(ct);
+        return await repository.GetCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
     }
 
     private static DslDocument DeserializeDsl(string json)
@@ -167,6 +297,12 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
             throw new ArgumentException($"DSL JSON is invalid: {ex.Message}");
         }
         return dsl;
+    }
+
+    private static void ValidateJson(string? json, string fieldName)
+    {
+        try { using var _ = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json); }
+        catch (JsonException ex) { throw new ArgumentException($"{fieldName} must be valid JSON.", ex); }
     }
 }
 
@@ -225,6 +361,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
     {
         var caseEntity = await repository.GetCaseAsync(r.CaseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
         if (caseEntity.Status != "Ready") throw new ArgumentException("Only Ready automation cases can be executed.");
+        if (caseEntity.IsQuarantined) throw new ArgumentException("This case is quarantined and cannot be executed until it is unquarantined.");
         var versionId = r.VersionId;
         if (versionId == Guid.Empty)
         {
@@ -252,7 +389,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
         foreach (var caseId in r.CaseIds.Distinct())
         {
             var caseEntity = await repository.GetCaseAsync(caseId, projectId, ct);
-            if (caseEntity is null || caseEntity.Status != "Ready")
+            if (caseEntity is null || caseEntity.Status != "Ready" || caseEntity.IsQuarantined)
             {
                 skipped.Add(caseEntity?.AutomationCode ?? caseId.ToString());
                 continue;
@@ -299,19 +436,93 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
     public async Task<AutomationExecutionDto> CompleteExecutionAsync(Guid executionId, CompleteExecutionRequest r, CancellationToken ct)
     {
         var execution = await repository.FindExecutionAsync(executionId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+        var executionProjectId = execution.AutomationCase.TestCase.ProjectId;
+        if (execution.Status is not ("Queued" or "Running"))
+        {
+            // Late/duplicate result: the agent reported after the execution was already cancelled or completed
+            // (e.g. lease expired and the job was reassigned, or a duplicate report was retried in transit).
+            // Ignore idempotently instead of corrupting a state that has already moved on.
+            return await repository.GetExecutionAsync(executionId, executionProjectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+        }
         execution.Complete(r.Status, r.FailureType, r.ErrorCode, r.ErrorMessage, DateTime.UtcNow);
         var job = await repository.FindJobByExecutionAsync(executionId, ct);
-        if (job is not null) job.Complete(r.Status, r.ErrorMessage);
-        var caseEntity = await repository.FindCaseByIdAsync(execution.AutomationCaseId, ct);
-        if (caseEntity is not null)
+        try
         {
-            if (r.Status == "Failed" && r.ErrorCode is "AUT-UI-001" or "AUT-UI-002" or "AUT-UI-003")
-                caseEntity.RequireMaintenance(null);
+            if (job is not null) job.Complete(r.Status, r.ErrorMessage);
+        }
+        catch (InvalidOperationException)
+        {
+            // The job was already completed by a concurrent duplicate/racing report that landed between our
+            // FindExecutionAsync and FindJobByExecutionAsync reads above — that request's write is authoritative.
+            // Treat this one idempotently instead of surfacing a confusing error to the agent.
+            return await repository.GetExecutionAsync(executionId, executionProjectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+        }
+        var projectId = executionProjectId;
+        var caseEntity = await repository.FindCaseByIdAsync(execution.AutomationCaseId, ct);
+        await repository.SaveChangesAsync(ct); // flush Status/ErrorCode before re-reading for classification
+
+        var retried = false;
+        AutomationFailureClassificationDto? classification = null;
+        if (r.Status is "Failed" or "Timeout" or "AgentLost")
+        {
+            var dtoForClassification = await repository.GetExecutionAsync(executionId, projectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+            classification = AutomationFailureClassifier.Classify(dtoForClassification);
+            execution.SetClassification(classification.FailureType, classification.Recommendation);
+
+            var policy = await repository.GetRetryPolicyAsync(ct);
+            var retryable = classification.Recommendation is "Retry" or "RetryOrCheckEnvironment";
+            var executedActionCodes = execution.StepResults.Where(s => s.Status == "Pass").Select(s => s.ActionCode).Distinct().ToList();
+            var unsafeExecuted = executedActionCodes.Count > 0 && (await repository.GetUnsafeActionCodesAsync(executedActionCodes, ct)).Count > 0;
+
+            if (policy.Enabled && retryable && !unsafeExecuted && execution.RetryCount < policy.MaxAttempts && caseEntity is not null && !caseEntity.IsQuarantined)
+            {
+                var retryExecution = new AutomationExecution(execution.AutomationCaseId, execution.AutomationVersionId, null, execution.BuildId, execution.EnvironmentId, "system:auto-retry", execution.TargetApp);
+                retryExecution.MarkAsRetry(executionId, execution.RetryCount + 1);
+                await repository.AddExecutionAsync(retryExecution, ct);
+                await repository.SaveChangesAsync(ct);
+                var retryJob = new AutomationJob(retryExecution.AutomationExecutionId, null, 5, DateTime.UtcNow.AddSeconds(policy.BackoffSeconds));
+                await repository.AddJobAsync(retryJob, ct);
+                retryExecution.LinkJob(retryJob.JobId);
+                retried = true;
+            }
+        }
+
+        if (caseEntity is not null && !retried)
+        {
+            // Use the same classifier the retry decision above relies on — it already knows AUT-DSL-001/AUT-AI-001
+            // also need maintenance, not just the three AUT-UI-* codes, and it now runs for Timeout/AgentLost too.
+            if (classification?.Recommendation == "MaintenanceRequired")
+                caseEntity.RequireMaintenance(execution.ErrorMessage, null);
             else
                 caseEntity.ChangeStatus("Ready");
         }
         await repository.SaveChangesAsync(ct);
-        return await repository.GetExecutionAsync(executionId, execution.AutomationCase.TestCase.ProjectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+        return await repository.GetExecutionAsync(executionId, projectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+    }
+
+    public async Task<VerificationBatchPackageDto?> ClaimVerificationBatchAsync(string agentCode, CancellationToken ct)
+        => await repository.ClaimVerificationBatchAsync(agentCode, ct);
+
+    public async Task ReportVerificationResultAsync(ReportVerificationResultRequest r, CancellationToken ct)
+    {
+        var verification = await repository.FindVerificationAsync(r.VerificationId, ct) ?? throw new EntityNotFoundException("Verification not found.");
+        if (verification.Status is not ("Pending" or "Assigned")) return; // late/duplicate report — already completed, ignore idempotently
+        verification.Complete(r.Status, r.ActualControlType, r.ActualAutomationId, r.Message);
+        await repository.SaveChangesAsync(ct);
+    }
+
+    public Task<FailureBreakdownDto> GetFailureBreakdownAsync(Guid projectId, DateTime? from, DateTime? to, Guid? buildId, Guid? agentId, string? failureType, CancellationToken ct)
+        => repository.GetFailureBreakdownAsync(projectId, from, to, buildId, agentId, failureType, ct);
+
+    public Task<IReadOnlyList<AutomationExecutionDto>> ListFailedExecutionsAsync(Guid projectId, DateTime? from, DateTime? to, Guid? buildId, Guid? agentId, string? failureType, int take, CancellationToken ct)
+        => repository.ListFailedExecutionsAsync(projectId, from, to, buildId, agentId, failureType, Math.Clamp(take, 1, 500), ct);
+
+    public Task<RetryPolicyDto> GetRetryPolicyAsync(CancellationToken ct) => repository.GetRetryPolicyAsync(ct);
+
+    public async Task<RetryPolicyDto> UpdateRetryPolicyAsync(UpdateRetryPolicyRequest r, Guid? userId, CancellationToken ct)
+    {
+        await repository.UpdateRetryPolicyAsync(r.MaxAttempts, r.BackoffSeconds, r.Enabled, userId, ct);
+        return await repository.GetRetryPolicyAsync(ct);
     }
 
     public async Task<AutomationExecutionDto> GetExecutionAsync(Guid executionId, Guid projectId, CancellationToken ct)

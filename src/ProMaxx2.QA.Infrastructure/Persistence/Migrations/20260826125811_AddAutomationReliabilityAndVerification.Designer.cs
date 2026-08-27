@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(QaDbContext))]
-    partial class QaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826125811_AddAutomationReliabilityAndVerification")]
+    partial class AddAutomationReliabilityAndVerification
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -631,79 +634,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasIndex("AutomationExecutionId", "StepNo");
 
                     b.ToTable("AutomationStepResults", (string)null);
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationSuite", b =>
-                {
-                    b.Property<Guid>("AutomationSuiteId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("ClosedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("ClosedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("SuiteCode")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("SuiteName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("UpdatedBy")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("AutomationSuiteId");
-
-                    b.HasIndex("ProjectId", "SuiteCode")
-                        .IsUnique();
-
-                    b.ToTable("AutomationSuites", (string)null);
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationSuiteCase", b =>
-                {
-                    b.Property<Guid>("AutomationSuiteId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("AutomationCaseId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("int");
-
-                    b.HasKey("AutomationSuiteId", "AutomationCaseId");
-
-                    b.HasIndex("AutomationCaseId");
-
-                    b.ToTable("AutomationSuiteCases", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationVersion", b =>
@@ -2533,34 +2463,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Navigation("Execution");
                 });
 
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationSuite", b =>
-                {
-                    b.HasOne("ProMaxx2.QA.Domain.Projects.Project", null)
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationSuiteCase", b =>
-                {
-                    b.HasOne("ProMaxx2.QA.Domain.Automation.AutomationCase", "AutomationCase")
-                        .WithMany()
-                        .HasForeignKey("AutomationCaseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("ProMaxx2.QA.Domain.Automation.AutomationSuite", "Suite")
-                        .WithMany("Cases")
-                        .HasForeignKey("AutomationSuiteId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AutomationCase");
-
-                    b.Navigation("Suite");
-                });
-
             modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationVersion", b =>
                 {
                     b.HasOne("ProMaxx2.QA.Domain.Automation.AutomationCase", null)
@@ -3015,11 +2917,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationExecution", b =>
                 {
                     b.Navigation("StepResults");
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationSuite", b =>
-                {
-                    b.Navigation("Cases");
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.TestCycle", b =>
