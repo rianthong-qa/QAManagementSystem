@@ -62,6 +62,7 @@ builder.Services.AddScoped<TestSuiteService>();
 builder.Services.AddScoped<TestCycleService>();
 builder.Services.AddScoped<ExecutionService>();
 builder.Services.AddScoped<AutomationCaseService>();
+builder.Services.AddScoped<AutomationSuiteService>();
 builder.Services.AddScoped<AutomationAgentService>();
 builder.Services.AddScoped<AutomationAiService>();
 builder.Services.AddScoped<AutomationDefectService>();

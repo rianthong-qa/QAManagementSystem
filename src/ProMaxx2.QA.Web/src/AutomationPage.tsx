@@ -51,6 +51,9 @@ type AutomationJobItem = {
   status: string; queuedAt: string; assignedAt?: string; startedAt?: string; completedAt?: string; retryCount: number; lastError?: string;
 };
 type FlakyCandidateItem = { automationCaseId: string; automationCode: string; recentRuns: number; transitions: number; lastExecutedAt: string };
+type AutomationSuiteCaseItem = { automationCaseId: string; automationCode: string; testCaseCode: string; testCaseTitle: string; automationType: string; status: string; sortOrder: number; isRequired: boolean };
+type AutomationSuiteListItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdAt: string; closedAt?: string; caseCount: number; readyCaseCount: number };
+type AutomationSuiteDetailItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string; closedAt?: string; cases: AutomationSuiteCaseItem[] };
 type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
 type CountByKeyItem = { key: string; count: number };
 type FailureBreakdownItem = { totalFailed: number; byFailureType: CountByKeyItem[]; byBuild: CountByKeyItem[]; byAgent: CountByKeyItem[]; byAutomationCase: CountByKeyItem[] };
@@ -874,6 +877,7 @@ export function AutomationPage({
   const tabs = [
     { id: "dashboard", label: "ภาพรวม", icon: "◉" },
     { id: "cases", label: "Automation Cases", icon: "▤" },
+    { id: "suites", label: "Automation Suite", icon: "▶" },
     { id: "execution", label: "Execution", icon: "▶" },
     { id: "failures", label: "Failure Dashboard", icon: "!" },
     { id: "manage", label: "การจัดการ", icon: "⚙" },
@@ -995,6 +999,8 @@ export function AutomationPage({
         </> : <div className="empty"><p>ยังไม่มี Automation Case</p><small>สร้างจาก Test Case ที่เป็น Automation Candidate — จากนั้นเขียน DSL / Generate AI → Validate → อนุมัติ → พร้อมรัน</small>{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div>}
       <div className="automation-status-legend" role="note" aria-label="ความหมายสถานะ"><span><i className="legend-dot legend-draft" />Draft — ยังไม่มี DSL</span><span><i className="legend-dot legend-review" />NeedsReview — AI สร้างแล้ว รอตรวจ</span><span><i className="legend-dot legend-ready" />Ready — พร้อมรัน</span><span><i className="legend-dot legend-maint" />MaintenanceRequired — ต้องซ่อม DSL/Object</span></div>
       </section>}
+
+      {tab === "suites" && <AutomationSuiteTab projectId={pid} headers={headers} canEdit={canEdit} cases={cases} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
@@ -1814,6 +1820,189 @@ function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDet
       </tr>)}</tbody></table></div> : <div className="empty"><p>ไม่พบ Execution ที่ Fail ตามเงื่อนไข</p></div>}
     </article>
   </section>;
+}
+
+function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
+  projectId: string; headers: Record<string, string>; canEdit: boolean; cases: AutomationCaseItem[];
+}) {
+  const [suites, setSuites] = useState<AutomationSuiteListItem[]>([]);
+  const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "closed">("active");
+  const [reload, setReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [createModal, setCreateModal] = useState(false);
+  const [editSuite, setEditSuite] = useState<AutomationSuiteListItem | null>(null);
+  const [detail, setDetail] = useState<AutomationSuiteDetailItem | null>(null);
+  const [addCasesModal, setAddCasesModal] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const qs = new URLSearchParams({ projectId });
+    if (search.trim()) qs.set("search", search.trim());
+    if (activeFilter !== "all") qs.set("isActive", activeFilter === "active" ? "true" : "false");
+    fetch(`${apiUrl}/automation/suites?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setSuites(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Automation Suite ไม่สำเร็จ"));
+  }, [projectId, search, activeFilter, headers, reload]);
+
+  const refreshDetail = async (id: string) => {
+    const r = await fetch(`${apiUrl}/automation/suites/${id}?projectId=${projectId}`, { headers });
+    if (r.ok) setDetail(await r.json());
+  };
+
+  const openDetail = async (row: AutomationSuiteListItem) => { await refreshDetail(row.automationSuiteId); };
+
+  const createSuite = async (suiteCode: string, suiteName: string, description: string) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/suites?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ suiteCode: suiteCode.trim() || null, suiteName: suiteName.trim(), description: description.trim() || null }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Suite ไม่สำเร็จ"); }
+      setCreateModal(false); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Suite ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const updateSuite = async (id: string, suiteName: string, description: string) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/suites/${id}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ suiteName: suiteName.trim(), description: description.trim() || null }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Suite ไม่สำเร็จ"); }
+      setEditSuite(null); setReload((v) => v + 1);
+      if (detail?.automationSuiteId === id) await refreshDetail(id);
+    } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Suite ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const toggleSuite = async (row: AutomationSuiteListItem) => {
+    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"} Suite "${row.suiteCode}"?`)) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/suites/${row.automationSuiteId}/${row.isActive ? "close" : "reopen"}?projectId=${projectId}`, { method: "POST", headers });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เปลี่ยนสถานะ Suite ไม่สำเร็จ"); }
+      setReload((v) => v + 1);
+      if (detail?.automationSuiteId === row.automationSuiteId) await refreshDetail(row.automationSuiteId);
+    } catch (e) { setError(e instanceof Error ? e.message : "เปลี่ยนสถานะ Suite ไม่สำเร็จ"); }
+  };
+
+  const addCases = async (caseIds: string[], isRequired: boolean) => {
+    if (!detail) return;
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ automationCaseIds: caseIds, isRequired }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เพิ่ม Case ไม่สำเร็จ"); }
+      setDetail(await r.json()); setAddCasesModal(false); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "เพิ่ม Case ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const removeCase = async (caseId: string) => {
+    if (!detail || !window.confirm("ลบ Case นี้ออกจาก Suite?")) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${caseId}?projectId=${projectId}`, { method: "DELETE", headers });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ลบ Case ไม่สำเร็จ"); }
+      setDetail(await r.json()); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "ลบ Case ไม่สำเร็จ"); }
+  };
+
+  const toggleRequired = async (row: AutomationSuiteCaseItem) => {
+    if (!detail) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${row.automationCaseId}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ sortOrder: row.sortOrder, isRequired: !row.isRequired }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Case ไม่สำเร็จ"); }
+      setDetail(await r.json());
+    } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Case ไม่สำเร็จ"); }
+  };
+
+  const moveCase = async (row: AutomationSuiteCaseItem, direction: -1 | 1) => {
+    if (!detail) return;
+    const sorted = [...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder);
+    const idx = sorted.findIndex((c) => c.automationCaseId === row.automationCaseId);
+    const swapWith = sorted[idx + direction];
+    if (!swapWith) return;
+    setError("");
+    try {
+      await Promise.all([
+        fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${row.automationCaseId}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ sortOrder: swapWith.sortOrder, isRequired: row.isRequired }) }),
+        fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${swapWith.automationCaseId}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ sortOrder: row.sortOrder, isRequired: swapWith.isRequired }) }),
+      ]);
+      await refreshDetail(detail.automationSuiteId);
+    } catch { setError("เรียงลำดับไม่สำเร็จ"); }
+  };
+
+  return <section className="automation-cases" aria-label="Automation Suite">
+    <header className="automation-section-head"><div><h2>Automation Suite (AUT-P1-001/002)</h2><p>รวม Automation Case เป็นชุดถาวรสำหรับรัน Regression/Smoke ซ้ำได้ — Required/Optional ต่อ Case</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Suite</button>}</header>
+    {error && <div className="inline-alert error"><span>{error}</span></div>}
+    <div className="automation-case-toolbar">
+      <input aria-label="ค้นหา Suite" placeholder="ค้นหา Suite..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      <select aria-label="กรองสถานะ Suite" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "closed")}>
+        <option value="active">เปิดใช้งาน</option>
+        <option value="closed">ปิดแล้ว</option>
+        <option value="all">ทั้งหมด</option>
+      </select>
+    </div>
+    {suites.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>ชื่อ</th><th>Case</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{suites.map((s) => <tr key={s.automationSuiteId}>
+      <td><b>{s.suiteCode}</b></td>
+      <td><span>{s.suiteName}</span>{s.description && <small>{s.description}</small>}</td>
+      <td>{s.readyCaseCount}/{s.caseCount} Ready</td>
+      <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
+      <td>{formatThaiDateTime(s.createdAt)}</td>
+      <td><button type="button" className="table-action" onClick={() => openDetail(s)}>รายละเอียด</button>{canEdit && s.isActive && <button type="button" className="table-action" onClick={() => setEditSuite(s)}>แก้ไข</button>}{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleSuite(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Automation Suite</p><small>สร้าง Suite เพื่อรวม Automation Case ที่ต้องรันซ้ำเป็นชุด (Smoke/Regression)</small></div>}
+
+    {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-suite-detail-title">{detail.suiteCode} · {detail.suiteName}</h2><small>{detail.cases.length} case · <Badge tone={detail.isActive ? "green" : "gray"}>{detail.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></small></div><button aria-label="ปิด" onClick={() => setDetail(null)}>×</button></div>
+      {!detail.isActive && <div className="inline-alert"><span>Suite นี้ปิดแล้ว — ต้องเปิดใช้งานก่อนจึงจะแก้ไข Case ได้</span></div>}
+      {canEdit && detail.isActive && <div className="acw-action-bar"><button type="button" className="btn" onClick={() => setAddCasesModal(true)}>＋ เพิ่ม Case</button></div>}
+      {detail.cases.length ? <div className="table-wrap"><table><thead><tr><th>ลำดับ</th><th>Code</th><th>Test Case</th><th>Target</th><th>สถานะ</th><th>Required</th><th></th></tr></thead><tbody>{[...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder).map((c, i, arr) => <tr key={c.automationCaseId}>
+        <td>{canEdit && detail.isActive ? <span className="automation-sort-controls"><button type="button" className="table-action icon-btn" aria-label="เลื่อนขึ้น" disabled={i === 0} onClick={() => moveCase(c, -1)}>↑</button><button type="button" className="table-action icon-btn" aria-label="เลื่อนลง" disabled={i === arr.length - 1} onClick={() => moveCase(c, 1)}>↓</button></span> : c.sortOrder}</td>
+        <td><b>{c.automationCode}</b></td>
+        <td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td>
+        <td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td>
+        <td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></td>
+        <td>{canEdit && detail.isActive ? <button type="button" className="table-action" onClick={() => toggleRequired(c)}>{c.isRequired ? "Required" : "Optional"}</button> : <Badge tone={c.isRequired ? "blue" : "gray"}>{c.isRequired ? "Required" : "Optional"}</Badge>}</td>
+        <td>{canEdit && detail.isActive && <button type="button" className="table-action danger" onClick={() => removeCase(c.automationCaseId)}>ลบ</button>}</td>
+      </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Case ใน Suite นี้</p></div>}
+      <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}>ปิดหน้าต่าง</button></div>
+    </div></div>}
+
+    {addCasesModal && detail && <AddSuiteCasesModal cases={cases} existingCaseIds={detail.cases.map((c) => c.automationCaseId)} busy={busy} onClose={() => setAddCasesModal(false)} onAdd={addCases} />}
+    {createModal && <SuiteFormModal title="สร้าง Automation Suite" busy={busy} onClose={() => setCreateModal(false)} onSave={createSuite} />}
+    {editSuite && <SuiteFormModal title={`แก้ไข ${editSuite.suiteCode}`} initialName={editSuite.suiteName} initialDescription={editSuite.description ?? ""} busy={busy} onClose={() => setEditSuite(null)} onSave={(_, name, desc) => updateSuite(editSuite.automationSuiteId, name, desc)} />}
+  </section>;
+}
+
+function SuiteFormModal({ title, initialCode = "", initialName = "", initialDescription = "", busy, onClose, onSave }: {
+  title: string; initialCode?: string; initialName?: string; initialDescription?: string; busy: boolean; onClose: () => void; onSave: (code: string, name: string, description: string) => void;
+}) {
+  const [suiteCode, setSuiteCode] = useState(initialCode);
+  const [suiteName, setSuiteName] = useState(initialName);
+  const [description, setDescription] = useState(initialDescription);
+  const isEdit = initialName !== "";
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-suite-form-title">{title}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="form-grid">
+      {!isEdit && <label>รหัส Suite (ไม่บังคับ — เว้นว่างให้ระบบสร้างให้)<input value={suiteCode} onChange={(e) => setSuiteCode(e.target.value)} placeholder="เช่น AUT-AS-SMOKE" /></label>}
+      <label className="full">ชื่อ Suite<input value={suiteName} onChange={(e) => setSuiteName(e.target.value)} /></label>
+      <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+    </div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !suiteName.trim()} onClick={() => onSave(suiteCode, suiteName, description)}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+  </div></div>;
+}
+
+function AddSuiteCasesModal({ cases, existingCaseIds, busy, onClose, onAdd }: {
+  cases: AutomationCaseItem[]; existingCaseIds: string[]; busy: boolean; onClose: () => void; onAdd: (caseIds: string[], isRequired: boolean) => void;
+}) {
+  const available = cases.filter((c) => !existingCaseIds.includes(c.automationCaseId));
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isRequired, setIsRequired] = useState(true);
+  const toggle = (id: string) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-add-cases-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-suite-add-cases-title">เพิ่ม Automation Case เข้า Suite</h2><small>เลือก Case ที่ยังไม่อยู่ใน Suite นี้</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <label className="checkbox-field"><input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} /> ตั้งเป็น Required (ต้องผ่านทุกตัว)</label>
+    {available.length ? <div className="automation-batch-list">
+      {available.map((c) => <label key={c.automationCaseId} className="automation-batch-row"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selected.has(c.automationCaseId)} onChange={() => toggle(c.automationCaseId)} /><span><b>{c.automationCode}</b><small>{c.testCaseCode} · {c.testCaseTitle}</small></span><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></label>)}
+    </div> : <div className="empty"><p>ทุก Automation Case ถูกเพิ่มเข้า Suite นี้หมดแล้ว</p></div>}
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !selected.size} onClick={() => onAdd([...selected], isRequired)}>{busy ? "กำลังเพิ่ม..." : `เพิ่ม ${selected.size} case`}</button></div>
+  </div></div>;
 }
 
 function Pager({ page, count, total, pageSize, onPrev, onNext }: { page: number; count: number; total: number; pageSize: number; onPrev: () => void; onNext: () => void }) {

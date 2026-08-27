@@ -572,6 +572,23 @@
 
 .automation-agent-grid b { color: var(--text, #1f2937); }
 .automation-agent-grid span, .automation-agent-grid small { color: var(--muted, #667085); font-size: 12px; }
+
+.automation-sort-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.automation-sort-controls .icon-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
 .automation-agent-grid time { color: var(--muted, #667085); font-size: 11px; margin-top: 4px; }
 
 .automation-queue-list {

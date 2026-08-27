@@ -41,6 +41,12 @@ internal static class AutomationTestFixtures
 
     public static AutomationAgentService AgentService(QaDbContext db) => new(new AutomationRepository(db));
 
+    public static ProMaxx2.QA.Application.Projects.IProjectRepository ProjectRepository(QaDbContext db, Guid projectId) =>
+        new ProjectRepository(db, new ProjectAccessContext { AllowedProjectIds = [projectId] });
+
+    public static AutomationSuiteService SuiteService(QaDbContext db, Guid projectId) =>
+        new(new AutomationRepository(db), ProjectRepository(db, projectId));
+
     public const string SampleDsl = """
         {"dslVersion":"1.0","automationType":"WindowsUI","steps":[{"stepNo":1,"action":"LOGIN","parameters":{"userRef":"QA_STANDARD_USER"}},{"stepNo":2,"action":"SAVE_DOCUMENT","parameters":{}}]}
         """;

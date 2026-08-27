@@ -89,8 +89,8 @@
 
 | ID | งาน | สถานะ | Owner | Acceptance Criteria / หลักฐาน |
 |---|---|---|---|---|
-| AUT-P1-001 | Persistent Automation Suite | TODO | - | สร้าง/แก้ไข/ปิด Suite และเก็บในฐานข้อมูลได้ |
-| AUT-P1-002 | จัดการ Case ใน Suite | TODO | - | เพิ่ม/ลบ/เรียง Case, Required/Optional และตรวจ Target/Status ได้ |
+| AUT-P1-001 | Persistent Automation Suite | DONE | Claude | Entity `AutomationSuite` (domain) + migration `AddAutomationSuites` (apply สำเร็จบน dev DB จริง) — SuiteCode/SuiteName/Description/IsActive/Created*/Updated*/Closed* พร้อม unique index (ProjectId, SuiteCode); `AutomationSuiteService`/`IAutomationSuiteRepository` (Create/Update/Close/Reopen/List/Get, auto-gen code จาก `{ProjectCode}-AS-NNN` ถ้าไม่ระบุ, project-scoped); endpoint `AutomationSuitesController` (`GET/POST api/v1/automation/suites`, `GET/PUT {id}`, `POST {id}/close`, `POST {id}/reopen`) ใช้ policy `AutomationView`/`AutomationEdit` เดิม; frontend tab ใหม่ "Automation Suite" (list + create/edit modal + close/reopen) — ดูหลักฐานรวมกับ AUT-P1-002 ด้านล่าง (2026-08-27) |
+| AUT-P1-002 | จัดการ Case ใน Suite | DONE | Claude | Entity `AutomationSuiteCase` (join table, SortOrder/IsRequired) + migration `AddAutomationSuiteCases` (FK ไป AutomationSuites Cascade / AutomationCases Restrict, apply สำเร็จบน dev DB จริง); service เพิ่ม `AddCasesAsync`/`UpdateCaseAsync`/`RemoveCaseAsync` — ตรวจ case ต้องอยู่ project เดียวกับ suite (ArgumentException ถ้าไม่ใช่), add ซ้ำ idempotent (skip ไม่ error), sort order auto-increment, บล็อกแก้ไข case บน suite ที่ปิดแล้วทุก action (ต้อง reopen ก่อน); `AutomationSuiteDto`/`AutomationSuiteListDto` ส่ง Target(AutomationType)/Status ของแต่ละ case กลับมาด้วย (ตรง AC "ตรวจ Target/Status ได้"), `ListDto` มี CaseCount/ReadyCaseCount แยกกัน; endpoint เพิ่ม `POST/PUT/DELETE {id}/cases[/{caseId}]`; frontend: detail modal ในหน้า Automation Suite แสดงรายการ case พร้อมปุ่มเลื่อนลำดับ (↑↓ สลับ sortOrder), toggle Required/Optional, ลบ case, modal เพิ่ม case (multi-select จาก case ที่ยังไม่อยู่ใน suite); เทสต์รวม `AutomationSuiteTests.cs` (11) + `AutomationSuiteCaseTests.cs` (11) = 22 tests ครอบคลุมทั้ง P1-001/002; QA Hub `dotnet build` 0 warning/0 error, `dotnet test` 188/188 ผ่าน (เพิ่มจาก 166), frontend `npm run build`/`npm run lint` ผ่าน, `git diff --check` ผ่าน (2026-08-27) |
 | AUT-P1-003 | Suite Version/History | TODO | - | เก็บ revision, change reason, ผู้แก้และเวลาครบ |
 | AUT-P1-004 | Run Suite ซ้ำ | TODO | - | เลือก Suite เดิมแล้วรันกับ Build/Environment ใหม่ได้โดยไม่เลือก Case ใหม่ |
 | AUT-P1-005 | Persistent Automation Schedule | TODO | - | สร้าง/แก้ไข/เปิด/ปิด Schedule พร้อม timezone และ next run |
@@ -156,6 +156,30 @@
 8. `AUT-P2-001` ถึง `AUT-P2-008` — Monitoring, UX และ Scalability
 
 ## 11. Progress Log
+
+### 2026-08-27 — AUT-P1-002: จัดการ Case ใน Suite (+ frontend UI ให้ทั้ง P1-001/002)
+
+- ปิด `AUT-P1-002`
+- Domain: `AutomationSuiteCase` เพิ่มในไฟล์เดียวกับ `AutomationSuite` (ตามแพทเทิร์น TestSuite/TestSuiteCase) — SortOrder/IsRequired, guard sortOrder ≥ 1
+- Migration `AddAutomationSuiteCases`: composite PK (AutomationSuiteId, AutomationCaseId), FK ไป AutomationSuites (Cascade — ลบ suite แล้ว membership หายตาม) และ AutomationCases (Restrict — ลบ case ไม่ได้ถ้ายังอยู่ใน suite ไหน) — apply สำเร็จบน dev DB จริง
+- Service: `AddCasesAsync` ตรวจทุก case ต้องอยู่ project เดียวกับ suite ก่อน (ArgumentException ถ้าไม่ใช่ — กัน cross-project reference), add case ที่มีอยู่แล้วซ้ำแบบ idempotent (skip ไม่ throw เพื่อ UX ที่เลือกซ้ำได้), sort order auto-increment จาก max เดิม; `UpdateCaseAsync`/`RemoveCaseAsync`/`AddCasesAsync` ทั้งหมดบล็อกด้วย guard เดียวกับที่ suite header ใช้ (ปิด suite แล้วแก้ case ไม่ได้ ต้อง reopen ก่อน) เพื่อความสม่ำเสมอ
+- `SuiteCaseDto` ส่ง AutomationType (Target) และ Status ของแต่ละ case กลับมาด้วย — ตรง AC "ตรวจ Target/Status ได้"; `AutomationSuiteListDto` แยก CaseCount/ReadyCaseCount ให้เห็นภาพรวมโดยไม่ต้องเปิด detail
+- API: `POST/PUT/DELETE /api/v1/automation/suites/{id}/cases[/{caseId}]`
+- **Frontend (ทำให้ทั้ง AUT-P1-001 และ AUT-P1-002 พร้อมกัน ตามที่บอกไว้ตอน P1-001):** เพิ่ม tab ใหม่ "Automation Suite" ใน `AutomationPage.tsx` (component `AutomationSuiteTab` แบบ self-contained fetch เหมือน `FailureDashboardTab` — ไม่แตะ Promise.all หลักของหน้า) — list พร้อม search/filter สถานะ, สร้าง/แก้ไข suite (modal), ปิด/เปิด suite (confirm), detail modal แสดง case list พร้อมปุ่มเลื่อนลำดับ ↑↓ (สลับ sortOrder กับตัวข้างเคียง), toggle Required/Optional, ลบ case, modal เพิ่ม case แบบ multi-select (กรองเฉพาะ case ที่ยังไม่อยู่ใน suite); เพิ่ม CSS เล็กน้อยสำหรับปุ่มเลื่อนลำดับ (`.automation-sort-controls`)
+- Test: รวม `AutomationSuiteTests.cs` (11, จาก P1-001) + `AutomationSuiteCaseTests.cs` ใหม่ (11): add/idempotent-add/cross-project-reject/empty-list-reject/closed-suite-reject, update sort+required, remove, list CaseCount vs ReadyCaseCount แยกกันถูกต้อง
+- Build: QA Hub `dotnet build` 0 warning/0 error, `dotnet test` **188/188 ผ่าน** (เพิ่มจาก 166); frontend `npm run build` (tsc + vite) ผ่าน, `npm run lint` (oxlint) ผ่าน, `git diff --check` ผ่าน (แค่ CRLF warning ปกติ)
+
+### 2026-08-27 — AUT-P1-001: Persistent Automation Suite (backend)
+
+- ปิด `AUT-P1-001` (เฉพาะ backend — ดูหมายเหตุขอบเขต)
+- Domain: `AutomationSuite` (`src/ProMaxx2.QA.Domain/Automation/AutomationSuite.cs`) — Create/Update/Close/Reopen, guard แก้ไข suite ที่ปิดแล้วต้อง reopen ก่อน
+- Migration `AddAutomationSuites` สร้างตาราง `AutomationSuites` พร้อม unique index (ProjectId, SuiteCode), FK ไป Projects (Restrict) — apply สำเร็จบน dev DB จริงแล้ว
+- Application: `AutomationSuiteContracts.cs` ใหม่ (แยกจาก `AutomationContracts.cs`/`AutomationService.cs` เดิมที่ใหญ่มากแล้ว ตามแพทเทิร์นเดียวกับ `TestSuiteContracts.cs`) — DTO, `IAutomationSuiteRepository`, `AutomationSuiteService`
+- Infrastructure: `AutomationRepository` เปลี่ยนเป็น `partial class` implement เพิ่ม `IAutomationSuiteRepository`, ย้าย suite persistence ไปไฟล์ใหม่ `AutomationSuiteRepository.cs` (partial) เพื่อไม่ให้ `AutomationRepository.cs` เดิมใหญ่ขึ้นอีก; DI bind `IAutomationSuiteRepository` ให้ resolve เป็น instance เดียวกับ `IAutomationRepository` ใน scope เดียวกัน (share DbContext)
+- API: `AutomationSuitesController` ใหม่ — `GET/POST /api/v1/automation/suites`, `GET/PUT {id}`, `POST {id}/close`, `POST {id}/reopen`; ใช้ policy `AutomationView` (read)/`AutomationEdit` (write) เดิม ไม่ต้องเพิ่ม policy ใหม่
+- Test: `AutomationSuiteTests.cs` 11 tests (create explicit/auto-gen code, duplicate code throw, update, close+closedAt, close-already-closed throw, edit-closed throw, reopen clears closed metadata, reopen-already-open throw, list filter by active/search, project scoping)
+- **ขอบเขตที่เว้นไว้โดยตั้งใจ:** ยังไม่มี frontend UI และยังไม่มี Case membership (AUT-P1-002) — Suite เปล่าที่ใส่ Case ไม่ได้ใช้งานจริงไม่ได้ ตัดสินใจรอทำ UI พร้อมกันตอน AUT-P1-002 เพื่อไม่ต้องสร้าง UI ซ้ำสองรอบ (ครั้งแรกแบบไม่มี case, ครั้งสองแก้ใหม่ให้มี case)
+- Build: `dotnet build` QA Hub solution 0 warning/0 error; `dotnet test` 177/177 ผ่าน (เพิ่มจาก 166)
 
 ### 2026-08-27 — AUT-P0-012/013: แก้ 2 gap จาก AUT-TEST-009/010
 
