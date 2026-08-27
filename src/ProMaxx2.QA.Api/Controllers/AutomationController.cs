@@ -242,6 +242,10 @@ public sealed class AutomationController(
         [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
         => agentService.ListExecutionsPagedAsync(projectId, buildId, environmentId, agentId, targetApp, status, failureType, from, to, search, sortBy, page, size, ct);
 
+    /// <summary>AUT-P2-003: Pass/Fail/Flaky trend, bucketed by day (default)/build/release.</summary>
+    [HttpGet("executions/trend")] public Task<ExecutionTrendDto> GetExecutionTrend([FromQuery] Guid projectId, [FromQuery] string? groupBy, [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] Guid? releaseId, CancellationToken ct = default)
+        => agentService.GetExecutionTrendAsync(projectId, groupBy, from, to, releaseId, ct);
+
     [HttpGet("executions/{id:guid}")] public async Task<ActionResult<AutomationExecutionDto>> GetExecution(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
     {
         try { return Ok(await agentService.GetExecutionAsync(id, projectId, ct)); }

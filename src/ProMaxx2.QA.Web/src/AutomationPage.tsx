@@ -1851,6 +1851,10 @@ function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, hea
       <div className={kpiFailed ? "needs-review" : ""}><small>Failed</small><strong>{kpiFailed}</strong><span>ไม่ผ่าน</span></div>
       <div><small>Total</small><strong>{executions.length}</strong><span>ผลรัน</span></div>
     </div>
+    <ExecutionTrendChart projectId={projectId} releaseId={releaseId} headers={headers} onDrillDown={(mode, bucket) => {
+      if (mode === "day") { setExecFrom(bucket.bucketKey); setExecTo(bucket.bucketKey); }
+      else if (mode === "build") { setExecBuildFilter(bucket.bucketKey); }
+    }} />
     <div className="automation-exec-grid">
       <article className="card">
         <div className="automation-section-head"><h3>Job Queue ({jobsPaged.total.toLocaleString()})</h3><span className="muted-text">{queuedJobs.length} queued</span></div>
@@ -1885,6 +1889,84 @@ function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, hea
     </div>
   </section>;
 }
+type ExecutionTrendBucket = { bucketKey: string; bucketLabel: string; passed: number; failed: number; flaky: number; total: number };
+
+/// AUT-P2-003: lightweight, dependency-free SVG bar chart (this codebase has no charting library) — Pass/Fail bars
+/// per bucket plus a small dot marking Flaky activity. "release" grouping is never a drill-down leaf: clicking a
+/// release bar switches the chart itself to "build" grouping scoped to that release (a second drill level entirely
+/// self-contained here); clicking a "day" or "build" bar calls `onDrillDown` so the parent can filter Run History
+/// to that day/build — reusing the exact filter state AUT-P2-002 already built, not a new mechanism.
+function ExecutionTrendChart({ projectId, releaseId, headers, onDrillDown }: {
+  projectId: string; releaseId?: string; headers: Record<string, string>; onDrillDown: (mode: "day" | "build", bucket: ExecutionTrendBucket) => void;
+}) {
+  const [groupBy, setGroupBy] = useState<"day" | "build" | "release">("day");
+  const [drillReleaseId, setDrillReleaseId] = useState("");
+  const [trend, setTrend] = useState<{ groupBy: string; buckets: ExecutionTrendBucket[] }>({ groupBy: "day", buckets: [] });
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) { setTrend({ groupBy, buckets: [] }); return; }
+    setBusy(true);
+    const qs = new URLSearchParams({ projectId, groupBy });
+    const effectiveRelease = drillReleaseId || releaseId;
+    if (effectiveRelease && groupBy !== "release") qs.set("releaseId", effectiveRelease);
+    fetch(`${apiUrl}/automation/executions/trend?${qs}`, { headers })
+      .then((r) => (r.ok ? r.json() : { groupBy, buckets: [] }))
+      .then((d) => setTrend(d && typeof d === "object" && Array.isArray(d.buckets) ? d : { groupBy, buckets: [] }))
+      .catch(() => setTrend({ groupBy, buckets: [] }))
+      .finally(() => setBusy(false));
+  }, [projectId, releaseId, groupBy, drillReleaseId, headers]);
+
+  const changeGroupBy = (g: "day" | "build" | "release") => { setGroupBy(g); setDrillReleaseId(""); };
+  const handleBarClick = (b: ExecutionTrendBucket) => {
+    if (groupBy === "release") { setGroupBy("build"); setDrillReleaseId(b.bucketKey); return; }
+    onDrillDown(groupBy, b);
+  };
+
+  const chartHeight = 140;
+  const barWidth = 24;
+  const gap = 14;
+  const maxVal = Math.max(1, ...trend.buckets.map((b) => Math.max(b.passed, b.failed)));
+
+  return <article className="card">
+    <div className="automation-section-head">
+      <h3>Pass / Fail / Flaky Trend{drillReleaseId && groupBy === "build" && " — เจาะดู Build ใน Release ที่เลือก"}</h3>
+      <div className="automation-trend-toolbar">
+        {drillReleaseId && <button type="button" className="table-action" onClick={() => changeGroupBy("release")}>‹ กลับไป Release</button>}
+        <select aria-label="จัดกลุ่มตาม" value={groupBy} onChange={(e) => changeGroupBy(e.target.value as "day" | "build" | "release")}>
+          <option value="day">ตามวัน</option>
+          <option value="build">ตาม Build</option>
+          <option value="release">ตาม Release</option>
+        </select>
+      </div>
+    </div>
+    {busy ? <div className="empty"><p>กำลังโหลด...</p></div> : trend.buckets.length ? <>
+      <div className="automation-trend-chart-wrap">
+        <svg className="automation-trend-chart" width={trend.buckets.length * (barWidth * 2 + gap) + gap} height={chartHeight + 34} role="img" aria-label="กราฟแนวโน้ม Pass / Fail / Flaky">
+          {trend.buckets.map((b, i) => {
+            const x = gap + i * (barWidth * 2 + gap);
+            const passH = Math.round((b.passed / maxVal) * chartHeight);
+            const failH = Math.round((b.failed / maxVal) * chartHeight);
+            return <g key={b.bucketKey} className="automation-trend-bar-group" tabIndex={0} role="button"
+              aria-label={`${b.bucketLabel}: Pass ${b.passed}, Fail ${b.failed}, Flaky ${b.flaky}`}
+              onClick={() => handleBarClick(b)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleBarClick(b); }}>
+              <title>{`${b.bucketLabel}: Pass ${b.passed} / Fail ${b.failed} / Flaky ${b.flaky}`}</title>
+              <rect className="automation-trend-bar-pass" x={x} y={chartHeight - passH} width={barWidth} height={Math.max(passH, b.passed > 0 ? 2 : 0)} />
+              <rect className="automation-trend-bar-fail" x={x + barWidth} y={chartHeight - failH} width={barWidth} height={Math.max(failH, b.failed > 0 ? 2 : 0)} />
+              {b.flaky > 0 && <circle className="automation-trend-flaky-dot" cx={x + barWidth} cy={chartHeight - Math.max(passH, failH) - 8} r={4} />}
+              <text className="automation-trend-bar-label" x={x + barWidth} y={chartHeight + 16} textAnchor="middle">{b.bucketLabel}</text>
+            </g>;
+          })}
+        </svg>
+      </div>
+      <div className="automation-trend-legend">
+        <span><i className="legend-pass" />Passed</span><span><i className="legend-fail" />Failed</span><span><i className="legend-flaky" />Flaky</span>
+        <small>{groupBy === "release" ? "คลิกที่แท่งกราฟเพื่อดู Build ใน Release นั้น" : "คลิกที่แท่งกราฟเพื่อดูรายการ Execution ใน Run History ด้านล่าง"}</small>
+      </div>
+    </> : <div className="empty"><p>ยังไม่มีข้อมูล Execution ในช่วง 90 วันล่าสุด</p></div>}
+  </article>;
+}
+
 const failureTypeOptions = ["EnvironmentFailure", "AssertionFailure", "AutomationFailure", "AgentFailure", "Unknown"];
 
 function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDetail }: {

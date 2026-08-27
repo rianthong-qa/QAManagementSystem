@@ -246,6 +246,48 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
         return new PagedResult<AutomationExecutionDto>(total, items);
     }
 
+    private sealed record ExecTrendRow(Guid AutomationExecutionId, Guid AutomationCaseId, string Status, DateTime CreatedAt, Guid BuildId, string BuildNumber, Guid ReleaseId, string ReleaseCode);
+
+    public async Task<ExecutionTrendDto> GetExecutionTrendAsync(Guid projectId, string? groupBy, DateTime? from, DateTime? to, Guid? releaseId, CancellationToken ct)
+    {
+        var effectiveFrom = from ?? DateTime.UtcNow.AddDays(-90);
+        var effectiveTo = to ?? DateTime.UtcNow;
+        var mode = groupBy is "build" or "release" ? groupBy : "day";
+        var q = db.AutomationExecutions.AsNoTracking()
+            .Where(x => x.AutomationCase.TestCase.ProjectId == projectId && (x.Status == "Passed" || x.Status == "Failed") && x.CreatedAt >= effectiveFrom && x.CreatedAt <= effectiveTo);
+        if (releaseId.HasValue) q = q.Where(x => x.Build.ReleaseId == releaseId.Value);
+        var rows = await q.OrderBy(x => x.AutomationCaseId).ThenBy(x => x.CreatedAt)
+            .Select(x => new ExecTrendRow(x.AutomationExecutionId, x.AutomationCaseId, x.Status, x.CreatedAt, x.BuildId, x.Build.BuildNumber, x.Build.ReleaseId, x.Build.Release.ReleaseCode))
+            .ToListAsync(ct);
+
+        // AUT-P2-003: "flaky" reuses GetFlakyCandidatesAsync's status-transition concept — a case whose status here
+        // differs from its immediately preceding execution (within this fetched window) is a flake, attributed to
+        // the bucket of this (the later) execution, since that's the run where the flip was actually observed.
+        var flips = new HashSet<Guid>();
+        Guid? prevCase = null;
+        string? prevStatus = null;
+        foreach (var r in rows)
+        {
+            if (prevCase == r.AutomationCaseId && prevStatus is not null && prevStatus != r.Status) flips.Add(r.AutomationExecutionId);
+            prevCase = r.AutomationCaseId;
+            prevStatus = r.Status;
+        }
+
+        var buckets = rows
+            .GroupBy(r => mode switch { "build" => r.BuildId.ToString(), "release" => r.ReleaseId.ToString(), _ => r.CreatedAt.Date.ToString("yyyy-MM-dd") })
+            .OrderBy(g => g.Min(x => x.CreatedAt))
+            .Select(g =>
+            {
+                var first = g.First();
+                var label = mode switch { "build" => first.BuildNumber, "release" => first.ReleaseCode, _ => first.CreatedAt.Date.ToString("dd MMM") };
+                return new ExecutionTrendBucketDto(g.Key, label, g.Count(x => x.Status == "Passed"), g.Count(x => x.Status == "Failed"),
+                    g.Where(x => flips.Contains(x.AutomationExecutionId)).Select(x => x.AutomationCaseId).Distinct().Count(), g.Count());
+            })
+            .ToList();
+
+        return new ExecutionTrendDto(mode, buckets);
+    }
+
     public async Task<IReadOnlyList<AutomationExecutionDto>> ListFailedExecutionsAsync(Guid projectId, DateTime? from, DateTime? to, Guid? buildId, Guid? agentId, string? failureType, int take, CancellationToken ct)
     {
         var q = db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationCase.TestCase.ProjectId == projectId && x.Status == "Failed");

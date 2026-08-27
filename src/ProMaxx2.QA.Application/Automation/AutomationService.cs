@@ -492,6 +492,10 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         DateTime? from, DateTime? to, string? search, string? sortBy, int page, int size, CancellationToken ct)
         => repository.ListExecutionsPagedAsync(projectId, buildId, environmentId, agentId, targetApp, status, failureType, from, to, search, sortBy, page, size, ct);
 
+    /// <summary>AUT-P2-003.</summary>
+    public Task<ExecutionTrendDto> GetExecutionTrendAsync(Guid projectId, string? groupBy, DateTime? from, DateTime? to, Guid? releaseId, CancellationToken ct)
+        => repository.GetExecutionTrendAsync(projectId, groupBy, from, to, releaseId, ct);
+
     public async Task<AutomationJobPackageDto?> ClaimNextJobAsync(ClaimJobRequest r, CancellationToken ct)
     {
         var caps = r.Capabilities.Select(x => x.Trim().ToUpperInvariant()).Distinct().ToList();

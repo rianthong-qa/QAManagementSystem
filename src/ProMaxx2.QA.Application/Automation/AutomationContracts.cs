@@ -39,6 +39,10 @@ public sealed record RetryPolicyDto(int MaxAttempts, int BackoffSeconds, bool En
 public sealed record UpdateRetryPolicyRequest(int MaxAttempts, int BackoffSeconds, bool Enabled);
 
 public sealed record FlakyCandidateDto(Guid AutomationCaseId, string AutomationCode, int RecentRuns, int Transitions, DateTime LastExecutedAt);
+
+/// <summary>AUT-P2-003.</summary>
+public sealed record ExecutionTrendBucketDto(string BucketKey, string BucketLabel, int Passed, int Failed, int Flaky, int Total);
+public sealed record ExecutionTrendDto(string GroupBy, IReadOnlyList<ExecutionTrendBucketDto> Buckets);
 public sealed record QuarantineCaseRequest(string Reason, Guid? OwnerUserId, DateTime? ExpiresAt);
 
 public sealed record RegisterAgentRequest(string AgentCode, string MachineName, string AgentVersion, string OperatingSystem, string Architecture, IReadOnlyList<string> Capabilities);
@@ -119,6 +123,12 @@ public interface IAutomationRepository
     /// <see cref="ListFailedExecutionsAsync"/>/the Failure Dashboard, not the raw agent-reported <c>FailureType</c>.</summary>
     Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, Guid? environmentId, Guid? agentId, string? targetApp, string? status, string? failureType,
         DateTime? from, DateTime? to, string? search, string? sortBy, int page, int size, CancellationToken ct);
+    /// <summary>AUT-P2-003: Pass/Fail/Flaky trend, bucketed by day, Build, or Release. <paramref name="groupBy"/> is
+    /// "day" (default)/"build"/"release". Defaults to the last 90 days when <paramref name="from"/>/<paramref name="to"/>
+    /// are omitted — an unbounded full-table scan isn't needed for a trend chart. "Flaky" reuses the same status-
+    /// transition concept as <see cref="GetFlakyCandidatesAsync"/> (a case's status differing from its immediately
+    /// preceding execution), attributed to the bucket of the later of the two executions — not a separate metric.</summary>
+    Task<ExecutionTrendDto> GetExecutionTrendAsync(Guid projectId, string? groupBy, DateTime? from, DateTime? to, Guid? releaseId, CancellationToken ct);
     Task<AutomationDashboardDto> GetDashboardAsync(Guid projectId, CancellationToken ct);
     Task AddStepResultAsync(AutomationStepResult entity, CancellationToken ct);
     Task<AutomationStepResult?> FindStepResultAsync(Guid stepResultId, Guid executionId, CancellationToken ct);

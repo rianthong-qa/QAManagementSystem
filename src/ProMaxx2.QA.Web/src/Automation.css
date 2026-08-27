@@ -294,6 +294,53 @@
   gap: 16px;
 }
 
+/* AUT-P2-003: Pass/Fail/Flaky trend chart. */
+.automation-trend-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.automation-trend-chart-wrap {
+  overflow-x: auto;
+}
+
+.automation-trend-chart {
+  display: block;
+}
+
+.automation-trend-bar-group { cursor: pointer; }
+.automation-trend-bar-group:focus-visible { outline: 2px solid var(--primary, #2457d6); outline-offset: 2px; }
+.automation-trend-bar-pass { fill: var(--green, #169c63); }
+.automation-trend-bar-fail { fill: var(--red, #d64545); }
+.automation-trend-flaky-dot { fill: #b5540a; }
+.automation-trend-bar-label { font-size: 10px; fill: var(--muted, #667085); }
+
+.automation-trend-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted, #667085);
+}
+
+.automation-trend-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.automation-trend-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.automation-trend-legend .legend-pass { background: var(--green, #169c63); }
+.automation-trend-legend .legend-fail { background: var(--red, #d64545); }
+.automation-trend-legend .legend-flaky { background: #b5540a; }
+
 .automation-subtabs {
   display: flex;
   gap: 4px;
