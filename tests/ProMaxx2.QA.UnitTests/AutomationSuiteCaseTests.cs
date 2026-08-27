@@ -83,7 +83,7 @@ public sealed class AutomationSuiteCaseTests
         var (baseline, readyCase, _) = await AutomationTestFixtures.SeedReadyCaseAsync(db);
         var service = AutomationTestFixtures.SuiteService(db, baseline.Project.ProjectId);
         var suite = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "Suite", null), null, CancellationToken.None);
-        await service.CloseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None);
+        await service.CloseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.AddCasesAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, new AddSuiteCasesRequest([readyCase.AutomationCaseId], true), CancellationToken.None));
@@ -98,7 +98,7 @@ public sealed class AutomationSuiteCaseTests
         var suite = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "Suite", null), null, CancellationToken.None);
         await service.AddCasesAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, new AddSuiteCasesRequest([readyCase.AutomationCaseId], true), CancellationToken.None);
 
-        var updated = await service.UpdateCaseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, readyCase.AutomationCaseId, new UpdateSuiteCaseRequest(5, false), CancellationToken.None);
+        var updated = await service.UpdateCaseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, readyCase.AutomationCaseId, new UpdateSuiteCaseRequest(5, false), null, CancellationToken.None);
 
         var link = Assert.Single(updated.Cases);
         Assert.Equal(5, link.SortOrder);
@@ -114,7 +114,7 @@ public sealed class AutomationSuiteCaseTests
         var suite = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "Suite", null), null, CancellationToken.None);
 
         await Assert.ThrowsAsync<EntityNotFoundException>(() =>
-            service.UpdateCaseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, Guid.NewGuid(), new UpdateSuiteCaseRequest(1, true), CancellationToken.None));
+            service.UpdateCaseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, Guid.NewGuid(), new UpdateSuiteCaseRequest(1, true), null, CancellationToken.None));
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class AutomationSuiteCaseTests
         var suite = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "Suite", null), null, CancellationToken.None);
         await service.AddCasesAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, new AddSuiteCasesRequest([readyCase.AutomationCaseId], true), CancellationToken.None);
 
-        var updated = await service.RemoveCaseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, readyCase.AutomationCaseId, CancellationToken.None);
+        var updated = await service.RemoveCaseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, readyCase.AutomationCaseId, null, null, CancellationToken.None);
 
         Assert.Empty(updated.Cases);
     }
@@ -139,10 +139,10 @@ public sealed class AutomationSuiteCaseTests
         var service = AutomationTestFixtures.SuiteService(db, baseline.Project.ProjectId);
         var suite = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "Suite", null), null, CancellationToken.None);
         await service.AddCasesAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, new AddSuiteCasesRequest([readyCase.AutomationCaseId], true), CancellationToken.None);
-        await service.CloseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None);
+        await service.CloseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.RemoveCaseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, readyCase.AutomationCaseId, CancellationToken.None));
+            service.RemoveCaseAsync(suite.AutomationSuiteId, baseline.Project.ProjectId, readyCase.AutomationCaseId, null, null, CancellationToken.None));
     }
 
     [Fact]

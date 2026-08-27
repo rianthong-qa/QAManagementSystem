@@ -52,8 +52,9 @@ type AutomationJobItem = {
 };
 type FlakyCandidateItem = { automationCaseId: string; automationCode: string; recentRuns: number; transitions: number; lastExecutedAt: string };
 type AutomationSuiteCaseItem = { automationCaseId: string; automationCode: string; testCaseCode: string; testCaseTitle: string; automationType: string; status: string; sortOrder: number; isRequired: boolean };
-type AutomationSuiteListItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdAt: string; closedAt?: string; caseCount: number; readyCaseCount: number };
-type AutomationSuiteDetailItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string; closedAt?: string; cases: AutomationSuiteCaseItem[] };
+type AutomationSuiteListItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdAt: string; closedAt?: string; revisionNo: number; caseCount: number; readyCaseCount: number };
+type AutomationSuiteDetailItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string; closedAt?: string; revisionNo: number; cases: AutomationSuiteCaseItem[] };
+type AutomationSuiteRevisionItem = { automationSuiteRevisionId: string; revisionNo: number; changeType: string; detail?: string; changeReason?: string; changedBy?: string; changedByName?: string; changedAt: string };
 type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
 type CountByKeyItem = { key: string; count: number };
 type FailureBreakdownItem = { totalFailed: number; byFailureType: CountByKeyItem[]; byBuild: CountByKeyItem[]; byAgent: CountByKeyItem[]; byAutomationCase: CountByKeyItem[] };
@@ -1000,7 +1001,7 @@ export function AutomationPage({
       <div className="automation-status-legend" role="note" aria-label="ความหมายสถานะ"><span><i className="legend-dot legend-draft" />Draft — ยังไม่มี DSL</span><span><i className="legend-dot legend-review" />NeedsReview — AI สร้างแล้ว รอตรวจ</span><span><i className="legend-dot legend-ready" />Ready — พร้อมรัน</span><span><i className="legend-dot legend-maint" />MaintenanceRequired — ต้องซ่อม DSL/Object</span></div>
       </section>}
 
-      {tab === "suites" && <AutomationSuiteTab projectId={pid} headers={headers} canEdit={canEdit} cases={cases} />}
+      {tab === "suites" && <AutomationSuiteTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} cases={cases} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
@@ -1822,8 +1823,8 @@ function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDet
   </section>;
 }
 
-function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
-  projectId: string; headers: Record<string, string>; canEdit: boolean; cases: AutomationCaseItem[];
+function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, cases }: {
+  projectId: string; releaseId?: string; headers: Record<string, string>; canEdit: boolean; canRun: boolean; cases: AutomationCaseItem[];
 }) {
   const [suites, setSuites] = useState<AutomationSuiteListItem[]>([]);
   const [search, setSearch] = useState("");
@@ -1835,6 +1836,9 @@ function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
   const [editSuite, setEditSuite] = useState<AutomationSuiteListItem | null>(null);
   const [detail, setDetail] = useState<AutomationSuiteDetailItem | null>(null);
   const [addCasesModal, setAddCasesModal] = useState(false);
+  const [history, setHistory] = useState<AutomationSuiteRevisionItem[] | null>(null);
+  const [runSuiteFor, setRunSuiteFor] = useState<{ automationSuiteId: string; suiteCode: string; caseCount: number; readyCaseCount: number } | null>(null);
+  const [runResult, setRunResult] = useState<{ suiteCode: string; created: number; skipped: string[] } | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -1851,6 +1855,15 @@ function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
 
   const openDetail = async (row: AutomationSuiteListItem) => { await refreshDetail(row.automationSuiteId); };
 
+  const openHistory = async (id: string) => {
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/suites/${id}/history?projectId=${projectId}`, { headers });
+      if (!r.ok) throw new Error("โหลดประวัติไม่สำเร็จ");
+      setHistory(await r.json());
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลดประวัติไม่สำเร็จ"); }
+  };
+
   const createSuite = async (suiteCode: string, suiteName: string, description: string) => {
     setBusy(true); setError("");
     try {
@@ -1860,10 +1873,10 @@ function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
     } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Suite ไม่สำเร็จ"); } finally { setBusy(false); }
   };
 
-  const updateSuite = async (id: string, suiteName: string, description: string) => {
+  const updateSuite = async (id: string, suiteName: string, description: string, changeReason: string) => {
     setBusy(true); setError("");
     try {
-      const r = await fetch(`${apiUrl}/automation/suites/${id}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ suiteName: suiteName.trim(), description: description.trim() || null }) });
+      const r = await fetch(`${apiUrl}/automation/suites/${id}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ suiteName: suiteName.trim(), description: description.trim() || null, changeReason: changeReason.trim() || null }) });
       if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Suite ไม่สำเร็จ"); }
       setEditSuite(null); setReload((v) => v + 1);
       if (detail?.automationSuiteId === id) await refreshDetail(id);
@@ -1881,11 +1894,11 @@ function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
     } catch (e) { setError(e instanceof Error ? e.message : "เปลี่ยนสถานะ Suite ไม่สำเร็จ"); }
   };
 
-  const addCases = async (caseIds: string[], isRequired: boolean) => {
+  const addCases = async (caseIds: string[], isRequired: boolean, changeReason: string) => {
     if (!detail) return;
     setBusy(true); setError("");
     try {
-      const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ automationCaseIds: caseIds, isRequired }) });
+      const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ automationCaseIds: caseIds, isRequired, changeReason: changeReason.trim() || null }) });
       if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เพิ่ม Case ไม่สำเร็จ"); }
       setDetail(await r.json()); setAddCasesModal(false); setReload((v) => v + 1);
     } catch (e) { setError(e instanceof Error ? e.message : "เพิ่ม Case ไม่สำเร็จ"); } finally { setBusy(false); }
@@ -1909,6 +1922,17 @@ function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
       if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Case ไม่สำเร็จ"); }
       setDetail(await r.json());
     } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Case ไม่สำเร็จ"); }
+  };
+
+  const runSuite = async (suiteId: string, suiteCode: string, buildId: string, environmentId: string, priority: number) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/suites/${suiteId}/run?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ buildId, environmentId, agentId: null, priority }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "รัน Suite ไม่สำเร็จ"); }
+      const result: { created: unknown[]; skippedCodes: string[] } = await r.json();
+      setRunSuiteFor(null);
+      setRunResult({ suiteCode, created: result.created.length, skipped: result.skippedCodes });
+    } catch (e) { setError(e instanceof Error ? e.message : "รัน Suite ไม่สำเร็จ"); } finally { setBusy(false); }
   };
 
   const moveCase = async (row: AutomationSuiteCaseItem, direction: -1 | 1) => {
@@ -1944,13 +1968,17 @@ function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
       <td>{s.readyCaseCount}/{s.caseCount} Ready</td>
       <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
       <td>{formatThaiDateTime(s.createdAt)}</td>
-      <td><button type="button" className="table-action" onClick={() => openDetail(s)}>รายละเอียด</button>{canEdit && s.isActive && <button type="button" className="table-action" onClick={() => setEditSuite(s)}>แก้ไข</button>}{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleSuite(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
+      <td>{canRun && s.isActive && <button type="button" className="table-action" onClick={() => setRunSuiteFor(s)}>▶ รัน</button>}<button type="button" className="table-action" onClick={() => openDetail(s)}>รายละเอียด</button><button type="button" className="table-action" onClick={() => openHistory(s.automationSuiteId)}>ประวัติ</button>{canEdit && s.isActive && <button type="button" className="table-action" onClick={() => setEditSuite(s)}>แก้ไข</button>}{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleSuite(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Automation Suite</p><small>สร้าง Suite เพื่อรวม Automation Case ที่ต้องรันซ้ำเป็นชุด (Smoke/Regression)</small></div>}
 
     {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2 id="automation-suite-detail-title">{detail.suiteCode} · {detail.suiteName}</h2><small>{detail.cases.length} case · <Badge tone={detail.isActive ? "green" : "gray"}>{detail.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></small></div><button aria-label="ปิด" onClick={() => setDetail(null)}>×</button></div>
+      <div className="modal-head"><div><h2 id="automation-suite-detail-title">{detail.suiteCode} · {detail.suiteName}</h2><small>{detail.cases.length} case · Rev {detail.revisionNo} · <Badge tone={detail.isActive ? "green" : "gray"}>{detail.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></small></div><button aria-label="ปิด" onClick={() => setDetail(null)}>×</button></div>
       {!detail.isActive && <div className="inline-alert"><span>Suite นี้ปิดแล้ว — ต้องเปิดใช้งานก่อนจึงจะแก้ไข Case ได้</span></div>}
-      {canEdit && detail.isActive && <div className="acw-action-bar"><button type="button" className="btn" onClick={() => setAddCasesModal(true)}>＋ เพิ่ม Case</button></div>}
+      {detail.isActive && (canEdit || canRun) && <div className="acw-action-bar">
+        {canRun && <button type="button" className="btn primary" onClick={() => setRunSuiteFor({ automationSuiteId: detail.automationSuiteId, suiteCode: detail.suiteCode, caseCount: detail.cases.length, readyCaseCount: detail.cases.filter((c) => c.status === "Ready").length })}>▶ รัน Suite</button>}
+        {canEdit && <button type="button" className="btn" onClick={() => setAddCasesModal(true)}>＋ เพิ่ม Case</button>}
+        <button type="button" className="btn" onClick={() => openHistory(detail.automationSuiteId)}>🕐 ประวัติ</button>
+      </div>}
       {detail.cases.length ? <div className="table-wrap"><table><thead><tr><th>ลำดับ</th><th>Code</th><th>Test Case</th><th>Target</th><th>สถานะ</th><th>Required</th><th></th></tr></thead><tbody>{[...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder).map((c, i, arr) => <tr key={c.automationCaseId}>
         <td>{canEdit && detail.isActive ? <span className="automation-sort-controls"><button type="button" className="table-action icon-btn" aria-label="เลื่อนขึ้น" disabled={i === 0} onClick={() => moveCase(c, -1)}>↑</button><button type="button" className="table-action icon-btn" aria-label="เลื่อนลง" disabled={i === arr.length - 1} onClick={() => moveCase(c, 1)}>↓</button></span> : c.sortOrder}</td>
         <td><b>{c.automationCode}</b></td>
@@ -1965,16 +1993,36 @@ function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
 
     {addCasesModal && detail && <AddSuiteCasesModal cases={cases} existingCaseIds={detail.cases.map((c) => c.automationCaseId)} busy={busy} onClose={() => setAddCasesModal(false)} onAdd={addCases} />}
     {createModal && <SuiteFormModal title="สร้าง Automation Suite" busy={busy} onClose={() => setCreateModal(false)} onSave={createSuite} />}
-    {editSuite && <SuiteFormModal title={`แก้ไข ${editSuite.suiteCode}`} initialName={editSuite.suiteName} initialDescription={editSuite.description ?? ""} busy={busy} onClose={() => setEditSuite(null)} onSave={(_, name, desc) => updateSuite(editSuite.automationSuiteId, name, desc)} />}
+    {editSuite && <SuiteFormModal title={`แก้ไข ${editSuite.suiteCode}`} initialName={editSuite.suiteName} initialDescription={editSuite.description ?? ""} busy={busy} onClose={() => setEditSuite(null)} onSave={(_, name, desc, reason) => updateSuite(editSuite.automationSuiteId, name, desc, reason ?? "")} />}
+    {history && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-history-title" onMouseDown={() => setHistory(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-suite-history-title">ประวัติการแก้ไข (AUT-P1-003)</h2><small>{history.length} รายการ — ล่าสุดก่อน</small></div><button aria-label="ปิด" onClick={() => setHistory(null)}>×</button></div>
+      {history.length ? <div className="automation-result-list">{history.map((h) => <div key={h.automationSuiteRevisionId} className="automation-failure-row">
+        <b>Rev {h.revisionNo} · {h.changeType}</b>
+        <span>{h.detail}</span>
+        {h.changeReason && <span>เหตุผล: {h.changeReason}</span>}
+        <span>{h.changedByName ?? (h.changedBy ? h.changedBy : "ระบบ")} · {formatThaiDateTime(h.changedAt)}</span>
+      </div>)}</div> : <div className="empty"><p>ยังไม่มีประวัติ</p></div>}
+      <div className="modal-actions"><button className="btn" onClick={() => setHistory(null)}>ปิดหน้าต่าง</button></div>
+    </div></div>}
+
+    {runSuiteFor && <RunSuiteModal suite={runSuiteFor} releaseId={releaseId} canRun={canRun} busy={busy} onClose={() => setRunSuiteFor(null)} onRun={(buildId, envId, priority) => runSuite(runSuiteFor.automationSuiteId, runSuiteFor.suiteCode, buildId, envId, priority)} onError={setError} />}
+
+    {runResult && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-run-result-title" onMouseDown={() => setRunResult(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-suite-run-result-title">สั่งรัน {runResult.suiteCode} แล้ว</h2></div><button aria-label="ปิด" onClick={() => setRunResult(null)}>×</button></div>
+      <p>สร้าง Execution {runResult.created} รายการ</p>
+      {runResult.skipped.length > 0 && <p>ข้าม {runResult.skipped.length} รายการ (ไม่ Ready หรือ Quarantined): {runResult.skipped.join(", ")}</p>}
+      <div className="modal-actions"><button className="btn primary" onClick={() => setRunResult(null)}>ตกลง</button></div>
+    </div></div>}
   </section>;
 }
 
 function SuiteFormModal({ title, initialCode = "", initialName = "", initialDescription = "", busy, onClose, onSave }: {
-  title: string; initialCode?: string; initialName?: string; initialDescription?: string; busy: boolean; onClose: () => void; onSave: (code: string, name: string, description: string) => void;
+  title: string; initialCode?: string; initialName?: string; initialDescription?: string; busy: boolean; onClose: () => void; onSave: (code: string, name: string, description: string, changeReason?: string) => void;
 }) {
   const [suiteCode, setSuiteCode] = useState(initialCode);
   const [suiteName, setSuiteName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription);
+  const [changeReason, setChangeReason] = useState("");
   const isEdit = initialName !== "";
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
     <div className="modal-head"><div><h2 id="automation-suite-form-title">{title}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
@@ -1982,26 +2030,63 @@ function SuiteFormModal({ title, initialCode = "", initialName = "", initialDesc
       {!isEdit && <label>รหัส Suite (ไม่บังคับ — เว้นว่างให้ระบบสร้างให้)<input value={suiteCode} onChange={(e) => setSuiteCode(e.target.value)} placeholder="เช่น AUT-AS-SMOKE" /></label>}
       <label className="full">ชื่อ Suite<input value={suiteName} onChange={(e) => setSuiteName(e.target.value)} /></label>
       <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+      {isEdit && <label className="full">เหตุผลที่แก้ไข (ไม่บังคับ — บันทึกลงประวัติ)<input value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="เช่น ปรับให้ตรงชื่อ Release ใหม่" /></label>}
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !suiteName.trim()} onClick={() => onSave(suiteCode, suiteName, description)}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !suiteName.trim()} onClick={() => onSave(suiteCode, suiteName, description, changeReason)}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+  </div></div>;
+}
+
+function RunSuiteModal({ suite, releaseId, canRun, busy, onClose, onRun, onError }: {
+  suite: { automationSuiteId: string; suiteCode: string; caseCount: number; readyCaseCount: number }; releaseId?: string; canRun: boolean; busy: boolean; onClose: () => void;
+  onRun: (buildId: string, environmentId: string, priority: number) => void; onError: (e: string) => void;
+}) {
+  const [buildId, setBuildId] = useState("");
+  const [envId, setEnvId] = useState("");
+  const [priority, setPriority] = useState(5);
+  const [builds, setBuilds] = useState<BuildOption[]>([]);
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      releaseId ? fetch(`${apiUrl}/releases/${releaseId}/builds`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])) : Promise.resolve([]),
+      fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
+    ]).then(([b, e]) => {
+      if (!mounted) return;
+      setBuilds(Array.isArray(b) ? b : []);
+      setEnvironments(Array.isArray(e) ? (e as EnvironmentOption[]).filter((x) => x.isActive) : []);
+    }).catch(() => onError("โหลด Build/Environment ไม่สำเร็จ"));
+    return () => { mounted = false; };
+  }, [releaseId, onError]);
+
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-run-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-suite-run-title">รัน {suite.suiteCode}</h2><small>{suite.readyCaseCount}/{suite.caseCount} case Ready — ไม่ต้องเลือก Case ใหม่ ใช้ชุดเดิมของ Suite</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="form-grid">
+      <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select></label>
+      <label>Environment<select value={envId} onChange={(e) => setEnvId(e.target.value)}><option value="">เลือก Env</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
+      <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
+    </div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={!canRun || busy || !buildId || !envId || suite.readyCaseCount === 0} onClick={() => onRun(buildId, envId, priority)}>{busy ? "กำลังส่ง..." : `▶ รัน ${suite.readyCaseCount} case`}</button></div>
   </div></div>;
 }
 
 function AddSuiteCasesModal({ cases, existingCaseIds, busy, onClose, onAdd }: {
-  cases: AutomationCaseItem[]; existingCaseIds: string[]; busy: boolean; onClose: () => void; onAdd: (caseIds: string[], isRequired: boolean) => void;
+  cases: AutomationCaseItem[]; existingCaseIds: string[]; busy: boolean; onClose: () => void; onAdd: (caseIds: string[], isRequired: boolean, changeReason: string) => void;
 }) {
   const available = cases.filter((c) => !existingCaseIds.includes(c.automationCaseId));
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isRequired, setIsRequired] = useState(true);
+  const [changeReason, setChangeReason] = useState("");
   const toggle = (id: string) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-add-cases-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
     <div className="modal-head"><div><h2 id="automation-suite-add-cases-title">เพิ่ม Automation Case เข้า Suite</h2><small>เลือก Case ที่ยังไม่อยู่ใน Suite นี้</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <label className="checkbox-field"><input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} /> ตั้งเป็น Required (ต้องผ่านทุกตัว)</label>
+    <label>เหตุผล (ไม่บังคับ — บันทึกลงประวัติ)<input value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="เช่น เพิ่ม case สำหรับ regression รอบนี้" /></label>
     {available.length ? <div className="automation-batch-list">
       {available.map((c) => <label key={c.automationCaseId} className="automation-batch-row"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selected.has(c.automationCaseId)} onChange={() => toggle(c.automationCaseId)} /><span><b>{c.automationCode}</b><small>{c.testCaseCode} · {c.testCaseTitle}</small></span><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></label>)}
     </div> : <div className="empty"><p>ทุก Automation Case ถูกเพิ่มเข้า Suite นี้หมดแล้ว</p></div>}
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !selected.size} onClick={() => onAdd([...selected], isRequired)}>{busy ? "กำลังเพิ่ม..." : `เพิ่ม ${selected.size} case`}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !selected.size} onClick={() => onAdd([...selected], isRequired, changeReason)}>{busy ? "กำลังเพิ่ม..." : `เพิ่ม ${selected.size} case`}</button></div>
   </div></div>;
 }
 

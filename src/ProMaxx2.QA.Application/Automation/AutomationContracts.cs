@@ -55,6 +55,7 @@ public sealed record ReportStepResultRequest(int StepNo, string ActionCode, stri
 public sealed record CompleteExecutionRequest(string Status, string? FailureType, string? ErrorCode, string? ErrorMessage);
 public sealed record RequestExecutionRequest(Guid CaseId, Guid VersionId, Guid BuildId, Guid EnvironmentId, Guid? AgentId, int Priority);
 public sealed record BatchRunRequest(IReadOnlyList<Guid> CaseIds, Guid BuildId, Guid EnvironmentId, Guid? AgentId, int Priority);
+public sealed record RunSuiteRequest(Guid AutomationSuiteId, Guid BuildId, Guid EnvironmentId, Guid? AgentId, int Priority);
 public sealed record BatchRunResultDto(IReadOnlyList<AutomationExecutionDto> Created, IReadOnlyList<string> SkippedCodes, int Total);
 public sealed record AutomationDashboardDto(int TotalTestCases, int AutomationCandidates, int AutomationCases, int Ready, int MaintenanceRequired, int NeedsReview, int InProgress, int Running, int PassToday, int FailToday, long? AverageDurationMs, int AgentsOnline, int AgentsTotal, decimal ReadyCoverage, decimal CandidateCoverage);
 

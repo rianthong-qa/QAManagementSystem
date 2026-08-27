@@ -306,7 +306,7 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     }
 }
 
-public sealed class AutomationAgentService(IAutomationRepository repository)
+public sealed class AutomationAgentService(IAutomationRepository repository, IAutomationSuiteRepository suiteRepository)
 {
     public async Task<AutomationAgentDto> RegisterAsync(RegisterAgentRequest r, Guid? userId, CancellationToken ct)
     {
@@ -413,6 +413,18 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
             if (dto is not null) created.Add(dto);
         }
         return new BatchRunResultDto(created, skipped, r.CaseIds.Count);
+    }
+
+    /// <summary>AUT-P1-004: run an existing Suite's cases against a (possibly new) Build/Environment without
+    /// re-selecting cases — just reuses BatchRunAsync with the suite's current case membership. Ready/quarantine
+    /// filtering, version resolution and skip-reporting are therefore identical to a manual batch run.</summary>
+    public async Task<BatchRunResultDto> RunSuiteAsync(Guid projectId, RunSuiteRequest r, Guid? userId, CancellationToken ct)
+    {
+        var suite = await suiteRepository.GetSuiteAsync(r.AutomationSuiteId, projectId, ct) ?? throw new EntityNotFoundException("Automation suite not found.");
+        if (!suite.IsActive) throw new InvalidOperationException("Cannot run a closed suite. Reopen it first.");
+        if (suite.Cases.Count == 0) throw new ArgumentException("Suite นี้ยังไม่มี Automation Case — เพิ่ม Case ก่อนรัน");
+        var caseIds = suite.Cases.Select(c => c.AutomationCaseId).ToList();
+        return await BatchRunAsync(projectId, new BatchRunRequest(caseIds, r.BuildId, r.EnvironmentId, r.AgentId, r.Priority), userId, ct);
     }
 
     public Task<AutomationDashboardDto> GetDashboardAsync(Guid projectId, CancellationToken ct) => repository.GetDashboardAsync(projectId, ct);

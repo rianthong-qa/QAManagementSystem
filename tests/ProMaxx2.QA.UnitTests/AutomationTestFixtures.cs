@@ -39,7 +39,11 @@ internal static class AutomationTestFixtures
     public static AutomationCaseService CaseService(QaDbContext db, Guid projectId) =>
         new(new AutomationRepository(db), TestCaseRepository(db, projectId));
 
-    public static AutomationAgentService AgentService(QaDbContext db) => new(new AutomationRepository(db));
+    public static AutomationAgentService AgentService(QaDbContext db)
+    {
+        var repo = new AutomationRepository(db);
+        return new AutomationAgentService(repo, repo);
+    }
 
     public static ProMaxx2.QA.Application.Projects.IProjectRepository ProjectRepository(QaDbContext db, Guid projectId) =>
         new ProjectRepository(db, new ProjectAccessContext { AllowedProjectIds = [projectId] });
