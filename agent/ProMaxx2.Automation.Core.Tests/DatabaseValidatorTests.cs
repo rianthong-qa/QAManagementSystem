@@ -5,10 +5,12 @@ namespace ProMaxx2.Automation.Core.Tests;
 /// <see cref="FirebirdDbValidator"/>/<see cref="SqlServerDbValidator"/> instantiate a concrete ADO.NET connection
 /// type directly (no injectable connection factory), so there is no seam to swap in a fake connection for testing
 /// query results — the real DB-facing exercise here is a connection failure against a closed local port, which
-/// fails fast (TCP RST) and exercises the real catch-all error path end to end. The provider-agnostic comparison
-/// and parameter-naming logic was extracted into <see cref="DbAssertionComparer"/> specifically so it's unit
-/// testable without any connection at all — see AUTOMATION_TODO.md for the AUT-TEST-010 note on what "timeout" does
-/// NOT cover here (the CancellationToken passed to ValidateAsync is accepted but never actually observed).
+/// fails fast (TCP RST plus, since AUT-P0-013, an explicit <see cref="DbProfile.ConnectTimeoutSeconds"/> cap) and
+/// exercises the real catch-all error path end to end for both providers. The provider-agnostic comparison and
+/// parameter-naming logic was extracted into <see cref="DbAssertionComparer"/> specifically so it's unit testable
+/// without any connection at all. Not covered: actual query execution/parameter binding against a live database, and
+/// genuine mid-query cancellation (AUT-P0-013 made both providers pass the CancellationToken through to
+/// OpenAsync/ExecuteReaderAsync/ReadAsync, but proving it actually interrupts a slow query needs a real DB).
 /// </summary>
 public sealed class DatabaseValidatorTests
 {
@@ -101,11 +103,33 @@ public sealed class DatabaseValidatorTests
         Assert.True(result.ElapsedMs >= 0);
     }
 
-    // No SQL Server equivalent of the connection-refused test above: Microsoft.Data.SqlClient does its own
-    // retry/backoff around a refused TCP connection and takes ~14s to give up because SqlServerDbValidator never
-    // sets ConnectTimeout on the connection string (defaults to 15s) — see the AUT-TEST-010 tracker note. Adding
-    // that test here would make the whole suite noticeably slower for one assertion; SqlServerDbValidator's
-    // catch(Exception) path is structurally identical to Firebird's (both wrap any connection/query exception into
-    // the same DbValidationResult(false, "", query, ex.Message, elapsed) shape), so the Firebird test above already
-    // covers that shape.
+    [Fact]
+    public async Task Sql_server_validator_reports_a_failure_result_when_the_connection_is_refused()
+    {
+        // AUT-P0-013 fix: ConnectTimeoutSeconds now caps at 10s (was unset, defaulting to the ~15s provider
+        // default and taking ~14s to fail here) so this is fast enough to run alongside the Firebird test above.
+        var profile = new DbProfile(DbKind.SqlServer, "127.0.0.1", 1, "sa", "wrong", "nonexistent");
+        var validator = new SqlServerDbValidator();
+        var request = new DbValidationRequest(profile, "SELECT 1", new Dictionary<string, string>(), "1");
+
+        var result = await validator.ValidateAsync(request, CancellationToken.None);
+
+        Assert.False(result.Passed);
+        Assert.Equal("", result.ActualValue);
+        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+    }
+
+    [Fact]
+    public void Connect_timeout_is_capped_at_five_seconds_from_a_longer_action_timeout()
+    {
+        var profile = DbProfile.FromEnvironment(new AgentConfig { ActionTimeoutSeconds = 30 });
+        Assert.Equal(5, profile.ConnectTimeoutSeconds);
+    }
+
+    [Fact]
+    public void Connect_timeout_follows_a_shorter_action_timeout()
+    {
+        var profile = DbProfile.FromEnvironment(new AgentConfig { ActionTimeoutSeconds = 5 });
+        Assert.Equal(5, profile.ConnectTimeoutSeconds);
+    }
 }

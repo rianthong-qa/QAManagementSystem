@@ -257,6 +257,7 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
         }
 
         var overall = true;
+        StepOutcome? failedStep = null;
         foreach (var step in dsl.Steps.OrderBy(s => s.StepNo))
         {
             var outcome = await executor.ExecuteAsync(step, driver, ct);
@@ -270,6 +271,7 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
             if (!outcome.Passed)
             {
                 overall = false;
+                failedStep = outcome;
                 foreach (var remaining in dsl.Steps.Where(s => s.StepNo > step.StepNo))
                 {
                     var now = DateTime.UtcNow;
@@ -281,9 +283,12 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
 
         await driver.CloseAsync();
         var status = overall ? "Passed" : "Failed";
-        var failureType = overall ? null : "AssertionFailure";
-        var errorCode = overall ? null : "AUT-UI-003";
-        var errorMessage = overall ? null : "One or more automation steps failed.";
+        // Forward the failed step's actual ErrorCode/ErrorMessage instead of a hardcoded "AUT-UI-003" — the server's
+        // AutomationFailureClassifier branches on ErrorCode (AUT-DB-*/AUT-APP-*/AUT-AGENT-* etc. drive Retry vs
+        // MaintenanceRequired vs QAReview), so a hardcoded generic code made every real failure look the same to it.
+        var failureType = overall ? null : "AutomationFailure";
+        var errorCode = overall ? null : (failedStep?.ErrorCode ?? "AUT-UI-003");
+        var errorMessage = overall ? null : (failedStep?.ErrorMessage ?? "One or more automation steps failed.");
         log.AppendLine($"Result: {status} in {(DateTime.UtcNow - started).TotalSeconds:0.0}s");
         await client.CompleteAsync(package.AutomationExecutionId, status, failureType, errorCode, errorMessage, ct);
         await UploadLogAsync(client, package, log, ct);
