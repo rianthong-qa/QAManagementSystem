@@ -23,6 +23,11 @@ if (args is { Length: > 0 } && args[0].Equals("snapshot", StringComparison.Ordin
     return await RunSnapshotAsync();
 }
 
+if (args is { Length: > 0 } && args[0].Equals("restore", StringComparison.OrdinalIgnoreCase))
+{
+    return await RunRestoreAsync();
+}
+
 var config = AgentConfig.FromEnvironment();
 
 if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
@@ -285,6 +290,59 @@ static async Task<int> RunSnapshotAsync()
 
     if (processed == 0) { Console.WriteLine("[snapshot] ไม่มี Snapshot request รอดำเนินการสำหรับ Agent นี้"); return 0; }
     Console.WriteLine($"[snapshot] summary: processed={processed}, failed={failed}");
+    return failed > 0 ? 1 : 0;
+}
+
+/// <summary>AUT-DATA-002: standalone command, same shape/rationale as `runner snapshot` — a restore overwrites the
+/// database, so it should only ever run when explicitly asked for (e.g. a pipeline step right before a retry), never
+/// silently in the background. Drains the queue the same way `runner snapshot` does.</summary>
+static async Task<int> RunRestoreAsync()
+{
+    var config = AgentConfig.FromEnvironment();
+    if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
+    {
+        Console.Error.WriteLine("Missing QAHUB_USERNAME / QAHUB_PASSWORD. ตั้งค่าก่อนรัน (ดู set-agent-env.ps1)");
+        return 2;
+    }
+
+    using var client = new QaHubClient(config);
+    if (!await client.LoginAsync(CancellationToken.None))
+    {
+        Console.Error.WriteLine($"Login ไป QA Hub ล้มเหลว ({config.HubBaseUrl}). ตรวจ Username/Password และสิทธิ์ AUTOMATION.EXECUTE");
+        return 2;
+    }
+    await client.RegisterAsync(CancellationToken.None);
+
+    var profile = DbProfile.FromEnvironment(config);
+    IDbSnapshotService snapshotService = new DatabaseSnapshotService(config.GbakPath);
+    var processed = 0;
+    var failed = 0;
+    while (true)
+    {
+        var package = await client.ClaimRestoreAsync(CancellationToken.None);
+        if (package is null) break;
+        processed++;
+        Console.WriteLine($"[restore] claimed {package.AutomationDbRestoreId} <- snapshot {package.AutomationDbSnapshotId} ({package.SnapshotPath})");
+        var result = await snapshotService.RestoreSnapshotAsync(profile, package.SnapshotPath, package.ExpectedChecksum, CancellationToken.None);
+        try
+        {
+            if (result.Success)
+            {
+                Console.WriteLine($"[restore] {package.AutomationDbRestoreId} => Succeeded (checksum ok, DB available, {result.ElapsedMs}ms)");
+                await client.CompleteRestoreAsync(package.AutomationDbRestoreId, "Succeeded", result.ChecksumVerified, result.AvailabilityVerified, null, CancellationToken.None);
+            }
+            else
+            {
+                failed++;
+                Console.Error.WriteLine($"[restore] {package.AutomationDbRestoreId} => Failed: {result.Error}");
+                await client.CompleteRestoreAsync(package.AutomationDbRestoreId, "Failed", result.ChecksumVerified, result.AvailabilityVerified, result.Error, CancellationToken.None);
+            }
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[restore] report FAILED for {package.AutomationDbRestoreId}: {ex.Message}"); }
+    }
+
+    if (processed == 0) { Console.WriteLine("[restore] ไม่มี Restore request รอดำเนินการสำหรับ Agent นี้"); return 0; }
+    Console.WriteLine($"[restore] summary: processed={processed}, failed={failed}");
     return failed > 0 ? 1 : 0;
 }
 

@@ -10,7 +10,7 @@ namespace ProMaxx2.QA.Api.Controllers;
 /// test run. This controller is the human/UI-facing side (list/request); the agent-facing claim/complete endpoints
 /// live on <see cref="AutomationAgentController"/> alongside job claim/complete, under the same auth model.</summary>
 [ApiController, Route("api/v1/automation/data"), Authorize(Policy = "AutomationView"), RequireProjectAccess]
-public sealed class AutomationDataController(AutomationDataSnapshotService service) : ControllerBase
+public sealed class AutomationDataController(AutomationDataSnapshotService service, AutomationDataRestoreService restores) : ControllerBase
 {
     private Guid? UserId() => Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value, out var id) ? id : null;
     private static ProblemDetails Problem(string title, string detail, int status) => new() { Title = title, Detail = detail, Status = status };
@@ -35,6 +35,30 @@ public sealed class AutomationDataController(AutomationDataSnapshotService servi
             return CreatedAtAction(nameof(GetSnapshot), new { id = result.AutomationDbSnapshotId, projectId }, result);
         }
         catch (EntityNotFoundException ex) { return NotFound(Problem("ไม่พบ Environment หรือ Build", ex.Message, 404)); }
+        catch (ArgumentException ex) { return BadRequest(Problem("ข้อมูลไม่ถูกต้อง", ex.Message, 400)); }
+    }
+
+    /// <summary>AUT-DATA-002.</summary>
+    [HttpGet("restores")]
+    public Task<IReadOnlyList<AutomationDbRestoreDto>> ListRestores([FromQuery] Guid projectId, [FromQuery] Guid? automationDbSnapshotId, CancellationToken ct)
+        => restores.ListAsync(projectId, automationDbSnapshotId, ct);
+
+    [HttpGet("restores/{id:guid}")]
+    public async Task<ActionResult<AutomationDbRestoreDto>> GetRestore(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { return Ok(await restores.GetAsync(id, projectId, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
+    [HttpPost("restores"), Authorize(Policy = "AutomationExecute")]
+    public async Task<ActionResult<AutomationDbRestoreDto>> RequestRestore([FromQuery] Guid projectId, RequestRestoreRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await restores.RequestAsync(projectId, request, UserId(), ct);
+            return CreatedAtAction(nameof(GetRestore), new { id = result.AutomationDbRestoreId, projectId }, result);
+        }
+        catch (EntityNotFoundException ex) { return NotFound(Problem("ไม่พบ Snapshot", ex.Message, 404)); }
         catch (ArgumentException ex) { return BadRequest(Problem("ข้อมูลไม่ถูกต้อง", ex.Message, 400)); }
     }
 }

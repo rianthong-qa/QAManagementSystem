@@ -19,6 +19,9 @@ public sealed record VerificationBatchPackage(IReadOnlyList<VerificationObjectIt
 /// <summary>AUT-DATA-001.</summary>
 public sealed record SnapshotPackage(Guid AutomationDbSnapshotId, Guid EnvironmentId, string EnvironmentName, Guid BuildId, string BuildNumber);
 
+/// <summary>AUT-DATA-002.</summary>
+public sealed record RestorePackage(Guid AutomationDbRestoreId, Guid AutomationDbSnapshotId, string SnapshotPath, string ExpectedChecksum);
+
 public sealed class QaHubClient : IDisposable
 {
     private readonly HttpClient _http = new();
@@ -179,6 +182,27 @@ public sealed class QaHubClient : IDisposable
             snapshotPath,
             checksum,
             sizeBytes,
+            errorMessage
+        }, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>AUT-DATA-002.</summary>
+    public async Task<RestorePackage?> ClaimRestoreAsync(CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/restores/claim", new { agentCode = _config.AgentCode, agentVersion = _config.AgentVersion }, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RestorePackage>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+    }
+
+    public async Task CompleteRestoreAsync(Guid restoreId, string status, bool checksumVerified, bool availabilityVerified, string? errorMessage, CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/restores/{restoreId}/complete", new
+        {
+            status,
+            checksumVerified,
+            availabilityVerified,
             errorMessage
         }, ct);
         response.EnsureSuccessStatusCode();

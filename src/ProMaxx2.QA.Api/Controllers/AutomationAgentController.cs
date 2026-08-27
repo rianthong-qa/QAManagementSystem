@@ -6,7 +6,7 @@ using ProMaxx2.QA.Application.Projects;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController, Route("api/v1/automation"), Authorize(Policy = "AutomationExecute")]
-public sealed class AutomationAgentController(AutomationAgentService service, AutomationDataSnapshotService snapshots, IWebHostEnvironment environment) : ControllerBase
+public sealed class AutomationAgentController(AutomationAgentService service, AutomationDataSnapshotService snapshots, AutomationDataRestoreService restores, IWebHostEnvironment environment) : ControllerBase
 {
     [HttpPost("agents/register")] public async Task<ActionResult<AutomationAgentDto>> Register(RegisterAgentRequest request, CancellationToken ct)
     {
@@ -99,6 +99,21 @@ public sealed class AutomationAgentController(AutomationAgentService service, Au
         try { return Ok(await snapshots.CompleteAsync(id, request, ct)); }
         catch (EntityNotFoundException) { return NotFound(); }
         catch (ArgumentException ex) { return BadRequest(Problem("Snapshot completion invalid", ex.Message, 400)); }
+    }
+
+    /// <summary>AUT-DATA-002: same "one at a time" claim shape as snapshots/claim, restricted server-side to
+    /// requests whose snapshot was produced by this claiming agent.</summary>
+    [HttpPost("restores/claim")] public async Task<ActionResult<ClaimRestorePackageDto?>> ClaimRestore(ClaimRestoreRequest request, CancellationToken ct)
+    {
+        var package = await restores.ClaimNextAsync(request.AgentCode, ct);
+        return package is null ? NoContent() : Ok(package);
+    }
+
+    [HttpPost("restores/{id:guid}/complete")] public async Task<ActionResult<AutomationDbRestoreDto>> CompleteRestore(Guid id, CompleteRestoreRequest request, CancellationToken ct)
+    {
+        try { return Ok(await restores.CompleteAsync(id, request, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("Restore completion invalid", ex.Message, 400)); }
     }
 
     private string EvidenceRoot()

@@ -68,6 +68,7 @@ builder.Services.AddHostedService<AutomationScheduleWorker>(); // AUT-P1-006: po
 builder.Services.AddScoped<AutomationBuildTriggerService>();
 builder.Services.AddScoped<AutomationWebhookService>();
 builder.Services.AddScoped<AutomationDataSnapshotService>(); // AUT-DATA-001
+builder.Services.AddScoped<AutomationDataRestoreService>(); // AUT-DATA-002
 builder.Services.AddScoped<AutomationAgentService>();
 builder.Services.AddScoped<AutomationAiService>();
 builder.Services.AddScoped<AutomationDefectService>();

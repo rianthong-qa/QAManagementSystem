@@ -37,7 +37,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
     }
 
     private AutomationAgentController MakeController(ProMaxx2.QA.Infrastructure.Persistence.QaDbContext db) =>
-        new(AutomationTestFixtures.AgentService(db), AutomationTestFixtures.SnapshotService(db), new FakeWebHostEnvironment(_tempRoot));
+        new(AutomationTestFixtures.AgentService(db), AutomationTestFixtures.SnapshotService(db), AutomationTestFixtures.RestoreService(db), new FakeWebHostEnvironment(_tempRoot));
 
     private static IFormFile MakeFile(string fileName, int sizeBytes = 10) =>
         new FormFile(new MemoryStream(new byte[sizeBytes]), 0, sizeBytes, "file", fileName);

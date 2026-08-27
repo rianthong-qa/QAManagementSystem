@@ -81,6 +81,11 @@ type AutomationDbSnapshotItem = {
   status: string; dbKind?: string; agentId?: string; agentCode?: string; snapshotPath?: string; checksum?: string; sizeBytes?: number; errorMessage?: string;
   requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
 };
+type AutomationDbRestoreItem = {
+  automationDbRestoreId: string; projectId: string; automationDbSnapshotId: string; environmentId: string; environmentName: string; buildId: string; buildNumber: string;
+  status: string; agentId?: string; agentCode?: string; checksumVerified: boolean; availabilityVerified: boolean; errorMessage?: string;
+  requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
+};
 type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
 type CountByKeyItem = { key: string; count: number };
 type FailureBreakdownItem = { totalFailed: number; byFailureType: CountByKeyItem[]; byBuild: CountByKeyItem[]; byAgent: CountByKeyItem[]; byAutomationCase: CountByKeyItem[] };
@@ -2525,6 +2530,7 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
   const [error, setError] = useState("");
   const [requestModal, setRequestModal] = useState(false);
   const [detail, setDetail] = useState<AutomationDbSnapshotItem | null>(null);
+  const [restoreHistory, setRestoreHistory] = useState<AutomationDbRestoreItem[]>([]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -2540,8 +2546,26 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
     } catch (e) { setError(e instanceof Error ? e.message : "ขอ Snapshot ไม่สำเร็จ"); } finally { setBusy(false); }
   };
 
+  const openDetail = async (s: AutomationDbSnapshotItem) => {
+    setDetail(s); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/restores?projectId=${projectId}&automationDbSnapshotId=${s.automationDbSnapshotId}`, { headers });
+      setRestoreHistory(r.ok ? await r.json() : []);
+    } catch { setRestoreHistory([]); }
+  };
+
+  const requestRestore = async (s: AutomationDbSnapshotItem) => {
+    if (!window.confirm(`ยืนยัน restore ฐานข้อมูลจริงของ "${s.environmentName}" กลับไปที่ snapshot นี้ (build ${s.buildNumber})?\n\n⚠ ข้อมูลปัจจุบันใน DB ของ Environment นี้จะถูกทับทั้งหมด — ย้อนกลับไม่ได้`)) return;
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/restores?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ automationDbSnapshotId: s.automationDbSnapshotId }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ขอ Restore ไม่สำเร็จ"); }
+      if (detail?.automationDbSnapshotId === s.automationDbSnapshotId) await openDetail(s);
+    } catch (e) { setError(e instanceof Error ? e.message : "ขอ Restore ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
   return <section className="automation-cases" aria-label="Automation DB Snapshot">
-    <header className="automation-section-head"><div><h2>Database Snapshot (AUT-DATA-001)</h2><p>ขอ backup ฐานข้อมูลจริงของ Environment ก่อนรัน — Windows Agent เป็นผู้ backup จริง (gbak สำหรับ Firebird / BACKUP DATABASE สำหรับ SQL Server) ผ่านคำสั่ง <code>runner snapshot</code> บนเครื่อง Agent</p></div>{canRun && <button className="btn primary" type="button" onClick={() => setRequestModal(true)}>＋ ขอ Snapshot</button>}</header>
+    <header className="automation-section-head"><div><h2>Database Snapshot &amp; Restore (AUT-DATA-001/002)</h2><p>ขอ backup ฐานข้อมูลจริงของ Environment ก่อนรัน และ restore กลับได้ภายหลัง — Windows Agent เป็นผู้ backup/restore จริง (gbak สำหรับ Firebird / BACKUP-RESTORE DATABASE สำหรับ SQL Server) ผ่านคำสั่ง <code>runner snapshot</code>/<code>runner restore</code> บนเครื่อง Agent</p></div>{canRun && <button className="btn primary" type="button" onClick={() => setRequestModal(true)}>＋ ขอ Snapshot</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
     {snapshots.length ? <div className="table-wrap"><table><thead><tr><th>Environment</th><th>Build</th><th>สถานะ</th><th>DB</th><th>Agent</th><th>ขนาด</th><th>ขอเมื่อ</th><th></th></tr></thead><tbody>{snapshots.map((s) => <tr key={s.automationDbSnapshotId}>
       <td>{s.environmentName}</td>
@@ -2551,7 +2575,7 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
       <td>{s.agentCode ?? "-"}</td>
       <td>{formatBytes(s.sizeBytes)}</td>
       <td>{formatThaiDateTime(s.requestedAt)}</td>
-      <td><button type="button" className="table-action" onClick={() => setDetail(s)}>รายละเอียด</button></td>
+      <td><button type="button" className="table-action" onClick={() => openDetail(s)}>รายละเอียด</button>{canRun && s.status === "Succeeded" && <button type="button" className="table-action danger" onClick={() => requestRestore(s)}>↺ Restore</button>}</td>
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Snapshot</p><small>ขอ Snapshot ก่อนรันชุด Automation เพื่อให้เริ่มจาก data state ที่รู้จักได้แน่นอน และ restore ได้ภายหลัง (AUT-DATA-002)</small></div>}
 
     {requestModal && <SnapshotRequestModal projectId={projectId} releaseId={releaseId} headers={headers} busy={busy} onClose={() => setRequestModal(false)} onSave={requestSnapshot} />}
@@ -2569,6 +2593,15 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
         </>}
         {detail.status === "Failed" && <div className="automation-failure-row"><b>Error</b><span>{detail.errorMessage}</span></div>}
       </div>
+
+      <h3>ประวัติการ Restore</h3>
+      {restoreHistory.length ? <div className="automation-result-list">{restoreHistory.map((r) => <div key={r.automationDbRestoreId} className="automation-failure-row">
+        <b><Badge tone={snapshotStatusTone[r.status] ?? "blue"}>{r.status}</Badge> {formatThaiDateTime(r.requestedAt)}{r.agentCode ? ` · ${r.agentCode}` : ""}</b>
+        <span>Checksum: <Badge tone={r.checksumVerified ? "green" : "gray"}>{r.checksumVerified ? "ตรวจแล้ว" : "-"}</Badge> · ความพร้อมใช้งาน: <Badge tone={r.availabilityVerified ? "green" : "gray"}>{r.availabilityVerified ? "ตรวจแล้ว" : "-"}</Badge></span>
+        {r.errorMessage && <span>{r.errorMessage}</span>}
+      </div>)}</div> : <div className="empty"><p>ยังไม่เคย Restore จาก Snapshot นี้</p></div>}
+      {canRun && detail.status === "Succeeded" && <div className="modal-actions" style={{ justifyContent: "flex-start" }}><button className="btn danger" disabled={busy} type="button" onClick={() => requestRestore(detail)}>↺ ขอ Restore จาก Snapshot นี้</button></div>}
+
       <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}>ปิดหน้าต่าง</button></div>
     </div></div>}
   </section>;

@@ -53,4 +53,57 @@ public sealed class DatabaseSnapshotServiceTests : IDisposable
 
         Assert.True(!Directory.Exists(_tempDir) || Directory.EnumerateFiles(_tempDir).Count() == 0);
     }
+
+    [Fact]
+    public async Task Restore_reports_a_failure_with_no_checks_verified_when_the_backup_file_does_not_exist()
+    {
+        var profile = new DbProfile(DbKind.SqlServer, "127.0.0.1", 1, "sa", "wrong", "nonexistent");
+        var service = new DatabaseSnapshotService();
+        var missingPath = Path.Combine(_tempDir, "does-not-exist.bak");
+
+        var result = await service.RestoreSnapshotAsync(profile, missingPath, "deadbeef", CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.False(result.ChecksumVerified);
+        Assert.False(result.AvailabilityVerified);
+        Assert.Contains("not found", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Restore_reports_a_checksum_mismatch_without_ever_attempting_the_restore_command()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var backupPath = Path.Combine(_tempDir, "snapshot.bak");
+        await File.WriteAllTextAsync(backupPath, "not the real backup content");
+        // Deliberately bogus host/port: if the restore command were attempted despite the checksum mismatch, this
+        // would fail for a *different* reason (connection refused) — the test would still fail, just misleadingly.
+        var profile = new DbProfile(DbKind.SqlServer, "127.0.0.1", 1, "sa", "wrong", "nonexistent");
+        var service = new DatabaseSnapshotService();
+
+        var result = await service.RestoreSnapshotAsync(profile, backupPath, "0000000000000000000000000000000000000000000000000000000000000000", CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.False(result.ChecksumVerified);
+        Assert.False(result.AvailabilityVerified);
+        Assert.Contains("Checksum mismatch", result.Error);
+    }
+
+    [Fact]
+    public async Task Restore_with_a_matching_checksum_but_a_refused_connection_reports_checksum_verified_and_availability_not()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var backupPath = Path.Combine(_tempDir, "snapshot.bak");
+        var content = "fake backup bytes"u8.ToArray();
+        await File.WriteAllBytesAsync(backupPath, content);
+        var checksum = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant();
+        var profile = new DbProfile(DbKind.SqlServer, "127.0.0.1", 1, "sa", "wrong", "nonexistent");
+        var service = new DatabaseSnapshotService();
+
+        var result = await service.RestoreSnapshotAsync(profile, backupPath, checksum, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.True(result.ChecksumVerified); // the checksum step passed — failure happened after it
+        Assert.False(result.AvailabilityVerified);
+        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+    }
 }
