@@ -16,6 +16,9 @@ public sealed record AgentInfo(Guid AgentId, string AgentCode, string Status, st
 public sealed record VerificationObjectItem(Guid VerificationId, string ObjectCode, string ApplicationCode, string ScreenCode, string? ExpectedAutomationId, string ExpectedControlType);
 public sealed record VerificationBatchPackage(IReadOnlyList<VerificationObjectItem> Items);
 
+/// <summary>AUT-DATA-001.</summary>
+public sealed record SnapshotPackage(Guid AutomationDbSnapshotId, Guid EnvironmentId, string EnvironmentName, Guid BuildId, string BuildNumber);
+
 public sealed class QaHubClient : IDisposable
 {
     private readonly HttpClient _http = new();
@@ -154,6 +157,29 @@ public sealed class QaHubClient : IDisposable
             actualAutomationId,
             actualControlType,
             message
+        }, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>AUT-DATA-001.</summary>
+    public async Task<SnapshotPackage?> ClaimSnapshotAsync(CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/snapshots/claim", new { agentCode = _config.AgentCode, agentVersion = _config.AgentVersion }, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SnapshotPackage>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+    }
+
+    public async Task CompleteSnapshotAsync(Guid snapshotId, string status, string? dbKind, string? snapshotPath, string? checksum, long? sizeBytes, string? errorMessage, CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/snapshots/{snapshotId}/complete", new
+        {
+            status,
+            dbKind,
+            snapshotPath,
+            checksum,
+            sizeBytes,
+            errorMessage
         }, ct);
         response.EnsureSuccessStatusCode();
     }

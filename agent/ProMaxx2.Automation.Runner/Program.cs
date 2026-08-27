@@ -18,6 +18,11 @@ if (args is { Length: > 0 } && args[0].Equals("verify", StringComparison.Ordinal
     return await RunVerifyAsync(args);
 }
 
+if (args is { Length: > 0 } && args[0].Equals("snapshot", StringComparison.OrdinalIgnoreCase))
+{
+    return await RunSnapshotAsync();
+}
+
 var config = AgentConfig.FromEnvironment();
 
 if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
@@ -225,6 +230,62 @@ static async Task<int> RunVerifyAsync(string[] args)
     }
     Console.WriteLine("[verify] summary: " + string.Join(", ", counts.Select(kv => $"{kv.Key}={kv.Value}")));
     return 0;
+}
+
+/// <summary>AUT-DATA-001: a standalone, single-invocation command (same shape as `runner verify`, not part of the
+/// main job-polling loop) — a DB backup is heavy/disruptive enough that it should run when explicitly asked for
+/// (manually, or from a CI/scheduling step right before a test run), not silently in the background between jobs.
+/// Drains the queue: claims and runs snapshot requests one at a time until none are left, since more than one can
+/// legitimately pile up between invocations.</summary>
+static async Task<int> RunSnapshotAsync()
+{
+    var config = AgentConfig.FromEnvironment();
+    if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
+    {
+        Console.Error.WriteLine("Missing QAHUB_USERNAME / QAHUB_PASSWORD. ตั้งค่าก่อนรัน (ดู set-agent-env.ps1)");
+        return 2;
+    }
+
+    using var client = new QaHubClient(config);
+    if (!await client.LoginAsync(CancellationToken.None))
+    {
+        Console.Error.WriteLine($"Login ไป QA Hub ล้มเหลว ({config.HubBaseUrl}). ตรวจ Username/Password และสิทธิ์ AUTOMATION.EXECUTE");
+        return 2;
+    }
+    await client.RegisterAsync(CancellationToken.None);
+
+    var profile = DbProfile.FromEnvironment(config);
+    IDbSnapshotService snapshotService = new DatabaseSnapshotService(config.GbakPath);
+    var processed = 0;
+    var failed = 0;
+    while (true)
+    {
+        var package = await client.ClaimSnapshotAsync(CancellationToken.None);
+        if (package is null) break;
+        processed++;
+        Console.WriteLine($"[snapshot] claimed {package.AutomationDbSnapshotId} — {package.EnvironmentName} / build {package.BuildNumber} ({profile.Kind})");
+        var fileNameHint = $"{package.EnvironmentName}_{package.BuildNumber}";
+        var result = await snapshotService.CreateSnapshotAsync(profile, config.SnapshotDirectory, fileNameHint, CancellationToken.None);
+        try
+        {
+            if (result.Success)
+            {
+                Console.WriteLine($"[snapshot] {package.AutomationDbSnapshotId} => Succeeded ({result.FilePath}, {result.SizeBytes} bytes, {result.ElapsedMs}ms)");
+                await client.CompleteSnapshotAsync(package.AutomationDbSnapshotId, "Succeeded", profile.Kind.ToString(), result.FilePath, result.Checksum, result.SizeBytes, null, CancellationToken.None);
+            }
+            else
+            {
+                failed++;
+                Console.Error.WriteLine($"[snapshot] {package.AutomationDbSnapshotId} => Failed: {result.Error}");
+                await client.CompleteSnapshotAsync(package.AutomationDbSnapshotId, "Failed", profile.Kind.ToString(), null, null, null, result.Error, CancellationToken.None);
+            }
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[snapshot] report FAILED for {package.AutomationDbSnapshotId}: {ex.Message}"); }
+    }
+
+    if (processed == 0) { Console.WriteLine("[snapshot] ไม่มี Snapshot request รอดำเนินการสำหรับ Agent นี้"); return 0; }
+    Console.WriteLine($"[snapshot] summary: processed={processed}, failed={failed}");
+    return failed > 0 ? 1 : 0;
 }
 
 static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, AgentConfig config, CancellationToken ct)

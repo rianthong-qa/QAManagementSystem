@@ -76,6 +76,11 @@ type AutomationBuildTriggerPolicyItem = {
 type AutomationBuildTriggerRunItem = { automationBuildTriggerRunId: string; automationBuildTriggerPolicyId: string; buildId: string; buildNumber: string; firedAtUtc: string; status: string; executionsCreated: number; skippedCount: number; errorMessage?: string };
 type AutomationWebhookTokenItem = { automationWebhookTokenId: string; projectId: string; name: string; tokenPrefix: string; isActive: boolean; lastUsedAtUtc?: string; createdBy?: string; createdAt: string; revokedAt?: string };
 type AutomationWebhookDeliveryItem = { automationWebhookDeliveryId: string; projectId: string; automationWebhookTokenId: string; tokenName: string; requestId: string; receivedAtUtc: string; buildId?: string; buildNumber?: string; status: string; errorMessage?: string };
+type AutomationDbSnapshotItem = {
+  automationDbSnapshotId: string; projectId: string; environmentId: string; environmentName: string; buildId: string; buildNumber: string;
+  status: string; dbKind?: string; agentId?: string; agentCode?: string; snapshotPath?: string; checksum?: string; sizeBytes?: number; errorMessage?: string;
+  requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
+};
 type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
 type CountByKeyItem = { key: string; count: number };
 type FailureBreakdownItem = { totalFailed: number; byFailureType: CountByKeyItem[]; byBuild: CountByKeyItem[]; byAgent: CountByKeyItem[]; byAutomationCase: CountByKeyItem[] };
@@ -903,6 +908,7 @@ export function AutomationPage({
     { id: "schedules", label: "Schedule", icon: "◷" },
     { id: "buildTriggers", label: "Build Trigger", icon: "⚡" },
     { id: "webhooks", label: "Webhook", icon: "🔗" },
+    { id: "dataSnapshots", label: "DB Snapshot", icon: "💾" },
     { id: "execution", label: "Execution", icon: "▶" },
     { id: "failures", label: "Failure Dashboard", icon: "!" },
     { id: "manage", label: "การจัดการ", icon: "⚙" },
@@ -1029,6 +1035,7 @@ export function AutomationPage({
       {tab === "schedules" && <AutomationScheduleTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} agents={agents} setExecDetail={setExecDetail} />}
       {tab === "buildTriggers" && <AutomationBuildTriggerTab projectId={pid} headers={headers} canEdit={canEdit} agents={agents} />}
       {tab === "webhooks" && <AutomationWebhookTab projectId={pid} headers={headers} canEdit={canEdit} />}
+      {tab === "dataSnapshots" && <AutomationDataSnapshotTab projectId={pid} releaseId={releaseId} headers={headers} canRun={canRun} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
@@ -2494,6 +2501,107 @@ function WebhookTokenFormModal({ busy, onClose, onSave }: { busy: boolean; onClo
       <label className="full">ชื่อ (สำหรับระบุ เช่นชื่อระบบ CI/CD)<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Jenkins Nightly" /></label>
     </div>
     <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !name.trim()} onClick={() => onSave(name.trim())}>{busy ? "กำลังสร้าง..." : "สร้าง"}</button></div>
+  </div></div>;
+}
+
+const snapshotStatusTone: Record<string, string> = { Requested: "gray", Running: "blue", Succeeded: "green", Failed: "red" };
+
+function formatBytes(bytes?: number): string {
+  if (bytes === undefined || bytes === null) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+  return `${value.toFixed(1)} ${units[i]}`;
+}
+
+function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
+  projectId: string; releaseId?: string; headers: Record<string, string>; canRun: boolean;
+}) {
+  const [snapshots, setSnapshots] = useState<AutomationDbSnapshotItem[]>([]);
+  const [reload, setReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [requestModal, setRequestModal] = useState(false);
+  const [detail, setDetail] = useState<AutomationDbSnapshotItem | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`${apiUrl}/automation/data/snapshots?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setSnapshots(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Snapshot ไม่สำเร็จ"));
+  }, [projectId, headers, reload]);
+
+  const requestSnapshot = async (environmentId: string, buildId: string) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/snapshots?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ environmentId, buildId }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ขอ Snapshot ไม่สำเร็จ"); }
+      setRequestModal(false); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "ขอ Snapshot ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  return <section className="automation-cases" aria-label="Automation DB Snapshot">
+    <header className="automation-section-head"><div><h2>Database Snapshot (AUT-DATA-001)</h2><p>ขอ backup ฐานข้อมูลจริงของ Environment ก่อนรัน — Windows Agent เป็นผู้ backup จริง (gbak สำหรับ Firebird / BACKUP DATABASE สำหรับ SQL Server) ผ่านคำสั่ง <code>runner snapshot</code> บนเครื่อง Agent</p></div>{canRun && <button className="btn primary" type="button" onClick={() => setRequestModal(true)}>＋ ขอ Snapshot</button>}</header>
+    {error && <div className="inline-alert error"><span>{error}</span></div>}
+    {snapshots.length ? <div className="table-wrap"><table><thead><tr><th>Environment</th><th>Build</th><th>สถานะ</th><th>DB</th><th>Agent</th><th>ขนาด</th><th>ขอเมื่อ</th><th></th></tr></thead><tbody>{snapshots.map((s) => <tr key={s.automationDbSnapshotId}>
+      <td>{s.environmentName}</td>
+      <td>{s.buildNumber}</td>
+      <td><Badge tone={snapshotStatusTone[s.status] ?? "blue"}>{s.status}</Badge></td>
+      <td>{s.dbKind ?? "-"}</td>
+      <td>{s.agentCode ?? "-"}</td>
+      <td>{formatBytes(s.sizeBytes)}</td>
+      <td>{formatThaiDateTime(s.requestedAt)}</td>
+      <td><button type="button" className="table-action" onClick={() => setDetail(s)}>รายละเอียด</button></td>
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Snapshot</p><small>ขอ Snapshot ก่อนรันชุด Automation เพื่อให้เริ่มจาก data state ที่รู้จักได้แน่นอน และ restore ได้ภายหลัง (AUT-DATA-002)</small></div>}
+
+    {requestModal && <SnapshotRequestModal projectId={projectId} releaseId={releaseId} headers={headers} busy={busy} onClose={() => setRequestModal(false)} onSave={requestSnapshot} />}
+
+    {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-snapshot-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-snapshot-detail-title">Snapshot — {detail.environmentName} / {detail.buildNumber}</h2><small><Badge tone={snapshotStatusTone[detail.status] ?? "blue"}>{detail.status}</Badge></small></div><button aria-label="ปิด" onClick={() => setDetail(null)}>×</button></div>
+      <div className="automation-result-list">
+        <div className="automation-failure-row"><b>ขอเมื่อ</b><span>{formatThaiDateTime(detail.requestedAt)}{detail.requestedBy ? ` · โดย ${detail.requestedBy}` : ""}</span></div>
+        {detail.startedAt && <div className="automation-failure-row"><b>Agent เริ่ม backup</b><span>{formatThaiDateTime(detail.startedAt)}{detail.agentCode ? ` · ${detail.agentCode}` : ""}</span></div>}
+        {detail.completedAt && <div className="automation-failure-row"><b>เสร็จสิ้น</b><span>{formatThaiDateTime(detail.completedAt)}</span></div>}
+        {detail.status === "Succeeded" && <>
+          <div className="automation-failure-row"><b>DB</b><span>{detail.dbKind} · {formatBytes(detail.sizeBytes)}</span></div>
+          <div className="automation-failure-row"><b>ไฟล์ (บนเครื่อง Agent)</b><span><code>{detail.snapshotPath}</code></span></div>
+          <div className="automation-failure-row"><b>Checksum (SHA-256)</b><span><code>{detail.checksum}</code></span></div>
+        </>}
+        {detail.status === "Failed" && <div className="automation-failure-row"><b>Error</b><span>{detail.errorMessage}</span></div>}
+      </div>
+      <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}>ปิดหน้าต่าง</button></div>
+    </div></div>}
+  </section>;
+}
+
+function SnapshotRequestModal({ projectId, releaseId, headers, busy, onClose, onSave }: {
+  projectId: string; releaseId?: string; headers: Record<string, string>; busy: boolean; onClose: () => void; onSave: (environmentId: string, buildId: string) => void;
+}) {
+  const [builds, setBuilds] = useState<BuildOption[]>([]);
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
+  const [environmentId, setEnvironmentId] = useState("");
+  const [buildId, setBuildId] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      releaseId ? fetch(`${apiUrl}/releases/${releaseId}/builds`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])) : Promise.resolve([]),
+      fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
+    ]).then(([b, e]) => {
+      if (!mounted) return;
+      setBuilds(Array.isArray(b) ? b : []);
+      setEnvironments(Array.isArray(e) ? (e as EnvironmentOption[]).filter((x) => x.isActive) : []);
+    }).catch(() => { /* selects just render empty — the inline error banner elsewhere already covers fetch failures for this tab */ });
+    return () => { mounted = false; };
+  }, [projectId, releaseId, headers]);
+
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-snapshot-request-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-snapshot-request-title">ขอ Database Snapshot</h2><small>Windows Agent จะ backup ฐานข้อมูลจริงและรายงานผลกลับมาที่นี่</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="form-grid">
+      <label>Environment<select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
+      <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select></label>
+    </div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !environmentId || !buildId} onClick={() => onSave(environmentId, buildId)}>{busy ? "กำลังส่งคำขอ..." : "ขอ Snapshot"}</button></div>
   </div></div>;
 }
 

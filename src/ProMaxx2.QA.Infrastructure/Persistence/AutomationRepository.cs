@@ -4,7 +4,7 @@ using ProMaxx2.QA.Domain.Automation;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
-public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRepository, IAutomationSuiteRepository, IAutomationScheduleRepository, IAutomationBuildTriggerRepository, IAutomationWebhookRepository
+public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRepository, IAutomationSuiteRepository, IAutomationScheduleRepository, IAutomationBuildTriggerRepository, IAutomationWebhookRepository, IAutomationDataSnapshotRepository
 {
     public async Task<IReadOnlyList<AutomationCaseDto>> ListCasesAsync(Guid projectId, string? search, int take, CancellationToken ct)
     {

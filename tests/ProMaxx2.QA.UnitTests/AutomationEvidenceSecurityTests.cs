@@ -36,8 +36,8 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
         public string WebRootPath { get; set; } = contentRoot;
     }
 
-    private AutomationAgentController MakeController(AutomationAgentService service) =>
-        new(service, new FakeWebHostEnvironment(_tempRoot));
+    private AutomationAgentController MakeController(ProMaxx2.QA.Infrastructure.Persistence.QaDbContext db) =>
+        new(AutomationTestFixtures.AgentService(db), AutomationTestFixtures.SnapshotService(db), new FakeWebHostEnvironment(_tempRoot));
 
     private static IFormFile MakeFile(string fileName, int sizeBytes = 10) =>
         new FormFile(new MemoryStream(new byte[sizeBytes]), 0, sizeBytes, "file", fileName);
@@ -48,7 +48,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
     public async Task Step_evidence_upload_rejects_disallowed_file_extension()
     {
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
-        var controller = MakeController(AutomationTestFixtures.AgentService(db));
+        var controller = MakeController(db);
 
         var result = await controller.UploadEvidence(Guid.NewGuid(), 1, MakeFile("payload.exe"), CancellationToken.None);
 
@@ -60,7 +60,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
     public async Task Step_evidence_upload_rejects_zero_byte_and_oversized_files()
     {
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
-        var controller = MakeController(AutomationTestFixtures.AgentService(db));
+        var controller = MakeController(db);
 
         var empty = await controller.UploadEvidence(Guid.NewGuid(), 1, MakeFile("shot.png", 0), CancellationToken.None);
         var tooBig = await controller.UploadEvidence(Guid.NewGuid(), 1, MakeFile("shot.png", 10_000_001), CancellationToken.None);
@@ -73,7 +73,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
     public async Task Step_evidence_upload_for_a_step_that_was_never_reported_returns_not_found_and_deletes_the_orphan_file()
     {
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
-        var controller = MakeController(AutomationTestFixtures.AgentService(db));
+        var controller = MakeController(db);
         var executionId = Guid.NewGuid(); // no execution/step seeded -> AttachStepEvidenceAsync will fail
 
         var result = await controller.UploadEvidence(executionId, 1, MakeFile("shot.png"), CancellationToken.None);
@@ -87,7 +87,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
     public async Task Execution_evidence_upload_rejects_disallowed_extension_and_oversized_file()
     {
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
-        var controller = MakeController(AutomationTestFixtures.AgentService(db));
+        var controller = MakeController(db);
 
         var badType = await controller.UploadExecutionEvidence(Guid.NewGuid(), null, "AutomationLog", MakeFile("payload.exe"), CancellationToken.None);
         var tooBig = await controller.UploadExecutionEvidence(Guid.NewGuid(), null, "AutomationLog", MakeFile("log.txt", 10_000_001), CancellationToken.None);
@@ -100,7 +100,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
     public async Task Execution_evidence_upload_blocks_a_path_traversal_evidence_type_from_escaping_the_evidence_root()
     {
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
-        var controller = MakeController(AutomationTestFixtures.AgentService(db));
+        var controller = MakeController(db);
         var executionId = Guid.NewGuid();
 
         // evidenceType is free text from the agent/form and is embedded directly into the on-disk file name —
@@ -115,7 +115,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
     public async Task Execution_evidence_upload_for_an_execution_that_does_not_exist_returns_not_found_and_deletes_the_orphan_file()
     {
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
-        var controller = MakeController(AutomationTestFixtures.AgentService(db));
+        var controller = MakeController(db);
         var executionId = Guid.NewGuid();
 
         var result = await controller.UploadExecutionEvidence(executionId, null, "AutomationLog", MakeFile("log.txt"), CancellationToken.None);
@@ -133,7 +133,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
         await agents.RegisterAsync(new RegisterAgentRequest("AGENT-A", "MACHINE-A", "1.0.0", "Windows", "x64", []), null, CancellationToken.None);
         await agents.RequestExecutionAsync(baseline.Project.ProjectId, new RequestExecutionRequest(readyCase.AutomationCaseId, versionId, baseline.Build.BuildId, baseline.Environment.TestEnvironmentId, null, 5), null, CancellationToken.None);
         var claim = await agents.ClaimNextJobAsync(new ClaimJobRequest("AGENT-A", "1.0.0", [], "WindowsUI"), CancellationToken.None) ?? throw new InvalidOperationException();
-        var controller = MakeController(agents);
+        var controller = MakeController(db);
 
         var result = await controller.UploadExecutionEvidence(claim.AutomationExecutionId, null, "Screenshot", MakeFile("shot.png"), CancellationToken.None);
 

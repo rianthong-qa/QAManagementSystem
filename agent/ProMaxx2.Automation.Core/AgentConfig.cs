@@ -19,6 +19,13 @@ public sealed class AgentConfig
     public string DbUser { get; init; } = "SYSDBA";
     public string DbPassword { get; init; } = "";
     public string DbDatabase { get; init; } = "";
+    /// <summary>AUT-DATA-001: path to the Firebird <c>gbak</c> executable used by <c>DatabaseSnapshotService</c> to
+    /// take a backup. Defaults to just "gbak", assuming it is on PATH (true of a standard Firebird install) — set
+    /// this only when gbak.exe lives somewhere PATH doesn't reach.</summary>
+    public string GbakPath { get; init; } = "gbak";
+    /// <summary>AUT-DATA-001: local directory backup files are written to before the agent reports the result back
+    /// to the Hub. Relative paths are resolved against the runner's working directory.</summary>
+    public string SnapshotDirectory { get; init; } = "snapshots";
     public int HeartbeatSeconds { get; init; } = 15;
     public int ActionTimeoutSeconds { get; init; } = 20;
     public TimeSpan ActionTimeout => TimeSpan.FromSeconds(ActionTimeoutSeconds);
@@ -44,6 +51,8 @@ public sealed class AgentConfig
             DbUser = Get("AUT_DB_USER") is { Length: > 0 } du ? du : "SYSDBA",
             DbPassword = Get("AUT_DB_PASSWORD"),
             DbDatabase = Get("AUT_DB_DATABASE") is { Length: > 0 } dd ? dd : "",
+            GbakPath = Get("AUT_GBAK_PATH") is { Length: > 0 } gp ? gp : "gbak",
+            SnapshotDirectory = Get("AUT_SNAPSHOT_DIR") is { Length: > 0 } sd ? sd : "snapshots",
             HeartbeatSeconds = GetInt("HEARTBEAT_SECONDS", 15),
             ActionTimeoutSeconds = GetInt("ACTION_TIMEOUT_SECONDS", 20),
         };

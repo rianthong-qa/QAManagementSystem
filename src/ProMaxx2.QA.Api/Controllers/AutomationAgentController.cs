@@ -6,7 +6,7 @@ using ProMaxx2.QA.Application.Projects;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController, Route("api/v1/automation"), Authorize(Policy = "AutomationExecute")]
-public sealed class AutomationAgentController(AutomationAgentService service, IWebHostEnvironment environment) : ControllerBase
+public sealed class AutomationAgentController(AutomationAgentService service, AutomationDataSnapshotService snapshots, IWebHostEnvironment environment) : ControllerBase
 {
     [HttpPost("agents/register")] public async Task<ActionResult<AutomationAgentDto>> Register(RegisterAgentRequest request, CancellationToken ct)
     {
@@ -85,6 +85,20 @@ public sealed class AutomationAgentController(AutomationAgentService service, IW
         try { await service.ReportVerificationResultAsync(request, ct); return NoContent(); }
         catch (EntityNotFoundException) { return NotFound(); }
         catch (ArgumentException ex) { return BadRequest(Problem("Verification result invalid", ex.Message, 400)); }
+    }
+
+    /// <summary>AUT-DATA-001: one at a time, mirroring "jobs/claim" — a DB backup is heavy/serial work.</summary>
+    [HttpPost("snapshots/claim")] public async Task<ActionResult<ClaimSnapshotPackageDto?>> ClaimSnapshot(ClaimSnapshotRequest request, CancellationToken ct)
+    {
+        var package = await snapshots.ClaimNextAsync(request.AgentCode, ct);
+        return package is null ? NoContent() : Ok(package);
+    }
+
+    [HttpPost("snapshots/{id:guid}/complete")] public async Task<ActionResult<AutomationDbSnapshotDto>> CompleteSnapshot(Guid id, CompleteSnapshotRequest request, CancellationToken ct)
+    {
+        try { return Ok(await snapshots.CompleteAsync(id, request, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("Snapshot completion invalid", ex.Message, 400)); }
     }
 
     private string EvidenceRoot()
