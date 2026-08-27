@@ -14,10 +14,12 @@ public sealed record DbProfile(DbKind Kind, string Host, int Port, string User, 
         config.DbUser,
         config.DbPassword,
         config.DbDatabase,
-        // Reuse the agent's action timeout budget as the connect timeout, capped at 5s: a DB assertion step
+        // Reuse the agent's action timeout budget as the connect timeout, clamped to 1-5s: a DB assertion step
         // shouldn't spend most of its own timeout budget just waiting to connect. Previously neither provider set
         // this at all, defaulting to the ~15s provider default regardless of how impatient the step itself was.
-        Math.Min(config.ActionTimeoutSeconds, 5));
+        // Clamped to a minimum of 1: both ADO.NET providers treat a timeout of 0 as "wait indefinitely", which is
+        // the exact opposite of the intent here if ActionTimeoutSeconds is ever misconfigured to 0.
+        Math.Clamp(config.ActionTimeoutSeconds, 1, 5));
 }
 
 public sealed record DbValidationRequest(DbProfile Profile, string Query, IReadOnlyDictionary<string, string> Parameters, string Expected, string? Column = null);

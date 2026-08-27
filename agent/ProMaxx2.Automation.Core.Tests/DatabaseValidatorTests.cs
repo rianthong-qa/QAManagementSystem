@@ -132,4 +132,16 @@ public sealed class DatabaseValidatorTests
         var profile = DbProfile.FromEnvironment(new AgentConfig { ActionTimeoutSeconds = 5 });
         Assert.Equal(5, profile.ConnectTimeoutSeconds);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public void Connect_timeout_never_drops_to_zero_or_below(int actionTimeoutSeconds)
+    {
+        // A connect timeout of 0 means "wait indefinitely" to both ADO.NET providers — the exact opposite of the
+        // fail-fast intent — so a misconfigured (or programmatically zero/negative) ActionTimeoutSeconds must not
+        // propagate through.
+        var profile = DbProfile.FromEnvironment(new AgentConfig { ActionTimeoutSeconds = actionTimeoutSeconds });
+        Assert.Equal(1, profile.ConnectTimeoutSeconds);
+    }
 }

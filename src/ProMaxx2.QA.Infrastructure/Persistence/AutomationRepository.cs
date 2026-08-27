@@ -268,12 +268,16 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
     {
         var agent = await db.AutomationAgents.SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
         if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;
+        // Serializable, same as ClaimNextJobAsync: without this, two agents polling concurrently can both read the
+        // same "Pending" rows before either commits and both end up claiming (and reporting) the same verification.
+        await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct) : null;
         var pending = await db.AutomationObjectVerifications.Include(x => x.Object)
             .Where(x => x.Status == "Pending" && (x.RequestedAgentId == null || x.RequestedAgentId == agent.AgentId))
             .OrderBy(x => x.RequestedAt).Take(100).ToListAsync(ct);
-        if (pending.Count == 0) return null;
+        if (pending.Count == 0) { if (transaction is not null) await transaction.CommitAsync(ct); return null; }
         foreach (var item in pending) item.Assign(agent.AgentId);
         await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
         var dtoItems = pending.Select(x => new VerificationObjectItemDto(x.AutomationObjectVerificationId, x.Object.ObjectCode, x.Object.ApplicationCode, x.Object.ScreenCode, x.Object.AutomationId, x.Object.ControlType)).ToList();
         return new VerificationBatchPackageDto(dtoItems);
     }

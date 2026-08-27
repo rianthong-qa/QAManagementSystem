@@ -36,6 +36,7 @@ public sealed class AutomationObjectVerification
     public void Complete(string status, string? actualControlType, string? actualAutomationId, string? message)
     {
         if (status is not ("Found" or "NotFound" or "Duplicate" or "ControlTypeMismatch" or "Error")) throw new ArgumentException("Invalid verification status.");
+        if (Status is not ("Pending" or "Assigned")) throw new InvalidOperationException("Verification is already completed.");
         Status = status;
         ActualControlType = actualControlType?.Trim();
         ActualAutomationId = actualAutomationId?.Trim();

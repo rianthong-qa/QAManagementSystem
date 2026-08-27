@@ -361,6 +361,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
     {
         var caseEntity = await repository.GetCaseAsync(r.CaseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
         if (caseEntity.Status != "Ready") throw new ArgumentException("Only Ready automation cases can be executed.");
+        if (caseEntity.IsQuarantined) throw new ArgumentException("This case is quarantined and cannot be executed until it is unquarantined.");
         var versionId = r.VersionId;
         if (versionId == Guid.Empty)
         {
@@ -388,7 +389,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
         foreach (var caseId in r.CaseIds.Distinct())
         {
             var caseEntity = await repository.GetCaseAsync(caseId, projectId, ct);
-            if (caseEntity is null || caseEntity.Status != "Ready")
+            if (caseEntity is null || caseEntity.Status != "Ready" || caseEntity.IsQuarantined)
             {
                 skipped.Add(caseEntity?.AutomationCode ?? caseId.ToString());
                 continue;
@@ -445,16 +446,27 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
         }
         execution.Complete(r.Status, r.FailureType, r.ErrorCode, r.ErrorMessage, DateTime.UtcNow);
         var job = await repository.FindJobByExecutionAsync(executionId, ct);
-        if (job is not null) job.Complete(r.Status, r.ErrorMessage);
+        try
+        {
+            if (job is not null) job.Complete(r.Status, r.ErrorMessage);
+        }
+        catch (InvalidOperationException)
+        {
+            // The job was already completed by a concurrent duplicate/racing report that landed between our
+            // FindExecutionAsync and FindJobByExecutionAsync reads above — that request's write is authoritative.
+            // Treat this one idempotently instead of surfacing a confusing error to the agent.
+            return await repository.GetExecutionAsync(executionId, executionProjectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+        }
         var projectId = executionProjectId;
         var caseEntity = await repository.FindCaseByIdAsync(execution.AutomationCaseId, ct);
         await repository.SaveChangesAsync(ct); // flush Status/ErrorCode before re-reading for classification
 
         var retried = false;
+        AutomationFailureClassificationDto? classification = null;
         if (r.Status is "Failed" or "Timeout" or "AgentLost")
         {
             var dtoForClassification = await repository.GetExecutionAsync(executionId, projectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
-            var classification = AutomationFailureClassifier.Classify(dtoForClassification);
+            classification = AutomationFailureClassifier.Classify(dtoForClassification);
             execution.SetClassification(classification.FailureType, classification.Recommendation);
 
             var policy = await repository.GetRetryPolicyAsync(ct);
@@ -462,7 +474,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
             var executedActionCodes = execution.StepResults.Where(s => s.Status == "Pass").Select(s => s.ActionCode).Distinct().ToList();
             var unsafeExecuted = executedActionCodes.Count > 0 && (await repository.GetUnsafeActionCodesAsync(executedActionCodes, ct)).Count > 0;
 
-            if (policy.Enabled && retryable && !unsafeExecuted && execution.RetryCount < policy.MaxAttempts && caseEntity is not null)
+            if (policy.Enabled && retryable && !unsafeExecuted && execution.RetryCount < policy.MaxAttempts && caseEntity is not null && !caseEntity.IsQuarantined)
             {
                 var retryExecution = new AutomationExecution(execution.AutomationCaseId, execution.AutomationVersionId, null, execution.BuildId, execution.EnvironmentId, "system:auto-retry", execution.TargetApp);
                 retryExecution.MarkAsRetry(executionId, execution.RetryCount + 1);
@@ -477,7 +489,9 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
 
         if (caseEntity is not null && !retried)
         {
-            if (r.Status == "Failed" && r.ErrorCode is "AUT-UI-001" or "AUT-UI-002" or "AUT-UI-003")
+            // Use the same classifier the retry decision above relies on — it already knows AUT-DSL-001/AUT-AI-001
+            // also need maintenance, not just the three AUT-UI-* codes, and it now runs for Timeout/AgentLost too.
+            if (classification?.Recommendation == "MaintenanceRequired")
                 caseEntity.RequireMaintenance(execution.ErrorMessage, null);
             else
                 caseEntity.ChangeStatus("Ready");
@@ -492,6 +506,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository)
     public async Task ReportVerificationResultAsync(ReportVerificationResultRequest r, CancellationToken ct)
     {
         var verification = await repository.FindVerificationAsync(r.VerificationId, ct) ?? throw new EntityNotFoundException("Verification not found.");
+        if (verification.Status is not ("Pending" or "Assigned")) return; // late/duplicate report — already completed, ignore idempotently
         verification.Complete(r.Status, r.ActualControlType, r.ActualAutomationId, r.Message);
         await repository.SaveChangesAsync(ct);
     }

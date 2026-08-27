@@ -16,7 +16,7 @@ public sealed partial class AutomationRepository
         if (isActive.HasValue) q = q.Where(x => x.IsActive == isActive.Value);
         return await q.OrderByDescending(x => x.CreatedAt)
             .Select(x => new AutomationSuiteListDto(x.AutomationSuiteId, x.ProjectId, x.SuiteCode, x.SuiteName, x.Description, x.IsActive, x.CreatedAt, x.ClosedAt,
-                x.Cases.Count, x.Cases.Count(c => c.AutomationCase.Status == "Ready")))
+                x.Cases.Count(c => !c.AutomationCase.IsDeleted), x.Cases.Count(c => !c.AutomationCase.IsDeleted && c.AutomationCase.Status == "Ready")))
             .ToListAsync(ct);
     }
 
@@ -26,7 +26,7 @@ public sealed partial class AutomationRepository
             .Select(x => new { x.AutomationSuiteId, x.ProjectId, x.SuiteCode, x.SuiteName, x.Description, x.IsActive, x.CreatedBy, x.CreatedAt, x.UpdatedAt, x.ClosedAt })
             .SingleOrDefaultAsync(ct);
         if (suite is null) return null;
-        var cases = await db.AutomationSuiteCases.AsNoTracking().Where(x => x.AutomationSuiteId == id).OrderBy(x => x.SortOrder)
+        var cases = await db.AutomationSuiteCases.AsNoTracking().Where(x => x.AutomationSuiteId == id && !x.AutomationCase.IsDeleted).OrderBy(x => x.SortOrder)
             .Select(x => new SuiteCaseDto(x.AutomationCaseId, x.AutomationCase.AutomationCode, x.AutomationCase.TestCase.TestCaseCode, x.AutomationCase.TestCase.Title, x.AutomationCase.AutomationType, x.AutomationCase.Status, x.SortOrder, x.IsRequired))
             .ToListAsync(ct);
         return new AutomationSuiteDto(suite.AutomationSuiteId, suite.ProjectId, suite.SuiteCode, suite.SuiteName, suite.Description, suite.IsActive, suite.CreatedBy, suite.CreatedAt, suite.UpdatedAt, suite.ClosedAt, cases);
