@@ -19,6 +19,11 @@ public sealed record DueScheduleDto(Guid AutomationScheduleId, Guid ProjectId, G
 
 public sealed record AutomationScheduleRunDto(Guid AutomationScheduleRunId, Guid AutomationScheduleId, DateTime FiredAtUtc, string Status, int ExecutionsCreated, int SkippedCount, string? ErrorMessage);
 
+/// <summary>AUT-P1-009: one Started/Completed/Failed/NoAgent notification about a schedule-fired execution, joined
+/// with the schedule name and automation code so the UI can render it without a second round-trip.</summary>
+public sealed record AutomationScheduleNotificationDto(Guid AutomationScheduleNotificationId, Guid ProjectId, Guid AutomationScheduleId, string ScheduleName,
+    Guid AutomationExecutionId, string AutomationCode, string EventType, string Message, DateTime CreatedAtUtc, bool IsRead, DateTime? ReadAtUtc);
+
 public interface IAutomationScheduleRepository
 {
     Task<IReadOnlyList<AutomationScheduleListDto>> ListSchedulesAsync(Guid projectId, bool? isActive, CancellationToken ct);
@@ -33,6 +38,18 @@ public interface IAutomationScheduleRepository
     Task<IReadOnlyList<DueScheduleDto>> ClaimDueSchedulesAsync(DateTime nowUtc, CancellationToken ct);
     Task AddScheduleRunAsync(AutomationScheduleRun entity, CancellationToken ct);
     Task<IReadOnlyList<AutomationScheduleRunDto>> ListScheduleRunsAsync(Guid scheduleId, CancellationToken ct);
+
+    /// <summary>AUT-P1-009.</summary>
+    Task AddNotificationAsync(AutomationScheduleNotification entity, CancellationToken ct);
+    /// <summary>AUT-P1-009: looks up the "Started" notification for <paramref name="executionId"/> (if any) so
+    /// <c>AutomationAgentService.CompleteExecutionAsync</c> can tell whether an execution was created by a schedule
+    /// fire and, if so, which schedule/project it belongs to, without threading that context through every
+    /// execution-creation call path (RunSuiteAsync/BatchRunAsync are shared with manual runs and Build Trigger).</summary>
+    Task<AutomationScheduleNotification?> FindStartedNotificationByExecutionAsync(Guid executionId, CancellationToken ct);
+    Task<AutomationScheduleNotification?> FindNotificationAsync(Guid id, Guid projectId, CancellationToken ct);
+    Task<IReadOnlyList<AutomationScheduleNotificationDto>> ListNotificationsAsync(Guid projectId, bool? unreadOnly, int take, CancellationToken ct);
+    Task<int> CountUnreadNotificationsAsync(Guid projectId, CancellationToken ct);
+    Task MarkAllNotificationsReadAsync(Guid projectId, CancellationToken ct);
 
     Task SaveChangesAsync(CancellationToken ct);
 }
@@ -87,5 +104,24 @@ public sealed class AutomationScheduleService(IAutomationScheduleRepository repo
         entity.Deactivate(userId);
         await repository.SaveChangesAsync(ct);
         return await repository.GetScheduleAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Automation schedule not found.");
+    }
+
+    /// <summary>AUT-P1-009.</summary>
+    public Task<IReadOnlyList<AutomationScheduleNotificationDto>> ListNotificationsAsync(Guid projectId, bool? unreadOnly, int take, CancellationToken ct)
+        => repository.ListNotificationsAsync(projectId, unreadOnly, Math.Clamp(take, 1, 200), ct);
+
+    public Task<int> CountUnreadNotificationsAsync(Guid projectId, CancellationToken ct) => repository.CountUnreadNotificationsAsync(projectId, ct);
+
+    public async Task MarkNotificationReadAsync(Guid id, Guid projectId, CancellationToken ct)
+    {
+        var entity = await repository.FindNotificationAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Notification not found.");
+        entity.MarkRead(DateTime.UtcNow);
+        await repository.SaveChangesAsync(ct);
+    }
+
+    public async Task MarkAllNotificationsReadAsync(Guid projectId, CancellationToken ct)
+    {
+        await repository.MarkAllNotificationsReadAsync(projectId, ct);
+        await repository.SaveChangesAsync(ct);
     }
 }

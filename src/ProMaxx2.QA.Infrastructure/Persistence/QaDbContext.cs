@@ -67,6 +67,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationSuiteRevision> AutomationSuiteRevisions => Set<AutomationSuiteRevision>();
     public DbSet<AutomationSchedule> AutomationSchedules => Set<AutomationSchedule>();
     public DbSet<AutomationScheduleRun> AutomationScheduleRuns => Set<AutomationScheduleRun>();
+    public DbSet<AutomationScheduleNotification> AutomationScheduleNotifications => Set<AutomationScheduleNotification>();
     public DbSet<AutomationBuildTriggerPolicy> AutomationBuildTriggerPolicies => Set<AutomationBuildTriggerPolicy>();
     public DbSet<AutomationBuildTriggerRun> AutomationBuildTriggerRuns => Set<AutomationBuildTriggerRun>();
     public DbSet<AutomationWebhookToken> AutomationWebhookTokens => Set<AutomationWebhookToken>();

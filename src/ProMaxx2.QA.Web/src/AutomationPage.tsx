@@ -65,6 +65,10 @@ type AutomationScheduleDetailItem = {
   agentId?: string; agentCode?: string; priority: number; isActive: boolean; nextRunAtUtc: string; lastRunAtUtc?: string; createdBy?: string; createdAt: string; updatedAt?: string;
 };
 type AutomationScheduleRunItem = { automationScheduleRunId: string; automationScheduleId: string; firedAtUtc: string; status: string; executionsCreated: number; skippedCount: number; errorMessage?: string };
+type AutomationScheduleNotificationItem = {
+  automationScheduleNotificationId: string; projectId: string; automationScheduleId: string; scheduleName: string;
+  automationExecutionId: string; automationCode: string; eventType: string; message: string; createdAtUtc: string; isRead: boolean; readAtUtc?: string;
+};
 type AutomationBuildTriggerPolicyItem = {
   automationBuildTriggerPolicyId: string; projectId: string; automationSuiteId: string; suiteCode: string; suiteName: string; pack: string;
   environmentId: string; environmentName: string; agentId?: string; agentCode?: string; priority: number; isActive: boolean; createdAt: string; updatedAt?: string;
@@ -1022,7 +1026,7 @@ export function AutomationPage({
       </section>}
 
       {tab === "suites" && <AutomationSuiteTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} cases={cases} />}
-      {tab === "schedules" && <AutomationScheduleTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} agents={agents} />}
+      {tab === "schedules" && <AutomationScheduleTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} agents={agents} setExecDetail={setExecDetail} />}
       {tab === "buildTriggers" && <AutomationBuildTriggerTab projectId={pid} headers={headers} canEdit={canEdit} agents={agents} />}
       {tab === "webhooks" && <AutomationWebhookTab projectId={pid} headers={headers} canEdit={canEdit} />}
 
@@ -2061,8 +2065,8 @@ const describeSchedule = (s: { frequency: string; daysOfWeekMask: number; runAtT
   return `ทุกวัน ${time}`;
 };
 
-function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents }: {
-  projectId: string; releaseId?: string; headers: Record<string, string>; canEdit: boolean; agents: AutomationAgentItem[];
+function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents, setExecDetail }: {
+  projectId: string; releaseId?: string; headers: Record<string, string>; canEdit: boolean; agents: AutomationAgentItem[]; setExecDetail: (v: AutomationExecutionItem | null) => void;
 }) {
   const [schedules, setSchedules] = useState<AutomationScheduleListItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("active");
@@ -2072,6 +2076,8 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents 
   const [createModal, setCreateModal] = useState(false);
   const [editSchedule, setEditSchedule] = useState<AutomationScheduleDetailItem | null>(null);
   const [runHistory, setRunHistory] = useState<{ name: string; runs: AutomationScheduleRunItem[] } | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState<AutomationScheduleNotificationItem[] | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -2079,6 +2085,47 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents 
     if (activeFilter !== "all") qs.set("isActive", activeFilter === "active" ? "true" : "false");
     fetch(`${apiUrl}/automation/schedules?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setSchedules(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Schedule ไม่สำเร็จ"));
   }, [projectId, activeFilter, headers, reload]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`${apiUrl}/automation/schedules/notifications/unread-count?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : 0)).then((n) => setUnreadCount(typeof n === "number" ? n : 0)).catch(() => { /* badge just stays at its last known value */ });
+  }, [projectId, headers, reload]);
+
+  const openNotifications = async () => {
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/schedules/notifications?projectId=${projectId}&take=100`, { headers });
+      if (!r.ok) throw new Error("โหลดการแจ้งเตือนไม่สำเร็จ");
+      setNotifications(await r.json());
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลดการแจ้งเตือนไม่สำเร็จ"); }
+  };
+
+  const markNotificationRead = async (n: AutomationScheduleNotificationItem) => {
+    if (n.isRead) return;
+    try {
+      await fetch(`${apiUrl}/automation/schedules/notifications/${n.automationScheduleNotificationId}/read?projectId=${projectId}`, { method: "POST", headers });
+      setNotifications((prev) => prev?.map((x) => x.automationScheduleNotificationId === n.automationScheduleNotificationId ? { ...x, isRead: true } : x) ?? null);
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch { /* best-effort — the notification just stays unread until the next open */ }
+  };
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await fetch(`${apiUrl}/automation/schedules/notifications/mark-all-read?projectId=${projectId}`, { method: "POST", headers });
+      setNotifications((prev) => prev?.map((x) => ({ ...x, isRead: true })) ?? null);
+      setUnreadCount(0);
+    } catch { /* best-effort */ }
+  };
+
+  const openNotificationExecution = async (n: AutomationScheduleNotificationItem) => {
+    await markNotificationRead(n);
+    try {
+      const r = await fetch(`${apiUrl}/automation/executions/${n.automationExecutionId}?projectId=${projectId}`, { headers });
+      if (!r.ok) throw new Error("โหลด Execution ไม่สำเร็จ");
+      setExecDetail(await r.json());
+      setNotifications(null);
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลด Execution ไม่สำเร็จ"); }
+  };
 
   const openEdit = async (id: string) => {
     setError("");
@@ -2127,7 +2174,7 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents 
   };
 
   return <section className="automation-cases" aria-label="Automation Schedule">
-    <header className="automation-section-head"><div><h2>Automation Schedule (AUT-P1-005)</h2><p>ตั้งเวลารัน Automation Suite ซ้ำอัตโนมัติ — Once/Daily/Weekly พร้อม timezone และคำนวณรอบถัดไป</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Schedule</button>}</header>
+    <header className="automation-section-head"><div><h2>Automation Schedule (AUT-P1-005)</h2><p>ตั้งเวลารัน Automation Suite ซ้ำอัตโนมัติ — Once/Daily/Weekly พร้อม timezone และคำนวณรอบถัดไป</p></div><div className="automation-section-head-actions"><button className="btn automation-notif-bell" type="button" onClick={openNotifications} aria-label="การแจ้งเตือน Schedule">🔔 การแจ้งเตือน{unreadCount > 0 && <Badge tone="red">{unreadCount}</Badge>}</button>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Schedule</button>}</div></header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
     <div className="automation-case-toolbar">
       <select aria-label="กรองสถานะ Schedule" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "inactive")}>
@@ -2158,6 +2205,21 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents 
         {r.errorMessage && <span>{r.errorMessage}</span>}
       </div>)}</div> : <div className="empty"><p>ยังไม่เคยถูกรันจาก Schedule นี้</p></div>}
       <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}>ปิดหน้าต่าง</button></div>
+    </div></div>}
+
+    {notifications && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-schedule-notif-title" onMouseDown={() => setNotifications(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-schedule-notif-title">การแจ้งเตือน Schedule (AUT-P1-009)</h2><small>{notifications.length} รายการ — Started/Completed/Failed/No Agent ล่าสุดก่อน</small></div><button aria-label="ปิด" onClick={() => setNotifications(null)}>×</button></div>
+      {notifications.length > 0 && <div className="modal-actions" style={{ justifyContent: "flex-start" }}><button className="btn" type="button" onClick={markAllNotificationsRead}>ทำเครื่องหมายว่าอ่านแล้วทั้งหมด</button></div>}
+      {notifications.length ? <div className="automation-result-list">{notifications.map((n) => <div key={n.automationScheduleNotificationId} className={`automation-failure-row automation-notif-item${n.isRead ? "" : " is-unread"}`}>
+        <b><Badge tone={n.eventType === "Completed" ? "green" : n.eventType === "Failed" ? "red" : n.eventType === "NoAgent" ? "orange" : "blue"}>{n.eventType}</Badge> {n.scheduleName} · {n.automationCode}{!n.isRead && <Badge tone="gray">ใหม่</Badge>}</b>
+        <span>{n.message}</span>
+        <span className="muted-text">{formatThaiDateTime(n.createdAtUtc)}</span>
+        <div className="modal-actions" style={{ justifyContent: "flex-start", padding: 0 }}>
+          <button className="table-action" type="button" onClick={() => openNotificationExecution(n)}>ดู Execution</button>
+          {!n.isRead && <button className="table-action" type="button" onClick={() => markNotificationRead(n)}>ทำเครื่องหมายว่าอ่านแล้ว</button>}
+        </div>
+      </div>)}</div> : <div className="empty"><p>ยังไม่มีการแจ้งเตือน</p><small>จะมีเมื่อ Schedule เริ่มรัน/รันเสร็จ/ล้มเหลว หรือรันแล้วไม่มี Agent ว่าง</small></div>}
+      <div className="modal-actions"><button className="btn" onClick={() => setNotifications(null)}>ปิดหน้าต่าง</button></div>
     </div></div>}
   </section>;
 }

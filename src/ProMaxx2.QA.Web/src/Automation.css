@@ -604,6 +604,28 @@
   cursor: pointer;
 }
 
+.automation-section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.automation-notif-bell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.automation-notif-item {
+  border-left: 3px solid var(--line, #e5e7eb);
+}
+
+.automation-notif-item.is-unread {
+  border-left-color: var(--primary, #2457d6);
+  background: var(--surface-hover, #f5f8ff);
+}
+
 .automation-sort-controls .icon-btn {
   width: 26px;
   height: 26px;

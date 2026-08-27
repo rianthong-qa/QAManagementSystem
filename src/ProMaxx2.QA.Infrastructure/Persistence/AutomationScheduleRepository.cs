@@ -61,6 +61,35 @@ public sealed partial class AutomationRepository
         => await db.AutomationScheduleRuns.AsNoTracking().Where(x => x.AutomationScheduleId == scheduleId).OrderByDescending(x => x.FiredAtUtc)
             .Select(x => new AutomationScheduleRunDto(x.AutomationScheduleRunId, x.AutomationScheduleId, x.FiredAtUtc, x.Status, x.ExecutionsCreated, x.SkippedCount, x.ErrorMessage))
             .ToListAsync(ct);
+
+    public Task AddNotificationAsync(AutomationScheduleNotification entity, CancellationToken ct) => db.AutomationScheduleNotifications.AddAsync(entity, ct).AsTask();
+
+    public Task<AutomationScheduleNotification?> FindStartedNotificationByExecutionAsync(Guid executionId, CancellationToken ct)
+        => db.AutomationScheduleNotifications.AsNoTracking().Where(x => x.AutomationExecutionId == executionId && x.EventType == "Started").FirstOrDefaultAsync(ct);
+
+    public Task<AutomationScheduleNotification?> FindNotificationAsync(Guid id, Guid projectId, CancellationToken ct)
+        => db.AutomationScheduleNotifications.SingleOrDefaultAsync(x => x.AutomationScheduleNotificationId == id && x.ProjectId == projectId, ct);
+
+    public async Task<IReadOnlyList<AutomationScheduleNotificationDto>> ListNotificationsAsync(Guid projectId, bool? unreadOnly, int take, CancellationToken ct)
+    {
+        var q = db.AutomationScheduleNotifications.AsNoTracking().Where(x => x.ProjectId == projectId);
+        if (unreadOnly == true) q = q.Where(x => !x.IsRead);
+        return await q.OrderByDescending(x => x.CreatedAtUtc).Take(take)
+            .Select(x => new AutomationScheduleNotificationDto(x.AutomationScheduleNotificationId, x.ProjectId, x.AutomationScheduleId, x.Schedule.Name,
+                x.AutomationExecutionId, db.AutomationExecutions.Where(e => e.AutomationExecutionId == x.AutomationExecutionId).Select(e => e.AutomationCase.AutomationCode).FirstOrDefault() ?? "-",
+                x.EventType, x.Message, x.CreatedAtUtc, x.IsRead, x.ReadAtUtc))
+            .ToListAsync(ct);
+    }
+
+    public Task<int> CountUnreadNotificationsAsync(Guid projectId, CancellationToken ct)
+        => db.AutomationScheduleNotifications.AsNoTracking().CountAsync(x => x.ProjectId == projectId && !x.IsRead, ct);
+
+    public async Task MarkAllNotificationsReadAsync(Guid projectId, CancellationToken ct)
+    {
+        var unread = await db.AutomationScheduleNotifications.Where(x => x.ProjectId == projectId && !x.IsRead).ToListAsync(ct);
+        var now = DateTime.UtcNow;
+        foreach (var n in unread) n.MarkRead(now);
+    }
 }
 
 public sealed class AutomationScheduleConfiguration : IEntityTypeConfiguration<AutomationSchedule>
@@ -88,6 +117,27 @@ public sealed class AutomationScheduleRunConfiguration : IEntityTypeConfiguratio
         b.Property(x => x.Status).HasMaxLength(20).IsRequired();
         b.Property(x => x.ErrorMessage).HasMaxLength(2000);
         b.HasIndex(x => new { x.AutomationScheduleId, x.FiredAtUtc });
+        b.HasOne(x => x.Schedule).WithMany().HasForeignKey(x => x.AutomationScheduleId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class AutomationScheduleNotificationConfiguration : IEntityTypeConfiguration<AutomationScheduleNotification>
+{
+    public void Configure(EntityTypeBuilder<AutomationScheduleNotification> b)
+    {
+        b.ToTable("AutomationScheduleNotifications");
+        b.HasKey(x => x.AutomationScheduleNotificationId);
+        b.Property(x => x.EventType).HasMaxLength(20).IsRequired();
+        b.Property(x => x.Message).HasMaxLength(1000).IsRequired();
+        // Not unique on (AutomationExecutionId, EventType): Started is looked up per execution (at most one is ever
+        // written per execution so this is de-facto unique for that row), but an execution can legitimately end up
+        // with more than one Failed/Completed row over time is NOT possible either (CompleteExecutionAsync's terminal
+        // guard prevents a second Complete call from reaching the notification code at all) — kept non-unique purely
+        // because EF Core cannot express "unique only for EventType='Started'" as a plain index without raw SQL, and
+        // a full uniqueness guarantee isn't needed for correctness here (FindStartedNotificationByExecutionAsync
+        // already takes FirstOrDefault).
+        b.HasIndex(x => new { x.AutomationExecutionId, x.EventType });
+        b.HasIndex(x => new { x.ProjectId, x.IsRead, x.CreatedAtUtc });
         b.HasOne(x => x.Schedule).WithMany().HasForeignKey(x => x.AutomationScheduleId).OnDelete(DeleteBehavior.Cascade);
     }
 }

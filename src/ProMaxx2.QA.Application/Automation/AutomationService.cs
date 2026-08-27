@@ -443,6 +443,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             {
                 var result = await RunSuiteAsync(schedule.ProjectId, new RunSuiteRequest(schedule.AutomationSuiteId, schedule.BuildId, schedule.EnvironmentId, schedule.AgentId, schedule.Priority), null, ct);
                 run = new AutomationScheduleRun(schedule.AutomationScheduleId, nowUtc, result.Created.Count > 0 ? "Succeeded" : "NoReadyCases", result.Created.Count, result.SkippedCodes.Count, null);
+                await NotifyScheduleFiredAsync(schedule, result.Created, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -453,6 +454,25 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             await scheduleRepository.AddScheduleRunAsync(run, ct);
             await scheduleRepository.SaveChangesAsync(ct);
         }
+    }
+
+    /// <summary>AUT-P1-009: "Started" notification for every execution the fire actually created, plus a "NoAgent"
+    /// notification (linked to the first created execution) when no enabled automation agent currently exists at
+    /// all — the newly queued job(s) will sit unclaimed until one registers. Scoped to "no agent exists" rather than
+    /// "no agent matches this case's capability" because job claiming does not actually filter by capability today
+    /// (only by TargetApp, and only when it isn't the WindowsUI default — see AUT-TEST-006 notes), so a
+    /// capability-based check here would claim a precision the runtime doesn't have.</summary>
+    private async Task NotifyScheduleFiredAsync(DueScheduleDto schedule, IReadOnlyList<AutomationExecutionDto> created, CancellationToken ct)
+    {
+        if (created.Count == 0) return;
+        foreach (var execution in created)
+            await scheduleRepository.AddNotificationAsync(new AutomationScheduleNotification(schedule.ProjectId, schedule.AutomationScheduleId, execution.AutomationExecutionId,
+                "Started", $"Schedule '{schedule.Name}' started execution {execution.AutomationCode}."), ct);
+
+        var agents = await repository.ListAgentsAsync(ct);
+        if (!agents.Any(a => a.IsEnabled))
+            await scheduleRepository.AddNotificationAsync(new AutomationScheduleNotification(schedule.ProjectId, schedule.AutomationScheduleId, created[0].AutomationExecutionId,
+                "NoAgent", $"Schedule '{schedule.Name}' fired but no active automation agent is available to run it."), ct);
     }
 
     public Task<AutomationDashboardDto> GetDashboardAsync(Guid projectId, CancellationToken ct) => repository.GetDashboardAsync(projectId, ct);
@@ -485,6 +505,19 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             return await repository.GetExecutionAsync(executionId, executionProjectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
         }
         execution.Complete(r.Status, r.FailureType, r.ErrorCode, r.ErrorMessage, DateTime.UtcNow);
+
+        // AUT-P1-009: only executions the schedule worker itself created carry a "Started" notification — an
+        // auto-retry child created below does not, so it deliberately gets no Completed/Failed notification of its own.
+        var started = await scheduleRepository.FindStartedNotificationByExecutionAsync(executionId, ct);
+        if (started is not null)
+        {
+            var eventType = r.Status == "Passed" ? "Completed" : "Failed";
+            var message = eventType == "Completed"
+                ? $"Execution {execution.AutomationCase.AutomationCode} completed successfully."
+                : $"Execution {execution.AutomationCase.AutomationCode} failed ({r.Status}: {r.ErrorMessage ?? r.ErrorCode ?? "unknown error"}).";
+            await scheduleRepository.AddNotificationAsync(new AutomationScheduleNotification(started.ProjectId, started.AutomationScheduleId, executionId, eventType, message), ct);
+        }
+
         var job = await repository.FindJobByExecutionAsync(executionId, ct);
         try
         {

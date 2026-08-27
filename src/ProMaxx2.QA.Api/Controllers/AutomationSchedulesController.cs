@@ -69,4 +69,28 @@ public sealed class AutomationSchedulesController(AutomationScheduleService serv
         catch (EntityNotFoundException) { return NotFound(); }
         catch (InvalidOperationException ex) { return Conflict(Problem("ปิดใช้งาน Schedule ไม่สำเร็จ", ex.Message, 409)); }
     }
+
+    /// <summary>AUT-P1-009: Started/Completed/Failed/NoAgent notifications for executions that a schedule fired,
+    /// newest first — each row carries the ExecutionId to link to (see <c>AutomationScheduleNotificationDto</c>).</summary>
+    [HttpGet("notifications")]
+    public Task<IReadOnlyList<AutomationScheduleNotificationDto>> ListNotifications([FromQuery] Guid projectId, [FromQuery] bool? unreadOnly, [FromQuery] int take = 50, CancellationToken ct = default)
+        => service.ListNotificationsAsync(projectId, unreadOnly, take, ct);
+
+    [HttpGet("notifications/unread-count")]
+    public Task<int> UnreadNotificationCount([FromQuery] Guid projectId, CancellationToken ct)
+        => service.CountUnreadNotificationsAsync(projectId, ct);
+
+    [HttpPost("notifications/{id:guid}/read")]
+    public async Task<IActionResult> MarkNotificationRead(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { await service.MarkNotificationReadAsync(id, projectId, ct); return NoContent(); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
+    [HttpPost("notifications/mark-all-read")]
+    public async Task<IActionResult> MarkAllNotificationsRead([FromQuery] Guid projectId, CancellationToken ct)
+    {
+        await service.MarkAllNotificationsReadAsync(projectId, ct);
+        return NoContent();
+    }
 }
