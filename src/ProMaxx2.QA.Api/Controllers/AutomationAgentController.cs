@@ -6,7 +6,7 @@ using ProMaxx2.QA.Application.Projects;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController, Route("api/v1/automation"), Authorize(Policy = "AutomationExecute")]
-public sealed class AutomationAgentController(AutomationAgentService service, AutomationDataSnapshotService snapshots, AutomationDataRestoreService restores, IWebHostEnvironment environment) : ControllerBase
+public sealed class AutomationAgentController(AutomationAgentService service, AutomationDataSnapshotService snapshots, AutomationDataRestoreService restores, AutomationDataSeedService seeds, IWebHostEnvironment environment) : ControllerBase
 {
     [HttpPost("agents/register")] public async Task<ActionResult<AutomationAgentDto>> Register(RegisterAgentRequest request, CancellationToken ct)
     {
@@ -114,6 +114,20 @@ public sealed class AutomationAgentController(AutomationAgentService service, Au
         try { return Ok(await restores.CompleteAsync(id, request, ct)); }
         catch (EntityNotFoundException) { return NotFound(); }
         catch (ArgumentException ex) { return BadRequest(Problem("Restore completion invalid", ex.Message, 400)); }
+    }
+
+    /// <summary>AUT-DATA-003.</summary>
+    [HttpPost("seed-runs/claim")] public async Task<ActionResult<ClaimSeedRunPackageDto?>> ClaimSeedRun(ClaimSeedRunRequest request, CancellationToken ct)
+    {
+        var package = await seeds.ClaimNextAsync(request.AgentCode, ct);
+        return package is null ? NoContent() : Ok(package);
+    }
+
+    [HttpPost("seed-runs/{id:guid}/complete")] public async Task<ActionResult<AutomationDataSeedRunDto>> CompleteSeedRun(Guid id, CompleteSeedRunRequest request, CancellationToken ct)
+    {
+        try { return Ok(await seeds.CompleteRunAsync(id, request, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("Seed run completion invalid", ex.Message, 400)); }
     }
 
     private string EvidenceRoot()

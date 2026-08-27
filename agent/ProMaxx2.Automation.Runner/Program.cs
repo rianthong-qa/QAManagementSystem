@@ -28,6 +28,11 @@ if (args is { Length: > 0 } && args[0].Equals("restore", StringComparison.Ordina
     return await RunRestoreAsync();
 }
 
+if (args is { Length: > 0 } && args[0].Equals("seed", StringComparison.OrdinalIgnoreCase))
+{
+    return await RunSeedAsync();
+}
+
 var config = AgentConfig.FromEnvironment();
 
 if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
@@ -343,6 +348,70 @@ static async Task<int> RunRestoreAsync()
 
     if (processed == 0) { Console.WriteLine("[restore] ไม่มี Restore request รอดำเนินการสำหรับ Agent นี้"); return 0; }
     Console.WriteLine($"[restore] summary: processed={processed}, failed={failed}");
+    return failed > 0 ? 1 : 0;
+}
+
+/// <summary>AUT-DATA-003: standalone command, same shape as `runner snapshot`/`runner restore` — run right before a
+/// suite that depends on known baseline data, not silently in the background. Fails fast on a DB-kind mismatch
+/// between the script and this agent's own DbProfile, rather than attempting to run the wrong dialect's SQL.</summary>
+static async Task<int> RunSeedAsync()
+{
+    var config = AgentConfig.FromEnvironment();
+    if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
+    {
+        Console.Error.WriteLine("Missing QAHUB_USERNAME / QAHUB_PASSWORD. ตั้งค่าก่อนรัน (ดู set-agent-env.ps1)");
+        return 2;
+    }
+
+    using var client = new QaHubClient(config);
+    if (!await client.LoginAsync(CancellationToken.None))
+    {
+        Console.Error.WriteLine($"Login ไป QA Hub ล้มเหลว ({config.HubBaseUrl}). ตรวจ Username/Password และสิทธิ์ AUTOMATION.EXECUTE");
+        return 2;
+    }
+    await client.RegisterAsync(CancellationToken.None);
+
+    var profile = DbProfile.FromEnvironment(config);
+    IDbSeedService seedService = new DatabaseSeedService();
+    var processed = 0;
+    var failed = 0;
+    while (true)
+    {
+        var package = await client.ClaimSeedRunAsync(CancellationToken.None);
+        if (package is null) break;
+        processed++;
+        Console.WriteLine($"[seed] claimed {package.AutomationDataSeedRunId} — script '{package.ScriptName}' ({package.DbKind})");
+
+        if (!string.Equals(package.DbKind, profile.Kind.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            failed++;
+            var mismatch = $"Script is written for {package.DbKind} but this agent's DB profile is {profile.Kind} — refusing to run the wrong SQL dialect.";
+            Console.Error.WriteLine($"[seed] {package.AutomationDataSeedRunId} => Failed: {mismatch}");
+            try { await client.CompleteSeedRunAsync(package.AutomationDataSeedRunId, "Failed", null, mismatch, CancellationToken.None); }
+            catch (Exception ex) { Console.Error.WriteLine($"[seed] report FAILED for {package.AutomationDataSeedRunId}: {ex.Message}"); }
+            continue;
+        }
+
+        var result = await seedService.RunSeedScriptAsync(profile, package.SqlScript, CancellationToken.None);
+        try
+        {
+            if (result.Success)
+            {
+                Console.WriteLine($"[seed] {package.AutomationDataSeedRunId} => Succeeded ({result.RowsAffected} rows affected, {result.ElapsedMs}ms)");
+                await client.CompleteSeedRunAsync(package.AutomationDataSeedRunId, "Succeeded", result.RowsAffected, null, CancellationToken.None);
+            }
+            else
+            {
+                failed++;
+                Console.Error.WriteLine($"[seed] {package.AutomationDataSeedRunId} => Failed: {result.Error}");
+                await client.CompleteSeedRunAsync(package.AutomationDataSeedRunId, "Failed", null, result.Error, CancellationToken.None);
+            }
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"[seed] report FAILED for {package.AutomationDataSeedRunId}: {ex.Message}"); }
+    }
+
+    if (processed == 0) { Console.WriteLine("[seed] ไม่มี Seed run รอดำเนินการสำหรับ Agent นี้"); return 0; }
+    Console.WriteLine($"[seed] summary: processed={processed}, failed={failed}");
     return failed > 0 ? 1 : 0;
 }
 

@@ -22,6 +22,9 @@ public sealed record SnapshotPackage(Guid AutomationDbSnapshotId, Guid Environme
 /// <summary>AUT-DATA-002.</summary>
 public sealed record RestorePackage(Guid AutomationDbRestoreId, Guid AutomationDbSnapshotId, string SnapshotPath, string ExpectedChecksum);
 
+/// <summary>AUT-DATA-003.</summary>
+public sealed record SeedRunPackage(Guid AutomationDataSeedRunId, string ScriptName, string DbKind, string SqlScript);
+
 public sealed class QaHubClient : IDisposable
 {
     private readonly HttpClient _http = new();
@@ -203,6 +206,26 @@ public sealed class QaHubClient : IDisposable
             status,
             checksumVerified,
             availabilityVerified,
+            errorMessage
+        }, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>AUT-DATA-003.</summary>
+    public async Task<SeedRunPackage?> ClaimSeedRunAsync(CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/seed-runs/claim", new { agentCode = _config.AgentCode, agentVersion = _config.AgentVersion }, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SeedRunPackage>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+    }
+
+    public async Task CompleteSeedRunAsync(Guid seedRunId, string status, int? rowsAffected, string? errorMessage, CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/seed-runs/{seedRunId}/complete", new
+        {
+            status,
+            rowsAffected,
             errorMessage
         }, ct);
         response.EnsureSuccessStatusCode();

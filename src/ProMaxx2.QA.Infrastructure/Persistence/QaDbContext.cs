@@ -74,6 +74,8 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationWebhookDelivery> AutomationWebhookDeliveries => Set<AutomationWebhookDelivery>();
     public DbSet<AutomationDbSnapshot> AutomationDbSnapshots => Set<AutomationDbSnapshot>();
     public DbSet<AutomationDbRestore> AutomationDbRestores => Set<AutomationDbRestore>();
+    public DbSet<AutomationDataSeedScript> AutomationDataSeedScripts => Set<AutomationDataSeedScript>();
+    public DbSet<AutomationDataSeedRun> AutomationDataSeedRuns => Set<AutomationDataSeedRun>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

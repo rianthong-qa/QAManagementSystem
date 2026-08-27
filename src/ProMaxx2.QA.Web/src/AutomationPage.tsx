@@ -86,6 +86,12 @@ type AutomationDbRestoreItem = {
   status: string; agentId?: string; agentCode?: string; checksumVerified: boolean; availabilityVerified: boolean; errorMessage?: string;
   requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
 };
+type AutomationDataSeedScriptListItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; dbKind: string; isActive: boolean; createdAt: string };
+type AutomationDataSeedScriptDetailItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; dbKind: string; sqlScript: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string };
+type AutomationDataSeedRunItem = {
+  automationDataSeedRunId: string; projectId: string; automationDataSeedScriptId: string; scriptName: string; environmentId: string; environmentName: string; buildId: string; buildNumber: string;
+  status: string; agentId?: string; agentCode?: string; rowsAffected?: number; errorMessage?: string; requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
+};
 type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
 type CountByKeyItem = { key: string; count: number };
 type FailureBreakdownItem = { totalFailed: number; byFailureType: CountByKeyItem[]; byBuild: CountByKeyItem[]; byAgent: CountByKeyItem[]; byAutomationCase: CountByKeyItem[] };
@@ -914,6 +920,7 @@ export function AutomationPage({
     { id: "buildTriggers", label: "Build Trigger", icon: "⚡" },
     { id: "webhooks", label: "Webhook", icon: "🔗" },
     { id: "dataSnapshots", label: "DB Snapshot", icon: "💾" },
+    { id: "dataSeeds", label: "Seed Data", icon: "🌱" },
     { id: "execution", label: "Execution", icon: "▶" },
     { id: "failures", label: "Failure Dashboard", icon: "!" },
     { id: "manage", label: "การจัดการ", icon: "⚙" },
@@ -1041,6 +1048,7 @@ export function AutomationPage({
       {tab === "buildTriggers" && <AutomationBuildTriggerTab projectId={pid} headers={headers} canEdit={canEdit} agents={agents} />}
       {tab === "webhooks" && <AutomationWebhookTab projectId={pid} headers={headers} canEdit={canEdit} />}
       {tab === "dataSnapshots" && <AutomationDataSnapshotTab projectId={pid} releaseId={releaseId} headers={headers} canRun={canRun} />}
+      {tab === "dataSeeds" && <AutomationDataSeedTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
@@ -2635,6 +2643,130 @@ function SnapshotRequestModal({ projectId, releaseId, headers, busy, onClose, on
       <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select></label>
     </div>
     <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !environmentId || !buildId} onClick={() => onSave(environmentId, buildId)}>{busy ? "กำลังส่งคำขอ..." : "ขอ Snapshot"}</button></div>
+  </div></div>;
+}
+
+function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun }: {
+  projectId: string; releaseId?: string; headers: Record<string, string>; canEdit: boolean; canRun: boolean;
+}) {
+  const [scripts, setScripts] = useState<AutomationDataSeedScriptListItem[]>([]);
+  const [reload, setReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [createModal, setCreateModal] = useState(false);
+  const [editScript, setEditScript] = useState<AutomationDataSeedScriptDetailItem | null>(null);
+  const [runModal, setRunModal] = useState<AutomationDataSeedScriptListItem | null>(null);
+  const [runHistory, setRunHistory] = useState<{ name: string; runs: AutomationDataSeedRunItem[] } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`${apiUrl}/automation/data/seed-scripts?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setScripts(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Seed Script ไม่สำเร็จ"));
+  }, [projectId, headers, reload]);
+
+  const openEdit = async (id: string) => {
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/seed-scripts/${id}?projectId=${projectId}`, { headers });
+      if (!r.ok) throw new Error("โหลด Seed Script ไม่สำเร็จ");
+      setEditScript(await r.json());
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลด Seed Script ไม่สำเร็จ"); }
+  };
+
+  const createScript = async (body: Record<string, unknown>) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/seed-scripts?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify(body) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Seed Script ไม่สำเร็จ"); }
+      setCreateModal(false); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Seed Script ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const updateScript = async (id: string, body: Record<string, unknown>) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/seed-scripts/${id}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify(body) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Seed Script ไม่สำเร็จ"); }
+      setEditScript(null); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Seed Script ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const toggleActive = async (row: AutomationDataSeedScriptListItem) => {
+    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Seed Script "${row.name}"?`)) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/seed-scripts/${row.automationDataSeedScriptId}/${row.isActive ? "deactivate" : "activate"}?projectId=${projectId}`, { method: "POST", headers });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เปลี่ยนสถานะไม่สำเร็จ"); }
+      setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "เปลี่ยนสถานะไม่สำเร็จ"); }
+  };
+
+  const requestRun = async (environmentId: string, buildId: string) => {
+    if (!runModal) return;
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/seed-runs?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ automationDataSeedScriptId: runModal.automationDataSeedScriptId, environmentId, buildId }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สั่งรัน Seed Script ไม่สำเร็จ"); }
+      setRunModal(null);
+    } catch (e) { setError(e instanceof Error ? e.message : "สั่งรัน Seed Script ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const openRunHistory = async (row: AutomationDataSeedScriptListItem) => {
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/seed-runs?projectId=${projectId}&automationDataSeedScriptId=${row.automationDataSeedScriptId}`, { headers });
+      if (!r.ok) throw new Error("โหลดประวัติการรันไม่สำเร็จ");
+      setRunHistory({ name: row.name, runs: await r.json() });
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลดประวัติการรันไม่สำเร็จ"); }
+  };
+
+  return <section className="automation-cases" aria-label="Automation Seed Data">
+    <header className="automation-section-head"><div><h2>Seed Test Data (AUT-DATA-003)</h2><p>เก็บ SQL script สำหรับ seed ข้อมูลพื้นฐาน (เช่นสินค้า/ราคา/โปรโมชั่น) แบบ repeatable/idempotent — Windows Agent เป็นผู้รัน SQL จริงผ่านคำสั่ง <code>runner seed</code> โดยไม่มี credential ของ DB เก็บอยู่ในนี้เลย (Agent เชื่อมต่อด้วย config ของตัวเองเสมอ)</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Seed Script</button>}</header>
+    {error && <div className="inline-alert error"><span>{error}</span></div>}
+    {scripts.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>DB</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{scripts.map((s) => <tr key={s.automationDataSeedScriptId}>
+      <td><b>{s.name}</b>{s.description && <small>{s.description}</small>}</td>
+      <td>{s.dbKind}</td>
+      <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
+      <td>{formatThaiDateTime(s.createdAt)}</td>
+      <td>{canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationDataSeedScriptId)}>แก้ไข</button>}{canRun && s.isActive && <button type="button" className="table-action" onClick={() => setRunModal(s)}>▶ รัน</button>}<button type="button" className="table-action" onClick={() => openRunHistory(s)}>ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Seed Script</p><small>สร้าง SQL script ที่ seed ข้อมูลได้ซ้ำโดยไม่พัง (เช่นใช้ MERGE/UPSERT หรือเช็คก่อน insert) แล้วสั่งรันก่อนชุด Automation ที่ต้องการ master data</small></div>}
+
+    {createModal && <SeedScriptFormModal busy={busy} onClose={() => setCreateModal(false)} onSave={createScript} />}
+    {editScript && <SeedScriptFormModal script={editScript} busy={busy} onClose={() => setEditScript(null)} onSave={(body) => updateScript(editScript.automationDataSeedScriptId, body)} />}
+    {runModal && <SnapshotRequestModal projectId={projectId} releaseId={releaseId} headers={headers} busy={busy} onClose={() => setRunModal(null)} onSave={requestRun} />}
+
+    {runHistory && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-seed-run-history-title" onMouseDown={() => setRunHistory(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-seed-run-history-title">ประวัติการรัน — {runHistory.name}</h2><small>{runHistory.runs.length} รายการ — ล่าสุดก่อน</small></div><button aria-label="ปิด" onClick={() => setRunHistory(null)}>×</button></div>
+      {runHistory.runs.length ? <div className="automation-result-list">{runHistory.runs.map((r) => <div key={r.automationDataSeedRunId} className="automation-failure-row">
+        <b><Badge tone={snapshotStatusTone[r.status] ?? "blue"}>{r.status}</Badge> {r.environmentName} / {r.buildNumber} · {formatThaiDateTime(r.requestedAt)}</b>
+        <span>{r.status === "Succeeded" ? `Rows affected: ${r.rowsAffected ?? 0}` : (r.agentCode ? `Agent: ${r.agentCode}` : "")}</span>
+        {r.errorMessage && <span>{r.errorMessage}</span>}
+      </div>)}</div> : <div className="empty"><p>ยังไม่เคยถูกรัน</p></div>}
+      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}>ปิดหน้าต่าง</button></div>
+    </div></div>}
+  </section>;
+}
+
+function SeedScriptFormModal({ script, busy, onClose, onSave }: {
+  script?: AutomationDataSeedScriptDetailItem; busy: boolean; onClose: () => void; onSave: (body: Record<string, unknown>) => void;
+}) {
+  const isEdit = !!script;
+  const [name, setName] = useState(script?.name ?? "");
+  const [description, setDescription] = useState(script?.description ?? "");
+  const [dbKind, setDbKind] = useState(script?.dbKind ?? "Firebird");
+  const [sqlScript, setSqlScript] = useState(script?.sqlScript ?? "");
+
+  const canSave = name.trim() && sqlScript.trim();
+  const save = () => onSave({ name: name.trim(), description: description.trim() || null, dbKind, sqlScript });
+
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-seed-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-seed-form-title">{isEdit ? `แก้ไข ${script!.name}` : "สร้าง Seed Script"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="form-grid">
+      <label className="full">ชื่อ<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Baseline Products" /></label>
+      <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+      <label>ฐานข้อมูล<select value={dbKind} onChange={(e) => setDbKind(e.target.value)}><option value="Firebird">Firebird</option><option value="SqlServer">SQL Server</option></select></label>
+      <label className="full">SQL Script (ต้อง repeatable/idempotent เอง เช่นเช็คก่อน insert — ห้ามใส่ connection string/credential)<textarea rows={10} className="mono" value={sqlScript} onChange={(e) => setSqlScript(e.target.value)} placeholder={"INSERT INTO Products (Code, Name)\nSELECT 'P001', 'Test Product'\nFROM RDB$DATABASE\nWHERE NOT EXISTS (SELECT 1 FROM Products WHERE Code='P001');"} /></label>
+    </div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
   </div></div>;
 }
 

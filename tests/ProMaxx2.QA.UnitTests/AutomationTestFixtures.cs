@@ -71,6 +71,8 @@ internal static class AutomationTestFixtures
         return new AutomationDataRestoreService(repo, repo);
     }
 
+    public static AutomationDataSeedService SeedService(QaDbContext db) => new(new AutomationRepository(db));
+
     /// <summary>A real <c>ReleaseService</c> wired with a real <see cref="AutomationBuildTriggerService"/> (AUT-P1-007),
     /// so tests can exercise Build-creation/Mark-RC through the actual production wiring instead of seeding
     /// Build/Release directly via EF like <see cref="SeedBaselineAsync"/> does.</summary>

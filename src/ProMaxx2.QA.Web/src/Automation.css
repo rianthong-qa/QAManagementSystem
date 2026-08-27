@@ -626,6 +626,12 @@
   background: var(--surface-hover, #f5f8ff);
 }
 
+.form-grid textarea.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12.5px;
+  white-space: pre;
+}
+
 .automation-sort-controls .icon-btn {
   width: 26px;
   height: 26px;
