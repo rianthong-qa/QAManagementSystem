@@ -108,6 +108,24 @@ public sealed class AutomationDataController(AutomationDataSnapshotService servi
         catch (EntityNotFoundException) { return NotFound(); }
     }
 
+    /// <summary>AUT-DATA-005: required before a "MasterData" script can be run — see
+    /// <c>AutomationDataSeedService.RequestRunAsync</c>. Uses the same "AutomationEdit" policy as script CRUD: there
+    /// is no separate approver role in this system's policy set (View/Edit/Execute only), and introducing one is out
+    /// of scope for this AC — documented the same way as other known routing/role gaps in this module.</summary>
+    [HttpPost("seed-scripts/{id:guid}/approve"), Authorize(Policy = "AutomationEdit")]
+    public async Task<ActionResult<AutomationDataSeedScriptDto>> ApproveSeedScript(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { return Ok(await seeds.ApproveScriptAsync(id, projectId, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
+    [HttpPost("seed-scripts/{id:guid}/reject"), Authorize(Policy = "AutomationEdit")]
+    public async Task<ActionResult<AutomationDataSeedScriptDto>> RejectSeedScript(Guid id, [FromQuery] Guid projectId, RejectSeedScriptRequest request, CancellationToken ct)
+    {
+        try { return Ok(await seeds.RejectScriptAsync(id, projectId, request, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
     // ---- AUT-DATA-003: Seed Runs ----
 
     [HttpGet("seed-runs")]

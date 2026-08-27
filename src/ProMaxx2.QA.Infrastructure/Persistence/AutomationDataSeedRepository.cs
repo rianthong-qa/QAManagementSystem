@@ -20,13 +20,14 @@ public sealed partial class AutomationRepository
         if (!string.IsNullOrWhiteSpace(scriptType)) q = q.Where(x => x.ScriptType == scriptType);
         if (isActive.HasValue) q = q.Where(x => x.IsActive == isActive.Value);
         return await q.OrderBy(x => x.Name)
-            .Select(x => new AutomationDataSeedScriptListDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.ScriptType, x.DbKind, x.IsActive, x.CreatedAt))
+            .Select(x => new AutomationDataSeedScriptListDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.ScriptType, x.DbKind, x.IsActive, x.ApprovalStatus, x.CreatedAt))
             .ToListAsync(ct);
     }
 
     public Task<AutomationDataSeedScriptDto?> GetScriptAsync(Guid id, Guid projectId, CancellationToken ct)
         => db.AutomationDataSeedScripts.AsNoTracking().Where(x => x.AutomationDataSeedScriptId == id && x.ProjectId == projectId)
-            .Select(x => new AutomationDataSeedScriptDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.ScriptType, x.DbKind, x.SqlScript, x.IsActive, x.CreatedBy, x.CreatedAt, x.UpdatedAt))
+            .Select(x => new AutomationDataSeedScriptDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.ScriptType, x.DbKind, x.SqlScript, x.IsActive,
+                x.ApprovalStatus, x.ReviewedBy, x.ReviewedAt, x.RejectionReason, x.CreatedBy, x.CreatedAt, x.UpdatedAt))
             .SingleOrDefaultAsync(ct);
 
     public Task<AutomationDataSeedScript?> FindScriptAsync(Guid id, Guid projectId, CancellationToken ct)
@@ -93,6 +94,8 @@ public sealed class AutomationDataSeedScriptConfiguration : IEntityTypeConfigura
         b.Property(x => x.ScriptType).HasMaxLength(20).IsRequired();
         b.Property(x => x.DbKind).HasMaxLength(20).IsRequired();
         b.Property(x => x.SqlScript).HasMaxLength(50_000).IsRequired();
+        b.Property(x => x.ApprovalStatus).HasMaxLength(20).IsRequired();
+        b.Property(x => x.RejectionReason).HasMaxLength(2000);
         b.HasIndex(x => new { x.ProjectId, x.ScriptType, x.IsActive });
         b.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
     }

@@ -4,11 +4,13 @@ using ProMaxx2.QA.Domain.Automation;
 namespace ProMaxx2.QA.Application.Automation;
 
 public sealed record AutomationDataSeedScriptDto(Guid AutomationDataSeedScriptId, Guid ProjectId, string Name, string? Description, string ScriptType, string DbKind, string SqlScript,
-    bool IsActive, Guid? CreatedBy, DateTime CreatedAt, DateTime? UpdatedAt);
-public sealed record AutomationDataSeedScriptListDto(Guid AutomationDataSeedScriptId, Guid ProjectId, string Name, string? Description, string ScriptType, string DbKind, bool IsActive, DateTime CreatedAt);
+    bool IsActive, string ApprovalStatus, Guid? ReviewedBy, DateTime? ReviewedAt, string? RejectionReason, Guid? CreatedBy, DateTime CreatedAt, DateTime? UpdatedAt);
+public sealed record AutomationDataSeedScriptListDto(Guid AutomationDataSeedScriptId, Guid ProjectId, string Name, string? Description, string ScriptType, string DbKind, bool IsActive, string ApprovalStatus, DateTime CreatedAt);
 
 public sealed record CreateSeedScriptRequest(string Name, string? Description, string ScriptType, string DbKind, string SqlScript);
 public sealed record UpdateSeedScriptRequest(string Name, string? Description, string ScriptType, string DbKind, string SqlScript);
+/// <summary>AUT-DATA-005: reason is optional but strongly encouraged in the UI — recorded verbatim for audit.</summary>
+public sealed record RejectSeedScriptRequest(string? Reason);
 
 public sealed record AutomationDataSeedRunDto(Guid AutomationDataSeedRunId, Guid ProjectId, Guid AutomationDataSeedScriptId, string ScriptName, string ScriptType, Guid EnvironmentId, string EnvironmentName,
     Guid BuildId, string BuildNumber, string Status, Guid? AgentId, string? AgentCode, int? RowsAffected, string? ErrorMessage,
@@ -83,6 +85,24 @@ public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repo
         return await repository.GetScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
     }
 
+    /// <summary>AUT-DATA-005.</summary>
+    public async Task<AutomationDataSeedScriptDto> ApproveScriptAsync(Guid id, Guid projectId, Guid? userId, CancellationToken ct)
+    {
+        var entity = await repository.FindScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
+        entity.Approve(userId);
+        await repository.SaveChangesAsync(ct);
+        return await repository.GetScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
+    }
+
+    /// <summary>AUT-DATA-005.</summary>
+    public async Task<AutomationDataSeedScriptDto> RejectScriptAsync(Guid id, Guid projectId, RejectSeedScriptRequest r, Guid? userId, CancellationToken ct)
+    {
+        var entity = await repository.FindScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
+        entity.Reject(userId, r.Reason);
+        await repository.SaveChangesAsync(ct);
+        return await repository.GetScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
+    }
+
     public Task<IReadOnlyList<AutomationDataSeedRunDto>> ListRunsAsync(Guid projectId, Guid? scriptId, CancellationToken ct)
         => repository.ListRunsAsync(projectId, scriptId, ct);
 
@@ -93,6 +113,10 @@ public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repo
     {
         var script = await repository.FindScriptAsync(r.AutomationDataSeedScriptId, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
         if (!script.IsActive) throw new ArgumentException("Cannot run an inactive seed script. Activate it first.");
+        // AUT-DATA-005: master data prep ahead of a POS scenario must be reviewed before it can run — Seed/Cleanup
+        // scripts are never gated on ApprovalStatus (see class summary on AutomationDataSeedScript).
+        if (script.ScriptType == "MasterData" && script.ApprovalStatus != "Approved")
+            throw new ArgumentException("Master data script must be approved before it can be run.");
         var entity = new AutomationDataSeedRun(projectId, script.AutomationDataSeedScriptId, r.EnvironmentId, r.BuildId, userId);
         await repository.AddRunAsync(entity, ct);
         await repository.SaveChangesAsync(ct);

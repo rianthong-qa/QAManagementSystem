@@ -1,23 +1,30 @@
 namespace ProMaxx2.QA.Domain.Automation;
 
-/// <summary>AUT-DATA-003/AUT-DATA-004: a reusable, named SQL script run against an Environment's database — either
-/// to "Seed" known baseline test data before a run (e.g. required master data), or to "Cleanup" data a run left
-/// behind afterward. Both are the same shape (a stored SQL script executed on request, audited per run) so they
-/// share this one entity/pipeline rather than duplicating CRUD+claim+complete+runner support for what is really the
-/// same mechanism used for two different purposes — see <see cref="ScriptType"/>. Tied to a <see cref="DbKind"/> at
-/// authoring time (Firebird SQL and T-SQL are different dialects, so a script can't be dialect-agnostic), stored and
-/// re-run as-is every time (no versioning here — unlike <see cref="AutomationSuite"/>, re-running the same
-/// idempotent script is the normal, expected usage rather than something to be tracked as drift). Per AC "ไม่เก็บ
-/// credential ใน DSL": there is deliberately no field anywhere on this entity for a DB host/user/password — the
-/// script is pure SQL text and the agent that executes it always connects using its own local <c>DbProfile</c> (same
-/// architecture as snapshot/restore), so a credential structurally cannot end up stored here even by mistake.
-/// "Repeatable/idempotent" is a property of the SQL the author writes (e.g. MERGE/UPSERT, delete-then-insert,
-/// existence checks) — the system's job is to store/re-run it safely, not to enforce idempotency of arbitrary SQL,
-/// which isn't something a script's text alone can be verified to guarantee.</summary>
+/// <summary>AUT-DATA-003/AUT-DATA-004/AUT-DATA-005: a reusable, named SQL script run against an Environment's
+/// database — to "Seed" known baseline test data before a run (e.g. required master data), to "Cleanup" data a run
+/// left behind afterward, or (AUT-DATA-005) "MasterData" to prepare products/prices/promotions ahead of a POS
+/// scenario. All three are the same shape (a stored SQL script executed on request, audited per run) so they share
+/// this one entity/pipeline rather than duplicating CRUD+claim+complete+runner support for what is really the same
+/// mechanism used for different purposes — see <see cref="ScriptType"/>. Tied to a <see cref="DbKind"/> at authoring
+/// time (Firebird SQL and T-SQL are different dialects, so a script can't be dialect-agnostic), stored and re-run
+/// as-is every time (no versioning here — unlike <see cref="AutomationSuite"/>, re-running the same idempotent
+/// script is the normal, expected usage rather than something to be tracked as drift). Per AC "ไม่เก็บ credential ใน
+/// DSL": there is deliberately no field anywhere on this entity for a DB host/user/password — the script is pure SQL
+/// text and the agent that executes it always connects using its own local <c>DbProfile</c> (same architecture as
+/// snapshot/restore), so a credential structurally cannot end up stored here even by mistake. "Repeatable/idempotent"
+/// is a property of the SQL the author writes (e.g. MERGE/UPSERT, delete-then-insert, existence checks) — the
+/// system's job is to store/re-run it safely, not to enforce idempotency of arbitrary SQL, which isn't something a
+/// script's text alone can be verified to guarantee.
+///
+/// AUT-DATA-005's AC ("ผ่าน UI หรือ approved DB seed") is read as: a "MasterData" script must be reviewed and
+/// approved before it can be run — see <see cref="ApprovalStatus"/>/<see cref="Approve"/>/<see cref="Reject"/> and
+/// the gate enforced in <c>AutomationDataSeedService.RequestRunAsync</c>. "Seed"/"Cleanup" scripts carry the same
+/// approval fields (one mechanism, not a parallel one) but are never gated on them — only master data preparation
+/// ahead of a POS scenario needs the extra review step, matching the AC's specific wording.</summary>
 public sealed class AutomationDataSeedScript
 {
     private static readonly string[] AllowedDbKinds = ["Firebird", "SqlServer"];
-    private static readonly string[] AllowedScriptTypes = ["Seed", "Cleanup"];
+    private static readonly string[] AllowedScriptTypes = ["Seed", "Cleanup", "MasterData"];
 
     private AutomationDataSeedScript() { }
     public AutomationDataSeedScript(Guid projectId, string name, string? description, string scriptType, string dbKind, string sqlScript, Guid? createdBy)
@@ -32,6 +39,7 @@ public sealed class AutomationDataSeedScript
         DbKind = dbKind;
         SqlScript = sqlScript;
         IsActive = true;
+        ApprovalStatus = "Pending";
         CreatedBy = createdBy;
         CreatedAt = DateTime.UtcNow;
     }
@@ -40,12 +48,18 @@ public sealed class AutomationDataSeedScript
     public Guid ProjectId { get; private set; }
     public string Name { get; private set; } = string.Empty;
     public string? Description { get; private set; }
-    /// <summary>"Seed" (AUT-DATA-003) / "Cleanup" (AUT-DATA-004) — what this script is for.</summary>
+    /// <summary>"Seed" (AUT-DATA-003) / "Cleanup" (AUT-DATA-004) / "MasterData" (AUT-DATA-005) — what this script is for.</summary>
     public string ScriptType { get; private set; } = "Seed";
     /// <summary>"Firebird" / "SqlServer" — which SQL dialect this script is written in.</summary>
     public string DbKind { get; private set; } = string.Empty;
     public string SqlScript { get; private set; } = string.Empty;
     public bool IsActive { get; private set; }
+    /// <summary>AUT-DATA-005: "Pending" / "Approved" / "Rejected". Only enforced (blocks <c>RequestRunAsync</c>) for
+    /// <see cref="ScriptType"/> "MasterData" — see class summary.</summary>
+    public string ApprovalStatus { get; private set; } = "Pending";
+    public Guid? ReviewedBy { get; private set; }
+    public DateTime? ReviewedAt { get; private set; }
+    public string? RejectionReason { get; private set; }
     public Guid? CreatedBy { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
@@ -59,6 +73,12 @@ public sealed class AutomationDataSeedScript
         ScriptType = scriptType;
         DbKind = dbKind;
         SqlScript = sqlScript;
+        // AUT-DATA-005: editing the SQL text invalidates whatever was previously reviewed — an approval is a
+        // sign-off on specific content, not on the script's identity, so it must be re-approved after any edit.
+        ApprovalStatus = "Pending";
+        ReviewedBy = null;
+        ReviewedAt = null;
+        RejectionReason = null;
         UpdatedAt = DateTime.UtcNow;
         UpdatedBy = userId;
     }
@@ -70,10 +90,30 @@ public sealed class AutomationDataSeedScript
         UpdatedBy = userId;
     }
 
+    public void Approve(Guid? userId)
+    {
+        ApprovalStatus = "Approved";
+        ReviewedBy = userId;
+        ReviewedAt = DateTime.UtcNow;
+        RejectionReason = null;
+        UpdatedAt = DateTime.UtcNow;
+        UpdatedBy = userId;
+    }
+
+    public void Reject(Guid? userId, string? reason)
+    {
+        ApprovalStatus = "Rejected";
+        ReviewedBy = userId;
+        ReviewedAt = DateTime.UtcNow;
+        RejectionReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        UpdatedAt = DateTime.UtcNow;
+        UpdatedBy = userId;
+    }
+
     private static void Validate(string name, string scriptType, string dbKind, string sqlScript)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Seed script name is required.");
-        if (!AllowedScriptTypes.Contains(scriptType)) throw new ArgumentException("Script type must be Seed or Cleanup.");
+        if (!AllowedScriptTypes.Contains(scriptType)) throw new ArgumentException("Script type must be Seed, Cleanup, or MasterData.");
         if (!AllowedDbKinds.Contains(dbKind)) throw new ArgumentException("DB kind must be Firebird or SqlServer.");
         if (string.IsNullOrWhiteSpace(sqlScript)) throw new ArgumentException("SQL script is required.");
     }

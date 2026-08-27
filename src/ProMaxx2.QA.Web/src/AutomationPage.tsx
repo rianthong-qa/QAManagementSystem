@@ -86,8 +86,11 @@ type AutomationDbRestoreItem = {
   status: string; agentId?: string; agentCode?: string; checksumVerified: boolean; availabilityVerified: boolean; errorMessage?: string;
   requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
 };
-type AutomationDataSeedScriptListItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; scriptType: string; dbKind: string; isActive: boolean; createdAt: string };
-type AutomationDataSeedScriptDetailItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; scriptType: string; dbKind: string; sqlScript: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string };
+type AutomationDataSeedScriptListItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; scriptType: string; dbKind: string; isActive: boolean; approvalStatus: string; createdAt: string };
+type AutomationDataSeedScriptDetailItem = {
+  automationDataSeedScriptId: string; projectId: string; name: string; description?: string; scriptType: string; dbKind: string; sqlScript: string; isActive: boolean;
+  approvalStatus: string; reviewedBy?: string; reviewedAt?: string; rejectionReason?: string; createdBy?: string; createdAt: string; updatedAt?: string;
+};
 type AutomationDataSeedRunItem = {
   automationDataSeedRunId: string; projectId: string; automationDataSeedScriptId: string; scriptName: string; scriptType: string; environmentId: string; environmentName: string; buildId: string; buildNumber: string;
   status: string; agentId?: string; agentCode?: string; rowsAffected?: number; errorMessage?: string; requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
@@ -2646,13 +2649,14 @@ function SnapshotRequestModal({ projectId, releaseId, headers, busy, onClose, on
   </div></div>;
 }
 
-const scriptTypeTone: Record<string, string> = { Seed: "blue", Cleanup: "orange" };
+const scriptTypeTone: Record<string, string> = { Seed: "blue", Cleanup: "orange", MasterData: "purple" };
+const approvalStatusTone: Record<string, string> = { Pending: "gray", Approved: "green", Rejected: "red" };
 
 function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun }: {
   projectId: string; releaseId?: string; headers: Record<string, string>; canEdit: boolean; canRun: boolean;
 }) {
   const [scripts, setScripts] = useState<AutomationDataSeedScriptListItem[]>([]);
-  const [typeFilter, setTypeFilter] = useState<"all" | "Seed" | "Cleanup">("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "Seed" | "Cleanup" | "MasterData">("all");
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -2724,24 +2728,58 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
     } catch (e) { setError(e instanceof Error ? e.message : "โหลดประวัติการรันไม่สำเร็จ"); }
   };
 
+  const approveScript = async (row: AutomationDataSeedScriptListItem) => {
+    if (!window.confirm(`อนุมัติ Master Data Script "${row.name}"? หลังอนุมัติจึงจะสั่งรันได้`)) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/seed-scripts/${row.automationDataSeedScriptId}/approve?projectId=${projectId}`, { method: "POST", headers });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "อนุมัติไม่สำเร็จ"); }
+      setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "อนุมัติไม่สำเร็จ"); }
+  };
+
+  const rejectScript = async (row: AutomationDataSeedScriptListItem) => {
+    const reason = window.prompt(`เหตุผลที่ไม่อนุมัติ "${row.name}" (ไม่บังคับ):`);
+    if (reason === null) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/seed-scripts/${row.automationDataSeedScriptId}/reject?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ reason: reason.trim() || null }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ไม่อนุมัติไม่สำเร็จ"); }
+      setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "ไม่อนุมัติไม่สำเร็จ"); }
+  };
+
   return <section className="automation-cases" aria-label="Automation Seed Cleanup Data">
-    <header className="automation-section-head"><div><h2>Seed &amp; Cleanup Test Data (AUT-DATA-003/004)</h2><p>เก็บ SQL script สำหรับ seed ข้อมูลพื้นฐาน (เช่นสินค้า/ราคา/โปรโมชั่น) ก่อนรัน และ cleanup ข้อมูลที่ทิ้งไว้หลังรัน แบบ repeatable/idempotent — Windows Agent เป็นผู้รัน SQL จริงผ่านคำสั่ง <code>runner seed</code> โดยไม่มี credential ของ DB เก็บอยู่ในนี้เลย; ถ้า Agent ที่รับงานหายไประหว่างรัน ระบบจะดึงงานกลับมาให้ Agent อื่นรับต่อได้อัตโนมัติหลัง 30 นาที (AUT-DATA-004)</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Script</button>}</header>
+    <header className="automation-section-head"><div><h2>Seed, Cleanup &amp; Master Data (AUT-DATA-003/004/005)</h2><p>เก็บ SQL script สำหรับ seed ข้อมูลพื้นฐาน (เช่นสินค้า/ราคา/โปรโมชั่น) ก่อนรัน, cleanup ข้อมูลที่ทิ้งไว้หลังรัน, และเตรียม Master Data (สินค้า/ราคา/โปรโมชั่น) ก่อน POS scenario แบบ repeatable/idempotent — Windows Agent เป็นผู้รัน SQL จริงผ่านคำสั่ง <code>runner seed</code> โดยไม่มี credential ของ DB เก็บอยู่ในนี้เลย; ถ้า Agent ที่รับงานหายไประหว่างรัน ระบบจะดึงงานกลับมาให้ Agent อื่นรับต่อได้อัตโนมัติหลัง 30 นาที (AUT-DATA-004) — Script ประเภท "Master Data" ต้องผ่านการอนุมัติก่อนจึงจะสั่งรันได้ (AUT-DATA-005)</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Script</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
     <div className="automation-case-toolbar">
-      <select aria-label="กรองประเภท Script" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as "all" | "Seed" | "Cleanup")}>
+      <select aria-label="กรองประเภท Script" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as "all" | "Seed" | "Cleanup" | "MasterData")}>
         <option value="all">ทุกประเภท</option>
         <option value="Seed">Seed</option>
         <option value="Cleanup">Cleanup</option>
+        <option value="MasterData">Master Data</option>
       </select>
     </div>
-    {scripts.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>ประเภท</th><th>DB</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{scripts.map((s) => <tr key={s.automationDataSeedScriptId}>
+    {scripts.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>ประเภท</th><th>DB</th><th>สถานะ</th><th>การอนุมัติ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{scripts.map((s) => {
+      const isMasterData = s.scriptType === "MasterData";
+      const canRunNow = s.isActive && (!isMasterData || s.approvalStatus === "Approved");
+      return <tr key={s.automationDataSeedScriptId}>
       <td><b>{s.name}</b>{s.description && <small>{s.description}</small>}</td>
       <td><Badge tone={scriptTypeTone[s.scriptType] ?? "blue"}>{s.scriptType}</Badge></td>
       <td>{s.dbKind}</td>
       <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
+      <td>{isMasterData ? <Badge tone={approvalStatusTone[s.approvalStatus] ?? "gray"}>{s.approvalStatus}</Badge> : <span className="muted-text">-</span>}</td>
       <td>{formatThaiDateTime(s.createdAt)}</td>
-      <td>{canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationDataSeedScriptId)}>แก้ไข</button>}{canRun && s.isActive && <button type="button" className="table-action" onClick={() => setRunModal(s)}>▶ รัน</button>}<button type="button" className="table-action" onClick={() => openRunHistory(s)}>ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
-    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Script</p><small>สร้าง SQL script ที่รันได้ซ้ำโดยไม่พัง (เช่นใช้ MERGE/UPSERT หรือเช็คก่อน insert/delete) — Seed สั่งก่อนชุด Automation ที่ต้องการ master data, Cleanup สั่งหลังรันเพื่อล้างข้อมูลที่ทิ้งไว้</small></div>}
+      <td>
+        {canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationDataSeedScriptId)}>แก้ไข</button>}
+        {canEdit && isMasterData && s.approvalStatus !== "Approved" && <button type="button" className="table-action" onClick={() => approveScript(s)}>✓ อนุมัติ</button>}
+        {canEdit && isMasterData && s.approvalStatus !== "Rejected" && <button type="button" className="table-action danger" onClick={() => rejectScript(s)}>✗ ไม่อนุมัติ</button>}
+        {canRun && canRunNow && <button type="button" className="table-action" onClick={() => setRunModal(s)}>▶ รัน</button>}
+        <button type="button" className="table-action" onClick={() => openRunHistory(s)}>ประวัติการรัน</button>
+        {canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}
+      </td>
+    </tr>;
+    })}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Script</p><small>สร้าง SQL script ที่รันได้ซ้ำโดยไม่พัง (เช่นใช้ MERGE/UPSERT หรือเช็คก่อน insert/delete) — Seed สั่งก่อนชุด Automation ที่ต้องการ master data, Cleanup สั่งหลังรันเพื่อล้างข้อมูลที่ทิ้งไว้, Master Data เตรียมสินค้า/ราคา/โปรโมชั่นก่อน POS scenario (ต้องอนุมัติก่อนรัน)</small></div>}
 
     {createModal && <SeedScriptFormModal busy={busy} onClose={() => setCreateModal(false)} onSave={createScript} />}
     {editScript && <SeedScriptFormModal script={editScript} busy={busy} onClose={() => setEditScript(null)} onSave={(body) => updateScript(editScript.automationDataSeedScriptId, body)} />}
@@ -2777,7 +2815,8 @@ function SeedScriptFormModal({ script, busy, onClose, onSave }: {
     <div className="form-grid">
       <label className="full">ชื่อ<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Baseline Products" /></label>
       <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
-      <label>ประเภท<select value={scriptType} onChange={(e) => setScriptType(e.target.value)}><option value="Seed">Seed (ใส่ข้อมูลก่อนรัน)</option><option value="Cleanup">Cleanup (ล้างข้อมูลหลังรัน)</option></select></label>
+      <label>ประเภท<select value={scriptType} onChange={(e) => setScriptType(e.target.value)}><option value="Seed">Seed (ใส่ข้อมูลก่อนรัน)</option><option value="Cleanup">Cleanup (ล้างข้อมูลหลังรัน)</option><option value="MasterData">Master Data (สินค้า/ราคา/โปรโมชั่นก่อน POS scenario — ต้องอนุมัติก่อนรัน)</option></select></label>
+      {isEdit && script!.scriptType === "MasterData" && <p className="muted-text">แก้ไข SQL แล้วจะต้องขออนุมัติใหม่อีกครั้งก่อนสั่งรันได้ (สถานะอนุมัติปัจจุบันจะถูกรีเซ็ตเป็น Pending)</p>}
       <label>ฐานข้อมูล<select value={dbKind} onChange={(e) => setDbKind(e.target.value)}><option value="Firebird">Firebird</option><option value="SqlServer">SQL Server</option></select></label>
       <label className="full">SQL Script (ต้อง repeatable/idempotent เอง เช่นเช็คก่อน insert — ห้ามใส่ connection string/credential)<textarea rows={10} className="mono" value={sqlScript} onChange={(e) => setSqlScript(e.target.value)} placeholder={"INSERT INTO Products (Code, Name)\nSELECT 'P001', 'Test Product'\nFROM RDB$DATABASE\nWHERE NOT EXISTS (SELECT 1 FROM Products WHERE Code='P001');"} /></label>
     </div>
