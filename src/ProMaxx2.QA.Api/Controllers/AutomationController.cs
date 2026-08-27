@@ -235,9 +235,12 @@ public sealed class AutomationController(
         [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
         => agentService.ListJobsPagedAsync(projectId, buildId, status, sortBy, page, size, ct);
 
-    [HttpGet("executions")] public Task<PagedResult<AutomationExecutionDto>> ListExecutions([FromQuery] Guid projectId, [FromQuery] Guid? buildId, [FromQuery] string? status, [FromQuery] string? search, [FromQuery] string? sortBy,
+    /// <summary>AUT-P2-002: adds environmentId/agentId/targetApp/failureType/from/to on top of AUT-P2-001's
+    /// buildId/status/search/sortBy/page/size.</summary>
+    [HttpGet("executions")] public Task<PagedResult<AutomationExecutionDto>> ListExecutions([FromQuery] Guid projectId, [FromQuery] Guid? buildId, [FromQuery] Guid? environmentId, [FromQuery] Guid? agentId,
+        [FromQuery] string? targetApp, [FromQuery] string? status, [FromQuery] string? failureType, [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] string? search, [FromQuery] string? sortBy,
         [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
-        => agentService.ListExecutionsPagedAsync(projectId, buildId, status, search, sortBy, page, size, ct);
+        => agentService.ListExecutionsPagedAsync(projectId, buildId, environmentId, agentId, targetApp, status, failureType, from, to, search, sortBy, page, size, ct);
 
     [HttpGet("executions/{id:guid}")] public async Task<ActionResult<AutomationExecutionDto>> GetExecution(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
     {

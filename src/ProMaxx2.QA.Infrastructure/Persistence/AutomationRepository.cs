@@ -217,11 +217,18 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
         return new PagedResult<AutomationJobDto>(total, items);
     }
 
-    public async Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, string? status, string? search, string? sortBy, int page, int size, CancellationToken ct)
+    public async Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, Guid? environmentId, Guid? agentId, string? targetApp, string? status, string? failureType,
+        DateTime? from, DateTime? to, string? search, string? sortBy, int page, int size, CancellationToken ct)
     {
         var q = db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationCase.TestCase.ProjectId == projectId);
         if (buildId.HasValue) q = q.Where(x => x.BuildId == buildId);
+        if (environmentId.HasValue) q = q.Where(x => x.EnvironmentId == environmentId);
+        if (agentId.HasValue) q = q.Where(x => x.AgentId == agentId);
+        if (!string.IsNullOrWhiteSpace(targetApp)) q = q.Where(x => x.TargetApp == targetApp);
         if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status);
+        if (!string.IsNullOrWhiteSpace(failureType)) q = q.Where(x => x.ClassifiedFailureType == failureType);
+        if (from.HasValue) q = q.Where(x => x.CreatedAt >= from.Value);
+        if (to.HasValue) q = q.Where(x => x.CreatedAt <= to.Value);
         if (!string.IsNullOrWhiteSpace(search)) q = q.Where(x => x.AutomationCase.AutomationCode.Contains(search) || (x.Agent != null && x.Agent.AgentCode.Contains(search)));
         var total = await q.CountAsync(ct);
         var p = Math.Max(1, page);

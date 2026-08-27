@@ -110,10 +110,15 @@ public interface IAutomationRepository
     /// <summary>AUT-P2-001: real server-side page/size/filter/sort for the Job Queue table — sibling of
     /// <see cref="ListJobsAsync"/>, same rationale as <see cref="ListCasesPagedAsync"/>.</summary>
     Task<PagedResult<AutomationJobDto>> ListJobsPagedAsync(Guid? projectId, Guid? buildId, string? status, string? sortBy, int page, int size, CancellationToken ct);
-    /// <summary>AUT-P2-001: real server-side page/size/filter/sort for the Execution table — sibling of
+    /// <summary>AUT-P2-001/AUT-P2-002: real server-side page/size/filter/sort for the Execution table — sibling of
     /// <see cref="ListExecutionsAsync"/>, same rationale as <see cref="ListCasesPagedAsync"/>. <paramref name="search"/>
-    /// preserves the existing Run History "search by code/agent" UX that used to be client-side only.</summary>
-    Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, string? status, string? search, string? sortBy, int page, int size, CancellationToken ct);
+    /// preserves the existing Run History "search by code/agent" UX that used to be client-side only.
+    /// <paramref name="environmentId"/>/<paramref name="agentId"/>/<paramref name="targetApp"/>/<paramref name="failureType"/>/
+    /// <paramref name="from"/>/<paramref name="to"/> are AUT-P2-002's advanced filters — <paramref name="failureType"/>
+    /// filters on <c>ClassifiedFailureType</c>, matching the meaning already established by
+    /// <see cref="ListFailedExecutionsAsync"/>/the Failure Dashboard, not the raw agent-reported <c>FailureType</c>.</summary>
+    Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, Guid? environmentId, Guid? agentId, string? targetApp, string? status, string? failureType,
+        DateTime? from, DateTime? to, string? search, string? sortBy, int page, int size, CancellationToken ct);
     Task<AutomationDashboardDto> GetDashboardAsync(Guid projectId, CancellationToken ct);
     Task AddStepResultAsync(AutomationStepResult entity, CancellationToken ct);
     Task<AutomationStepResult?> FindStepResultAsync(Guid stepResultId, Guid executionId, CancellationToken ct);

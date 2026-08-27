@@ -487,9 +487,10 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
     /// <summary>AUT-P2-001.</summary>
     public Task<PagedResult<AutomationJobDto>> ListJobsPagedAsync(Guid? projectId, Guid? buildId, string? status, string? sortBy, int page, int size, CancellationToken ct)
         => repository.ListJobsPagedAsync(projectId, buildId, status, sortBy, page, size, ct);
-    /// <summary>AUT-P2-001.</summary>
-    public Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, string? status, string? search, string? sortBy, int page, int size, CancellationToken ct)
-        => repository.ListExecutionsPagedAsync(projectId, buildId, status, search, sortBy, page, size, ct);
+    /// <summary>AUT-P2-001/AUT-P2-002.</summary>
+    public Task<PagedResult<AutomationExecutionDto>> ListExecutionsPagedAsync(Guid projectId, Guid? buildId, Guid? environmentId, Guid? agentId, string? targetApp, string? status, string? failureType,
+        DateTime? from, DateTime? to, string? search, string? sortBy, int page, int size, CancellationToken ct)
+        => repository.ListExecutionsPagedAsync(projectId, buildId, environmentId, agentId, targetApp, status, failureType, from, to, search, sortBy, page, size, ct);
 
     public async Task<AutomationJobPackageDto?> ClaimNextJobAsync(ClaimJobRequest r, CancellationToken ct)
     {

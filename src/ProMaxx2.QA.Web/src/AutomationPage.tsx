@@ -1085,7 +1085,7 @@ export function AutomationPage({
         {manageTab === "retry" && <RetryPolicyTab policy={retryPolicy} canManage={canManage} busy={maintenanceBusy} onSave={updateRetryPolicy} />}
       </section>}
 
-      {tab === "execution" && <ExecutionTab projectId={pid} buildId={buildId} headers={headers} jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} reload={reload} />}
+      {tab === "execution" && <ExecutionTab projectId={pid} buildId={buildId} releaseId={releaseId} agents={agents} headers={headers} jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} reload={reload} />}
 
       {tab === "failures" && <FailureDashboardTab projectId={pid} releaseId={releaseId} agents={agents} headers={headers} setExecDetail={setExecDetail} />}
     </>}
@@ -1764,8 +1764,8 @@ function AgentsSection({ agents, agentsOnline, canManage, onToggle, onDelete }: 
   </section>;
 }
 
-function ExecutionTab({ projectId, buildId, headers, jobs, executions, setExecDetail, execFilter, setExecFilter, canRun, onCancel, onRerun, reload }: {
-  projectId: string; buildId?: string; headers: Record<string, string>; jobs: AutomationJobItem[]; executions: AutomationExecutionItem[]; setExecDetail: (v: AutomationExecutionItem | null) => void;
+function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, headers, jobs, executions, setExecDetail, execFilter, setExecFilter, canRun, onCancel, onRerun, reload }: {
+  projectId: string; buildId?: string; releaseId?: string; agents: AutomationAgentItem[]; headers: Record<string, string>; jobs: AutomationJobItem[]; executions: AutomationExecutionItem[]; setExecDetail: (v: AutomationExecutionItem | null) => void;
   execFilter: string; setExecFilter: (v: string) => void; canRun: boolean; onCancel: (x: AutomationExecutionItem) => void; onRerun: (x: AutomationExecutionItem) => void; reload: number;
 }) {
   // AUT-P2-001: Job Queue and Run History are server-paginated for real — their own fetch, own page/filter/sort
@@ -1778,6 +1778,19 @@ function ExecutionTab({ projectId, buildId, headers, jobs, executions, setExecDe
   const pageSize = 15;
   const [jobsPaged, setJobsPaged] = useState<{ total: number; rows: AutomationJobItem[] }>({ total: 0, rows: [] });
   const [execPaged, setExecPaged] = useState<{ total: number; rows: AutomationExecutionItem[] }>({ total: 0, rows: [] });
+  // AUT-P2-002: advanced Run History filters — date range, Build, Environment, Agent, Target, Failure Type.
+  // `execBuildFilter` overrides the page-level `buildId` context when set (empty means "all builds").
+  const [execFrom, setExecFrom] = useState("");
+  const [execTo, setExecTo] = useState("");
+  const [execBuildFilter, setExecBuildFilter] = useState("");
+  const [execEnvironmentFilter, setExecEnvironmentFilter] = useState("");
+  const [execAgentFilter, setExecAgentFilter] = useState("");
+  const [execTargetFilter, setExecTargetFilter] = useState("");
+  const [execFailureTypeFilter, setExecFailureTypeFilter] = useState("");
+  const [execBuilds, setExecBuilds] = useState<BuildOption[]>([]);
+  const [execEnvironments, setExecEnvironments] = useState<EnvironmentOption[]>([]);
+  const hasAdvancedFilters = execFrom || execTo || execBuildFilter || execEnvironmentFilter || execAgentFilter || execTargetFilter || execFailureTypeFilter;
+  const clearAdvancedFilters = () => { setExecFrom(""); setExecTo(""); setExecBuildFilter(""); setExecEnvironmentFilter(""); setExecAgentFilter(""); setExecTargetFilter(""); setExecFailureTypeFilter(""); };
 
   const queuedJobs = jobs.filter((j) => j.status === "Queued");
   const jobPageCount = Math.max(1, Math.ceil(jobsPaged.total / pageSize));
@@ -1785,8 +1798,21 @@ function ExecutionTab({ projectId, buildId, headers, jobs, executions, setExecDe
   const kpiRunning = executions.filter((e) => e.status === "Running").length;
   const kpiPassed = executions.filter((e) => e.status === "Passed").length;
   const kpiFailed = executions.filter((e) => e.status === "Failed").length;
-  useEffect(() => setExecPage(1), [execSearch, execFilter]);
+  useEffect(() => setExecPage(1), [execSearch, execFilter, execFrom, execTo, execBuildFilter, execEnvironmentFilter, execAgentFilter, execTargetFilter, execFailureTypeFilter]);
   useEffect(() => setJobPage(1), [buildId]);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      releaseId ? fetch(`${apiUrl}/releases/${releaseId}/builds`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])) : Promise.resolve([]),
+      fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
+    ]).then(([b, e]) => {
+      if (!mounted) return;
+      setExecBuilds(Array.isArray(b) ? b : []);
+      setExecEnvironments(Array.isArray(e) ? (e as EnvironmentOption[]).filter((x) => x.isActive) : []);
+    }).catch(() => { /* selects just render empty — the run history table still works without them */ });
+    return () => { mounted = false; };
+  }, [releaseId]);
 
   useEffect(() => {
     if (!projectId) { setJobsPaged({ total: 0, rows: [] }); return; }
@@ -1801,14 +1827,20 @@ function ExecutionTab({ projectId, buildId, headers, jobs, executions, setExecDe
   useEffect(() => {
     if (!projectId) { setExecPaged({ total: 0, rows: [] }); return; }
     const qs = new URLSearchParams({ projectId, page: String(execPage), size: String(pageSize) });
-    if (buildId) qs.set("buildId", buildId);
+    if (execBuildFilter || buildId) qs.set("buildId", execBuildFilter || buildId!);
+    if (execEnvironmentFilter) qs.set("environmentId", execEnvironmentFilter);
+    if (execAgentFilter) qs.set("agentId", execAgentFilter);
+    if (execTargetFilter) qs.set("targetApp", execTargetFilter);
     if (execFilter !== "all") qs.set("status", execFilter);
+    if (execFailureTypeFilter) qs.set("failureType", execFailureTypeFilter);
+    if (execFrom) qs.set("from", new Date(execFrom).toISOString());
+    if (execTo) qs.set("to", new Date(execTo).toISOString());
     if (execSearch.trim()) qs.set("search", execSearch.trim());
     fetch(`${apiUrl}/automation/executions?${qs}`, { headers })
       .then((r) => (r.ok ? r.json() : { total: 0, rows: [] }))
       .then((d) => setExecPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }))
       .catch(() => setExecPaged({ total: 0, rows: [] }));
-  }, [projectId, buildId, execPage, execFilter, execSearch, headers, reload]);
+  }, [projectId, buildId, execPage, execFilter, execSearch, execFrom, execTo, execBuildFilter, execEnvironmentFilter, execAgentFilter, execTargetFilter, execFailureTypeFilter, headers, reload]);
 
   return <section className="automation-execution" aria-label="Automation Execution">
     <header className="automation-section-head"><div><h2>Execution Queue & Run History</h2><p>ติดตามงานที่ Agent รับไปรัน และผลลัพธ์ทั้งหมด — รองรับข้อมูลจำนวนมากด้วยค้นหา/กรอง/แบ่งหน้าฝั่ง Server</p></div></header>
@@ -1835,6 +1867,17 @@ function ExecutionTab({ projectId, buildId, headers, jobs, executions, setExecDe
             <option value="all">ทุกสถานะ</option>
             {["Passed", "Failed", "Running", "Queued", "Blocked", "Cancelled", "Timeout", "AgentLost"].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
+        </div>
+        {/* AUT-P2-002: advanced filters — date/Build/Environment/Agent/Target/Failure Type, all server-side. */}
+        <div className="automation-run-toolbar">
+          <label>จาก<input type="date" value={execFrom} onChange={(e) => setExecFrom(e.target.value)} aria-label="วันที่เริ่ม" /></label>
+          <label>ถึง<input type="date" value={execTo} onChange={(e) => setExecTo(e.target.value)} aria-label="วันที่สิ้นสุด" /></label>
+          <select aria-label="กรอง Build" value={execBuildFilter} onChange={(e) => setExecBuildFilter(e.target.value)}><option value="">ทุก Build</option>{execBuilds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select>
+          <select aria-label="กรอง Environment" value={execEnvironmentFilter} onChange={(e) => setExecEnvironmentFilter(e.target.value)}><option value="">ทุก Environment</option>{execEnvironments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select>
+          <select aria-label="กรอง Agent" value={execAgentFilter} onChange={(e) => setExecAgentFilter(e.target.value)}><option value="">ทุก Agent</option>{agentOptions.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select>
+          <select aria-label="กรอง Target" value={execTargetFilter} onChange={(e) => setExecTargetFilter(e.target.value)}><option value="">ทุก Target</option><option value="Pos">Pos</option><option value="App">App</option><option value="WindowsUI">WindowsUI</option></select>
+          <select aria-label="กรอง Failure Type" value={execFailureTypeFilter} onChange={(e) => setExecFailureTypeFilter(e.target.value)}><option value="">ทุก Failure Type</option>{failureTypeOptions.map((f) => <option key={f} value={f}>{f}</option>)}</select>
+          {hasAdvancedFilters && <button type="button" className="table-action" onClick={clearAdvancedFilters}>ล้างตัวกรองขั้นสูง</button>}
         </div>
         {execPaged.rows.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Target</th><th>Agent</th><th>Status</th><th>Duration</th><th>เวลา</th><th></th></tr></thead><tbody>{execPaged.rows.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className="automation-exec-tr"><td><b>{x.automationCode}</b><small>Rev {x.versionNo} · {x.buildNumber}</small></td><td><Badge tone={x.targetApp === "Pos" ? "blue" : x.targetApp === "App" ? "purple" : "gray"}>{x.targetApp ?? "WindowsUI"}</Badge></td><td>{x.agentCode ?? "-"}</td><td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td><td>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)}s` : "-"}</td><td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td><td onClick={(e) => e.stopPropagation()}><div className="automation-row-actions"><button type="button" className="automation-more" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>{canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => onRerun(x)}>▶</button>}{canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => onCancel(x)}>✕</button>}</div></td></tr>)}</tbody></table></div> : <div className="empty"><p>{execSearch || execFilter !== "all" ? "ไม่พบผลการรันที่ตรงเงื่อนไข" : "ยังไม่มีประวัติการรัน"}</p></div>}
         {execPaged.total > pageSize && <Pager page={execPage} count={execPageCount} total={execPaged.total} pageSize={pageSize} onPrev={() => setExecPage((p) => Math.max(1, p - 1))} onNext={() => setExecPage((p) => Math.min(execPageCount, p + 1))} />}

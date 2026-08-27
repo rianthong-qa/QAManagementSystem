@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace ProMaxx2.QA.UnitTests;
 
 /// <summary>Covers AUT-P2-001 (Server-side pagination) for the three list endpoints named in the AC — Automation
@@ -69,7 +71,7 @@ public sealed class AutomationListPaginationTests
             new ProMaxx2.QA.Application.Automation.BatchRunRequest(cases.Select(c => c.ReadyCase.AutomationCaseId).ToList(), baseline.Build.BuildId, baseline.Environment.TestEnvironmentId, null, 5), null, CancellationToken.None);
 
         var jobsPage1 = await agents.ListJobsPagedAsync(baseline.Project.ProjectId, null, null, null, 1, 2, CancellationToken.None);
-        var execPage1 = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, 1, 2, CancellationToken.None);
+        var execPage1 = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, null, null, null, null, null, null, 1, 2, CancellationToken.None);
 
         Assert.Equal(3, jobsPage1.Total);
         Assert.Equal(2, jobsPage1.Rows.Count);
@@ -89,7 +91,7 @@ public sealed class AutomationListPaginationTests
         var claim = await agents.ClaimNextJobAsync(new ProMaxx2.QA.Application.Automation.ClaimJobRequest("AGENT-A", "1.0.0", [], "WindowsUI"), CancellationToken.None);
         await agents.CompleteExecutionAsync(claim!.AutomationExecutionId, new ProMaxx2.QA.Application.Automation.CompleteExecutionRequest("Failed", "AutomationFailure", "AUT-UI-001", "Object not found"), CancellationToken.None);
 
-        var failedOnly = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, "Failed", null, null, 1, 20, CancellationToken.None);
+        var failedOnly = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, "Failed", null, null, null, null, null, 1, 20, CancellationToken.None);
 
         Assert.Single(failedOnly.Rows);
         Assert.Equal("Failed", failedOnly.Rows[0].Status);
@@ -105,10 +107,81 @@ public sealed class AutomationListPaginationTests
             new ProMaxx2.QA.Application.Automation.BatchRunRequest(cases.Select(c => c.ReadyCase.AutomationCaseId).ToList(), baseline.Build.BuildId, baseline.Environment.TestEnvironmentId, null, 5), null, CancellationToken.None);
         var target = cases[0].ReadyCase.AutomationCode;
 
-        var found = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, target, null, 1, 20, CancellationToken.None);
+        var found = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, null, null, null, null, target, null, 1, 20, CancellationToken.None);
 
         Assert.Single(found.Rows);
         Assert.Equal(target, found.Rows[0].AutomationCode);
+    }
+
+    [Fact]
+    public async Task Executions_paging_filters_by_environmentId_and_agentId_and_targetApp()
+    {
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var (baseline, cases) = await AutomationTestFixtures.SeedReadyCasesAsync(db, 1);
+        var agents = AutomationTestFixtures.AgentService(db);
+        var agent = await agents.RegisterAsync(new ProMaxx2.QA.Application.Automation.RegisterAgentRequest("AGENT-A", "MACHINE-A", "1.0.0", "Windows", "x64", []), null, CancellationToken.None);
+        await agents.BatchRunAsync(baseline.Project.ProjectId,
+            new ProMaxx2.QA.Application.Automation.BatchRunRequest(cases.Select(c => c.ReadyCase.AutomationCaseId).ToList(), baseline.Build.BuildId, baseline.Environment.TestEnvironmentId, null, 5), null, CancellationToken.None);
+        await agents.ClaimNextJobAsync(new ProMaxx2.QA.Application.Automation.ClaimJobRequest("AGENT-A", "1.0.0", [], "WindowsUI"), CancellationToken.None);
+
+        var wrongEnvironment = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, Guid.NewGuid(), null, null, null, null, null, null, null, null, 1, 20, CancellationToken.None);
+        var rightEnvironment = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, baseline.Environment.TestEnvironmentId, null, null, null, null, null, null, null, null, 1, 20, CancellationToken.None);
+        var rightAgent = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, agent.AgentId, null, null, null, null, null, null, null, 1, 20, CancellationToken.None);
+        var wrongAgent = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, Guid.NewGuid(), null, null, null, null, null, null, null, 1, 20, CancellationToken.None);
+        // SeedReadyCasesAsync's TestCase defaults AutomationTarget to "app", which AutomationCaseService.CreateAsync
+        // resolves to AutomationType "App" (not "WindowsUI") — see the switch in CreateAsync.
+        var rightTarget = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, "App", null, null, null, null, null, null, 1, 20, CancellationToken.None);
+        var wrongTarget = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, "Pos", null, null, null, null, null, null, 1, 20, CancellationToken.None);
+
+        Assert.Equal(0, wrongEnvironment.Total);
+        Assert.Equal(1, rightEnvironment.Total);
+        Assert.Equal(1, rightAgent.Total);
+        Assert.Equal(0, wrongAgent.Total);
+        Assert.Equal(1, rightTarget.Total);
+        Assert.Equal(0, wrongTarget.Total);
+    }
+
+    [Fact]
+    public async Task Executions_paging_filters_by_ClassifiedFailureType()
+    {
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var (baseline, cases) = await AutomationTestFixtures.SeedReadyCasesAsync(db, 1);
+        var agents = AutomationTestFixtures.AgentService(db);
+        await agents.RegisterAsync(new ProMaxx2.QA.Application.Automation.RegisterAgentRequest("AGENT-A", "MACHINE-A", "1.0.0", "Windows", "x64", []), null, CancellationToken.None);
+        await agents.BatchRunAsync(baseline.Project.ProjectId,
+            new ProMaxx2.QA.Application.Automation.BatchRunRequest(cases.Select(c => c.ReadyCase.AutomationCaseId).ToList(), baseline.Build.BuildId, baseline.Environment.TestEnvironmentId, null, 5), null, CancellationToken.None);
+        var claim = await agents.ClaimNextJobAsync(new ProMaxx2.QA.Application.Automation.ClaimJobRequest("AGENT-A", "1.0.0", [], "WindowsUI"), CancellationToken.None);
+        await agents.CompleteExecutionAsync(claim!.AutomationExecutionId, new ProMaxx2.QA.Application.Automation.CompleteExecutionRequest("Failed", "AutomationFailure", "AUT-UI-001", "Object not found"), CancellationToken.None);
+        // Domain-level, same as the real classify endpoint's effect — AutomationDefectService.ClassifyAsync lives in
+        // the Api project (not reachable from this test project), so set ClassifiedFailureType directly via the
+        // same domain method it calls (AutomationExecution.SetClassification) rather than pull in that dependency.
+        var execution = await db.AutomationExecutions.SingleAsync(x => x.AutomationExecutionId == claim.AutomationExecutionId);
+        execution.SetClassification("AutomationFailure", "Fix the automation script.");
+        await db.SaveChangesAsync();
+
+        var matching = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, null, "AutomationFailure", null, null, null, null, 1, 20, CancellationToken.None);
+        var notMatching = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, null, "EnvironmentFailure", null, null, null, null, 1, 20, CancellationToken.None);
+
+        Assert.Equal(1, matching.Total);
+        Assert.Equal(0, notMatching.Total);
+    }
+
+    [Fact]
+    public async Task Executions_paging_filters_by_date_range()
+    {
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var (baseline, cases) = await AutomationTestFixtures.SeedReadyCasesAsync(db, 1);
+        var agents = AutomationTestFixtures.AgentService(db);
+        await agents.BatchRunAsync(baseline.Project.ProjectId,
+            new ProMaxx2.QA.Application.Automation.BatchRunRequest(cases.Select(c => c.ReadyCase.AutomationCaseId).ToList(), baseline.Build.BuildId, baseline.Environment.TestEnvironmentId, null, 5), null, CancellationToken.None);
+
+        var future = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, null, null, DateTime.UtcNow.AddDays(1), null, null, null, 1, 20, CancellationToken.None);
+        var past = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, null, null, null, DateTime.UtcNow.AddDays(-1), null, null, 1, 20, CancellationToken.None);
+        var wideRange = await agents.ListExecutionsPagedAsync(baseline.Project.ProjectId, null, null, null, null, null, null, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddDays(1), null, null, 1, 20, CancellationToken.None);
+
+        Assert.Equal(0, future.Total);
+        Assert.Equal(0, past.Total);
+        Assert.Equal(1, wideRange.Total);
     }
 
     [Fact]
