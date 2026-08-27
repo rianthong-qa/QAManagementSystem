@@ -13,6 +13,11 @@ if (args is { Length: > 0 } && args[0].Equals("trylogin", StringComparison.Ordin
     return await RunTryLoginAsync(args);
 }
 
+if (args is { Length: > 0 } && args[0].Equals("verify", StringComparison.OrdinalIgnoreCase))
+{
+    return await RunVerifyAsync(args);
+}
+
 var config = AgentConfig.FromEnvironment();
 
 if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
@@ -159,6 +164,66 @@ static async Task<int> RunInspectAsync(string[] args)
     Console.WriteLine("[inspect] control types: " + string.Join(", ", byType));
     var withId = result.Nodes.Count(n => n.AutomationId.Length > 0);
     Console.WriteLine($"[inspect] nodes with AutomationId: {withId}");
+    return 0;
+}
+
+static async Task<int> RunVerifyAsync(string[] args)
+{
+    string? exe = null, processName = null;
+    var timeout = 30;
+    var settle = 8;
+    for (var i = 1; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--exe": exe = args[++i]; break;
+            case "--process": processName = args[++i]; break;
+            case "--timeout": timeout = int.TryParse(args[++i], out var t) ? t : 30; break;
+            case "--wait": settle = int.TryParse(args[++i], out var s) ? s : 8; break;
+        }
+    }
+    if (string.IsNullOrWhiteSpace(exe) && string.IsNullOrWhiteSpace(processName))
+    {
+        Console.Error.WriteLine("Usage: Runner verify --exe <path> [--process <name>] [--timeout <sec>] [--wait <sec>]");
+        return 2;
+    }
+
+    var config = AgentConfig.FromEnvironment();
+    if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
+    {
+        Console.Error.WriteLine("Missing QAHUB_USERNAME / QAHUB_PASSWORD. ตั้งค่าก่อนรัน (ดู set-agent-env.ps1)");
+        return 2;
+    }
+
+    using var client = new QaHubClient(config);
+    if (!await client.LoginAsync(CancellationToken.None))
+    {
+        Console.Error.WriteLine($"Login ไป QA Hub ล้มเหลว ({config.HubBaseUrl}). ตรวจ Username/Password และสิทธิ์ AUTOMATION.EXECUTE");
+        return 2;
+    }
+    await client.RegisterAsync(CancellationToken.None);
+
+    var batch = await client.ClaimVerificationBatchAsync(CancellationToken.None);
+    if (batch is null || batch.Items.Count == 0)
+    {
+        Console.WriteLine("[verify] ไม่มี Object รอตรวจสอบสำหรับ Agent นี้");
+        return 0;
+    }
+    Console.WriteLine($"[verify] claimed {batch.Items.Count} object(s) to verify — scanning {(exe ?? processName)}...");
+
+    var scan = await UiInspector.InspectAsync(exe ?? "", processName, timeout, settle, null, CancellationToken.None);
+    var counts = new Dictionary<string, int>();
+    foreach (var item in batch.Items)
+    {
+        var outcome = scan is null
+            ? new VerifierOutcome("Error", null, null, "Could not find or launch the application's main window.")
+            : ObjectVerifier.Verify(scan, item.ExpectedAutomationId, item.ExpectedControlType);
+        counts[outcome.Status] = counts.GetValueOrDefault(outcome.Status) + 1;
+        Console.WriteLine($"  {item.ScreenCode}.{item.ObjectCode} ({item.ExpectedAutomationId ?? "-"}) => {outcome.Status}{(outcome.Message is null ? "" : $" — {outcome.Message}")}");
+        try { await client.ReportVerificationResultAsync(item.VerificationId, outcome.Status, outcome.ActualAutomationId, outcome.ActualControlType, outcome.Message, CancellationToken.None); }
+        catch (Exception ex) { Console.Error.WriteLine($"  report FAILED for {item.ObjectCode}: {ex.Message}"); }
+    }
+    Console.WriteLine("[verify] summary: " + string.Join(", ", counts.Select(kv => $"{kv.Key}={kv.Value}")));
     return 0;
 }
 

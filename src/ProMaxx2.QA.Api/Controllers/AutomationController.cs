@@ -125,6 +125,7 @@ public sealed class AutomationController(
     {
         try { return Ok(await cases.UpdateActionAsync(id, request, ct)); }
         catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("แก้ไข Action ไม่สำเร็จ", ex.Message, 400)); }
     }
 
     [HttpGet("objects")] public Task<IReadOnlyList<AutomationObjectDto>> ListObjects([FromQuery] Guid projectId, [FromQuery] string? search, CancellationToken ct) => cases.ListObjectsAsync(projectId, search, ct);
@@ -133,10 +134,16 @@ public sealed class AutomationController(
         try { return Ok(await cases.CreateObjectAsync(request, ct)); }
         catch (ArgumentException ex) { return BadRequest(Problem("สร้าง Object ไม่สำเร็จ", ex.Message, 400)); }
     }
+    [HttpPost("objects/import"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationObjectImportResultDto>> ImportObjects(ImportAutomationObjectsRequest request, CancellationToken ct)
+    {
+        try { return Ok(await cases.ImportObjectsAsync(request, ct)); }
+        catch (ArgumentException ex) { return BadRequest(Problem("Import Object failed", ex.Message, 400)); }
+    }
     [HttpPut("objects/{id:guid}"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationObjectDto>> UpdateObject(Guid id, [FromQuery] Guid projectId, UpdateAutomationObjectRequest request, CancellationToken ct)
     {
         try { return Ok(await cases.UpdateObjectAsync(id, projectId, request, ct)); }
         catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("แก้ไข Object ไม่สำเร็จ", ex.Message, 400)); }
     }
     [HttpPost("objects/{id:guid}/activate"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationObjectDto>> ActivateObject(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
     {
@@ -148,6 +155,56 @@ public sealed class AutomationController(
         try { return Ok(await cases.SetObjectActiveAsync(id, projectId, false, ct)); }
         catch (EntityNotFoundException) { return NotFound(); }
     }
+
+    [HttpPost("objects/verify"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<IReadOnlyList<AutomationObjectVerificationDto>>> RequestObjectVerification([FromQuery] Guid projectId, RequestObjectVerificationRequest request, CancellationToken ct)
+    {
+        try { return Ok(await cases.RequestObjectVerificationAsync(projectId, request, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("ขอตรวจสอบ Object ไม่สำเร็จ", ex.Message, 400)); }
+    }
+
+    [HttpGet("objects/verifications")] public Task<IReadOnlyList<AutomationObjectVerificationDto>> ListVerifications([FromQuery] Guid projectId, [FromQuery] Guid? objectId, CancellationToken ct)
+        => cases.ListVerificationsAsync(projectId, objectId, ct);
+
+    [HttpPost("cases/{id:guid}/maintenance/owner"), Authorize(Policy = "AutomationEdit")] public async Task<ActionResult<AutomationCaseDto>> AssignMaintenanceOwner(Guid id, [FromQuery] Guid projectId, AssignMaintenanceOwnerRequest request, CancellationToken ct)
+    {
+        try { return Ok(await cases.AssignMaintenanceOwnerAsync(id, projectId, request.OwnerUserId, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (InvalidOperationException ex) { return Conflict(Problem("มอบหมายไม่สำเร็จ", ex.Message, 409)); }
+    }
+
+    [HttpPost("cases/{id:guid}/maintenance/resolve"), Authorize(Policy = "AutomationEdit")] public async Task<ActionResult<AutomationCaseDto>> ResolveMaintenance(Guid id, [FromQuery] Guid projectId, ResolveMaintenanceRequest request, CancellationToken ct)
+    {
+        try { return Ok(await cases.ResolveMaintenanceAsync(id, projectId, request.ResolutionNote, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (InvalidOperationException ex) { return Conflict(Problem("แก้ไขไม่สำเร็จ", ex.Message, 409)); }
+    }
+
+    [HttpGet("cases/flaky-candidates")] public Task<IReadOnlyList<FlakyCandidateDto>> FlakyCandidates([FromQuery] Guid projectId, CancellationToken ct) => cases.GetFlakyCandidatesAsync(projectId, ct);
+
+    [HttpPost("cases/{id:guid}/quarantine"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationCaseDto>> Quarantine(Guid id, [FromQuery] Guid projectId, QuarantineCaseRequest request, CancellationToken ct)
+    {
+        try { return Ok(await cases.QuarantineCaseAsync(id, projectId, request, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("Quarantine ไม่สำเร็จ", ex.Message, 400)); }
+    }
+
+    [HttpPost("cases/{id:guid}/unquarantine"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationCaseDto>> Unquarantine(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { return Ok(await cases.UnquarantineCaseAsync(id, projectId, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
+    [HttpGet("failures/dashboard")] public Task<FailureBreakdownDto> FailureDashboard([FromQuery] Guid projectId, [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] Guid? buildId, [FromQuery] Guid? agentId, [FromQuery] string? failureType, CancellationToken ct)
+        => agentService.GetFailureBreakdownAsync(projectId, from, to, buildId, agentId, failureType, ct);
+
+    [HttpGet("failures/executions")] public Task<IReadOnlyList<AutomationExecutionDto>> FailureExecutions([FromQuery] Guid projectId, [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] Guid? buildId, [FromQuery] Guid? agentId, [FromQuery] string? failureType, [FromQuery] int take = 200, CancellationToken ct = default)
+        => agentService.ListFailedExecutionsAsync(projectId, from, to, buildId, agentId, failureType, take, ct);
+
+    [HttpGet("settings/retry-policy")] public Task<RetryPolicyDto> GetRetryPolicy(CancellationToken ct) => agentService.GetRetryPolicyAsync(ct);
+
+    [HttpPut("settings/retry-policy"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<RetryPolicyDto>> UpdateRetryPolicy(UpdateRetryPolicyRequest request, CancellationToken ct)
+        => Ok(await agentService.UpdateRetryPolicyAsync(request, UserId(), ct));
 
     [HttpGet("agents")] public Task<IReadOnlyList<AutomationAgentDto>> ListAgents(CancellationToken ct) => agentService.ListAgentsAsync(ct);
     [HttpPost("agents/{id:guid}/enable"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationAgentDto>> EnableAgent(Guid id, CancellationToken ct)

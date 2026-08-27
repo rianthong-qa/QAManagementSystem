@@ -60,6 +60,8 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationStepResult> AutomationStepResults => Set<AutomationStepResult>();
     public DbSet<AutomationJob> AutomationJobs => Set<AutomationJob>();
     public DbSet<AutomationEvidence> AutomationEvidences => Set<AutomationEvidence>();
+    public DbSet<AutomationObjectVerification> AutomationObjectVerifications => Set<AutomationObjectVerification>();
+    public DbSet<AutomationRetryPolicySettings> AutomationRetryPolicySettings => Set<AutomationRetryPolicySettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

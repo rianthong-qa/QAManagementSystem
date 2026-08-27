@@ -74,6 +74,19 @@ public sealed class AutomationAgentController(AutomationAgentService service, IW
         catch (ArgumentException ex) { return BadRequest(Problem("Completion invalid", ex.Message, 400)); }
     }
 
+    [HttpPost("verifications/claim")] public async Task<ActionResult<VerificationBatchPackageDto?>> ClaimVerifications(ClaimVerificationBatchRequest request, CancellationToken ct)
+    {
+        var package = await service.ClaimVerificationBatchAsync(request.AgentCode, ct);
+        return package is null ? NoContent() : Ok(package);
+    }
+
+    [HttpPost("verifications/result")] public async Task<IActionResult> ReportVerificationResult(ReportVerificationResultRequest request, CancellationToken ct)
+    {
+        try { await service.ReportVerificationResultAsync(request, ct); return NoContent(); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("Verification result invalid", ex.Message, 400)); }
+    }
+
     private string EvidenceRoot()
     {
         var root = Path.GetFullPath(Path.Combine(environment.ContentRootPath, "App_Data", "AutomationEvidence"));

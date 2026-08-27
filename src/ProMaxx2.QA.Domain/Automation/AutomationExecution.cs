@@ -34,6 +34,10 @@ public sealed class AutomationExecution
     public string? FailureType { get; private set; }
     public string? ErrorCode { get; private set; }
     public string? ErrorMessage { get; private set; }
+    public string? ClassifiedFailureType { get; private set; }
+    public string? ClassifiedRecommendation { get; private set; }
+    public Guid? RetryOfExecutionId { get; private set; }
+    public int RetryCount { get; private set; }
     public string? RequestedBy { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public ICollection<AutomationStepResult> StepResults { get; private set; } = [];
@@ -55,6 +59,7 @@ public sealed class AutomationExecution
     public void Complete(string status, string? failureType, string? errorCode, string? errorMessage, DateTime at)
     {
         if (status is not ("Passed" or "Failed" or "Blocked" or "Cancelled" or "Timeout" or "AgentLost")) throw new ArgumentException("Invalid execution status.");
+        if (Status is not ("Queued" or "Running")) throw new InvalidOperationException("Execution is already completed.");
         Status = status;
         CompletedAt = at;
         DurationMs = StartedAt.HasValue ? (long)(at - StartedAt.Value).TotalMilliseconds : 0;
@@ -65,6 +70,16 @@ public sealed class AutomationExecution
     public void LinkTestExecution(Guid testExecutionId) => TestExecutionId = testExecutionId;
     public void LinkDefect(Guid defectId) => DefectId = defectId;
     public void AddStepResult(AutomationStepResult result) => StepResults.Add(result);
+    public void SetClassification(string failureType, string recommendation)
+    {
+        ClassifiedFailureType = failureType;
+        ClassifiedRecommendation = recommendation;
+    }
+    public void MarkAsRetry(Guid originalExecutionId, int retryCount)
+    {
+        RetryOfExecutionId = originalExecutionId;
+        RetryCount = retryCount;
+    }
 }
 
 public sealed class AutomationStepResult
