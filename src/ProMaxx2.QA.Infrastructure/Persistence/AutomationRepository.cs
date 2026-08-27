@@ -126,6 +126,45 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
 
     public Task AddAgentAsync(AutomationAgent entity, CancellationToken ct) => db.AutomationAgents.AddAsync(entity, ct).AsTask();
 
+    /// <summary>AUT-P2-004: bounded "recent heartbeats" log — keeps at most this many rows per agent.</summary>
+    private const int HeartbeatHistoryCap = 50;
+
+    public async Task RecordHeartbeatEventAsync(Guid agentId, string status, Guid? currentExecutionId, CancellationToken ct)
+    {
+        var existing = await db.AutomationAgentHeartbeatEvents.Where(x => x.AgentId == agentId).OrderByDescending(x => x.OccurredAt).ToListAsync(ct);
+        if (existing.Count >= HeartbeatHistoryCap) db.AutomationAgentHeartbeatEvents.RemoveRange(existing.Skip(HeartbeatHistoryCap - 1));
+        await db.AutomationAgentHeartbeatEvents.AddAsync(new AutomationAgentHeartbeatEvent(agentId, status, currentExecutionId), ct);
+    }
+
+    public async Task<AutomationAgentWorkloadDto> GetAgentWorkloadAsync(Guid agentId, DateTime? from, DateTime? to, CancellationToken ct)
+    {
+        var agent = await db.AutomationAgents.AsNoTracking().SingleOrDefaultAsync(x => x.AgentId == agentId && !x.IsDeleted, ct)
+            ?? throw new ProMaxx2.QA.Application.Projects.EntityNotFoundException("Agent not found.");
+        var effectiveFrom = from ?? DateTime.UtcNow.AddDays(-30);
+        var effectiveTo = to ?? DateTime.UtcNow;
+
+        var executions = await db.AutomationExecutions.AsNoTracking()
+            .Where(x => x.AgentId == agentId && x.CreatedAt >= effectiveFrom && x.CreatedAt <= effectiveTo && (x.Status == "Passed" || x.Status == "Failed"))
+            .Select(x => new { x.Status, x.DurationMs }).ToListAsync(ct);
+        var total = executions.Count;
+        var failed = executions.Count(x => x.Status == "Failed");
+        var totalRuntimeMs = executions.Sum(x => x.DurationMs ?? 0);
+        var avgRuntimeMs = total > 0 ? (double?)totalRuntimeMs / total : null;
+        var windowMs = (effectiveTo - effectiveFrom).TotalMilliseconds;
+        var utilization = windowMs > 0 ? Math.Clamp((decimal)totalRuntimeMs / (decimal)windowMs * 100m, 0m, 100m) : 0m;
+        var failureRate = total > 0 ? (decimal)failed / total * 100m : 0m;
+
+        var jobs = await db.AutomationJobs.AsNoTracking()
+            .Where(x => x.AssignedAgentId == agentId && x.AssignedAt != null && x.QueuedAt >= effectiveFrom && x.QueuedAt <= effectiveTo)
+            .Select(x => new { x.QueuedAt, x.AssignedAt }).ToListAsync(ct);
+        var avgQueueMs = jobs.Count > 0 ? (double?)jobs.Average(x => (x.AssignedAt!.Value - x.QueuedAt).TotalMilliseconds) : null;
+
+        var heartbeats = await db.AutomationAgentHeartbeatEvents.AsNoTracking().Where(x => x.AgentId == agentId).OrderByDescending(x => x.OccurredAt).Take(HeartbeatHistoryCap)
+            .Select(x => new AutomationAgentHeartbeatEventDto(x.Status, x.CurrentExecutionId, x.OccurredAt)).ToListAsync(ct);
+
+        return new AutomationAgentWorkloadDto(agent.AgentId, agent.AgentCode, effectiveFrom, effectiveTo, utilization, avgQueueMs, avgRuntimeMs, total, failed, failureRate, heartbeats);
+    }
+
     public async Task<AutomationExecutionDto?> GetExecutionAsync(Guid id, Guid projectId, CancellationToken ct)
     {
         var r = await db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationExecutionId == id && x.AutomationCase.TestCase.ProjectId == projectId)
@@ -538,6 +577,19 @@ public sealed class AutomationAgentCapabilityConfiguration : Microsoft.EntityFra
         b.HasKey(x => new { x.AgentId, x.CapabilityCode });
         b.Property(x => x.CapabilityCode).HasMaxLength(40);
         b.Property(x => x.CapabilityVersion).HasMaxLength(20);
+    }
+}
+
+/// <summary>AUT-P2-004.</summary>
+public sealed class AutomationAgentHeartbeatEventConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationAgentHeartbeatEvent>
+{
+    public void Configure(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<AutomationAgentHeartbeatEvent> b)
+    {
+        b.ToTable("AutomationAgentHeartbeatEvents");
+        b.HasKey(x => x.AutomationAgentHeartbeatEventId);
+        b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+        b.HasIndex(x => new { x.AgentId, x.OccurredAt });
+        b.HasOne<AutomationAgent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Cascade);
     }
 }
 

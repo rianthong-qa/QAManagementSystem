@@ -212,6 +212,15 @@ public sealed class AutomationController(
         => Ok(await agentService.UpdateRetryPolicyAsync(request, UserId(), ct));
 
     [HttpGet("agents")] public Task<IReadOnlyList<AutomationAgentDto>> ListAgents(CancellationToken ct) => agentService.ListAgentsAsync(ct);
+
+    /// <summary>AUT-P2-004: utilization/queue time/runtime/failure over a window (default: last 30 days) plus a
+    /// capped recent heartbeat history.</summary>
+    [HttpGet("agents/{id:guid}/workload")] public async Task<ActionResult<AutomationAgentWorkloadDto>> GetAgentWorkload(Guid id, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
+    {
+        try { return Ok(await agentService.GetAgentWorkloadAsync(id, from, to, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
     [HttpPost("agents/{id:guid}/enable"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationAgentDto>> EnableAgent(Guid id, CancellationToken ct)
     {
         try { return Ok(await agentService.SetAgentEnabledAsync(id, true, ct)); }

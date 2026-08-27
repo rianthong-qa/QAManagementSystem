@@ -1081,7 +1081,7 @@ export function AutomationPage({
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
         {manageTab === "actions" && <ActionLibraryTab actions={actions} canManage={canManage} headers={headers} onReload={() => setReload((x) => x + 1)} onError={setError} actionModal={actionModal} setActionModal={setActionModal} />}
         {manageTab === "objects" && <ObjectRepositoryTab projectId={pid} objects={objects} canManage={canManage} headers={headers} onReload={() => setReload((x) => x + 1)} onError={setError} objectModal={objectModal} setObjectModal={setObjectModal} />}
-        {manageTab === "agents" && <AgentsSection agents={agents} agentsOnline={agentsOnline} canManage={canManage} onToggle={toggleAgent} onDelete={deleteAgent} />}
+        {manageTab === "agents" && <AgentsSection agents={agents} agentsOnline={agentsOnline} canManage={canManage} headers={headers} onToggle={toggleAgent} onDelete={deleteAgent} />}
         {manageTab === "retry" && <RetryPolicyTab policy={retryPolicy} canManage={canManage} busy={maintenanceBusy} onSave={updateRetryPolicy} />}
       </section>}
 
@@ -1755,13 +1755,56 @@ function RetryPolicyTab({ policy, canManage, busy, onSave }: {
   </section>;
 }
 
-function AgentsSection({ agents, agentsOnline, canManage, onToggle, onDelete }: {
-  agents: AutomationAgentItem[]; agentsOnline: number; canManage: boolean; onToggle: (a: AutomationAgentItem, enable: boolean) => void; onDelete: (a: AutomationAgentItem) => void;
+function AgentsSection({ agents, agentsOnline, canManage, headers, onToggle, onDelete }: {
+  agents: AutomationAgentItem[]; agentsOnline: number; canManage: boolean; headers: Record<string, string>; onToggle: (a: AutomationAgentItem, enable: boolean) => void; onDelete: (a: AutomationAgentItem) => void;
 }) {
+  const [workloadFor, setWorkloadFor] = useState<AutomationAgentItem | null>(null);
   return <section className="automation-agents" aria-label="Automation Agents">
     <header className="automation-section-head"><div><h2>Central Windows Agents</h2><p>Agent ลงทะเบียนอัตโนมัติและส่ง heartbeat ทุก 15 วินาที · Offline เมื่อเงียบเกิน 60 วินาที</p></div><span className="automation-agent-count">{agentsOnline} Online</span></header>
-    {agents.length ? <div className="automation-agent-grid">{agents.map((a) => <article key={a.agentId}><div className="automation-agent-top"><div><Badge tone={a.connectivity === "Online" ? "green" : a.connectivity === "Disabled" ? "gray" : "yellow"}>{a.connectivity}</Badge><Badge tone={a.status === "Busy" ? "blue" : "green"}>{a.status}</Badge></div><div className="automation-agent-actions">{canManage && <button type="button" className={`table-action icon-btn${a.isEnabled ? "" : " danger"}`} title={a.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"} aria-label={a.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"} onClick={() => onToggle(a, !a.isEnabled)}>{a.isEnabled ? "⏻" : "⏼"}</button>}{canManage && <button type="button" className="table-action danger icon-btn" title="ลบ Agent" aria-label="ลบ Agent" onClick={() => onDelete(a)}>🗑</button>}</div></div><b>{a.agentCode}</b><span>{a.machineName} · v{a.agentVersion}</span><small>{a.operatingSystem} · {a.architecture}</small><small>รองรับ {a.capabilities.join(" + ") || "-"}</small><time dateTime={a.lastHeartbeatAt}>ล่าสุด {formatThaiDateTime(a.lastHeartbeatAt)}</time></article>)}</div> : <div className="empty"><p>ยังไม่มี Agent ลงทะเบียน</p><small>ติดตั้งบนเครื่อง Windows: ตั้งค่า env แล้วรัน <code>agent\\run-agent.ps1</code> — Agent จะ register + ส่ง heartbeat อัตโนมัติ</small></div>}
+    {agents.length ? <div className="automation-agent-grid">{agents.map((a) => <article key={a.agentId}><div className="automation-agent-top"><div><Badge tone={a.connectivity === "Online" ? "green" : a.connectivity === "Disabled" ? "gray" : "yellow"}>{a.connectivity}</Badge><Badge tone={a.status === "Busy" ? "blue" : "green"}>{a.status}</Badge></div><div className="automation-agent-actions"><button type="button" className="table-action icon-btn" title="Workload / History" aria-label={`Workload ${a.agentCode}`} onClick={() => setWorkloadFor(a)}>📊</button>{canManage && <button type="button" className={`table-action icon-btn${a.isEnabled ? "" : " danger"}`} title={a.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"} aria-label={a.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"} onClick={() => onToggle(a, !a.isEnabled)}>{a.isEnabled ? "⏻" : "⏼"}</button>}{canManage && <button type="button" className="table-action danger icon-btn" title="ลบ Agent" aria-label="ลบ Agent" onClick={() => onDelete(a)}>🗑</button>}</div></div><b>{a.agentCode}</b><span>{a.machineName} · v{a.agentVersion}</span><small>{a.operatingSystem} · {a.architecture}</small><small>รองรับ {a.capabilities.join(" + ") || "-"}</small><time dateTime={a.lastHeartbeatAt}>ล่าสุด {formatThaiDateTime(a.lastHeartbeatAt)}</time></article>)}</div> : <div className="empty"><p>ยังไม่มี Agent ลงทะเบียน</p><small>ติดตั้งบนเครื่อง Windows: ตั้งค่า env แล้วรัน <code>agent\\run-agent.ps1</code> — Agent จะ register + ส่ง heartbeat อัตโนมัติ</small></div>}
+    {workloadFor && <AgentWorkloadModal agent={workloadFor} headers={headers} onClose={() => setWorkloadFor(null)} />}
   </section>;
+}
+
+type AutomationAgentWorkload = {
+  agentId: string; agentCode: string; windowFrom: string; windowTo: string; utilizationPercent: number; avgQueueTimeMs?: number; avgRuntimeMs?: number;
+  totalExecutions: number; failedExecutions: number; failureRatePercent: number; recentHeartbeats: { status: string; currentExecutionId?: string; occurredAt: string }[];
+};
+
+/// AUT-P2-004: utilization/queue time/runtime/failure over the last 30 days (server default), plus the capped
+/// recent-heartbeat log (see AutomationAgentHeartbeatEvent — literal heartbeat history, not an online/offline
+/// timeline; that would need a background worker this system doesn't have).
+function AgentWorkloadModal({ agent, headers, onClose }: { agent: AutomationAgentItem; headers: Record<string, string>; onClose: () => void }) {
+  const [workload, setWorkload] = useState<AutomationAgentWorkload | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch(`${apiUrl}/automation/agents/${agent.agentId}/workload`, { headers })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setWorkload(d))
+      .catch(() => setError("โหลดข้อมูล Workload ไม่สำเร็จ"));
+  }, [agent.agentId, headers]);
+
+  const fmtMs = (ms?: number) => ms == null ? "-" : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-agent-workload-title" onMouseDown={onClose}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-agent-workload-title">Workload — {agent.agentCode}</h2><small>{workload ? `${formatThaiDateTime(workload.windowFrom)} – ${formatThaiDateTime(workload.windowTo)}` : "ช่วง 30 วันล่าสุด"}</small></div><button aria-label="ปิด" onClick={onClose}>×</button></div>
+    {error && <div className="inline-alert error"><span>{error}</span></div>}
+    {workload ? <>
+      <div className="automation-kpis">
+        <div><small>Utilization</small><strong>{workload.utilizationPercent.toFixed(1)}%</strong><span>สัดส่วนเวลาที่ทำงาน</span></div>
+        <div><small>Queue Time เฉลี่ย</small><strong>{fmtMs(workload.avgQueueTimeMs)}</strong><span>รอ Agent รับงาน</span></div>
+        <div><small>Runtime เฉลี่ย</small><strong>{fmtMs(workload.avgRuntimeMs)}</strong><span>ต่อ Execution</span></div>
+        <div><small>Total</small><strong>{workload.totalExecutions}</strong><span>Execution</span></div>
+        <div className={workload.failedExecutions ? "needs-review" : ""}><small>Failure Rate</small><strong>{workload.failureRatePercent.toFixed(1)}%</strong><span>{workload.failedExecutions} Failed</span></div>
+      </div>
+      <h3>ประวัติ Heartbeat ({workload.recentHeartbeats.length} รายการล่าสุด)</h3>
+      {workload.recentHeartbeats.length ? <div className="table-wrap"><table><thead><tr><th>สถานะ</th><th>Execution ที่กำลังรัน</th><th>เวลา</th></tr></thead><tbody>
+        {workload.recentHeartbeats.map((h, i) => <tr key={i}><td><Badge tone={h.status === "Busy" ? "blue" : "green"}>{h.status}</Badge></td><td>{h.currentExecutionId ?? "-"}</td><td>{formatThaiDateTime(h.occurredAt)}</td></tr>)}
+      </tbody></table></div> : <div className="empty"><p>ยังไม่มีประวัติ Heartbeat</p></div>}
+    </> : !error && <div className="empty"><p>กำลังโหลด...</p></div>}
+    <div className="modal-actions"><button className="btn" onClick={onClose}>ปิดหน้าต่าง</button></div>
+  </div></div>;
 }
 
 function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, headers, jobs, executions, setExecDetail, execFilter, setExecFilter, canRun, onCancel, onRerun, reload }: {

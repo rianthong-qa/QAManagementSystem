@@ -49,6 +49,17 @@ public sealed record RegisterAgentRequest(string AgentCode, string MachineName, 
 public sealed record AgentHeartbeatRequest(string AgentCode, string MachineName, string AgentVersion, string Status, Guid? CurrentExecutionId);
 public sealed record AutomationAgentDto(Guid AgentId, string AgentCode, string MachineName, string AgentVersion, string OperatingSystem, string Architecture, string Status, DateTime LastHeartbeatAt, Guid? CurrentExecutionId, DateTime RegisteredAt, bool IsEnabled, string Connectivity, IReadOnlyList<string> Capabilities);
 
+/// <summary>AUT-P2-004.</summary>
+public sealed record AutomationAgentHeartbeatEventDto(string Status, Guid? CurrentExecutionId, DateTime OccurredAt);
+
+/// <summary>AUT-P2-004: workload/history for one Agent over a window (default: last 30 days). Utilization is the
+/// share of the window this Agent spent actually running an execution (sum of execution DurationMs / window
+/// duration) — a real busy-vs-idle measure, not just a count. AvgQueueTimeMs/AvgRuntimeMs are null when there is no
+/// data in the window (no jobs assigned / no completed executions) rather than 0, so the UI can distinguish
+/// "genuinely instant" from "no data yet".</summary>
+public sealed record AutomationAgentWorkloadDto(Guid AgentId, string AgentCode, DateTime WindowFrom, DateTime WindowTo, decimal UtilizationPercent,
+    double? AvgQueueTimeMs, double? AvgRuntimeMs, int TotalExecutions, int FailedExecutions, decimal FailureRatePercent, IReadOnlyList<AutomationAgentHeartbeatEventDto> RecentHeartbeats);
+
 public sealed record CreateAutomationExecutionRequest(Guid BuildId, Guid EnvironmentId, Guid? AgentId, int Priority);
 public sealed record AutomationExecutionDto(Guid AutomationExecutionId, Guid AutomationCaseId, string AutomationCode, string TestCaseCode, string TestCaseTitle, Guid AutomationVersionId, int VersionNo, Guid? TestExecutionId, Guid? DefectId, string TargetApp, Guid? AgentId, string? AgentCode, Guid BuildId, string BuildNumber, Guid EnvironmentId, string EnvironmentName, Guid? JobId, string Status, DateTime? StartedAt, DateTime? CompletedAt, long? DurationMs, string? FailureType, string? ErrorCode, string? ErrorMessage, IReadOnlyList<AutomationStepResultDto> StepResults, IReadOnlyList<AutomationEvidenceDto> Evidence = null!,
     string? ClassifiedFailureType = null, string? ClassifiedRecommendation = null, Guid? RetryOfExecutionId = null, int RetryCount = 0);
@@ -101,6 +112,11 @@ public interface IAutomationRepository
     Task<AutomationAgent?> FindAgentByCodeAsync(string agentCode, CancellationToken ct);
     Task<IReadOnlyList<AutomationAgentDto>> ListAgentsAsync(CancellationToken ct);
     Task AddAgentAsync(AutomationAgent entity, CancellationToken ct);
+    /// <summary>AUT-P2-004: stages a new heartbeat event and prunes anything past the cap for this agent — does NOT
+    /// call SaveChangesAsync itself, so it composes into the same SaveChangesAsync call the caller (RegisterAsync/
+    /// HeartbeatAsync) already makes right after touching the agent entity.</summary>
+    Task RecordHeartbeatEventAsync(Guid agentId, string status, Guid? currentExecutionId, CancellationToken ct);
+    Task<AutomationAgentWorkloadDto> GetAgentWorkloadAsync(Guid agentId, DateTime? from, DateTime? to, CancellationToken ct);
 
     Task<AutomationExecutionDto?> GetExecutionAsync(Guid id, Guid projectId, CancellationToken ct);
     Task<AutomationExecution?> FindExecutionAsync(Guid id, CancellationToken ct);

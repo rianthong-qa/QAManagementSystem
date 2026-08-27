@@ -327,6 +327,9 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             if (agent.IsDeleted) agent.Reactivate();
             agent.Heartbeat(DateTime.UtcNow, agent.CurrentExecutionId);
         }
+        // AUT-P2-004: record this check-in in the (capped) heartbeat history — staged, not saved separately, so it
+        // commits in the same SaveChangesAsync call below as the agent entity itself.
+        await repository.RecordHeartbeatEventAsync(agent.AgentId, agent.Status, agent.CurrentExecutionId, ct);
         await repository.SaveChangesAsync(ct);
         return (await repository.ListAgentsAsync(ct)).Single(x => x.AgentId == agent.AgentId);
     }
@@ -337,9 +340,15 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         agent.Heartbeat(DateTime.UtcNow, r.CurrentExecutionId);
         if (string.Equals(r.Status, "Busy", StringComparison.OrdinalIgnoreCase)) agent.SetStatus("Busy");
         else if (string.Equals(r.Status, "Idle", StringComparison.OrdinalIgnoreCase)) agent.SetStatus("Idle");
+        // AUT-P2-004: see RegisterAsync — same capped heartbeat history, same single SaveChangesAsync commit.
+        await repository.RecordHeartbeatEventAsync(agent.AgentId, agent.Status, agent.CurrentExecutionId, ct);
         await repository.SaveChangesAsync(ct);
         return (await repository.ListAgentsAsync(ct)).Single(x => x.AgentId == agent.AgentId);
     }
+
+    /// <summary>AUT-P2-004.</summary>
+    public Task<AutomationAgentWorkloadDto> GetAgentWorkloadAsync(Guid agentId, DateTime? from, DateTime? to, CancellationToken ct)
+        => repository.GetAgentWorkloadAsync(agentId, from, to, ct);
 
     public async Task<AutomationAgentDto> SetAgentEnabledAsync(Guid agentId, bool enabled, CancellationToken ct)
     {

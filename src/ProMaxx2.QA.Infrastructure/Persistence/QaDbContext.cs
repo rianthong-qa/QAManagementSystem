@@ -56,6 +56,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationObject> AutomationObjects => Set<AutomationObject>();
     public DbSet<AutomationAgent> AutomationAgents => Set<AutomationAgent>();
     public DbSet<AutomationAgentCapability> AutomationAgentCapabilities => Set<AutomationAgentCapability>();
+    public DbSet<AutomationAgentHeartbeatEvent> AutomationAgentHeartbeatEvents => Set<AutomationAgentHeartbeatEvent>();
     public DbSet<AutomationExecution> AutomationExecutions => Set<AutomationExecution>();
     public DbSet<AutomationStepResult> AutomationStepResults => Set<AutomationStepResult>();
     public DbSet<AutomationJob> AutomationJobs => Set<AutomationJob>();
