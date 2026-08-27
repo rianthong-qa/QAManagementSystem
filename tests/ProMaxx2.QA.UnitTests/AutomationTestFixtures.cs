@@ -49,11 +49,34 @@ internal static class AutomationTestFixtures
     public static async Task<(Baseline Baseline, AutomationCaseDto ReadyCase, Guid VersionId)> SeedReadyCaseAsync(QaDbContext db)
     {
         var baseline = await SeedBaselineAsync(db);
+        var (readyCase, versionId) = await ApproveNewCaseAsync(db, baseline, baseline.TestCase.TestCaseId, "WindowsUI");
+        return (baseline, readyCase, versionId);
+    }
+
+    /// <summary>Seeds one baseline project/build/environment plus <paramref name="count"/> additional Ready automation cases (each on its own TestCase), for tests that need several cases to batch-run against.</summary>
+    public static async Task<(Baseline Baseline, IReadOnlyList<(AutomationCaseDto ReadyCase, Guid VersionId)> Cases)> SeedReadyCasesAsync(QaDbContext db, int count, string automationType = "WindowsUI")
+    {
+        var baseline = await SeedBaselineAsync(db);
+        var cases = new List<(AutomationCaseDto, Guid)>();
+        for (var i = 0; i < count; i++)
+        {
+            var testCase = new TestCase(baseline.Project.ProjectId, baseline.Module.ModuleId, $"TC-SALE-{i + 100}", $"Batch case {i}", null, null,
+                "P1", "Functional", true, null, [new TestStepInput(1, "Add item", null, "Item added")], null);
+            testCase.SetAutomationTarget("app", null);
+            db.Add(testCase);
+            await db.SaveChangesAsync();
+            cases.Add(await ApproveNewCaseAsync(db, baseline, testCase.TestCaseId, automationType));
+        }
+        return (baseline, cases);
+    }
+
+    private static async Task<(AutomationCaseDto ReadyCase, Guid VersionId)> ApproveNewCaseAsync(QaDbContext db, Baseline baseline, Guid testCaseId, string automationType)
+    {
         var caseService = CaseService(db, baseline.Project.ProjectId);
-        var created = await caseService.CreateAsync(baseline.Project.ProjectId, new CreateAutomationCaseRequest(baseline.TestCase.TestCaseId, "WindowsUI", null), null, CancellationToken.None);
+        var created = await caseService.CreateAsync(baseline.Project.ProjectId, new CreateAutomationCaseRequest(testCaseId, automationType, null), null, CancellationToken.None);
         var version = await caseService.CreateVersionAsync(created.AutomationCaseId, baseline.Project.ProjectId, new CreateAutomationVersionRequest(SampleDsl, "initial"), null, CancellationToken.None);
         await caseService.ValidateVersionAsync(version.AutomationVersionId, baseline.Project.ProjectId, CancellationToken.None);
         var readyCase = await caseService.ApproveVersionAsync(version.AutomationVersionId, baseline.Project.ProjectId, null, CancellationToken.None);
-        return (baseline, readyCase, version.AutomationVersionId);
+        return (readyCase, version.AutomationVersionId);
     }
 }
