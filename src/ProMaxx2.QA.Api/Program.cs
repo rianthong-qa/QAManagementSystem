@@ -98,14 +98,7 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"))
     .AddPolicy("RiskApprove",p=>p.RequireClaim("permission","RISK.APPROVE"))
     .AddPolicy("ReleaseSignoff",p=>p.RequireClaim("permission","RELEASE.SIGNOFF"))
-    .AddPolicy("AutomationView",p=>p.RequireClaim("permission","AUTOMATION.VIEW"))
-    .AddPolicy("AutomationEdit",p=>p.RequireClaim("permission","AUTOMATION.EDIT"))
-    .AddPolicy("AutomationValidate",p=>p.RequireClaim("permission","AUTOMATION.VALIDATE"))
-    .AddPolicy("AutomationApprove",p=>p.RequireClaim("permission","AUTOMATION.APPROVE"))
-    .AddPolicy("AutomationExecute",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","AUTOMATION.EXECUTE")||c.User.HasClaim("permission","EXECUTION.RUN")))
-    .AddPolicy("AutomationManage",p=>p.RequireClaim("permission","AUTOMATION.MANAGE"))
-    .AddPolicy("AutomationGenerateAi",p=>p.RequireClaim("permission","AUTOMATION.GENERATEAI"))
-    .AddPolicy("AutomationEvidence",p=>p.RequireClaim("permission","AUTOMATION.VIEWEVIDENCE"));
+    .AddAutomationPolicies();
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
 if (allowedOrigins == null || allowedOrigins.Length == 0)
 {
