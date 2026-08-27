@@ -42,7 +42,7 @@ internal static class AutomationTestFixtures
     public static AutomationAgentService AgentService(QaDbContext db)
     {
         var repo = new AutomationRepository(db);
-        return new AutomationAgentService(repo, repo);
+        return new AutomationAgentService(repo, repo, repo);
     }
 
     public static ProMaxx2.QA.Application.Projects.IProjectRepository ProjectRepository(QaDbContext db, Guid projectId) =>
@@ -50,6 +50,12 @@ internal static class AutomationTestFixtures
 
     public static AutomationSuiteService SuiteService(QaDbContext db, Guid projectId) =>
         new(new AutomationRepository(db), ProjectRepository(db, projectId));
+
+    public static AutomationScheduleService ScheduleService(QaDbContext db)
+    {
+        var repo = new AutomationRepository(db);
+        return new AutomationScheduleService(repo, repo);
+    }
 
     public const string SampleDsl = """
         {"dslVersion":"1.0","automationType":"WindowsUI","steps":[{"stepNo":1,"action":"LOGIN","parameters":{"userRef":"QA_STANDARD_USER"}},{"stepNo":2,"action":"SAVE_DOCUMENT","parameters":{}}]}

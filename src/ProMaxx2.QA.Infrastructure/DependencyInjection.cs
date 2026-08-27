@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<IReleaseSignoffRepository,ReleaseSignoffRepository>();
         services.AddScoped<IAutomationRepository,AutomationRepository>();
         services.AddScoped<IAutomationSuiteRepository>(sp => (AutomationRepository)sp.GetRequiredService<IAutomationRepository>());
+        services.AddScoped<IAutomationScheduleRepository>(sp => (AutomationRepository)sp.GetRequiredService<IAutomationRepository>());
         services.AddScoped<Identity.ProjectAccessService>();
         return services;
     }

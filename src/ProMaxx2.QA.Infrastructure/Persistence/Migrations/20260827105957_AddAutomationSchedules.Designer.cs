@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(QaDbContext))]
-    partial class QaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260827105957_AddAutomationSchedules")]
+    partial class AddAutomationSchedules
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -618,9 +621,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
-                    b.Property<DateTime?>("LastRunAtUtc")
-                        .HasColumnType("datetime2");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -659,40 +659,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasIndex("ProjectId", "IsActive", "NextRunAtUtc");
 
                     b.ToTable("AutomationSuiteSchedules", (string)null);
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationScheduleRun", b =>
-                {
-                    b.Property<Guid>("AutomationScheduleRunId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("AutomationScheduleId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<int>("ExecutionsCreated")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("FiredAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("SkippedCount")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.HasKey("AutomationScheduleRunId");
-
-                    b.HasIndex("AutomationScheduleId", "FiredAtUtc");
-
-                    b.ToTable("AutomationScheduleRuns", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationStepResult", b =>
@@ -2694,17 +2660,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Suite");
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationScheduleRun", b =>
-                {
-                    b.HasOne("ProMaxx2.QA.Domain.Automation.AutomationSchedule", "Schedule")
-                        .WithMany()
-                        .HasForeignKey("AutomationScheduleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Schedule");
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationStepResult", b =>

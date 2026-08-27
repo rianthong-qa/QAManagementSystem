@@ -65,6 +65,8 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationSuite> AutomationSuites => Set<AutomationSuite>();
     public DbSet<AutomationSuiteCase> AutomationSuiteCases => Set<AutomationSuiteCase>();
     public DbSet<AutomationSuiteRevision> AutomationSuiteRevisions => Set<AutomationSuiteRevision>();
+    public DbSet<AutomationSchedule> AutomationSchedules => Set<AutomationSchedule>();
+    public DbSet<AutomationScheduleRun> AutomationScheduleRuns => Set<AutomationScheduleRun>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

@@ -55,6 +55,16 @@ type AutomationSuiteCaseItem = { automationCaseId: string; automationCode: strin
 type AutomationSuiteListItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdAt: string; closedAt?: string; revisionNo: number; caseCount: number; readyCaseCount: number };
 type AutomationSuiteDetailItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string; closedAt?: string; revisionNo: number; cases: AutomationSuiteCaseItem[] };
 type AutomationSuiteRevisionItem = { automationSuiteRevisionId: string; revisionNo: number; changeType: string; detail?: string; changeReason?: string; changedBy?: string; changedByName?: string; changedAt: string };
+type AutomationScheduleListItem = {
+  automationScheduleId: string; projectId: string; automationSuiteId: string; suiteCode: string; suiteName: string; name: string; description?: string;
+  frequency: string; daysOfWeekMask: number; runAtTime: string; onceOnDate?: string; timeZoneId: string; buildNumber: string; environmentName: string; isActive: boolean; nextRunAtUtc: string; lastRunAtUtc?: string; createdAt: string;
+};
+type AutomationScheduleDetailItem = {
+  automationScheduleId: string; projectId: string; automationSuiteId: string; suiteCode: string; suiteName: string; name: string; description?: string;
+  frequency: string; daysOfWeekMask: number; runAtTime: string; onceOnDate?: string; timeZoneId: string; buildId: string; buildNumber: string; environmentId: string; environmentName: string;
+  agentId?: string; agentCode?: string; priority: number; isActive: boolean; nextRunAtUtc: string; lastRunAtUtc?: string; createdBy?: string; createdAt: string; updatedAt?: string;
+};
+type AutomationScheduleRunItem = { automationScheduleRunId: string; automationScheduleId: string; firedAtUtc: string; status: string; executionsCreated: number; skippedCount: number; errorMessage?: string };
 type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
 type CountByKeyItem = { key: string; count: number };
 type FailureBreakdownItem = { totalFailed: number; byFailureType: CountByKeyItem[]; byBuild: CountByKeyItem[]; byAgent: CountByKeyItem[]; byAutomationCase: CountByKeyItem[] };
@@ -879,6 +889,7 @@ export function AutomationPage({
     { id: "dashboard", label: "ภาพรวม", icon: "◉" },
     { id: "cases", label: "Automation Cases", icon: "▤" },
     { id: "suites", label: "Automation Suite", icon: "▶" },
+    { id: "schedules", label: "Schedule", icon: "◷" },
     { id: "execution", label: "Execution", icon: "▶" },
     { id: "failures", label: "Failure Dashboard", icon: "!" },
     { id: "manage", label: "การจัดการ", icon: "⚙" },
@@ -1002,6 +1013,7 @@ export function AutomationPage({
       </section>}
 
       {tab === "suites" && <AutomationSuiteTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} cases={cases} />}
+      {tab === "schedules" && <AutomationScheduleTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} agents={agents} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
@@ -2014,6 +2026,198 @@ function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, ca
       <div className="modal-actions"><button className="btn primary" onClick={() => setRunResult(null)}>ตกลง</button></div>
     </div></div>}
   </section>;
+}
+
+const DAY_LABELS: { value: number; label: string }[] = [
+  { value: 0, label: "อา" }, { value: 1, label: "จ" }, { value: 2, label: "อ" }, { value: 3, label: "พ" },
+  { value: 4, label: "พฤ" }, { value: 5, label: "ศ" }, { value: 6, label: "ส" },
+];
+const FALLBACK_TIMEZONES = ["UTC", "Asia/Bangkok", "Asia/Singapore", "Asia/Tokyo", "Asia/Ho_Chi_Minh", "Asia/Jakarta", "Asia/Kolkata", "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles"];
+const timezoneOptions = (): string[] => {
+  try {
+    const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone");
+    if (supported && supported.length) return supported;
+  } catch { /* older browser without Intl.supportedValuesOf — fall back to a curated list */ }
+  return FALLBACK_TIMEZONES;
+};
+const describeSchedule = (s: { frequency: string; daysOfWeekMask: number; runAtTime: string; onceOnDate?: string }) => {
+  const time = s.runAtTime.slice(0, 5);
+  if (s.frequency === "Once") return `ครั้งเดียว ${s.onceOnDate ?? "-"} ${time}`;
+  if (s.frequency === "Weekly") {
+    const days = DAY_LABELS.filter((d) => (s.daysOfWeekMask & (1 << d.value)) !== 0).map((d) => d.label).join(",");
+    return `ทุกสัปดาห์ (${days || "-"}) ${time}`;
+  }
+  return `ทุกวัน ${time}`;
+};
+
+function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents }: {
+  projectId: string; releaseId?: string; headers: Record<string, string>; canEdit: boolean; agents: AutomationAgentItem[];
+}) {
+  const [schedules, setSchedules] = useState<AutomationScheduleListItem[]>([]);
+  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("active");
+  const [reload, setReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [createModal, setCreateModal] = useState(false);
+  const [editSchedule, setEditSchedule] = useState<AutomationScheduleDetailItem | null>(null);
+  const [runHistory, setRunHistory] = useState<{ name: string; runs: AutomationScheduleRunItem[] } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const qs = new URLSearchParams({ projectId });
+    if (activeFilter !== "all") qs.set("isActive", activeFilter === "active" ? "true" : "false");
+    fetch(`${apiUrl}/automation/schedules?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setSchedules(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Schedule ไม่สำเร็จ"));
+  }, [projectId, activeFilter, headers, reload]);
+
+  const openEdit = async (id: string) => {
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/schedules/${id}?projectId=${projectId}`, { headers });
+      if (!r.ok) throw new Error("โหลด Schedule ไม่สำเร็จ");
+      setEditSchedule(await r.json());
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลด Schedule ไม่สำเร็จ"); }
+  };
+
+  const createSchedule = async (body: Record<string, unknown>) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/schedules?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify(body) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Schedule ไม่สำเร็จ"); }
+      setCreateModal(false); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Schedule ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const updateSchedule = async (id: string, body: Record<string, unknown>) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/schedules/${id}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify(body) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Schedule ไม่สำเร็จ"); }
+      setEditSchedule(null); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Schedule ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const toggleActive = async (row: AutomationScheduleListItem) => {
+    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Schedule "${row.name}"?`)) return;
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/schedules/${row.automationScheduleId}/${row.isActive ? "deactivate" : "activate"}?projectId=${projectId}`, { method: "POST", headers });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เปลี่ยนสถานะ Schedule ไม่สำเร็จ"); }
+      setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "เปลี่ยนสถานะ Schedule ไม่สำเร็จ"); }
+  };
+
+  const openRunHistory = async (row: AutomationScheduleListItem) => {
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/schedules/${row.automationScheduleId}/runs?projectId=${projectId}`, { headers });
+      if (!r.ok) throw new Error("โหลดประวัติการรันไม่สำเร็จ");
+      setRunHistory({ name: row.name, runs: await r.json() });
+    } catch (e) { setError(e instanceof Error ? e.message : "โหลดประวัติการรันไม่สำเร็จ"); }
+  };
+
+  return <section className="automation-cases" aria-label="Automation Schedule">
+    <header className="automation-section-head"><div><h2>Automation Schedule (AUT-P1-005)</h2><p>ตั้งเวลารัน Automation Suite ซ้ำอัตโนมัติ — Once/Daily/Weekly พร้อม timezone และคำนวณรอบถัดไป</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Schedule</button>}</header>
+    {error && <div className="inline-alert error"><span>{error}</span></div>}
+    <div className="automation-case-toolbar">
+      <select aria-label="กรองสถานะ Schedule" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "inactive")}>
+        <option value="active">เปิดใช้งาน</option>
+        <option value="inactive">ปิดแล้ว</option>
+        <option value="all">ทั้งหมด</option>
+      </select>
+    </div>
+    {schedules.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>Suite</th><th>ตารางเวลา</th><th>Timezone</th><th>รันครั้งถัดไป</th><th>รันล่าสุด</th><th>สถานะ</th><th></th></tr></thead><tbody>{schedules.map((s) => <tr key={s.automationScheduleId}>
+      <td><b>{s.name}</b>{s.description && <small>{s.description}</small>}</td>
+      <td>{s.suiteCode}</td>
+      <td>{describeSchedule(s)}</td>
+      <td>{s.timeZoneId}</td>
+      <td>{s.isActive ? formatThaiDateTime(s.nextRunAtUtc) : "-"}</td>
+      <td>{s.lastRunAtUtc ? formatThaiDateTime(s.lastRunAtUtc) : "ยังไม่เคยรัน"}</td>
+      <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
+      <td>{canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationScheduleId)}>แก้ไข</button>}<button type="button" className="table-action" onClick={() => openRunHistory(s)}>ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Automation Schedule</p><small>ตั้งเวลารัน Automation Suite ที่มีอยู่แล้วให้ทำงานซ้ำอัตโนมัติตามรอบที่กำหนด</small></div>}
+
+    {createModal && <ScheduleFormModal projectId={projectId} releaseId={releaseId} headers={headers} agents={agents} busy={busy} onClose={() => setCreateModal(false)} onSave={createSchedule} />}
+    {editSchedule && <ScheduleFormModal projectId={projectId} releaseId={releaseId} headers={headers} agents={agents} busy={busy} schedule={editSchedule} onClose={() => setEditSchedule(null)} onSave={(body) => updateSchedule(editSchedule.automationScheduleId, body)} />}
+
+    {runHistory && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-schedule-run-history-title" onMouseDown={() => setRunHistory(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="automation-schedule-run-history-title">ประวัติการรัน — {runHistory.name}</h2><small>{runHistory.runs.length} รายการ — ล่าสุดก่อน (AUT-P1-006)</small></div><button aria-label="ปิด" onClick={() => setRunHistory(null)}>×</button></div>
+      {runHistory.runs.length ? <div className="automation-result-list">{runHistory.runs.map((r) => <div key={r.automationScheduleRunId} className="automation-failure-row">
+        <b><Badge tone={r.status === "Succeeded" ? "green" : r.status === "NoReadyCases" ? "yellow" : "red"}>{r.status}</Badge> {formatThaiDateTime(r.firedAtUtc)}</b>
+        <span>สร้าง Execution {r.executionsCreated} รายการ{r.skippedCount > 0 && ` · ข้าม ${r.skippedCount} รายการ`}</span>
+        {r.errorMessage && <span>{r.errorMessage}</span>}
+      </div>)}</div> : <div className="empty"><p>ยังไม่เคยถูกรันจาก Schedule นี้</p></div>}
+      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}>ปิดหน้าต่าง</button></div>
+    </div></div>}
+  </section>;
+}
+
+function ScheduleFormModal({ projectId, releaseId, headers, agents, schedule, busy, onClose, onSave }: {
+  projectId: string; releaseId?: string; headers: Record<string, string>; agents: AutomationAgentItem[]; schedule?: AutomationScheduleDetailItem; busy: boolean; onClose: () => void; onSave: (body: Record<string, unknown>) => void;
+}) {
+  const isEdit = !!schedule;
+  const [suites, setSuites] = useState<{ automationSuiteId: string; suiteCode: string; suiteName: string }[]>([]);
+  const [builds, setBuilds] = useState<BuildOption[]>([]);
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
+  const [automationSuiteId, setAutomationSuiteId] = useState(schedule?.automationSuiteId ?? "");
+  const [name, setName] = useState(schedule?.name ?? "");
+  const [description, setDescription] = useState(schedule?.description ?? "");
+  const [frequency, setFrequency] = useState(schedule?.frequency ?? "Daily");
+  const [daysOfWeekMask, setDaysOfWeekMask] = useState(schedule?.daysOfWeekMask ?? 0);
+  const [runAtTime, setRunAtTime] = useState((schedule?.runAtTime ?? "09:00").slice(0, 5));
+  const [onceOnDate, setOnceOnDate] = useState(schedule?.onceOnDate ?? "");
+  const [timeZoneId, setTimeZoneId] = useState(schedule?.timeZoneId ?? "Asia/Bangkok");
+  const [buildId, setBuildId] = useState(schedule?.buildId ?? "");
+  const [environmentId, setEnvironmentId] = useState(schedule?.environmentId ?? "");
+  const [agentId, setAgentId] = useState(schedule?.agentId ?? "");
+  const [priority, setPriority] = useState(schedule?.priority ?? 5);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      fetch(`${apiUrl}/automation/suites?projectId=${projectId}&isActive=true`, { headers }).then((r) => (r.ok ? r.json() : [])),
+      releaseId ? fetch(`${apiUrl}/releases/${releaseId}/builds`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])) : Promise.resolve([]),
+      fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
+    ]).then(([su, b, e]) => {
+      if (!mounted) return;
+      setSuites(Array.isArray(su) ? su : []);
+      setBuilds(Array.isArray(b) ? b : []);
+      setEnvironments(Array.isArray(e) ? (e as EnvironmentOption[]).filter((x) => x.isActive) : []);
+    }).catch(() => { /* selects just render empty — the inline error banner elsewhere already covers fetch failures for this tab */ });
+    return () => { mounted = false; };
+  }, [projectId, releaseId, headers]);
+
+  const toggleDay = (value: number) => setDaysOfWeekMask((prev) => (prev & (1 << value)) !== 0 ? prev & ~(1 << value) : prev | (1 << value));
+
+  const canSave = name.trim() && automationSuiteId && buildId && environmentId
+    && (frequency !== "Weekly" || daysOfWeekMask > 0)
+    && (frequency !== "Once" || onceOnDate);
+
+  const save = () => onSave({
+    automationSuiteId, name: name.trim(), description: description.trim() || null, frequency,
+    daysOfWeekMask: frequency === "Weekly" ? daysOfWeekMask : 0,
+    runAtTime: runAtTime.length === 5 ? `${runAtTime}:00` : runAtTime,
+    onceOnDate: frequency === "Once" ? onceOnDate : null,
+    timeZoneId, buildId, environmentId, agentId: agentId || null, priority,
+  });
+
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-schedule-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-schedule-form-title">{isEdit ? `แก้ไข ${schedule!.name}` : "สร้าง Automation Schedule"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="form-grid">
+      <label className="full">Automation Suite{isEdit ? <input value={`${schedule!.suiteCode} · ${schedule!.suiteName}`} disabled /> : <select value={automationSuiteId} onChange={(e) => setAutomationSuiteId(e.target.value)}><option value="">เลือก Suite</option>{suites.map((s) => <option key={s.automationSuiteId} value={s.automationSuiteId}>{s.suiteCode} · {s.suiteName}</option>)}</select>}</label>
+      <label className="full">ชื่อ Schedule<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Nightly Smoke" /></label>
+      <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+      <label>ความถี่<select value={frequency} onChange={(e) => setFrequency(e.target.value)}><option value="Daily">ทุกวัน</option><option value="Weekly">ทุกสัปดาห์</option><option value="Once">ครั้งเดียว</option></select></label>
+      <label>เวลา (ตาม Timezone ที่เลือก)<input type="time" value={runAtTime} onChange={(e) => setRunAtTime(e.target.value)} /></label>
+      {frequency === "Weekly" && <div className="full form-grid-label-like"><span>วันในสัปดาห์</span><div className="automation-days-row">{DAY_LABELS.map((d) => <label key={d.value}><input type="checkbox" checked={(daysOfWeekMask & (1 << d.value)) !== 0} onChange={() => toggleDay(d.value)} />{d.label}</label>)}</div></div>}
+      {frequency === "Once" && <label>วันที่<input type="date" value={onceOnDate} onChange={(e) => setOnceOnDate(e.target.value)} /></label>}
+      <label>Timezone<select value={timeZoneId} onChange={(e) => setTimeZoneId(e.target.value)}>{timezoneOptions().map((tz) => <option key={tz} value={tz}>{tz}</option>)}</select></label>
+      <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select></label>
+      <label>Environment<select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Env</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
+      <label>Agent (ไม่บังคับ)<select value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">Agent ใดก็ได้</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select></label>
+      <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
+    </div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+  </div></div>;
 }
 
 function SuiteFormModal({ title, initialCode = "", initialName = "", initialDescription = "", busy, onClose, onSave }: {

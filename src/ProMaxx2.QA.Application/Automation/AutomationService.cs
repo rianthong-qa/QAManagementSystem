@@ -306,7 +306,7 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     }
 }
 
-public sealed class AutomationAgentService(IAutomationRepository repository, IAutomationSuiteRepository suiteRepository)
+public sealed class AutomationAgentService(IAutomationRepository repository, IAutomationSuiteRepository suiteRepository, IAutomationScheduleRepository scheduleRepository)
 {
     public async Task<AutomationAgentDto> RegisterAsync(RegisterAgentRequest r, Guid? userId, CancellationToken ct)
     {
@@ -425,6 +425,34 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         if (suite.Cases.Count == 0) throw new ArgumentException("Suite นี้ยังไม่มี Automation Case — เพิ่ม Case ก่อนรัน");
         var caseIds = suite.Cases.Select(c => c.AutomationCaseId).ToList();
         return await BatchRunAsync(projectId, new BatchRunRequest(caseIds, r.BuildId, r.EnvironmentId, r.AgentId, r.Priority), userId, ct);
+    }
+
+    /// <summary>AUT-P1-006: polled by <c>AutomationScheduleWorker</c> (a BackgroundService in the Api process). Atomically
+    /// claims every Automation Schedule whose NextRunAtUtc has arrived — see
+    /// <see cref="IAutomationScheduleRepository.ClaimDueSchedulesAsync"/> for how the claim itself makes each fire
+    /// exactly-once — then actually runs each claimed suite and records an audit row regardless of outcome. One
+    /// schedule's suite being closed/deleted/empty must not stop the rest from firing, so failures are caught per
+    /// schedule rather than aborting the batch.</summary>
+    public async Task FireDueSchedulesAsync(DateTime nowUtc, CancellationToken ct)
+    {
+        var due = await scheduleRepository.ClaimDueSchedulesAsync(nowUtc, ct);
+        foreach (var schedule in due)
+        {
+            AutomationScheduleRun run;
+            try
+            {
+                var result = await RunSuiteAsync(schedule.ProjectId, new RunSuiteRequest(schedule.AutomationSuiteId, schedule.BuildId, schedule.EnvironmentId, schedule.AgentId, schedule.Priority), null, ct);
+                run = new AutomationScheduleRun(schedule.AutomationScheduleId, nowUtc, result.Created.Count > 0 ? "Succeeded" : "NoReadyCases", result.Created.Count, result.SkippedCodes.Count, null);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Suite closed/deleted or had zero cases entirely — the schedule itself is already claimed and
+                // advanced (or deactivated, for Once) so it won't spin retrying every tick; just make the failure visible.
+                run = new AutomationScheduleRun(schedule.AutomationScheduleId, nowUtc, "Failed", 0, 0, ex.Message);
+            }
+            await scheduleRepository.AddScheduleRunAsync(run, ct);
+            await scheduleRepository.SaveChangesAsync(ct);
+        }
     }
 
     public Task<AutomationDashboardDto> GetDashboardAsync(Guid projectId, CancellationToken ct) => repository.GetDashboardAsync(projectId, ct);

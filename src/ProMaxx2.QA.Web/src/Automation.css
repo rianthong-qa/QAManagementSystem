@@ -579,6 +579,31 @@
   gap: 4px;
 }
 
+.form-grid-label-like {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted, #667085);
+  font-size: 12px;
+}
+
+.automation-days-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.automation-days-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .automation-sort-controls .icon-btn {
   width: 26px;
   height: 26px;

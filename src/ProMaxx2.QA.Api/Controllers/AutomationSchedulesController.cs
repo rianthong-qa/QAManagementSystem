@@ -1,0 +1,72 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using ProMaxx2.QA.Api.Services;
+using ProMaxx2.QA.Application.Automation;
+using ProMaxx2.QA.Application.Projects;
+
+namespace ProMaxx2.QA.Api.Controllers;
+
+/// <summary>AUT-P1-005: persistent Automation Schedule — create/edit/activate/deactivate a recurring
+/// (Once/Daily/Weekly, timezone-aware) timetable that re-runs an Automation Suite against a fixed Build/Environment.
+/// Actually firing a run when <c>nextRunAtUtc</c> arrives is AUT-P1-006 (Schedule Execution Worker), not this controller.</summary>
+[ApiController, Route("api/v1/automation/schedules"), Authorize(Policy = "AutomationView"), RequireProjectAccess]
+public sealed class AutomationSchedulesController(AutomationScheduleService service) : ControllerBase
+{
+    private Guid? UserId() => Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value, out var id) ? id : null;
+    private static ProblemDetails Problem(string title, string detail, int status) => new() { Title = title, Detail = detail, Status = status };
+
+    [HttpGet]
+    public Task<IReadOnlyList<AutomationScheduleListDto>> List([FromQuery] Guid projectId, [FromQuery] bool? isActive, CancellationToken ct)
+        => service.ListAsync(projectId, isActive, ct);
+
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<AutomationScheduleDto>> Get(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { return Ok(await service.GetAsync(id, projectId, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
+    /// <summary>AUT-P1-006: audit history of every time <c>AutomationScheduleWorker</c> fired this schedule.</summary>
+    [HttpGet("{id:guid}/runs")]
+    public async Task<ActionResult<IReadOnlyList<AutomationScheduleRunDto>>> Runs(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { return Ok(await service.ListRunsAsync(id, projectId, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
+    [HttpPost, Authorize(Policy = "AutomationEdit")]
+    public async Task<ActionResult<AutomationScheduleDto>> Create([FromQuery] Guid projectId, CreateAutomationScheduleRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await service.CreateAsync(projectId, request, UserId(), ct);
+            return CreatedAtAction(nameof(Get), new { id = result.AutomationScheduleId, projectId }, result);
+        }
+        catch (EntityNotFoundException) { return NotFound(Problem("ไม่พบ Automation Suite", "Suite ที่เลือกไม่มีอยู่จริง", 404)); }
+        catch (ArgumentException ex) { return BadRequest(Problem("ข้อมูลไม่ถูกต้อง", ex.Message, 400)); }
+    }
+
+    [HttpPut("{id:guid}"), Authorize(Policy = "AutomationEdit")]
+    public async Task<ActionResult<AutomationScheduleDto>> Update(Guid id, [FromQuery] Guid projectId, UpdateAutomationScheduleRequest request, CancellationToken ct)
+    {
+        try { return Ok(await service.UpdateAsync(id, projectId, request, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(Problem("ข้อมูลไม่ถูกต้อง", ex.Message, 400)); }
+    }
+
+    [HttpPost("{id:guid}/activate"), Authorize(Policy = "AutomationEdit")]
+    public async Task<ActionResult<AutomationScheduleDto>> Activate(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { return Ok(await service.ActivateAsync(id, projectId, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (InvalidOperationException ex) { return Conflict(Problem("เปิดใช้งาน Schedule ไม่สำเร็จ", ex.Message, 409)); }
+    }
+
+    [HttpPost("{id:guid}/deactivate"), Authorize(Policy = "AutomationEdit")]
+    public async Task<ActionResult<AutomationScheduleDto>> Deactivate(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { return Ok(await service.DeactivateAsync(id, projectId, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (InvalidOperationException ex) { return Conflict(Problem("ปิดใช้งาน Schedule ไม่สำเร็จ", ex.Message, 409)); }
+    }
+}
