@@ -3,14 +3,14 @@ using ProMaxx2.QA.Domain.Automation;
 
 namespace ProMaxx2.QA.Application.Automation;
 
-public sealed record AutomationDataSeedScriptDto(Guid AutomationDataSeedScriptId, Guid ProjectId, string Name, string? Description, string DbKind, string SqlScript,
+public sealed record AutomationDataSeedScriptDto(Guid AutomationDataSeedScriptId, Guid ProjectId, string Name, string? Description, string ScriptType, string DbKind, string SqlScript,
     bool IsActive, Guid? CreatedBy, DateTime CreatedAt, DateTime? UpdatedAt);
-public sealed record AutomationDataSeedScriptListDto(Guid AutomationDataSeedScriptId, Guid ProjectId, string Name, string? Description, string DbKind, bool IsActive, DateTime CreatedAt);
+public sealed record AutomationDataSeedScriptListDto(Guid AutomationDataSeedScriptId, Guid ProjectId, string Name, string? Description, string ScriptType, string DbKind, bool IsActive, DateTime CreatedAt);
 
-public sealed record CreateSeedScriptRequest(string Name, string? Description, string DbKind, string SqlScript);
-public sealed record UpdateSeedScriptRequest(string Name, string? Description, string DbKind, string SqlScript);
+public sealed record CreateSeedScriptRequest(string Name, string? Description, string ScriptType, string DbKind, string SqlScript);
+public sealed record UpdateSeedScriptRequest(string Name, string? Description, string ScriptType, string DbKind, string SqlScript);
 
-public sealed record AutomationDataSeedRunDto(Guid AutomationDataSeedRunId, Guid ProjectId, Guid AutomationDataSeedScriptId, string ScriptName, Guid EnvironmentId, string EnvironmentName,
+public sealed record AutomationDataSeedRunDto(Guid AutomationDataSeedRunId, Guid ProjectId, Guid AutomationDataSeedScriptId, string ScriptName, string ScriptType, Guid EnvironmentId, string EnvironmentName,
     Guid BuildId, string BuildNumber, string Status, Guid? AgentId, string? AgentCode, int? RowsAffected, string? ErrorMessage,
     Guid? RequestedBy, DateTime RequestedAt, DateTime? StartedAt, DateTime? CompletedAt);
 
@@ -27,7 +27,7 @@ public sealed record CompleteSeedRunRequest(string Status, int? RowsAffected, st
 
 public interface IAutomationDataSeedRepository
 {
-    Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, bool? isActive, CancellationToken ct);
+    Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, string? scriptType, bool? isActive, CancellationToken ct);
     Task<AutomationDataSeedScriptDto?> GetScriptAsync(Guid id, Guid projectId, CancellationToken ct);
     Task<AutomationDataSeedScript?> FindScriptAsync(Guid id, Guid projectId, CancellationToken ct);
     Task AddScriptAsync(AutomationDataSeedScript entity, CancellationToken ct);
@@ -37,29 +37,31 @@ public interface IAutomationDataSeedRepository
     Task<AutomationDataSeedRunDto?> GetRunByIdAsync(Guid id, CancellationToken ct);
     Task AddRunAsync(AutomationDataSeedRun entity, CancellationToken ct);
 
-    /// <summary>Atomically (Serializable transaction, same pattern used throughout this module) claims the oldest
-    /// still-"Requested" seed run — one at a time, same rationale as snapshots. No agent-affinity restriction
-    /// (unlike restore claims): any enabled agent can run a seed script against the environment it manages, there is
-    /// no explicit Environment→Agent mapping in the Hub to filter on (same known scope limitation already recorded
-    /// for job claiming in AUT-TEST-006 — capability/target-based routing isn't implemented).</summary>
+    /// <summary>Atomically (Serializable transaction, same pattern used throughout this module) first reclaims any
+    /// stale "Running" runs (AUT-DATA-004 — see <see cref="AutomationDataSeedRun.ReclaimIfStale"/>), then claims the
+    /// oldest still-"Requested" run — one at a time, same rationale as snapshots. No agent-affinity restriction
+    /// (unlike restore claims): any enabled agent can run a script against the environment it manages, there is no
+    /// explicit Environment→Agent mapping in the Hub to filter on (same known scope limitation already recorded for
+    /// job claiming in AUT-TEST-006 — capability/target-based routing isn't implemented).</summary>
     Task<ClaimSeedRunPackageDto?> ClaimNextSeedRunRequestAsync(string agentCode, CancellationToken ct);
     Task<AutomationDataSeedRun?> FindRunAsync(Guid id, CancellationToken ct);
 
     Task SaveChangesAsync(CancellationToken ct);
 }
 
-/// <summary>AUT-DATA-003: manage reusable seed scripts and request/track their execution against an Environment.</summary>
+/// <summary>AUT-DATA-003/AUT-DATA-004: manage reusable Seed/Cleanup scripts and request/track their execution
+/// against an Environment.</summary>
 public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repository)
 {
-    public Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, bool? isActive, CancellationToken ct)
-        => repository.ListScriptsAsync(projectId, isActive, ct);
+    public Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, string? scriptType, bool? isActive, CancellationToken ct)
+        => repository.ListScriptsAsync(projectId, scriptType, isActive, ct);
 
     public async Task<AutomationDataSeedScriptDto> GetScriptAsync(Guid id, Guid projectId, CancellationToken ct)
         => await repository.GetScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
 
     public async Task<AutomationDataSeedScriptDto> CreateScriptAsync(Guid projectId, CreateSeedScriptRequest r, Guid? userId, CancellationToken ct)
     {
-        var entity = new AutomationDataSeedScript(projectId, r.Name, r.Description, r.DbKind, r.SqlScript, userId);
+        var entity = new AutomationDataSeedScript(projectId, r.Name, r.Description, r.ScriptType, r.DbKind, r.SqlScript, userId);
         await repository.AddScriptAsync(entity, ct);
         await repository.SaveChangesAsync(ct);
         return await repository.GetScriptAsync(entity.AutomationDataSeedScriptId, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
@@ -68,7 +70,7 @@ public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repo
     public async Task<AutomationDataSeedScriptDto> UpdateScriptAsync(Guid id, Guid projectId, UpdateSeedScriptRequest r, Guid? userId, CancellationToken ct)
     {
         var entity = await repository.FindScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
-        entity.Update(r.Name, r.Description, r.DbKind, r.SqlScript, userId);
+        entity.Update(r.Name, r.Description, r.ScriptType, r.DbKind, r.SqlScript, userId);
         await repository.SaveChangesAsync(ct);
         return await repository.GetScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
     }

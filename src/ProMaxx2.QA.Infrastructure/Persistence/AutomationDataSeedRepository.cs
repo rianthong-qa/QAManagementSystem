@@ -6,23 +6,27 @@ using ProMaxx2.QA.Domain.Projects;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
-/// <summary>AUT-DATA-003 persistence for <see cref="AutomationDataSeedScript"/>/<see cref="AutomationDataSeedRun"/> —
-/// split into its own file as a partial of <see cref="AutomationRepository"/>, same pattern as the rest of this
-/// module.</summary>
+/// <summary>AUT-DATA-003/AUT-DATA-004 persistence for <see cref="AutomationDataSeedScript"/>/
+/// <see cref="AutomationDataSeedRun"/> — split into its own file as a partial of <see cref="AutomationRepository"/>,
+/// same pattern as the rest of this module.</summary>
 public sealed partial class AutomationRepository
 {
-    public async Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, bool? isActive, CancellationToken ct)
+    /// <summary>AUT-DATA-004: generous on purpose — see <see cref="AutomationDataSeedRun.ReclaimIfStale"/>.</summary>
+    private static readonly TimeSpan SeedRunStaleAfter = TimeSpan.FromMinutes(30);
+
+    public async Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, string? scriptType, bool? isActive, CancellationToken ct)
     {
         var q = db.AutomationDataSeedScripts.AsNoTracking().Where(x => x.ProjectId == projectId);
+        if (!string.IsNullOrWhiteSpace(scriptType)) q = q.Where(x => x.ScriptType == scriptType);
         if (isActive.HasValue) q = q.Where(x => x.IsActive == isActive.Value);
         return await q.OrderBy(x => x.Name)
-            .Select(x => new AutomationDataSeedScriptListDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.DbKind, x.IsActive, x.CreatedAt))
+            .Select(x => new AutomationDataSeedScriptListDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.ScriptType, x.DbKind, x.IsActive, x.CreatedAt))
             .ToListAsync(ct);
     }
 
     public Task<AutomationDataSeedScriptDto?> GetScriptAsync(Guid id, Guid projectId, CancellationToken ct)
         => db.AutomationDataSeedScripts.AsNoTracking().Where(x => x.AutomationDataSeedScriptId == id && x.ProjectId == projectId)
-            .Select(x => new AutomationDataSeedScriptDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.DbKind, x.SqlScript, x.IsActive, x.CreatedBy, x.CreatedAt, x.UpdatedAt))
+            .Select(x => new AutomationDataSeedScriptDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.ScriptType, x.DbKind, x.SqlScript, x.IsActive, x.CreatedBy, x.CreatedAt, x.UpdatedAt))
             .SingleOrDefaultAsync(ct);
 
     public Task<AutomationDataSeedScript?> FindScriptAsync(Guid id, Guid projectId, CancellationToken ct)
@@ -32,7 +36,7 @@ public sealed partial class AutomationRepository
 
     private static IQueryable<AutomationDataSeedRunDto> ProjectSeedRunDto(QaDbContext db) =>
         db.AutomationDataSeedRuns.AsNoTracking()
-            .Select(x => new AutomationDataSeedRunDto(x.AutomationDataSeedRunId, x.ProjectId, x.AutomationDataSeedScriptId, x.Script.Name,
+            .Select(x => new AutomationDataSeedRunDto(x.AutomationDataSeedRunId, x.ProjectId, x.AutomationDataSeedScriptId, x.Script.Name, x.Script.ScriptType,
                 x.EnvironmentId, db.TestEnvironments.Where(e => e.TestEnvironmentId == x.EnvironmentId).Select(e => e.EnvironmentName).FirstOrDefault() ?? "-",
                 x.BuildId, db.Builds.Where(b => b.BuildId == x.BuildId).Select(b => b.BuildNumber).FirstOrDefault() ?? "-",
                 x.Status, x.AgentId, x.AgentId != null ? db.AutomationAgents.Where(a => a.AgentId == x.AgentId).Select(a => a.AgentCode).FirstOrDefault() : null,
@@ -62,8 +66,15 @@ public sealed partial class AutomationRepository
         if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;
         // Serializable, same pattern as ClaimNextSnapshotRequestAsync/ClaimNextRestoreRequestAsync.
         await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct) : null;
+
+        // AUT-DATA-004: reclaim any run whose agent went silent mid-execution before looking for new work — folded
+        // into every claim call instead of a separate background sweep, so it needs no new worker/timer at all.
+        var now = DateTime.UtcNow;
+        var stale = await db.AutomationDataSeedRuns.Where(x => x.Status == "Running").ToListAsync(ct);
+        foreach (var run in stale) run.ReclaimIfStale(now, SeedRunStaleAfter);
+
         var next = await db.AutomationDataSeedRuns.Include(x => x.Script).Where(x => x.Status == "Requested").OrderBy(x => x.RequestedAt).FirstOrDefaultAsync(ct);
-        if (next is null) { if (transaction is not null) await transaction.CommitAsync(ct); return null; }
+        if (next is null) { await db.SaveChangesAsync(ct); if (transaction is not null) await transaction.CommitAsync(ct); return null; }
         next.Claim(agent.AgentId);
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
@@ -79,9 +90,10 @@ public sealed class AutomationDataSeedScriptConfiguration : IEntityTypeConfigura
         b.HasKey(x => x.AutomationDataSeedScriptId);
         b.Property(x => x.Name).HasMaxLength(200).IsRequired();
         b.Property(x => x.Description).HasMaxLength(2000);
+        b.Property(x => x.ScriptType).HasMaxLength(20).IsRequired();
         b.Property(x => x.DbKind).HasMaxLength(20).IsRequired();
         b.Property(x => x.SqlScript).HasMaxLength(50_000).IsRequired();
-        b.HasIndex(x => new { x.ProjectId, x.IsActive });
+        b.HasIndex(x => new { x.ProjectId, x.ScriptType, x.IsActive });
         b.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
     }
 }

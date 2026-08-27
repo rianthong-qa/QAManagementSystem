@@ -86,10 +86,10 @@ type AutomationDbRestoreItem = {
   status: string; agentId?: string; agentCode?: string; checksumVerified: boolean; availabilityVerified: boolean; errorMessage?: string;
   requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
 };
-type AutomationDataSeedScriptListItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; dbKind: string; isActive: boolean; createdAt: string };
-type AutomationDataSeedScriptDetailItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; dbKind: string; sqlScript: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string };
+type AutomationDataSeedScriptListItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; scriptType: string; dbKind: string; isActive: boolean; createdAt: string };
+type AutomationDataSeedScriptDetailItem = { automationDataSeedScriptId: string; projectId: string; name: string; description?: string; scriptType: string; dbKind: string; sqlScript: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string };
 type AutomationDataSeedRunItem = {
-  automationDataSeedRunId: string; projectId: string; automationDataSeedScriptId: string; scriptName: string; environmentId: string; environmentName: string; buildId: string; buildNumber: string;
+  automationDataSeedRunId: string; projectId: string; automationDataSeedScriptId: string; scriptName: string; scriptType: string; environmentId: string; environmentName: string; buildId: string; buildNumber: string;
   status: string; agentId?: string; agentCode?: string; rowsAffected?: number; errorMessage?: string; requestedBy?: string; requestedAt: string; startedAt?: string; completedAt?: string;
 };
 type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
@@ -920,7 +920,7 @@ export function AutomationPage({
     { id: "buildTriggers", label: "Build Trigger", icon: "⚡" },
     { id: "webhooks", label: "Webhook", icon: "🔗" },
     { id: "dataSnapshots", label: "DB Snapshot", icon: "💾" },
-    { id: "dataSeeds", label: "Seed Data", icon: "🌱" },
+    { id: "dataSeeds", label: "Seed & Cleanup", icon: "🌱" },
     { id: "execution", label: "Execution", icon: "▶" },
     { id: "failures", label: "Failure Dashboard", icon: "!" },
     { id: "manage", label: "การจัดการ", icon: "⚙" },
@@ -2646,10 +2646,13 @@ function SnapshotRequestModal({ projectId, releaseId, headers, busy, onClose, on
   </div></div>;
 }
 
+const scriptTypeTone: Record<string, string> = { Seed: "blue", Cleanup: "orange" };
+
 function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun }: {
   projectId: string; releaseId?: string; headers: Record<string, string>; canEdit: boolean; canRun: boolean;
 }) {
   const [scripts, setScripts] = useState<AutomationDataSeedScriptListItem[]>([]);
+  const [typeFilter, setTypeFilter] = useState<"all" | "Seed" | "Cleanup">("all");
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -2660,8 +2663,10 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
 
   useEffect(() => {
     if (!projectId) return;
-    fetch(`${apiUrl}/automation/data/seed-scripts?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setScripts(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Seed Script ไม่สำเร็จ"));
-  }, [projectId, headers, reload]);
+    const qs = new URLSearchParams({ projectId });
+    if (typeFilter !== "all") qs.set("scriptType", typeFilter);
+    fetch(`${apiUrl}/automation/data/seed-scripts?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setScripts(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Script ไม่สำเร็จ"));
+  }, [projectId, typeFilter, headers, reload]);
 
   const openEdit = async (id: string) => {
     setError("");
@@ -2719,16 +2724,24 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
     } catch (e) { setError(e instanceof Error ? e.message : "โหลดประวัติการรันไม่สำเร็จ"); }
   };
 
-  return <section className="automation-cases" aria-label="Automation Seed Data">
-    <header className="automation-section-head"><div><h2>Seed Test Data (AUT-DATA-003)</h2><p>เก็บ SQL script สำหรับ seed ข้อมูลพื้นฐาน (เช่นสินค้า/ราคา/โปรโมชั่น) แบบ repeatable/idempotent — Windows Agent เป็นผู้รัน SQL จริงผ่านคำสั่ง <code>runner seed</code> โดยไม่มี credential ของ DB เก็บอยู่ในนี้เลย (Agent เชื่อมต่อด้วย config ของตัวเองเสมอ)</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Seed Script</button>}</header>
+  return <section className="automation-cases" aria-label="Automation Seed Cleanup Data">
+    <header className="automation-section-head"><div><h2>Seed &amp; Cleanup Test Data (AUT-DATA-003/004)</h2><p>เก็บ SQL script สำหรับ seed ข้อมูลพื้นฐาน (เช่นสินค้า/ราคา/โปรโมชั่น) ก่อนรัน และ cleanup ข้อมูลที่ทิ้งไว้หลังรัน แบบ repeatable/idempotent — Windows Agent เป็นผู้รัน SQL จริงผ่านคำสั่ง <code>runner seed</code> โดยไม่มี credential ของ DB เก็บอยู่ในนี้เลย; ถ้า Agent ที่รับงานหายไประหว่างรัน ระบบจะดึงงานกลับมาให้ Agent อื่นรับต่อได้อัตโนมัติหลัง 30 นาที (AUT-DATA-004)</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Script</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
-    {scripts.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>DB</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{scripts.map((s) => <tr key={s.automationDataSeedScriptId}>
+    <div className="automation-case-toolbar">
+      <select aria-label="กรองประเภท Script" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as "all" | "Seed" | "Cleanup")}>
+        <option value="all">ทุกประเภท</option>
+        <option value="Seed">Seed</option>
+        <option value="Cleanup">Cleanup</option>
+      </select>
+    </div>
+    {scripts.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>ประเภท</th><th>DB</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{scripts.map((s) => <tr key={s.automationDataSeedScriptId}>
       <td><b>{s.name}</b>{s.description && <small>{s.description}</small>}</td>
+      <td><Badge tone={scriptTypeTone[s.scriptType] ?? "blue"}>{s.scriptType}</Badge></td>
       <td>{s.dbKind}</td>
       <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
       <td>{formatThaiDateTime(s.createdAt)}</td>
       <td>{canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationDataSeedScriptId)}>แก้ไข</button>}{canRun && s.isActive && <button type="button" className="table-action" onClick={() => setRunModal(s)}>▶ รัน</button>}<button type="button" className="table-action" onClick={() => openRunHistory(s)}>ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
-    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Seed Script</p><small>สร้าง SQL script ที่ seed ข้อมูลได้ซ้ำโดยไม่พัง (เช่นใช้ MERGE/UPSERT หรือเช็คก่อน insert) แล้วสั่งรันก่อนชุด Automation ที่ต้องการ master data</small></div>}
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Script</p><small>สร้าง SQL script ที่รันได้ซ้ำโดยไม่พัง (เช่นใช้ MERGE/UPSERT หรือเช็คก่อน insert/delete) — Seed สั่งก่อนชุด Automation ที่ต้องการ master data, Cleanup สั่งหลังรันเพื่อล้างข้อมูลที่ทิ้งไว้</small></div>}
 
     {createModal && <SeedScriptFormModal busy={busy} onClose={() => setCreateModal(false)} onSave={createScript} />}
     {editScript && <SeedScriptFormModal script={editScript} busy={busy} onClose={() => setEditScript(null)} onSave={(body) => updateScript(editScript.automationDataSeedScriptId, body)} />}
@@ -2737,7 +2750,7 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
     {runHistory && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-seed-run-history-title" onMouseDown={() => setRunHistory(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head"><div><h2 id="automation-seed-run-history-title">ประวัติการรัน — {runHistory.name}</h2><small>{runHistory.runs.length} รายการ — ล่าสุดก่อน</small></div><button aria-label="ปิด" onClick={() => setRunHistory(null)}>×</button></div>
       {runHistory.runs.length ? <div className="automation-result-list">{runHistory.runs.map((r) => <div key={r.automationDataSeedRunId} className="automation-failure-row">
-        <b><Badge tone={snapshotStatusTone[r.status] ?? "blue"}>{r.status}</Badge> {r.environmentName} / {r.buildNumber} · {formatThaiDateTime(r.requestedAt)}</b>
+        <b><Badge tone={snapshotStatusTone[r.status] ?? "blue"}>{r.status}</Badge> <Badge tone={scriptTypeTone[r.scriptType] ?? "blue"}>{r.scriptType}</Badge> {r.environmentName} / {r.buildNumber} · {formatThaiDateTime(r.requestedAt)}</b>
         <span>{r.status === "Succeeded" ? `Rows affected: ${r.rowsAffected ?? 0}` : (r.agentCode ? `Agent: ${r.agentCode}` : "")}</span>
         {r.errorMessage && <span>{r.errorMessage}</span>}
       </div>)}</div> : <div className="empty"><p>ยังไม่เคยถูกรัน</p></div>}
@@ -2752,17 +2765,19 @@ function SeedScriptFormModal({ script, busy, onClose, onSave }: {
   const isEdit = !!script;
   const [name, setName] = useState(script?.name ?? "");
   const [description, setDescription] = useState(script?.description ?? "");
+  const [scriptType, setScriptType] = useState(script?.scriptType ?? "Seed");
   const [dbKind, setDbKind] = useState(script?.dbKind ?? "Firebird");
   const [sqlScript, setSqlScript] = useState(script?.sqlScript ?? "");
 
   const canSave = name.trim() && sqlScript.trim();
-  const save = () => onSave({ name: name.trim(), description: description.trim() || null, dbKind, sqlScript });
+  const save = () => onSave({ name: name.trim(), description: description.trim() || null, scriptType, dbKind, sqlScript });
 
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-seed-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="modal-head"><div><h2 id="automation-seed-form-title">{isEdit ? `แก้ไข ${script!.name}` : "สร้าง Seed Script"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="modal-head"><div><h2 id="automation-seed-form-title">{isEdit ? `แก้ไข ${script!.name}` : "สร้าง Script"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <div className="form-grid">
       <label className="full">ชื่อ<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Baseline Products" /></label>
       <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+      <label>ประเภท<select value={scriptType} onChange={(e) => setScriptType(e.target.value)}><option value="Seed">Seed (ใส่ข้อมูลก่อนรัน)</option><option value="Cleanup">Cleanup (ล้างข้อมูลหลังรัน)</option></select></label>
       <label>ฐานข้อมูล<select value={dbKind} onChange={(e) => setDbKind(e.target.value)}><option value="Firebird">Firebird</option><option value="SqlServer">SQL Server</option></select></label>
       <label className="full">SQL Script (ต้อง repeatable/idempotent เอง เช่นเช็คก่อน insert — ห้ามใส่ connection string/credential)<textarea rows={10} className="mono" value={sqlScript} onChange={(e) => setSqlScript(e.target.value)} placeholder={"INSERT INTO Products (Code, Name)\nSELECT 'P001', 'Test Product'\nFROM RDB$DATABASE\nWHERE NOT EXISTS (SELECT 1 FROM Products WHERE Code='P001');"} /></label>
     </div>

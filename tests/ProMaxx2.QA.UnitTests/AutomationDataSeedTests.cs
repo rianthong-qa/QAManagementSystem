@@ -18,7 +18,7 @@ public sealed class AutomationDataSeedTests
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SeedService(db);
 
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
 
         Assert.True(script.IsActive);
         Assert.Equal("Firebird", script.DbKind);
@@ -34,7 +34,7 @@ public sealed class AutomationDataSeedTests
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SeedService(db);
 
-        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Bad", null, dbKind, SampleSql), null, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Bad", null, "Seed", dbKind, SampleSql), null, CancellationToken.None));
     }
 
     [Fact]
@@ -43,10 +43,10 @@ public sealed class AutomationDataSeedTests
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SeedService(db);
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
 
         var updated = await service.UpdateScriptAsync(script.AutomationDataSeedScriptId, baseline.Project.ProjectId,
-            new UpdateSeedScriptRequest("Baseline products v2", "updated", "Firebird", "UPDATE Products SET Name='X' WHERE Code='P001';"), null, CancellationToken.None);
+            new UpdateSeedScriptRequest("Baseline products v2", "updated", "Seed", "Firebird", "UPDATE Products SET Name='X' WHERE Code='P001';"), null, CancellationToken.None);
 
         Assert.Equal("Baseline products v2", updated.Name);
         Assert.Equal("UPDATE Products SET Name='X' WHERE Code='P001';", updated.SqlScript);
@@ -58,7 +58,7 @@ public sealed class AutomationDataSeedTests
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SeedService(db);
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
         await service.SetScriptActiveAsync(script.AutomationDataSeedScriptId, baseline.Project.ProjectId, false, null, CancellationToken.None);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
@@ -82,7 +82,7 @@ public sealed class AutomationDataSeedTests
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SeedService(db);
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
 
         var run = await service.RequestRunAsync(baseline.Project.ProjectId, new RequestSeedRunRequest(script.AutomationDataSeedScriptId, baseline.Environment.TestEnvironmentId, baseline.Build.BuildId), null, CancellationToken.None);
 
@@ -98,7 +98,7 @@ public sealed class AutomationDataSeedTests
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SeedService(db);
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
 
         await service.RequestRunAsync(baseline.Project.ProjectId, new RequestSeedRunRequest(script.AutomationDataSeedScriptId, baseline.Environment.TestEnvironmentId, baseline.Build.BuildId), null, CancellationToken.None);
         await service.RequestRunAsync(baseline.Project.ProjectId, new RequestSeedRunRequest(script.AutomationDataSeedScriptId, baseline.Environment.TestEnvironmentId, baseline.Build.BuildId), null, CancellationToken.None);
@@ -115,7 +115,7 @@ public sealed class AutomationDataSeedTests
         var service = AutomationTestFixtures.SeedService(db);
         var agents = AutomationTestFixtures.AgentService(db);
         await agents.RegisterAsync(new RegisterAgentRequest("AGENT-A", "MACHINE-A", "1.0.0", "Windows", "x64", []), null, CancellationToken.None);
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
         var requested = await service.RequestRunAsync(baseline.Project.ProjectId, new RequestSeedRunRequest(script.AutomationDataSeedScriptId, baseline.Environment.TestEnvironmentId, baseline.Build.BuildId), null, CancellationToken.None);
 
         var claimed = await service.ClaimNextAsync("AGENT-A", CancellationToken.None);
@@ -149,7 +149,7 @@ public sealed class AutomationDataSeedTests
         var service = AutomationTestFixtures.SeedService(db);
         var agents = AutomationTestFixtures.AgentService(db);
         await agents.RegisterAsync(new RegisterAgentRequest("AGENT-A", "MACHINE-A", "1.0.0", "Windows", "x64", []), null, CancellationToken.None);
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
         var requested = await service.RequestRunAsync(baseline.Project.ProjectId, new RequestSeedRunRequest(script.AutomationDataSeedScriptId, baseline.Environment.TestEnvironmentId, baseline.Build.BuildId), null, CancellationToken.None);
         await service.ClaimNextAsync("AGENT-A", CancellationToken.None);
 
@@ -168,7 +168,7 @@ public sealed class AutomationDataSeedTests
         var service = AutomationTestFixtures.SeedService(db);
         var agents = AutomationTestFixtures.AgentService(db);
         await agents.RegisterAsync(new RegisterAgentRequest("AGENT-A", "MACHINE-A", "1.0.0", "Windows", "x64", []), null, CancellationToken.None);
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
         var requested = await service.RequestRunAsync(baseline.Project.ProjectId, new RequestSeedRunRequest(script.AutomationDataSeedScriptId, baseline.Environment.TestEnvironmentId, baseline.Build.BuildId), null, CancellationToken.None);
         await service.ClaimNextAsync("AGENT-A", CancellationToken.None);
 
@@ -186,7 +186,7 @@ public sealed class AutomationDataSeedTests
         var service = AutomationTestFixtures.SeedService(db);
         var agents = AutomationTestFixtures.AgentService(db);
         await agents.RegisterAsync(new RegisterAgentRequest("AGENT-A", "MACHINE-A", "1.0.0", "Windows", "x64", []), null, CancellationToken.None);
-        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var script = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Baseline products", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
         var requested = await service.RequestRunAsync(baseline.Project.ProjectId, new RequestSeedRunRequest(script.AutomationDataSeedScriptId, baseline.Environment.TestEnvironmentId, baseline.Build.BuildId), null, CancellationToken.None);
         await service.ClaimNextAsync("AGENT-A", CancellationToken.None);
         await service.CompleteRunAsync(requested.AutomationDataSeedRunId, new CompleteSeedRunRequest("Succeeded", 3, null), CancellationToken.None);
@@ -203,11 +203,11 @@ public sealed class AutomationDataSeedTests
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SeedService(db);
-        var active = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Active one", null, "Firebird", SampleSql), null, CancellationToken.None);
-        var toDeactivate = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Inactive one", null, "Firebird", SampleSql), null, CancellationToken.None);
+        var active = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Active one", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
+        var toDeactivate = await service.CreateScriptAsync(baseline.Project.ProjectId, new CreateSeedScriptRequest("Inactive one", null, "Seed", "Firebird", SampleSql), null, CancellationToken.None);
         await service.SetScriptActiveAsync(toDeactivate.AutomationDataSeedScriptId, baseline.Project.ProjectId, false, null, CancellationToken.None);
 
-        var activeOnly = await service.ListScriptsAsync(baseline.Project.ProjectId, true, CancellationToken.None);
+        var activeOnly = await service.ListScriptsAsync(baseline.Project.ProjectId, null, true, CancellationToken.None);
 
         var only = Assert.Single(activeOnly);
         Assert.Equal(active.AutomationDataSeedScriptId, only.AutomationDataSeedScriptId);

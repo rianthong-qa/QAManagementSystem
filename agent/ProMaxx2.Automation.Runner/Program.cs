@@ -351,9 +351,12 @@ static async Task<int> RunRestoreAsync()
     return failed > 0 ? 1 : 0;
 }
 
-/// <summary>AUT-DATA-003: standalone command, same shape as `runner snapshot`/`runner restore` — run right before a
-/// suite that depends on known baseline data, not silently in the background. Fails fast on a DB-kind mismatch
-/// between the script and this agent's own DbProfile, rather than attempting to run the wrong dialect's SQL.</summary>
+/// <summary>AUT-DATA-003/AUT-DATA-004: standalone command, same shape as `runner snapshot`/`runner restore` — run
+/// right before a suite that depends on known baseline data (Seed scripts), or after one to tear it back down
+/// (Cleanup scripts). One command drains both queues since the Hub's "seed-runs" claim endpoint hands out either
+/// kind identically — the only difference between a Seed and a Cleanup script is what its SQL does, not how it's
+/// run. Fails fast on a DB-kind mismatch between the script and this agent's own DbProfile, rather than attempting
+/// to run the wrong dialect's SQL.</summary>
 static async Task<int> RunSeedAsync()
 {
     var config = AgentConfig.FromEnvironment();
@@ -410,7 +413,7 @@ static async Task<int> RunSeedAsync()
         catch (Exception ex) { Console.Error.WriteLine($"[seed] report FAILED for {package.AutomationDataSeedRunId}: {ex.Message}"); }
     }
 
-    if (processed == 0) { Console.WriteLine("[seed] ไม่มี Seed run รอดำเนินการสำหรับ Agent นี้"); return 0; }
+    if (processed == 0) { Console.WriteLine("[seed] ไม่มี Seed/Cleanup run รอดำเนินการสำหรับ Agent นี้"); return 0; }
     Console.WriteLine($"[seed] summary: processed={processed}, failed={failed}");
     return failed > 0 ? 1 : 0;
 }

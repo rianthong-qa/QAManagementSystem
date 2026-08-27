@@ -65,8 +65,8 @@ public sealed class AutomationDataController(AutomationDataSnapshotService servi
     // ---- AUT-DATA-003: Seed Scripts ----
 
     [HttpGet("seed-scripts")]
-    public Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListSeedScripts([FromQuery] Guid projectId, [FromQuery] bool? isActive, CancellationToken ct)
-        => seeds.ListScriptsAsync(projectId, isActive, ct);
+    public Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListSeedScripts([FromQuery] Guid projectId, [FromQuery] string? scriptType, [FromQuery] bool? isActive, CancellationToken ct)
+        => seeds.ListScriptsAsync(projectId, scriptType, isActive, ct);
 
     [HttpGet("seed-scripts/{id:guid}")]
     public async Task<ActionResult<AutomationDataSeedScriptDto>> GetSeedScript(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
