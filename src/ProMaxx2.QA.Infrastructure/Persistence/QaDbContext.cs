@@ -76,6 +76,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationDbRestore> AutomationDbRestores => Set<AutomationDbRestore>();
     public DbSet<AutomationDataSeedScript> AutomationDataSeedScripts => Set<AutomationDataSeedScript>();
     public DbSet<AutomationDataSeedRun> AutomationDataSeedRuns => Set<AutomationDataSeedRun>();
+    public DbSet<AutomationEnvironmentDataProfile> AutomationEnvironmentDataProfiles => Set<AutomationEnvironmentDataProfile>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 }

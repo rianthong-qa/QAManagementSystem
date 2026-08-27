@@ -70,6 +70,7 @@ builder.Services.AddScoped<AutomationWebhookService>();
 builder.Services.AddScoped<AutomationDataSnapshotService>(); // AUT-DATA-001
 builder.Services.AddScoped<AutomationDataRestoreService>(); // AUT-DATA-002
 builder.Services.AddScoped<AutomationDataSeedService>(); // AUT-DATA-003
+builder.Services.AddScoped<AutomationEnvironmentDataProfileService>(); // AUT-DATA-006
 builder.Services.AddScoped<AutomationAgentService>();
 builder.Services.AddScoped<AutomationAiService>();
 builder.Services.AddScoped<AutomationDefectService>();

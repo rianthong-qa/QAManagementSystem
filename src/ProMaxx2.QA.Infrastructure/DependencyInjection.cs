@@ -41,6 +41,7 @@ public static class DependencyInjection
         services.AddScoped<IAutomationDataSnapshotRepository>(sp => (AutomationRepository)sp.GetRequiredService<IAutomationRepository>());
         services.AddScoped<IAutomationDataRestoreRepository>(sp => (AutomationRepository)sp.GetRequiredService<IAutomationRepository>());
         services.AddScoped<IAutomationDataSeedRepository>(sp => (AutomationRepository)sp.GetRequiredService<IAutomationRepository>());
+        services.AddScoped<IAutomationEnvironmentDataProfileRepository>(sp => (AutomationRepository)sp.GetRequiredService<IAutomationRepository>());
         services.AddScoped<Identity.ProjectAccessService>();
         return services;
     }

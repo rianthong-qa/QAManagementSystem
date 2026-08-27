@@ -53,7 +53,7 @@ public interface IAutomationDataSeedRepository
 
 /// <summary>AUT-DATA-003/AUT-DATA-004: manage reusable Seed/Cleanup scripts and request/track their execution
 /// against an Environment.</summary>
-public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repository)
+public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repository, IAutomationEnvironmentDataProfileRepository profiles)
 {
     public Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, string? scriptType, bool? isActive, CancellationToken ct)
         => repository.ListScriptsAsync(projectId, scriptType, isActive, ct);
@@ -117,6 +117,11 @@ public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repo
         // scripts are never gated on ApprovalStatus (see class summary on AutomationDataSeedScript).
         if (script.ScriptType == "MasterData" && script.ApprovalStatus != "Approved")
             throw new ArgumentException("Master data script must be approved before it can be run.");
+        // AUT-DATA-006: catch an obvious dialect mismatch before creating the request, not after an agent claims it
+        // and fails partway through. Skipped entirely when the Environment has no data profile yet (opt-in check).
+        var profiledDbKind = await profiles.GetDataProfileDbKindForEnvironmentAsync(r.EnvironmentId, ct);
+        if (profiledDbKind is not null && profiledDbKind != script.DbKind)
+            throw new ArgumentException($"Script is written for {script.DbKind} but this Environment's data profile is {profiledDbKind}.");
         var entity = new AutomationDataSeedRun(projectId, script.AutomationDataSeedScriptId, r.EnvironmentId, r.BuildId, userId);
         await repository.AddRunAsync(entity, ct);
         await repository.SaveChangesAsync(ct);

@@ -36,7 +36,7 @@ public interface IAutomationDataRestoreRepository
 }
 
 /// <summary>AUT-DATA-002: request/track restoring an Environment's DB from a previously completed snapshot.</summary>
-public sealed class AutomationDataRestoreService(IAutomationDataRestoreRepository repository, IAutomationDataSnapshotRepository snapshots)
+public sealed class AutomationDataRestoreService(IAutomationDataRestoreRepository repository, IAutomationDataSnapshotRepository snapshots, IAutomationEnvironmentDataProfileRepository profiles)
 {
     public Task<IReadOnlyList<AutomationDbRestoreDto>> ListAsync(Guid projectId, Guid? snapshotId, CancellationToken ct)
         => repository.ListRestoresAsync(projectId, snapshotId, ct);
@@ -48,6 +48,10 @@ public sealed class AutomationDataRestoreService(IAutomationDataRestoreRepositor
     {
         var snapshot = await snapshots.GetSnapshotAsync(r.AutomationDbSnapshotId, projectId, ct) ?? throw new EntityNotFoundException("Snapshot not found.");
         if (snapshot.Status != "Succeeded") throw new ArgumentException("Only a successfully completed snapshot can be restored from.");
+        // AUT-DATA-006: same opt-in dialect cross-check as Seed — skipped when the Environment has no profile yet.
+        var profiledDbKind = await profiles.GetDataProfileDbKindForEnvironmentAsync(snapshot.EnvironmentId, ct);
+        if (profiledDbKind is not null && snapshot.DbKind is not null && profiledDbKind != snapshot.DbKind)
+            throw new ArgumentException($"Snapshot was taken from {snapshot.DbKind} but this Environment's data profile is {profiledDbKind}.");
         var entity = new AutomationDbRestore(projectId, r.AutomationDbSnapshotId, userId);
         await repository.AddRestoreAsync(entity, ct);
         await repository.SaveChangesAsync(ct);

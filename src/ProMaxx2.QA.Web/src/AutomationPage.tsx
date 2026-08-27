@@ -924,6 +924,7 @@ export function AutomationPage({
     { id: "webhooks", label: "Webhook", icon: "🔗" },
     { id: "dataSnapshots", label: "DB Snapshot", icon: "💾" },
     { id: "dataSeeds", label: "Seed & Cleanup", icon: "🌱" },
+    { id: "dataProfiles", label: "Environment Data Profile", icon: "🗂" },
     { id: "execution", label: "Execution", icon: "▶" },
     { id: "failures", label: "Failure Dashboard", icon: "!" },
     { id: "manage", label: "การจัดการ", icon: "⚙" },
@@ -1052,6 +1053,7 @@ export function AutomationPage({
       {tab === "webhooks" && <AutomationWebhookTab projectId={pid} headers={headers} canEdit={canEdit} />}
       {tab === "dataSnapshots" && <AutomationDataSnapshotTab projectId={pid} releaseId={releaseId} headers={headers} canRun={canRun} />}
       {tab === "dataSeeds" && <AutomationDataSeedTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} />}
+      {tab === "dataProfiles" && <AutomationEnvironmentDataProfileTab projectId={pid} headers={headers} canEdit={canEdit} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
@@ -2819,6 +2821,90 @@ function SeedScriptFormModal({ script, busy, onClose, onSave }: {
       {isEdit && script!.scriptType === "MasterData" && <p className="muted-text">แก้ไข SQL แล้วจะต้องขออนุมัติใหม่อีกครั้งก่อนสั่งรันได้ (สถานะอนุมัติปัจจุบันจะถูกรีเซ็ตเป็น Pending)</p>}
       <label>ฐานข้อมูล<select value={dbKind} onChange={(e) => setDbKind(e.target.value)}><option value="Firebird">Firebird</option><option value="SqlServer">SQL Server</option></select></label>
       <label className="full">SQL Script (ต้อง repeatable/idempotent เอง เช่นเช็คก่อน insert — ห้ามใส่ connection string/credential)<textarea rows={10} className="mono" value={sqlScript} onChange={(e) => setSqlScript(e.target.value)} placeholder={"INSERT INTO Products (Code, Name)\nSELECT 'P001', 'Test Product'\nFROM RDB$DATABASE\nWHERE NOT EXISTS (SELECT 1 FROM Products WHERE Code='P001');"} /></label>
+    </div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+  </div></div>;
+}
+
+type AutomationEnvironmentDataProfileItem = { automationEnvironmentDataProfileId: string; projectId: string; environmentId: string; environmentName: string; dbKind: string; notes?: string; createdAt: string; updatedAt?: string };
+
+function AutomationEnvironmentDataProfileTab({ projectId, headers, canEdit }: {
+  projectId: string; headers: Record<string, string>; canEdit: boolean;
+}) {
+  const [profiles, setProfiles] = useState<AutomationEnvironmentDataProfileItem[]>([]);
+  const [reload, setReload] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [createModal, setCreateModal] = useState(false);
+  const [editProfile, setEditProfile] = useState<AutomationEnvironmentDataProfileItem | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`${apiUrl}/automation/data/environment-data-profiles?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((p) => setProfiles(Array.isArray(p) ? p : [])).catch(() => setError("โหลด Environment Data Profile ไม่สำเร็จ"));
+  }, [projectId, headers, reload]);
+
+  const createProfile = async (body: Record<string, unknown>) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/environment-data-profiles?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify(body) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Profile ไม่สำเร็จ"); }
+      setCreateModal(false); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Profile ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  const updateProfile = async (id: string, body: Record<string, unknown>) => {
+    setBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/data/environment-data-profiles/${id}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify(body) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Profile ไม่สำเร็จ"); }
+      setEditProfile(null); setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Profile ไม่สำเร็จ"); } finally { setBusy(false); }
+  };
+
+  return <section className="automation-cases" aria-label="Automation Environment Data Profile">
+    <header className="automation-section-head"><div><h2>Environment Data Profile (AUT-DATA-006)</h2><p>เก็บ metadata ที่ไม่ใช่ secret ต่อ Environment (ตอนนี้มีแค่ประเภทฐานข้อมูล) เพื่อให้ Hub เช็คความไม่ตรงกันของ DbKind ระหว่าง Environment กับ Seed script/DB Snapshot ได้ตั้งแต่ตอนสั่งงาน แทนที่จะรอให้ Agent claim งานไปแล้วค่อย fail — <b>ไม่มี field เก็บ connection string/credential ในนี้เลย</b> credential ของ DB จริงยังอยู่ที่เครื่อง Windows Agent เท่านั้นเหมือนเดิมทุกประการ (Environment ที่ยังไม่สร้าง Profile จะไม่ถูกเช็คอะไรเลย เป็น opt-in)</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Profile</button>}</header>
+    {error && <div className="inline-alert error"><span>{error}</span></div>}
+    {profiles.length ? <div className="table-wrap"><table><thead><tr><th>Environment</th><th>DbKind</th><th>หมายเหตุ</th><th>แก้ไขล่าสุด</th><th></th></tr></thead><tbody>{profiles.map((p) => <tr key={p.automationEnvironmentDataProfileId}>
+      <td><b>{p.environmentName}</b></td>
+      <td><Badge tone={p.dbKind === "Firebird" ? "blue" : "purple"}>{p.dbKind}</Badge></td>
+      <td>{p.notes ?? <span className="muted-text">-</span>}</td>
+      <td>{formatThaiDateTime(p.updatedAt ?? p.createdAt)}</td>
+      <td>{canEdit && <button type="button" className="table-action" onClick={() => setEditProfile(p)}>แก้ไข</button>}</td>
+    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Environment Data Profile</p><small>สร้าง Profile ต่อ Environment เพื่อระบุว่าเป็น Firebird หรือ SQL Server — Hub จะใช้เทียบกับ Seed script/Snapshot ก่อนสั่งงานให้อัตโนมัติ</small></div>}
+
+    {createModal && <EnvironmentDataProfileFormModal busy={busy} onClose={() => setCreateModal(false)} onSave={createProfile} />}
+    {editProfile && <EnvironmentDataProfileFormModal profile={editProfile} busy={busy} onClose={() => setEditProfile(null)} onSave={(body) => updateProfile(editProfile.automationEnvironmentDataProfileId, body)} />}
+  </section>;
+}
+
+function EnvironmentDataProfileFormModal({ profile, busy, onClose, onSave }: {
+  profile?: AutomationEnvironmentDataProfileItem; busy: boolean; onClose: () => void; onSave: (body: Record<string, unknown>) => void;
+}) {
+  const isEdit = !!profile;
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
+  const [environmentId, setEnvironmentId] = useState(profile?.environmentId ?? "");
+  const [dbKind, setDbKind] = useState(profile?.dbKind ?? "Firebird");
+  const [notes, setNotes] = useState(profile?.notes ?? "");
+
+  useEffect(() => {
+    if (isEdit) return;
+    let mounted = true;
+    fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])).then((e) => {
+      if (mounted) setEnvironments(Array.isArray(e) ? (e as EnvironmentOption[]).filter((x) => x.isActive) : []);
+    }).catch(() => { /* select just renders empty — inline error banner elsewhere covers fetch failures */ });
+    return () => { mounted = false; };
+  }, [isEdit]);
+
+  const canSave = isEdit ? true : !!environmentId;
+  const save = () => onSave(isEdit ? { dbKind, notes: notes.trim() || null } : { environmentId, dbKind, notes: notes.trim() || null });
+
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-data-profile-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal-head"><div><h2 id="automation-data-profile-form-title">{isEdit ? `แก้ไข ${profile!.environmentName}` : "สร้าง Environment Data Profile"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
+    <div className="form-grid">
+      {isEdit ? <label>Environment<input value={profile!.environmentName} disabled /></label> :
+        <label>Environment<select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>}
+      <label>DbKind<select value={dbKind} onChange={(e) => setDbKind(e.target.value)}><option value="Firebird">Firebird</option><option value="SqlServer">SQL Server</option></select></label>
+      <label className="full">หมายเหตุ (ไม่บังคับ — ห้ามใส่ connection string/credential)<textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="เช่น เครื่อง UAT ทีม Sales" /></label>
     </div>
     <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
   </div></div>;

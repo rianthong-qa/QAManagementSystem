@@ -10,7 +10,7 @@ namespace ProMaxx2.QA.Api.Controllers;
 /// test run. This controller is the human/UI-facing side (list/request); the agent-facing claim/complete endpoints
 /// live on <see cref="AutomationAgentController"/> alongside job claim/complete, under the same auth model.</summary>
 [ApiController, Route("api/v1/automation/data"), Authorize(Policy = "AutomationView"), RequireProjectAccess]
-public sealed class AutomationDataController(AutomationDataSnapshotService service, AutomationDataRestoreService restores, AutomationDataSeedService seeds) : ControllerBase
+public sealed class AutomationDataController(AutomationDataSnapshotService service, AutomationDataRestoreService restores, AutomationDataSeedService seeds, AutomationEnvironmentDataProfileService profiles) : ControllerBase
 {
     private Guid? UserId() => Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value, out var id) ? id : null;
     private static ProblemDetails Problem(string title, string detail, int status) => new() { Title = title, Detail = detail, Status = status };
@@ -148,6 +148,39 @@ public sealed class AutomationDataController(AutomationDataSnapshotService servi
             return CreatedAtAction(nameof(GetSeedRun), new { id = result.AutomationDataSeedRunId, projectId }, result);
         }
         catch (EntityNotFoundException ex) { return NotFound(Problem("ไม่พบ Seed Script", ex.Message, 404)); }
+        catch (ArgumentException ex) { return BadRequest(Problem("ข้อมูลไม่ถูกต้อง", ex.Message, 400)); }
+    }
+
+    // ---- AUT-DATA-006: Environment Data Profiles ----
+
+    [HttpGet("environment-data-profiles")]
+    public Task<IReadOnlyList<AutomationEnvironmentDataProfileDto>> ListEnvironmentDataProfiles([FromQuery] Guid projectId, CancellationToken ct)
+        => profiles.ListAsync(projectId, ct);
+
+    [HttpGet("environment-data-profiles/{id:guid}")]
+    public async Task<ActionResult<AutomationEnvironmentDataProfileDto>> GetEnvironmentDataProfile(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
+    {
+        try { return Ok(await profiles.GetAsync(id, projectId, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
+    [HttpPost("environment-data-profiles"), Authorize(Policy = "AutomationEdit")]
+    public async Task<ActionResult<AutomationEnvironmentDataProfileDto>> CreateEnvironmentDataProfile([FromQuery] Guid projectId, CreateEnvironmentDataProfileRequest request, CancellationToken ct)
+    {
+        try
+        {
+            var result = await profiles.CreateAsync(projectId, request, UserId(), ct);
+            return CreatedAtAction(nameof(GetEnvironmentDataProfile), new { id = result.AutomationEnvironmentDataProfileId, projectId }, result);
+        }
+        catch (EntityNotFoundException ex) { return NotFound(Problem("ไม่พบ Environment", ex.Message, 404)); }
+        catch (ArgumentException ex) { return BadRequest(Problem("ข้อมูลไม่ถูกต้อง", ex.Message, 400)); }
+    }
+
+    [HttpPut("environment-data-profiles/{id:guid}"), Authorize(Policy = "AutomationEdit")]
+    public async Task<ActionResult<AutomationEnvironmentDataProfileDto>> UpdateEnvironmentDataProfile(Guid id, [FromQuery] Guid projectId, UpdateEnvironmentDataProfileRequest request, CancellationToken ct)
+    {
+        try { return Ok(await profiles.UpdateAsync(id, projectId, request, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
         catch (ArgumentException ex) { return BadRequest(Problem("ข้อมูลไม่ถูกต้อง", ex.Message, 400)); }
     }
 }
