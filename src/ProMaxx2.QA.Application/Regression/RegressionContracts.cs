@@ -70,7 +70,7 @@ public sealed record GenerateRegressionSuiteRequest(
     IReadOnlyList<Guid> TestCaseIds);
 
 public sealed record RegressionSuiteResultDto(Guid TestSuiteId, string SuiteCode, string SuiteName, int CaseCount);
-public sealed record AddImpactCasesRequest(IReadOnlyList<Guid> TestCaseIds);
+public sealed record AddImpactCasesRequest(IReadOnlyList<Guid> TestCaseIds, bool AutoAssignPreview = false);
 public sealed record RegressionHistoryDto(Guid RegressionAnalysisId,Guid ReleaseId,Guid BuildId,string BuildNumber,int ImpactedModules,int RecommendedCases,string MinimumPriority,string?ChangeNotes,Guid?AnalyzedBy,string?AnalyzedByName,DateTime AnalyzedAt);
 public sealed record RegressionBuildMetricsDto(Guid BuildId,string BuildNumber,int TotalCases,int ExecutedCases,int PassedCases,int FailedCases,int BlockedCases,int NotRunCases,decimal PassRate);
 public sealed record RegressionBaselineDto(RegressionBuildMetricsDto Baseline,RegressionBuildMetricsDto Target,int ExecutedDelta,int PassedDelta,int FailedDelta,decimal PassRateDelta);

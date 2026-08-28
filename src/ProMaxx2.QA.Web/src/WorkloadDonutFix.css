@@ -1,0 +1,1 @@
+.workload-panel .workload-donut{width:clamp(118px,38%,146px);height:auto;aspect-ratio:1;margin:10px auto 16px}.workload-panel .workload-donut:after{width:62%;height:62%}.workload-panel .workload-legend{max-width:260px;margin:0 auto}.workload-panel .workload-actions{margin-top:10px}@media(max-width:520px){.workload-panel .workload-donut{width:128px}}

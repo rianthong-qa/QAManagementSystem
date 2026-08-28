@@ -1,0 +1,1 @@
+.role-selector{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}.role-selector>select{min-width:260px}.role-actions{display:flex;gap:6px}.role-actions .btn{padding:8px 11px}.role-actions .btn:last-child{color:var(--red)}@media(max-width:520px){.role-selector{align-items:stretch}.role-selector>select,.role-actions{width:100%}.role-actions .btn{flex:1}}

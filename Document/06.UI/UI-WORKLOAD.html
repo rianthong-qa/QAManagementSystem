@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ProMaxx2 QA Hub - Development Workstreams</title>
+<style>
+:root{
+  --bg:#f6f8fc;--surface:#fff;--border:#e2e8f0;--text:#162033;--muted:#667085;
+  --primary:#2563eb;--primary-soft:#eef4ff;--success:#16a34a;--success-soft:#edf9f1;
+  --warning:#f59e0b;--warning-soft:#fff7e8;--danger:#dc2626;--danger-soft:#fff1f1;
+  --purple:#7c3aed;--purple-soft:#f4f0ff;--nav:#102238;--nav2:#163252;
+}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",Tahoma,sans-serif}
+button,input,select{font:inherit}.app{display:grid;grid-template-columns:235px minmax(0,1fr);min-height:100vh}
+.sidebar{background:linear-gradient(180deg,var(--nav),var(--nav2));color:#fff;padding:16px 12px}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 4px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
+.brand-badge{width:42px;height:42px;border-radius:12px;background:var(--primary);display:grid;place-items:center;font-weight:800}
+.brand strong{display:block;font-size:14px}.brand span{display:block;font-size:10px;color:#c9d5e4}
+.group-title{margin:18px 7px 8px;color:#8fa5c0;font-size:9px;text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;color:#edf3fb;font-size:11px;margin-bottom:3px}
+.nav-item.active{background:#2563eb}.nav-icon{width:20px;height:20px;border-radius:6px;background:rgba(255,255,255,.1);display:grid;place-items:center;font-size:9px}
+.main{min-width:0}.topbar{height:68px;background:#fff;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;padding:0 22px}
+.ctx-wrap,.user-wrap{display:flex;gap:10px;align-items:center}.ctx{min-width:120px;border:1px solid var(--border);border-radius:10px;padding:7px 11px;background:#fff}.ctx .k{font-size:8px;color:var(--muted)}.ctx .v{font-size:11px;font-weight:700;margin-top:2px}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-size:10px;font-weight:800}.user small{display:block;font-size:9px;color:var(--muted)}
+.content{padding:20px 22px 32px}.page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.page-head h1{margin:0;font-size:25px}.page-head p{margin:5px 0 0;font-size:11px;color:var(--muted)}
+.updated{font-size:10px;color:var(--muted);padding-top:6px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:14px}
+.left{display:grid;gap:14px}.right{display:grid;gap:14px;align-content:start}
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.metric{background:#fff;border:1px solid var(--border);border-radius:13px;padding:14px;min-height:108px}.metric.primary{border-color:#9ab6ff;background:#f8fbff}.metric .label{font-size:10px;color:var(--muted)}.metric .value{font-size:25px;font-weight:800;margin:5px 0}.metric .note{font-size:9px;color:var(--muted)}.status-label{display:inline-flex;margin-top:8px;padding:4px 8px;border-radius:999px;font-size:9px;font-weight:800}.s-p0{background:var(--danger-soft);color:var(--danger)}.s-progress{background:var(--success-soft);color:var(--success)}.s-pause{background:var(--warning-soft);color:var(--warning)}.s-complete{background:var(--purple-soft);color:var(--purple)}.s-next{background:var(--primary-soft);color:var(--primary)}
+.card{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.05)}
+.priority-card{display:grid;grid-template-columns:1.3fr .7fr;gap:14px;padding:16px;border:1px solid #8fb0ff;background:#f8fbff;border-left:6px solid var(--primary)}
+.priority-main{display:flex;gap:14px;align-items:flex-start}.star{width:70px;height:70px;border-radius:50%;background:var(--primary);color:#fff;display:grid;place-items:center;font-size:30px;flex:0 0 auto}
+.priority-main .eyebrow{font-size:9px;color:var(--muted);font-weight:700}.priority-main h2{margin:6px 0 8px;font-size:21px}.tags{display:flex;gap:8px;flex-wrap:wrap}.tag{display:inline-flex;padding:5px 9px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:9px;font-weight:800}.tag.p0{border-color:#ffadad;color:var(--danger);background:var(--danger-soft)}.tag.start{border-color:#b9cdfd;color:var(--primary);background:var(--primary-soft)}
+.priority-main p{font-size:10px;color:#475569;margin:14px 0 0}.focus{border:1px solid var(--border);border-radius:10px;background:#fff;padding:12px}.focus h3{margin:0 0 9px;font-size:11px}.focus ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}.focus li{font-size:10px;color:#475569}.focus li:before{content:"✓";color:var(--success);font-weight:800;margin-right:7px}
+.card-head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}.card-head h2{margin:0;font-size:14px}.card-head a{font-size:10px;color:var(--primary);font-weight:800}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:920px}th{text-align:left;font-size:9px;color:#475569;background:#fafbfc;padding:10px 12px;border-bottom:1px solid var(--border)}td{font-size:10px;padding:11px 12px;border-bottom:1px solid #eef2f7}.ws-code{font-weight:800}.status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:9px;font-weight:800}.inprogress{background:var(--success-soft);color:var(--success)}.planned{background:#f1f5f9;color:#64748b}.priority{background:var(--danger-soft);color:var(--danger)}.next{background:var(--purple-soft);color:var(--purple)}
+.flow-card{padding:14px 16px}.flow-title{font-size:13px;font-weight:800;margin-bottom:14px}.flow{display:grid;grid-template-columns:1fr 36px 1fr 36px 1fr 36px 1fr 36px 1fr;align-items:center}.fstep{display:flex;align-items:center;gap:9px}.fico{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-weight:800}.f-plan{background:#eef2f7;color:#64748b}.f-run{background:var(--success-soft);color:var(--success)}.f-pause{background:var(--warning-soft);color:var(--warning)}.f-priority{background:var(--danger-soft);color:var(--danger)}.f-done{background:var(--purple-soft);color:var(--purple)}.fstep strong{display:block;font-size:10px}.fstep span{display:block;font-size:9px;color:var(--muted);margin-top:3px}.arrow{text-align:center;color:#9aa7b8;font-size:18px}
+.quick-actions{padding:14px}.quick-actions h2{font-size:14px;margin:0 0 12px}.qa-btn{width:100%;height:42px;border-radius:9px;border:1px solid var(--border);background:#fff;margin-bottom:9px;font-size:10px;font-weight:800;text-align:left;padding:0 12px;cursor:pointer}.qa-btn.primary{background:var(--primary);color:#fff;border-color:var(--primary)}.qa-btn.pause{border-color:#ffc686;color:var(--warning);background:var(--warning-soft)}.qa-btn.resume{border-color:#bde7c7;color:var(--success);background:var(--success-soft)}.qa-btn.update{border-color:#d5c8ff;color:var(--purple);background:var(--purple-soft)}
+.side-card{padding:14px}.side-card h2{margin:0 0 12px;font-size:14px}.paused{border-color:#ffd7ad;background:#fffaf3}.paused-head{display:flex;justify-content:space-between;align-items:center}.paused-badge{padding:4px 8px;border-radius:999px;background:var(--danger-soft);color:var(--danger);font-size:9px;font-weight:800}.paused-body{margin-top:12px;display:grid;grid-template-columns:90px 1fr;gap:9px 10px;font-size:10px}.paused-body .k{color:var(--muted)}
+.dep-list{display:grid;gap:10px}.dep-item{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #eef2f7}.dep-item:last-child{border-bottom:0}.dep-main strong{display:block;font-size:10px}.dep-main span{display:block;font-size:9px;color:var(--muted);margin-top:3px}.dep-ok{color:var(--success);font-weight:800}.dep-warn{color:var(--warning);font-weight:800}
+@media(max-width:1200px){.layout{grid-template-columns:1fr}.right{grid-template-columns:repeat(2,1fr)}.metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:900px){.app{grid-template-columns:1fr}.sidebar{display:none}.metrics{grid-template-columns:repeat(2,1fr)}.priority-card{grid-template-columns:1fr}.right{grid-template-columns:1fr}.topbar{height:auto;padding:12px 14px;align-items:flex-start;flex-direction:column}.ctx-wrap{flex-wrap:wrap}.content{padding:14px}.flow{grid-template-columns:1fr;gap:9px}.arrow{transform:rotate(90deg)}}
+@media(max-width:560px){.metrics{grid-template-columns:1fr}.page-head{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand"><div class="brand-badge">QA</div><div><strong>ProMaxx2 QA Hub</strong><span>Quality Assurance Management</span></div></div>
+  <div class="group-title">ภาพรวม</div>
+  <div class="nav-item"><span class="nav-icon">⌂</span>Dashboard</div>
+  <div class="nav-item active"><span class="nav-icon">WS</span>Development Workstreams</div>
+  <div class="nav-item"><span class="nav-icon">WL</span>QA Workload</div>
+  <div class="nav-item"><span class="nav-icon">MW</span>My Work</div>
+
+  <div class="group-title">Requirement & Test Design</div>
+  <div class="nav-item"><span class="nav-icon">R</span>Requirement</div>
+  <div class="nav-item"><span class="nav-icon">TC</span>Test Case</div>
+  <div class="nav-item"><span class="nav-icon">TS</span>Test Suite</div>
+  <div class="nav-item"><span class="nav-icon">RT</span>RTM</div>
+
+  <div class="group-title">Test Execution</div>
+  <div class="nav-item"><span class="nav-icon">CY</span>Test Cycle</div>
+  <div class="nav-item"><span class="nav-icon">EX</span>Execution Workspace</div>
+  <div class="nav-item"><span class="nav-icon">!</span>Defect</div>
+  <div class="nav-item"><span class="nav-icon">↻</span>Regression</div>
+  <div class="nav-item"><span class="nav-icon">A</span>Automation</div>
+
+  <div class="group-title">Report & Summary</div>
+  <div class="nav-item"><span class="nav-icon">Σ</span>Test Summary</div>
+  <div class="nav-item"><span class="nav-icon">WL</span>QA Workload</div>
+  <div class="nav-item"><span class="nav-icon">✓</span>Release Sign-off</div>
+
+  <div class="group-title">Administration</div>
+  <div class="nav-item"><span class="nav-icon">U</span>User Management</div>
+  <div class="nav-item"><span class="nav-icon">⚙</span>System Setting</div>
+</aside>
+
+<main class="main">
+<header class="topbar">
+  <div class="ctx-wrap">
+    <div class="ctx"><div class="k">PROJECT</div><div class="v">ProMaxx2</div></div>
+    <div class="ctx"><div class="k">RELEASE</div><div class="v">PMX2-REL-003</div></div>
+    <div class="ctx"><div class="k">BUILD</div><div class="v">10.4.28.0845</div></div>
+  </div>
+  <div class="user-wrap"><div class="avatar">134</div><div class="user"><strong>QA User</strong><small>QA Tester</small></div></div>
+</header>
+
+<div class="content">
+  <div class="page-head">
+    <div><h1>Development Workstreams</h1><p>หน้าจอสำหรับจัดการลำดับความสำคัญของงานพัฒนา งานที่พักไว้ และจุดที่จะกลับมาทำต่อ</p></div>
+    <div class="updated">อัปเดตล่าสุด: 23/08/2569 11:30</div>
+  </div>
+
+  <div class="layout">
+    <div class="left">
+
+      <section class="metrics">
+        <div class="metric primary"><div class="label">Current Priority</div><div class="value">1</div><div class="note">Workstream</div><span class="status-label s-p0">P0 Priority</span></div>
+        <div class="metric"><div class="label">In Progress</div><div class="value">2</div><div class="note">Workstreams</div><span class="status-label s-progress">กำลังดำเนินการ</span></div>
+        <div class="metric"><div class="label">Paused</div><div class="value">1</div><div class="note">Workstream</div><span class="status-label s-pause">พักไว้</span></div>
+        <div class="metric"><div class="label">Completed</div><div class="value">6</div><div class="note">Workstreams</div><span class="status-label s-complete">เสร็จสิ้น</span></div>
+        <div class="metric"><div class="label">Next</div><div class="value">1</div><div class="note">Workstream</div><span class="status-label s-next">ถัดไป</span></div>
+      </section>
+
+      <section class="card priority-card">
+        <div class="priority-main">
+          <div class="star">★</div>
+          <div>
+            <div class="eyebrow">CURRENT PRIORITY</div>
+            <h2>Workstream B / QA Workload & My Work</h2>
+            <div class="tags"><span class="tag p0">P0 Priority</span><span class="tag start">Start Immediately</span></div>
+            <p>งานนี้มีความสำคัญสูงสุด กรุณาเริ่มดำเนินการทันที และให้ระบบอื่นที่ไม่เร่งด่วนเปลี่ยนเป็น Paused พร้อมบันทึก Resume Point</p>
+          </div>
+        </div>
+        <div class="focus">
+          <h3>Key Focus</h3>
+          <ul><li>จัดการกระจายงาน QA</li><li>My Work ตาม User Login</li><li>ติดตามความคืบหน้า</li><li>Dashboard & Reporting</li></ul>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Workstream Overview</h2><a href="#">ดูทั้งหมด</a></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Workstream</th><th>Status</th><th>Priority</th><th>Dependency</th><th>Resume Point</th><th>Last Update</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><span class="ws-code">WS-01</span> &nbsp; Core QA Management</td><td><span class="status inprogress">▶ In Progress</span></td><td>P1</td><td>—</td><td>Phase B2 - Test Cycle</td><td>23/08/2569 10:15</td><td>›</td></tr>
+              <tr><td><span class="ws-code">WS-02</span> &nbsp; Automation Module</td><td><span class="status inprogress">▶ In Progress</span></td><td>P1</td><td>WS-01</td><td>Phase C3 - Script Engine</td><td>23/08/2569 11:00</td><td>›</td></tr>
+              <tr><td><span class="ws-code">WS-03</span> &nbsp; Object Repository / Inspector</td><td><span class="status planned">Planned</span></td><td>P2</td><td>WS-02</td><td>Phase D1 - Design</td><td>23/08/2569 09:45</td><td>›</td></tr>
+              <tr style="background:#fff8f8"><td><span class="ws-code" style="color:var(--danger)">★ WS-04</span> &nbsp; <strong style="color:var(--danger)">QA Workload / My Work</strong></td><td><span class="status priority">★ Priority</span></td><td>P0</td><td>WS-01</td><td>Start Immediately</td><td>23/08/2569 11:30</td><td>›</td></tr>
+              <tr><td><span class="ws-code">WS-05</span> &nbsp; Weighted Auto Assignment</td><td><span class="status next">Next</span></td><td>P2</td><td>WS-01, WS-02</td><td>Phase E1 - Design</td><td>22/08/2569 16:20</td><td>›</td></tr>
+              <tr><td><span class="ws-code">WS-06</span> &nbsp; Windows Agent</td><td><span class="status planned">Planned</span></td><td>P3</td><td>WS-02</td><td>Phase F1 - Design</td><td>22/08/2569 14:30</td><td>›</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card flow-card">
+        <div class="flow-title">Development Status Flow</div>
+        <div class="flow">
+          <div class="fstep"><div class="fico f-plan">▣</div><div><strong>Planned</strong><span>วางแผน</span></div></div><div class="arrow">→</div>
+          <div class="fstep"><div class="fico f-run">▶</div><div><strong>In Progress</strong><span>กำลังดำเนินการ</span></div></div><div class="arrow">→</div>
+          <div class="fstep"><div class="fico f-pause">Ⅱ</div><div><strong>Paused</strong><span>พักไว้</span></div></div><div class="arrow">→</div>
+          <div class="fstep"><div class="fico f-priority">★</div><div><strong>Priority</strong><span>งานสำคัญเร่งด่วน</span></div></div><div class="arrow">→</div>
+          <div class="fstep"><div class="fico f-done">✓</div><div><strong>Completed</strong><span>เสร็จสิ้น</span></div></div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="right">
+      <section class="card quick-actions">
+        <h2>Quick Actions</h2>
+        <button class="qa-btn primary" id="createWs">＋ Create New Workstream</button>
+        <button class="qa-btn pause">Ⅱ Pause Current Task</button>
+        <button class="qa-btn resume">▶ Resume Workstream</button>
+        <button class="qa-btn update">✎ Update Status</button>
+        <button class="qa-btn">☷ View All Workstreams</button>
+      </section>
+
+      <section class="card side-card paused">
+        <div class="paused-head"><h2>Paused Workstream</h2><span class="paused-badge">PAUSED</span></div>
+        <div class="paused-body"><div class="k">Workstream</div><div><strong>Workstream A</strong></div><div class="k">Reason</div><div>Priority changed</div><div class="k">Resume From</div><div>Phase G3 - Automation Validator</div></div>
+      </section>
+
+      <section class="card side-card">
+        <h2>Integration & Shared Dependencies</h2>
+        <div class="dep-list">
+          <div class="dep-item"><div class="dep-main"><strong>Shared Database</strong><span>PMX2_QA (v1.2.8)</span></div><div class="dep-ok">✓</div></div>
+          <div class="dep-item"><div class="dep-main"><strong>API</strong><span>/api/qa/v2</span></div><div class="dep-ok">✓</div></div>
+          <div class="dep-item"><div class="dep-main"><strong>Permission</strong><span>Role-Based Access Control</span></div><div class="dep-ok">✓</div></div>
+          <div class="dep-item"><div class="dep-main"><strong>Regression Impact</strong><span>Medium (3 Workstreams)</span></div><div class="dep-warn">!</div></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+</main>
+</div>
+<script>
+document.getElementById("createWs").addEventListener("click",()=>alert("Prototype: เปิดฟอร์ม Create New Workstream"));
+</script>
+</body>
+</html>

@@ -139,6 +139,21 @@
 
 ## 9. Documentation และมาตรฐาน
 
+### Weighted Auto Assignment — Gap และ Implementation Plan (2026-08-28)
+
+จากการเทียบ `WEIGHTED_AUTO_ASSIGN.md` กับโค้ดปัจจุบัน พบว่า TestCycleCase มีเพียง `AssignedTesterUserId` และยังขาด Case Weight snapshot, Skill Matrix, Availability/Capacity, Preview/Confirm versioning, Assignment History/Audit, Reviewer และ Rebalance จึงต้องเพิ่ม domain model, EF configuration/migration, service/API, UI และ critical-path tests เป็นชุดใหม่
+
+ลำดับ implementation ที่ยืนยันร่วมกับผู้ใช้:
+
+1. AA1: เพิ่ม complexity/priority/estimated-time และ Case Weight snapshot ใน cycle
+2. AA2: เพิ่ม Skill Matrix และ candidate filtering
+3. AA3: เพิ่ม deterministic preview, override, confirm, audit และ optimistic concurrency
+4. AA4: เพิ่ม capacity, availability, leave และ overload warning
+5. AA5: เพิ่ม score, explainability และ algorithm version
+6. AA6: เพิ่ม rebalance, reviewer pairing, historical performance และ automation/defect/regression integration
+
+สถานะเริ่มต้น: `IN PROGRESS` — ยังไม่มีรายการใดทำเครื่องหมาย `DONE` จนกว่าจะผ่าน Acceptance Criteria และมีหลักฐาน build/test จริง
+
 | ID | งาน | สถานะ | Owner | Acceptance Criteria / หลักฐาน |
 |---|---|---|---|---|
 | AUT-DOC-001 | รวม Automation Roadmap | TODO | - | เอกสาร Phase 0–5 และ G0–G10 ไม่ขัดกันและอ้าง tracker นี้ |
@@ -159,6 +174,65 @@
 8. `AUT-P2-001` ถึง `AUT-P2-008` — Monitoring, UX และ Scalability
 
 ## 11. Progress Log
+
+### 2026-08-28 — Weighted Auto Assignment: foundation
+
+- ผู้ใช้ยืนยันให้ทำครบทั้ง Gap analysis, plan/tracker, AA1–AA6 และ UI/integration โดยอนุมัติ schema ใหม่ตาม deterministic weighted rule engine
+- Gap ที่ยืนยัน: ระบบเดิมมีเพียง `TestCycleCase.AssignedTesterUserId`; ยังไม่มี weight snapshot, skill matrix, availability/capacity, preview/confirm versioning, assignment history/audit, reviewer และ rebalance
+- เพิ่ม foundation ใน domain: TestCase รองรับ `ComplexityWeight`, `EstimatedMinutes`, `RequiredSkillLevel`, `IsCritical`, `ReviewerRequired`; TestCycleCase รองรับ weight/estimated/skill snapshots, algorithm version, assignment version, priority weighting และ reassignment guard
+- หลักฐาน: `dotnet build src/ProMaxx2.QA.Api --nologo` ผ่าน 0 warning / 0 error
+- สถานะ: ยังไม่ปิด Acceptance Criteria; อยู่ระหว่างต่อ persistence/application/API
+
+- เพิ่ม persistence entities/configuration สำหรับ `QaSkillMatrixEntry`, `QaAvailability`, `AssignmentPreview` และ `AssignmentHistory` พร้อม DbSet/foreign keys/indexes ใน `QaDbContext`
+- หลักฐานรอบนี้: `dotnet build src/ProMaxx2.QA.Api --nologo` ผ่าน 0 warning / 0 error
+- เพิ่ม `WeightedAssignmentEngine` สำหรับ AA1–AA2: priority ordering (P0 ก่อน), weight calculation, skill/capacity/availability filtering, workload balancing, deterministic tie-break และ explainable reasons/error codes
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ไม่พบ whitespace error; ยังไม่ปิด Acceptance Criteria เพราะยังขาด API, migration, tests และ UI
+- AA3 foundation: เพิ่ม preview/confirm contracts, preview version/expiration validation, override reason validation และ conflict/expired error codes; เพิ่ม EF migration `AddWeightedAutoAssignment` สำหรับ entities ชุดใหม่
+- หลักฐานรอบนี้: migration generated, backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน; ยังไม่ปิด AA3 เพราะ controller/service ที่เขียนลง TestCycleCases และ audit จริง รวมถึง integration tests ยังเหลือ
+- เชื่อม AA3 เข้ากับ API จริงที่ `POST test-cycles/{cycleId}/auto-assign/preview` และ `/confirm`: โหลด unassigned cases/QA pool, ใช้ engine, สร้าง Preview 10 นาที, รองรับ override และเขียน assignment/history ใน transaction เดียวกัน
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน; ยังต้องเพิ่ม concurrency token ระดับ SQL และ integration/unit tests ก่อนถือว่าผ่าน Acceptance Criteria
+- เพิ่ม `TestCycleCase.RowVersion` เป็น SQL Server rowversion/concurrency token และดัก `DbUpdateConcurrencyException` ใน Confirm ให้ rollback และตอบ `AUTOASSIGN_ASSIGNMENT_CONFLICT` (HTTP 409); migration `AddTestCycleCaseAssignmentConcurrency` ถูกสร้างแล้ว
+- หลักฐานรอบนี้: build ผ่าน 0 warning / 0 error และ migration scaffold สำเร็จ; ยังเหลือ integration tests, การ apply migration บน dev DB และ frontend
+- เพิ่ม `WeightedAssignmentTests` ครอบคลุม P0 ordering/lowest eligible load, skill exclusion และ preview expiration/version conflict
+- หลักฐานรอบนี้: `dotnet test tests/ProMaxx2.QA.UnitTests --no-restore --nologo` ผ่าน 350/350; ยังเหลือ apply migration บน dev DB, API integration test และ frontend
+- Apply migrations สำเร็จบน dev DB จริง: `AddWeightedAutoAssignment` และ `AddTestCycleCaseAssignmentConcurrency`; สร้าง tables/indexes และ `TestCycleCases.RowVersion` สำเร็จ
+- AA4 foundation: Preview รับ `WorkloadThresholdPercent` และสร้าง overload warnings เมื่อ After Load เกิน threshold พร้อม error `AUTOASSIGN_CAPACITY_EXCEEDED`
+- AA5: เพิ่ม explainable score แบบ weighted (Workload 45%, Skill 35%, Experience 20%), tie-break ด้วย experience/skill/name, reviewer-required filtering และ experience score จาก execution history
+- หลักฐานรอบนี้: `dotnet test` ผ่าน 350/350, backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน
+- AA6 foundation: เพิ่ม deterministic `Rebalance` โดยจัด critical/reviewer cases ก่อน, บังคับ reviewer eligibility, balance ตาม current load และไม่แตะ historical execution; เพิ่ม test reviewer pairing/balance
+- หลักฐานรอบนี้: `dotnet test` ผ่าน 351/351, backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน; ยังเหลือ endpoint/UI สำหรับ Rebalance และ integration Automation/Defect/Regression
+- เพิ่ม shared `AssignmentIntegrationRules` สำหรับ Defect Retest, Automation Failure Review และ Regression: Prefer Original Tester เมื่อ available + skill/capacity ผ่าน และ fallback เป็น Weighted Assignment พร้อมเหตุผล
+- หลักฐานรอบนี้: `dotnet test` ผ่าน 353/353, backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน; ยังเหลือการผูก relation จาก Automation/Defect จริงเข้าสู่ TestCycleCase
+- เพิ่ม endpoint กลาง `POST /api/v1/test-cycles/{cycleId}/auto-assign/integration-decision` สำหรับ Retest/Automation Review/Regression; โหลด active QA + skill + availability และคืน Prefer Original/Fallback decision พร้อม reason
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน; ยังไม่ได้ผูก caller อัตโนมัติจาก domain Automation/Defect เพราะยังไม่มี foreign-key relation ไป TestCycleCase
+- เพิ่ม `GET /api/v1/test-cycles/{cycleId}/auto-assign/retest-decision/{cycleCaseId}`: ดึง Original Tester จาก execution ล่าสุด แล้วตรวจ active/skill/availability/capacity ผ่าน shared integration rule
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน; Automation Failure mapping ยังเหลือการ resolve linked TestExecution และ Regression auto-trigger
+- Automation mapping เพิ่ม endpoint `GET /api/v1/automation/executions/{id}/assignment-context`: resolve AutomationExecution → linked TestExecution → TestCycleCase และคืน Original Tester/วงจร/Case/Failure recommendation สำหรับส่งต่อ Assignment Engine
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน; ยังเหลือการให้ endpoint นี้เรียก auto-preview อัตโนมัติและ Regression trigger
+- Regression integration เพิ่ม endpoint `POST /api/v1/test-cycles/{cycleId}/auto-assign/regression-auto-preview` ซึ่ง delegate ไป Preview workflow เดิม เพื่อให้ Regression ใช้ deterministic engine ชุดเดียวกัน
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน; ยังเหลือ orchestration จาก RegressionController ให้เรียก endpoint นี้อัตโนมัติหลังสร้าง cycle
+- Regression request เพิ่ม explicit `AutoAssignPreview` flag; `add-impact-cases` จะคืน `202 Accepted` พร้อม URL สำหรับ Regression Auto Preview เมื่อ flag เป็น true และคง `204 No Content` behavior เดิมเมื่อไม่ระบุ
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน
+- เพิ่ม shared application boundary `IAutoAssignmentService` สำหรับ Preview/Confirm/Rebalance เพื่อเตรียม refactor orchestration จาก Auto Assign, Regression และ Automation ให้ใช้ service เดียวกัน
+- สถานะ: interface เพิ่มแล้ว แต่ implementation/refactor controller ยังอยู่ระหว่างทำ จึงยังไม่ถือว่า auto-trigger เสร็จ
+- แก้ AA4 gap: Preview คำนวณ Current Load จาก TestCycleCases ที่ assign อยู่จริง (estimated minutes ÷ วันนี้ capacity) และส่ง Remaining Capacity ให้ engine แทนการใช้ค่า 0 แบบเดิม
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน
+- เพิ่ม Assignment History UI ใน Test Cycle detail modal: โหลด audit ล่าสุดและแสดง Action/Case/Weight/Score/Reason/เวลา ใน table container ที่เลื่อนได้เฉพาะตาราง
+- หลักฐานรอบนี้: `npm.cmd run build` ผ่าน, `npm.cmd run lint` ผ่าน และ `git diff --check` ผ่าน
+- เพิ่ม `GET /api/v1/test-cycles/{cycleId}/auto-assign/history` สำหรับอ่าน Assignment History เรียงล่าสุด พร้อม navigation/configuration ของ `AssignmentHistory.TestCycleCase`
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน
+- เพิ่ม UI action `Auto Assign Preview` ใน Test Cycle detail modal และเชื่อม Preview API; แสดงจำนวนคำแนะนำผ่าน notice (ยังไม่ถือว่า UI Acceptance ครบ เพราะ Preview detail/Confirm/Override modal ยังต้องทำต่อ)
+- หลักฐานรอบนี้: `npm.cmd run build` และ `npm.cmd run lint` ผ่าน; `git diff --check` ผ่าน
+- เพิ่ม `WeightedAssignmentPreview` modal จริงในหน้า Test Cycle: แสดง Weight/Score/Before-After Load/Reason/Warnings และ Confirm API พร้อมปิด Preview
+- หลักฐานรอบนี้: `npm.cmd run build` ผ่าน, `npm.cmd run lint` ผ่าน และ `git diff --check` ผ่าน; Manual Change ราย Case ยังต้องต่อเพราะ API ยังไม่คืน QA pool options
+- เพิ่ม `WeightedAssignmentPreview` component: แสดง recommendation ต่อ Case, Weight, Score, Before/After Load, Reasons, warnings และปุ่ม Confirm ที่ส่งรายการแนะนำเข้า Confirm API
+- หลักฐานรอบนี้: `npm.cmd run build` ผ่าน, `npm.cmd run lint` ผ่าน และ `git diff --check` ผ่าน; การเลือก Change/override ราย Case ยังเป็นงานถัดไป
+- เพิ่ม QA pool options ใน Preview API และเพิ่ม dropdown เปลี่ยน QA ราย Case ใน `WeightedAssignmentPreview`; เมื่อเปลี่ยนคนจะบังคับกรอก Override Reason ก่อน Confirm
+- หลักฐานรอบนี้: `npm.cmd run build` ผ่าน, `npm.cmd run lint` ผ่าน และ `git diff --check` ผ่าน
+- เพิ่ม QA pool options ใน Preview response และ dropdown เลือก QA/เหตุผล Override ใน Preview component; Confirm จะส่ง tester ที่เลือกจริง
+- หลักฐานรอบนี้: `npm.cmd run build` ผ่าน, `npm.cmd run lint` ผ่าน และ `git diff --check` ผ่าน
+- เพิ่ม Rebalance endpoint `POST /api/v1/test-cycles/{cycleId}/auto-assign/rebalance` สำหรับ QA Lead ยืนยันการย้าย assignment, บังคับเหตุผล, บันทึก `AssignmentRebalanced`, ใช้ transaction และรองรับ concurrency conflict
+- หลักฐานรอบนี้: backend build ผ่าน 0 warning / 0 error และ `git diff --check` ผ่าน
 
 ### 2026-08-27/28 — AUT-P2-004: Agent workload/history
 

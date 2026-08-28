@@ -4,6 +4,9 @@ import "./styles.css";
 import "./DragDrop.css";
 import "./ReleaseBuild.css";
 import "./TestManagement.css";
+import "./PermissionMatrix.css";
+import "./RoleManagement.css";
+import "./MyWork.css";
 import "./Dashboard.css";
 import "./DashboardExecutive.css";
 import "./Rtm.css";
@@ -17,6 +20,7 @@ import { AutomationPage } from "./AutomationPage";
 
 type Page =
   | "dashboard"
+  | "my-work"
   | "projects"
   | "releases"
   | "requirements"
@@ -188,6 +192,7 @@ const nav: {
     label: "ภาพรวม",
     items: [
       { id: "dashboard", icon: "▦", label: "Dashboard" },
+      { id: "my-work", icon: "MW", label: "My Work" },
       { id: "projects", icon: "P", label: "Project / Module" },
       { id: "releases", icon: "◫", label: "Release / Build" },
     ],
@@ -242,6 +247,7 @@ function restoredActivePage(): Page {
 }
 const viewPermission: Record<Page, string> = {
   dashboard: "PROJECT.VIEW",
+  "my-work": "QA.MYWORK.VIEW",
   projects: "PROJECT.VIEW",
   releases: "PROJECT.VIEW",
   requirements: "REQUIREMENT.VIEW",
@@ -776,9 +782,8 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [modules, setModules] = useState<ModuleItem[]>([]);
   const [users, setUsers] = useState<UserLookup[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);  const [activities, setActivities] = useState<DefectActivityItem[]>([]);
   const [detail, setDetail] = useState<DefectItem | null>(null);
-  const [activities, setActivities] = useState<DefectActivityItem[]>([]);
   const [linkedCases, setLinkedCases] = useState<DefectTestCaseItem[]>([]);
   const [_detailLoading, setDetailLoading] = useState(false);
   const [commentText, setCommentText] = useState("");
@@ -3612,9 +3617,8 @@ type RtmLinkedCase = { testCaseId: string; testCaseCode: string; title: string; 
 type RtmItem = { requirementId: string; moduleId: string; moduleName: string; requirementCode: string; title: string; priority: string; testCaseCount: number; coverageStatus: string; status: string; testCases: RtmLinkedCase[] };
 function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: number; projectId?: string; releaseId?: string; search: string; canEdit: boolean }) {
   const [items, setItems] = useState<RtmItem[]>([]), [releases, setReleases] = useState<ReleaseItem[]>([]), [modules, setModules] = useState<ModuleItem[]>([]), [cases, setCases] = useState<TestCaseItem[]>([]);
-  const [selectedRelease, setSelectedRelease] = useState(releaseId ?? ""), [moduleFilter, setModuleFilter] = useState(""), [coverageFilter, setCoverageFilter] = useState(""), [statusFilter, setStatusFilter] = useState("");
-  const [detail, setDetail] = useState<RtmItem | null>(null), [caseDetail, setCaseDetail] = useState<RtmLinkedCase | null>(null), [linking, setLinking] = useState<RtmItem | null>(null), [linkModuleFilter,setLinkModuleFilter]=useState(""), [selectedCase, setSelectedCase] = useState(""), [coverageType, setCoverageType] = useState("Direct");
-  const [busy, setBusy] = useState(false), [reload, setReload] = useState(0), [error, setError] = useState(""), [loading, setLoading] = useState(true);
+  const [selectedRelease, setSelectedRelease] = useState(releaseId ?? ""), [moduleFilter, setModuleFilter] = useState(""), [coverageFilter, setCoverageFilter] = useState(""), [statusFilter, setStatusFilter] = useState("");  const [busy, setBusy] = useState(false), [reload, setReload] = useState(0), [error, setError] = useState(""), [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<RtmItem | null>(null), [caseDetail, setCaseDetail] = useState<RtmLinkedCase | null>(null), [linking, setLinking] = useState<RtmItem | null>(null), [linkModuleFilter, setLinkModuleFilter] = useState(""), [selectedCase, setSelectedCase] = useState(""), [coverageType, setCoverageType] = useState("Direct");
   const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   useEffect(() => setSelectedRelease(releaseId ?? ""), [releaseId]);
   useEffect(() => {
@@ -5282,8 +5286,47 @@ type AdminRole = {
   roleId: string;
   roleCode: string;
   roleName: string;
+  description?: string;
   permissions: string[];
 };
+
+type MyWorkRow = { testCycleCaseId: string; testCaseId?: string; testCaseCode: string; title: string; moduleId?: string; priority?: string; testType?: string; testCycleId?: string; cycleCode?: string; currentStatus: string; assignmentStatus: string; dueDate?: string; estimatedMinutesSnapshot?: number; assignedAt?: string };
+function MyWorkPage({ onOpenExecution }: { onOpenExecution: (cycleId: string) => void }) {
+  const [rows, setRows] = useState<MyWorkRow[]>([]);
+  const [filter, setFilter] = useState("All");
+  const [sortBy, setSortBy] = useState<"priority" | "dueDate">("priority");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  useEffect(() => { setLoading(true); fetch(`${apiUrl}/my-work`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } }).then((r) => { if (!r.ok) throw new Error(r.status === 403 ? "ไม่มีสิทธิ์เข้าถึง My Work" : `โหลด My Work ไม่สำเร็จ (${r.status})`); return r.json(); }).then((data) => setRows(Array.isArray(data?.rows) ? data.rows : [])).catch((e) => setError(e instanceof Error ? e.message : "โหลด My Work ไม่สำเร็จ")).finally(() => setLoading(false)); }, []);
+  const filtered = rows.filter((x) => {
+    if (["All", "NotRun", "InProgress", "Pass", "Fail", "Blocked"].includes(filter)) return filter === "All" || x.currentStatus === filter;
+    const due = x.dueDate ? new Date(x.dueDate) : null;
+    return filter === "Today" ? !!due && due.toDateString() === new Date().toDateString() : filter === "Overdue" ? !!due && due < new Date() && x.currentStatus !== "Pass" : true;
+  });
+  const priorityRank: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+  const sorted = [...filtered].sort((a, b) => sortBy === "priority" ? (priorityRank[a.priority ?? ""] ?? 9) - (priorityRank[b.priority ?? ""] ?? 9) : (a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER) - (b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER));
+  const priorityCase = [...rows].sort((a, b) => (priorityRank[a.priority ?? ""] ?? 9) - (priorityRank[b.priority ?? ""] ?? 9) || (a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER) - (b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER))[0];
+  const count = (status: string) => rows.filter((x) => x.currentStatus === status).length;
+  const changeAssignment = async (row: MyWorkRow, action: "accept" | "start") => {
+    const response = await fetch(`${apiUrl}/test-cycle-cases/${row.testCycleCaseId}/${action}`, { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
+    if (response.ok) setRows((current) => current.map((item) => item.testCycleCaseId === row.testCycleCaseId ? { ...item, assignmentStatus: action === "start" ? "InProgress" : "Accepted", currentStatus: action === "start" ? "InProgress" : item.currentStatus } : item));
+    else window.alert(`ไม่สามารถ${action === "accept" ? "รับงาน" : "เริ่มงาน"}ได้`);
+  };
+  const bulkAssignment = async (action: "accept" | "start") => {
+    const targets = rows.filter((row) => selectedIds.includes(row.testCycleCaseId));
+    await Promise.all(targets.map((row) => changeAssignment(row, action)));
+    setSelectedIds([]);
+  };
+  const runSelected = () => {
+    const targets = rows.filter((row) => selectedIds.includes(row.testCycleCaseId));
+    const cycleIds = [...new Set(targets.map((row) => row.testCycleId).filter((id): id is string => !!id))];
+    if (cycleIds.length === 1) onOpenExecution(cycleIds[0]);
+    else if (cycleIds.length > 1) window.alert("เลือกงานใน Test Cycle เดียวกันก่อนเปิดการทำงาน");
+  };
+  if (loading) return <div className="my-work-page"><div className="card empty-state">กำลังโหลด My Work...</div></div>;
+  if (error) return <div className="my-work-page"><div className="card empty-state error-state">{error}</div></div>;
+  return <div className="my-work-page"><div className="page-heading"><div><h1>My Work</h1><p>งานที่มอบหมายให้ผู้ใช้ปัจจุบัน</p></div><span>อัปเดตจากข้อมูลจริง</span></div><div className="my-work-priority card"> <div><small>Current Priority</small><h2>{priorityCase?.testCaseCode ?? "No priority case"}</h2><p>{priorityCase?.title ?? "No assigned case"}</p>{priorityCase && <span>{priorityCase.priority ?? "-"} · {priorityCase.currentStatus}</span>}</div>{priorityCase?.testCycleId && <button className="btn primary" onClick={() => onOpenExecution(priorityCase.testCycleId!)}>Run Test Case</button>}</div><div className="my-work-metrics"><div><b>{rows.length}</b><span>Assigned</span></div><div><b>{count("InProgress")}</b><span>In Progress</span></div><div><b>{count("Pass")}</b><span>Completed</span></div><div><b>{count("Fail")}</b><span>Fail / Retest</span></div><div><b>{rows.filter((x) => x.dueDate && new Date(x.dueDate) < new Date() && x.currentStatus !== "Pass").length}</b><span>Overdue</span></div></div><section className="card my-work-card"><div className="card-title"><div><h2>งานของฉัน</h2><p>รายการ Test Case ที่ Assign ให้ฉัน</p></div><label className="my-work-sort">Sort by <select value={sortBy} onChange={(e) => setSortBy(e.target.value as "priority" | "dueDate")}><option value="priority">Priority</option><option value="dueDate">Due Date</option></select></label></div><div className="my-work-bulk"><button className="btn" onClick={() => setSelectedIds(sorted.map((x) => x.testCycleCaseId))}>Select all</button><button className="btn" onClick={() => setSelectedIds([])}>Clear</button><button className="btn" disabled={!selectedIds.length} onClick={() => bulkAssignment("accept")}>Accept selected</button><button className="btn primary" disabled={!selectedIds.length} onClick={() => bulkAssignment("start")}>Start selected</button><button className="btn" disabled={!selectedIds.length} onClick={runSelected}>Run selected</button><span>{selectedIds.length} selected</span></div><div className="my-work-tabs">{[["All", "All"], ["NotRun", "Not Run"], ["InProgress", "In Progress"], ["Pass", "Pass"], ["Fail", "Fail"], ["Blocked", "Blocked"], ["Today", "Today"], ["Overdue", "Overdue"]].map(([value, label]) => <button key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label} <small>{value === "All" ? rows.length : count(value)}</small></button>)}</div><div className="table-wrap"><table><thead><tr><th>Select</th><th>Test Case ID</th><th>Test Case</th><th>Test Cycle</th><th>Priority</th><th>Status</th><th>Due Date</th><th>Last Update</th><th>Action</th></tr></thead><tbody>{sorted.map((x) => <tr key={x.testCycleCaseId}><td><input type="checkbox" checked={selectedIds.includes(x.testCycleCaseId)} onChange={(e) => setSelectedIds((current) => e.target.checked ? [...current, x.testCycleCaseId] : current.filter((id) => id !== x.testCycleCaseId))} /></td><td><button className="link-button" onClick={() => x.testCycleId && onOpenExecution(x.testCycleId)}>{x.testCaseCode}</button></td><td><b>{x.title}</b><small>{x.testType ?? "-"}</small></td><td>{x.cycleCode ?? "-"}</td><td>{x.priority ?? "-"}</td><td><span className={`badge ${x.currentStatus === "Pass" ? "green" : x.currentStatus === "Fail" ? "red" : "blue"}`}>{x.currentStatus}</span></td><td>{x.dueDate ? new Date(x.dueDate).toLocaleDateString("th-TH") : "-"}</td><td>{x.assignedAt ? new Date(x.assignedAt).toLocaleString("th-TH") : "-"}</td><td><div className="my-work-row-actions">{x.assignmentStatus === "Assigned" && <button className="btn" onClick={() => changeAssignment(x, "accept")}>Accept</button>}{(x.assignmentStatus === "Accepted" || x.assignmentStatus === "Assigned") && <button className="btn primary" onClick={() => changeAssignment(x, "start")}>Start</button>}{x.testCycleId && <button className="btn" onClick={() => onOpenExecution(x.testCycleId!)}>Run</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty-state">ยังไม่มีงานที่ตรงกับตัวกรอง</div>}</div></section></div>;
+}
 type AdminPermission = {
   permissionId: string;
   permissionCode: string;
@@ -5434,6 +5477,10 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
   const [creating, setCreating] = useState(false),
     [newUsername, setNewUsername] = useState(""),
     [newPasswordCreate, setNewPasswordCreate] = useState("");
+  const [roleModal, setRoleModal] = useState<"create" | "edit" | null>(null);
+  const [roleCode, setRoleCode] = useState("");
+  const [roleName, setRoleName] = useState("");
+  const [roleDescription, setRoleDescription] = useState("");
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -5506,6 +5553,30 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
     } finally {
       setSaving(false);
     }
+  };
+  const openRoleModal = (mode: "create" | "edit") => {
+    const role = roles.find((x) => x.roleId === roleId);
+    setRoleModal(mode);
+    setRoleCode(mode === "edit" ? role?.roleCode ?? "" : "");
+    setRoleName(mode === "edit" ? role?.roleName ?? "" : "");
+    setRoleDescription(mode === "edit" ? role?.description ?? "" : "");
+  };
+  const saveRole = async () => {
+    if (!roleModal || !roleName.trim() || (roleModal === "create" && !roleCode.trim())) return;
+    const response = await fetch(roleModal === "create" ? `${apiUrl}/admin/roles` : `${apiUrl}/admin/roles/${roleId}`, {
+      method: roleModal === "create" ? "POST" : "PUT",
+      headers,
+      body: JSON.stringify(roleModal === "create" ? { roleCode, roleName, description: roleDescription } : { roleName, description: roleDescription }),
+    });
+    if (response.ok) window.location.reload();
+    else window.alert("บันทึกกลุ่มสิทธิ์ไม่สำเร็จ");
+  };
+  const deleteRole = async () => {
+    const role = roles.find((x) => x.roleId === roleId);
+    if (!role || !window.confirm(`ลบกลุ่มสิทธิ์ ${role.roleName} หรือไม่?`)) return;
+    const response = await fetch(`${apiUrl}/admin/roles/${roleId}`, { method: "DELETE", headers });
+    if (response.ok) window.location.reload();
+    else window.alert("ลบกลุ่มสิทธิ์ไม่สำเร็จ หรือกลุ่มนี้ยังมีผู้ใช้งานอยู่");
   };
   const openEdit = (user: AdminUser) => {
     setEditing(user);
@@ -5636,6 +5707,15 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
   const menuGroupOrder = ["ภาพรวม (Overview)", "Test Design", "Test Execution", "Release Governance", "Administration", "Other"];
   const visiblePermissions = permissions.filter((p) => (p.permissionCode + " " + (p.moduleArea ?? "")).toLowerCase().includes(permFilter.toLowerCase()));
   const grouped = menuGroupOrder.map((group) => ({ group, icon: Object.values(areaMenuMap).find((v) => v.group === group)?.icon ?? "…", items: visiblePermissions.filter((p) => { const area = p.moduleArea || "OTHER"; return (areaMenuMap[area]?.group ?? "Other") === group; }) })).filter((g) => g.items.length > 0 || g.group !== "Other");
+  const menuTree = [
+    ["OVERVIEW", [["Dashboard", "DASHBOARD"], ["My Work", "MYWORK"]]],
+    ["REQUIREMENT & TEST DESIGN", [["Project / Module", "PROJECT"], ["Requirement", "REQUIREMENT"], ["RTM", "RTM"], ["Test Case", "TESTCASE"], ["Test Suite", "TESTSUITE"]]],
+    ["TEST EXECUTION", [["Test Cycle", "TESTCYCLE"], ["Execution Workspace", "EXECUTION"], ["Defect", "DEFECT"], ["Regression", "REGRESSION"], ["Automation", "AUTOMATION"]]],
+    ["RELEASE GOVERNANCE", [["Workload Summary", "WORKLOAD"], ["Test Summary", "REPORT"], ["Risk Acceptance", "RISK"], ["Release Sign-off", "RELEASE"]]],
+    ["ADMINISTRATION", [["User / Role", "ADMIN"], ["Setting Center", "SETTING"], ["System Monitor", "MONITOR"], ["Audit Log", "AUDIT"]]],
+  ] as const;
+  const matrixGroups = menuTree.map(([group, areas]) => ({ group, areas: areas.map(([label, area]) => ({ label, area, items: visiblePermissions.filter((p) => (p.moduleArea || "OTHER") === area) })) }));
+  const matrixPermission = (items: AdminPermission[], action: string) => items.find((x) => x.permissionCode.split(".").at(-1)?.toUpperCase() === action || x.permissionCode.toUpperCase().endsWith(`.${action}`));
   return (
     <div className="admin-page">
       <header className="admin-page-header">
@@ -5942,6 +6022,11 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
               </option>
             ))}
           </select>
+          <div className="role-actions">
+            <button type="button" className="btn" onClick={() => openRoleModal("create")}>Create group</button>
+            <button type="button" className="btn" onClick={() => openRoleModal("edit")} disabled={!roleId}>Edit</button>
+            <button type="button" className="btn" onClick={deleteRole} disabled={!roleId}>Delete</button>
+          </div>
         </label>
         <div className="permission-toolbar">
           <div className="permission-filter"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input aria-label="ค้นหาสิทธิ์" placeholder="ค้นหาสิทธิ์..." value={permFilter} onChange={(e) => setPermFilter(e.target.value)} /></div>
@@ -5956,6 +6041,12 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
               ล้างทั้งหมด
             </button>
           </div>
+        </div>
+        <div className="permission-matrix-wrap">
+          <table className="permission-matrix">
+            <thead><tr><th>Menu</th><th>Create</th><th>Delete</th><th>Edit</th><th>View only</th></tr></thead>
+            <tbody>{matrixGroups.map((g) => <_F key={g.group}><tr className="permission-menu-group"><th colSpan={5}>{g.group}</th></tr>{g.areas.map((row) => <tr key={row.area}><td className="permission-submenu">{row.label}</td>{["CREATE", "DELETE", "EDIT", "VIEW"].map((action) => { const permission = matrixPermission(row.items, action); return <td key={action}><input type="checkbox" aria-label={`${row.label} ${action}`} checked={permission ? selected.includes(permission.permissionId) : false} onChange={(e) => permission && togglePermission(permission.permissionId, e.target.checked)} /></td>; })}</tr>)}</_F>)}</tbody>
+          </table>
         </div>
         <div className="permission-groups">
           {grouped.map((g) => (
@@ -5989,6 +6080,25 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
           </button>
         </div>
       </article>
+      {roleModal && (
+        <div className="modal" role="presentation" onMouseDown={() => setRoleModal(null)}>
+          <div className="modal-box role-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>{roleModal === "create" ? "เพิ่มกลุ่มสิทธิ์" : "แก้ไขกลุ่มสิทธิ์"}</h2>
+              <button type="button" onClick={() => setRoleModal(null)} aria-label="ปิด">×</button>
+            </div>
+            <div className="form-grid">
+              <label>Role Code<input value={roleCode} disabled={roleModal === "edit"} onChange={(e) => setRoleCode(e.target.value.toUpperCase())} /></label>
+              <label>ชื่อกลุ่มสิทธิ์<input value={roleName} onChange={(e) => setRoleName(e.target.value)} /></label>
+              <label className="full">รายละเอียด<textarea value={roleDescription} onChange={(e) => setRoleDescription(e.target.value)} rows={3} /></label>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn" onClick={() => setRoleModal(null)}>ยกเลิก</button>
+              <button type="button" className="btn primary" onClick={saveRole}>บันทึก</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -6256,6 +6366,7 @@ type RiskDefectOption = { defectId: string; label: string };
 
 function RiskAcceptancePage({ projectId, releaseId: contextReleaseId, canEdit, canApprove }: { projectId?: string; releaseId?: string; canEdit: boolean; canApprove: boolean }) {
   const [items, setItems] = useState<RiskItem[]>([]);
+  const [detail, setDetail] = useState<RiskItem | null>(null);
   const [releases, setReleases] = useState<ReleaseItem[]>([]);
   const [users, setUsers] = useState<UserLookup[]>([]);
   const [defects, setDefects] = useState<RiskDefectOption[]>([]);
@@ -6264,9 +6375,7 @@ function RiskAcceptancePage({ projectId, releaseId: contextReleaseId, canEdit, c
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<RiskItem | null>(null);
-  const [detail, setDetail] = useState<RiskItem | null>(null);
-  const [decision, setDecision] = useState<{ kind: "approve" | "reject"; item: RiskItem } | null>(null);
+  const [editing, setEditing] = useState<RiskItem | null>(null);  const [decision, setDecision] = useState<{ kind: "approve" | "reject"; item: RiskItem } | null>(null);
   const [decisionComment, setDecisionComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ releaseId: "", defectId: "", title: "", issue: "", impact: "Medium", probability: "Medium", workaround: "", targetFix: "", qaRecommendation: "", ownerUserId: "" });
@@ -6869,6 +6978,8 @@ function App() {
           </div>
           {page === "dashboard" ? (
             <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} />
+          ) : page === "my-work" ? (
+            <MyWorkPage onOpenExecution={(cycleId) => { localStorage.setItem("qa.targetCycleId", cycleId); go("execution"); }} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (

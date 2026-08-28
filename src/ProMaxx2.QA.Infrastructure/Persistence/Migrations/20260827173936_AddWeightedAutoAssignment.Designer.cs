@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(QaDbContext))]
-    partial class QaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260827173936_AddWeightedAutoAssignment")]
+    partial class AddWeightedAutoAssignment
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2061,8 +2064,7 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
                     b.Property<byte[]>("AssignmentVersion")
                         .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("varbinary(16)");
+                        .HasColumnType("varbinary(max)");
 
                     b.Property<int>("CaseWeight")
                         .HasColumnType("int");
@@ -2085,12 +2087,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<int>("RequiredSkillLevelSnapshot")
                         .HasColumnType("int");
 
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
-
                     b.Property<Guid>("TestCaseId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2110,45 +2106,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("TestCycleCases", (string)null);
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.TestCycleCaseAssignment", b =>
-                {
-                    b.Property<Guid>("TestCycleCaseAssignmentId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("AcceptedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("AssignedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("AssignedByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("DueDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("StartedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<Guid>("TestCycleCaseId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("TestCycleCaseAssignmentId");
-
-                    b.HasIndex("AssignedByUserId");
-
-                    b.HasIndex("TestCycleCaseId")
-                        .IsUnique();
-
-                    b.ToTable("TestCycleCaseAssignments", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.TestEnvironment", b =>
@@ -3703,13 +3660,11 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AssignmentHistory", b =>
                 {
-                    b.HasOne("ProMaxx2.QA.Domain.Execution.TestCycleCase", "TestCycleCase")
+                    b.HasOne("ProMaxx2.QA.Domain.Execution.TestCycleCase", null)
                         .WithMany()
                         .HasForeignKey("TestCycleCaseId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("TestCycleCase");
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.AssignmentPreview", b =>
@@ -3798,20 +3753,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Navigation("Cycle");
 
                     b.Navigation("TestCase");
-                });
-
-            modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.TestCycleCaseAssignment", b =>
-                {
-                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
-                        .WithMany()
-                        .HasForeignKey("AssignedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("ProMaxx2.QA.Domain.Execution.TestCycleCase", null)
-                        .WithMany()
-                        .HasForeignKey("TestCycleCaseId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Execution.TestEnvironment", b =>

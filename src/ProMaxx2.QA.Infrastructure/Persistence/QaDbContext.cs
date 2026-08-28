@@ -41,6 +41,11 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<RegressionProfile> RegressionProfiles => Set<RegressionProfile>();
     public DbSet<RegressionSchedule> RegressionSchedules => Set<RegressionSchedule>();
     public DbSet<TestStepResult> TestStepResults => Set<TestStepResult>();
+    public DbSet<QaSkillMatrixEntry> QaSkillMatrixEntries => Set<QaSkillMatrixEntry>();
+    public DbSet<QaAvailability> QaAvailabilities => Set<QaAvailability>();
+    public DbSet<AssignmentPreview> AssignmentPreviews => Set<AssignmentPreview>();
+    public DbSet<AssignmentHistory> AssignmentHistories => Set<AssignmentHistory>();
+    public DbSet<TestCycleCaseAssignment> TestCycleCaseAssignments => Set<TestCycleCaseAssignment>();
     public DbSet<Defect> Defects => Set<Defect>();
     public DbSet<DefectActivity> DefectActivities => Set<DefectActivity>();
     public DbSet<DefectTestCaseLink> DefectTestCaseLinks => Set<DefectTestCaseLink>();

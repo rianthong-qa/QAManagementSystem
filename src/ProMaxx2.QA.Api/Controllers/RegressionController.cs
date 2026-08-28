@@ -158,7 +158,7 @@ public sealed class RegressionController(QaDbContext db) : ControllerBase
         db.TestCycleCases.AddRange(cases.Where(x => !existing.Contains(x.TestCaseId)).Select((x, index) => new TestCycleCase(cycleId, x.TestCaseId, x.RevisionNo, x.Priority, nextOrder + index + 1)));
         db.RegressionActivities.Add(new RegressionActivity(cycle.ProjectId,cycle.ReleaseId,cycle.BuildId,"CasesAddedToCycle",$"{cases.Count} requested cases added to {cycle.CycleCode}",UserId()));
         await db.SaveChangesAsync(ct);
-        return NoContent();
+        return request.AutoAssignPreview ? Accepted($"/api/v1/test-cycles/{cycleId}/auto-assign/regression-auto-preview", new { previewRequested = true, cycleId }) : NoContent();
     }
 
     private static int PriorityRank(string value) => value.ToUpperInvariant() switch { "P0" => 0, "P1" => 1, "P2" => 2, "P3" => 3, _ => 1 };

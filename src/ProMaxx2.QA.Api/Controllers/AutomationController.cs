@@ -2,11 +2,13 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Application.Automation;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.TestManagement;
 using ProMaxx2.QA.Api.Services;
+using ProMaxx2.QA.Infrastructure.Persistence;
 
 namespace ProMaxx2.QA.Api.Controllers;
 
@@ -17,8 +19,18 @@ public sealed class AutomationController(
     AutomationAiService aiService,
     AutomationDefectService defectService,
     ITestCaseRepository testCases,
-    IWebHostEnvironment environment) : ControllerBase
+    IWebHostEnvironment environment,
+    QaDbContext db) : ControllerBase
 {
+    [HttpGet("executions/{id:guid}/assignment-context")]
+    public async Task<ActionResult> AssignmentContext(Guid id, CancellationToken ct)
+    {
+        var linked = await db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationExecutionId == id && x.TestExecutionId.HasValue).Select(x => new { x.TestExecutionId, x.Status, x.ClassifiedRecommendation, x.ErrorCode }).SingleOrDefaultAsync(ct);
+        if (linked is null || !linked.TestExecutionId.HasValue) return NotFound(new { code = "AUTOASSIGN_NO_LINKED_TEST_EXECUTION" });
+        var execution = await db.TestExecutions.AsNoTracking().Where(x => x.TestExecutionId == linked.TestExecutionId.Value).Select(x => new { x.TestCycleCaseId, x.TesterUserId, x.CycleCase.TestCycleId }).SingleOrDefaultAsync(ct);
+        return execution is null ? NotFound(new { code = "AUTOASSIGN_NO_LINKED_TEST_EXECUTION" }) : Ok(new { execution.TestCycleId, execution.TestCycleCaseId, originalTesterUserId = execution.TesterUserId, linked.Status, linked.ClassifiedRecommendation, linked.ErrorCode });
+    }
+
     /// <summary>AUT-P2-001: real server-side page/size/filter/sort — <c>page</c>/<c>size</c> default to a single
     /// page of 200 so existing callers that just want "up to 200 flat" (dashboard KPIs, batch-run/suite case
     /// pickers) keep working unchanged by simply reading <c>.Rows</c> off the response.</summary>

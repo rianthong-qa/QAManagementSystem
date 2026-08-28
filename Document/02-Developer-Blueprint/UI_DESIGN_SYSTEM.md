@@ -258,6 +258,12 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-08-28 (Weighted Auto Assignment)
+
+- หน้า Test Cycle เพิ่ม action `Auto Assign Preview` ใน unified modal เดิม เพื่อเริ่ม workflow Preview อายุ 10 นาที; ใช้ปุ่มมาตรฐานและแสดงผลผ่าน notice/error เดิมของหน้า ไม่สร้าง page-level horizontal scroll หรือ modal pattern ใหม่
+- เพิ่ม Preview result modal แยก component แสดง Before/After Load, Score, Reason และ warnings; Confirm ใช้ primary button มาตรฐานและแสดง modal ซ้อนแบบ keyboard-accessible ตาม pattern เดิม
+- Test Cycle detail เพิ่ม Assignment History section แบบโหลดตามคำขอ ใช้ `.table-wrap` เพื่อจำกัด horizontal scroll ไว้เฉพาะตาราง
+
 ### 2026-08-26 (Automation Action/Object Management)
 
 - หน้า Automation แท็บการจัดการเพิ่ม row actions **แก้ไข/เปิด/ปิด** สำหรับ Action Library และ Object Repository ตามสิทธิ์ `AUTOMATION.MANAGE`; modal เดิมรองรับทั้ง create/edit โดย Action Code คงที่เมื่อแก้ไข, แก้ Parameter Schema JSON/Handler Key/Minimum Agent Version ได้ และ Object แก้ Business Key/AutomationId/Selector JSON พร้อมแสดง Object Version; การเปิด–ปิดต้อง confirm, ระหว่างบันทึก action ถูก disabled, invalid JSON แสดง inline page error; ตารางยังเลื่อนภายใน `.table-wrap` และ modal ใช้ Unified modal responsive เดิม
