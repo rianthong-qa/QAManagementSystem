@@ -5546,7 +5546,11 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
           body: JSON.stringify({ permissionIds: selected }),
         },
       );
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? payload?.title ?? `HTTP ${response.status}`);
+      }
+      setVersion((current) => current + 1);
       window.alert("บันทึกสิทธิ์เรียบร้อยแล้ว");
     } catch {
       window.alert("ไม่สามารถบันทึกสิทธิ์ได้ กรุณาลองใหม่");
