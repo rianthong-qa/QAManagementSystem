@@ -5718,7 +5718,13 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
     ["RELEASE GOVERNANCE", [["Workload Summary", "WORKLOAD"], ["Test Summary", "REPORT"], ["Risk Acceptance", "RISK"], ["Release Sign-off", "RELEASE"]]],
     ["ADMINISTRATION", [["User / Role", "ADMIN"], ["Setting Center", "SETTING"], ["System Monitor", "MONITOR"], ["Audit Log", "AUDIT"]]],
   ] as const;
-  const matrixGroups = menuTree.map(([group, areas]) => ({ group, areas: areas.map(([label, area]) => ({ label, area, items: visiblePermissions.filter((p) => (p.moduleArea || "OTHER") === area) })) }));
+  const permissionArea = (permission: AdminPermission) => {
+    const code = permission.permissionCode.toUpperCase();
+    if (code.startsWith("QA.MYWORK.")) return "MYWORK";
+    if (code.startsWith("QA.WORKLOAD.")) return "WORKLOAD";
+    return (permission.moduleArea || code.split(".")[0] || "OTHER").toUpperCase();
+  };
+  const matrixGroups = menuTree.map(([group, areas]) => ({ group, areas: areas.map(([label, area]) => ({ label, area, items: visiblePermissions.filter((p) => permissionArea(p) === area) })) }));
   const matrixPermission = (items: AdminPermission[], action: string) => items.find((x) => x.permissionCode.split(".").at(-1)?.toUpperCase() === action || x.permissionCode.toUpperCase().endsWith(`.${action}`));
   return (
     <div className="admin-page">
