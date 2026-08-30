@@ -34,6 +34,18 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
         return await repository.GetCaseAsync(entity.AutomationCaseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
     }
 
+    /// <summary>ลบ Automation Case ถาวร — ตรวจว่าทุก id ที่ระบุอยู่ใน project นี้จริงก่อน (project scope กันลบข้าม
+    /// project จากช่องโหว่ id เดา) แล้วส่งต่อให้ repository จัดการลำดับการลบตาราง Restrict/Cascade ที่เกี่ยวข้อง.</summary>
+    public async Task HardDeleteCasesAsync(Guid projectId, HardDeleteAutomationCasesRequest r, CancellationToken ct)
+    {
+        if (r.AutomationCaseIds.Count == 0) return;
+        var owned = new List<Guid>();
+        foreach (var id in r.AutomationCaseIds.Distinct())
+            if (await repository.GetCaseAsync(id, projectId, ct) is not null) owned.Add(id);
+        if (owned.Count == 0) throw new EntityNotFoundException("Automation case not found.");
+        await repository.HardDeleteCasesAsync(owned, ct);
+    }
+
     public async Task<AutomationVersionDto> CreateVersionAsync(Guid caseId, Guid projectId, CreateAutomationVersionRequest r, Guid? userId, CancellationToken ct)
     {
         var caseEntity = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");

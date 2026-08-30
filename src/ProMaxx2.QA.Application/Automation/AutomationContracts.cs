@@ -4,6 +4,7 @@ using ProMaxx2.QA.Domain.Automation;
 namespace ProMaxx2.QA.Application.Automation;
 
 public sealed record CreateAutomationCaseRequest(Guid TestCaseId, string AutomationType, Guid? OwnerUserId);
+public sealed record HardDeleteAutomationCasesRequest(IReadOnlyList<Guid> AutomationCaseIds);
 public sealed record AutomationCaseDto(Guid AutomationCaseId, Guid TestCaseId, string TestCaseCode, string TestCaseTitle, string AutomationCode, string AutomationType, string Status, int CurrentVersionNo, int VersionCount, Guid? OwnerUserId, string? OwnerName, bool IsAiGenerated, DateTime CreatedAt,
     string? MaintenanceReason = null, Guid? MaintenanceOwnerUserId = null, DateTime? MaintenanceOpenedAt = null,
     bool IsQuarantined = false, string? QuarantineReason = null, Guid? QuarantineOwnerUserId = null, DateTime? QuarantineExpiresAt = null);
@@ -92,6 +93,13 @@ public interface IAutomationRepository
     Task<AutomationCase?> FindCaseByIdAsync(Guid id, CancellationToken ct);
     Task<bool> CodeExistsAsync(Guid projectId, string code, CancellationToken ct);
     Task AddCaseAsync(AutomationCase entity, CancellationToken ct);
+    /// <summary>Permanent delete for one or more Automation Cases — cascades explicitly through everything that is
+    /// FK-Restrict against the case (AutomationExecutions, their AutomationJobs, and AutomationSuiteCase links),
+    /// since only AutomationVersion is configured Cascade at the DB level; the case rows themselves are removed last
+    /// so that DB-level cascade then takes AutomationVersions (and, transitively, each execution's own
+    /// AutomationStepResults/AutomationEvidence) with them. Silently ignores ids that don't exist — a bulk delete
+    /// should not fail just because one row was already removed by someone else.</summary>
+    Task HardDeleteCasesAsync(IReadOnlyList<Guid> automationCaseIds, CancellationToken ct);
     Task<IReadOnlyList<AutomationVersionDto>> ListVersionsAsync(Guid caseId, CancellationToken ct);
     Task<AutomationVersion?> FindVersionAsync(Guid versionId, CancellationToken ct);
     Task AddVersionAsync(AutomationVersion entity, CancellationToken ct);

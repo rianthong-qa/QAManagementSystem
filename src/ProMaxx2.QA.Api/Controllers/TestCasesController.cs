@@ -15,7 +15,7 @@ public sealed class TestCasesController(TestCaseService service, ProjectService 
 {
     private sealed record TestCaseImportResult(int Imported,int Failed,IReadOnlyList<string>Errors);
     [HttpGet("test-cases")]
-    public Task<PagedResult<TestCaseListDto>> List([FromQuery] Guid? projectId, [FromQuery] Guid? moduleId, [FromQuery] string? priority, [FromQuery] string? testType, [FromQuery] string? status, [FromQuery] bool? automation, [FromQuery] string? search, [FromQuery] string? automationTarget, [FromQuery] string? sortBy, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, moduleId, priority, testType, status, automation, search, automationTarget, sortBy, page, size, ct);
+    public Task<PagedResult<TestCaseListDto>> List([FromQuery] Guid? projectId, [FromQuery] Guid? moduleId, [FromQuery] string? priority, [FromQuery] string? testType, [FromQuery] string? status, [FromQuery] bool? automation, [FromQuery] string? search, [FromQuery] string? automationTarget, [FromQuery] Guid? createdBy, [FromQuery] string? sortBy, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, moduleId, priority, testType, status, automation, search, automationTarget, createdBy, sortBy, page, size, ct);
 
     [HttpGet("test-cases/automation-summary"), Authorize(Policy="TestCaseView")]
     public async Task<ActionResult<AutomationCandidateSummaryDto>> AutomationSummary([FromQuery] Guid projectId, CancellationToken ct) { return Ok(await service.AutomationSummaryAsync(projectId, ct)); }

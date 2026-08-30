@@ -17,7 +17,7 @@ export function MyWorkDetailModal({ detail, onClose, onRun }: { detail: MyWorkDe
       {detail.preconditions && <p><b>Preconditions:</b> {detail.preconditions}</p>}
       <h3>Test Steps ({detail.steps?.length ?? 0})</h3>
       <ol>{(detail.steps ?? []).map((step) => <li key={step.stepNo}><b>{step.action}</b>{step.testData && <small> · {step.testData}</small>}<div>{step.expectedResult}</div></li>)}</ol>
-      <div className="modal-actions"><button type="button" className="btn" onClick={onClose}>ปิด</button>{onRun && <button type="button" className="btn primary" onClick={onRun}>Run Test Case</button>}</div>
+      <div className="modal-actions"><button type="button" className="btn" onClick={onClose}><span aria-hidden="true">✕</span> ปิด</button>{onRun && <button type="button" className="btn primary" onClick={onRun}><span aria-hidden="true">▶</span> Run Test Case</button>}</div>
     </div>
   </div>;
 }

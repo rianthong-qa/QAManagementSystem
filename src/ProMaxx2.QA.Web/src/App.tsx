@@ -16,6 +16,7 @@ import "./TestSummary.css";
 import "./RiskAcceptance.css";
 import "./ReleaseSignoff.css";
 import { formatThaiDateTime } from "./dateTime";
+import { calculateOverallResult, type StepStatus } from "./overallResult";
 import { AutomationPage } from "./AutomationPage";
 
 type Page =
@@ -50,7 +51,8 @@ type SessionUser = {
 type DashboardSummary = {
   totalRequirements: number; coveredRequirements: number; requirementCoverage: number;
   totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
-  openP0: number; openP1: number; overallScore?: number; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string; generatedAt: string;
+  openP0: number; openP1: number; overallScore?: number; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string;
+  totalTestCaseCount: number; testedTestCaseCount: number; testCaseProgress: number; totalExecutionCount: number; generatedAt: string;
   modules: { moduleId: string; parentModuleId?: string; moduleCode?: string; moduleName: string; sortOrder?: number; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
   users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
   statusDistribution: { status: string; count: number; color: string }[];
@@ -86,6 +88,11 @@ function renderModuleSelectOptions(modules: ModuleItem[]): ReactElement[] {
       {depth ? `${"　".repeat(depth)}└ ` : "▾ "}{module.moduleCode ? `${module.moduleCode} · ` : ""}{module.moduleName}
     </option>
   ));
+}
+// ค่าเริ่มต้นของ Filter "ผู้สร้าง" ในหน้า Test Case/Suite/Cycle — ตั้งเป็น User ที่ login อยู่
+function currentUserId(): string {
+  try { return (JSON.parse(localStorage.getItem("qa.user") ?? "{}") as SessionUser).userId ?? ""; }
+  catch { return ""; }
 }
 
 type MasterOption = { masterOptionId: string; category: string; value: string; displayName: string; sortOrder: number; isActive: boolean };
@@ -383,6 +390,17 @@ function Badge({
 type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string; projectId?:string; releaseId?:string|null; buildId?:string|null; moduleId?:string|null; description?:string|null; stepsToReproduce?:string|null; expectedResult?:string|null; actualResult?:string|null; assigneeUserId?:string|null; updatedAt?:string|null; createdByName?:string|null; updatedByName?:string|null; releaseCode?:string|null; buildNumber?:string|null; assigneeName?:string|null };
 type DefectActivityItem = { activityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string; performedByUserId?: string | null; performedAt?: string };
 type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority?: string; status?: string; linkedAt?: string };
+const cycleStatusOptions = ["Draft", "InProgress", "Completed", "Closed", "Cancelled"];
+// เหตุผลของ Skip Test Case (test-case-execution-ui-spec.md §18) — ไม่มีคอลัมน์ DB แยกเก็บ Reason
+// เลยเข้ารหัสรวมไว้ใน Comment field เดิมตอนส่ง (ดู confirmSkip ใน ExecutionWorkspacePage)
+const skipReasonOptions = [
+  { value: "RequirementChanged", label: "Requirement Changed" },
+  { value: "NotApplicable", label: "Not Applicable" },
+  { value: "FeatureRemoved", label: "Feature Removed" },
+  { value: "EnvironmentLimitation", label: "Environment Limitation" },
+  { value: "DuplicateTestCase", label: "Duplicate Test Case" },
+  { value: "Other", label: "Other" },
+];
 const defectSeverities = ["Critical", "High", "Medium", "Low"];
 const defectStatuses = ["Open", "In Progress", "Resolved", "Closed", "Rejected"];
 const defectSeverityTones: Record<string, string> = { Critical: "red", High: "yellow", Medium: "blue", Low: "green" };
@@ -390,10 +408,56 @@ const defectStatusTones: Record<string, string> = { Open: "yellow", "In Progress
 const testCaseStatusTones: Record<string, string> = { Draft: "gray", Review: "yellow", Ready: "green", Deprecated: "red" };
 const defectActionLabels: Record<string, string> = { Created: "สร้าง", Updated: "แก้ไข", StatusChanged: "สถานะ", SeverityChanged: "Severity", Comment: "คอมเมนต์", TestLinked: "เชื่อมโยง Test Case", TestUnlinked: "ยกเลิก Test Case", BulkUpdated: "อัปเดตกลุ่ม", Deleted: "ลบ" };
 
-function QualityOverviewCharts({ data }: { data: DashboardSummary }) {
+// เดิมทั้งสองกราฟนี้อยู่ใน component เดียวกัน (QualityOverviewCharts) เรนเดอร์คู่กันใน .charts-grid เสมอ
+// — แยกเป็น 2 component อิสระเพื่อให้ผู้ใช้สลับตำแหน่งได้ (Defect แยกตามความรุนแรง ย้ายไปอยู่คู่กับ
+// Risks & Blockers แทน ส่วนโมดูลที่ต้องให้ความสนใจย้ายมาอยู่คู่กับกราฟสถานะผลการทดสอบแทน)
+function TestStatusChart({ data }: { data: DashboardSummary }) {
   const statusDist = data.statusDistribution || [];
   const totalStatus = Math.max(1, statusDist.reduce((s, x) => s + x.count, 0));
 
+  // Build conic gradient for donut — เว้นช่องว่างเล็กๆ ระหว่างเซกเมนต์ให้ดูเป็นสัดส่วนชัดเจนขึ้น
+  // (ไม่เว้นช่องถ้ามีสถานะเดียวที่มีค่า เพราะจะกลายเป็นวงแหวนขาดครึ่งดวง)
+  const activeSegments = statusDist.filter(x => x.count > 0);
+  const gapDeg = activeSegments.length > 1 ? 3 : 0;
+  let angle = 0;
+  const donutSegments = activeSegments.map(x => {
+    const start = angle;
+    const pct = x.count / totalStatus * 100;
+    angle += pct / 100 * 360;
+    const end = Math.max(start, angle - gapDeg);
+    return `${x.color} ${start}deg ${end}deg, #fff ${end}deg ${angle}deg`;
+  }).join(", ") || "#e2e8f0 0deg 360deg";
+
+  return <article className="card chart-card">
+    <div className="chart-card-head">
+      <h3>สถานะผลการทดสอบ</h3>
+      <span>{totalStatus.toLocaleString()} รายการใน Test Cycle</span>
+    </div>
+    <div className="chart-donut-wrap">
+      <div className="chart-donut" style={{background:`conic-gradient(${donutSegments})`}}>
+        <div className="chart-donut-hole">
+          <b>{data.passRate}%</b>
+          <span>อัตราผ่าน</span>
+          <small>{data.passedCases.toLocaleString()}/{data.executedCases.toLocaleString()} ผ่าน</small>
+        </div>
+      </div>
+      <div className="chart-donut-legend">
+        {statusDist.map(x => <div key={x.status} className="legend-item">
+          <i style={{background:x.color}} />
+          <span className="legend-label">{x.status}</span>
+          <span className="legend-count" style={{background:`${x.color}1a`,color:x.color}}>{x.count}</span>
+          <span className="legend-pct">{Math.round(x.count / totalStatus * 100)}%</span>
+        </div>)}
+      </div>
+    </div>
+    {/* กันสับสนกับ % ความคืบหน้าการทดสอบใน Hero ด้านบน — ตัวนั้นนับ Test Case แบบไม่ซ้ำ (Tested ÷ Total
+        distinct Test Case) ส่วน executedCases/totalCases ตรงนี้นับจาก cycleCases (แถว Assign
+        Test Case เข้า Test Cycle) ถ้า Test Case เดียวถูกใช้ในหลาย Cycle จะถูกนับซ้ำได้ — ต้องบอกให้ชัด
+        ว่าเป็นคนละฐานการนับ ไม่ใช่แค่ "คนละคำถาม" เฉยๆ กันเข้าใจผิดว่า totalCases = จำนวน Test Case จริง */}
+    <p className="chart-note">คำนวณจากรายการที่ Assign เข้า Test Cycle ({data.executedCases.toLocaleString()}/{data.totalCases.toLocaleString()} รายการ — นับซ้ำได้หาก Test Case เดียวถูกใช้หลาย Cycle) คนละฐานกับ % ความคืบหน้าการทดสอบด้านบนที่นับ Test Case แบบไม่ซ้ำ</p>
+  </article>;
+}
+function DefectSeverityChart({ data }: { data: DashboardSummary }) {
   const sevDist = data.defectSeverityDistribution || [];
   const sevOrder = ["Critical","High","Medium","Low"];
   const sevColor: Record<string, string> = { Critical: "#dc2626", High: "#f59e0b", Medium: "#2563eb", Low: "#94a3b8" };
@@ -401,69 +465,25 @@ function QualityOverviewCharts({ data }: { data: DashboardSummary }) {
   const totalDefects = sevCounts.reduce((s, x) => s + x.count, 0);
   const maxSev = Math.max(1, ...sevCounts.map(x => x.count));
 
-  // Build conic gradient for donut
-  let angle = 0;
-  const donutSegments = statusDist.filter(x => x.count > 0).map(x => {
-    const start = angle;
-    const pct = x.count / totalStatus * 100;
-    angle += pct / 100 * 360;
-    return `${x.color} ${start}deg ${angle}deg`;
-  }).join(", ") || "#e2e8f0 0deg 360deg";
-
-  return <div className="charts-grid">
-    <article className="card chart-card">
-      <div className="chart-card-head">
-        <h3>Test Execution Status</h3>
-        <span>{totalStatus.toLocaleString()} Total Cases</span>
-      </div>
-      <div className="chart-donut-wrap">
-        <div className="chart-donut" style={{background:`conic-gradient(${donutSegments})`}}>
-          <div className="chart-donut-hole">
-            <b>{data.passRate}%</b>
-            <span>Pass Rate</span>
+  return <article className="card chart-card">
+    <div className="chart-card-head">
+      <h3>Defect แยกตามความรุนแรง</h3>
+      <span>{totalDefects.toLocaleString()} รายการ</span>
+    </div>
+    <div className="chart-bars">
+      {sevCounts.map(x => <div key={x.sev} className="bar-row">
+        <div className="bar-label">{x.sev}</div>
+        <div className="bar-track">
+          <div className="bar-fill" style={{width:`${Math.max(x.count / maxSev * 100, x.count > 0 ? 8 : 0)}%`,background:`linear-gradient(90deg, ${x.color}cc, ${x.color})`}}>
+            {x.count > 0 && <span>{x.count}</span>}
           </div>
         </div>
-        <div className="chart-donut-legend">
-          {statusDist.map(x => <div key={x.status} className="legend-item">
-            <i style={{background:x.color}} />
-            <span className="legend-label">{x.status}</span>
-            <span className="legend-count">{x.count}</span>
-            <span className="legend-pct">{Math.round(x.count / totalStatus * 100)}%</span>
-          </div>)}
-        </div>
-      </div>
-    </article>
-    <article className="card chart-card">
-      <div className="chart-card-head">
-        <h3>Defects by Severity</h3>
-        <span>{totalDefects.toLocaleString()} Total</span>
-      </div>
-      <div className="chart-bars">
-        {sevCounts.map(x => <div key={x.sev} className="bar-row">
-          <div className="bar-label">{x.sev}</div>
-          <div className="bar-track">
-            <div className="bar-fill" style={{width:`${Math.max(x.count / maxSev * 100, x.count > 0 ? 8 : 0)}%`,background:x.color}}>
-              {x.count > 0 && <span>{x.count}</span>}
-            </div>
-          </div>
-        </div>)}
-      </div>
-      {totalDefects === 0 && <p className="chart-empty">ยังไม่มีข้อมูล Defect</p>}
-    </article>
-  </div>;
+      </div>)}
+    </div>
+    {totalDefects === 0 && <p className="chart-empty">ยังไม่มีข้อมูล Defect</p>}
+  </article>;
 }
 
-type TimelineRelease = { releaseId: string; releaseCode: string; version: string; plannedReleaseDate?: string; actualReleaseDate?: string; status: string };
-type TimelineCycle = { testCycleId: string; cycleCode: string; cycleName: string; startDate?: string; endDate?: string; status: string; progressPercent: number };
-
-const TH_OFFSET = 7;
-function nowTH(): Date { const u = new Date(); return new Date(u.getTime() + (u.getTimezoneOffset() + TH_OFFSET * 60) * 60000); }
-function startOfDayTH(d: Date): Date { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
-function parseDateTH(s: string): Date { const d = new Date(s); return new Date(d.getTime() + (d.getTimezoneOffset() + TH_OFFSET * 60) * 60000); }
-function isWeekday(d: Date): boolean { const day = d.getDay(); return day >= 1 && day <= 5; }
-function addDays(d: Date, n: number): Date { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
-function sameDay(a: Date, b: Date): boolean { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
-function fmtShort(d: Date): string { return `${d.getDate()}/${d.getMonth() + 1}`; }
 function fmtAgo(iso?: string | null): string {
   if (!iso) return "-";
   const ms = Date.now() - new Date(iso).getTime();
@@ -478,148 +498,91 @@ function fmtAgo(iso?: string | null): string {
   if (mo < 12) return `${mo} เดือนที่แล้ว`;
   return `${Math.floor(mo / 12)} ปีที่แล้ว`;
 }
+// สีของ Badge สถานะผลการทดสอบ (Test Execution) — ใช้ชุดสีเดียวกับ Dashboard's statusDistribution
+// (Pass=เขียว, Fail=แดง, Blocked=เหลือง, Skipped=ม่วง, NotRun=เทา) ให้สื่อความหมายตรงกันทั้งระบบ
+function executionStatusTone(status: string): string {
+  switch (status) {
+    case "Pass": return "green";
+    case "Fail": return "red";
+    case "Blocked": return "yellow";
+    case "Skipped": return "purple";
+    case "InProgress": return "blue";
+    default: return "gray"; // NotRun
+  }
+}
+// รูปแบบ DD/MM/YYYY HH:MM:SS แบบปี พ.ศ. (เช่น 28/08/2569 14:35:02) — จัดรูปแบบเองแทนการพึ่ง
+// toLocaleString เพราะ locale/timezone ของแต่ละเบราว์เซอร์อาจให้ผลลัพธ์ไม่ตรงตามที่ต้องการเป๊ะๆ
+function fmtDateTimeBE(iso?: string | null): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear() + 543} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
 function defectAgeDays(createdAt: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000));
 }
+type DefectReproStep = { stepNo: number; action: string; status?: "Pass" | "Fail"; detail: string };
+// "Steps to Reproduce" เป็น freeform text — ถ้าเขียนตามรูปแบบ "1. Action (Pass/Fail) | รายละเอียด" จะแปลงเป็น
+// การ์ดลำดับขั้นตอนพร้อม Badge ผลลัพธ์ให้ ถ้าไม่ตรงรูปแบบ (ไม่ได้ขึ้นต้นด้วยเลขข้อทุกบรรทัด) จะคืน null ให้แสดง
+// เป็นข้อความธรรมดาแทน ไม่พังแม้ข้อมูลจะเป็น text อิสระที่ไม่ได้ตามรูปแบบนี้
+function parseReproSteps(text: string): DefectReproStep[] | null {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  const steps: DefectReproStep[] = [];
+  for (const line of lines) {
+    const m = line.match(/^(\d+)[.)]\s*(.+)$/);
+    if (!m) return null;
+    const stepNo = Number(m[1]);
+    const rest = m[2];
+    const statusMatch = rest.match(/^(.*?)\s*\((Pass|Fail)\)\s*(?:\|\s*(.*))?$/);
+    if (statusMatch) {
+      const [, action, status, detailPart] = statusMatch;
+      steps.push({ stepNo, action: action.trim(), status: status as "Pass" | "Fail", detail: (detailPart ?? "").trim() });
+    } else {
+      const parts = rest.split("|");
+      steps.push({ stepNo, action: parts[0].trim(), detail: parts.slice(1).join("|").trim() });
+    }
+  }
+  return steps;
+}
 
-function ExecutiveTimeline({ projectId, releaseId, buildId, shareCode, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string }) {
-  const [releases, setReleases] = useState<TimelineRelease[]>([]);
-  const [cycles, setCycles] = useState<TimelineCycle[]>([]);
-  const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
+function ModuleAttentionPanel({ projectId, releaseId, buildId, modules, shareCode, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; modules: DashboardSummary["modules"]; shareCode?: string; shareToken?: string }) {
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
   useEffect(() => {
-    const apply = (t: { releases?: TimelineRelease[]; cycles?: TimelineCycle[] } | null) => {
-      if (!t) return;
-      const aR = new Set(["Draft","Testing","Ready"]);
-      const aC = new Set(["Draft","InProgress"]);
-      setReleases((t.releases ?? []).filter(r => aR.has(r.status)));
-      setCycles((t.cycles ?? []).filter(c => aC.has(c.status)));
-    };
-    if (shareCode || shareToken) {
-      const url = shareCode ? `${apiUrl}/dashboard/shared/${encodeURIComponent(shareCode)}/timeline` : `${apiUrl}/dashboard/shared/timeline?token=${encodeURIComponent(shareToken ?? "")}`;
-      fetch(url).then(r => r.ok ? r.json() : null).then(apply).catch(() => {});
-      return;
-    }
-    if (!projectId) return;
-    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
-    Promise.all([
-      fetch(`${apiUrl}/releases?${q}`, { headers }).then(r => r.ok ? r.json() : []),
-      fetch(`${apiUrl}/test-cycles?${q}&page=1&size=100`, { headers }).then(r => r.ok ? r.json() : null),
-    ]).then(([rel, cyc]) => {
-      const cycleRows = cyc && typeof cyc === "object" && "items" in cyc ? (cyc as { items: { rows: TimelineCycle[] } }).items.rows : (cyc as TimelineCycle[] | null) ?? [];
-      apply({ releases: rel as TimelineRelease[], cycles: cycleRows });
-    }).catch(() => {});
-  }, [projectId, releaseId, buildId, headers, shareCode, shareToken]);
+    if (!projectId || shareCode || shareToken) { setCounts(null); return; }
+    const headers = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), page: "1", size: "500" });
+    fetch(`${apiUrl}/defects?${q}`, { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then((res: { rows?: DefectItem[] } | null) => {
+        const closed = new Set(["Resolved", "Closed", "Rejected"]);
+        const map: Record<string, number> = {};
+        for (const d of res?.rows ?? []) { if (d.moduleId && !closed.has(d.status)) map[d.moduleId] = (map[d.moduleId] ?? 0) + 1; }
+        setCounts(map);
+      }).catch(() => setCounts(null));
+  }, [projectId, releaseId, buildId, shareCode, shareToken]);
 
-  const todayTH = startOfDayTH(nowTH());
-  const allDates: Date[] = [];
-  releases.forEach(r => { if (r.plannedReleaseDate) allDates.push(parseDateTH(r.plannedReleaseDate)); if (r.actualReleaseDate) allDates.push(parseDateTH(r.actualReleaseDate)); });
-  cycles.forEach(c => { if (c.startDate) allDates.push(parseDateTH(c.startDate)); if (c.endDate) allDates.push(parseDateTH(c.endDate)); });
-  allDates.push(todayTH);
-  if (!releases.length && !cycles.length) return null;
+  if (!projectId || shareCode || shareToken) return null;
+  const rows = Object.entries(counts ?? {})
+    .map(([moduleId, count]) => ({ moduleId, count, name: modules.find(m => m.moduleId === moduleId)?.moduleName ?? "ไม่ระบุโมดูล" }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+  const maxCount = Math.max(1, ...rows.map(r => r.count));
 
-  const minD = new Date(Math.min(...allDates.map(d => d.getTime())));
-  const maxD = new Date(Math.max(...allDates.map(d => d.getTime())));
-  const rangeStart = addDays(minD, -7);
-  const rangeEnd = addDays(maxD, 14);
-
-  // Build working days array (Mon-Fri only)
-  const workDays: Date[] = [];
-  const d = new Date(rangeStart);
-  while (d <= rangeEnd) { if (isWeekday(d)) workDays.push(new Date(d)); d.setDate(d.getDate() + 1); }
-  const totalCols = workDays.length;
-  if (totalCols === 0) return null;
-
-  const dayIndex = (target: Date) => workDays.findIndex(w => sameDay(w, target));
-  const colStart = (target: Date) => { const i = dayIndex(target); return i >= 0 ? i + 1 : -1; };
-  const colSpan = (from: Date, to: Date) => { const s = dayIndex(from); const e = dayIndex(to); return s >= 0 && e >= 0 ? Math.max(1, e - s + 1) : 0; };
-
-  // Build week groups (Mon-Fri chunks)
-  type WeekGroup = { weekNo: number; start: Date; end: Date; dayCount: number; label: string };
-  const weekGroups: WeekGroup[] = [];
-  let wg: WeekGroup | null = null;
-  workDays.forEach(w => {
-    if (!wg || w.getDay() === 1) {
-      if (wg) weekGroups.push(wg);
-      wg = { weekNo: weekGroups.length + 1, start: new Date(w), end: new Date(w), dayCount: 0, label: "" };
-    }
-    wg.end = new Date(w);
-    wg.dayCount++;
-  });
-  if (wg) weekGroups.push(wg);
-  weekGroups.forEach(wg => { wg.label = `${fmtShort(wg.start)} – ${fmtShort(wg.end)}`; });
-
-  // Today column
-  const cycleColor = (s: string) => s === "Completed" ? "#16a34a" : s === "InProgress" ? "#2563eb" : s === "Cancelled" ? "#94a3b8" : "#d97706";
-  const releaseColor = (s: string) => s === "Released" ? "#16a34a" : s === "Ready" ? "#2563eb" : s === "Testing" ? "#d97706" : "#64748b";
-
-  // Build week header spans (how many cols each week has)
-  const weekSpans = weekGroups.map(wg => wg.dayCount);
-
-  return <article className="card panel" style={{padding:24,overflowX:"auto"}}>
-    <h3 className="title" style={{fontSize:16}}>Executive Timeline</h3>
-    <p className="subtitle">Weekly Delivery View — Release milestones & Test Cycle progress</p>
-    <div className="tl-head">
-      <div></div>
-      <div>
-        <div className="weeks">
-          {weekGroups.map((wg, i) => <span key={i} style={{gridColumn:`span ${weekSpans[i]}`}}>{wg.label}</span>)}
-        </div>
-        <div className="days">
-          {workDays.map((w, i) => <span key={i} className={sameDay(w, todayTH) ? "today-col" : ""}>{w.getDate()}</span>)}
-        </div>
-      </div>
-    </div>
-    {releases.length > 0 && <>
-      <div className="week-group-header"><div><span>RELEASES</span><b>Milestones</b></div><strong>{releases.length} Active</strong></div>
-      {releases.map((r, idx) => {
-        const pd = r.plannedReleaseDate ? parseDateTH(r.plannedReleaseDate) : null;
-        const ad = r.actualReleaseDate ? parseDateTH(r.actualReleaseDate) : null;
-        const sd = pd || ad; const ed = ad || pd;
-        const gc = sd && ed ? colStart(sd) : -1;
-        const gs = sd && ed ? colSpan(sd, ed) : 0;
-        return <div key={r.releaseId} className={`tl-row animated-row${r.status === "Testing" ? " critical-row" : ""}`} style={{"--delay":`${idx * 0.06}s`} as React.CSSProperties}>
-          <div className="tl-label">
-            <div className="tl-title">{r.releaseCode}</div>
-            <div className="tl-meta">{r.version} • {r.status}</div>
-          </div>
-          <div className="tl-track">
-            <div className="day-grid">{workDays.map((_, i) => <i key={i} />)}</div>
-            <div className="tl-bar-grid">
-              {gc > 0 && <span className="animated-bar" style={{gridColumn:`${gc}/span ${Math.max(gs,1)}`,background:releaseColor(r.status),["--bar-delay" as string]:`${0.15 + idx * 0.08}s`}}>
-                <em>{pd ? fmtShort(pd) : ""}{ad && pd ? "–" : ""}{ad ? fmtShort(ad) : ""}</em>
-              </span>}
-            </div>
-          </div>
-        </div>;
-      })}
-    </>}
-    {cycles.length > 0 && <>
-      <div className="week-group-header"><div><span>TEST CYCLES</span><b>Execution Progress</b></div><strong>{cycles.length} Active</strong></div>
-      {cycles.map((c, idx) => {
-        const sd = c.startDate ? parseDateTH(c.startDate) : null;
-        const ed = c.endDate ? parseDateTH(c.endDate) : null;
-        const gc = sd && ed ? colStart(sd) : -1;
-        const gs = sd && ed ? colSpan(sd, ed) : 0;
-        const color = cycleColor(c.status);
-        return <div key={c.testCycleId} className="tl-row animated-row" style={{"--delay":`${idx * 0.06}s`} as React.CSSProperties}>
-          <div className="tl-label">
-            <div className="tl-title">{c.cycleCode}</div>
-            <div className="tl-meta">{c.cycleName} • {c.progressPercent}%</div>
-          </div>
-          <div className="tl-track">
-            <div className="day-grid">{workDays.map((_, i) => <i key={i} />)}</div>
-            <div className="tl-bar-grid">
-              {gc > 0 && gs > 0 && <span className="animated-bar" style={{gridColumn:`${gc}/span ${gs}`,background:color,["--bar-delay" as string]:`${0.15 + idx * 0.08}s`}}>
-                <em>{sd ? fmtShort(sd) : ""}{ed && sd ? "–" : ""}{ed ? fmtShort(ed) : ""}</em>
-              </span>}
-            </div>
-          </div>
-        </div>;
-      })}
-    </>}
+  return <article className="card" style={{padding:24}}>
+    <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>โมดูลที่ต้องให้ความสนใจ</h3>
+    <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>จัดอันดับโมดูลตามจำนวน Defect ที่ยังเปิดอยู่</p>
+    {counts === null ? <p className="muted-row">กำลังโหลด...</p> : rows.length ? <div className="attention-list">
+      {rows.map(r => <div className="attention-row" key={r.moduleId}>
+        <span className="attention-label" title={r.name}>{r.name}</span>
+        <div className="attention-bar-track"><span className="attention-bar-fill" style={{width:`${Math.max(r.count / maxCount * 100, 12)}%`}} /></div>
+        <span className="attention-count">{r.count} Defect</span>
+      </div>)}
+    </div> : <p className="muted-row">ยังไม่มี Defect ที่เปิดอยู่ในระบบ</p>}
   </article>;
 }
 
+const healthLabelTH: Record<string, string> = { Healthy: "ปกติ", Watch: "เฝ้าระวัง", Risk: "เสี่ยง", "No Data": "ไม่มีข้อมูล" };
 function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, projectName }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string; projectName?: string }) {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [data, setData] = useState<DashboardSummary | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
@@ -674,8 +637,8 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
       <div className={"module-tree-row" + (hasChildren ? " has-children" : "")} style={{ paddingLeft: depth * 24 }}>
         {hasChildren ? <button type="button" className={"tree-expand-btn" + (isExpanded ? " open" : "")} aria-expanded={isExpanded} aria-label={(isExpanded ? "ย่อ " : "ขยาย ") + m.moduleName} onClick={() => setExpandedModules(prev => { const next = new Set(prev); if (next.has(m.moduleId)) next.delete(m.moduleId); else next.add(m.moduleId); return next; })}>▸</button> : <span className="tree-expand-spacer" />}
         <div className="module-tree-info">
-          <div className="module-tree-name">{m.moduleName}{m.moduleCode && <span className="module-code-chip">{m.moduleCode}</span>}<span className={`health-badge health-${healthClass}`}>{m.health}</span></div>
-          <small>{hasSubCases ? `${m.testCases.toLocaleString()} ในโมดูลนี้ + ${childCases.toLocaleString()} จาก ${agg.subs} Submodules` : `${m.testCases.toLocaleString()} Cases`}</small>
+          <div className="module-tree-name">{m.moduleName}{m.moduleCode && <span className="module-code-chip">{m.moduleCode}</span>}<span className={`health-badge health-${healthClass}`}>{healthLabelTH[m.health] ?? m.health}</span></div>
+          <small>{hasSubCases ? `${m.testCases.toLocaleString()} ในโมดูลนี้ + ${childCases.toLocaleString()} จาก ${agg.subs} โมดูลย่อย` : `${m.testCases.toLocaleString()} Cases`}</small>
           <div className="module-tree-bars">
             <div className="status-bar-track">{agg.executed > 0 && <><span style={{width:`${pPct}%`,background:"#16a34a"}} /><span style={{width:`${fPct}%`,background:"#dc2626"}} /><span style={{width:`${bPct}%`,background:"#d97706"}} /></>}</div>
             <div className="status-bar-labels">{agg.executed > 0 ? <><span className="sb-pass">Pass {pPct}%</span><span className="sb-fail">Fail {fPct}%</span><span className="sb-block">Blocked {bPct}%</span></> : <span className="sb-none">ยังไม่มีผล Execution</span>}</div>
@@ -692,12 +655,25 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
       <div className="exec-hero-body">
         <div className="exec-hero-top">
           <div className="exec-hero-info">
-            <span className="exec-hero-eyebrow">QUALITY EXECUTIVE OVERVIEW</span>
-            <h2 className="exec-hero-title">{projectName || data.projectName || "Release Readiness Dashboard"}</h2>
+            <span className="exec-hero-eyebrow">ภาพรวมคุณภาพสำหรับผู้บริหาร</span>
+            <h2 className="exec-hero-title">{projectName || data.projectName || "แดชบอร์ดความพร้อมปล่อย Release"}</h2>
           </div>
           <div className="exec-hero-score">
-            <strong>{data.overallScore == null ? "N/A" : `${data.overallScore}%`}</strong>
-            <small>Overall Score</small>
+            <strong>{data.totalTestCaseCount > 0 ? `${data.testCaseProgress}%` : "N/A"}</strong>
+            <small>ความคืบหน้าการทดสอบ (เสร็จแล้ว)</small>
+            {data.totalTestCaseCount > 0 && (() => {
+              const remaining = Math.round((100 - data.testCaseProgress) * 10) / 10;
+              return <>
+                <div className="exec-hero-progress-track"><span style={{ width: `${data.testCaseProgress}%` }} /></div>
+                <div className="exec-hero-progress-labels">
+                  <span className="done">เสร็จแล้ว {data.testCaseProgress}%</span>
+                  <span className="remaining">เหลืออีก {remaining}%</span>
+                </div>
+              </>;
+            })()}
+            <div className="exec-hero-score-detail">
+              <span>{data.testedTestCaseCount.toLocaleString()} / {data.totalTestCaseCount.toLocaleString()} Test Case ที่ทดสอบแล้ว</span>
+            </div>
           </div>
         </div>
         <div className="exec-hero-bottom">
@@ -709,68 +685,61 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
             </div>
           </div>
           <div className="exec-hero-context">
-            <span>{data.totalRequirements} Requirements</span>
-            <span>{data.totalCases} Test Cases</span>
-            <span>{data.executionProgress}% Execution</span>
-            <span>{data.passRate}% Pass Rate</span>
-            {data.openDefects > 0 && <span className="ctx-alert">{data.openDefects} Open Defects</span>}
-            {data.criticalDefects > 0 && <span className="ctx-alert">{data.criticalDefects} Critical</span>}
+            {data.criticalDefects > 0 && <span className="ctx-alert">Defect Critical {data.criticalDefects} รายการ</span>}
             <span className="ctx-time">{new Date(data.generatedAt).toLocaleString("th-TH", {timeZone:"Asia/Bangkok", day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit"})}</span>
           </div>
         </div>
       </div>
     </section>
-    <div className="kpi-grid">{[
-      ["Requirement Coverage", `${data.requirementCoverage}%`, `${data.coveredRequirements.toLocaleString()} / ${data.totalRequirements.toLocaleString()} Covered`, "green"],
-      ["Execution Progress", `${data.executionProgress}%`, `${data.executedCases.toLocaleString()} / ${data.totalCases.toLocaleString()} Cases`, "blue"],
-      ["Pass Rate", `${data.passRate}%`, `${data.passedCases.toLocaleString()} Passed`, "green"],
-      ["Defect Quality", `${data.defectQuality}%`, `${data.openDefects} Open · Critical ${data.criticalDefects} · High ${data.highDefects}`, data.criticalDefects ? "red" : data.highDefects ? "yellow" : "green"],
-      ["Release Blockers", data.openP0 + data.openP1, `P0 ${data.openP0} • P1 ${data.openP1}`, data.openP0 + data.openP1 ? "red" : "green"],
-    ].map(x => <article className="card kpi" key={x[0]}><span>{x[0]}</span><strong>{x[1]}</strong><small className={String(x[3])}>{x[2]}</small></article>)}</div>
-    <QualityOverviewCharts data={data} />
-    <ExecutiveTimeline projectId={projectId} releaseId={releaseId} buildId={buildId} shareCode={shareCode} shareToken={shareToken} />
-    <article className="card" style={{padding:24}}>
-      <div className="module-overview-head">
-        <div className="module-overview-title">
-          <h3>Module Overview</h3>
-          <p>โครงสร้าง Module แบบ Tree พร้อมจำนวน Test Case รวมทุก Submodule และสถานะการทดสอบ</p>
+    <div className="charts-grid">
+      <TestStatusChart data={data} />
+      <ModuleAttentionPanel projectId={projectId} releaseId={releaseId} buildId={buildId} modules={data.modules} shareCode={shareCode} shareToken={shareToken} />
+    </div>
+    <div className="dashboard-module-row">
+      <article className="card" style={{padding:24}}>
+        <div className="module-overview-head">
+          <div className="module-overview-title">
+            <h3>ภาพรวมโมดูล</h3>
+            <p>โครงสร้าง Module แบบ Tree พร้อมจำนวน Test Case รวมทุกโมดูลย่อยและสถานะการทดสอบ</p>
+          </div>
+          <div className="module-overview-total">
+            <strong>{totalCasesAll.toLocaleString()}</strong>
+            <span>Test Cases ทั้งหมด</span>
+            <small>{data.modules.length} โมดูล · {rootModules.length} โมดูลหลัก</small>
+          </div>
         </div>
-        <div className="module-overview-total">
-          <strong>{totalCasesAll.toLocaleString()}</strong>
-          <span>Test Cases ทั้งหมด</span>
-          <small>{data.modules.length} Modules · {rootModules.length} Root</small>
+        <div className="module-tree-list">
+          {rootModules.map(m => renderModule(m, 0))}
         </div>
+      </article>
+      <div className="dashboard-module-side">
+        <DefectSeverityChart data={data} />
+        <article className="card" style={{padding:24}}>
+          <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>ความเสี่ยงและ Blocker</h3>
+          <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ความเสี่ยงและสิ่งกีดขวางที่ต้องติดตาม</p>
+          <div className="risks-grid">
+            {data.criticalDefects > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>Defect Critical</b><span>พบ Critical Defect ค้าง {data.criticalDefects} รายการ ต้องแก้ไขก่อน Release</span></div></div>}
+            {data.openP0 > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>P0 ที่เป็น Blocker</b><span>พบ P0 ค้าง {data.openP0} รายการ เป็น Blocker สำหรับ Release</span></div></div>}
+            {data.highDefects > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>Defect High</b><span>พบ High Defect ค้าง {data.highDefects} รายการ ควรตรวจสอบและจัดลำดับ</span></div></div>}
+            {data.openP1 > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>P1 ที่พบปัญหา</b><span>พบ P1 ค้าง {data.openP1} รายการ ตรวจสอบว่าต้องแก้ก่อน Release หรือไม่</span></div></div>}
+            {data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).length > 0 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>โมดูลที่ Coverage ต่ำ</b><span>{data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).map(x => x.moduleName).join(", ")} มี Coverage ต่ำกว่า 50%</span></div></div>}
+            {data.requirementCoverage < 80 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>ความครอบคลุม Requirement ต่ำ</b><span>Requirement Coverage อยู่ที่ {data.requirementCoverage}% ต่ำกว่าเกณฑ์ 80%</span></div></div>}
+            {data.criticalDefects === 0 && data.openP0 === 0 && data.highDefects === 0 && data.openP1 === 0 && <div className="risk-card" style={{background:"#f0fdf4",borderColor:"#bbf7d0"}}><div className="risk-icon" style={{background:"#dcfce7",color:"#16a34a"}}>✓</div><div className="risk-body"><b>ไม่มีความเสี่ยงร้ายแรง</b><span>ไม่พบ Critical Defect, P0 หรือ High Defect ค้าง — สถานะปกติ</span></div></div>}
+          </div>
+        </article>
       </div>
-      <div className="module-tree-list">
-        {rootModules.map(m => renderModule(m, 0))}
+    </div>
+    <article className="card" style={{padding:24}}>
+      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>ผลการดำเนินงาน QA</h3>
+      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ผลการดำเนินงานของผู้ทดสอบแต่ละคน</p>
+      <div className="qa-list">
+        {data.users.length ? data.users.map((u, i) => <div className="qa-card" key={u.userId}><div className="qa-icon">{i + 1}</div><div className="qa-body"><div className="qa-top"><b>{u.displayName}</b><span>{u.passRate}%</span></div><div className="qa-desc">{u.executions} Executions · ผ่าน {u.passed} · ไม่ผ่าน {u.failed}</div><div className="qa-progress"><span style={{width:`${u.passRate}%`}} /></div></div></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบ</p>}
       </div>
     </article>
-    <div className="dashboard-two-col">
-      <article className="card" style={{padding:24}}>
-        <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>QA Performance</h3>
-        <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ผลการดำเนินงานของผู้ทดสอบแต่ละคน</p>
-        <div className="qa-list">
-          {data.users.length ? data.users.map((u, i) => <div className="qa-card" key={u.userId}><div className="qa-icon">{i + 1}</div><div className="qa-body"><div className="qa-top"><b>{u.displayName}</b><span>{u.passRate}%</span></div><div className="qa-desc">{u.executions} Executions · {u.passed} Passed · {u.failed} Failed</div><div className="qa-progress"><span style={{width:`${u.passRate}%`}} /></div></div></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบ</p>}
-        </div>
-      </article>
-      <article className="card" style={{padding:24}}>
-        <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>Risks &amp; Blockers</h3>
-        <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ความเสี่ยงและสิ่งกีดขวางที่ต้องติดตาม</p>
-        <div className="risks-grid">
-          {data.criticalDefects > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>Critical Defects</b><span>พบ Critical Defect ค้าง {data.criticalDefects} รายการ ต้องแก้ไขก่อน Release</span></div></div>}
-          {data.openP0 > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>P0 Blockers</b><span>พบ P0 ค้าง {data.openP0} รายการ เป็น Blocker สำหรับ Release</span></div></div>}
-          {data.highDefects > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>High Defects</b><span>พบ High Defect ค้าง {data.highDefects} รายการ ควรตรวจสอบและจัดลำดับ</span></div></div>}
-          {data.openP1 > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>P1 Issues</b><span>พบ P1 ค้าง {data.openP1} รายการ ตรวจสอบว่าต้องแก้ก่อน Release หรือไม่</span></div></div>}
-          {data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).length > 0 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>Low Coverage Modules</b><span>{data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).map(x => x.moduleName).join(", ")} มี Coverage ต่ำกว่า 50%</span></div></div>}
-          {data.requirementCoverage < 80 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>Low Requirement Coverage</b><span>Requirement Coverage อยู่ที่ {data.requirementCoverage}% ต่ำกว่าเกณฑ์ 80%</span></div></div>}
-          {data.criticalDefects === 0 && data.openP0 === 0 && data.highDefects === 0 && data.openP1 === 0 && <div className="risk-card" style={{background:"#f0fdf4",borderColor:"#bbf7d0"}}><div className="risk-icon" style={{background:"#dcfce7",color:"#16a34a"}}>✓</div><div className="risk-body"><b>No Critical Risks</b><span>ไม่พบ Critical Defect, P0 หรือ High Defect ค้าง — สถานะปกติ</span></div></div>}
-        </div>
-      </article>
-    </div>
   </div>;
 }
 
-function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { projectId?: string; releaseId?: string; buildId?: string; search: string; canEdit?: boolean }) {
+function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTestCase }: { projectId?: string; releaseId?: string; buildId?: string; search: string; canEdit?: boolean; onOpenTestCase?: (testCaseId: string) => void }) {
   const [items, setItems] = useState<DefectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -787,6 +756,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
   const [linkedCases, setLinkedCases] = useState<DefectTestCaseItem[]>([]);
   const [_detailLoading, setDetailLoading] = useState(false);
   const [commentText, setCommentText] = useState("");
+  const [codeCopied, setCodeCopied] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<DefectItem | null>(null);
   const [formTitle, setFormTitle] = useState("");
@@ -878,7 +848,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1); }
   };
   const openDetail = async (item: DefectItem) => {
-    setDetail(item); setActivities([]); setLinkedCases([]); setCommentText(""); setDetailLoading(true);
+    setDetail(item); setActivities([]); setLinkedCases([]); setCommentText(""); setCodeCopied(false); setDetailLoading(true);
     try {
       const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
       const [actRes, tcRes] = await Promise.all([
@@ -907,7 +877,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
   };
   const toggleSelectAll = () => { setSelectedIds(selectedIds.length === items.length ? [] : items.map(x => x.defectId)); };
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
-  if (loading && !items.length) return <article className="card empty"><p>กำลังโหลด Defect...</p></article>;
+  if (loading && !items.length) return <article className="card empty"><div className="spinner" /><p>กำลังโหลด Defect...</p></article>;
   return <>
     {error && <div className="inline-alert error"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
     {notice && <div className="inline-alert success"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
@@ -928,10 +898,10 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
         </div>
         <div>
           {selectedIds.length > 0 && <>
-            <button className="btn" onClick={() => bulkStatus("Resolved")}>Resolve ({selectedIds.length})</button>
-            <button className="btn" onClick={() => bulkStatus("Closed")}>Close ({selectedIds.length})</button>
+            <button className="btn" onClick={() => bulkStatus("Resolved")}><span aria-hidden="true">✓</span> Resolve ({selectedIds.length})</button>
+            <button className="btn" onClick={() => bulkStatus("Closed")}><span aria-hidden="true">⏹</span> Close ({selectedIds.length})</button>
           </>}
-          <button className="btn" onClick={exportCsv}>Export</button>
+          <button className="btn" onClick={exportCsv}><span aria-hidden="true">⤓</span> Export</button>
           {canEdit !== false && <button className="btn primary" disabled={!projectId} onClick={() => openForm()}>+ Defect</button>}
         </div>
       </div>
@@ -939,7 +909,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
         <table>
           <thead><tr>
             <th><input type="checkbox" checked={selectedIds.length === items.length && items.length > 0} onChange={toggleSelectAll} /></th>
-            <th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Module</th><th>Age</th><th>Created</th><th>จัดการ</th>
+            <th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Module</th><th>Age</th><th>Created</th><th className="actions-col">จัดการ</th>
           </tr></thead>
           <tbody>
             {items.map(x => <tr key={x.defectId}>
@@ -951,13 +921,13 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
               <td>{modules.find(m => m.moduleId === x.moduleId)?.moduleName ?? "-"}</td>
               <td>{defectAgeDays(x.createdAt)} วัน</td>
               <td>{fmtAgo(x.createdAt)}</td>
-              <td><div className="row-actions">
-                <button className="table-action" onClick={() => openDetail(x)}>ดู</button>
+              <td className="actions-col"><div className="row-actions">
+                <button className="table-action icon-only" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.defectCode}`} onClick={() => openDetail(x)}><span aria-hidden="true">i</span></button>
                 {canEdit !== false && <>
-                  <button className="table-action" onClick={() => openForm(x)}>แก้ไข</button>
-                  {x.status === "Open" && <button className="table-action" onClick={() => quickStatus(x, "In Progress")}>เริ่ม</button>}
-                  {x.status === "In Progress" && <button className="table-action" onClick={() => quickStatus(x, "Resolved")}>Resolve</button>}
-                  <button className="table-action danger-action" onClick={() => removeDefect(x)}>ลบ</button>
+                  <button className="table-action icon-only" title="แก้ไข" aria-label={`แก้ไข ${x.defectCode}`} onClick={() => openForm(x)}><span aria-hidden="true">✎</span></button>
+                  {x.status === "Open" && <button className="table-action icon-only" title="เริ่มดำเนินการ" aria-label={`เริ่มดำเนินการ ${x.defectCode}`} onClick={() => quickStatus(x, "In Progress")}><span aria-hidden="true">▶</span></button>}
+                  {x.status === "In Progress" && <button className="table-action icon-only" title="Resolve" aria-label={`Resolve ${x.defectCode}`} onClick={() => quickStatus(x, "Resolved")}><span aria-hidden="true">✓</span></button>}
+                  <button className="table-action danger-action icon-only" title="ลบ" aria-label={`ลบ ${x.defectCode}`} onClick={() => removeDefect(x)}><span aria-hidden="true">✕</span></button>
                 </>}
               </div></td>
             </tr>)}
@@ -968,65 +938,171 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit }: { proje
         <div className="pagination">
         <label>แสดง<select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}><option>10</option><option>20</option><option>50</option></select> รายการ</label>
         <span>หน้า {Math.min(page, pageCount)} / {pageCount} ({totalCount} รายการ)</span>
-        <button className="btn" disabled={page <= 1} onClick={() => setPage(x => x - 1)}>ก่อนหน้า</button>
-        <button className="btn" disabled={page >= pageCount} onClick={() => setPage(x => x + 1)}>ถัดไป</button>
+        <button className="btn" disabled={page <= 1} onClick={() => setPage(x => x - 1)}><span aria-hidden="true">‹</span> ก่อนหน้า</button>
+        <button className="btn" disabled={page >= pageCount} onClick={() => setPage(x => x + 1)}>ถัดไป <span aria-hidden="true">›</span></button>
       </div>
     </article>
+    {/* หน้าสร้าง/แก้ไข Defect ปรับให้ใช้ภาษาภาพเดียวกับหน้ารายละเอียด Defect (defect-detail ด้านล่าง) —
+        eyebrow เหนือหัวข้อ, ส่วนต่างๆ ใช้ .cycle-detail-section (ไอคอน+h3) แทน label เดี่ยวๆ, และ
+        Description/Steps to Reproduce กับ Expected/Actual Result จัดเป็น 2 คอลัมน์ (.defect-detail-split)
+        เหมือนที่หน้ารายละเอียดจัดไว้เป๊ะๆ ให้ตอนแก้ไขรู้สึกเหมือนกำลังดู/แก้ข้อมูลชุดเดียวกันต่อเนื่องกัน */}
     {formOpen && <div className="modal" onMouseDown={() => setFormOpen(false)}>
-      <div className="modal-box" onMouseDown={e => e.stopPropagation()}>
-        <div className="modal-head"><h2>{editing ? "แก้ไข" : "สร้าง"} Defect</h2><button onClick={() => setFormOpen(false)}>×</button></div>
-        <div className="form-grid">
-          <label className="full">Title<input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="ระบุชื่อ Defect" /></label>
-          <label>Module<select value={formModuleId} onChange={e => setFormModuleId(e.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(modules)}</select></label>
-          <label>Severity<select value={formSeverity} onChange={e => setFormSeverity(e.target.value)}>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select></label>
-          <label>Status<select value={formStatus} onChange={e => setFormStatus(e.target.value)}>{defectStatuses.map(s => <option key={s}>{s}</option>)}</select></label>
-          <label>Assignee<select value={formAssigneeUserId} onChange={e => setFormAssigneeUserId(e.target.value)}><option value="">ไม่ระบุ</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>
-          <label className="full">Description<textarea rows={3} value={formDescription} onChange={e => setFormDescription(e.target.value)} placeholder="รายละเอียด Defect" /></label>
-          <label className="full">Steps to Reproduce<textarea rows={3} value={formStepsToReproduce} onChange={e => setFormStepsToReproduce(e.target.value)} /></label>
-          <label className="full">Expected Result<input value={formExpectedResult} onChange={e => setFormExpectedResult(e.target.value)} /></label>
-          <label className="full">Actual Result<input value={formActualResult} onChange={e => setFormActualResult(e.target.value)} /></label>
+      <div className="modal-box defect-form-modal" onMouseDown={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-head-title-group">
+            <div>
+              <span className="cycle-detail-eyebrow">DEFECT</span>
+              <h2>{editing ? "แก้ไข" : "สร้าง"} Defect</h2>
+            </div>
+          </div>
+          <button aria-label="ปิดหน้าต่าง" onClick={() => setFormOpen(false)}>×</button>
+        </div>
+        <section className="cycle-detail-section">
+          <h3><span aria-hidden="true">▢</span> ข้อมูลทั่วไป</h3>
+          <div className="form-grid">
+            <label className="full">Title<input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="ระบุชื่อ Defect" /></label>
+            <div className="form-row">
+              <label>Module<select value={formModuleId} onChange={e => setFormModuleId(e.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(modules)}</select></label>
+              <label>Severity<select value={formSeverity} onChange={e => setFormSeverity(e.target.value)}>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select></label>
+            </div>
+            <div className="form-row">
+              <label>Status<select value={formStatus} onChange={e => setFormStatus(e.target.value)}>{defectStatuses.map(s => <option key={s}>{s}</option>)}</select></label>
+              <label>Assignee<select value={formAssigneeUserId} onChange={e => setFormAssigneeUserId(e.target.value)}><option value="">ไม่ระบุ</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>
+            </div>
+          </div>
+        </section>
+        <div className="defect-detail-split">
+          <section className="cycle-detail-section">
+            <h3><span aria-hidden="true">▤</span> Description</h3>
+            <textarea className="defect-form-field" rows={4} value={formDescription} onChange={e => setFormDescription(e.target.value)} placeholder="รายละเอียด Defect" aria-label="Description" />
+          </section>
+          <section className="cycle-detail-section">
+            <h3><span aria-hidden="true">▤</span> Steps to Reproduce</h3>
+            <textarea className="defect-form-field" rows={4} value={formStepsToReproduce} onChange={e => setFormStepsToReproduce(e.target.value)} placeholder="ขั้นตอนการทำซ้ำ" aria-label="Steps to Reproduce" />
+          </section>
+        </div>
+        <div className="defect-detail-split">
+          <section className="cycle-detail-section">
+            <h3>Expected Result</h3>
+            <input className="defect-form-field" value={formExpectedResult} onChange={e => setFormExpectedResult(e.target.value)} aria-label="Expected Result" />
+          </section>
+          <section className="cycle-detail-section">
+            <h3>Actual Result</h3>
+            <input className="defect-form-field" value={formActualResult} onChange={e => setFormActualResult(e.target.value)} aria-label="Actual Result" />
+          </section>
         </div>
         <div className="modal-actions">
-          <button className="btn" onClick={() => setFormOpen(false)}>ยกเลิก</button>
-          <button className="btn primary" disabled={saving || !formTitle.trim()} onClick={saveForm}>{saving ? "กำลังบันทึก..." : "บันทึก"}</button>
+          <button className="btn" onClick={() => setFormOpen(false)}><span aria-hidden="true">✕</span> ยกเลิก</button>
+          <button className="btn primary" disabled={saving || !formTitle.trim()} onClick={saveForm}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button>
         </div>
       </div>
     </div>}
-    {detail && <div className="modal" onMouseDown={() => setDetail(null)}>
-      <div className="modal-box" style={{ maxWidth: 800 }} onMouseDown={e => e.stopPropagation()}>
-        <div className="modal-head"><div><h2>{detail.defectCode}</h2><small>{detail.title}</small></div><button onClick={() => setDetail(null)}>×</button></div>
-        <div className="detail-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-          <span>Severity <Badge tone={defectSeverityTones[detail.severity]}>{detail.severity}</Badge></span>
-          <span>Status <Badge tone={defectStatusTones[detail.status]}>{detail.status}</Badge></span>
-          <span>Module <b>{modules.find(m => m.moduleId === detail.moduleId)?.moduleName ?? "-"}</b></span>
-          <span>Age <b>{defectAgeDays(detail.createdAt)} วัน</b></span>
-          <span>Created <b>{fmtAgo(detail.createdAt)}</b></span>
-          <span>Assignee <b>{detail.assigneeName ?? "ไม่ระบุ"}</b></span>
-        </div>
-        {detail.description && <section style={{ marginBottom: 16 }}><h4>Description</h4><p style={{ fontSize: 13, color: "#374151", lineHeight: 1.6 }}>{detail.description}</p></section>}
-        {detail.stepsToReproduce && <section style={{ marginBottom: 16 }}><h4>Steps to Reproduce</h4><p style={{ fontSize: 13, color: "#374151", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{detail.stepsToReproduce}</p></section>}
-        {canEdit !== false && <section style={{ marginBottom: 16 }}><h4>Quick Actions</h4><div className="row-actions" style={{ gap: 4 }}>
-          {detail.status !== "In Progress" && detail.status !== "Closed" && <button className="btn" onClick={() => { quickStatus(detail, "In Progress"); setDetail(null); }}>→ In Progress</button>}
-          {detail.status !== "Resolved" && detail.status !== "Closed" && <button className="btn" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}>✓ Resolve</button>}
-          {detail.status !== "Closed" && <button className="btn" onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}>Closed</button>}
-          <button className="btn" onClick={() => { openForm(detail); setDetail(null); }}>แก้ไข</button>
-        </div></section>}
-        <section style={{ marginBottom: 16 }}><h4>Linked Test Cases ({linkedCases.length})</h4>
-          {linkedCases.length ? <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{linkedCases.map(tc => <div key={tc.testCaseId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", background: "#f9fafb", borderRadius: 6 }}><b style={{ fontSize: 12 }}>{tc.testCaseCode}</b><span style={{ fontSize: 12, flex: 1 }}>{tc.title}</span><Badge tone={tc.status ? (testCaseStatusTones[tc.status] ?? "gray") : "gray"}>{tc.status ?? "-"}</Badge></div>)}</div> : <p style={{ fontSize: 12, color: "#9ca3af" }}>ยังไม่มี Test Case ที่เชื่อมโยง</p>}
-        </section>
-        <section style={{ marginBottom: 16 }}><h4>Activities ({activities.length})</h4>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
-            {activities.length ? activities.map(a => <div key={a.activityId} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}><Badge tone="blue">{defectActionLabels[a.actionType] ?? a.actionType}</Badge><div style={{ flex: 1 }}><p style={{ fontSize: 12, margin: 0 }}>{a.message ?? a.actionType}</p><small style={{ fontSize: 10, color: "#9ca3af" }}>{a.actorName ?? "System"} · {fmtAgo(a.performedAt ?? a.createdAt)}</small></div></div>) : <p style={{ fontSize: 12, color: "#9ca3af" }}>ยังไม่มี Activity</p>}
+    {detail && (() => {
+      const steps = detail.stepsToReproduce ? parseReproSteps(detail.stepsToReproduce) : null;
+      const moduleName = modules.find(m => m.moduleId === detail.moduleId)?.moduleName ?? "-";
+      return (
+        <div className="modal" role="presentation" onMouseDown={() => setDetail(null)}>
+          <div className="modal-box cycle-modal cycle-detail-modal defect-detail" role="dialog" aria-modal="true" aria-labelledby="defect-detail-title" onMouseDown={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <div className="modal-head-title-group">
+                <button className="modal-back-btn" aria-label="ปิดรายละเอียด Defect" onClick={() => setDetail(null)}>←</button>
+                <div>
+                  <span className="cycle-detail-eyebrow">DEFECT</span>
+                  <h2 id="defect-detail-title">
+                    {detail.defectCode}
+                    <button type="button" className="defect-copy-btn" title="คัดลอกรหัส Defect" aria-label="คัดลอกรหัส Defect" onClick={async () => { const ok = await copyText(detail.defectCode); setCodeCopied(ok); setTimeout(() => setCodeCopied(false), 1500); }}>
+                      <span aria-hidden="true">{codeCopied ? "✓" : "⧉"}</span>
+                    </button>
+                  </h2>
+                  <small>{detail.title}</small>
+                </div>
+              </div>
+              <button aria-label="ปิดรายละเอียด Defect" onClick={() => setDetail(null)}>×</button>
+            </div>
+            <div className="defect-detail-stats">
+              <div className="defect-detail-stat"><span className="defect-detail-stat-icon orange" aria-hidden="true">⚠</span><div><small>Severity</small><Badge tone={defectSeverityTones[detail.severity] ?? "blue"}>{detail.severity}</Badge></div></div>
+              <div className="defect-detail-stat"><span className="defect-detail-stat-icon green" aria-hidden="true">✓</span><div><small>Status</small><Badge tone={defectStatusTones[detail.status] ?? "gray"}>{detail.status}</Badge></div></div>
+              <div className="defect-detail-stat"><span className="defect-detail-stat-icon blue" aria-hidden="true">▢</span><div><small>Module</small><b>{moduleName}</b></div></div>
+              <div className="defect-detail-stat"><span className="defect-detail-stat-icon purple" aria-hidden="true">◔</span><div><small>Age</small><b>{defectAgeDays(detail.createdAt)} วัน</b></div></div>
+              <div className="defect-detail-stat"><span className="defect-detail-stat-icon blue" aria-hidden="true">▤</span><div><small>Created</small><b>{fmtAgo(detail.createdAt)}</b><small className="defect-detail-stat-sub">{new Date(detail.createdAt).toLocaleString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small></div></div>
+              <div className="defect-detail-stat"><span className="defect-detail-stat-icon gray" aria-hidden="true">U</span><div><small>Assignee</small><b>{detail.assigneeName ?? "ไม่ระบุ"}</b></div></div>
+            </div>
+            <div className="defect-detail-split">
+              <section className="cycle-detail-section">
+                <h3><span aria-hidden="true">▤</span> Description</h3>
+                <p className="defect-detail-text">{detail.description || "ไม่มีคำอธิบาย"}</p>
+              </section>
+              <section className="cycle-detail-section">
+                <h3><span aria-hidden="true">▤</span> Steps to Reproduce</h3>
+                {detail.stepsToReproduce ? (steps ? (
+                  <div className="defect-repro-steps">
+                    {steps.map(s => (
+                      <div key={s.stepNo} className={"defect-repro-step" + (s.status === "Fail" ? " is-fail" : "")}>
+                        <span className="defect-repro-step-no">{s.stepNo}</span>
+                        <div className="defect-repro-step-body"><b>{s.action}</b>{s.detail && <span className="defect-repro-step-detail"> {s.detail}</span>}</div>
+                        {s.status && <Badge tone={s.status === "Pass" ? "green" : "red"}>{s.status}</Badge>}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="defect-detail-text">{detail.stepsToReproduce}</p>) : <p className="defect-detail-text muted-text">ไม่มีขั้นตอนการทำซ้ำ</p>}
+              </section>
+            </div>
+            {(detail.expectedResult || detail.actualResult) && (
+              <div className="defect-detail-split">
+                {detail.expectedResult && <section className="cycle-detail-section"><h3>Expected Result</h3><p className="defect-detail-text">{detail.expectedResult}</p></section>}
+                {detail.actualResult && <section className="cycle-detail-section"><h3>Actual Result</h3><p className="defect-detail-text">{detail.actualResult}</p></section>}
+              </div>
+            )}
+            <section className="cycle-detail-section">
+              <h3>Linked Test Cases ({linkedCases.length})</h3>
+              <div className="defect-linked-cases">
+                {linkedCases.length ? linkedCases.map(tc => (
+                  <div key={tc.testCaseId} className="defect-linked-case">
+                    <div><b>{tc.testCaseCode}</b><small>{tc.title}</small></div>
+                    <Badge tone={tc.status ? (testCaseStatusTones[tc.status] ?? "gray") : "gray"}>{tc.status ?? "-"}</Badge>
+                    {onOpenTestCase && <button className="btn" onClick={() => { const id = tc.testCaseId; setDetail(null); onOpenTestCase(id); }}><span aria-hidden="true">⤢</span> ดูรายละเอียด</button>}
+                  </div>
+                )) : <p className="muted-text">ยังไม่มี Test Case ที่เชื่อมโยง</p>}
+              </div>
+            </section>
+            {canEdit !== false && (
+              <section className="cycle-detail-section">
+                <h3>Quick Actions</h3>
+                <div className="defect-quick-actions">
+                  {detail.status !== "In Progress" && detail.status !== "Closed" && <button className="btn quick-action-blue" onClick={() => { quickStatus(detail, "In Progress"); setDetail(null); }}><span aria-hidden="true">→</span> In Progress</button>}
+                  {detail.status !== "Resolved" && detail.status !== "Closed" && <button className="btn quick-action-green" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}><span aria-hidden="true">✓</span> Resolve</button>}
+                  {detail.status !== "Closed" && <button className="btn quick-action-purple" onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}><span aria-hidden="true">⏹</span> Closed</button>}
+                  <button className="btn" onClick={() => { openForm(detail); setDetail(null); }}><span aria-hidden="true">✎</span> แก้ไข</button>
+                  <button className="btn quick-action-red" onClick={() => { const item = detail; setDetail(null); removeDefect(item); }}><span aria-hidden="true">🗑</span> ลบ</button>
+                </div>
+              </section>
+            )}
+            <section className="cycle-detail-section">
+              <h3>Activities ({activities.length})</h3>
+              <div className="defect-activity-list">
+                {activities.length ? activities.map(a => (
+                  <div key={a.activityId} className="defect-activity-row">
+                    <Badge tone="blue">{defectActionLabels[a.actionType] ?? a.actionType}</Badge>
+                    <div><p>{a.message ?? a.actionType}</p><small>{a.actorName ?? "System"} · {fmtAgo(a.performedAt ?? a.createdAt)}</small></div>
+                  </div>
+                )) : <p className="muted-text">ยังไม่มี Activity</p>}
+              </div>
+              {canEdit !== false && (
+                <div className="defect-comment-box">
+                  <input value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="เพิ่มคอมเมนต์..." onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }} />
+                  <button className="btn primary" onClick={postComment} disabled={!commentText.trim()}><span aria-hidden="true">➤</span> ส่ง</button>
+                </div>
+              )}
+            </section>
+            <div className="modal-actions"><button className="btn primary" onClick={() => setDetail(null)}><span aria-hidden="true">✕</span> ปิด</button></div>
           </div>
-          {canEdit !== false && <div style={{ display: "flex", gap: 8, marginTop: 8 }}><input style={{ flex: 1 }} value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="เพิ่มคอมเมนต์..." onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }} /><button className="btn primary" onClick={postComment} disabled={!commentText.trim()}>ส่ง</button></div>}
-        </section>
-        <div className="modal-actions"><button className="btn primary" onClick={() => setDetail(null)}>ปิด</button></div>
-      </div>
-    </div>}
+        </div>
+      );
+    })()}
   </>;
 }
 
-function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecution = false, canExport = false }: { page: Page; search: string; projectId?: string; releaseId?: string; buildId?: string; canAssignExecution?: boolean; canExport?: boolean }) {
+function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecution = false, canExport = false, onOpenCycle, onCreateCycle }: { page: Page; search: string; projectId?: string; releaseId?: string; buildId?: string; canAssignExecution?: boolean; canExport?: boolean; onOpenCycle?: (page: "test-cycles" | "execution", cycleId: string) => void; onCreateCycle?: (projectId: string, testSuiteId: string) => void }) {
   if (page === "execution") return <ExecutionWorkspacePage contextProjectId={projectId} contextReleaseId={releaseId} contextBuildId={buildId} />;
   if (page === "test-cycles") return <TestCyclesPage search={search} canEdit={canAssignExecution} canExport={canExport} contextProjectId={projectId} contextReleaseId={releaseId} contextBuildId={buildId} />;
   if (page === "test-suites") {
@@ -1041,7 +1117,7 @@ function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecut
     } catch {
       canEdit = false;
     }
-    return <TestSuitesPage search={search} canEdit={canEdit} contextProjectId={projectId} />;
+    return <TestSuitesPage search={search} canEdit={canEdit} contextProjectId={projectId} onOpenCycle={onOpenCycle} onCreateCycle={onCreateCycle} />;
   }
   let headers: string[] = [],
     rows: string[][] = [];
@@ -1508,6 +1584,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
   if (loading)
     return (
       <article className="card empty">
+        <div className="spinner" />
         <p>กำลังโหลดข้อมูลโครงการ...</p>
       </article>
     );
@@ -1576,7 +1653,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
                   <th>Module</th>
                   <th>Description</th>
                   <th>Status</th>
-                  {canEdit && <th>จัดการ</th>}
+                  {canEdit && <th className="actions-col">จัดการ</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1668,21 +1745,25 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
                         <Badge tone="green">ใช้งาน</Badge>
                       </td>
                       {canEdit && (
-                        <td>
+                        <td className="actions-col">
                           <div className="row-actions">
                             <button
-                              className="table-action"
+                              className="table-action icon-only"
+                              title="แก้ไข"
+                              aria-label={`แก้ไข ${x.moduleName}`}
                               onClick={() => openModule(x)}
                             >
-                              แก้ไข
+                              <span aria-hidden="true">✎</span>
                             </button>
                             <button
-                              className="table-action danger-action"
+                              className="table-action danger-action icon-only"
+                              title="ลบ"
+                              aria-label={`ลบ ${x.moduleName}`}
                               onClick={() =>
                                 deactivate("module", x.moduleId, x.moduleName)
                               }
                             >
-                              ลบ
+                              <span aria-hidden="true">✕</span>
                             </button>
                           </div>
                         </td>
@@ -1778,7 +1859,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
                 disabled={saving || !code.trim() || !name.trim()}
                 onClick={save}
               >
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}
               </button>
             </div>
           </div>
@@ -2078,6 +2159,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
   if (loading)
     return (
       <article className="card empty">
+        <div className="spinner" />
         <p>กำลังโหลดข้อมูล Release...</p>
       </article>
     );
@@ -2146,7 +2228,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                   <th>Commit</th>
                   <th>Build Date</th>
                   <th>Status</th>
-                  {canEdit && <th>จัดการ</th>}
+                  {canEdit && <th className="actions-col">จัดการ</th>}
                 </tr>
               </thead>
               <tbody>
@@ -2168,29 +2250,35 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                       <Badge tone="green">{x.status}</Badge>
                     </td>
                     {canEdit && (
-                      <td>
+                      <td className="actions-col">
                         <div className="row-actions">
                           <button
-                            className="table-action"
+                            className="table-action icon-only"
+                            title="แก้ไข"
+                            aria-label={`แก้ไข ${x.buildNumber}`}
                             onClick={() => openBuild(x)}
                           >
-                            แก้ไข
+                            <span aria-hidden="true">✎</span>
                           </button>
                           {!x.isReleaseCandidate && (
                             <button
-                              className="table-action"
+                              className="table-action icon-only"
+                              title="Mark RC"
+                              aria-label={`Mark RC ${x.buildNumber}`}
                               onClick={() => markRc(x)}
                             >
-                              Mark RC
+                              <span aria-hidden="true">★</span>
                             </button>
                           )}
                           <button
-                            className="table-action danger-action"
+                            className="table-action danger-action icon-only"
+                            title="ลบ"
+                            aria-label={`ลบ ${x.buildNumber}`}
                             onClick={() =>
                               remove("build", x.buildId, x.buildNumber)
                             }
                           >
-                            ลบ
+                            <span aria-hidden="true">✕</span>
                           </button>
                         </div>
                       </td>
@@ -2226,7 +2314,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
             <div className="release-detail-meta"><div><span aria-hidden="true">P</span><small>Project<b>{projects.find((x) => x.projectId === releaseDetail.projectId)?.projectName || "-"}</b></small></div><div><span aria-hidden="true">#</span><small>Builds<b>{releaseDetail.releaseId === selectedId ? builds.length : "เลือก Release เพื่อดู"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{releaseDetail.status}</b></small></div></div>
             <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">≡</span><div><h3>Release Scope</h3><small>ขอบเขตและเป้าหมายของ Release</small></div></div><p>{releaseDetail.scope || "ยังไม่ได้ระบุขอบเขตของ Release"}</p></section>
             <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">▤</span><div><h3>Builds ใน Release</h3><small>รายการ Build ที่พร้อมใช้งาน</small></div></div>{releaseDetail.releaseId === selectedId && builds.length ? <div className="release-detail-builds">{builds.map((build) => <button key={build.buildId} onClick={() => { setReleaseDetail(null); setBuildDetail(build); }}><span><b>{build.buildNumber}</b><small>{build.applicationVersion || "ไม่ระบุ Application Version"}</small></span><span><Badge tone={build.status === "Ready" ? "green" : "yellow"}>{build.status}</Badge>{build.isReleaseCandidate && <Badge tone="blue">RC</Badge>}<i aria-hidden="true">›</i></span></button>)}</div> : <div className="release-detail-empty">ยังไม่มี Build ที่ใช้งานใน Release นี้</div>}</section>
-            <div className="modal-actions"><button className="btn" onClick={() => setReleaseDetail(null)}>ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = releaseDetail; setReleaseDetail(null); openRelease(item); }}>แก้ไข Release</button>}</div>
+            <div className="modal-actions"><button className="btn" onClick={() => setReleaseDetail(null)}><span aria-hidden="true">✕</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = releaseDetail; setReleaseDetail(null); openRelease(item); }}><span aria-hidden="true">✎</span> แก้ไข Release</button>}</div>
           </div>
         </div>
       )}
@@ -2238,7 +2326,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
             <div className="release-detail-meta build-detail-meta"><div><span aria-hidden="true">◫</span><small>Build Date<b>{buildDetail.buildDate ? new Date(buildDetail.buildDate).toLocaleDateString("th-TH") : "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">C</span><small>Commit Reference<b>{buildDetail.commitReference || "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{buildDetail.status}</b></small></div></div>
             <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">+</span><div><h3>Change Notes</h3><small>รายการเปลี่ยนแปลงใน Build นี้</small></div></div><p>{buildDetail.changeNotes || "ไม่มี Change Notes"}</p></section>
             <section className="release-detail-section known-issues"><div className="release-detail-heading"><span aria-hidden="true">!</span><div><h3>Known Issues</h3><small>ปัญหาที่ทราบและควรระวัง</small></div></div><p>{buildDetail.knownIssues || "ไม่พบ Known Issues"}</p></section>
-            <div className="modal-actions"><button className="btn" onClick={() => setBuildDetail(null)}>ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = buildDetail; setBuildDetail(null); openBuild(item); }}>แก้ไข Build</button>}</div>
+            <div className="modal-actions"><button className="btn" onClick={() => setBuildDetail(null)}><span aria-hidden="true">✕</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = buildDetail; setBuildDetail(null); openBuild(item); }}><span aria-hidden="true">✎</span> แก้ไข Build</button>}</div>
           </div>
         </div>
       )}
@@ -2407,7 +2495,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                 }
                 onClick={save}
               >
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}
               </button>
             </div>
           </div>
@@ -2625,6 +2713,7 @@ function RequirementsPage({
   if (loading)
     return (
       <article className="card empty">
+        <div className="spinner" />
         <p>กำลังโหลด Requirement...</p>
       </article>
     );
@@ -2664,8 +2753,27 @@ function RequirementsPage({
     });
   return (
     <article className="card requirement-page-card">
-      <div className="table-tools">
-        <div>
+      <div className="filter-toolbar">
+        <div className="filter-toolbar-top">
+          <div className="result-count"><strong>{filtered.length.toLocaleString()}</strong><span>Requirements</span></div>
+        </div>
+        <div className="filter-toolbar-row">
+          <select aria-label="กรองตาม Module" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
+            <option value="">ทุก Module</option>
+            {filterProjects.map((project) => {
+              const options = renderModuleSelectOptions(filterModules.filter((x) => x.projectId === project.projectId && x.isActive));
+              return options.length ? <optgroup key={project.projectId} label={`${project.projectCode ? `${project.projectCode} · ` : ""}${project.projectName}`}>{options}</optgroup> : null;
+            })}
+          </select>
+          {contextProjectId && filterReleases.length > 0 && (
+            <select aria-label="กรองตาม Release" value={releaseFilter} onChange={(e) => setReleaseFilter(e.target.value)}>
+              <option value="">ทุก Release</option>
+              {filterReleases.map((x) => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}
+            </select>
+          )}
+          <select aria-label="กรองตามขอบเขต" value={scopeFilter} onChange={(e) => setScopeFilter(e.target.value)}>
+            <option value="">ทุก Scope</option><option value="true">In Scope</option><option value="false">Out of Scope</option>
+          </select>
           <select aria-label="กรองตามสถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">ทุกสถานะ</option>
             {statusOptions.map((x) => <option key={x} value={x}>{x} ({countBy("status", x)})</option>)}
@@ -2674,24 +2782,7 @@ function RequirementsPage({
             <option value="">ทุก Priority</option>
             {priorityOptions.map((x) => <option key={x} value={x}>{x} ({countBy("priority", x)})</option>)}
           </select>
-          <select aria-label="กรองตามขอบเขต" value={scopeFilter} onChange={(e) => setScopeFilter(e.target.value)}>
-            <option value="">ทุก Scope</option><option value="true">In Scope</option><option value="false">Out of Scope</option>
-          </select>
-          {contextProjectId && filterReleases.length > 0 && (
-            <select aria-label="กรองตาม Release" value={releaseFilter} onChange={(e) => setReleaseFilter(e.target.value)}>
-              <option value="">ทุก Release</option>
-              {filterReleases.map((x) => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}
-            </select>
-          )}
-          <select aria-label="กรองตาม Module" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
-            <option value="">ทุก Module</option>
-            {filterProjects.map((project) => {
-              const options = renderModuleSelectOptions(filterModules.filter((x) => x.projectId === project.projectId && x.isActive));
-              return options.length ? <optgroup key={project.projectId} label={`${project.projectCode ? `${project.projectCode} · ` : ""}${project.projectName}`}>{options}</optgroup> : null;
-            })}
-          </select>
         </div>
-        <span>{filtered.length} Requirements</span>
       </div>
       <div className="table-wrap">
         <table className="requirement-table">
@@ -2706,7 +2797,7 @@ function RequirementsPage({
               <th>In Scope</th>
               <th>Status</th>
               <th>Test Cases</th>
-              <th>จัดการ</th>
+              <th className="actions-col">จัดการ</th>
             </tr>
           </thead>
           <tbody>
@@ -2748,7 +2839,7 @@ function RequirementsPage({
                   </Badge>
                 </td>
                 <td data-label="Test Cases"><Badge tone={(testCaseCounts[x.requirementId] ?? 0) > 0 ? "green" : "red"}>{testCaseCounts[x.requirementId] ?? 0} Cases</Badge></td>
-                <td data-label="จัดการ"><div className="row-actions"><button className="table-action" onClick={() => openHistory(x)}>Revision</button>{canEdit && <><button className="table-action" onClick={() => openEdit(x)}>แก้ไข</button><button className="table-action danger-action" onClick={() => remove(x)}>ลบ</button></>}</div></td>
+                <td data-label="จัดการ" className="actions-col"><div className="row-actions"><button className="table-action icon-only" title="Revision" aria-label={`Revision ${x.requirementCode}`} onClick={() => openHistory(x)}><span aria-hidden="true">↺</span></button>{canEdit && <><button className="table-action icon-only" title="แก้ไข" aria-label={`แก้ไข ${x.requirementCode}`} onClick={() => openEdit(x)}><span aria-hidden="true">✎</span></button><button className="table-action danger-action icon-only" title="ลบ" aria-label={`ลบ ${x.requirementCode}`} onClick={() => remove(x)}><span aria-hidden="true">✕</span></button></>}</div></td>
               </tr>
             ))}
             {filtered.length === 0 && <tr><td colSpan={10}><div className="empty"><p>ไม่พบ Requirement ตามตัวกรองที่เลือก</p></div></td></tr>}
@@ -2767,11 +2858,16 @@ function RequirementsPage({
             <div><span className="requirement-meta-icon risk" aria-hidden="true">!</span><span><dt>Risk</dt><dd>{viewing.riskLevel || "ไม่ระบุ"}</dd></span></div>
             <div><span className="requirement-meta-icon" aria-hidden="true">O</span><span><dt>Owner</dt><dd>{users.find((x) => x.userId === viewing.ownerUserId)?.displayName ?? "ไม่ระบุผู้รับผิดชอบ"}</dd></span></div>
           </dl>
-          <section className="requirement-detail-section"><div className="requirement-section-heading"><span aria-hidden="true">S</span><div><h3>Source</h3><small>แหล่งที่มาของ Requirement</small></div></div><p className="requirement-detail-copy">{viewing.source || "ไม่ระบุแหล่งที่มา"}</p></section>
-          <section className="requirement-detail-section"><div className="requirement-section-heading"><span aria-hidden="true">D</span><div><h3>Description</h3><small>รายละเอียดและขอบเขตของความต้องการ</small></div></div><p className="requirement-detail-copy">{viewing.description || "ไม่มีรายละเอียด"}</p></section>
-          <section className="requirement-detail-section criteria"><div className="requirement-section-heading"><span aria-hidden="true">✓</span><div><h3>Acceptance Criteria</h3><small>เงื่อนไขที่ใช้ยืนยันว่า Requirement สำเร็จ</small></div></div><p className="requirement-detail-copy">{viewing.acceptanceCriteria || "ไม่มี Acceptance Criteria"}</p></section>
-          <div className={`requirement-detail-status status-${viewing.status.toLowerCase()}`}><span className="information-icon" aria-hidden="true">i</span><div><span className="requirement-status-label">สถานะปัจจุบัน</span><b>{viewing.status} · {requirementStatusInformation.find((x) => x.value === viewing.status)?.label}</b><p>{requirementStatusInformation.find((x) => x.value === viewing.status)?.meaning}</p><small>{requirementStatusInformation.find((x) => x.value === viewing.status)?.impact}</small></div></div>
-          <div className="modal-actions"><button className="btn" onClick={() => setViewing(null)}>ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = viewing; setViewing(null); openEdit(item); }}>แก้ไข Requirement</button>}</div>
+          <section className="requirement-detail-section"><div className="requirement-section-heading"><span aria-hidden="true">S</span><h3>Source</h3></div><p className="requirement-detail-copy">{viewing.source || "ไม่ระบุแหล่งที่มา"}</p></section>
+          <section className="requirement-detail-section"><div className="requirement-section-heading"><span aria-hidden="true">D</span><h3>Description</h3></div><p className="requirement-detail-copy">{viewing.description || "ไม่มีรายละเอียด"}</p></section>
+          <section className="requirement-detail-section criteria"><div className="requirement-section-heading"><span aria-hidden="true">✓</span><h3>Acceptance Criteria</h3></div><p className="requirement-detail-copy requirement-criteria-copy"><span aria-hidden="true">✓</span> {viewing.acceptanceCriteria || "ไม่มี Acceptance Criteria"}</p></section>
+          <section className={`requirement-detail-status status-${viewing.status.toLowerCase()}`}>
+            <div className="requirement-section-heading"><span className="information-icon" aria-hidden="true">i</span><h3>Current Status / Summary</h3></div>
+            <b>{viewing.status} · {requirementStatusInformation.find((x) => x.value === viewing.status)?.label}</b>
+            <p>{requirementStatusInformation.find((x) => x.value === viewing.status)?.meaning}</p>
+            <small>{requirementStatusInformation.find((x) => x.value === viewing.status)?.impact}</small>
+          </section>
+          <div className="modal-actions"><button className="btn" onClick={() => setViewing(null)}><span aria-hidden="true">✕</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = viewing; setViewing(null); openEdit(item); }}><span aria-hidden="true">✎</span> แก้ไข Requirement</button>}</div>
         </div>
       </div>}
       {editing && (
@@ -2807,11 +2903,11 @@ function RequirementsPage({
               <label className="full">Description<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
               <label className="full">Acceptance Criteria<textarea rows={3} value={criteria} onChange={(e) => setCriteria(e.target.value)} /></label>
             </div>
-            <div className="modal-actions"><button className="btn" onClick={() => setEditing(null)}>ยกเลิก</button><button className="btn primary" disabled={saving || !title.trim() || !moduleId} onClick={saveEdit}>{saving ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+            <div className="modal-actions"><button className="btn" onClick={() => setEditing(null)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={saving || !title.trim() || !moduleId} onClick={saveEdit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>
           </div>
         </div>
       )}
-      {historyItem && <div className="modal" onMouseDown={() => setHistoryItem(null)}><div className="modal-box requirement-history" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2>Revision History</h2><small>{historyItem.requirementCode} · {historyItem.title}</small></div><button onClick={() => setHistoryItem(null)}>×</button></div>{historyLoading ? <div className="empty"><p>กำลังโหลดประวัติ...</p></div> : <div className="revision-list">{revisions.length === 0 ? <div className="empty"><p>ยังไม่มีประวัติ Revision</p></div> : revisions.map((x) => <article key={x.revisionNo}><div><b>Rev. {x.revisionNo}</b><time>{formatThaiDateTime(x.changedAt)}</time></div><h3>{x.title}</h3><p>{x.changeReason || "ไม่ระบุเหตุผลการเปลี่ยนแปลง"}</p>{x.acceptanceCriteria && <small>Acceptance Criteria: {x.acceptanceCriteria}</small>}</article>)}</div>}<div className="modal-actions"><button className="btn primary" onClick={() => setHistoryItem(null)}>ปิด</button></div></div></div>}
+      {historyItem && <div className="modal" onMouseDown={() => setHistoryItem(null)}><div className="modal-box requirement-history" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2>Revision History</h2><small>{historyItem.requirementCode} · {historyItem.title}</small></div><button onClick={() => setHistoryItem(null)}>×</button></div>{historyLoading ? <div className="empty"><p>กำลังโหลดประวัติ...</p></div> : <div className="revision-list">{revisions.length === 0 ? <div className="empty"><p>ยังไม่มีประวัติ Revision</p></div> : revisions.map((x) => <article key={x.revisionNo}><div><b>Rev. {x.revisionNo}</b><time>{formatThaiDateTime(x.changedAt)}</time></div><h3>{x.title}</h3><p>{x.changeReason || "ไม่ระบุเหตุผลการเปลี่ยนแปลง"}</p>{x.acceptanceCriteria && <small>Acceptance Criteria: {x.acceptanceCriteria}</small>}</article>)}</div>}<div className="modal-actions"><button className="btn primary" onClick={() => setHistoryItem(null)}><span aria-hidden="true">✕</span> ปิด</button></div></div></div>}
     </article>
   );
 }
@@ -2835,6 +2931,7 @@ type TestCaseItem = {
     testData?: string;
     expectedResult: string;
   }[];
+  createdAt?: string;
 };
 type TestCaseRequirement = { requirementId:string; requirementCode:string; title:string; status:string; coverageType?:string };
 type TestCaseRevision = { revisionNo:number; changeReason:string; changedBy?:string; changedByName?:string; changedAt:string; steps:TestCaseItem["steps"] };
@@ -2868,7 +2965,8 @@ function TestCasesPage({
     [saving, setSaving] = useState(false),
     [statusFilter, setStatusFilter] = useState(""),
     [projectFilter,setProjectFilter]=useState(""),[moduleFilter,setModuleFilter]=useState(""),
-    [priorityFilter,setPriorityFilter]=useState(""),[typeFilter,setTypeFilter]=useState(""),[automationFilter,setAutomationFilter]=useState(""),
+    [automationFilter,setAutomationFilter]=useState(""),
+    [createdByFilter,setCreatedByFilter]=useState(""),
     [users,setUsers]=useState<UserLookup[]>([]),[ownerUserId,setOwnerUserId]=useState(""),
     [error,setError]=useState(""),[notice,setNotice]=useState(""),[page,setPage]=useState(1),[pageSize,setPageSize]=useState(10),
     [detail,setDetail]=useState<TestCaseItem|null>(null),[detailRequirements,setDetailRequirements]=useState<TestCaseRequirement[]>([]),
@@ -2934,9 +3032,8 @@ function TestCasesPage({
     if (projectFilter) params.set("projectId", projectFilter);
     if (moduleFilter) params.set("moduleId", moduleFilter);
     if (statusFilter) params.set("status", statusFilter);
-    if (priorityFilter) params.set("priority", priorityFilter);
-    if (typeFilter) params.set("testType", typeFilter);
     if (automationFilter) params.set("automation", automationFilter === "yes" ? "true" : "false");
+    if (createdByFilter) params.set("createdBy", createdByFilter);
     if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
     fetch(`${apiUrl}/test-cases?${params}`, { headers: h })
       .then(async r => { if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`); return r.json(); })
@@ -2948,7 +3045,7 @@ function TestCasesPage({
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "โหลดข้อมูล Test Case ไม่สำเร็จ"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [reload, page, pageSize, projectFilter, moduleFilter, statusFilter, priorityFilter, typeFilter, automationFilter, debouncedSearch]);
+  }, [reload, page, pageSize, projectFilter, moduleFilter, statusFilter, automationFilter, createdByFilter, debouncedSearch]);
   useEffect(() => {
     if (!projectId) {
       setModules([]);
@@ -3118,6 +3215,14 @@ function TestCasesPage({
     setConfirmDelete(null);setNotice(`ลบ ${item.testCaseCode} แล้ว`);setReload((x) => x + 1);
   };
   const openDetail=async(item:TestCaseItem)=>{try{const h={Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`};const read=(url:string)=>fetch(url,{headers:h}).then(r=>r.ok?r.json():null);const [full,reqs,history]=await Promise.all([read(`${apiUrl}/test-cases/${item.testCaseId}`),read(`${apiUrl}/test-cases/${item.testCaseId}/requirements`),read(`${apiUrl}/test-cases/${item.testCaseId}/revisions`)]);setDetail(full?{...item,...full}:item);setDetailRequirements(Array.isArray(reqs)?reqs:[]);setRevisions(Array.isArray(history)?history:[]);}catch{setDetail(item);}};
+  // ปุ่ม "ดูรายละเอียด" บน Test Case ที่เชื่อมโยงกับ Defect ฝาก id ไว้ผ่าน localStorage แล้วพามาที่นี่ — เปิด
+  // detail modal ให้ทันทีด้วย openDetail เดิม (stub เฉพาะ testCaseId พอ เพราะ openDetail ดึงข้อมูลเต็มมา merge ทับอยู่แล้ว)
+  useEffect(() => {
+    const target = localStorage.getItem("qa.targetTestCaseId");
+    if (!target) return;
+    localStorage.removeItem("qa.targetTestCaseId");
+    void openDetail({ testCaseId: target } as unknown as TestCaseItem);
+  }, []);
   const cloneCase=async(item:TestCaseItem)=>{try{const r=await fetch(`${apiUrl}/test-cases/${item.testCaseId}/clone`,{method:"POST",headers});if(!r.ok)throw new Error("คัดลอก Test Case ไม่สำเร็จ");setNotice(`สร้างสำเนาจาก ${item.testCaseCode} แล้ว`);setReload(x=>x+1);}catch(e){setError(e instanceof Error?e.message:"คัดลอกไม่สำเร็จ");}};
   const toggleTcSelect=(id:string)=>setTcSelected(prev=>{const next=new Set(prev);if(next.has(id))next.delete(id);else next.add(id);return next;});
   const toggleTcSelectPage=()=>setTcSelected(prev=>{const next=new Set(prev);const all=pagedRows.length>0&&pagedRows.every(x=>prev.has(x.testCaseId));if(all)pagedRows.forEach(x=>next.delete(x.testCaseId));else pagedRows.forEach(x=>next.add(x.testCaseId));return next;});
@@ -3145,6 +3250,7 @@ function TestCasesPage({
   if (loading && !items.length)
     return (
       <article className="card empty">
+        <div className="spinner" />
         <p>กำลังโหลด Test Case...</p>
       </article>
     );
@@ -3158,11 +3264,11 @@ function TestCasesPage({
   return (
     <>
       <article className="card">
-        {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>{setError("");setReload(x=>x+1)}}>ลองใหม่</button></div>}
+        {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>{setError("");setReload(x=>x+1)}}><span aria-hidden="true">↻</span> ลองใหม่</button></div>}
         {notice&&<div className="inline-alert success"><span>{notice}</span><button onClick={()=>setNotice("")}>×</button></div>}
         <div className="testcase-toolbar">
           <div className="testcase-toolbar-head">
-            <div className="testcase-result-count"><strong>{totalCount.toLocaleString()}</strong><span>Test Cases</span></div>
+            <div className="result-count"><strong>{totalCount.toLocaleString()}</strong><span>Test Cases</span></div>
             <div className="testcase-toolbar-actions">
               {canEdit&&<button className="btn ai-button" onClick={openTestCaseAi}><span aria-hidden="true">✦</span> AI Generate</button>}
               {canEdit&&<button className="btn" disabled={templateDownloading||projects.length===0} onClick={downloadImportTemplate}>{templateDownloading?"กำลังดาวน์โหลด...":"↓ Template"}</button>}
@@ -3175,6 +3281,8 @@ function TestCasesPage({
             <div className="testcase-filters">
             <select value={projectFilter} onChange={e=>{setProjectFilter(e.target.value);setModuleFilter("");setPage(1)}}><option value="">ทุก Project</option>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select>
             <select className="testcase-module-filter" value={moduleFilter} onChange={e=>{setModuleFilter(e.target.value);setPage(1)}} disabled={!moduleFilterGroups.length}><option value="">ทุก Module</option>{moduleFilterGroups.map(({project,ordered})=><optgroup key={project.projectId} label={`${project.projectCode} · ${project.projectName}`}>{renderModuleSelectOptions(ordered.map(entry=>entry.module))}</optgroup>)}</select>
+            <select value={automationFilter} onChange={e=>{setAutomationFilter(e.target.value);setPage(1)}}><option value="">ทุก Automation</option><option value="yes">Automation Candidate</option><option value="no">Manual</option></select>
+            <select aria-label="กรองผู้สร้าง" value={createdByFilter} onChange={e=>{setCreatedByFilter(e.target.value);setPage(1)}}><option value="">ผู้สร้างทั้งหมด</option>{users.map(u=><option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -3185,9 +3293,6 @@ function TestCasesPage({
               <option>Ready</option>
               <option>Deprecated</option>
             </select>
-            <select value={priorityFilter} onChange={e=>{setPriorityFilter(e.target.value);setPage(1)}}><option value="">ทุก Priority</option>{testCasePriorities.map(x=><option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
-            <select value={typeFilter} onChange={e=>{setTypeFilter(e.target.value);setPage(1)}}><option value="">ทุก Type</option>{testCaseTypes.map(x=><option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
-            <select value={automationFilter} onChange={e=>{setAutomationFilter(e.target.value);setPage(1)}}><option value="">ทุก Automation</option><option value="yes">Automation Candidate</option><option value="no">Manual</option></select>
             </div>
           </div>
         </div>
@@ -3203,7 +3308,7 @@ function TestCasesPage({
                 <option>Deprecated</option>
               </select>
             </label>
-            <button type="button" className="btn primary" disabled={tcSaving!==""||!tcBulkStatus} onClick={applyTcBulkStatus}>{tcSaving==="bulk"?"กำลังบันทึก...":"กำหนดสถานะ"}</button>
+            <button type="button" className="btn primary" disabled={tcSaving!==""||!tcBulkStatus} onClick={applyTcBulkStatus}>{tcSaving==="bulk"?<><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</>:<><span aria-hidden="true">✓</span> กำหนดสถานะ</>}</button>
             <label className="bulk-automation">Automation Candidate
               <select value={tcBulkAutomation} onChange={e=>setTcBulkAutomation(e.target.value)}>
                 <option value="">เลือกค่า...</option>
@@ -3211,9 +3316,9 @@ function TestCasesPage({
                 <option value="no">Manual</option>
               </select>
             </label>
-            <button type="button" className="btn primary" disabled={tcSaving!==""||tcBulkAutomation===""} onClick={applyTcBulkAutomation}>{tcSaving==="bulk"?"กำลังบันทึก...":"กำหนด Candidate"}</button>
-            <button type="button" className="btn danger" disabled={tcSaving!==""} onClick={()=>setConfirmBulkDelete(true)}>{tcSaving==="bulk-delete"?"กำลังลบ...":"ลบที่เลือก"}</button>
-            <button type="button" className="bulk-clear" disabled={tcSaving!==""} onClick={()=>setTcSelected(new Set())}>ยกเลิกเลือก</button>
+            <button type="button" className="btn primary" disabled={tcSaving!==""||tcBulkAutomation===""} onClick={applyTcBulkAutomation}>{tcSaving==="bulk"?<><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</>:<><span aria-hidden="true">✓</span> กำหนด Candidate</>}</button>
+            <button type="button" className="btn danger" disabled={tcSaving!==""} onClick={()=>setConfirmBulkDelete(true)}>{tcSaving==="bulk-delete"?<><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>:<><span aria-hidden="true">✕</span> ลบที่เลือก</>}</button>
+            <button type="button" className="bulk-clear" disabled={tcSaving!==""} onClick={()=>setTcSelected(new Set())}><span aria-hidden="true">✕</span> ยกเลิกเลือก</button>
           </div>
         )}
         <div className="table-wrap">
@@ -3228,7 +3333,8 @@ function TestCasesPage({
                 <th>Revision</th>
                 <th>Steps</th>
                 <th>Status</th>
-                {canEdit && <th>จัดการ</th>}
+                <th>สร้างเมื่อ</th>
+                {canEdit && <th className="actions-col">จัดการ</th>}
               </tr>
             </thead>
             <tbody>
@@ -3258,32 +3364,37 @@ function TestCasesPage({
                       {x.status}
                     </Badge>
                   </td>
+                  <td data-label="สร้างเมื่อ">{fmtDateTimeBE(x.createdAt)}</td>
                   {canEdit && (
-                    <td data-label="จัดการ">
+                    <td data-label="จัดการ" className="actions-col">
                       <div className="row-actions">
                         <button
-                          className="table-action"
+                          className="table-action icon-only"
+                          title="แก้ไข"
+                          aria-label={`แก้ไข ${x.testCaseCode}`}
                           onClick={() => openForm(x)}
                         >
-                          แก้ไข
+                          <span aria-hidden="true">✎</span>
                         </button>
-                        <button className="table-action" onClick={() => cloneCase(x)}>สำเนา</button>
+                        <button className="table-action icon-only" title="สำเนา" aria-label={`สำเนา ${x.testCaseCode}`} onClick={() => cloneCase(x)}><span aria-hidden="true">⧉</span></button>
                         <button
-                          className="table-action danger-action"
+                          className="table-action danger-action icon-only"
+                          title="ลบ"
+                          aria-label={`ลบ ${x.testCaseCode}`}
                           onClick={() => setConfirmDelete(x)}
                         >
-                          ลบ
+                          <span aria-hidden="true">✕</span>
                         </button>
                       </div>
                     </td>
                   )}
                 </tr>
               ))}
-              {!pagedRows.length && !loading && <tr><td colSpan={canEdit ? 9 : 8}><div className="empty"><p>ไม่พบ Test Case ตามตัวกรองที่เลือก</p></div></td></tr>}
+              {!pagedRows.length && !loading && <tr><td colSpan={canEdit ? 10 : 9}><div className="empty"><p>ไม่พบ Test Case ตามตัวกรองที่เลือก</p></div></td></tr>}
             </tbody>
           </table>
         </div>
-        <div className="pagination"><label>แสดง<select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1)}}><option>10</option><option>25</option><option>50</option></select> รายการ</label><span>หน้า {Math.min(page,pageCount)} / {pageCount}</span><button className="btn" disabled={page<=1} onClick={()=>setPage(x=>x-1)}>ก่อนหน้า</button><button className="btn" disabled={page>=pageCount} onClick={()=>setPage(x=>x+1)}>ถัดไป</button></div>
+        <div className="pagination"><label>แสดง<select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1)}}><option>10</option><option>25</option><option>50</option></select> รายการ</label><span>หน้า {Math.min(page,pageCount)} / {pageCount}</span><button className="btn" disabled={page<=1} onClick={()=>setPage(x=>x-1)}><span aria-hidden="true">‹</span> ก่อนหน้า</button><button className="btn" disabled={page>=pageCount} onClick={()=>setPage(x=>x+1)}>ถัดไป <span aria-hidden="true">›</span></button></div>
       </article>
       {testCaseAiModal&&<div className="modal" onMouseDown={()=>{if(!testCaseAiGenerating)setTestCaseAiModal(false)}}><div className="modal-box requirement-ai-modal" role="dialog" aria-modal="true" aria-labelledby="testcase-ai-title" onMouseDown={e=>e.stopPropagation()} style={{position:"relative"}}>{testCaseAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{caseAiDrafts.length?<p>กำลังบันทึก Test Cases...</p>:<p>AI กำลังออกแบบ Test Case...</p>}<small>{caseAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังสร้าง Test Steps และ Expected Results"}</small></div>}
         <div className="modal-head"><div><h2 id="testcase-ai-title">AI Generate Test Case</h2><small>{caseAiDrafts.length?`พบ ${caseAiDrafts.length} Test Cases ที่ AI สร้าง — ตรวจสอบและบันทึก`:"สร้าง Draft พร้อม Test Steps จากคำอธิบายและไฟล์อ้างอิง"}</small></div><button aria-label="ปิดหน้าต่าง AI Generate" disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiModal(false)}>×</button></div>
@@ -3298,14 +3409,14 @@ function TestCasesPage({
           </div>
           <div className="ai-attachments"><div><strong>ไฟล์อ้างอิง (ไม่บังคับ)</strong><small>รองรับ PDF, Word, Excel, CSV, Text และรูปภาพ สูงสุด 5 ไฟล์ รวมไม่เกิน 20 MB</small></div><label className="ai-file-picker">+ เลือกไฟล์<input type="file" multiple accept=".pdf,.txt,.md,.csv,.docx,.xlsx,.png,.jpg,.jpeg,.webp" disabled={testCaseAiGenerating||testCaseAiFiles.length>=5} onChange={e=>{addTestCaseAiFiles(Array.from(e.target.files??[]));e.target.value=""}}/></label>{testCaseAiFiles.length>0&&<div className="ai-file-list">{testCaseAiFiles.map((file,index)=><div key={`${file.name}-${index}`}><span aria-hidden="true">▧</span><p><b>{file.name}</b><small>{(file.size/1024/1024).toFixed(2)} MB</small></p><button aria-label={`ลบไฟล์ ${file.name}`} disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiFiles(current=>current.filter((_,i)=>i!==index))}>×</button></div>)}</div>}</div>
           <div className="ai-draft-note"><span aria-hidden="true">i</span><p><strong>AI จะยังไม่บันทึกข้อมูล</strong><small>AI จะสร้าง Test Case หลายชุดให้ตรวจสอบก่อนบันทึก ผลลัพธ์ยังไม่ถูกบันทึกลงระบบ</small></p></div>
-          <div className="requirement-ai-actions"><small>ไฟล์ใช้วิเคราะห์เฉพาะคำขอนี้และไม่บันทึกลงระบบ</small><div className="row-actions"><button className="btn" disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiModal(false)}>ยกเลิก</button><button className="btn primary" disabled={testCaseAiGenerating||!projectId||!moduleId||!testCaseAiPrompt.trim()} onClick={generateTestCaseWithAi}>{testCaseAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Cases"}</button></div></div>
+          <div className="requirement-ai-actions"><small>ไฟล์ใช้วิเคราะห์เฉพาะคำขอนี้และไม่บันทึกลงระบบ</small><div className="row-actions"><button className="btn" disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={testCaseAiGenerating||!projectId||!moduleId||!testCaseAiPrompt.trim()} onClick={generateTestCaseWithAi}>{testCaseAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Cases"}</button></div></div>
         </section>
         ):(
         <section className="requirement-ai-panel case-ai-review">
           <div className="case-ai-review-head"><div><h3>Test Cases ที่ AI สร้าง ({caseAiDrafts.length})</h3></div></div>
           {testCaseAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{testCaseAiError}</span></div>}
-          <div className="case-ai-draft-list">{caseAiDrafts.map((draft,index)=>{const isExpanded=caseAiExpanded===index;return<div key={index} className={`case-ai-draft-card${isExpanded?" expanded":""}`}><div className="case-ai-draft-head" onClick={()=>setCaseAiExpanded(isExpanded?undefined:index)}><div className="case-ai-draft-title"><b>{draft.title}</b><div className="case-ai-draft-tags"><Badge tone={draft.priority==="P0"||draft.priority==="P1"?"red":"blue"}>{draft.priority}</Badge><Badge tone="yellow">{draft.testType}</Badge>{draft.automationCandidate&&<Badge tone="green">Auto</Badge>}<span className="case-ai-step-count">{draft.steps.length} Steps</span></div></div><span className="case-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="case-ai-draft-body"><p className="case-ai-draft-desc"><strong>Objective:</strong> {draft.objective}</p>{draft.preconditions&&<p className="case-ai-draft-desc"><strong>Preconditions:</strong> {draft.preconditions}</p>}<div className="case-ai-steps-list">{draft.steps.map(step=><div key={step.stepNo}><b>{step.stepNo}</b><span><strong>{step.action}</strong>{step.testData&&<small>Test Data: {step.testData}</small>}<small>Expected: {step.expectedResult}</small></span></div>)}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeCaseAiDraft(index)}>นำ Test Case นี้ออก</button></div>}</div>})}</div>
-          <div className="requirement-ai-actions"><small>{caseAiDrafts.length} Test Cases พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={testCaseAiGenerating} onClick={()=>setCaseAiDrafts([])}>สร้างใหม่</button><button className="btn primary" disabled={testCaseAiGenerating||!caseAiDrafts.length} onClick={saveAllCaseDrafts}>{testCaseAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${caseAiDrafts.length} Cases)`}</button></div></div>
+          <div className="case-ai-draft-list">{caseAiDrafts.map((draft,index)=>{const isExpanded=caseAiExpanded===index;return<div key={index} className={`case-ai-draft-card${isExpanded?" expanded":""}`}><div className="case-ai-draft-head" onClick={()=>setCaseAiExpanded(isExpanded?undefined:index)}><div className="case-ai-draft-title"><b>{draft.title}</b><div className="case-ai-draft-tags"><Badge tone={draft.priority==="P0"||draft.priority==="P1"?"red":"blue"}>{draft.priority}</Badge><Badge tone="yellow">{draft.testType}</Badge>{draft.automationCandidate&&<Badge tone="green">Auto</Badge>}<span className="case-ai-step-count">{draft.steps.length} Steps</span></div></div><span className="case-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="case-ai-draft-body"><p className="case-ai-draft-desc"><strong>Objective:</strong> {draft.objective}</p>{draft.preconditions&&<p className="case-ai-draft-desc"><strong>Preconditions:</strong> {draft.preconditions}</p>}<div className="case-ai-steps-list">{draft.steps.map(step=><div key={step.stepNo}><b>{step.stepNo}</b><span><strong>{step.action}</strong>{step.testData&&<small>Test Data: {step.testData}</small>}<small>Expected: {step.expectedResult}</small></span></div>)}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeCaseAiDraft(index)}><span aria-hidden="true">✕</span> นำ Test Case นี้ออก</button></div>}</div>})}</div>
+          <div className="requirement-ai-actions"><small>{caseAiDrafts.length} Test Cases พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={testCaseAiGenerating} onClick={()=>setCaseAiDrafts([])}><span aria-hidden="true">↻</span> สร้างใหม่</button><button className="btn primary" disabled={testCaseAiGenerating||!caseAiDrafts.length} onClick={saveAllCaseDrafts}>{testCaseAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${caseAiDrafts.length} Cases)`}</button></div></div>
         </section>
         )}
       </div></div>}
@@ -3524,13 +3635,101 @@ function TestCasesPage({
                 }
                 onClick={save}
               >
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}
               </button>
             </div>
           </div>
         </div>
       )}
- {detail&&<div className="modal" onMouseDown={()=>setDetail(null)}><div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}> <div className="modal-head"><div><h2>{detail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===detail.moduleId)?.moduleName||"-"} · {projects.find(x=>x.projectId===detail.projectId)?.projectName||""}</small></div><button onClick={()=>setDetail(null)}>×</button></div> <div className="tc-detail-hero"><h3>{detail.title}</h3> <div className="tc-detail-badges"> <Badge tone={detail.priority==="P0"||detail.priority==="P1"?"red":"blue"}>{detail.priority}</Badge> <Badge tone={detail.status==="Ready"?"green":detail.status==="Deprecated"?"yellow":"blue"}>{detail.status}</Badge> {detail.testType&&<Badge tone="yellow">{detail.testType}</Badge>} <Badge tone={detail.automationCandidate?"green":"gray"}>{detail.automationCandidate?"Automation Candidate":"Manual"}</Badge> </div> </div> <div className="tc-detail-meta"> <div className="tc-detail-meta-item"><span>Owner</span><b>{users.find(x=>x.userId===detail.ownerUserId)?.displayName||"ไม่ระบุ"}</b></div> <div className="tc-detail-meta-item"><span>Revision</span><b>Rev. {detail.revisionNo}</b></div> <div className="tc-detail-meta-item"><span>Module</span><b>{modules.find(x=>x.moduleId===detail.moduleId)?.moduleCode||"-"}</b></div> </div> <section className="tc-detail-section"> <h3>Objective</h3> <p className="tc-detail-body">{detail.objective||"ไม่ระบุวัตถุประสงค์"}</p> </section> {detail.preconditions&&<section className="tc-detail-section"> <h3>Preconditions</h3> <p className="tc-detail-body">{detail.preconditions}</p> </section>} <section className="tc-detail-section"> <h3>Test Steps ({detail.steps.length})</h3> <div className="tc-detail-steps">{detail.steps.map(x=><div key={x.stepNo} className="tc-detail-step"><div className="tc-detail-step-no">{x.stepNo}</div><div className="tc-detail-step-body"><div className="tc-detail-step-action"><strong>Action</strong><p>{x.action}</p></div>{x.testData&&<div className="tc-detail-step-data"><strong>Test Data</strong><p>{x.testData}</p></div>}<div className="tc-detail-step-expect"><strong>Expected Result</strong><p>{x.expectedResult}</p></div></div></div>)}</div> </section> <section className="tc-detail-section"> <h3>Requirements ที่เชื่อมโยง ({detailRequirements.length})</h3> {detailRequirements.length?<div className="tc-detail-reqs">{detailRequirements.map(x=><div key={x.requirementId} className="tc-detail-req-card"><div className="tc-detail-req-head"><b>{x.requirementCode}</b><Badge tone={x.status==="Approved"?"green":x.status==="Draft"?"yellow":"blue"}>{x.status}</Badge></div><p className="tc-detail-req-title">{x.title}</p>{x.coverageType&&<span className="tc-detail-req-coverage">Coverage: {x.coverageType}</span>}</div>)}</div>:<p className="muted-text">ยังไม่มี Requirement ที่เชื่อมโยง — สามารถเชื่อมได้จากหน้า Requirement</p>} </section> {revisions.length?<section className="tc-detail-section"> <h3>Revision History ({revisions.length})</h3> <div className="tc-detail-revisions">{revisions.map(x=><div key={x.revisionNo} className="tc-detail-revision"><div className="tc-detail-rev-head"><b>Rev. {x.revisionNo}</b><small>{x.changedByName||"ไม่ระบุผู้แก้ไข"} · {formatThaiDateTime(x.changedAt)}</small></div><p className="tc-detail-rev-reason">{x.changeReason||"-"}</p></div>)}</div> </section>:null} <div className="modal-actions"> <button className="btn" onClick={()=>setDetail(null)}>ปิด</button> {canEdit&&<button className="btn primary" onClick={()=>{const item=detail;setDetail(null);openForm(item);}}>แก้ไข</button>} </div> </div></div>}       {confirmDelete&&<div className="modal" onMouseDown={()=>setConfirmDelete(null)}><div className="modal-box confirm-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>ยืนยันการลบ Test Case</h2><button onClick={()=>setConfirmDelete(null)}>×</button></div><p>ต้องการลบ <b>{confirmDelete.testCaseCode}</b> ใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" onClick={()=>setConfirmDelete(null)}>ยกเลิก</button><button className="btn danger" onClick={()=>remove(confirmDelete)}>ยืนยันลบ</button></div></div></div>}      {confirmBulkDelete&&<div className="modal" onMouseDown={()=>{if(tcSaving!=="bulk-delete")setConfirmBulkDelete(false)}}><div className="modal-box confirm-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>ยืนยันการลบ Test Case ที่เลือก</h2><button disabled={tcSaving==="bulk-delete"} onClick={()=>setConfirmBulkDelete(false)}>×</button></div><p>ต้องการลบ <b>{tcSelected.size}</b> Test Case ที่เลือกใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" disabled={tcSaving==="bulk-delete"} onClick={()=>setConfirmBulkDelete(false)}>ยกเลิก</button><button className="btn danger" disabled={tcSaving==="bulk-delete"} onClick={removeBulkSelected}>{tcSaving==="bulk-delete"?"กำลังลบ...":"ยืนยันลบ"}</button></div></div></div>}
+ {detail && (() => {
+        const ownerName = users.find(x=>x.userId===detail.ownerUserId)?.displayName || "ไม่ระบุ";
+        const moduleCode = modules.find(x=>x.moduleId===detail.moduleId)?.moduleCode || "-";
+        return (
+        <div className="modal" role="presentation" onMouseDown={()=>setDetail(null)}>
+          <div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}>
+            <div className="modal-head">
+              <div><h2>{detail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===detail.moduleId)?.moduleName||"-"} · {projects.find(x=>x.projectId===detail.projectId)?.projectName||""}</small></div>
+              <button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setDetail(null)}>×</button>
+            </div>
+            <section className="cycle-detail-hero">
+              <div className="suite-detail-hero-text">
+                <span className="suite-detail-hero-icon" aria-hidden="true">▤</span>
+                <div><h3>{detail.title}</h3></div>
+              </div>
+              <div className="cycle-detail-badges">
+                <Badge tone={detail.priority==="P0"||detail.priority==="P1"?"red":"blue"}>{detail.priority}</Badge>
+                <Badge tone={detail.status==="Ready"?"green":detail.status==="Deprecated"?"yellow":"blue"}>{detail.status}</Badge>
+                {detail.testType && <Badge tone="yellow">{detail.testType}</Badge>}
+                <Badge tone={detail.automationCandidate?"green":"gray"}>{detail.automationCandidate?"Automation Candidate":"Manual"}</Badge>
+              </div>
+            </section>
+            <div className="suite-info-cards">
+              <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">U</span> Owner</span><b>{ownerName}</b></div>
+              <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">D</span> Revision</span><b>Rev. {detail.revisionNo}</b></div>
+              <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">M</span> Module</span><b>{moduleCode}</b></div>
+            </div>
+            <div className="defect-detail-split">
+              <section className="cycle-detail-section">
+                <h3><span aria-hidden="true">◎</span> Objective</h3>
+                <p className="defect-detail-text">{detail.objective||"ไม่ระบุวัตถุประสงค์"}</p>
+              </section>
+              <section className="cycle-detail-section">
+                <h3><span aria-hidden="true">▤</span> Preconditions</h3>
+                <p className="defect-detail-text">{detail.preconditions||"ไม่มีเงื่อนไขก่อนเริ่ม"}</p>
+              </section>
+            </div>
+            <section className="cycle-detail-section">
+              <h3><span aria-hidden="true">▤</span> Test Steps ({detail.steps.length})</h3>
+              <div className="tc-detail-steps-v2">
+                {detail.steps.map((x,i)=>(
+                  <div className="tc-detail-step-row" key={x.stepNo}>
+                    <div className="tc-detail-step-timeline">
+                      <span className="tc-detail-step-dot">{x.stepNo}</span>
+                      {i<detail.steps.length-1 && <i className="tc-detail-step-line" />}
+                    </div>
+                    <div className="tc-detail-step-card">
+                      <div className="tc-detail-step-col"><span className="tc-detail-step-col-label"><span aria-hidden="true">▶</span> Action</span><b>{x.action}</b></div>
+                      <div className="tc-detail-step-col"><span className="tc-detail-step-col-label"><span aria-hidden="true">●</span> Test Data</span>{x.testData ? <span className="tc-detail-step-pill amber">{x.testData}</span> : <span className="muted-text">-</span>}</div>
+                      <div className="tc-detail-step-col"><span className="tc-detail-step-col-label"><span aria-hidden="true">✓</span> Expected Result</span><span className="tc-detail-step-pill green">{x.expectedResult}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="cycle-detail-section">
+              <h3>Requirements ที่เชื่อมโยง ({detailRequirements.length})</h3>
+              {detailRequirements.length ? (
+                <div className="defect-linked-cases">
+                  {detailRequirements.map(x=>(
+                    <div key={x.requirementId} className="defect-linked-case">
+                      <div><b>{x.requirementCode}</b><small>{x.title}{x.coverageType ? ` · Coverage: ${x.coverageType}` : ""}</small></div>
+                      <Badge tone={x.status==="Approved"?"green":x.status==="Draft"?"yellow":"blue"}>{x.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="muted-text">ยังไม่มี Requirement ที่เชื่อมโยง — สามารถเชื่อมได้จากหน้า Requirement</p>}
+            </section>
+            {!!revisions.length && (
+              <section className="cycle-detail-section">
+                <h3>Revision History ({revisions.length})</h3>
+                <div className="defect-activity-list">
+                  {revisions.map(x=>(
+                    <div key={x.revisionNo} className="defect-activity-row">
+                      <Badge tone="blue">Rev. {x.revisionNo}</Badge>
+                      <div><p>{x.changeReason||"-"}</p><small>{x.changedByName||"ไม่ระบุผู้แก้ไข"} · {formatThaiDateTime(x.changedAt)}</small></div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+            <div className="modal-actions">
+              <button className="btn" onClick={()=>setDetail(null)}><span aria-hidden="true">✕</span> ปิด</button>
+              {canEdit && <button className="btn primary" onClick={()=>{const item=detail;setDetail(null);openForm(item);}}><span aria-hidden="true">✎</span> แก้ไข</button>}
+            </div>
+          </div>
+        </div>
+        );
+      })()}       {confirmDelete&&<div className="modal" onMouseDown={()=>setConfirmDelete(null)}><div className="modal-box confirm-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>ยืนยันการลบ Test Case</h2><button onClick={()=>setConfirmDelete(null)}>×</button></div><p>ต้องการลบ <b>{confirmDelete.testCaseCode}</b> ใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" onClick={()=>setConfirmDelete(null)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn danger" onClick={()=>remove(confirmDelete)}><span aria-hidden="true">✕</span> ยืนยันลบ</button></div></div></div>}      {confirmBulkDelete&&<div className="modal" onMouseDown={()=>{if(tcSaving!=="bulk-delete")setConfirmBulkDelete(false)}}><div className="modal-box confirm-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>ยืนยันการลบ Test Case ที่เลือก</h2><button disabled={tcSaving==="bulk-delete"} onClick={()=>setConfirmBulkDelete(false)}>×</button></div><p>ต้องการลบ <b>{tcSelected.size}</b> Test Case ที่เลือกใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" disabled={tcSaving==="bulk-delete"} onClick={()=>setConfirmBulkDelete(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn danger" disabled={tcSaving==="bulk-delete"} onClick={removeBulkSelected}>{tcSaving==="bulk-delete"?<><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>:<><span aria-hidden="true">✕</span> ยืนยันลบ</>}</button></div></div></div>}
     </>
   );
 }
@@ -3586,30 +3785,30 @@ function RegressionPage({projectId,releaseId,buildId,search,canEdit,onOpenCycle}
   const metrics=impact?.metrics??{impactedModules:0,recommendedCases:0,regressionCycles:0,totalCycleCases:0,executedCases:0,passedCases:0,failedCases:0,progressPercent:0,passRate:0,openDefects:0,overallStatus:"Not Started"};
   const stepDone1=!!selectedRelease&&!!selectedBuild,stepDone2=!!impact,stepDone3=selectedCases.length>0;
   const activeStepIndex=[stepDone1,stepDone2,stepDone3].findIndex(v=>!v);
-  if(initialLoading)return <article className="card regression-empty"><p>กำลังโหลด Regression workspace...</p></article>;
+  if(initialLoading)return <article className="card regression-empty"><div className="spinner" /><p>กำลังโหลด Regression workspace...</p></article>;
   return <div className="regression-page">
     <section className="regression-summary" aria-label="Regression summary"><article><span className="regression-summary-icon blue">M</span><div><small>Impacted Modules</small><b>{metrics.impactedModules}</b><span>Module ที่เปลี่ยนแปลง</span></div></article><article><span className="regression-summary-icon violet">TC</span><div><small>Recommended Cases</small><b>{metrics.recommendedCases}</b><span>{selectedCases.length} รายการที่เลือก</span></div></article><article><span className="regression-summary-icon green">%</span><div><small>Regression Progress</small><b>{metrics.progressPercent}%</b><span>{metrics.executedCases}/{metrics.totalCycleCases} Executed</span></div></article><article><span className="regression-summary-icon amber">✓</span><div><small>Pass Rate</small><b>{metrics.passRate}%</b><span>{metrics.failedCases} Failed/Blocked</span></div></article><article><span className="regression-summary-icon red">!</span><div><small>Open Defects</small><b>{metrics.openDefects}</b><span className={`regression-health ${metrics.overallStatus.toLowerCase().replaceAll(" ","-")}`}>{metrics.overallStatus}</span></div></article></section>
     <nav className="regression-steps" aria-label="ขั้นตอนการทำ Regression">{([["เลือกบริบทและการเปลี่ยนแปลง","Release · Target Build · Changed Modules",stepDone1,"regression-analysis"],["วิเคราะห์และเลือก Test Case","กด “วิเคราะห์ Impact” แล้วติ๊กรายการที่จะทดสอบ",stepDone2,impact?"regression-results":"regression-analysis"],["สร้าง Suite / Cycle","เพิ่มเข้า Cycle เดิมหรือสร้างใหม่",stepDone3,"regression-results"]] as [string,string,boolean,string][]).map(([title,desc,done,target],index)=>(<button key={String(index)} type="button" aria-current={!done&&index===activeStepIndex?"step":undefined} className={done?"done":index===activeStepIndex?"active":""} onClick={()=>document.getElementById(target)?.scrollIntoView({behavior:"smooth",block:"start"})}><span className="regression-step-no" aria-hidden="true">{done?"✓":String(index+1)}</span><span className="regression-step-text"><b>{title}</b><small>{desc}</small></span></button>))}</nav>
     {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>setError("")}>×</button></div>}{success&&<div className="inline-alert success"><span>{success}</span><button onClick={()=>setSuccess("")}>×</button></div>}
-    <section id="regression-analysis" className="card regression-analysis"><div className="regression-section-head"><div><span className="regression-title-icon">◎</span><div><h2><span className="regression-step-chip">ขั้นตอน 1</span>Impact Analysis</h2><p>ระบุส่วนที่เปลี่ยนแปลงเพื่อค้นหา Test Case ที่ควร Regression</p></div></div><span className="regression-analyze-action"><button className="btn primary" disabled={loading||!selectedBuild} onClick={()=>analyze()}>{loading?"กำลังวิเคราะห์...":"วิเคราะห์ Impact"}</button>{!selectedBuild&&<small className="regression-analyze-hint">เลือก Release และ Target Build ก่อน</small>}</span></div>
-      <div className="regression-profile-bar"><select aria-label="Regression Profile" value={selectedProfileId} onChange={e=>{setSelectedProfileId(e.target.value);applyProfile(e.target.value)}}><option value="">เลือก Profile / Template</option>{profiles.map(x=><option key={x.id} value={x.id}>{x.name}{x.isOwner?"":" (Shared)"}</option>)}</select><input aria-label="ชื่อ Regression Profile" value={profileName} onChange={e=>setProfileName(e.target.value)} placeholder="ชื่อ Profile"/><select aria-label="การมองเห็น Regression Profile" value={profileVisibility} onChange={e=>setProfileVisibility(e.target.value)}><option value="Private">Owner / Private</option><option value="Shared">Shared with Team</option></select><button className="btn" disabled={!profileName.trim()||saving} onClick={saveProfile}>บันทึกใหม่</button><button className="btn" disabled={!profiles.find(x=>x.id===selectedProfileId)?.isOwner||!profileName.trim()||saving} onClick={updateProfile}>อัปเดต Profile</button><button className="btn danger" disabled={!selectedProfileId} onClick={deleteProfile}>ลบ Profile</button></div>
+    <section id="regression-analysis" className="card regression-analysis"><div className="regression-section-head"><div><span className="regression-title-icon">◎</span><div><h2><span className="regression-step-chip">ขั้นตอน 1</span>Impact Analysis</h2><p>ระบุส่วนที่เปลี่ยนแปลงเพื่อค้นหา Test Case ที่ควร Regression</p></div></div><span className="regression-analyze-action"><button className="btn primary" disabled={loading||!selectedBuild} onClick={()=>analyze()}>{loading?<><span className="spinner inline" aria-hidden="true" /> กำลังวิเคราะห์...</>:<><span aria-hidden="true">⚡</span> วิเคราะห์ Impact</>}</button>{!selectedBuild&&<small className="regression-analyze-hint">เลือก Release และ Target Build ก่อน</small>}</span></div>
+      <div className="regression-profile-bar"><select aria-label="Regression Profile" value={selectedProfileId} onChange={e=>{setSelectedProfileId(e.target.value);applyProfile(e.target.value)}}><option value="">เลือก Profile / Template</option>{profiles.map(x=><option key={x.id} value={x.id}>{x.name}{x.isOwner?"":" (Shared)"}</option>)}</select><input aria-label="ชื่อ Regression Profile" value={profileName} onChange={e=>setProfileName(e.target.value)} placeholder="ชื่อ Profile"/><select aria-label="การมองเห็น Regression Profile" value={profileVisibility} onChange={e=>setProfileVisibility(e.target.value)}><option value="Private">Owner / Private</option><option value="Shared">Shared with Team</option></select><button className="btn" disabled={!profileName.trim()||saving} onClick={saveProfile}><span aria-hidden="true">✓</span> บันทึกใหม่</button><button className="btn" disabled={!profiles.find(x=>x.id===selectedProfileId)?.isOwner||!profileName.trim()||saving} onClick={updateProfile}><span aria-hidden="true">✎</span> อัปเดต Profile</button><button className="btn danger" disabled={!selectedProfileId} onClick={deleteProfile}><span aria-hidden="true">✕</span> ลบ Profile</button></div>
       <div className="regression-context-grid"><label>Release<select value={selectedRelease} onChange={e=>{setSelectedRelease(e.target.value);setImpact(null)}}><option value="">เลือก Release</option>{releases.filter(x=>!projectId||x.projectId===projectId).map(x=><option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}</select></label><label>Target Build<select value={selectedBuild} onChange={e=>{setSelectedBuild(e.target.value);setImpact(null)}}><option value="">เลือก Build</option>{builds.map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber} · {x.applicationVersion||"-"}</option>)}</select></label><label>Minimum Priority<select value={minimumPriority} onChange={e=>setMinimumPriority(e.target.value)}><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label></div>
       <div className="regression-analysis-grid"><div className="regression-module-picker"><div className="regression-field-title"><b>Changed Modules</b><small>เลือกได้มากกว่า 1 Module</small></div><div className="regression-module-options">{modules.map(x=><label key={x.moduleId} className={changedModules.includes(x.moduleId)?"selected":""}><input type="checkbox" checked={changedModules.includes(x.moduleId)} onChange={()=>setChangedModules(v=>v.includes(x.moduleId)?v.filter(id=>id!==x.moduleId):[...v,x.moduleId])}/><span><b>{x.moduleCode}</b><small>{x.moduleName}</small></span></label>)}</div></div><div className="regression-change-panel"><div className="regression-field-title"><b>Change Impact</b><small>เลือกประเภทการเปลี่ยนแปลงที่เกี่ยวข้อง</small></div><div className="regression-impact-options">{[["Database / Schema",databaseChange,setDatabaseChange],["API Contract",apiChange,setApiChange],["Calculation",calculationChange,setCalculationChange],["Permission",permissionChange,setPermissionChange],["Update / Installer",installerChange,setInstallerChange],["Defect Fix",defectFix,setDefectFix]] .map(([label,value,setter])=><label key={label as string}><input type="checkbox" checked={value as boolean} onChange={e=>(setter as (v:boolean)=>void)(e.target.checked)}/><span>{label as string}</span></label>)}</div><label>Shared Components<input value={sharedComponents} onChange={e=>setSharedComponents(e.target.value)} placeholder="เช่น Auth, Pricing, Shared Library"/></label><label className="regression-shared-check"><input type="checkbox" checked={shared} onChange={e=>setShared(e.target.checked)}/><span>รวม Shared Dependencies และ Critical P0/P1</span></label></div></div>
       <label className="regression-notes">Change Notes<textarea rows={3} value={changeNotes} onChange={e=>setChangeNotes(e.target.value)} placeholder="สรุปสิ่งที่เปลี่ยนแปลง เพื่อใช้เป็นบริบทของ Suite และ Cycle"/></label>
       <details className="regression-risk-config"><summary>ตั้งค่า Risk Score</summary><p>กำหนดน้ำหนักเพื่อจัดลำดับ Test Case ที่มีความเสี่ยงสูงก่อน (คะแนนสูงสุด 100)</p><div>{[["Direct Impact",directImpactWeight,setDirectImpactWeight],["Historical Defect",historicalDefectWeight,setHistoricalDefectWeight],["Critical P0/P1",criticalPriorityWeight,setCriticalPriorityWeight],["Shared Dependency",sharedDependencyWeight,setSharedDependencyWeight]].map(([label,value,setter])=><label key={label as string}><span>{label as string}<b>{value as number}</b></span><input type="range" min="0" max="60" step="5" value={value as number} onChange={e=>(setter as (v:number)=>void)(Number(e.target.value))}/></label>)}</div></details>
     </section>
-    <section id="regression-results" className="card regression-results"><div className="regression-section-head"><div><span className="regression-title-icon">⇄</span><div><h2><span className="regression-step-chip">ขั้นตอน 2</span>Recommended Test Cases</h2><p>{impact?`${impact.cases.length} รายการจากผลวิเคราะห์ · แสดง ${visibleCases.length} · เลือกแล้ว ${selectedCases.length} รายการ`:"เริ่มจากเลือก Module หรือประเภทการเปลี่ยนแปลง แล้วกดวิเคราะห์ Impact"}</p></div></div>{impact&&<div className="regression-result-actions"><button className="btn" onClick={()=>downloadRegression("csv")}>Export CSV</button><button className="btn" onClick={()=>downloadRegression("xls")}>Export Excel</button><button className="btn" onClick={toggleVisible}>{visibleCases.length&&visibleCases.every(x=>selectedCases.includes(x.testCaseId))?"ยกเลิกที่แสดง":"เลือกทั้งหมดที่แสดง"}</button></div>}</div>
-      {impact&&<div className="regression-server-actions"><button className="btn" disabled={loading} onClick={selectAllPages}>เลือกทั้งหมดทุกหน้า ({impact.totalItems})</button><button className="btn" disabled={loading} onClick={exportAllPages}>Export ทุกหน้าพร้อม Risk</button></div>}
+    <section id="regression-results" className="card regression-results"><div className="regression-section-head"><div><span className="regression-title-icon">⇄</span><div><h2><span className="regression-step-chip">ขั้นตอน 2</span>Recommended Test Cases</h2><p>{impact?`${impact.cases.length} รายการจากผลวิเคราะห์ · แสดง ${visibleCases.length} · เลือกแล้ว ${selectedCases.length} รายการ`:"เริ่มจากเลือก Module หรือประเภทการเปลี่ยนแปลง แล้วกดวิเคราะห์ Impact"}</p></div></div>{impact&&<div className="regression-result-actions"><button className="btn" onClick={()=>downloadRegression("csv")}><span aria-hidden="true">⤓</span> Export CSV</button><button className="btn" onClick={()=>downloadRegression("xls")}><span aria-hidden="true">⤓</span> Export Excel</button><button className="btn" onClick={toggleVisible}>{visibleCases.length&&visibleCases.every(x=>selectedCases.includes(x.testCaseId))?<><span aria-hidden="true">✕</span> ยกเลิกที่แสดง</>:<><span aria-hidden="true">☑</span> เลือกทั้งหมดที่แสดง</>}</button></div>}</div>
+      {impact&&<div className="regression-server-actions"><button className="btn" disabled={loading} onClick={selectAllPages}><span aria-hidden="true">☑</span> เลือกทั้งหมดทุกหน้า ({impact.totalItems})</button><button className="btn" disabled={loading} onClick={exportAllPages}><span aria-hidden="true">⤓</span> Export ทุกหน้าพร้อม Risk</button></div>}
       {impact&&<div className="regression-filters"><select aria-label="กรอง Impact Type" value={impactFilter} onChange={e=>setImpactFilter(e.target.value)}><option value="">ทุก Impact Type</option>{[...new Set(impact.cases.map(x=>x.impactType))].map(x=><option key={x}>{x}</option>)}</select><select aria-label="กรอง Module" value={moduleFilter} onChange={e=>setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{[...new Map(impact.cases.map(x=>[x.moduleId,x.moduleName])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select><select aria-label="กรอง Priority" value={priorityFilter} onChange={e=>setPriorityFilter(e.target.value)}><option value="">ทุก Priority</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select><select aria-label="กรอง Last Result" value={resultFilter} onChange={e=>setResultFilter(e.target.value)}><option value="">ทุก Last Result</option><option>Fail</option><option>Blocked</option><option>Not Run</option><option>Pass</option></select><label className="regression-defect-filter"><input type="checkbox" checked={defectOnly} onChange={e=>setDefectOnly(e.target.checked)}/><span>เคยพบ Defect</span></label></div>}
       {!impact?<div className="regression-empty"><span>◎</span><b>ยังไม่มีผลการวิเคราะห์</b><p>ระบบจะแนะนำ Direct Impact, Shared Dependency, Critical P0/P1 และ Historical Defect Cases</p></div>:visibleCases.length===0?<div className="regression-empty"><span>⌕</span><b>ไม่พบ Test Case ตามตัวกรอง</b><p>ลองเปลี่ยน Impact Type, Module หรือ Priority</p></div>:<div className="regression-case-list">{visibleCases.map(x=><div key={x.testCaseId} className={`regression-case ${selectedCases.includes(x.testCaseId)?"selected":""}`}><input aria-label={`เลือก ${x.testCaseCode} ${x.title}`} type="checkbox" checked={selectedCases.includes(x.testCaseId)} onChange={()=>toggleCase(x.testCaseId)}/><span className="regression-case-main"><span className="regression-case-code"><button className="regression-case-link" disabled={caseDetailLoading} onClick={()=>openCaseDetail(x)} aria-label={`ดูรายละเอียด ${x.testCaseCode}`}>{x.testCaseCode}</button><Badge tone={x.priority==="P0"||x.priority==="P1"?"red":"blue"}>{x.priority}</Badge>{x.isRequired&&<Badge tone="yellow">Required</Badge>}<Badge tone={x.riskScore>=60?"red":x.riskScore>=30?"yellow":"blue"}>Risk {x.riskScore}</Badge></span><strong>{x.title}</strong><small>{x.moduleName} · {x.testType||"ไม่ระบุประเภท"} · Rev. {x.revisionNo}</small></span><span className="regression-case-impact"><Badge tone={x.impactType==="Direct Impact"?"blue":x.impactType==="Historical Defect"?"red":"yellow"}>{x.impactType}</Badge><small>{x.reason}</small></span><span className="regression-last-result"><small>Last Result</small><b className={(x.lastResult||"not-run").toLowerCase()}>{x.lastResult||"Not Run"}</b></span></div>)}</div>}
-      {impact&&impact.totalPages>1&&<nav className="regression-pagination" aria-label="หน้ารายการ Recommended Test Cases"><span>หน้า {impact.page} / {impact.totalPages} · ทั้งหมด {impact.totalItems} รายการ</span><label>ต่อหน้า<select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setTimeout(()=>analyze(1,false),0)}}><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option></select></label><button className="btn" disabled={loading||impact.page<=1} onClick={()=>analyze(impact.page-1,false)}>ก่อนหน้า</button><button className="btn" disabled={loading||impact.page>=impact.totalPages} onClick={()=>analyze(impact.page+1,false)}>ถัดไป</button></nav>}
+      {impact&&impact.totalPages>1&&<nav className="regression-pagination" aria-label="หน้ารายการ Recommended Test Cases"><span>หน้า {impact.page} / {impact.totalPages} · ทั้งหมด {impact.totalItems} รายการ</span><label>ต่อหน้า<select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setTimeout(()=>analyze(1,false),0)}}><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option></select></label><button className="btn" disabled={loading||impact.page<=1} onClick={()=>analyze(impact.page-1,false)}><span aria-hidden="true">‹</span> ก่อนหน้า</button><button className="btn" disabled={loading||impact.page>=impact.totalPages} onClick={()=>analyze(impact.page+1,false)}>ถัดไป <span aria-hidden="true">›</span></button></nav>}
     </section>
-    <section className="card regression-schedule"><div className="regression-section-head"><div><span className="regression-title-icon">◷</span><div><h2>Scheduled Regression</h2><p>เตรียม Regression อัตโนมัติและแจ้งเตือนเมื่อมี Active Build ใหม่</p></div></div><Badge tone={notifications.length?"yellow":"green"}>{notifications.length} Notifications</Badge></div>{notifications.length>0&&<div className="regression-notifications">{notifications.map(x=><div key={`${x.regressionScheduleId}-${x.buildId}`}><span>!</span><p><b>{x.message}</b><small>{x.scheduleName} · {formatThaiDateTime(x.createdAt)}</small></p><button className="btn" disabled={!canEdit||saving} onClick={()=>acknowledgeNotification(x)}>รับทราบ</button></div>)}</div>}<div className="regression-schedule-form"><input aria-label="ชื่อ Scheduled Regression" value={scheduleName} onChange={e=>setScheduleName(e.target.value)}/><select aria-label="Profile สำหรับ Scheduled Regression" value={selectedProfileId} onChange={e=>{setSelectedProfileId(e.target.value);applyProfile(e.target.value)}}><option value="">ไม่ใช้ Profile</option>{profiles.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><button className="btn primary" disabled={!selectedRelease||!scheduleName.trim()||saving} onClick={saveSchedule}>เปิด Schedule</button></div>{schedules.length>0&&<ul className="regression-schedule-list">{schedules.map(x=><li key={x.regressionScheduleId}><span><b>{x.name}</b><small>{releases.find(r=>r.releaseId===x.releaseId)?.releaseCode??"-"} · เปิดใช้งานอยู่</small></span><button className="btn danger" disabled={!canEdit||saving} onClick={()=>removeSchedule(x.regressionScheduleId)}>ปิด Schedule</button></li>)}</ul>}</section>
+    <section className="card regression-schedule"><div className="regression-section-head"><div><span className="regression-title-icon">◷</span><div><h2>Scheduled Regression</h2><p>เตรียม Regression อัตโนมัติและแจ้งเตือนเมื่อมี Active Build ใหม่</p></div></div><Badge tone={notifications.length?"yellow":"green"}>{notifications.length} Notifications</Badge></div>{notifications.length>0&&<div className="regression-notifications">{notifications.map(x=><div key={`${x.regressionScheduleId}-${x.buildId}`}><span>!</span><p><b>{x.message}</b><small>{x.scheduleName} · {formatThaiDateTime(x.createdAt)}</small></p><button className="btn" disabled={!canEdit||saving} onClick={()=>acknowledgeNotification(x)}><span aria-hidden="true">✓</span> รับทราบ</button></div>)}</div>}<div className="regression-schedule-form"><input aria-label="ชื่อ Scheduled Regression" value={scheduleName} onChange={e=>setScheduleName(e.target.value)}/><select aria-label="Profile สำหรับ Scheduled Regression" value={selectedProfileId} onChange={e=>{setSelectedProfileId(e.target.value);applyProfile(e.target.value)}}><option value="">ไม่ใช้ Profile</option>{profiles.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><button className="btn primary" disabled={!selectedRelease||!scheduleName.trim()||saving} onClick={saveSchedule}><span aria-hidden="true">▶</span> เปิด Schedule</button></div>{schedules.length>0&&<ul className="regression-schedule-list">{schedules.map(x=><li key={x.regressionScheduleId}><span><b>{x.name}</b><small>{releases.find(r=>r.releaseId===x.releaseId)?.releaseCode??"-"} · เปิดใช้งานอยู่</small></span><button className="btn danger" disabled={!canEdit||saving} onClick={()=>removeSchedule(x.regressionScheduleId)}><span aria-hidden="true">⏹</span> ปิด Schedule</button></li>)}</ul>}</section>
     <section className="regression-dashboard-grid"><article className="card regression-trend"><div className="regression-section-head"><div><span className="regression-title-icon">↗</span><div><h2>Regression Trend</h2><p>จำนวน Test Case ที่ระบบแนะนำจากการวิเคราะห์ 6 ครั้งล่าสุด</p></div></div></div><div className="regression-trend-bars">{history.slice(0,6).reverse().map(x=>{const max=Math.max(1,...history.slice(0,6).map(h=>h.recommendedCases));return <div key={x.regressionAnalysisId}><span style={{height:`${Math.max(8,x.recommendedCases*100/max)}%`}} title={`${x.recommendedCases} cases`}></span><small>{x.buildNumber}</small><b>{x.recommendedCases}</b></div>})}{history.length===0&&<p className="regression-helper">ยังไม่มีข้อมูลแนวโน้ม</p>}</div></article><article className="card regression-activity"><div className="regression-section-head"><div><span className="regression-title-icon">⌁</span><div><h2>Recent Activity</h2><p>กิจกรรม Regression ล่าสุดของ Release</p></div></div><Badge tone="blue">{activities.length}</Badge></div><div className="regression-activity-list">{activities.slice(0,6).map(x=><div key={x.regressionActivityId}><span></span><p><b>{x.action}</b><small>{x.details||"-"} · {x.actorName||"System"}</small></p><time>{formatThaiDateTime(x.createdAt,{dateStyle:"short",timeStyle:"short"})}</time></div>)}{activities.length===0&&<p className="regression-helper">ยังไม่มีกิจกรรม</p>}</div></article></section>
     <section className="regression-phase-grid"><article className="card regression-baseline"><div className="regression-section-head"><div><span className="regression-title-icon">Δ</span><div><h2>Baseline Comparison</h2><p>เปรียบเทียบผล Regression ของ Target Build กับ Build ก่อนหน้า</p></div></div></div><label>Baseline Build<select value={baselineBuild} onChange={e=>setBaselineBuild(e.target.value)}><option value="">เลือก Build สำหรับเปรียบเทียบ</option>{builds.filter(x=>x.buildId!==selectedBuild).map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber} · {x.applicationVersion||"-"}</option>)}</select></label>{baseline?<div className="regression-compare"><div><small>Executed</small><b>{baseline.target.executedCases}</b><span className={baseline.executedDelta>=0?"positive":"negative"}>{baseline.executedDelta>=0?"+":""}{baseline.executedDelta}</span></div><div><small>Passed</small><b>{baseline.target.passedCases}</b><span className={baseline.passedDelta>=0?"positive":"negative"}>{baseline.passedDelta>=0?"+":""}{baseline.passedDelta}</span></div><div><small>Failed</small><b>{baseline.target.failedCases+baseline.target.blockedCases}</b><span className={baseline.failedDelta<=0?"positive":"negative"}>{baseline.failedDelta>=0?"+":""}{baseline.failedDelta}</span></div><div><small>Pass Rate</small><b>{baseline.target.passRate}%</b><span className={baseline.passRateDelta>=0?"positive":"negative"}>{baseline.passRateDelta>=0?"+":""}{baseline.passRateDelta}%</span></div></div>:<p className="regression-helper">{builds.length<2?"Release นี้ยังไม่มี Build อื่นสำหรับเปรียบเทียบ":"เลือก Baseline Build เพื่อดูแนวโน้ม"}</p>}</article><article className="card regression-history"><div className="regression-section-head"><div><span className="regression-title-icon">↺</span><div><h2>Regression History</h2><p>ประวัติการวิเคราะห์ Impact ล่าสุด</p></div></div><Badge tone="blue">{history.length}</Badge></div>{history.length?<div className="regression-history-list">{history.slice(0,6).map(x=><div key={x.regressionAnalysisId}><span><b>Build {x.buildNumber}</b><small>{formatThaiDateTime(x.analyzedAt)} · {x.analyzedByName||"System"}</small></span><span><b>{x.recommendedCases}</b><small>Cases · {x.impactedModules} Modules · {x.minimumPriority}</small></span>{x.changeNotes&&<p>{x.changeNotes}</p>}</div>)}</div>:<p className="regression-helper">ยังไม่มีประวัติการวิเคราะห์สำหรับ Release นี้</p>}</article></section>
-    {impact&&selectedCases.length>0&&<div className="regression-selection-bar"><div><b>{selectedCases.length}</b><span>Test Cases ที่เลือก</span></div><div className="regression-existing-cycle"><select aria-label="Regression Cycle ที่มีอยู่" value={existingCycle} onChange={e=>setExistingCycle(e.target.value)}><option value="">เพิ่มเข้า Regression Cycle ที่มีอยู่</option>{cycles.filter(x=>x.releaseId===selectedRelease&&x.buildId===selectedBuild).map(x=><option key={x.testCycleId} value={x.testCycleId}>{x.cycleCode} · {x.cycleName}</option>)}</select><button className="btn" disabled={!existingCycle||saving||!canEdit} onClick={addToCycle}>เพิ่มเข้า Cycle</button>{existingCycle&&<><button className="btn" onClick={()=>onOpenCycle("test-cycles",existingCycle)}>เปิด Cycle</button><button className="btn" onClick={()=>onOpenCycle("execution",existingCycle)}>เปิด Execution</button></>}</div><button className="btn primary" disabled={!canEdit} onClick={openSuite}>สร้าง Regression Suite / Cycle</button></div>}
-    {suiteModal&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-suite-title" onMouseDown={()=>!saving&&setSuiteModal(false)}><div className="modal-box regression-suite-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-suite-title">สร้าง Regression Suite</h2><small>{selectedCases.length} Test Cases ที่เลือก</small></div><button disabled={saving} onClick={()=>setSuiteModal(false)}>×</button></div><div className="form-grid"><label className="full">Suite Name<input value={suiteName} onChange={e=>setSuiteName(e.target.value)}/></label><label>Risk Tier<select value={riskTier} onChange={e=>setRiskTier(e.target.value)}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></label><label className="full">Description<textarea rows={3} value={suiteDescription} onChange={e=>setSuiteDescription(e.target.value)}/></label></div><label className="regression-create-cycle"><input type="checkbox" checked={createCycle} onChange={e=>setCreateCycle(e.target.checked)}/><span><b>สร้าง Regression Cycle ต่อทันที</b><small>ระบบจะนำ Test Case ทั้งหมดใน Suite เข้า Cycle</small></span></label>{createCycle&&<div className="form-grid regression-cycle-fields"><label className="full">Cycle Name<input value={cycleName} onChange={e=>setCycleName(e.target.value)}/></label><label>Environment<select value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map(x=><option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label><label>Start Date<input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></label><label>End Date<input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/></label></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={()=>setSuiteModal(false)}>ยกเลิก</button><button className="btn primary" disabled={saving||!suiteName.trim()||(createCycle&&!environmentId)} onClick={generateSuite}>{saving?"กำลังสร้าง...":createCycle?"สร้าง Suite และ Cycle":"สร้าง Suite"}</button></div></div></div>}
-    {caseDetail&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-case-detail-title" onMouseDown={()=>setCaseDetail(null)}><div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-case-detail-title">{caseDetail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleName||"-"}</small></div><button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setCaseDetail(null)}>×</button></div><div className="tc-detail-hero"><h3>{caseDetail.title}</h3><div className="tc-detail-badges"><Badge tone={caseDetail.priority==="P0"||caseDetail.priority==="P1"?"red":"blue"}>{caseDetail.priority}</Badge><Badge tone={caseDetail.status==="Ready"?"green":caseDetail.status==="Deprecated"?"yellow":"blue"}>{caseDetail.status}</Badge>{caseDetail.testType&&<Badge tone="yellow">{caseDetail.testType}</Badge>}</div></div><div className="tc-detail-meta"><div className="tc-detail-meta-item"><span>Revision</span><b>Rev. {caseDetail.revisionNo}</b></div><div className="tc-detail-meta-item"><span>Module</span><b>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleCode||"-"}</b></div><div className="tc-detail-meta-item"><span>Execution Type</span><b>{caseDetail.automationCandidate?"Automation Candidate":"Manual"}</b></div></div><section className="tc-detail-section"><h3>Objective</h3><p className="tc-detail-body">{caseDetail.objective||"ไม่ระบุวัตถุประสงค์"}</p></section>{caseDetail.preconditions&&<section className="tc-detail-section"><h3>Preconditions</h3><p className="tc-detail-body">{caseDetail.preconditions}</p></section>}<section className="tc-detail-section"><h3>Test Steps ({caseDetail.steps?.length??0})</h3><div className="tc-detail-steps">{(caseDetail.steps??[]).map(x=><div key={x.stepNo} className="tc-detail-step"><div className="tc-detail-step-no">{x.stepNo}</div><div className="tc-detail-step-body"><div className="tc-detail-step-action"><strong>Action</strong><p>{x.action}</p></div>{x.testData&&<div className="tc-detail-step-data"><strong>Test Data</strong><p>{x.testData}</p></div>}<div className="tc-detail-step-expect"><strong>Expected Result</strong><p>{x.expectedResult}</p></div></div></div>)}</div></section><div className="modal-actions"><button className="btn primary" onClick={()=>setCaseDetail(null)}>ปิด</button></div></div></div>}
+    {impact&&selectedCases.length>0&&<div className="regression-selection-bar"><div><b>{selectedCases.length}</b><span>Test Cases ที่เลือก</span></div><div className="regression-existing-cycle"><select aria-label="Regression Cycle ที่มีอยู่" value={existingCycle} onChange={e=>setExistingCycle(e.target.value)}><option value="">เพิ่มเข้า Regression Cycle ที่มีอยู่</option>{cycles.filter(x=>x.releaseId===selectedRelease&&x.buildId===selectedBuild).map(x=><option key={x.testCycleId} value={x.testCycleId}>{x.cycleCode} · {x.cycleName}</option>)}</select><button className="btn" disabled={!existingCycle||saving||!canEdit} onClick={addToCycle}><span aria-hidden="true">+</span> เพิ่มเข้า Cycle</button>{existingCycle&&<><button className="btn" onClick={()=>onOpenCycle("test-cycles",existingCycle)}><span aria-hidden="true">▶</span> เปิด Cycle</button><button className="btn" onClick={()=>onOpenCycle("execution",existingCycle)}><span aria-hidden="true">▶</span> เปิด Execution</button></>}</div><button className="btn primary" disabled={!canEdit} onClick={openSuite}><span aria-hidden="true">+</span> สร้าง Regression Suite / Cycle</button></div>}
+    {suiteModal&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-suite-title" onMouseDown={()=>!saving&&setSuiteModal(false)}><div className="modal-box regression-suite-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-suite-title">สร้าง Regression Suite</h2><small>{selectedCases.length} Test Cases ที่เลือก</small></div><button disabled={saving} onClick={()=>setSuiteModal(false)}>×</button></div><div className="form-grid"><label className="full">Suite Name<input value={suiteName} onChange={e=>setSuiteName(e.target.value)}/></label><label>Risk Tier<select value={riskTier} onChange={e=>setRiskTier(e.target.value)}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></label><label className="full">Description<textarea rows={3} value={suiteDescription} onChange={e=>setSuiteDescription(e.target.value)}/></label></div><label className="regression-create-cycle"><input type="checkbox" checked={createCycle} onChange={e=>setCreateCycle(e.target.checked)}/><span><b>สร้าง Regression Cycle ต่อทันที</b><small>ระบบจะนำ Test Case ทั้งหมดใน Suite เข้า Cycle</small></span></label>{createCycle&&<div className="form-grid regression-cycle-fields"><label className="full">Cycle Name<input value={cycleName} onChange={e=>setCycleName(e.target.value)}/></label><label>Environment<select value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map(x=><option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label><label>Start Date<input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></label><label>End Date<input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/></label></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={()=>setSuiteModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={saving||!suiteName.trim()||(createCycle&&!environmentId)} onClick={generateSuite}>{saving?<><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง...</>:createCycle?<><span aria-hidden="true">+</span> สร้าง Suite และ Cycle</>:<><span aria-hidden="true">+</span> สร้าง Suite</>}</button></div></div></div>}
+    {caseDetail&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-case-detail-title" onMouseDown={()=>setCaseDetail(null)}><div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-case-detail-title">{caseDetail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleName||"-"}</small></div><button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setCaseDetail(null)}>×</button></div><div className="tc-detail-hero"><h3>{caseDetail.title}</h3><div className="tc-detail-badges"><Badge tone={caseDetail.priority==="P0"||caseDetail.priority==="P1"?"red":"blue"}>{caseDetail.priority}</Badge><Badge tone={caseDetail.status==="Ready"?"green":caseDetail.status==="Deprecated"?"yellow":"blue"}>{caseDetail.status}</Badge>{caseDetail.testType&&<Badge tone="yellow">{caseDetail.testType}</Badge>}</div></div><div className="tc-detail-meta"><div className="tc-detail-meta-item"><span>Revision</span><b>Rev. {caseDetail.revisionNo}</b></div><div className="tc-detail-meta-item"><span>Module</span><b>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleCode||"-"}</b></div><div className="tc-detail-meta-item"><span>Execution Type</span><b>{caseDetail.automationCandidate?"Automation Candidate":"Manual"}</b></div></div><section className="tc-detail-section"><h3>Objective</h3><p className="tc-detail-body">{caseDetail.objective||"ไม่ระบุวัตถุประสงค์"}</p></section>{caseDetail.preconditions&&<section className="tc-detail-section"><h3>Preconditions</h3><p className="tc-detail-body">{caseDetail.preconditions}</p></section>}<section className="tc-detail-section"><h3>Test Steps ({caseDetail.steps?.length??0})</h3><div className="tc-detail-steps">{(caseDetail.steps??[]).map(x=><div key={x.stepNo} className="tc-detail-step"><div className="tc-detail-step-no">{x.stepNo}</div><div className="tc-detail-step-body"><div className="tc-detail-step-action"><strong>Action</strong><p>{x.action}</p></div>{x.testData&&<div className="tc-detail-step-data"><strong>Test Data</strong><p>{x.testData}</p></div>}<div className="tc-detail-step-expect"><strong>Expected Result</strong><p>{x.expectedResult}</p></div></div></div>)}</div></section><div className="modal-actions"><button className="btn primary" onClick={()=>setCaseDetail(null)}><span aria-hidden="true">✕</span> ปิด</button></div></div></div>}
   </div>
 }
 
@@ -3643,12 +3842,12 @@ function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: 
   if (loading) return <article className="card empty"><p>กำลังคำนวณ RTM...</p></article>;
   return <>
     <div className="kpi-grid"><article className="card kpi"><span>Requirements</span><strong>{items.length}</strong><small>In Scope</small></article><article className="card kpi"><span>Covered</span><strong>{counts.covered}</strong><small className="green">มี Test Case Ready</small></article><article className="card kpi"><span>Partial</span><strong>{counts.partial}</strong><small className="blue">เชื่อมแล้ว แต่ยังไม่ Ready</small></article><article className="card kpi"><span>Not Covered</span><strong>{counts.none}</strong><small className="red">ยังไม่มี Test Case</small></article></div>
-    <article className="card"><div className="table-tools rtm-tools"><div><select value={selectedRelease} onChange={e => setSelectedRelease(e.target.value)}><option value="">เลือก Release</option>{releases.filter(x => !projectId || x.projectId === projectId).map(x => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}</select><select value={moduleFilter} onChange={e => setModuleFilter(e.target.value)} aria-label="กรองตาม Module"><option value="">ทุก Module</option>{renderModuleSelectOptions(modules.filter(x => x.isActive && (!projectId || x.projectId === projectId)))}</select><select value={coverageFilter} onChange={e => setCoverageFilter(e.target.value)}><option value="">ทุก Coverage</option><option>Covered</option><option>Partial</option><option>Not Covered</option></select><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">ทุก Status</option>{[...new Set(items.map(x => x.status))].map(x => <option key={x}>{x}</option>)}</select></div><button className="btn" onClick={exportCsv}>Export CSV</button></div>{error && <div className="inline-error">{error}</div>}
-      <div className="table-wrap"><table className="rtm-table"><thead><tr><th>Requirement</th><th>Title</th><th>Priority</th><th>Test Cases</th><th>Coverage</th><th>Status</th><th>จัดการ</th></tr></thead><tbody>{filtered.map(x => <tr key={x.requirementId}><td data-label="Requirement"><button className="link-button" onClick={() => setDetail(x)}>{x.requirementCode}</button><small className="rtm-module">{x.moduleName}</small></td><td data-label="Title">{x.title}</td><td data-label="Priority">{x.priority}</td><td data-label="Test Cases">{x.testCaseCount}</td><td data-label="Coverage"><Badge tone={x.coverageStatus === "Covered" ? "green" : x.coverageStatus === "Partial" ? "yellow" : "red"}>{x.coverageStatus}</Badge></td><td data-label="Status">{x.status}</td><td data-label="จัดการ"><div className="row-actions"><button className="btn" onClick={() => setDetail(x)}>รายละเอียด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(x);setLinkModuleFilter(x.moduleId);setSelectedCase("");setCoverageType("Direct")}}>จัดการ Link</button>}</div></td></tr>)}</tbody></table></div>
+    <article className="card"><div className="table-tools rtm-tools"><div className="filter-toolbar-row"><select value={moduleFilter} onChange={e => setModuleFilter(e.target.value)} aria-label="กรองตาม Module"><option value="">ทุก Module</option>{renderModuleSelectOptions(modules.filter(x => x.isActive && (!projectId || x.projectId === projectId)))}</select><select value={selectedRelease} onChange={e => setSelectedRelease(e.target.value)}><option value="">เลือก Release</option>{releases.filter(x => !projectId || x.projectId === projectId).map(x => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}</select><select value={coverageFilter} onChange={e => setCoverageFilter(e.target.value)}><option value="">ทุก Coverage</option><option>Covered</option><option>Partial</option><option>Not Covered</option></select><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">ทุก Status</option>{[...new Set(items.map(x => x.status))].map(x => <option key={x}>{x}</option>)}</select></div><button className="btn" onClick={exportCsv}><span aria-hidden="true">⤓</span> Export CSV</button></div>{error && <div className="inline-error">{error}</div>}
+      <div className="table-wrap"><table className="rtm-table"><thead><tr><th>Requirement</th><th>Title</th><th>Priority</th><th>Test Cases</th><th>Coverage</th><th>Status</th><th>จัดการ</th></tr></thead><tbody>{filtered.map(x => <tr key={x.requirementId}><td data-label="Requirement"><button className="link-button" onClick={() => setDetail(x)}>{x.requirementCode}</button><small className="rtm-module">{x.moduleName}</small></td><td data-label="Title">{x.title}</td><td data-label="Priority">{x.priority}</td><td data-label="Test Cases">{x.testCaseCount}</td><td data-label="Coverage"><Badge tone={x.coverageStatus === "Covered" ? "green" : x.coverageStatus === "Partial" ? "yellow" : "red"}>{x.coverageStatus}</Badge></td><td data-label="Status">{x.status}</td><td data-label="จัดการ"><div className="row-actions"><button className="btn" onClick={() => setDetail(x)}><span aria-hidden="true">i</span> รายละเอียด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(x);setLinkModuleFilter(x.moduleId);setSelectedCase("");setCoverageType("Direct")}}><span aria-hidden="true">⇄</span> จัดการ Link</button>}</div></td></tr>)}</tbody></table></div>
     </article>
-    {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="rtm-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box rtm-detail" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2 id="rtm-detail-title">รายละเอียด RTM</h2><small>{detail.requirementCode} · {detail.moduleName}</small></div><button aria-label="ปิดหน้าต่างรายละเอียด RTM" onClick={() => setDetail(null)}>×</button></div><div className="rtm-detail-hero"><div className="rtm-detail-hero-copy"><span className="rtm-detail-eyebrow">Requirement</span><b className="rtm-detail-code">{detail.requirementCode}</b><h3>{detail.title}</h3><div className="rtm-detail-badges"><Badge tone={detail.priority === "P0" || detail.priority === "P1" ? "red" : "blue"}>{detail.priority}</Badge><Badge tone={detail.status === "Approved" || detail.status === "Implemented" ? "green" : "yellow"}>{detail.status}</Badge></div></div><div className={`rtm-coverage-summary ${detail.coverageStatus.toLowerCase().replaceAll(" ", "-")}`}><span>Coverage</span><b>{detail.coverageStatus}</b><small>{detail.testCaseCount} Test Case{detail.testCaseCount === 1 ? "" : "s"}</small></div></div><div className="rtm-detail-meta"><div><span className="rtm-meta-icon" aria-hidden="true">M</span><span>Module<b>{detail.moduleName || "ไม่ระบุ"}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">#</span><span>Linked Test Cases<b>{detail.testCaseCount}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">✓</span><span>Traceability<b>{detail.coverageStatus}</b></span></div></div><section className="rtm-detail-section"><div className="rtm-section-heading"><div><span className="rtm-section-icon" aria-hidden="true">⇄</span><span><h3>Test Cases ที่เชื่อมโยง</h3><small>ตรวจสอบความครอบคลุมและชนิดการเชื่อมโยง</small></span></div><span className="rtm-linked-count">{detail.testCases.length} รายการ</span></div><div className="rtm-linked-list rtm-detail-linked-list">{detail.testCases.length ? detail.testCases.map((t, index) => <button key={t.testCaseId} onClick={() => setCaseDetail(t)}><span className="rtm-case-index">{String(index + 1).padStart(2, "0")}</span><span className="rtm-case-copy"><b>{t.testCaseCode}</b><span>{t.title}</span><small>{t.testType || "ไม่ระบุประเภท"} · Rev. {t.revisionNo}</small></span><span className="rtm-case-status"><Badge tone={t.status === "Ready" ? "green" : t.status === "Deprecated" ? "red" : "yellow"}>{t.status}</Badge>{t.coverageType && <small>{t.coverageType}</small>}<i aria-hidden="true">›</i></span></button>) : <div className="rtm-detail-empty"><span aria-hidden="true">⇄</span><b>ยังไม่มี Test Case ที่เชื่อมโยง</b><p>Requirement นี้ยังไม่ถูกครอบคลุม กรุณาเพิ่ม Test Case Link เพื่อให้ตรวจสอบ Traceability ได้</p></div>}</div></section><div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}>ปิด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(detail);setLinkModuleFilter(detail.moduleId);setSelectedCase("");setCoverageType("Direct");setDetail(null)}}>จัดการ Link</button>}</div></div></div>}
+    {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="rtm-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box rtm-detail" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2 id="rtm-detail-title">รายละเอียด RTM</h2><small>{detail.requirementCode} · {detail.moduleName}</small></div><button aria-label="ปิดหน้าต่างรายละเอียด RTM" onClick={() => setDetail(null)}>×</button></div><div className="rtm-detail-hero"><div className="rtm-detail-hero-copy"><span className="rtm-detail-eyebrow">Requirement</span><b className="rtm-detail-code">{detail.requirementCode}</b><h3>{detail.title}</h3><div className="rtm-detail-badges"><Badge tone={detail.priority === "P0" || detail.priority === "P1" ? "red" : "blue"}>{detail.priority}</Badge><Badge tone={detail.status === "Approved" || detail.status === "Implemented" ? "green" : "yellow"}>{detail.status}</Badge></div></div><div className={`rtm-coverage-summary ${detail.coverageStatus.toLowerCase().replaceAll(" ", "-")}`}><span>Coverage</span><b>{detail.coverageStatus}</b><small>{detail.testCaseCount} Test Case{detail.testCaseCount === 1 ? "" : "s"}</small></div></div><div className="rtm-detail-meta"><div><span className="rtm-meta-icon" aria-hidden="true">M</span><span>Module<b>{detail.moduleName || "ไม่ระบุ"}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">#</span><span>Linked Test Cases<b>{detail.testCaseCount}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">✓</span><span>Traceability<b>{detail.coverageStatus}</b></span></div></div><section className="rtm-detail-section"><div className="rtm-section-heading"><div><span className="rtm-section-icon" aria-hidden="true">⇄</span><span><h3>Test Cases ที่เชื่อมโยง</h3><small>ตรวจสอบความครอบคลุมและชนิดการเชื่อมโยง</small></span></div><span className="rtm-linked-count">{detail.testCases.length} รายการ</span></div><div className="rtm-linked-list rtm-detail-linked-list">{detail.testCases.length ? detail.testCases.map((t, index) => <button key={t.testCaseId} onClick={() => setCaseDetail(t)}><span className="rtm-case-index">{String(index + 1).padStart(2, "0")}</span><span className="rtm-case-copy"><b>{t.testCaseCode}</b><span>{t.title}</span><small>{t.testType || "ไม่ระบุประเภท"} · Rev. {t.revisionNo}</small></span><span className="rtm-case-status"><Badge tone={t.status === "Ready" ? "green" : t.status === "Deprecated" ? "red" : "yellow"}>{t.status}</Badge>{t.coverageType && <small>{t.coverageType}</small>}<i aria-hidden="true">›</i></span></button>) : <div className="rtm-detail-empty"><span aria-hidden="true">⇄</span><b>ยังไม่มี Test Case ที่เชื่อมโยง</b><p>Requirement นี้ยังไม่ถูกครอบคลุม กรุณาเพิ่ม Test Case Link เพื่อให้ตรวจสอบ Traceability ได้</p></div>}</div></section><div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}><span aria-hidden="true">✕</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(detail);setLinkModuleFilter(detail.moduleId);setSelectedCase("");setCoverageType("Direct");setDetail(null)}}><span aria-hidden="true">⇄</span> จัดการ Link</button>}</div></div></div>}
     {caseDetail && <div className="modal nested-modal" onMouseDown={() => setCaseDetail(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><h2>{caseDetail.testCaseCode}</h2><button onClick={() => setCaseDetail(null)}>×</button></div><h3>{caseDetail.title}</h3><div className="detail-grid"><span>Priority<b>{caseDetail.priority}</b></span><span>Type<b>{caseDetail.testType || "-"}</b></span><span>Status<b>{caseDetail.status}</b></span><span>Revision<b>Rev. {caseDetail.revisionNo}</b></span><span>Link Type<b>{caseDetail.coverageType || "Direct"}</b></span></div></div></div>}
-    {linking && <div className="modal" onMouseDown={() => setLinking(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>จัดการ Test Case Link</h2><small>{linking.requirementCode}</small></div><button onClick={() => setLinking(null)}>×</button></div><div className="rtm-linked-list editable">{linking.testCases.map(t => <div key={t.testCaseId}><button onClick={() => setCaseDetail(t)}><b>{t.testCaseCode}</b><span>{t.title}</span></button><button className="btn danger" disabled={busy} onClick={() => saveLink(t)}>ยกเลิก Link</button></div>)}</div><div className="form-grid rtm-link-form"><label className="full">Module<select className="rtm-link-module-filter" value={linkModuleFilter} onChange={e=>{setLinkModuleFilter(e.target.value);setSelectedCase("")}}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules.filter(x=>x.isActive&&(!projectId||x.projectId===projectId)))}</select></label><label>Test Case <small>{linkableCases.length} รายการ</small><select value={selectedCase} onChange={e => setSelectedCase(e.target.value)}><option value="">{linkableCases.length?"เลือก Test Case":"ไม่พบ Test Case ใน Module นี้"}</option>{linkableCases.map(t => <option key={t.testCaseId} value={t.testCaseId}>{t.testCaseCode} · {t.title}</option>)}</select></label><label>Coverage Type<select value={coverageType} onChange={e => setCoverageType(e.target.value)}><option>Direct</option><option>Indirect</option></select></label></div><div className="modal-actions"><button className="btn" onClick={() => setLinking(null)}>ปิด</button><button className="btn primary" disabled={busy || !selectedCase} onClick={() => saveLink()}>{busy ? "กำลังบันทึก..." : "เพิ่ม Link"}</button></div></div></div>}
+    {linking && <div className="modal" onMouseDown={() => setLinking(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>จัดการ Test Case Link</h2><small>{linking.requirementCode}</small></div><button onClick={() => setLinking(null)}>×</button></div><div className="rtm-linked-list editable">{linking.testCases.map(t => <div key={t.testCaseId}><button onClick={() => setCaseDetail(t)}><b>{t.testCaseCode}</b><span>{t.title}</span></button><button className="btn danger" disabled={busy} onClick={() => saveLink(t)}>ยกเลิก Link</button></div>)}</div><div className="form-grid rtm-link-form"><label className="full">Module<select className="rtm-link-module-filter" value={linkModuleFilter} onChange={e=>{setLinkModuleFilter(e.target.value);setSelectedCase("")}}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules.filter(x=>x.isActive&&(!projectId||x.projectId===projectId)))}</select></label><label>Test Case <small>{linkableCases.length} รายการ</small><select value={selectedCase} onChange={e => setSelectedCase(e.target.value)}><option value="">{linkableCases.length?"เลือก Test Case":"ไม่พบ Test Case ใน Module นี้"}</option>{linkableCases.map(t => <option key={t.testCaseId} value={t.testCaseId}>{t.testCaseCode} · {t.title}</option>)}</select></label><label>Coverage Type<select value={coverageType} onChange={e => setCoverageType(e.target.value)}><option>Direct</option><option>Indirect</option></select></label></div><div className="modal-actions"><button className="btn" onClick={() => setLinking(null)}><span aria-hidden="true">✕</span> ปิด</button><button className="btn primary" disabled={busy || !selectedCase} onClick={() => saveLink()}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">+</span> เพิ่ม Link</>}</button></div></div></div>}
   </>;
 }
 type CycleEnvironment = {
@@ -3691,7 +3890,13 @@ type TestCycleItem = {
   caseCount: number;
   executedCount: number;
   progressPercent: number;
+  modules?: { moduleId: string; moduleCode: string; moduleName: string }[];
+  ownerUserId?: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: string;
 };
+type GeneratedTestCycleDraft = { cycleName: string; cycleType: string; startDate?: string; endDate?: string; notes?: string; selectionSummary: string };
 function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextReleaseId, contextBuildId }: { search: string; canEdit: boolean; canExport: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
   const masterOptions = useMasterOptions(), cycleTypes = masterOptions("TestCycleType");
   const [items, setItems] = useState<TestCycleItem[]>([]),
@@ -3700,6 +3905,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     [builds, setBuilds] = useState<CycleBuild[]>([]),
     [environments, setEnvironments] = useState<CycleEnvironment[]>([]),
     [suites, setSuites] = useState<TestSuiteItem[]>([]),
+    [users, setUsers] = useState<UserLookup[]>([]),
     [reload, setReload] = useState(0),
     [form, setForm] = useState(false),
     [editing, setEditing] = useState<TestCycleItem | null>(null),
@@ -3710,20 +3916,46 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [totalCount, setTotalCount] = useState(0),
+    [caseSummary, setCaseSummary] = useState({ totalCases: 0, executedCases: 0 }),
     [page, setPage] = useState(1),
-    [pageSize, setPageSize] = useState(20);
+    [pageSize, setPageSize] = useState(50),
+    [listModuleFilter, setListModuleFilter] = useState(""),
+    [listCycleTypeFilter, setListCycleTypeFilter] = useState(""),
+    [listCreatedByFilter, setListCreatedByFilter] = useState(currentUserId),
+    [listStatusFilter, setListStatusFilter] = useState(""),
+    [statusCounts, setStatusCounts] = useState<Record<string, number>>({}),
+    [listModules, setListModules] = useState<ModuleItem[]>([]),
+    [cycleSelected, setCycleSelected] = useState<Set<string>>(new Set()),
+    [cycleBulkStatus, setCycleBulkStatus] = useState(""),
+    [cycleBulkSaving, setCycleBulkSaving] = useState(false);
   const [projectId, setProjectId] = useState(""),
     [releaseId, setReleaseId] = useState(""),
     [buildId, setBuildId] = useState(""),
     [environmentId, setEnvironmentId] = useState(""),
     [suiteId, setSuiteId] = useState(""),
+    [suiteSearch, setSuiteSearch] = useState(""),
     [code, setCode] = useState(""),
     [name, setName] = useState(""),
+    // true = Cycle Name ยังเป็นค่าที่ระบบตั้งให้อัตโนมัติอยู่ (ยังไม่ถูกแก้ไขเอง) — ให้ auto-generate
+    // ใหม่ทุกครั้งที่ Release/Build/Environment/Cycle Type/Module เปลี่ยน จนกว่าผู้ใช้จะพิมพ์แก้เอง
+    [nameAutoFilled, setNameAutoFilled] = useState(true),
+    [formModuleId, setFormModuleId] = useState(""),
+    [formModules, setFormModules] = useState<ModuleItem[]>([]),
     [cycleType, setCycleType] = useState(""),
     [startDate, setStartDate] = useState(""),
     [endDate, setEndDate] = useState(""),
     [notes, setNotes] = useState(""),
     [environmentName, setEnvironmentName] = useState("");
+  const [cycleAiModal, setCycleAiModal] = useState(false),
+    [cycleAiProjectId, setCycleAiProjectId] = useState(""),
+    [cycleAiReleaseId, setCycleAiReleaseId] = useState(""),
+    [cycleAiBuildId, setCycleAiBuildId] = useState(""),
+    [cycleAiEnvironmentId, setCycleAiEnvironmentId] = useState(""),
+    [cycleAiSuiteId, setCycleAiSuiteId] = useState(""),
+    [cycleAiSuiteSearch, setCycleAiSuiteSearch] = useState(""),
+    [cycleAiGenerating, setCycleAiGenerating] = useState(false),
+    [cycleAiError, setCycleAiError] = useState(""),
+    [cycleAiDrafts, setCycleAiDrafts] = useState<GeneratedTestCycleDraft[]>([]);
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -3742,8 +3974,9 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       readList<ProjectItem>(`${apiUrl}/projects`),
       readList<CycleRelease>(`${apiUrl}/releases`),
       readList<CycleEnvironment>(`${apiUrl}/test-environments`),
-      readList<TestSuiteItem>(`${apiUrl}/test-suites`),
-    ]).then(async ([p, r, e, s]) => {
+      readList<TestSuiteItem>(`${apiUrl}/test-suites?size=100`),
+      readList<UserLookup>(`${apiUrl}/lookups/users`),
+    ]).then(async ([p, r, e, s, u]) => {
       const activeProjects = (p as ProjectItem[]).filter((x) => x.isActive);
       const activeReleases = (r as CycleRelease[]).filter(
         (x) => x.status !== "Released" && x.status !== "Cancelled",
@@ -3763,6 +3996,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       setReleases(activeReleases);
       setEnvironments(e);
       setSuites(s);
+      setUsers(u);
       setBuilds((buildGroups.flat() as CycleBuild[]).filter((x) => x.isActive));
       setProjectId((current) =>
         activeProjects.some((x) => x.projectId === current)
@@ -3775,6 +4009,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       setBuilds([]);
       setEnvironments([]);
       setSuites([]);
+      setUsers([]);
     });
   }, [reload]);
   useEffect(() => {
@@ -3782,6 +4017,10 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     if (contextProjectId) query.set("projectId", contextProjectId);
     if (contextReleaseId) query.set("releaseId", contextReleaseId);
     if (contextBuildId) query.set("buildId", contextBuildId);
+    if (listModuleFilter) query.set("moduleId", listModuleFilter);
+    if (listCycleTypeFilter) query.set("cycleType", listCycleTypeFilter);
+    if (listCreatedByFilter) query.set("createdBy", listCreatedByFilter);
+    if (listStatusFilter) query.set("status", listStatusFilter);
     if (search.trim()) query.set("search", search.trim());
     setLoading(true);
     setError("");
@@ -3793,16 +4032,72 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
         const rows = Array.isArray(container?.rows) ? container.rows : Array.isArray(container) ? container : [];
         setItems(rows);
         setTotalCount(Number(container?.total ?? rows.length));
+        // summary รวมทุก Test Cycle ที่ตรงเงื่อนไข filter ปัจจุบัน (คำนวณฝั่ง server ไม่ใช่แค่หน้าที่กำลังแสดง)
+        setCaseSummary({ totalCases: Number(data?.summary?.totalCases ?? 0), executedCases: Number(data?.summary?.executedCases ?? 0) });
       })
-      .catch(reason => { setItems([]); setTotalCount(0); setError(reason instanceof Error ? reason.message : "โหลด Test Cycle ไม่สำเร็จ"); })
+      .catch(reason => { setItems([]); setTotalCount(0); setCaseSummary({ totalCases: 0, executedCases: 0 }); setError(reason instanceof Error ? reason.message : "โหลด Test Cycle ไม่สำเร็จ"); })
       .finally(() => setLoading(false));
-  }, [contextProjectId, contextReleaseId, contextBuildId, search, page, pageSize, reload]);
-  useEffect(() => { setPage(1); }, [contextProjectId, contextReleaseId, contextBuildId, search]);
+  }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, search, page, pageSize, reload]);
+  useEffect(() => { setPage(1); }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, search]);
+  useEffect(() => { setCycleSelected(new Set()); }, [items]);
+  // Lightweight count-only queries (size=1, just read `total`) per status — respects every other active
+  // filter except status itself, so the chips always reflect "how many would show if you picked this status".
+  useEffect(() => {
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const baseParams = () => {
+      const q = new URLSearchParams({ page: "1", size: "1" });
+      if (contextProjectId) q.set("projectId", contextProjectId);
+      if (contextReleaseId) q.set("releaseId", contextReleaseId);
+      if (contextBuildId) q.set("buildId", contextBuildId);
+      if (listModuleFilter) q.set("moduleId", listModuleFilter);
+      if (listCycleTypeFilter) q.set("cycleType", listCycleTypeFilter);
+      if (listCreatedByFilter) q.set("createdBy", listCreatedByFilter);
+      if (search.trim()) q.set("search", search.trim());
+      return q;
+    };
+    Promise.all(cycleStatusOptions.map(status => {
+      const q = baseParams(); q.set("status", status);
+      return fetch(`${apiUrl}/test-cycles?${q}`, { headers: h }).then(r => r.ok ? r.json() : null).then(data => {
+        const container = data?.items ?? data;
+        return [status, Number(container?.total ?? 0)] as const;
+      }).catch(() => [status, 0] as const);
+    })).then(pairs => setStatusCounts(Object.fromEntries(pairs)));
+  }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, search, reload]);
+  useEffect(() => {
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const projectIds = contextProjectId ? [contextProjectId] : [...new Set(items.map((x) => x.projectId))];
+    if (!projectIds.length) { setListModules([]); return; }
+    Promise.all(projectIds.map((id) => fetch(`${apiUrl}/projects/${id}/modules`, { headers: h }).then((r) => r.ok ? r.json() : [])))
+      .then((groups: ModuleItem[][]) => {
+        const seen = new Map<string, ModuleItem>();
+        groups.flat().filter((m) => m.isActive).forEach((m) => { if (!seen.has(m.moduleId)) seen.set(m.moduleId, m); });
+        setListModules([...seen.values()].sort((a, b) => a.moduleCode.localeCompare(b.moduleCode)));
+      });
+  }, [contextProjectId, items]);
   useEffect(()=>{const target=localStorage.getItem("qa.targetCycleId");if(!target)return;fetch(`${apiUrl}/test-cycles/${target}`,{headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}}).then(r=>r.ok?r.json():null).then((cycle:TestCycleItem|null)=>{if(cycle)setDetail(cycle);localStorage.removeItem("qa.targetCycleId")}).catch(()=>localStorage.removeItem("qa.targetCycleId"))},[]);
+  // ปุ่ม "สร้าง Test Cycle" แบบด่วนจากหน้า Test Suite ฝาก Project/Suite ไว้ผ่าน localStorage แล้วพามาที่นี่ —
+  // รอจน projects โหลดเสร็จก่อน (openForm ต้องใช้ project code มา gen เลข Cycle Code) แล้วค่อยเปิดฟอร์มสร้าง
+  useEffect(() => {
+    if (!projects.length) return;
+    const raw = localStorage.getItem("qa.createCycleFromSuite");
+    if (!raw) return;
+    localStorage.removeItem("qa.createCycleFromSuite");
+    try {
+      const prefill: { projectId?: string; testSuiteId?: string } = JSON.parse(raw);
+      if (prefill.projectId) openForm(undefined, prefill);
+    } catch { /* ignore malformed prefill */ }
+  }, [projects]);
   useEffect(() => {
     const lastPage = Math.max(1, Math.ceil(totalCount / pageSize));
     if (page > lastPage) setPage(lastPage);
   }, [page, pageSize, totalCount]);
+  // Module list scoped to the create form's selected project — used only to auto-prefix the Cycle Name,
+  // Test Cycles aren't themselves linked to a single Module so this isn't persisted anywhere.
+  useEffect(() => {
+    if (!form || editing || !projectId) { setFormModules([]); return; }
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    fetch(`${apiUrl}/projects/${projectId}/modules`, { headers: h }).then(r => r.ok ? r.json() : []).then((rows: ModuleItem[]) => setFormModules(rows.filter(x => x.isActive)));
+  }, [form, editing, projectId]);
   const projectReleases = useMemo(
       () => releases.filter((x) => x.projectId === projectId),
       [releases, projectId],
@@ -3815,10 +4110,30 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       () => environments.filter((x) => x.projectId === projectId && x.isActive),
       [environments, projectId],
     ),
+    // เมื่อเลือก Module ไว้ ให้กรอง Test Suite เหลือเฉพาะ Suite ที่มี Test Case อยู่ใน Module นั้นจริง
+    // (ไม่ระบุ Module = ไม่กรอง แสดง Suite ทั้งหมดของโปรเจกต์เหมือนเดิม)
     projectSuites = useMemo(
-      () => suites.filter((x) => x.projectId === projectId && x.isActive),
-      [suites, projectId],
+      () => suites.filter((x) => x.projectId === projectId && x.isActive && (!formModuleId || (x.modules ?? []).some((m) => m.moduleId === formModuleId))),
+      [suites, projectId, formModuleId],
     );
+  const suiteOptions = useMemo(() => {
+    const query = suiteSearch.trim().toLowerCase();
+    if (!query) return projectSuites;
+    // Always keep the currently selected suite visible even if it doesn't match the search text,
+    // so the dropdown never silently loses the active selection while filtering a long list.
+    return projectSuites.filter((x) => x.testSuiteId === suiteId || `${x.suiteCode} ${x.suiteName}`.toLowerCase().includes(query));
+  }, [projectSuites, suiteSearch, suiteId]);
+  const cycleAiReleases = useMemo(() => releases.filter((x) => x.projectId === cycleAiProjectId), [releases, cycleAiProjectId]),
+    cycleAiBuilds = useMemo(() => builds.filter((x) => x.releaseId === cycleAiReleaseId && x.isActive), [builds, cycleAiReleaseId]),
+    cycleAiEnvironments = useMemo(() => environments.filter((x) => x.projectId === cycleAiProjectId && x.isActive), [environments, cycleAiProjectId]),
+    cycleAiSuites = useMemo(() => suites.filter((x) => x.projectId === cycleAiProjectId && x.isActive), [suites, cycleAiProjectId]);
+  const cycleAiSuiteOptions = useMemo(() => {
+    const query = cycleAiSuiteSearch.trim().toLowerCase();
+    if (!query) return cycleAiSuites;
+    // Always keep the currently selected suite visible even if it doesn't match the search text,
+    // so the dropdown never silently loses the active selection while filtering a long list.
+    return cycleAiSuites.filter((x) => x.testSuiteId === cycleAiSuiteId || `${x.suiteCode} ${x.suiteName}`.toLowerCase().includes(query));
+  }, [cycleAiSuites, cycleAiSuiteSearch, cycleAiSuiteId]);
   useEffect(() => {
     if (!projectReleases.some((x) => x.releaseId === releaseId))
       setReleaseId(projectReleases[0]?.releaseId ?? "");
@@ -3831,6 +4146,11 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     if (!projectEnvironments.some((x) => x.testEnvironmentId === environmentId))
       setEnvironmentId(projectEnvironments[0]?.testEnvironmentId ?? "");
   }, [projectEnvironments, environmentId]);
+  // Suite เป็นฟิลด์ไม่บังคับ — ถ้าเปลี่ยน Module แล้ว Suite ที่เลือกไว้ไม่อยู่ในรายการที่กรองใหม่
+  // (ไม่ตรง Module) ให้เคลียร์ค่าทิ้งเฉยๆ (ไม่ auto-เลือกตัวอื่นแทน เพราะ Suite ไม่ใช่ฟิลด์บังคับ)
+  useEffect(() => {
+    if (suiteId && !projectSuites.some((x) => x.testSuiteId === suiteId)) setSuiteId("");
+  }, [projectSuites, suiteId]);
   useEffect(() => {
     if (!form || editing || !projectId) return;
     const project = projects.find((x) => x.projectId === projectId);
@@ -3841,13 +4161,29 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       ),
     );
   }, [form, editing, projectId, projects, items]);
-  const openForm = (cycle?: TestCycleItem) => {
+  // Cycle Name อัตโนมัติ: ตราบใดที่ผู้ใช้ยังไม่ได้พิมพ์แก้ไขเอง (nameAutoFilled) ให้ประกอบชื่อจาก
+  // Module + Suite Code (ถ้าเลือก) + Cycle Type + Release + Build ให้อัตโนมัติทุกครั้งที่ค่าพวกนี้เปลี่ยน
+  // — ใส่ Suite Code ต่อจาก Module เพราะ 1 Module อาจมีหลาย Suite (เช่น 4 Suite ในโมดูลเดียวกัน)
+  // ถ้าใช้แค่ Module อย่างเดียวชื่อ Cycle ที่สร้างจากแต่ละ Suite จะซ้ำกันหมด ต้องมี Suite Code มาแยกให้ไม่ซ้ำ
+  // — พอผู้ใช้แก้ไขในช่อง Cycle Name เอง จะหยุด auto-generate ทันที (เคารพชื่อที่ผู้ใช้ตั้งเอง)
+  useEffect(() => {
+    if (!form || editing || !nameAutoFilled) return;
+    const module = formModules.find((m) => m.moduleId === formModuleId);
+    const suite = projectSuites.find((x) => x.testSuiteId === suiteId);
+    const typeLabel = cycleTypes.find((x) => x.value === cycleType)?.displayName ?? cycleType;
+    const release = projectReleases.find((x) => x.releaseId === releaseId);
+    const build = releaseBuilds.find((x) => x.buildId === buildId);
+    const parts = [module?.moduleName, suite?.suiteCode, [typeLabel, release?.releaseCode, build?.buildNumber].filter(Boolean).join(" ")].filter(Boolean);
+    setName(parts.length ? parts.join("-") : "");
+  }, [form, editing, nameAutoFilled, formModuleId, formModules, suiteId, projectSuites, cycleType, cycleTypes, releaseId, buildId, projectReleases, releaseBuilds]);
+  const openForm = (cycle?: TestCycleItem, prefill?: { projectId?: string; testSuiteId?: string }) => {
     setEditing(cycle ?? null);
-    setProjectId(cycle?.projectId ?? contextProjectId ?? projects[0]?.projectId ?? "");
+    setProjectId(cycle?.projectId ?? prefill?.projectId ?? contextProjectId ?? projects[0]?.projectId ?? "");
     setReleaseId(cycle?.releaseId ?? contextReleaseId ?? "");
     setBuildId(cycle?.buildId ?? contextBuildId ?? "");
     setEnvironmentId(cycle?.environmentId ?? "");
-    setSuiteId(cycle?.testSuiteId ?? "");
+    setSuiteId(cycle?.testSuiteId ?? prefill?.testSuiteId ?? "");
+    setSuiteSearch("");
     const targetProjectId = cycle?.projectId ?? contextProjectId ?? projects[0]?.projectId ?? "";
     const project = projects.find((x) => x.projectId === targetProjectId);
     setCode(
@@ -3858,6 +4194,8 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
         ),
     );
     setName(cycle?.cycleName ?? "");
+    setNameAutoFilled(!cycle); // สร้างใหม่ = ให้ auto-generate ชื่อ, แก้ไขของเดิม = คงชื่อเดิมไว้ไม่แตะ
+    setFormModuleId("");
     setCycleType(cycle?.cycleType ?? cycleTypes[0]?.value ?? "");
     setStartDate(cycle?.startDate?.slice(0, 10) ?? "");
     setEndDate(cycle?.endDate?.slice(0, 10) ?? "");
@@ -3904,6 +4242,99 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       setSaving(false);
     }
   };
+  const openCycleAi = () => {
+    const targetProject = contextProjectId || projectId || projects[0]?.projectId || "";
+    setCycleAiProjectId(targetProject);
+    setCycleAiReleaseId("");
+    setCycleAiBuildId("");
+    setCycleAiEnvironmentId("");
+    setCycleAiSuiteId("");
+    setCycleAiSuiteSearch("");
+    setCycleAiError("");
+    setCycleAiDrafts([]);
+    setCycleAiModal(true);
+  };
+  const generateCycleWithAi = async () => {
+    if (!cycleAiProjectId || !cycleAiReleaseId || !cycleAiBuildId || !cycleAiEnvironmentId) return;
+    setCycleAiGenerating(true);
+    setCycleAiError("");
+    try {
+      const response = await fetch(`${apiUrl}/test-cycles/generate-ai`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          projectId: cycleAiProjectId,
+          releaseId: cycleAiReleaseId,
+          buildId: cycleAiBuildId,
+          environmentId: cycleAiEnvironmentId,
+          testSuiteId: cycleAiSuiteId || null,
+        }),
+      });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => null);
+        throw new Error(problem?.detail ?? "AI Generate Test Cycle ไม่สำเร็จ");
+      }
+      const drafts: GeneratedTestCycleDraft[] = await response.json();
+      if (!Array.isArray(drafts) || !drafts.length) throw new Error("AI ไม่ได้สร้าง Test Cycle กลับมา");
+      setCycleAiDrafts(drafts);
+    } catch (error) {
+      setCycleAiError(error instanceof Error ? error.message : "AI Generate Test Cycle ไม่สำเร็จ");
+    } finally {
+      setCycleAiGenerating(false);
+    }
+  };
+  const removeCycleAiDraft = (index: number) =>
+    setCycleAiDrafts((drafts) => {
+      const next = drafts.filter((_, i) => i !== index);
+      if (next.length === 0) setCycleAiModal(false);
+      return next;
+    });
+  const saveAllCycleDrafts = async () => {
+    if (!cycleAiDrafts.length) return;
+    setCycleAiGenerating(true);
+    setCycleAiError("");
+    try {
+      const project = projects.find((x) => x.projectId === cycleAiProjectId);
+      const existingCodes = items.map((x) => x.cycleCode);
+      for (const draft of cycleAiDrafts) {
+        const draftCode = nextBusinessCode(`${project?.projectCode ?? "PRJ"}-CYC`, existingCodes);
+        existingCodes.push(draftCode);
+        const res = await fetch(`${apiUrl}/test-cycles`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            projectId: cycleAiProjectId,
+            releaseId: cycleAiReleaseId,
+            buildId: cycleAiBuildId,
+            environmentId: cycleAiEnvironmentId,
+            testSuiteId: cycleAiSuiteId || null,
+            cycleCode: draftCode,
+            cycleName: draft.cycleName,
+            cycleType: draft.cycleType,
+            startDate: draft.startDate || null,
+            endDate: draft.endDate || null,
+            ownerUserId: null,
+            notes: draft.notes || null,
+            populateFromSuite: true,
+            requiredOnly: false,
+          }),
+        });
+        if (!res.ok) {
+          const problem = await res.json().catch(() => null);
+          throw new Error(`สร้าง "${draft.cycleName}" ไม่สำเร็จ: ${problem?.detail ?? ""}`);
+        }
+      }
+      const count = cycleAiDrafts.length;
+      setCycleAiDrafts([]);
+      setCycleAiModal(false);
+      setNotice(`สร้าง Test Cycle จาก AI แล้ว ${count} รายการ`);
+      setReload((x) => x + 1);
+    } catch (error) {
+      setCycleAiError(error instanceof Error ? error.message : "บันทึก Test Cycle ไม่สำเร็จ");
+    } finally {
+      setCycleAiGenerating(false);
+    }
+  };
   const createEnvironment = async () => {
     if (!projectId || !environmentName.trim()) return;
     setSaving(true);
@@ -3939,6 +4370,28 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     setNotice(`เปลี่ยนสถานะ ${cycle.cycleCode} แล้ว`);
     setReload((x) => x + 1);
   };
+  const toggleCycleSelect = (id: string) => setCycleSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleCycleSelectPage = () => setCycleSelected((prev) => { const next = new Set(prev); const all = rows.length > 0 && rows.every((x) => prev.has(x.testCycleId)); if (all) rows.forEach((x) => next.delete(x.testCycleId)); else rows.forEach((x) => next.add(x.testCycleId)); return next; });
+  const applyCycleBulkStatus = async () => {
+    if (!cycleBulkStatus || !cycleSelected.size) return;
+    setCycleBulkSaving(true);
+    setError("");
+    const targets = rows.filter((x) => cycleSelected.has(x.testCycleId));
+    const failed: string[] = [];
+    try {
+      for (const cycle of targets) {
+        const response = await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}/status`, { method: "POST", headers, body: JSON.stringify({ status: cycleBulkStatus }) });
+        if (!response.ok) failed.push(cycle.cycleCode);
+      }
+      setCycleSelected(new Set());
+      setCycleBulkStatus("");
+      if (failed.length) setError(`เปลี่ยนสถานะไม่สำเร็จ ${failed.length} รายการ: ${failed.join(", ")}`);
+      else setNotice(`เปลี่ยนสถานะ ${targets.length} Test Cycle เป็น ${cycleBulkStatus} แล้ว`);
+      setReload((x) => x + 1);
+    } finally {
+      setCycleBulkSaving(false);
+    }
+  };
   const remove = async (cycle: TestCycleItem) => {
     if (!window.confirm(`ยืนยันลบ ${cycle.cycleCode}?`)) return;
     const response = await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}`, {
@@ -3964,6 +4417,9 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
         if (contextProjectId) query.set("projectId", contextProjectId);
         if (contextReleaseId) query.set("releaseId", contextReleaseId);
         if (contextBuildId) query.set("buildId", contextBuildId);
+        if (listModuleFilter) query.set("moduleId", listModuleFilter);
+        if (listCycleTypeFilter) query.set("cycleType", listCycleTypeFilter);
+        if (listStatusFilter) query.set("status", listStatusFilter);
         if (search.trim()) query.set("search", search.trim());
         const response = await fetch(`${apiUrl}/test-cycles?${query}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
         if (!response.ok) throw new Error(`ส่งออก Test Cycle ไม่สำเร็จ (${response.status})`);
@@ -3974,7 +4430,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
         exported.push(...batch);
         exportPage += 1;
       } while (exported.length < total);
-      const csvRows = [["Cycle Code", "Name", "Release", "Build", "Environment", "Type", "Executed", "Cases", "Progress", "Status"], ...exported.map(item => [item.cycleCode, item.cycleName, item.releaseCode, item.buildNumber, item.environmentName, item.cycleType ?? "", item.executedCount, item.caseCount, `${item.progressPercent}%`, item.status])];
+      const csvRows = [["Cycle Code", "Name", "Module", "Release", "Build", "Environment", "Type", "Executed", "Cases", "Progress", "Status"], ...exported.map(item => [item.cycleCode, item.cycleName, item.modules?.map(m => m.moduleName).join("; ") ?? "", item.releaseCode, item.buildNumber, item.environmentName, item.cycleType ?? "", item.executedCount, item.caseCount, `${item.progressPercent}%`, item.status])];
       const csv = "\ufeff" + csvRows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
       const link = document.createElement("a"); link.href = url; link.download = "test-cycles.csv"; link.click(); URL.revokeObjectURL(url);
@@ -3994,48 +4450,113 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
   return (
     <>
       <article className="card">
-        {error && <div className="inline-alert error" role="alert"><span>{error}</span><button onClick={() => { setError(""); setReload(value => value + 1); }}>ลองใหม่</button></div>}
+        {error && <div className="inline-alert error" role="alert"><span>{error}</span><button onClick={() => { setError(""); setReload(value => value + 1); }}><span aria-hidden="true">↻</span> ลองใหม่</button></div>}
         {notice && <div className="inline-alert success" role="status"><span>{notice}</span><button aria-label="ปิดข้อความ" onClick={() => setNotice("")}>×</button></div>}
-        <div className="table-tools">
-          <span>{totalCount.toLocaleString()} Test Cycles</span>
-          <div>
-            {canExport && <button className="btn" disabled={exporting || loading || totalCount === 0} onClick={exportCsv}>{exporting ? "กำลัง Export..." : "Export CSV"}</button>}
-            {canEdit && (
-            <button className="btn primary" onClick={() => openForm()}>
-              + สร้าง Test Cycle
-            </button>
-            )}
+        <div className="filter-toolbar">
+          <div className="filter-toolbar-top">
+            <div className="result-count-row">
+              <div className="result-count"><strong>{totalCount.toLocaleString()}</strong><span>Test Cycles</span></div>
+              <div className="result-count"><strong>{caseSummary.totalCases.toLocaleString()}</strong><span>Test Case ทั้งหมด</span></div>
+            </div>
+            <div>
+              {canExport && <button className="btn" disabled={exporting || loading || totalCount === 0} onClick={exportCsv}>{exporting ? <><span className="spinner inline" aria-hidden="true" /> กำลัง Export...</> : <><span aria-hidden="true">⤓</span> Export CSV</>}</button>}
+              {canEdit && (
+              <>
+              <button className="btn ai-button" onClick={openCycleAi}>
+                <span aria-hidden="true">✦</span> AI Generate
+              </button>
+              <button className="btn primary" onClick={() => openForm()}>
+                + สร้าง Test Cycle
+              </button>
+              </>
+              )}
+            </div>
+          </div>
+          <div className="filter-toolbar-row cycle-toolbar-row">
+            <div className="cycle-status-chips" role="group" aria-label="กรองตามสถานะ">
+              <button type="button" className={"status-chip" + (listStatusFilter === "" ? " active" : "")} onClick={() => setListStatusFilter("")}>
+                ทั้งหมด <b>{cycleStatusOptions.reduce((s, x) => s + (statusCounts[x] ?? 0), 0).toLocaleString()}</b>
+              </button>
+              {cycleStatusOptions.map(status => (
+                <button key={status} type="button" className={"status-chip" + (listStatusFilter === status ? " active" : "")} onClick={() => setListStatusFilter(current => current === status ? "" : status)}>
+                  <i className={`status-chip-dot status-chip-dot-${status.toLowerCase()}`} aria-hidden="true" />
+                  {status} <b>{(statusCounts[status] ?? 0).toLocaleString()}</b>
+                </button>
+              ))}
+            </div>
+            <div className="cycle-filters-right">
+              <select className="testcase-module-filter" aria-label="กรอง Module" value={listModuleFilter} onChange={e => setListModuleFilter(e.target.value)} disabled={!listModules.length}>
+                <option value="">ทุก Module</option>
+                {renderModuleSelectOptions(listModules)}
+              </select>
+              <select aria-label="กรอง Type" value={listCycleTypeFilter} onChange={e => setListCycleTypeFilter(e.target.value)}>
+                <option value="">ทุก Type</option>
+                {cycleTypes.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}
+              </select>
+              <select aria-label="กรองผู้สร้าง" value={listCreatedByFilter} onChange={e => setListCreatedByFilter(e.target.value)}>
+                <option value="">ผู้สร้างทั้งหมด</option>
+                {users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}
+              </select>
+            </div>
           </div>
         </div>
+        {canEdit && cycleSelected.size > 0 && (
+          <div className="testcase-bulk-bar" role="region" aria-label="กำหนดสถานะแบบกลุ่ม">
+            <span className="bulk-count">{cycleSelected.size} เลือกแล้ว</span>
+            <label className="bulk-status">กำหนดสถานะ
+              <select value={cycleBulkStatus} onChange={(e) => setCycleBulkStatus(e.target.value)}>
+                <option value="">เลือกสถานะ...</option>
+                <option>Draft</option>
+                <option>InProgress</option>
+                <option>Completed</option>
+                <option>Closed</option>
+                <option>Cancelled</option>
+              </select>
+            </label>
+            <button type="button" className="btn primary" disabled={cycleBulkSaving || !cycleBulkStatus} onClick={applyCycleBulkStatus}>{cycleBulkSaving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> กำหนดสถานะ</>}</button>
+            <button type="button" className="bulk-clear" disabled={cycleBulkSaving} onClick={() => setCycleSelected(new Set())}><span aria-hidden="true">✕</span> ยกเลิกเลือก</button>
+          </div>
+        )}
         <div className="table-wrap">
-          <table>
+          <table className="cycle-list-table">
             <thead>
               <tr>
+                {canEdit && <th className="cycle-select-col"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={rows.length > 0 && rows.every((x) => cycleSelected.has(x.testCycleId))} onChange={toggleCycleSelectPage} /></th>}
                 <th>Cycle Code</th>
                 <th>Name</th>
-                <th>Release / Build</th>
-                <th>Environment</th>
-                <th>Type</th>
+                <th>Module</th>
+                <th>Release / Build / Environment</th>
                 <th>Progress</th>
                 <th>Status</th>
-                {canEdit && <th>จัดการ</th>}
+                <th>สร้างเมื่อ</th>
+                {canEdit && <th className="actions-col">จัดการ</th>}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td className="empty-cell" colSpan={canEdit ? 8 : 7}><div className="empty-state"><span aria-hidden="true">…</span><b>กำลังโหลด Test Cycle...</b></div></td></tr>}
-              {!loading && !error && rows.length === 0 && <tr><td className="empty-cell" colSpan={canEdit ? 8 : 7}><div className="empty-state"><span aria-hidden="true">◎</span><b>ไม่พบ Test Cycle</b><small>ลองเปลี่ยน Project, Release, Build หรือคำค้นหา</small></div></td></tr>}
-              {rows.map((x) => (
-                <tr key={x.testCycleId}>
+              {loading && <tr><td className="empty-cell" colSpan={canEdit ? 9 : 7}><div className="empty-state"><div className="spinner" /><b>กำลังโหลด Test Cycle...</b></div></td></tr>}
+              {!loading && !error && rows.length === 0 && <tr><td className="empty-cell" colSpan={canEdit ? 9 : 7}><div className="empty-state"><span aria-hidden="true">◎</span><b>ไม่พบ Test Cycle</b><small>ลองเปลี่ยน Project, Release, Build หรือคำค้นหา</small></div></td></tr>}
+              {rows.map((x) => {
+                const extraModules = Math.max(0, (x.modules?.length ?? 0) - 2);
+                return (
+                <tr key={x.testCycleId} className={cycleSelected.has(x.testCycleId) ? "is-selected" : ""}>
+                  {canEdit && <td className="cycle-select-col"><input type="checkbox" aria-label={`เลือก ${x.cycleCode}`} checked={cycleSelected.has(x.testCycleId)} onChange={() => toggleCycleSelect(x.testCycleId)} /></td>}
                   <td>
                     <button className="link-button" onClick={() => openDetail(x)}>{x.cycleCode}</button>
+                    {x.cycleType && <small className="cell-sub">{x.cycleType}</small>}
                   </td>
                   <td>{x.cycleName}</td>
                   <td>
-                    {x.releaseCode}
-                    <small className="cell-sub">{x.buildNumber}</small>
+                    {x.modules?.length
+                      ? <div className="role-tags" title={x.modules.map(m => m.moduleName).join(", ")}>
+                          {x.modules.slice(0, 2).map((m) => <span key={m.moduleId}>{m.moduleName}</span>)}
+                          {extraModules > 0 && <span className="role-tags-more">+{extraModules}</span>}
+                        </div>
+                      : "-"}
                   </td>
-                  <td>{x.environmentName}</td>
-                  <td>{x.cycleType ?? "-"}</td>
+                  <td>
+                    {x.releaseCode}
+                    <small className="cell-sub">Build {x.buildNumber} · {x.environmentName}</small>
+                  </td>
                   <td>
                     <div className="progress-cell">
                       <span>
@@ -4059,48 +4580,57 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                       {x.status}
                     </Badge>
                   </td>
-                  {canEdit && <td>
+                  <td>{fmtDateTimeBE(x.createdAt)}</td>
+                  {canEdit && <td className="actions-col">
                     <div className="row-actions">
                       <button
-                        className="table-action"
+                        className="table-action icon-only"
+                        title="แก้ไข"
+                        aria-label={`แก้ไข ${x.cycleCode}`}
                         onClick={() => openForm(x)}
                       >
-                        แก้ไข
+                        <span aria-hidden="true">✎</span>
                       </button>
                       {x.status === "Draft" && (
                         <button
-                          className="table-action"
+                          className="table-action icon-only"
+                          title="เริ่ม"
+                          aria-label={`เริ่ม ${x.cycleCode}`}
                           onClick={() => changeStatus(x, "InProgress")}
                         >
-                          เริ่ม
+                          <span aria-hidden="true">▶</span>
                         </button>
                       )}
                       {x.status === "InProgress" && (
                         <button
-                          className="table-action"
+                          className="table-action icon-only"
+                          title="ปิด Cycle"
+                          aria-label={`ปิด Cycle ${x.cycleCode}`}
                           onClick={() => changeStatus(x, "Closed")}
                         >
-                          ปิด Cycle
+                          <span aria-hidden="true">⏹</span>
                         </button>
                       )}
                       <button
-                        className="table-action danger-action"
+                        className="table-action danger-action icon-only"
+                        title="ลบ"
+                        aria-label={`ลบ ${x.cycleCode}`}
                         onClick={() => remove(x)}
                       >
-                        ลบ
+                        <span aria-hidden="true">✕</span>
                       </button>
                     </div>
                   </td>}
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
         <div className="pagination">
           <label>แสดง<select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}><option>10</option><option>20</option><option>50</option></select> รายการ</label>
           <span>หน้า {Math.min(page, pageCount)} / {pageCount} ({totalCount.toLocaleString()} รายการ)</span>
-          <button className="btn" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}>ก่อนหน้า</button>
-          <button className="btn" disabled={loading || page >= pageCount} onClick={() => setPage(value => value + 1)}>ถัดไป</button>
+          <button className="btn" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}><span aria-hidden="true">‹</span> ก่อนหน้า</button>
+          <button className="btn" disabled={loading || page >= pageCount} onClick={() => setPage(value => value + 1)}>ถัดไป <span aria-hidden="true">›</span></button>
         </div>
       </article>
       {detail && (
@@ -4125,7 +4655,10 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                 <div><dt><span aria-hidden="true">◫</span> Release</dt><dd>{detail.releaseCode || "-"}</dd></div>
                 <div><dt><span aria-hidden="true">#</span> Build</dt><dd>{detail.buildNumber || "-"}</dd></div>
                 <div><dt><span aria-hidden="true">◎</span> Environment</dt><dd>{detail.environmentName || "-"}</dd></div>
+                <div><dt><span aria-hidden="true">U</span> สร้างโดย</dt><dd>{detail.createdByName || "-"}</dd></div>
+                <div><dt><span aria-hidden="true">D</span> สร้างเมื่อ</dt><dd>{detail.createdAt ? new Date(detail.createdAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "-"}</dd></div>
                 <div className="wide"><dt><span aria-hidden="true">▤</span> Test Suite</dt><dd>{detail.suiteName || "ไม่ระบุ Suite"}</dd></div>
+                <div className="wide"><dt><span aria-hidden="true">M</span> Module</dt><dd>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</dd></div>
               </dl>
             </section>
             <section className="cycle-detail-section">
@@ -4138,9 +4671,136 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
             </section>
             <section className="cycle-detail-notes"><div aria-hidden="true">i</div><span><b>Notes</b><p>{detail.notes || "ไม่มี Notes สำหรับ Test Cycle นี้"}</p></span></section>
             <div className="modal-actions">
-              <button className="btn" onClick={() => setDetail(null)}>ปิด</button>
-              {canEdit && <button className="btn primary" onClick={() => { const cycle = detail; setDetail(null); openForm(cycle); }}>แก้ไข</button>}
+              <button className="btn" onClick={() => setDetail(null)}><span aria-hidden="true">✕</span> ปิด</button>
+              {canEdit && <button className="btn primary" onClick={() => { const cycle = detail; setDetail(null); openForm(cycle); }}><span aria-hidden="true">✎</span> แก้ไข</button>}
             </div>
+          </div>
+        </div>
+      )}
+      {cycleAiModal && (
+        <div className="modal" onMouseDown={() => !cycleAiGenerating && setCycleAiModal(false)}>
+          <div className="modal-box requirement-ai-modal suite-ai-modal cycle-ai-modal" role="dialog" aria-modal="true" aria-labelledby="cycle-ai-title" onMouseDown={(event) => event.stopPropagation()} style={{ position: "relative" }}>
+            {cycleAiGenerating && (
+              <div className="ai-loading-overlay">
+                <div className="ai-spinner" />
+                {cycleAiDrafts.length ? <p>กำลังบันทึก Test Cycle...</p> : <p>AI กำลังวิเคราะห์ Test Cycle...</p>}
+                <small>{cycleAiDrafts.length ? "กรุณารอสักครู่ อย่าปิดหน้าต่างนี้" : "รอสักครู่ ระบบกำลังประมวลผล Release/Build/Test Suite"}</small>
+              </div>
+            )}
+            <div className="modal-head">
+              <div>
+                <h2 id="cycle-ai-title">AI Generate Test Cycle</h2>
+                <small>{cycleAiDrafts.length ? `พบ ${cycleAiDrafts.length} Test Cycle ที่ AI สร้าง — ตรวจสอบและบันทึก` : "วางแผนรอบทดสอบจาก Release/Build/Environment/Test Suite ที่เลือก"}</small>
+              </div>
+              <button disabled={cycleAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={() => setCycleAiModal(false)}>×</button>
+            </div>
+            {cycleAiDrafts.length === 0 ? (
+              <section className="requirement-ai-panel">
+                <div className="requirement-ai-head">
+                  <div>
+                    <span className="ai-spark">AI</span>
+                    <p><strong>ผู้ช่วยวางแผนรอบทดสอบ</strong><small>AI จะเสนอ Test Cycle 1-3 รอบจากขอบเขตที่เลือก</small></p>
+                  </div>
+                  <span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span>
+                </div>
+                {cycleAiError && <div className="inline-alert error"><span>{cycleAiError}</span></div>}
+                {!cycleTypes.length && <div className="inline-alert error"><span>กรุณาเพิ่ม Test Cycle Type ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}
+                <div className="form-grid">
+                  <label>
+                    Project
+                    <select value={cycleAiProjectId} disabled={cycleAiGenerating} onChange={(e) => { setCycleAiProjectId(e.target.value); setCycleAiReleaseId(""); setCycleAiBuildId(""); setCycleAiEnvironmentId(""); setCycleAiSuiteId(""); setCycleAiSuiteSearch(""); setCycleAiError(""); }}>
+                      <option value="">เลือก Project</option>
+                      {projects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectCode} · {x.projectName}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Release
+                    <select value={cycleAiReleaseId} disabled={cycleAiGenerating || !cycleAiProjectId} onChange={(e) => { setCycleAiReleaseId(e.target.value); setCycleAiBuildId(""); }}>
+                      <option value="">เลือก Release</option>
+                      {cycleAiReleases.map((x) => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Build
+                    <select value={cycleAiBuildId} disabled={cycleAiGenerating || !cycleAiReleaseId} onChange={(e) => setCycleAiBuildId(e.target.value)}>
+                      <option value="">เลือก Build</option>
+                      {cycleAiBuilds.map((x) => <option key={x.buildId} value={x.buildId}>{x.buildNumber}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Environment
+                    <select value={cycleAiEnvironmentId} disabled={cycleAiGenerating || !cycleAiProjectId} onChange={(e) => setCycleAiEnvironmentId(e.target.value)}>
+                      <option value="">เลือก Environment</option>
+                      {cycleAiEnvironments.map((x) => <option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}
+                    </select>
+                  </label>
+                  <label className="cycle-ai-suite-field">
+                    <span>Test Suite (ไม่บังคับ){cycleAiSuites.length > 8 && <small className="cycle-ai-suite-count"> · {cycleAiSuiteOptions.length}/{cycleAiSuites.length}</small>}</span>
+                    {cycleAiSuites.length > 8 && (
+                      <input
+                        type="text"
+                        placeholder="ค้นหารหัสหรือชื่อ Test Suite..."
+                        value={cycleAiSuiteSearch}
+                        disabled={cycleAiGenerating || !cycleAiProjectId}
+                        onChange={(e) => setCycleAiSuiteSearch(e.target.value)}
+                      />
+                    )}
+                    <select value={cycleAiSuiteId} disabled={cycleAiGenerating || !cycleAiProjectId} onChange={(e) => setCycleAiSuiteId(e.target.value)}>
+                      <option value="">ไม่ระบุ Test Suite</option>
+                      {cycleAiSuiteOptions.map((x) => <option key={x.testSuiteId} value={x.testSuiteId}>{x.suiteCode} · {x.suiteName}</option>)}
+                    </select>
+                    {cycleAiSuiteSearch.trim() && cycleAiSuiteOptions.length === 0 && <small>ไม่พบ Test Suite ที่ตรงกับคำค้นหา</small>}
+                  </label>
+                </div>
+                <div className="ai-draft-note">
+                  <span aria-hidden="true">i</span>
+                  <p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่ง Release/Build/Environment/Test Suite ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p>
+                </div>
+                <div className="requirement-ai-actions">
+                  <small>{cycleAiSuiteId ? `อ้างอิง Test Suite ที่เลือก` : "ไม่ได้อ้างอิง Test Suite"}</small>
+                  <div className="row-actions">
+                    <button className="btn" disabled={cycleAiGenerating} onClick={() => setCycleAiModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button>
+                    <button className="btn primary" disabled={cycleAiGenerating || !cycleAiProjectId || !cycleAiReleaseId || !cycleAiBuildId || !cycleAiEnvironmentId || !cycleTypes.length} onClick={generateCycleWithAi}>{cycleAiGenerating ? <><span className="spinner inline" aria-hidden="true" /> AI กำลังวิเคราะห์...</> : "✦ สร้าง Test Cycle"}</button>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="requirement-ai-panel suite-ai-review">
+                <div className="suite-ai-review-head">
+                  <div>
+                    <h3>Test Cycle ที่ AI สร้าง ({cycleAiDrafts.length})</h3>
+                  </div>
+                </div>
+                {cycleAiError && <div className="inline-alert error" style={{ marginBottom: 8 }}><span>{cycleAiError}</span></div>}
+                <div className="suite-ai-draft-list">
+                  {cycleAiDrafts.map((draft, index) => (
+                    <div key={index} className="suite-ai-draft-card expanded">
+                      <div className="suite-ai-draft-head">
+                        <div className="suite-ai-draft-title">
+                          <b>{draft.cycleName}</b>
+                          <div className="suite-ai-draft-tags">
+                            <Badge tone="blue">{draft.cycleType}</Badge>
+                            {draft.startDate && <span className="suite-ai-case-count">{draft.startDate} → {draft.endDate ?? "-"}</span>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="suite-ai-draft-body">
+                        {draft.notes && <p className="suite-ai-draft-desc">{draft.notes}</p>}
+                        <p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p>
+                        <button className="table-action danger-action" style={{ marginTop: 8 }} onClick={() => removeCycleAiDraft(index)}><span aria-hidden="true">✕</span> นำ Test Cycle นี้ออก</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="requirement-ai-actions">
+                  <small>{cycleAiDrafts.length} Test Cycle พร้อมบันทึก</small>
+                  <div className="row-actions">
+                    <button className="btn" disabled={cycleAiGenerating} onClick={() => setCycleAiDrafts([])}><span aria-hidden="true">↻</span> สร้างใหม่</button>
+                    <button className="btn primary" disabled={cycleAiGenerating || !cycleAiDrafts.length} onClick={saveAllCycleDrafts}>{cycleAiGenerating ? "กำลังบันทึก..." : `✦ บันทึกทั้งหมด (${cycleAiDrafts.length} Cycle)`}</button>
+                  </div>
+                </div>
+              </section>
+            )}
           </div>
         </div>
       )}
@@ -4151,9 +4811,16 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="modal-head">
-              <h2>{editing ? "แก้ไข" : "สร้าง"} Test Cycle</h2>
-              <button onClick={() => setForm(false)}>×</button>
+              <div>
+                <h2>{editing ? "แก้ไข" : "สร้าง"} Test Cycle</h2>
+                <small>กำหนดขอบเขต Release/Build/Environment และรายละเอียดของรอบทดสอบนี้</small>
+              </div>
+              <button aria-label="ปิดหน้าต่าง" onClick={() => setForm(false)}>×</button>
             </div>
+            <p className="fieldset-hint"><span className="required">*</span> ข้อมูลที่จำเป็นต้องกรอก</p>
+            <div className="cycle-form-columns">
+            <div className="modal-section">
+            <h3 className="modal-section-title">ขอบเขตการทดสอบ</h3>
             <div className="form-grid">
               <label>
                 Project
@@ -4169,38 +4836,40 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                   ))}
                 </select>
               </label>
+              <div className="form-row">
+                <label>
+                  Release <span className="required">*</span>
+                  <select
+                    disabled={!!editing}
+                    value={releaseId}
+                    onChange={(e) => setReleaseId(e.target.value)}
+                  >
+                    <option value="">เลือก Release</option>
+                    {projectReleases.map((x) => (
+                      <option key={x.releaseId} value={x.releaseId}>
+                        {x.releaseCode}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Build <span className="required">*</span>
+                  <select
+                    disabled={!!editing}
+                    value={buildId}
+                    onChange={(e) => setBuildId(e.target.value)}
+                  >
+                    <option value="">เลือก Build</option>
+                    {releaseBuilds.map((x) => (
+                      <option key={x.buildId} value={x.buildId}>
+                        {x.buildNumber}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <label>
-                Release
-                <select
-                  disabled={!!editing}
-                  value={releaseId}
-                  onChange={(e) => setReleaseId(e.target.value)}
-                >
-                  <option value="">เลือก Release</option>
-                  {projectReleases.map((x) => (
-                    <option key={x.releaseId} value={x.releaseId}>
-                      {x.releaseCode}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Build
-                <select
-                  disabled={!!editing}
-                  value={buildId}
-                  onChange={(e) => setBuildId(e.target.value)}
-                >
-                  <option value="">เลือก Build</option>
-                  {releaseBuilds.map((x) => (
-                    <option key={x.buildId} value={x.buildId}>
-                      {x.buildNumber}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Environment
+                Environment <span className="required">*</span>
                 <select
                   disabled={!!editing}
                   value={environmentId}
@@ -4233,66 +4902,104 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                   </button>
                 </div>
               )}
-              <label>
-                Test Suite
+              {!editing && (
+                <label>
+                  Module <span className="required">*</span>
+                  <select
+                    className="testcase-module-filter"
+                    value={formModuleId}
+                    disabled={!formModules.length}
+                    onChange={(e) => setFormModuleId(e.target.value)}
+                  >
+                    <option value="">เลือก Module</option>
+                    {renderModuleSelectOptions(formModules)}
+                  </select>
+                  {!formModules.length && <small>โปรเจกต์นี้ยังไม่มี Module — ไปสร้าง Module ก่อนที่เมนู "Project / Module"</small>}
+                </label>
+              )}
+              <label className="full cycle-ai-suite-field">
+                <span>Test Suite (ไม่บังคับ){formModuleId && <small className="cycle-ai-suite-count"> · กรองตาม Module ที่เลือก</small>}{projectSuites.length > 8 && <small className="cycle-ai-suite-count"> · {suiteOptions.length}/{projectSuites.length}</small>}</span>
+                {!editing && projectSuites.length > 8 && (
+                  <input
+                    type="text"
+                    placeholder="ค้นหารหัสหรือชื่อ Test Suite..."
+                    value={suiteSearch}
+                    onChange={(e) => setSuiteSearch(e.target.value)}
+                  />
+                )}
                 <select
                   disabled={!!editing}
                   value={suiteId}
                   onChange={(e) => setSuiteId(e.target.value)}
                 >
                   <option value="">ไม่ระบุ Suite</option>
-                  {projectSuites.map((x) => (
+                  {suiteOptions.map((x) => (
                     <option key={x.testSuiteId} value={x.testSuiteId}>
-                      {x.suiteName}
+                      {x.suiteCode} · {x.suiteName}
                     </option>
                   ))}
                 </select>
+                {suiteSearch.trim() && suiteOptions.length === 0 && <small>ไม่พบ Test Suite ที่ตรงกับคำค้นหา</small>}
+                {!suiteSearch.trim() && formModuleId && projectSuites.length === 0 && <small>ไม่มี Test Suite ที่มี Test Case อยู่ใน Module นี้</small>}
               </label>
+            </div>
+            </div>
+            <div className="modal-section">
+            <h3 className="modal-section-title">รายละเอียด Cycle</h3>
+            <div className="form-grid">
+              <div className="form-row">
+                <label>
+                  Cycle Type
+                  <select
+                    value={cycleType}
+                    onChange={(e) => setCycleType(e.target.value)}
+                  >
+                    {masterOptionElements(cycleTypes, cycleType)}
+                  </select>
+                </label>
+                <label>
+                  Cycle Code
+                  <input
+                    disabled
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                  />
+                </label>
+              </div>
               <label>
-                Cycle Type
-                <select
-                  value={cycleType}
-                  onChange={(e) => setCycleType(e.target.value)}
-                >
-                  {masterOptionElements(cycleTypes, cycleType)}
-                </select>
+                Cycle Name <span className="required">*</span>
+                <input value={name} onChange={(e) => { setName(e.target.value); setNameAutoFilled(false); }} placeholder="เช่น รอบทดสอบ Sprint 12" />
+                {!editing && nameAutoFilled && <small>ตั้งชื่อให้อัตโนมัติจาก Module/Suite/Cycle Type/Release/Build — แก้ไขได้ตามต้องการ</small>}
               </label>
-              <label>
-                Cycle Code
-                <input
-                  disabled
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-              </label>
-              <label>
-                Cycle Name
-                <input value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-              <label>
-                Start Date
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </label>
-              <label>
-                End Date
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </label>
+              <div className="form-row">
+                <label>
+                  Start Date
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </label>
+                <label>
+                  End Date
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </label>
+              </div>
               <label className="full">
                 Notes
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
+                  placeholder="รายละเอียดเพิ่มเติมของรอบทดสอบนี้ (ไม่บังคับ)"
                 />
               </label>
+            </div>
+            </div>
             </div>
             <div className="modal-actions">
               <button className="btn" onClick={() => setForm(false)}>
@@ -4306,12 +5013,13 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                   !releaseId ||
                   !buildId ||
                   !environmentId ||
+                  (!editing && !formModuleId) ||
                   !code.trim() ||
                   !name.trim()
                 }
                 onClick={save}
               >
-                {saving ? "กำลังบันทึก..." : "บันทึก Test Cycle"}
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก Test Cycle</>}
               </button>
             </div>
           </div>
@@ -4334,6 +5042,8 @@ type ExecutionCase = {
     action: string;
     testData?: string;
     expectedResult: string;
+    lastStatus?: string;
+    lastActualResult?: string;
   }[];
   history: {
     testExecutionId: string;
@@ -4366,8 +5076,20 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
     [comment, setComment] = useState(""),
     [caseSearch, setCaseSearch] = useState(""),
     [statusFilter, setStatusFilter] = useState("All"),
+    [cycleModuleFilter, setCycleModuleFilter] = useState(""),
+    [cycleModules, setCycleModules] = useState<ModuleItem[]>([]),
+    // ปิดเป็นค่าเริ่มต้นเสมอ (ไม่กรอง) — Test Cycle ไม่มีช่องให้กำหนด "ผู้ดำเนินการ" (ownerUserId) ตอนสร้าง/แก้ไข
+    // เลยเป็น null เสมอทุก Cycle ในระบบ ถ้า default เปิดไว้จะกรองจนไม่เหลือ Cycle ให้เลือกเลยสำหรับทุกคน
+    [myCyclesOnly, setMyCyclesOnly] = useState(false),
     [saving, setSaving] = useState(false),
-    [reload, setReload] = useState(0);
+    [reload, setReload] = useState(0),
+    // สถานะสำหรับ Skip Test Case modal (§18) และปุ่ม Create Defect ต่อ Step (§19)
+    [skipModalOpen, setSkipModalOpen] = useState(false),
+    [skipReason, setSkipReason] = useState(""),
+    [skipComment, setSkipComment] = useState(""),
+    [defectCodes, setDefectCodes] = useState<Record<number, string>>({}),
+    [creatingDefectStep, setCreatingDefectStep] = useState<number | null>(null);
+  const currentUser = useMemo(() => { try { return JSON.parse(localStorage.getItem("qa.user") ?? "{}") as SessionUser; } catch { return null; } }, []);
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -4376,22 +5098,41 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
     const h = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
-    fetch(`${apiUrl}/test-cycles`, { headers: h })
+    const query = cycleModuleFilter ? `?moduleId=${cycleModuleFilter}&size=100` : "?size=100";
+    fetch(`${apiUrl}/test-cycles${query}`, { headers: h })
       .then(async (r) => {
         if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
         const data: unknown = await r.json();
         return Array.isArray(data) ? (data as TestCycleItem[]) : (data as any)?.items?.rows ?? [];
       })
       .then((data: TestCycleItem[]) => {
-        setCycles(data);
-        setCycleId((current) => data.some(x=>x.testCycleId===current)?current:(data[0]?.testCycleId||""));
+        // Only offer cycles that are actively being executed — Draft hasn't started yet, and
+        // Completed/Closed/Cancelled have no more work to do, so none of them belong in this dropdown.
+        // "เฉพาะ Cycle ของฉัน" further narrows to cycles created by the logged-in user — toggleable,
+        // since a lead/admin may still need to see everyone's cycles. (Not ownerUserId: Test Cycle has
+        // no "ผู้ดำเนินการ" field in the create/edit form, so that column is always null for every cycle.)
+        const myId = currentUserId();
+        const openCycles = data.filter((x) => x.status === "InProgress" && (!myCyclesOnly || x.createdBy === myId));
+        setCycles(openCycles);
+        setCycleId((current) => openCycles.some(x=>x.testCycleId===current)?current:(openCycles[0]?.testCycleId||""));
         localStorage.removeItem("qa.targetCycleId");
       })
       .catch(() => {
         setCycles([]);
         setCycleId("");
       });
-  }, [reload]);
+  }, [reload, cycleModuleFilter, myCyclesOnly]);
+  useEffect(() => {
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const projectIds = contextProjectId ? [contextProjectId] : [...new Set(cycles.map((x) => x.projectId))];
+    if (!projectIds.length) { setCycleModules([]); return; }
+    Promise.all(projectIds.map((id) => fetch(`${apiUrl}/projects/${id}/modules`, { headers: h }).then((r) => r.ok ? r.json() : [])))
+      .then((groups: ModuleItem[][]) => {
+        const seen = new Map<string, ModuleItem>();
+        groups.flat().filter((m) => m.isActive).forEach((m) => { if (!seen.has(m.moduleId)) seen.set(m.moduleId, m); });
+        setCycleModules([...seen.values()].sort((a, b) => a.moduleCode.localeCompare(b.moduleCode)));
+      });
+  }, [contextProjectId, cycles]);
   useEffect(() => {
     if (!cycleId) {
       setWorkspace(null);
@@ -4434,6 +5175,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       passed: cases.filter((x) => x.currentStatus === "Pass").length,
       failed: cases.filter((x) => x.currentStatus === "Fail").length,
       blocked: cases.filter((x) => x.currentStatus === "Blocked").length,
+      inProgress: cases.filter((x) => x.currentStatus === "InProgress").length,
       pending: cases.filter((x) => x.currentStatus === "NotRun").length,
     };
   }, [workspace]);
@@ -4446,22 +5188,42 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
   }, [workspace, caseSearch, statusFilter]);
   useEffect(() => {
     if (selected) {
+      // Restore the last saved values for this case instead of always resetting to blank — otherwise
+      // switching cases (or any background refetch) silently discards previously recorded results.
       setStepStatuses(
-        Object.fromEntries(selected.steps.map((x) => [x.stepNo, "NotRun"])),
+        Object.fromEntries(selected.steps.map((x) => [x.stepNo, x.lastStatus ?? "NotRun"])),
       );
-      setStepActuals({});
-      setActual("");
-      setComment("");
+      setStepActuals(
+        Object.fromEntries(selected.steps.filter((x) => x.lastActualResult).map((x) => [x.stepNo, x.lastActualResult as string])),
+      );
+      const latest = selected.history[0];
+      setActual(latest?.actualResult ?? "");
+      setComment(latest?.comment ?? "");
+      setDefectCodes({});
+      setSkipModalOpen(false);
+      setSkipReason("");
+      setSkipComment("");
     }
   }, [selected]);
-  const finalize = async (status: string) => {
-    if (
-      !selected ||
-      !window.confirm(
-        `ยืนยันบันทึกผล ${status} สำหรับ ${selected.testCaseCode}?\nผลที่บันทึกแล้วจะไม่สามารถแก้ไขทับได้`,
-      )
-    )
-      return;
+  // Overall Result แบบ live พรีวิวจากสถานะ Step ปัจจุบันที่กำลังแก้ (test-case-execution-ui-spec.md §4-5)
+  // — คำนวณด้วยฟังก์ชันเดียวกับที่ backend ใช้จริงตอนบันทึก (ดู overallResult.ts)
+  const liveStepStatuses = useMemo(
+    () => (selected?.steps ?? []).map((x) => (stepStatuses[x.stepNo] ?? "NotRun") as StepStatus),
+    [selected, stepStatuses],
+  );
+  const liveOverall = useMemo(() => calculateOverallResult(liveStepStatuses), [liveStepStatuses]);
+  const stepCounts = useMemo(() => ({
+    passed: liveStepStatuses.filter((s) => s === "Pass").length,
+    failed: liveStepStatuses.filter((s) => s === "Fail").length,
+    blocked: liveStepStatuses.filter((s) => s === "Blocked").length,
+    notRun: liveStepStatuses.filter((s) => s === "NotRun").length,
+  }), [liveStepStatuses]);
+  // เดิมมีปุ่ม Pass/Fail/Blocked ให้ผู้ใช้กดกำหนด Overall Result ของ Test Case เอง (finalize(status))
+  // — เอาออกตาม spec §14/§25: Overall Result ต้องมาจากการคำนวณผล Step เท่านั้น (ยกเว้น Skipped)
+  // เหลือ submitExecution กลางที่ทุกปุ่มใหม่ (Save Progress/Skip/Complete) เรียกใช้ร่วมกัน
+  const submitExecution = async (status: string, opts?: { confirmMessage?: string; commentOverride?: string }) => {
+    if (!selected) return;
+    if (opts?.confirmMessage && !window.confirm(opts.confirmMessage)) return;
     setSaving(true);
     try {
       const response = await fetch(
@@ -4472,7 +5234,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
           body: JSON.stringify({
             status,
             actualResult: actual || null,
-            comment: comment || null,
+            comment: opts?.commentOverride ?? (comment || null),
             stepResults: selected.steps.map((x) => ({
               stepNo: x.stepNo,
               status: stepStatuses[x.stepNo] ?? "NotRun",
@@ -4486,11 +5248,92 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
         const problem = await response.json();
         throw new Error(problem.detail ?? "บันทึกผลไม่สำเร็จ");
       }
+      // ExecutionHistoryDto.CreatedDefectCode มีให้ "ครั้งเดียว" ตรงนี้เท่านั้น — GET .../cases/{id}
+      // (ที่ setReload ทำให้ refetch ใหม่) ไม่ได้ persist/ผูกกลับมาให้ query ซ้ำได้ทีหลัง เลยต้องแจ้ง
+      // ผู้ใช้ตรงนี้ทันทีถ้ามี Defect ถูก auto-create ให้ ไม่งั้นข้อมูลนี้จะหายไปเงียบๆ
+      const result: { createdDefectCode?: string } = await response.json();
+      if (result.createdDefectCode) window.alert(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ เนื่องจากผลเป็น Fail`);
       setReload((x) => x + 1);
+      if (status === "Skipped") { setSkipModalOpen(false); setSkipReason(""); setSkipComment(""); }
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "บันทึกผลไม่สำเร็จ");
     } finally {
       setSaving(false);
+    }
+  };
+  // §15 Save Progress — บันทึกได้แม้ยังทดสอบไม่ครบทุก Step ไม่ต้องยืนยันซ้ำ (เป็นการบันทึกระหว่างทางบ่อยๆ)
+  const saveProgress = () => submitExecution(liveOverall);
+  // §16 Complete Test — ตรวจ validation ก่อนเสมอ: Fail/Blocked ต้องมี Actual Result, และถ้ายังมี Step
+  // NotRun อยู่ต้องถามยืนยันก่อน (Default = Cancel ตาม native window.confirm)
+  const completeTest = () => {
+    if (!selected) return;
+    const missingActual = selected.steps.filter((x) => {
+      const st = stepStatuses[x.stepNo] ?? "NotRun";
+      return (st === "Fail" || st === "Blocked") && !stepActuals[x.stepNo]?.trim();
+    });
+    if (missingActual.length) {
+      window.alert(`กรุณาระบุผลที่เกิดขึ้นจริงสำหรับ Step ที่ยังไม่ได้กรอก: #${missingActual.map((x) => x.stepNo).join(", #")}`);
+      return;
+    }
+    const confirmMessage = stepCounts.notRun > 0
+      ? `ยังมี Test Step ที่ยังไม่ได้ทดสอบจำนวน ${stepCounts.notRun} Step\n\nกด Cancel เพื่อกลับไปทดสอบต่อ หรือกด OK เพื่อบันทึกทั้งที่ยังไม่ครบ (Complete Anyway)`
+      : `ยืนยันบันทึกผล ${liveOverall} สำหรับ ${selected.testCaseCode}?\nผลที่บันทึกแล้วจะไม่สามารถแก้ไขทับได้`;
+    submitExecution(liveOverall, { confirmMessage });
+  };
+  // §18 Skip Test Case — เปิด modal เลือก Reason + Comment ก่อนเสมอ ไม่มีปุ่มลัด
+  const openSkipModal = () => { setSkipReason(""); setSkipComment(""); setSkipModalOpen(true); };
+  const confirmSkip = () => {
+    if (!skipReason) { window.alert("กรุณาเลือก Reason ก่อนยืนยัน Skip"); return; }
+    const label = skipReasonOptions.find((r) => r.value === skipReason)?.label ?? skipReason;
+    submitExecution("Skipped", { commentOverride: `[${label}] ${skipComment}`.trim() });
+  };
+  // §19 Create Defect ต่อ Step ที่ Fail — ใช้ endpoint Defect create + link ที่มีอยู่แล้ว ไม่ต้องเพิ่ม
+  // backend ใหม่ (auto-fill Test Case/Step/Build/Environment/Tester ตาม spec ไว้ใน description เพราะ
+  // Defect ไม่มีคอลัมน์แยกสำหรับแต่ละอย่างเหล่านี้) — ไม่ชนกับ Defect ที่ auto-create ตอน Complete เป็น
+  // Fail เพราะฝั่งนั้นเช็คก่อนแล้วว่ามี Defect เปิดอยู่ของ Test Case นี้หรือยัง ถ้ามีจะไม่สร้างซ้ำ
+  const createDefectForStep = async (step: { stepNo: number; action: string; expectedResult: string }) => {
+    if (!selected) return;
+    if (!contextProjectId) { window.alert("ไม่พบ Project ของ Test Cycle นี้ ไม่สามารถสร้าง Defect ได้"); return; }
+    setCreatingDefectStep(step.stepNo);
+    try {
+      const description = [
+        "สร้างจาก Execution Workspace",
+        `Test Case: ${selected.testCaseCode} - ${selected.title}`,
+        `Step ${step.stepNo}: ${step.action}`,
+        `Expected Result: ${step.expectedResult}`,
+        `Actual Result: ${stepActuals[step.stepNo] || "-"}`,
+        `Build: ${workspace?.buildNumber ?? "-"}`,
+        `Environment: ${workspace?.environmentName ?? "-"}`,
+        `Tester: ${currentUser?.displayName ?? "-"}`,
+      ].join("\n");
+      const createRes = await fetch(`${apiUrl}/defects`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          projectId: contextProjectId,
+          releaseId: contextReleaseId || null,
+          buildId: contextBuildId || null,
+          title: `${selected.testCaseCode} Step ${step.stepNo} Fail: ${step.action}`.slice(0, 200),
+          severity: "Medium",
+          status: "Open",
+          description,
+          stepsToReproduce: step.action,
+          expectedResult: step.expectedResult,
+          actualResult: stepActuals[step.stepNo] || "",
+        }),
+      });
+      if (!createRes.ok) throw new Error("สร้าง Defect ไม่สำเร็จ");
+      const defect = await createRes.json();
+      await fetch(`${apiUrl}/defects/${defect.defectId}/test-cases`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ testCaseId: selected.testCaseId }),
+      });
+      setDefectCodes((d) => ({ ...d, [step.stepNo]: defect.defectCode }));
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "สร้าง Defect ไม่สำเร็จ");
+    } finally {
+      setCreatingDefectStep(null);
     }
   };
   const removeExecution = async (execution: ExecutionCase["history"][number]) => {
@@ -4518,6 +5361,17 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
   return (
     <div className="execution-page">
       <div className="execution-toolbar card">
+        <label className="check-line">
+          <input type="checkbox" checked={myCyclesOnly} onChange={(e) => setMyCyclesOnly(e.target.checked)} />
+          เฉพาะ Cycle ของฉัน
+        </label>
+        <label>
+          Module
+          <select className="testcase-module-filter" aria-label="กรอง Test Cycle ตาม Module" value={cycleModuleFilter} onChange={(e) => setCycleModuleFilter(e.target.value)} disabled={!cycleModules.length}>
+            <option value="">ทุก Module</option>
+            {renderModuleSelectOptions(cycleModules)}
+          </select>
+        </label>
         <label>
           Test Cycle
           <select value={cycleId} onChange={(e) => setCycleId(e.target.value)}>
@@ -4551,6 +5405,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
           <div className="metric-pass"><small>Passed</small><strong>{executionStats.passed}</strong></div>
           <div className="metric-fail"><small>Failed</small><strong>{executionStats.failed}</strong></div>
           <div className="metric-blocked"><small>Blocked</small><strong>{executionStats.blocked}</strong></div>
+          <div className="metric-inprogress"><small>In Progress</small><strong>{executionStats.inProgress}</strong></div>
           <div className="metric-pending"><small>Not Run</small><strong>{executionStats.pending}</strong></div>
           <div className="execution-progress-summary">
             <span><i style={{width:`${executionStats.total ? ((executionStats.total-executionStats.pending)/executionStats.total)*100 : 0}%`}} /></span>
@@ -4583,7 +5438,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
             <div className="case-queue-tools">
               <input aria-label="ค้นหา Test Case" value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} placeholder="ค้นหารหัสหรือชื่อ Test Case" />
               <select aria-label="กรองสถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                {["All", "NotRun", "Pass", "Fail", "Blocked", "Skipped"].map((status) => <option key={status} value={status}>{status === "All" ? "ทุกสถานะ" : status}</option>)}
+                {["All", "NotRun", "InProgress", "Pass", "Fail", "Blocked", "Skipped"].map((status) => <option key={status} value={status}>{status === "All" ? "ทุกสถานะ" : status}</option>)}
               </select>
             </div>
             <div className="case-queue-list">
@@ -4593,16 +5448,13 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                 key={x.testCycleCaseId}
                 onClick={() => setSelectedId(x.testCycleCaseId)}
               >
-                <Badge tone={x.priority === "P0" ? "red" : "blue"}>
-                  {x.priority}
-                </Badge>
-                <span>
+                <span className="case-row-top">
                   <b>{x.testCaseCode}</b>
-                  <small>{x.title}</small>
+                  <Badge tone={executionStatusTone(x.currentStatus)}>
+                    {x.currentStatus}
+                  </Badge>
                 </span>
-                <i className={`status-dot ${x.currentStatus.toLowerCase()}`}>
-                  {x.currentStatus}
-                </i>
+                <small>{x.title}</small>
               </button>
             ))}
             {!filteredCases.length && <p className="queue-empty">ไม่พบ Test Case ที่ตรงกับตัวกรอง</p>}
@@ -4615,18 +5467,16 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                   <span>{selected.testCaseCode}</span>
                   <h2>{selected.title}</h2>
                 </div>
-                <Badge
-                  tone={
-                    selected.currentStatus === "Pass"
-                      ? "green"
-                      : selected.currentStatus === "Fail"
-                        ? "red"
-                        : "yellow"
-                  }
-                >
+                <Badge tone={executionStatusTone(selected.currentStatus)}>
                   {selected.currentStatus}
                 </Badge>
               </div>
+              {/* ตัดแถว Tester/Environment/Build/Test Cycle ออกทั้งหมด — ข้อมูลซ้ำกับที่แสดงอยู่แล้ว
+                  ในหน้านี้ (Environment/Build อยู่ใน toolbar บนสุด, Test Cycle อยู่ใน dropdown เลือก
+                  Cycle, Tester คือผู้ใช้ที่ login อยู่ซึ่งเห็นอยู่แล้วที่ profile บน topbar ของทั้งแอป) */}
+              {/* Overall Result Summary การ์ดแยกก็ตัดออกด้วย — ซ้ำกับ Badge สถานะที่ execution-case-head
+                  ด้านบนอยู่แล้ว (ยังคง bind กับ selected.currentStatus ตัวเดิม ไม่ใช่ liveOverall เพราะ
+                  ต้องโชว์สถานะที่ persist ไว้จริงรวมถึง "Skipped" ซึ่ง liveOverall ไม่มีค่านี้) */}
               {selected.preconditions && (
                 <div className="precondition">
                   <b>Preconditions</b>
@@ -4636,55 +5486,89 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
               <div className="step-table">
                 <div className="step-bulk-actions">
                   <span>Test Steps <b>{selected.steps.length}</b></span>
-                  <div>{["Pass", "Fail", "NotRun"].map((status) => <button type="button" key={status} onClick={() => setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])))}>ทั้งหมด: {status}</button>)}</div>
+                  <div>{(["Pass", "Fail", "Blocked", "NotRun"] as const).map((status) => {
+                    const label = status === "NotRun" ? "Not Run" : status;
+                    return (
+                      <button
+                        type="button"
+                        key={status}
+                        onClick={() => {
+                          if (!window.confirm(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${label} หรือไม่?`)) return;
+                          setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
+                        }}
+                      >
+                        <span aria-hidden="true">{status === "Pass" ? "✓" : status === "Fail" ? "✕" : status === "Blocked" ? "⊘" : "○"}</span> Set All {label}
+                      </button>
+                    );
+                  })}</div>
                 </div>
                 <div className="step-row step-head">
                   <span>#</span>
                   <span>Action / Test Data</span>
                   <span>Expected Result</span>
-                  <span>Result</span>
+                  <span>Step Result</span>
+                  <span>Actual Result / Comment</span>
                 </div>
-                {selected.steps.map((x) => (
-                  <div className="step-row" key={x.stepNo}>
-                    <span>{x.stepNo}</span>
-                    <span>
-                      <b>{x.action}</b>
-                      {x.testData && <small>{x.testData}</small>}
-                    </span>
-                    <span>{x.expectedResult}</span>
-                    <span>
-                      <select
-                        value={stepStatuses[x.stepNo] ?? "NotRun"}
-                        onChange={(e) =>
-                          setStepStatuses((s) => ({
-                            ...s,
-                            [x.stepNo]: e.target.value,
-                          }))
-                        }
-                      >
-                        <option>NotRun</option>
-                        <option>Pass</option>
-                        <option>Fail</option>
-                        <option>Blocked</option>
-                        <option>Skipped</option>
-                      </select>
-                      <input
-                        value={stepActuals[x.stepNo] ?? ""}
-                        onChange={(e) =>
-                          setStepActuals((s) => ({
-                            ...s,
-                            [x.stepNo]: e.target.value,
-                          }))
-                        }
-                        placeholder="ผลที่ได้จริง"
-                      />
-                    </span>
-                  </div>
-                ))}
+                {selected.steps.map((x) => {
+                  const status = (stepStatuses[x.stepNo] ?? "NotRun") as StepStatus;
+                  const requiresActual = status === "Fail" || status === "Blocked";
+                  const missingActual = requiresActual && !stepActuals[x.stepNo]?.trim();
+                  return (
+                    <div className="step-row" key={x.stepNo}>
+                      <span>{x.stepNo}</span>
+                      <span>
+                        <b>{x.action}</b>
+                        {x.testData && <small>{x.testData}</small>}
+                      </span>
+                      <span>{x.expectedResult}</span>
+                      <span className="step-result-control">
+                        {(["Pass", "Fail", "Blocked", "NotRun"] as const).map((opt) => (
+                          <button
+                            type="button"
+                            key={opt}
+                            className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
+                            title={opt === "NotRun" ? "Not Run" : opt}
+                            onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
+                          >
+                            {opt === "Pass" ? "✓" : opt === "Fail" ? "✕" : opt === "Blocked" ? "⊘" : "○"}
+                          </button>
+                        ))}
+                      </span>
+                      <span className="step-actual-cell">
+                        <input
+                          className={missingActual ? "input-required" : ""}
+                          value={stepActuals[x.stepNo] ?? ""}
+                          onChange={(e) =>
+                            setStepActuals((s) => ({
+                              ...s,
+                              [x.stepNo]: e.target.value,
+                            }))
+                          }
+                          placeholder={requiresActual ? "ผลที่ได้จริง (บังคับกรอก) *" : "ผลที่ได้จริง / Comment"}
+                        />
+                        {status === "Fail" && (
+                          defectCodes[x.stepNo]
+                            ? <small className="step-defect-linked">Defect: {defectCodes[x.stepNo]}</small>
+                            : (
+                              <button
+                                type="button"
+                                className="step-create-defect"
+                                title="Create Defect"
+                                disabled={creatingDefectStep === x.stepNo}
+                                onClick={() => createDefectForStep(x)}
+                              >
+                                {creatingDefectStep === x.stepNo ? "..." : "+ Defect"}
+                              </button>
+                            )
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
               <div className="execution-notes">
                 <label>
-                  Actual Result
+                  Actual Result (สรุปผลที่เกิดขึ้นจริง)
                   <textarea
                     rows={3}
                     value={actual}
@@ -4693,7 +5577,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                   />
                 </label>
                 <label>
-                  Comment
+                  Comment / หมายเหตุเพิ่มเติม
                   <textarea
                     rows={3}
                     value={comment}
@@ -4702,36 +5586,46 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                   />
                 </label>
               </div>
+              {/* Action Bar (§14) — เดิมมี Pass/Fail/Blocked ให้ผู้ใช้กำหนด Overall Result เอง เอาออก
+                  หมดตาม spec เหลือ 3 ปุ่มนี้เท่านั้น */}
               <div className="execution-actions">
-                <button
-                  className="result-btn pass"
-                  disabled={saving}
-                  onClick={() => finalize("Pass")}
-                >
-                  ✓ Pass
+                <button className="btn" disabled={saving} onClick={saveProgress}>
+                  {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : "Save Progress"}
                 </button>
-                <button
-                  className="result-btn fail"
-                  disabled={saving}
-                  onClick={() => finalize("Fail")}
-                >
-                  × Fail
+                <button className="result-btn skip" disabled={saving} onClick={openSkipModal}>
+                  Skip Test Case
                 </button>
-                <button
-                  className="result-btn blocked"
-                  disabled={saving}
-                  onClick={() => finalize("Blocked")}
-                >
-                  ! Blocked
-                </button>
-                <button
-                  className="result-btn skip"
-                  disabled={saving}
-                  onClick={() => finalize("Skipped")}
-                >
-                  → Skip
+                <button className="result-btn pass" disabled={saving} onClick={completeTest}>
+                  Complete Test
                 </button>
               </div>
+              {skipModalOpen && (
+                <div className="modal" onMouseDown={() => setSkipModalOpen(false)}>
+                  <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+                    <div className="modal-head">
+                      <h2>Skip Test Case</h2>
+                      <button aria-label="ปิดหน้าต่าง" onClick={() => setSkipModalOpen(false)}>×</button>
+                    </div>
+                    <div className="form-grid">
+                      <label>
+                        Reason <span className="required">*</span>
+                        <select value={skipReason} onChange={(e) => setSkipReason(e.target.value)}>
+                          <option value="">เลือก Reason</option>
+                          {skipReasonOptions.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                        </select>
+                      </label>
+                      <label className="full">
+                        Comment
+                        <textarea rows={3} value={skipComment} onChange={(e) => setSkipComment(e.target.value)} placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)" />
+                      </label>
+                    </div>
+                    <div className="modal-actions">
+                      <button className="btn" onClick={() => setSkipModalOpen(false)}>Cancel</button>
+                      <button className="btn primary" disabled={saving || !skipReason} onClick={confirmSkip}>Confirm Skip</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </main>
           )}
           <aside className="card execution-history">
@@ -4743,19 +5637,11 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
               selected.history.map((x) => (
                 <div className="history-item" key={x.testExecutionId}>
                   <div className="history-item-head">
-                    <Badge
-                      tone={
-                        x.status === "Pass"
-                          ? "green"
-                          : x.status === "Fail"
-                            ? "red"
-                            : "yellow"
-                      }
-                    >
+                    <Badge tone={executionStatusTone(x.status)}>
                       {x.status}
                     </Badge>
                     <span className="history-run">Run #{x.executionNo}</span>
-                    <button className="history-delete" onClick={() => removeExecution(x)} title="ลบผลการทดสอบ">ลบ</button>
+                    <button className="history-delete" onClick={() => removeExecution(x)} title="ลบผลการทดสอบ"><span aria-hidden="true">✕</span> ลบ</button>
                   </div>
                   <p>{x.actualResult || "-"}</p>
                   <small>
@@ -4785,6 +5671,10 @@ type TestSuiteItem = {
   riskTier?: string;
   isActive: boolean;
   cycleCount: number;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: string;
+  modules?: { moduleId: string; moduleCode: string; moduleName: string }[];
   cases: {
     testCaseId: string;
     testCaseCode: string;
@@ -4793,45 +5683,67 @@ type TestSuiteItem = {
     sortOrder: number;
     isRequired: boolean;
   }[];
+  linkedCycles?: {
+    testCycleId: string;
+    cycleCode: string;
+    cycleName: string;
+    status: string;
+    isDeleted: boolean;
+    buildNumber?: string;
+    startDate?: string;
+    endDate?: string;
+    ownerName?: string;
+    caseCount: number;
+    executedCount: number;
+    progressPercent: number;
+  }[];
 };
 type GeneratedTestSuiteDraft={suiteName:string;suiteType:string;description:string;riskTier:string;testCases:{testCaseId:string;isRequired:boolean;reason:string}[];selectionSummary:string};
 function TestSuitesPage({
   search,
   canEdit,
   contextProjectId,
+  onOpenCycle,
+  onCreateCycle,
 }: {
   search: string;
   canEdit: boolean;
   contextProjectId?: string;
+  onOpenCycle?: (page: "test-cycles" | "execution", cycleId: string) => void;
+  onCreateCycle?: (projectId: string, testSuiteId: string) => void;
 }) {
   const masterOptions = useMasterOptions(), suiteTypes = masterOptions("TestSuiteType"), riskTiers = masterOptions("TestSuiteRiskTier");
   const [items, setItems] = useState<TestSuiteItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
     [modules, setModules] = useState<ModuleItem[]>([]),
     [testCases, setTestCases] = useState<TestCaseItem[]>([]),
+    [users, setUsers] = useState<UserLookup[]>([]),
     [reload, setReload] = useState(0),
     [form, setForm] = useState(false),
     [editing, setEditing] = useState<TestSuiteItem | null>(null),
     [managing, setManaging] = useState<TestSuiteItem | null>(null),
     [detail, setDetail] = useState<TestSuiteItem | null>(null),
+    [caseListExpanded, setCaseListExpanded] = useState(false),
     [checked, setChecked] = useState<string[]>([]),
     [saving, setSaving] = useState(false),
     [error, setError] = useState(""),
     [projectFilter, setProjectFilter] = useState(contextProjectId ?? ""),
+    [suiteModuleFilter, setSuiteModuleFilter] = useState(""),
     [typeFilter, setTypeFilter] = useState(""),
     [riskFilter, setRiskFilter] = useState(""),
+    [createdByFilter, setCreatedByFilter] = useState(currentUserId),
     [activeFilter, setActiveFilter] = useState("active"),
+    [noCycleOnly, setNoCycleOnly] = useState(false),
     [caseSearch, setCaseSearch] = useState(""),
-    [caseModuleFilter, setCaseModuleFilter] = useState(""),
     [casePriorityFilter, setCasePriorityFilter] = useState(""),
     [caseTypeFilter, setCaseTypeFilter] = useState(""),
-    [caseStatusFilter, setCaseStatusFilter] = useState(""),
     [addRequired, setAddRequired] = useState(true),
     [suiteAiModal,setSuiteAiModal]=useState(false),[suiteAiGenerating,setSuiteAiGenerating]=useState(false),[suiteAiError,setSuiteAiError]=useState(""),
     [suiteAiProjectId,setSuiteAiProjectId]=useState(""),[suiteAiModuleId,setSuiteAiModuleId]=useState(""),[suiteAiModules,setSuiteAiModules]=useState<ModuleItem[]>([]),
     [suiteAiDrafts,setSuiteAiDrafts]=useState<GeneratedTestSuiteDraft[]>([]),[suiteAiExpanded,setSuiteAiExpanded]=useState<number|undefined>(undefined);
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
+    [formModuleId, setFormModuleId] = useState(""),
     [type, setType] = useState(""),
     [risk, setRisk] = useState(""),
     [description, setDescription] = useState(""),
@@ -4841,34 +5753,61 @@ function TestSuitesPage({
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
   }), []);
+  // ปุ่ม "ลบถาวร" (พ่วงลบ Test Cycle + ประวัติ Execution ทั้งหมด) จำกัดเฉพาะ SYS_ADMIN —
+  // สิทธิ์อื่นกดปุ่มเดียวกันแล้วจะเป็นแค่ "ปิดใช้งาน" (ย้อนกลับได้ ไม่ลบข้อมูลจริง)
+  const isSysAdmin = useMemo(() => {
+    try { return (JSON.parse(localStorage.getItem("qa.user") ?? "{}") as SessionUser).roles?.includes("SYS_ADMIN") ?? false; }
+    catch { return false; }
+  }, []);
   useEffect(() => { if (contextProjectId) setProjectFilter(contextProjectId); }, [contextProjectId]);
   useEffect(() => {
     const requestHeaders = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
     Promise.all([
-      fetch(`${apiUrl}/test-suites`, { headers: requestHeaders }).then((r) =>
+      fetch(`${apiUrl}/test-suites?size=100`, { headers: requestHeaders }).then((r) =>
         r.json(),
       ),
       fetch(`${apiUrl}/projects`, { headers: requestHeaders }).then((r) =>
         r.json(),
       ),
-      fetch(`${apiUrl}/test-cases`, { headers: requestHeaders }).then((r) =>
-        r.json(),
+      fetch(`${apiUrl}/lookups/users`, { headers: requestHeaders }).then((r) =>
+        r.ok ? r.json() : [],
       ),
-    ]).then(([s, p, t]) => {
+    ]).then(([s, p, u]) => {
       setItems(Array.isArray(s) ? s : (s as any)?.rows ?? []);
       const activeProjects = (p as ProjectItem[]).filter((x) => x.isActive);
       setProjects(activeProjects);
-      setTestCases(Array.isArray(t) ? t : (t as any)?.rows ?? []);
+      setUsers(Array.isArray(u) ? u : []);
       setProjectId((current) => current || activeProjects[0]?.projectId || "");
     });
   }, [reload]);
   useEffect(() => {
-    const target = managing?.projectId ?? projectFilter ?? contextProjectId;
-    if (!target) { setModules([]); return; }
+    const target = managing?.projectId ?? (form && !editing ? projectId : null) ?? projectFilter ?? contextProjectId;
+    if (!target) { setModules([]); setTestCases([]); return; }
     fetch(`${apiUrl}/projects/${target}/modules`, { headers }).then(r => r.ok ? r.json() : []).then((rows: ModuleItem[]) => setModules(rows.filter(x => x.isActive)));
-  }, [headers, managing?.projectId, projectFilter, contextProjectId]);
+    // The test-cases endpoint caps each page at 100 — page through all of it (scoped to this one
+    // project only) so the "จัดการ Test Case" picker sees every case, without pulling every other
+    // project's test cases too (that was the main cause of this page loading slowly).
+    let cancelled = false;
+    (async () => {
+      const collected: TestCaseItem[] = [];
+      let pageNo = 1;
+      let total = Infinity;
+      while (collected.length < total) {
+        const response = await fetch(`${apiUrl}/test-cases?projectId=${target}&page=${pageNo}&size=100`, { headers });
+        if (!response.ok) break;
+        const data = await response.json();
+        const rows = Array.isArray(data) ? data : (data?.rows ?? []);
+        if (!rows.length) break;
+        collected.push(...rows);
+        total = Number(data?.total ?? rows.length);
+        pageNo += 1;
+      }
+      if (!cancelled) setTestCases(collected);
+    })();
+    return () => { cancelled = true; };
+  }, [headers, managing?.projectId, form, editing, projectId, projectFilter, contextProjectId]);
   useEffect(()=>{
     if(!suiteAiProjectId){setSuiteAiModules([]);setSuiteAiModuleId("");return;}
     fetch(`${apiUrl}/projects/${suiteAiProjectId}/modules`,{headers}).then(async response=>response.ok?response.json():Promise.reject(new Error("โหลด Module ไม่สำเร็จ"))).then((rows:ModuleItem[])=>{const active=rows.filter(x=>x.isActive);setSuiteAiModules(active);setSuiteAiModuleId(current=>active.some(x=>x.moduleId===current)?current:(active[0]?.moduleId??""));}).catch(error=>setSuiteAiError(error instanceof Error?error.message:"โหลด Module ไม่สำเร็จ"));
@@ -4883,8 +5822,19 @@ function TestSuitesPage({
       ),
     );
   }, [form, editing, projectId, projects, items]);
-  const openForm = (suite?: TestSuiteItem) => {
+  useEffect(() => {
+    // Switching the target project mid-creation invalidates any staged picks from the old project —
+    // clear them so a stale test case ID can never ride along into the wrong suite's project.
+    if (form && !editing) setChecked([]);
+  }, [form, editing, projectId]);
+  const openForm = async (suite?: TestSuiteItem) => {
     setEditing(suite ?? null);
+    setChecked([]);
+    setCaseSearch("");
+    setCasePriorityFilter("");
+    setCaseTypeFilter("");
+    setAddRequired(true);
+    setError("");
     const targetProjectId = suite?.projectId ?? projects[0]?.projectId ?? "";
     const project = projects.find((x) => x.projectId === targetProjectId);
     setCode(
@@ -4895,17 +5845,21 @@ function TestSuitesPage({
         ),
     );
     setName(suite?.suiteName ?? "");
+    setFormModuleId("");
     setType(suite?.suiteType ?? suiteTypes[0]?.value ?? "");
     setRisk(suite?.riskTier ?? riskTiers[0]?.value ?? "");
     setDescription(suite?.description ?? "");
     setProjectId(suite?.projectId ?? contextProjectId ?? projects[0]?.projectId ?? "");
     setActive(suite?.isActive ?? true);
     setForm(true);
+    // Editing an existing suite also needs its live, full case list (with current titles/order) so the
+    // case manager below can show and edit real data instead of the summary row from the list fetch.
+    setManaging(suite ? await fetchFullSuite(suite) : null);
   };
   const openSuiteAi=()=>{const targetProject=contextProjectId||projectFilter||projects[0]?.projectId||"";setSuiteAiProjectId(targetProject);setSuiteAiModuleId("");setSuiteAiError("");setSuiteAiDrafts([]);setSuiteAiExpanded(undefined);setSuiteAiModal(true);};
   const generateSuiteWithAi=async()=>{if(!suiteAiProjectId||!suiteAiModuleId)return;setSuiteAiGenerating(true);setSuiteAiError("");try{const response=await fetch(`${apiUrl}/test-suites/generate-ai`,{method:"POST",headers,body:JSON.stringify({projectId:suiteAiProjectId,moduleId:suiteAiModuleId,suiteTypes:suiteTypes.map(x=>x.value),riskTiers:riskTiers.map(x=>x.value)})});if(!response.ok){const problem=await response.json().catch(()=>null);throw new Error(problem?.detail??"AI Generate Test Suite ไม่สำเร็จ");}const drafts:GeneratedTestSuiteDraft[]=await response.json();if(!Array.isArray(drafts)||!drafts.length)throw new Error("AI ไม่ได้สร้าง Test Suite กลับมา");setSuiteAiDrafts(drafts);setSuiteAiExpanded(0);}catch(error){if(error instanceof SyntaxError)setSuiteAiError("AI ส่งข้อมูลกลับมาในรูปแบบที่ไม่ถูกต้อง กรุณาลองใหม่");else setSuiteAiError(error instanceof Error?error.message:"AI Generate Test Suite ไม่สำเร็จ");}finally{setSuiteAiGenerating(false);}};
   const removeSuiteAiDraft=(index:number)=>setSuiteAiDrafts(drafts=>{const next=drafts.filter((_,i)=>i!==index);if(next.length===0){setSuiteAiModal(false);}return next;});
-  const saveAllSuiteDrafts=async()=>{if(!suiteAiDrafts.length)return;setSuiteAiGenerating(true);setSuiteAiError("");try{let created=0;for(const draft of suiteAiDrafts){const body={code:"",name:draft.suiteName,projectId:suiteAiProjectId,moduleId:suiteAiModuleId,suiteType:draft.suiteType,riskTier:draft.riskTier,description:draft.description,isActive:true};const res=await fetch(`${apiUrl}/test-suites`,{method:"POST",headers,body:JSON.stringify(body)});if(!res.ok){const problem=await res.json().catch(()=>null);throw new Error(`สร้าง Suite "${draft.suiteName}" ไม่สำเร็จ: ${problem?.detail??""}`);}const saved:TestSuiteItem=await res.json();const required=draft.testCases.filter(x=>x.isRequired).map(x=>x.testCaseId),optional=draft.testCases.filter(x=>!x.isRequired).map(x=>x.testCaseId);for(const [ids,isRequired] of [[required,true],[optional,false]] as const){if(!ids.length)continue;const ar=await fetch(`${apiUrl}/test-suites/${saved.testSuiteId}/cases`,{method:"POST",headers,body:JSON.stringify({testCaseIds:ids,isRequired})});if(!ar.ok)throw new Error(`สร้าง "${draft.suiteName}" แล้ว แต่กำหนด Test Case ไม่สำเร็จ`);}created++;}setSuiteAiDrafts([]);setSuiteAiModal(false);setReload(x=>x+1);}catch(error){setSuiteAiError(error instanceof Error?error.message:"บันทึก Test Suite ไม่สำเร็จ");}finally{setSuiteAiGenerating(false);}};
+  const saveAllSuiteDrafts=async()=>{if(!suiteAiDrafts.length)return;setSuiteAiGenerating(true);setSuiteAiError("");try{let created=0;for(const draft of suiteAiDrafts){const body={projectId:suiteAiProjectId,suiteCode:"",suiteName:draft.suiteName,suiteType:draft.suiteType,riskTier:draft.riskTier,description:draft.description,isActive:true};const res=await fetch(`${apiUrl}/test-suites`,{method:"POST",headers,body:JSON.stringify(body)});if(!res.ok){const problem=await res.json().catch(()=>null);throw new Error(`สร้าง Suite "${draft.suiteName}" ไม่สำเร็จ: ${problem?.detail??""}`);}const saved:TestSuiteItem=await res.json();const required=draft.testCases.filter(x=>x.isRequired).map(x=>x.testCaseId),optional=draft.testCases.filter(x=>!x.isRequired).map(x=>x.testCaseId);for(const [ids,isRequired] of [[required,true],[optional,false]] as const){if(!ids.length)continue;const ar=await fetch(`${apiUrl}/test-suites/${saved.testSuiteId}/cases`,{method:"POST",headers,body:JSON.stringify({testCaseIds:ids,isRequired})});if(!ar.ok)throw new Error(`สร้าง "${draft.suiteName}" แล้ว แต่กำหนด Test Case ไม่สำเร็จ`);}created++;}setSuiteAiDrafts([]);setSuiteAiModal(false);setReload(x=>x+1);}catch(error){setSuiteAiError(error instanceof Error?error.message:"บันทึก Test Suite ไม่สำเร็จ");}finally{setSuiteAiGenerating(false);}};
   const save = async () => {
     setSaving(true);
     try {
@@ -4929,8 +5883,19 @@ function TestSuitesPage({
         const problem = await response.json();
         throw new Error(problem.detail ?? "บันทึกไม่สำเร็จ");
       }
-      await response.json();
+      const saved: TestSuiteItem = await response.json();
+      if (!editing && checked.length) {
+        // Cases staged before the suite existed get added in one batch right after creation.
+        const caseResponse = await fetch(`${apiUrl}/test-suites/${saved.testSuiteId}/cases`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ testCaseIds: checked, isRequired: addRequired }),
+        });
+        if (!caseResponse.ok) throw new Error("สร้าง Test Suite แล้ว แต่เพิ่ม Test Case ที่เลือกไว้ไม่สำเร็จ กรุณาเพิ่มอีกครั้งจากหน้าจัดการ");
+      }
       setForm(false);
+      setManaging(null);
+      setChecked([]);
       setReload((x) => x + 1);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
@@ -4974,18 +5939,17 @@ function TestSuitesPage({
     setManaging(fresh); setItems(current => current.map(x => x.testSuiteId === fresh.testSuiteId ? fresh : x)); setSaving(false);
   };
   const removeSuite = async (suite: TestSuiteItem) => {
-    if (
-      !window.confirm(
-        `ยืนยันลบ ${suite.suiteCode}? ข้อมูลประวัติเดิมจะยังคงอยู่`,
-      )
-    )
-      return;
-    const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}`, {
+    const confirmMessage = isSysAdmin
+      ? `ยืนยันลบ ${suite.suiteCode} ถาวร? การลบนี้ไม่สามารถกู้คืนได้ Test Case ที่ผูกไว้จะถูกนำออก และถ้ามี Test Cycle ผูกอยู่ ${suite.cycleCount > 0 ? `(${suite.cycleCount} รายการ) ` : ""}จะถูกลบถาวรพร้อมผล Execution/ประวัติการทดสอบทั้งหมดของ Cycle นั้นไปด้วย`
+      : `ยืนยันปิดใช้งาน ${suite.suiteCode}? Suite นี้จะไม่แสดงในรายการที่ใช้งานอยู่ (เปิดกลับมาใช้งานได้ภายหลังผ่านหน้าแก้ไข)`;
+    if (!window.confirm(confirmMessage)) return;
+    const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}${isSysAdmin ? "/hard" : ""}`, {
       method: "DELETE",
       headers,
     });
     if (!response.ok) {
-      window.alert("ลบ Test Suite ไม่สำเร็จ");
+      const problem = await response.json().catch(() => null);
+      window.alert(problem?.detail || problem?.title || `${isSysAdmin ? "ลบ" : "ปิดใช้งาน"} Test Suite ไม่สำเร็จ (${response.status})`);
       return;
     }
     setReload((x) => x + 1);
@@ -4997,38 +5961,100 @@ function TestSuitesPage({
       return full ? { ...item, ...full } : { ...item, cases: [] };
     } catch { return { ...item, cases: [] }; }
   };
-  const openSuiteDetail = async (item: TestSuiteItem) => { const full = await fetchFullSuite(item); setDetail(full); };
-  const openSuiteManaging = async (item: TestSuiteItem) => { const full = await fetchFullSuite(item); setManaging(full); setChecked([]); setCaseSearch(""); setCaseModuleFilter(""); setCasePriorityFilter(""); setCaseTypeFilter(""); setCaseStatusFilter(""); setAddRequired(true); setError(""); };
-  const rows = items.filter(
-    (x) =>
-      (!projectFilter || x.projectId === projectFilter) &&
-      (!typeFilter || x.suiteType === typeFilter) &&
-      (!riskFilter || x.riskTier === riskFilter) &&
-      (activeFilter === "all" || (activeFilter === "active" ? x.isActive : !x.isActive)) &&
-      `${x.suiteCode} ${x.suiteName} ${x.suiteType ?? ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+  const openSuiteDetail = async (item: TestSuiteItem) => { const full = await fetchFullSuite(item); setCaseListExpanded(false); setDetail(full); };
+  const downloadSuiteReport = (suite: TestSuiteItem) => {
+    const activeCycles = (suite.linkedCycles ?? []).filter(c => !c.isDeleted);
+    const rows: (string | number)[][] = [
+      ["Test Suite Report"],
+      ["Suite Code", suite.suiteCode],
+      ["Suite Name", suite.suiteName],
+      ["Type", suite.suiteType ?? "-"],
+      ["Risk Tier", suite.riskTier ?? "-"],
+      ["Status", suite.isActive ? "ใช้งาน" : "ปิดใช้งาน"],
+      ["Module", suite.modules?.length ? suite.modules.map(m => m.moduleName).join(", ") : "-"],
+      ["สร้างโดย", suite.createdByName ?? "-"],
+      ["สร้างเมื่อ", suite.createdAt ? new Date(suite.createdAt).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"],
+      [],
+      ["Test Cases", suite.cases.length],
+      ["#", "Test Case Code", "Title", "Priority", "Required"],
+      ...suite.cases.map(c => [c.sortOrder, c.testCaseCode, c.title, c.priority, c.isRequired ? "Required" : "Optional"]),
+      [],
+      ["Test Cycles", activeCycles.length],
+      ["Cycle Code", "Cycle Name", "Status", "Progress %"],
+      ...activeCycles.map(c => [c.cycleCode, c.cycleName, c.status, c.progressPercent]),
+    ];
+    const csv = "﻿" + rows.map(row => row.map(v => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = `${suite.suiteCode}-report.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+  // Split out the active/inactive condition so the status chips can each show "how many would match
+  // with every other filter applied" — same approach as the Test Cycle page's status chips.
+  const matchesOtherSuiteFilters = (x: TestSuiteItem) =>
+    (!projectFilter || x.projectId === projectFilter) &&
+    (!suiteModuleFilter || x.modules?.some((m) => m.moduleId === suiteModuleFilter)) &&
+    (!typeFilter || x.suiteType === typeFilter) &&
+    (!riskFilter || x.riskTier === riskFilter) &&
+    (!createdByFilter || x.createdBy === createdByFilter) &&
+    `${x.suiteCode} ${x.suiteName} ${x.suiteType ?? ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase());
+  const baseRows = items.filter(matchesOtherSuiteFilters);
+  const activeSuiteCount = baseRows.filter((x) => x.isActive).length;
+  const inactiveSuiteCount = baseRows.length - activeSuiteCount;
+  const statusRows = baseRows.filter(
+    (x) => activeFilter === "all" || (activeFilter === "active" ? x.isActive : !x.isActive),
   );
+  // "ยังไม่มี Test Cycle" is an orthogonal toggle (not another status partition), so its count is
+  // taken from statusRows — how many would remain if this toggle were also applied to the current view.
+  const noCycleCount = statusRows.filter((x) => x.cycleCount === 0).length;
+  const rows = statusRows.filter((x) => !noCycleOnly || x.cycleCount === 0);
+  // When editing, cases live against the already-saved suite (managing). When creating, there's no
+  // suite yet — the project comes straight from the form, and picks are staged locally in `checked`
+  // until the suite is actually created (then added in one batch right after).
+  const caseProjectId = editing ? managing?.projectId : projectId;
+  const existingCaseIds = new Set((managing?.cases ?? []).map((c) => c.testCaseId));
   const available = testCases.filter(
     (x) =>
-      managing &&
-      !managing.cases.some((c) => c.testCaseId === x.testCaseId) &&
-      x.projectId === managing.projectId,
-  ).filter(x => (!caseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseSearch.toLowerCase())) && (!caseModuleFilter || x.moduleId === caseModuleFilter) && (!casePriorityFilter || x.priority === casePriorityFilter) && (!caseTypeFilter || x.testType === caseTypeFilter) && (!caseStatusFilter || x.status === caseStatusFilter));
+      !!caseProjectId &&
+      x.projectId === caseProjectId &&
+      x.status === "Ready" && // only fully reviewed cases belong in a suite — Draft/Review/Deprecated aren't addable
+      !existingCaseIds.has(x.testCaseId) &&
+      (editing || !checked.includes(x.testCaseId)), // while creating, a staged pick moves out of "available" into the staged panel
+  ).filter(x => (!caseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseSearch.toLowerCase())) && (editing || !formModuleId || x.moduleId === formModuleId) && (!casePriorityFilter || x.priority === casePriorityFilter) && (!caseTypeFilter || x.testType === caseTypeFilter));
+  const stagedCases = testCases.filter((x) => checked.includes(x.testCaseId));
   return (
     <>
       <article className="card">
-        <div className="table-tools suite-toolbar">
-          <span>{rows.length} Test Suites</span>
-          <div className="suite-filters">
-            <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)}><option value="">ทุก Project</option>{projects.map(x => <option key={x.projectId} value={x.projectId}>{x.projectCode} · {x.projectName}</option>)}</select>
-            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">ทุก Type</option>{suiteTypes.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
-            <select value={riskFilter} onChange={e => setRiskFilter(e.target.value)}><option value="">ทุก Risk Tier</option>{riskTiers.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
-            <select value={activeFilter} onChange={e => setActiveFilter(e.target.value)}><option value="active">ใช้งาน</option><option value="inactive">ปิดใช้งาน</option><option value="all">ทุกสถานะ</option></select>
+        <div className="filter-toolbar">
+          <div className="filter-toolbar-top">
+            <div className="result-count"><strong>{rows.length.toLocaleString()}</strong><span>Test Suites</span></div>
+            {canEdit && (
+              <div className="suite-create-actions"><button className="btn ai-button" onClick={openSuiteAi}><span aria-hidden="true">✦</span> AI Generate</button><button className="btn primary" onClick={() => openForm()}>+ สร้าง Test Suite</button></div>
+            )}
           </div>
-          {canEdit && (
-            <div className="suite-create-actions"><button className="btn ai-button" onClick={openSuiteAi}><span aria-hidden="true">✦</span> AI Generate</button><button className="btn primary" onClick={() => openForm()}>+ สร้าง Test Suite</button></div>
-          )}
+          <div className="filter-toolbar-row cycle-toolbar-row">
+            <div className="cycle-status-chips" role="group" aria-label="กรองตามสถานะ">
+              <button type="button" className={"status-chip" + (activeFilter === "all" ? " active" : "")} onClick={() => setActiveFilter("all")}>
+                ทั้งหมด <b>{(activeSuiteCount + inactiveSuiteCount).toLocaleString()}</b>
+              </button>
+              <button type="button" className={"status-chip" + (activeFilter === "active" ? " active" : "")} onClick={() => setActiveFilter("active")}>
+                <i className="status-chip-dot status-chip-dot-completed" aria-hidden="true" /> ใช้งาน <b>{activeSuiteCount.toLocaleString()}</b>
+              </button>
+              <button type="button" className={"status-chip" + (activeFilter === "inactive" ? " active" : "")} onClick={() => setActiveFilter("inactive")}>
+                <i className="status-chip-dot status-chip-dot-cancelled" aria-hidden="true" /> ปิดใช้งาน <b>{inactiveSuiteCount.toLocaleString()}</b>
+              </button>
+              <button type="button" className={"status-chip" + (noCycleOnly ? " active" : "")} title="แสดงเฉพาะ Suite ที่ยังไม่ถูกนำไปสร้าง Test Cycle" onClick={() => setNoCycleOnly((v) => !v)}>
+                <i className="status-chip-dot status-chip-dot-warning" aria-hidden="true" /> ยังไม่มี Test Cycle <b>{noCycleCount.toLocaleString()}</b>
+              </button>
+            </div>
+            <div className="cycle-filters-right">
+              <select className="testcase-module-filter" value={suiteModuleFilter} onChange={e => setSuiteModuleFilter(e.target.value)} disabled={!modules.length}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}</select>
+              <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">ทุก Type</option>{suiteTypes.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
+              <select value={riskFilter} onChange={e => setRiskFilter(e.target.value)}><option value="">ทุก Risk Tier</option>{riskTiers.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
+              <select aria-label="กรองผู้สร้าง" value={createdByFilter} onChange={e => setCreatedByFilter(e.target.value)}><option value="">ผู้สร้างทั้งหมด</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
+              <select value={projectFilter} onChange={e => { setProjectFilter(e.target.value); setSuiteModuleFilter(""); }}><option value="">ทุก Project</option>{projects.map(x => <option key={x.projectId} value={x.projectId}>{x.projectCode} · {x.projectName}</option>)}</select>
+            </div>
+          </div>
         </div>
         <div className="table-wrap">
           <table className="suite-table">
@@ -5036,12 +6062,12 @@ function TestSuitesPage({
               <tr>
                 <th>Suite Code</th>
                 <th>Suite Name</th>
-                <th>Type</th>
+                <th>Module</th>
                 <th>Risk Tier</th>
-                <th>Case Count</th>
-                <th>Test Cycles</th>
+                <th>Cases / Cycles</th>
                 <th>Active</th>
-                {canEdit && <th>จัดการ</th>}
+                <th>สร้างเมื่อ</th>
+                {canEdit && <th className="actions-col">จัดการ</th>}
               </tr>
             </thead>
             <tbody>
@@ -5049,47 +6075,70 @@ function TestSuitesPage({
                 <tr key={x.testSuiteId}>
                   <td data-label="Suite Code">
                     <button className="link-button" onClick={() => openSuiteDetail(x)}>{x.suiteCode}</button>
+                    {x.suiteType && <small className="cell-sub">{x.suiteType}</small>}
                   </td>
                   <td data-label="Suite Name">{x.suiteName}</td>
-                  <td data-label="Type">{x.suiteType ?? "-"}</td>
+                  <td data-label="Module">
+                    {x.modules?.length
+                      ? <div className="role-tags" title={x.modules.map(m => m.moduleName).join(", ")}>
+                          {x.modules.slice(0, 2).map((m) => <span key={m.moduleId}>{m.moduleName}</span>)}
+                          {x.modules.length > 2 && <span className="role-tags-more">+{x.modules.length - 2}</span>}
+                        </div>
+                      : "-"}
+                  </td>
                   <td data-label="Risk Tier">
                     <Badge tone={x.riskTier === "P0" ? "red" : "yellow"}>
                       {x.riskTier ?? "-"}
                     </Badge>
                   </td>
-                  <td data-label="Case Count">{(x as any).cases?.length ?? (x as any).caseCount ?? 0}</td>
-                  <td data-label="Test Cycles">{x.cycleCount}</td>
+                  <td data-label="Cases / Cycles">
+                    {(x as any).cases?.length ?? (x as any).caseCount ?? 0} Cases
+                    {x.cycleCount === 0
+                      ? <small className="cell-sub cell-sub-warning"><span aria-hidden="true">⚠</span> ยังไม่มี Cycle</small>
+                      : <small className="cell-sub">{x.cycleCount} Cycles</small>}
+                  </td>
                   <td data-label="Status">
                     <Badge tone={x.isActive ? "green" : "red"}>
                       {x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}
                     </Badge>
                   </td>
+                  <td data-label="สร้างเมื่อ">{fmtDateTimeBE(x.createdAt)}</td>
                   {canEdit && (
-                    <td data-label="จัดการ">
+                    <td data-label="จัดการ" className="actions-col">
                       <div className="row-actions">
                         <button
-                          className="table-action"
+                          className="table-action icon-only"
+                          title="รายละเอียด"
+                          aria-label={`ดูรายละเอียด ${x.suiteCode}`}
                           onClick={() => openSuiteDetail(x)}
                         >
-                          รายละเอียด
+                          <span aria-hidden="true">i</span>
                         </button>
                         <button
-                          className="table-action"
+                          className="table-action icon-only"
+                          title="แก้ไข / จัด Test Case"
+                          aria-label={`แก้ไขหรือจัดการ Test Case ของ ${x.suiteCode}`}
                           onClick={() => openForm(x)}
                         >
-                          แก้ไข
+                          <span aria-hidden="true">✎</span>
                         </button>
+                        {onCreateCycle && x.isActive && (
+                          <button
+                            className="table-action icon-only"
+                            title="สร้าง Test Cycle จาก Suite นี้"
+                            aria-label={`สร้าง Test Cycle จาก ${x.suiteCode}`}
+                            onClick={() => onCreateCycle(x.projectId, x.testSuiteId)}
+                          >
+                            <span aria-hidden="true">+</span>
+                          </button>
+                        )}
                         <button
-                          className="table-action"
-                          onClick={() => openSuiteManaging(x)}
-                        >
-                          จัด Test Case
-                        </button>
-                        <button
-                          className="table-action danger-action"
+                          className={isSysAdmin ? "table-action danger-action icon-only" : "table-action icon-only"}
+                          title={isSysAdmin ? "ลบถาวร" : "ปิดใช้งาน"}
+                          aria-label={`${isSysAdmin ? "ลบถาวร" : "ปิดใช้งาน"} ${x.suiteCode}`}
                           onClick={() => removeSuite(x)}
                         >
-                          ลบ
+                          <span aria-hidden="true">{isSysAdmin ? "✕" : "⏻"}</span>
                         </button>
                       </div>
                     </td>
@@ -5100,71 +6149,231 @@ function TestSuitesPage({
           </table>
         </div>
       </article>
-      {suiteAiModal&&<div className="modal" onMouseDown={()=>!suiteAiGenerating&&setSuiteAiModal(false)}><div className="modal-box requirement-ai-modal suite-ai-modal" role="dialog" aria-modal="true" aria-labelledby="suite-ai-title" onMouseDown={event=>event.stopPropagation()} style={{position:"relative"}}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}>×</button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(suiteAiModules)}</select></label></div><div className="ai-draft-note"><span aria-hidden="true">i</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<div className="requirement-ai-actions"><small>{testCases.filter(testCase=>testCase.moduleId===suiteAiModuleId&&testCase.status!=="Deprecated").length} Test Cases พร้อมวิเคราะห์</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}>ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}>สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</div></div>}
+      {suiteAiModal&&<div className="modal" onMouseDown={()=>!suiteAiGenerating&&setSuiteAiModal(false)}><div className="modal-box requirement-ai-modal suite-ai-modal" role="dialog" aria-modal="true" aria-labelledby="suite-ai-title" onMouseDown={event=>event.stopPropagation()} style={{position:"relative"}}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}>×</button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(suiteAiModules)}</select></label></div><div className="ai-draft-note"><span aria-hidden="true">i</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<div className="requirement-ai-actions"><small>{testCases.filter(testCase=>testCase.moduleId===suiteAiModuleId&&testCase.status!=="Deprecated").length} Test Cases พร้อมวิเคราะห์</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}><span aria-hidden="true">↻</span> สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</div></div>}
       {form && (
         <div className="modal" onMouseDown={() => setForm(false)}>
-          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h2>{editing ? "แก้ไข" : "สร้าง"} Test Suite</h2>
-              <button onClick={() => setForm(false)}>×</button>
+          <div className="modal-box suite-editor" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head suite-editor-head">
+              <div>
+                <span className="suite-editor-eyebrow">{editing ? "แก้ไข Test Suite" : "สร้าง Test Suite"}</span>
+                <h2>{editing ? `${editing.suiteCode} · ${editing.suiteName}` : "กำหนดข้อมูลและเลือก Test Case ในหน้าเดียว"}</h2>
+              </div>
+              <button aria-label="ปิดหน้าต่าง" onClick={() => setForm(false)}>×</button>
             </div>
-            <div className="form-grid">
-              <label>
-                Project
-                <select
-                  value={projectId}
-                  disabled={Boolean(editing)}
-                  onChange={(e) => setProjectId(e.target.value)}
-                >
-                  {projects.map((x) => (
-                    <option key={x.projectId} value={x.projectId}>
-                      {x.projectName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Suite Code
-                <input
-                  disabled
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-              </label>
-              <label className="full">
-                Suite Name
-                <input value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-              <label>
-                Type
-                <select value={type} onChange={(e) => setType(e.target.value)}>
-                  {masterOptionElements(suiteTypes, type)}
-                </select>
-              </label>
-              <label>
-                Risk Tier
-                <select value={risk} onChange={(e) => setRisk(e.target.value)}>
-                  {masterOptionElements(riskTiers, risk)}
-                </select>
-              </label>
-              <label className="full">
-                รายละเอียด
-                <textarea
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </label>
-              {editing && (
-                <label className="full check-line">
-                  <input
-                    type="checkbox"
-                    checked={active}
-                    onChange={(e) => setActive(e.target.checked)}
-                  />{" "}
-                  เปิดใช้งาน
-                </label>
-              )}
+            {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+            <div className="suite-editor-body">
+              <section className="suite-editor-meta">
+                <div className="form-grid">
+                  <label className="full">
+                    Suite Name <span className="required">*</span>
+                    <input value={name} onChange={(e) => setName(e.target.value)} />
+                  </label>
+                  <label>
+                    Project
+                    <select
+                      value={projectId}
+                      disabled={Boolean(editing)}
+                      onChange={(e) => setProjectId(e.target.value)}
+                    >
+                      {projects.map((x) => (
+                        <option key={x.projectId} value={x.projectId}>
+                          {x.projectName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Suite Code
+                    <input
+                      disabled
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                    />
+                  </label>
+                  {!editing && (
+                    <label>
+                      Module <span className="required">*</span>
+                      <select
+                        className="testcase-module-filter"
+                        value={formModuleId}
+                        disabled={!modules.length}
+                        required
+                        onChange={(e) => {
+                          const nextModuleId = e.target.value;
+                          setFormModuleId(nextModuleId);
+                          const nextModule = modules.find((m) => m.moduleId === nextModuleId);
+                          setName((current) => {
+                            const stripped = modules.reduce((acc, m) => acc.startsWith(`${m.moduleName}-`) ? acc.slice(m.moduleName.length + 1) : acc, current);
+                            return nextModule ? `${nextModule.moduleName}-${stripped}` : stripped;
+                          });
+                        }}
+                      >
+                        <option value="">เลือก Module</option>
+                        {renderModuleSelectOptions(modules)}
+                      </select>
+                    </label>
+                  )}
+                  <label>
+                    Type
+                    <select value={type} onChange={(e) => setType(e.target.value)}>
+                      {masterOptionElements(suiteTypes, type)}
+                    </select>
+                  </label>
+                  <label>
+                    Risk Tier
+                    <select value={risk} onChange={(e) => setRisk(e.target.value)}>
+                      {masterOptionElements(riskTiers, risk)}
+                    </select>
+                  </label>
+                  <label className="full">
+                    รายละเอียด
+                    <textarea
+                      rows={2}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                    />
+                  </label>
+                  {editing && (
+                    <label className="full check-line">
+                      <input
+                        type="checkbox"
+                        checked={active}
+                        onChange={(e) => setActive(e.target.checked)}
+                      />{" "}
+                      เปิดใช้งาน
+                    </label>
+                  )}
+                </div>
+              </section>
+              <section className="suite-editor-cases">
+                <div className="suite-case-toolbar">
+                  <div className="suite-case-search">
+                    <span aria-hidden="true">⌕</span>
+                    <input value={caseSearch} onChange={e => setCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." />
+                  </div>
+                  <select value={casePriorityFilter} onChange={e => setCasePriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(testCases.map(x => x.priority))].map(x => <option key={x}>{x}</option>)}</select>
+                  <select value={caseTypeFilter} onChange={e => setCaseTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(testCases.map(x => x.testType).filter(Boolean))].map(x => <option key={x} value={x}>{x}</option>)}</select>
+                  <small className="suite-case-toolbar-note"><span aria-hidden="true">✓</span> เฉพาะสถานะ Ready</small>
+                </div>
+                <div className="suite-columns">
+                  <section className="suite-panel">
+                    <div className="suite-panel-head">
+                      <h3><span aria-hidden="true">▤</span> {editing ? "Test Case ในชุด" : "Test Case ที่จะเพิ่ม"}</h3>
+                      <span className="suite-panel-count">{editing ? managing?.cases.length ?? 0 : checked.length}</span>
+                    </div>
+                    <div className="suite-panel-body">
+                      {editing ? (
+                        managing && managing.cases.length ? (
+                          managing.cases.map((x, index) => (
+                            <div className="suite-case" key={x.testCaseId}>
+                              <span className="suite-case-order">{x.sortOrder}</span>
+                              <span className="suite-case-info">
+                                <b>{x.testCaseCode}</b>
+                                <small>{x.title}</small>
+                              </span>
+                              <Badge tone={x.isRequired ? "blue" : "yellow"}>{x.isRequired ? "Required" : "Optional"}</Badge>
+                              <div className="suite-case-actions">
+                                <button disabled={saving || index === 0} title="เลื่อนขึ้น" onClick={() => updateCase(managing, x.testCaseId, managing.cases[index - 1]?.sortOrder ?? x.sortOrder, x.isRequired)}>↑</button>
+                                <button disabled={saving || index === managing.cases.length - 1} title="เลื่อนลง" onClick={() => updateCase(managing, x.testCaseId, managing.cases[index + 1]?.sortOrder ?? x.sortOrder, x.isRequired)}>↓</button>
+                                <button className="requirement-toggle" disabled={saving} onClick={() => updateCase(managing, x.testCaseId, x.sortOrder, !x.isRequired)}>{x.isRequired ? "Required" : "Optional"}</button>
+                              </div>
+                              <button
+                                className="suite-case-remove"
+                                title="นำออกจาก Suite"
+                                aria-label={`นำ ${x.testCaseCode} ออกจาก Suite`}
+                                onClick={() =>
+                                  removeCase(managing.testSuiteId, x.testCaseId)
+                                }
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="suite-panel-empty">
+                            <span aria-hidden="true">▢</span>
+                            <p>ยังไม่มี Test Case ในชุดนี้</p>
+                          </div>
+                        )
+                      ) : stagedCases.length ? (
+                        stagedCases.map((x) => (
+                          <div className="suite-case" key={x.testCaseId}>
+                            <span className="suite-case-info">
+                              <b>{x.testCaseCode}</b>
+                              <small>{x.title}</small>
+                            </span>
+                            <Badge tone={x.priority === "P0" || x.priority === "P1" ? "red" : "blue"}>{x.priority}</Badge>
+                            <button
+                              className="suite-case-remove"
+                              title="เอาออกจากรายการที่จะเพิ่ม"
+                              aria-label={`เอา ${x.testCaseCode} ออกจากรายการที่จะเพิ่ม`}
+                              onClick={() => setChecked((c) => c.filter((id) => id !== x.testCaseId))}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="suite-panel-empty">
+                          <span aria-hidden="true">▢</span>
+                          <p>ยังไม่ได้เลือก Test Case — เลือกจากรายการด้านขวา</p>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                  <section className="suite-panel">
+                    <div className="suite-panel-head">
+                      <h3><span aria-hidden="true">+</span> Test Case ที่เพิ่มได้</h3>
+                      <span className="suite-panel-count">{available.length}</span>
+                      <div className="suite-panel-head-actions">
+                        <button className="table-action" disabled={!available.length} onClick={() => setChecked((c) => [...new Set([...c, ...available.map(x => x.testCaseId)])])}><span aria-hidden="true">☑</span> เลือกทั้งหมด</button>
+                        <button className="table-action" disabled={!checked.length} onClick={() => setChecked([])}><span aria-hidden="true">✕</span> ล้าง</button>
+                      </div>
+                    </div>
+                    <div className="suite-panel-body">
+                      {available.length ? available.map((x) => (
+                        <label className={`suite-case selectable${checked.includes(x.testCaseId) ? " is-checked" : ""}`} key={x.testCaseId}>
+                          <input
+                            type="checkbox"
+                            checked={checked.includes(x.testCaseId)}
+                            onChange={(e) =>
+                              setChecked((c) =>
+                                e.target.checked
+                                  ? [...c, x.testCaseId]
+                                  : c.filter((id) => id !== x.testCaseId),
+                              )
+                            }
+                          />
+                          <span className="suite-case-info">
+                            <b>{x.testCaseCode}</b>
+                            <small>{x.title}</small>
+                          </span>
+                          <Badge tone={x.priority === "P0" || x.priority === "P1" ? "red" : "blue"}>{x.priority}</Badge>
+                        </label>
+                      )) : (
+                        <div className="suite-panel-empty">
+                          <span aria-hidden="true">◎</span>
+                          <p>{caseProjectId ? "ไม่พบ Test Case ที่ตรงกับตัวกรอง" : "เลือก Project ก่อนเพื่อดู Test Case ที่เพิ่มได้"}</p>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+                <div className="suite-editor-case-actions">
+                  <label className="suite-required-choice"><input type="checkbox" checked={addRequired} onChange={e => setAddRequired(e.target.checked)} /> เพิ่มเป็น Required</label>
+                  {editing ? (
+                    <button
+                      className="btn primary"
+                      onClick={addCases}
+                      disabled={saving || !checked.length}
+                    >
+                      {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">+</span> เพิ่ม {checked.length} รายการเข้าชุด</>}
+                    </button>
+                  ) : checked.length > 0 && (
+                    <small className="suite-editor-staged-hint">จะเพิ่ม {checked.length} Test Case ทันทีที่กด "สร้าง Test Suite"</small>
+                  )}
+                </div>
+              </section>
             </div>
             <div className="modal-actions">
               <button className="btn" onClick={() => setForm(false)}>
@@ -5172,103 +6381,113 @@ function TestSuitesPage({
               </button>
               <button
                 className="btn primary"
-                disabled={saving || !projectId || !code.trim() || !name.trim()}
+                disabled={saving || !projectId || !code.trim() || !name.trim() || (!editing && !formModuleId)}
                 onClick={save}
               >
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : editing ? <><span aria-hidden="true">✓</span> บันทึก</> : checked.length ? <><span aria-hidden="true">+</span> สร้าง Test Suite + {checked.length} Test Case</> : <><span aria-hidden="true">+</span> สร้าง Test Suite</>}
               </button>
             </div>
           </div>
         </div>
       )}
-      {managing && (
-        <div className="modal" onMouseDown={() => setManaging(null)}>
-          <div
-            className="modal-box suite-editor"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="modal-head">
-              <div>
-                <h2>จัด Test Case</h2>
-                <small>
-                  {managing.suiteCode} · {managing.suiteName}
-                </small>
+      {detail && (() => {
+        const activeLinkedCycles = (detail.linkedCycles ?? []).filter(c => !c.isDeleted);
+        const totalCycleCases = activeLinkedCycles.reduce((sum, c) => sum + c.caseCount, 0);
+        const totalCycleExecuted = activeLinkedCycles.reduce((sum, c) => sum + c.executedCount, 0);
+        const cyclesProgressPercent = totalCycleCases ? Math.round((totalCycleExecuted * 100) / totalCycleCases) : 0;
+        const visibleCases = caseListExpanded ? detail.cases : detail.cases.slice(0, 5);
+        return (
+          <div className="modal" role="presentation" onMouseDown={() => setDetail(null)}>
+            <div className="modal-box cycle-modal cycle-detail-modal suite-detail" role="dialog" aria-modal="true" aria-labelledby="suite-detail-title" onMouseDown={e => e.stopPropagation()}>
+              <div className="modal-head">
+                <div className="modal-head-title-group">
+                  <button className="modal-back-btn" aria-label="ปิดรายละเอียด Test Suite" onClick={() => setDetail(null)}>←</button>
+                  <div><span className="cycle-detail-eyebrow">TEST SUITE</span><h2 id="suite-detail-title">{detail.suiteCode}</h2><small>{projects.find(x => x.projectId === detail.projectId)?.projectName ?? "-"}</small></div>
+                </div>
+                <button aria-label="ปิดรายละเอียด Test Suite" onClick={() => setDetail(null)}>×</button>
               </div>
-              <button onClick={() => setManaging(null)}>×</button>
-            </div>
-            {error && <div className="inline-error">{error}</div>}
-            <div className="suite-case-toolbar">
-              <input value={caseSearch} onChange={e => setCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." />
-              <select value={caseModuleFilter} onChange={e => setCaseModuleFilter(e.target.value)}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}</select>
-              <select value={casePriorityFilter} onChange={e => setCasePriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(testCases.map(x => x.priority))].map(x => <option key={x}>{x}</option>)}</select>
-              <select value={caseTypeFilter} onChange={e => setCaseTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(testCases.map(x => x.testType).filter(Boolean))].map(x => <option key={x} value={x}>{x}</option>)}</select>
-              <select value={caseStatusFilter} onChange={e => setCaseStatusFilter(e.target.value)}><option value="">ทุก Status</option>{[...new Set(testCases.map(x => x.status))].map(x => <option key={x}>{x}</option>)}</select>
-            </div>
-            <div className="suite-columns">
-              <section>
-                <h3>Test Case ในชุด ({managing.cases.length})</h3>
-                {managing.cases.length ? (
-                  managing.cases.map((x, index) => (
-                    <div className="suite-case" key={x.testCaseId}>
-                      <span>
-                        <b>{x.testCaseCode}</b>
-                        <small>{x.title}</small>
-                        <small>ลำดับ {x.sortOrder} · {x.isRequired ? "Required" : "Optional"}</small>
-                      </span>
-                      <div className="suite-case-actions"><button disabled={saving || index === 0} title="เลื่อนขึ้น" onClick={() => updateCase(managing, x.testCaseId, managing.cases[index - 1]?.sortOrder ?? x.sortOrder, x.isRequired)}>↑</button><button disabled={saving || index === managing.cases.length - 1} title="เลื่อนลง" onClick={() => updateCase(managing, x.testCaseId, managing.cases[index + 1]?.sortOrder ?? x.sortOrder, x.isRequired)}>↓</button><button className="requirement-toggle" disabled={saving} onClick={() => updateCase(managing, x.testCaseId, x.sortOrder, !x.isRequired)}>{x.isRequired ? "Required" : "Optional"}</button></div>
-                      <button
-                        onClick={() =>
-                          removeCase(managing.testSuiteId, x.testCaseId)
-                        }
-                      >
-                        นำออก
+              <section className="cycle-detail-hero">
+                <div className="suite-detail-hero-text">
+                  <span className="suite-detail-hero-icon" aria-hidden="true">✓</span>
+                  <div><h3>{detail.suiteName}</h3><p>{detail.description || "ไม่มีรายละเอียด"}</p></div>
+                </div>
+                <div className="cycle-detail-badges">
+                  <Badge tone={detail.isActive ? "green" : "red"}>{detail.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</Badge>
+                  {detail.suiteType && <Badge tone="blue">{detail.suiteType}</Badge>}
+                  {detail.riskTier && <Badge tone={detail.riskTier === "P0" ? "red" : "yellow"}>{detail.riskTier}</Badge>}
+                </div>
+              </section>
+              <div className="admin-stats-row suite-detail-stats">
+                <div className="admin-stat-card"><span className="admin-stat-icon blue" aria-hidden="true">&#x1F4C4;</span><div><b>{detail.cases.length}</b><small>Test Cases ทั้งหมด</small></div></div>
+                <div className="admin-stat-card"><span className="admin-stat-icon purple" aria-hidden="true">&#x2611;&#xFE0F;</span><div><b>{detail.cases.filter(c => c.isRequired).length}</b><small>Required</small></div></div>
+                <div className="admin-stat-card"><span className="admin-stat-icon green" aria-hidden="true">&#x1F504;</span><div><b>{activeLinkedCycles.length}</b><small>Test Cycle</small></div></div>
+                <div className="admin-stat-card"><span className="admin-stat-icon orange" aria-hidden="true">&#x1F4CA;</span><div><b>{cyclesProgressPercent}%</b><small>ความคืบหน้า</small></div></div>
+              </div>
+              <section className="cycle-detail-section">
+                <h3><span aria-hidden="true">ℹ</span> ข้อมูลทั่วไป</h3>
+                <div className="suite-info-cards">
+                  <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">M</span> Module</span><b>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</b></div>
+                  <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">U</span> สร้างโดย</span><b>{detail.createdByName || "-"}</b></div>
+                  <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">D</span> สร้างเมื่อ</span><b>{detail.createdAt ? new Date(detail.createdAt).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</b></div>
+                </div>
+              </section>
+              <div className="suite-detail-split">
+                <section className="cycle-detail-section">
+                  <h3>Test Cycles ทั้งหมด ({activeLinkedCycles.length})</h3>
+                  <div className="suite-cycle-cards">
+                    {activeLinkedCycles.length ? activeLinkedCycles.map(c => (
+                      <div className="suite-cycle-card" key={c.testCycleId}>
+                        <div className="suite-cycle-card-head">
+                          <b>{c.cycleCode}</b>
+                          <Badge tone={c.status === "Completed" || c.status === "Closed" ? "green" : c.status === "Cancelled" ? "red" : "yellow"}>{c.status}</Badge>
+                        </div>
+                        <p className="suite-cycle-card-sub">{c.cycleName}{c.buildNumber ? ` · Build ${c.buildNumber}` : ""}</p>
+                        <div className="suite-cycle-card-meta">
+                          <div><span aria-hidden="true">S</span><span><small>เริ่มต้น</small><b>{c.startDate ? new Date(c.startDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "-"}</b></span></div>
+                          <div><span aria-hidden="true">E</span><span><small>สิ้นสุด</small><b>{c.endDate ? new Date(c.endDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "-"}</b></span></div>
+                        </div>
+                        <div className="suite-cycle-card-owner"><span aria-hidden="true">U</span><span><small>ผู้ดำเนินการ</small><b>{c.ownerName || "-"}</b></span></div>
+                        <div className="suite-cycle-card-progress">
+                          <div className="suite-cycle-card-progress-head"><span>ความคืบหน้า</span><b>{c.progressPercent}%</b></div>
+                          <div className="suite-cycle-card-progress-track"><span style={{ width: `${Math.min(100, Math.max(0, c.progressPercent))}%` }} /></div>
+                        </div>
+                        {onOpenCycle && <button className="btn" onClick={() => { setDetail(null); onOpenCycle("test-cycles", c.testCycleId); }}><span aria-hidden="true">⤢</span> ดูรายละเอียด Test Cycle</button>}
+                      </div>
+                    )) : <p className="muted-text">ยังไม่มี Test Cycle ผูกกับ Suite นี้</p>}
+                  </div>
+                  {!!detail.linkedCycles?.some(c => c.isDeleted) && (
+                    <p className="muted-text">มี Test Cycle ที่ถูกลบไปแล้ว {detail.linkedCycles.filter(c => c.isDeleted).length} รายการ (ไม่แสดงในนี้)</p>
+                  )}
+                </section>
+                <section className="cycle-detail-section">
+                  <div className="cycle-detail-section-head">
+                    <h3>Test Cases ({detail.cases.length})</h3>
+                    {detail.cases.length > 5 && (
+                      <button className="link-button" onClick={() => setCaseListExpanded(v => !v)}>
+                        {caseListExpanded ? "ย่อรายการ" : "ดูทั้งหมด"} <span aria-hidden="true">→</span>
                       </button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="muted-text">ยังไม่มี Test Case</p>
-                )}
-              </section>
-              <section>
-                <div className="suite-available-head"><h3>Test Case ที่เพิ่มได้ ({available.length})</h3><div><button className="table-action" onClick={() => setChecked(available.map(x => x.testCaseId))}>เลือกทั้งหมด</button><button className="table-action" onClick={() => setChecked([])}>ล้าง</button></div></div>
-                {available.map((x) => (
-                  <label className="suite-case selectable" key={x.testCaseId}>
-                    <input
-                      type="checkbox"
-                      checked={checked.includes(x.testCaseId)}
-                      onChange={(e) =>
-                        setChecked((c) =>
-                          e.target.checked
-                            ? [...c, x.testCaseId]
-                            : c.filter((id) => id !== x.testCaseId),
-                        )
-                      }
-                    />
-                    <span>
-                      <b>{x.testCaseCode}</b>
-                      <small>{x.title}</small>
-                    </span>
-                  </label>
-                ))}
-              </section>
-            </div>
-            <div className="modal-actions">
-              <label className="suite-required-choice"><input type="checkbox" checked={addRequired} onChange={e => setAddRequired(e.target.checked)} /> เพิ่มเป็น Required</label>
-              <button className="btn" onClick={() => setManaging(null)}>
-                ปิด
-              </button>
-              <button
-                className="btn primary"
-                onClick={addCases}
-                disabled={saving || !checked.length}
-              >
-                เพิ่ม {checked.length} รายการ
-              </button>
+                    )}
+                  </div>
+                  <div className="suite-detail-cases">
+                    {visibleCases.length ? visibleCases.map(x => (
+                      <div key={x.testCaseId}>
+                        <span><b>{x.sortOrder}. {x.testCaseCode}</b><small>{x.title}</small></span>
+                        <Badge tone={x.isRequired ? "blue" : "yellow"}>{x.isRequired ? "Required" : "Optional"}</Badge>
+                      </div>
+                    )) : <p className="muted-text">ยังไม่มี Test Case ในชุดนี้</p>}
+                  </div>
+                </section>
+              </div>
+              <div className="modal-actions">
+                <button className="btn suite-detail-download" onClick={() => downloadSuiteReport(detail)}><span aria-hidden="true">⤓</span> ดาวน์โหลดรายงาน</button>
+                <button className="btn" onClick={() => setDetail(null)}><span aria-hidden="true">✕</span> ยกเลิก</button>
+                {onCreateCycle && detail.isActive && <button className="btn" onClick={() => onCreateCycle(detail.projectId, detail.testSuiteId)}><span aria-hidden="true">+</span> สร้าง Test Cycle</button>}
+                {canEdit && <button className="btn primary" onClick={() => { const suite = detail; setDetail(null); openForm(suite); }}><span aria-hidden="true">✎</span> แก้ไข</button>}
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      {detail && <div className="modal" onMouseDown={() => setDetail(null)}><div className="modal-box suite-detail" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>{detail.suiteCode}</h2><small>{projects.find(x => x.projectId === detail.projectId)?.projectName ?? "-"}</small></div><button onClick={() => setDetail(null)}>×</button></div><h3>{detail.suiteName}</h3><p className="muted-text">{detail.description || "ไม่มีรายละเอียด"}</p><div className="detail-grid"><span>Type<b>{detail.suiteType || "-"}</b></span><span>Risk Tier<b>{detail.riskTier || "-"}</b></span><span>Status<b>{detail.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</b></span><span>Test Cycles<b>{detail.cycleCount}</b></span></div><h3>Test Cases ({detail.cases.length})</h3><div className="suite-detail-cases">{detail.cases.map(x => <div key={x.testCaseId}><span><b>{x.sortOrder}. {x.testCaseCode}</b><small>{x.title}</small></span><Badge tone={x.isRequired ? "blue" : "yellow"}>{x.isRequired ? "Required" : "Optional"}</Badge></div>)}</div><div className="modal-actions"><button className="btn primary" onClick={() => setDetail(null)}>ปิด</button></div></div></div>}
+        );
+      })()}
     </>
   );
 }
@@ -5290,42 +6509,116 @@ type AdminRole = {
   permissions: string[];
 };
 
-type MyWorkRow = { testCycleCaseId: string; testCaseId?: string; testCaseCode: string; title: string; moduleId?: string; priority?: string; testType?: string; testCycleId?: string; cycleCode?: string; currentStatus: string; assignmentStatus: string; dueDate?: string; estimatedMinutesSnapshot?: number; assignedAt?: string };
-function MyWorkPage({ onOpenExecution }: { onOpenExecution: (cycleId: string) => void }) {
-  const [rows, setRows] = useState<MyWorkRow[]>([]);
-  const [filter, setFilter] = useState("All");
-  const [sortBy, setSortBy] = useState<"priority" | "dueDate">("priority");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);  const [loading, setLoading] = useState(true);
+function MyWorkPage({ user, onOpenExecution, onNavigate }: { user: SessionUser | null; onOpenExecution: (cycleId: string) => void; onNavigate: (page: Page) => void }) {
+  const initials = (user?.displayName ?? user?.username ?? "?").trim().split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  useEffect(() => { setLoading(true); fetch(`${apiUrl}/my-work`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } }).then((r) => { if (!r.ok) throw new Error(r.status === 403 ? "ไม่มีสิทธิ์เข้าถึง My Work" : `โหลด My Work ไม่สำเร็จ (${r.status})`); return r.json(); }).then((data) => setRows(Array.isArray(data?.rows) ? data.rows : [])).catch((e) => setError(e instanceof Error ? e.message : "โหลด My Work ไม่สำเร็จ")).finally(() => setLoading(false)); }, []);
-  const filtered = rows.filter((x) => {
-    if (["All", "NotRun", "InProgress", "Pass", "Fail", "Blocked"].includes(filter)) return filter === "All" || x.currentStatus === filter;
-    const due = x.dueDate ? new Date(x.dueDate) : null;
-    return filter === "Today" ? !!due && due.toDateString() === new Date().toDateString() : filter === "Overdue" ? !!due && due < new Date() && x.currentStatus !== "Pass" : true;
-  });
-  const priorityRank: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
-  const sorted = [...filtered].sort((a, b) => sortBy === "priority" ? (priorityRank[a.priority ?? ""] ?? 9) - (priorityRank[b.priority ?? ""] ?? 9) : (a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER) - (b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER));
-  const priorityCase = [...rows].sort((a, b) => (priorityRank[a.priority ?? ""] ?? 9) - (priorityRank[b.priority ?? ""] ?? 9) || (a.dueDate ? new Date(a.dueDate).getTime() : Number.MAX_SAFE_INTEGER) - (b.dueDate ? new Date(b.dueDate).getTime() : Number.MAX_SAFE_INTEGER))[0];
-  const count = (status: string) => rows.filter((x) => x.currentStatus === status).length;
-  const changeAssignment = async (row: MyWorkRow, action: "accept" | "start") => {
-    const response = await fetch(`${apiUrl}/test-cycle-cases/${row.testCycleCaseId}/${action}`, { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
-    if (response.ok) setRows((current) => current.map((item) => item.testCycleCaseId === row.testCycleCaseId ? { ...item, assignmentStatus: action === "start" ? "InProgress" : "Accepted", currentStatus: action === "start" ? "InProgress" : item.currentStatus } : item));
-    else window.alert(`ไม่สามารถ${action === "accept" ? "รับงาน" : "เริ่มงาน"}ได้`);
-  };
-  const bulkAssignment = async (action: "accept" | "start") => {
-    const targets = rows.filter((row) => selectedIds.includes(row.testCycleCaseId));
-    await Promise.all(targets.map((row) => changeAssignment(row, action)));
-    setSelectedIds([]);
-  };
-  const runSelected = () => {
-    const targets = rows.filter((row) => selectedIds.includes(row.testCycleCaseId));
-    const cycleIds = [...new Set(targets.map((row) => row.testCycleId).filter((id): id is string => !!id))];
-    if (cycleIds.length === 1) onOpenExecution(cycleIds[0]);
-    else if (cycleIds.length > 1) window.alert("เลือกงานใน Test Cycle เดียวกันก่อนเปิดการทำงาน");
-  };
-  if (loading) return <div className="my-work-page"><div className="card empty-state">กำลังโหลด My Work...</div></div>;
-  if (error) return <div className="my-work-page"><div className="card empty-state error-state">{error}</div></div>;
-  return <div className="my-work-page"><div className="page-heading"><div><h1>My Work</h1><p>งานที่มอบหมายให้ผู้ใช้ปัจจุบัน</p></div><span>อัปเดตจากข้อมูลจริง</span></div><div className="my-work-priority card"> <div><small>Current Priority</small><h2>{priorityCase?.testCaseCode ?? "No priority case"}</h2><p>{priorityCase?.title ?? "No assigned case"}</p>{priorityCase && <span>{priorityCase.priority ?? "-"} · {priorityCase.currentStatus}</span>}</div>{priorityCase?.testCycleId && <button className="btn primary" onClick={() => onOpenExecution(priorityCase.testCycleId!)}>Run Test Case</button>}</div><div className="my-work-metrics"><div><b>{rows.length}</b><span>Assigned</span></div><div><b>{count("InProgress")}</b><span>In Progress</span></div><div><b>{count("Pass")}</b><span>Completed</span></div><div><b>{count("Fail")}</b><span>Fail / Retest</span></div><div><b>{rows.filter((x) => x.dueDate && new Date(x.dueDate) < new Date() && x.currentStatus !== "Pass").length}</b><span>Overdue</span></div></div><section className="card my-work-card"><div className="card-title"><div><h2>งานของฉัน</h2><p>รายการ Test Case ที่ Assign ให้ฉัน</p></div><label className="my-work-sort">Sort by <select value={sortBy} onChange={(e) => setSortBy(e.target.value as "priority" | "dueDate")}><option value="priority">Priority</option><option value="dueDate">Due Date</option></select></label></div><div className="my-work-bulk"><button className="btn" onClick={() => setSelectedIds(sorted.map((x) => x.testCycleCaseId))}>Select all</button><button className="btn" onClick={() => setSelectedIds([])}>Clear</button><button className="btn" disabled={!selectedIds.length} onClick={() => bulkAssignment("accept")}>Accept selected</button><button className="btn primary" disabled={!selectedIds.length} onClick={() => bulkAssignment("start")}>Start selected</button><button className="btn" disabled={!selectedIds.length} onClick={runSelected}>Run selected</button><span>{selectedIds.length} selected</span></div><div className="my-work-tabs">{[["All", "All"], ["NotRun", "Not Run"], ["InProgress", "In Progress"], ["Pass", "Pass"], ["Fail", "Fail"], ["Blocked", "Blocked"], ["Today", "Today"], ["Overdue", "Overdue"]].map(([value, label]) => <button key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label} <small>{value === "All" ? rows.length : count(value)}</small></button>)}</div><div className="table-wrap"><table><thead><tr><th>Select</th><th>Test Case ID</th><th>Test Case</th><th>Test Cycle</th><th>Priority</th><th>Status</th><th>Due Date</th><th>Last Update</th><th>Action</th></tr></thead><tbody>{sorted.map((x) => <tr key={x.testCycleCaseId}><td><input type="checkbox" checked={selectedIds.includes(x.testCycleCaseId)} onChange={(e) => setSelectedIds((current) => e.target.checked ? [...current, x.testCycleCaseId] : current.filter((id) => id !== x.testCycleCaseId))} /></td><td><button className="link-button" onClick={() => x.testCycleId && onOpenExecution(x.testCycleId)}>{x.testCaseCode}</button></td><td><b>{x.title}</b><small>{x.testType ?? "-"}</small></td><td>{x.cycleCode ?? "-"}</td><td>{x.priority ?? "-"}</td><td><span className={`badge ${x.currentStatus === "Pass" ? "green" : x.currentStatus === "Fail" ? "red" : "blue"}`}>{x.currentStatus}</span></td><td>{x.dueDate ? new Date(x.dueDate).toLocaleDateString("th-TH") : "-"}</td><td>{x.assignedAt ? new Date(x.assignedAt).toLocaleString("th-TH") : "-"}</td><td><div className="my-work-row-actions">{x.assignmentStatus === "Assigned" && <button className="btn" onClick={() => changeAssignment(x, "accept")}>Accept</button>}{(x.assignmentStatus === "Accepted" || x.assignmentStatus === "Assigned") && <button className="btn primary" onClick={() => changeAssignment(x, "start")}>Start</button>}{x.testCycleId && <button className="btn" onClick={() => onOpenExecution(x.testCycleId!)}>Run</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty-state">ยังไม่มีงานที่ตรงกับตัวกรอง</div>}</div></section></div>;
+  const [reload, setReload] = useState(0);
+  const [mySuites, setMySuites] = useState<TestSuiteItem[]>([]);
+  const [myCycles, setMyCycles] = useState<TestCycleItem[]>([]);
+  // Test Suite/Test Cycle "ของฉัน" ดึงมาแบบกว้าง (size=100 เท่าที่ project ของ user เข้าถึงได้) แล้วกรองฝั่ง
+  // browser เอา — เหมือนวิธีที่หน้า Test Suite/Execution Workspace ใช้อยู่แล้ว ไม่ต้องเพิ่ม query param ใหม่ที่ backend
+  useEffect(() => {
+    if (!user?.userId) { setLoading(false); return; }
+    setLoading(true); setError("");
+    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    const readJson = (url: string) => fetch(url, { headers: h }).then(async (r) => { if (!r.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (${r.status})`); return r.json(); });
+    Promise.all([readJson(`${apiUrl}/test-suites?size=100`), readJson(`${apiUrl}/test-cycles?size=100`)])
+      .then(([suiteData, cycleData]) => {
+        setMySuites(Array.isArray(suiteData) ? suiteData : suiteData?.rows ?? []);
+        setMyCycles(Array.isArray(cycleData) ? cycleData : cycleData?.items?.rows ?? []);
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "โหลดข้อมูล My Work ไม่สำเร็จ"))
+      .finally(() => setLoading(false));
+  }, [user?.userId, reload]);
+  const myOwnSuites = useMemo(() => mySuites.filter((s) => s.createdBy === user?.userId), [mySuites, user?.userId]);
+  // "ของฉัน" สำหรับ Test Cycle = สร้างเอง หรือเป็นผู้ดำเนินการ (เกณฑ์เดียวกับที่ใช้ในหน้า Execution Workspace) — รวมกันแบบไม่ซ้ำ
+  const myOwnCycles = useMemo(() => {
+    const seen = new Set<string>();
+    return myCycles.filter((c) => (c.createdBy === user?.userId || c.ownerUserId === user?.userId) && !seen.has(c.testCycleId) && seen.add(c.testCycleId));
+  }, [myCycles, user?.userId]);
+  // เฉพาะที่ "กำลังดำเนินการอยู่จริง" และเราเป็นผู้สร้าง — คือเกณฑ์เดียวกับ default ของ Execution Workspace
+  // (ไม่ใช่ ownerUserId: Test Cycle ไม่มีช่องกำหนด "ผู้ดำเนินการ" ตอนสร้าง/แก้ไข เลยเป็น null เสมอทุก Cycle)
+  const myActiveCycles = useMemo(() => myCycles.filter((c) => c.status === "InProgress" && c.createdBy === user?.userId), [myCycles, user?.userId]);
+  const myDoneCycles = useMemo(() => myOwnCycles.filter((c) => c.status === "Completed" || c.status === "Closed"), [myOwnCycles]);
+  const avgActiveProgress = myActiveCycles.length ? Math.round(myActiveCycles.reduce((sum, c) => sum + c.progressPercent, 0) / myActiveCycles.length) : 0;
+  // การ์ดชวนทำงานต่อ — เลือก Cycle ที่กำลังดำเนินการอยู่และใกล้ครบกำหนดที่สุด (ไม่มี endDate ก็อยู่ท้ายสุด) แทนที่การไฮไลต์
+  // "งานที่ควรทำก่อน" แบบ Test Case รายตัวเดิม ซึ่งอิงระบบ assignment ที่เลิกใช้แล้ว
+  const urgentCycle = [...myActiveCycles].sort((a, b) => (a.endDate ? new Date(a.endDate).getTime() : Number.MAX_SAFE_INTEGER) - (b.endDate ? new Date(b.endDate).getTime() : Number.MAX_SAFE_INTEGER))[0];
+  // แปลง endDate เป็นข้อความ + สีที่บอก "เร่งด่วนแค่ไหน" ตรงๆ แทนป้าย "กำหนดส่ง" สีเหลืองตายตัวเดิม
+  // ที่ไม่บอกว่าใกล้หรือไกลแค่ไหน (ต้องมานั่งคำนวณเทียบวันที่เอง) — ให้เห็นปุ๊บเข้าใจปั๊บว่าด่วนแค่ไหน
+  const urgentDeadline = (() => {
+    if (!urgentCycle?.endDate) return null;
+    const daysLeft = Math.ceil((new Date(urgentCycle.endDate).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
+    const dateLabel = new Date(urgentCycle.endDate).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+    if (daysLeft < 0) return { text: `เลยกำหนดมาแล้ว ${-daysLeft} วัน`, tone: "red" };
+    if (daysLeft === 0) return { text: "ครบกำหนดวันนี้", tone: "red" };
+    if (daysLeft <= 3) return { text: `เหลืออีก ${daysLeft} วัน (${dateLabel})`, tone: "red" };
+    if (daysLeft <= 7) return { text: `เหลืออีก ${daysLeft} วัน (${dateLabel})`, tone: "yellow" };
+    return { text: `กำหนดส่ง ${dateLabel}`, tone: "blue" };
+  })();
+  if (loading) return <div className="my-work-page"><div className="card empty-state"><div className="spinner" />กำลังโหลด My Work...</div></div>;
+  if (error) return <div className="my-work-page"><div className="card empty-state error-state"><p>ไม่สามารถโหลดข้อมูล My Work ได้</p><small>{error}</small><button className="btn primary" onClick={() => setReload((x) => x + 1)}><span aria-hidden="true">↻</span> ลองใหม่</button></div></div>;
+  // ดัน urgentCycle (Cycle ที่ใกล้ครบกำหนดที่สุด) ให้มาอยู่แถวแรกของลิสต์ "Test Cycle ของฉัน" เสมอ
+  // จะได้เห็น badge ⏰ เน้นแถวนั้นแน่ๆ ไม่ต้องเสี่ยงว่าจะหลุดจาก 5 แถวแรกที่แสดง
+  const displayedOwnCycles = urgentCycle
+    ? [urgentCycle, ...myOwnCycles.filter((c) => c.testCycleId !== urgentCycle.testCycleId)]
+    : myOwnCycles;
+  return <div className="my-work-page">
+    <div className="my-work-user-strip"><span className="my-work-user-avatar" aria-hidden="true">{initials}</span><div><b>{user?.displayName ?? "ผู้ใช้งาน"}</b><small>@{user?.username ?? "-"}{user?.roles?.length ? ` · ${user.roles.join(", ")}` : ""}</small></div></div>
+    <div className="my-work-metrics">
+      <div className="metric-suite"><b>{myOwnSuites.length}</b><span>Test Suite ของฉัน</span></div>
+      <div className="metric-cycle"><b>{myOwnCycles.length}</b><span>Test Cycle ของฉัน</span></div>
+      <div className="metric-active"><b>{myActiveCycles.length}</b><span>กำลังดำเนินการ</span></div>
+      <div className="metric-done"><b>{myDoneCycles.length}</b><span>เสร็จสิ้นแล้ว</span></div>
+      <div className="metric-progress"><b>{avgActiveProgress}%</b><span>ความคืบหน้าเฉลี่ย</span></div>
+    </div>
+    <div className="my-work-overview">
+      <section className="card my-work-overview-card">
+        <div className="my-work-overview-head"><h3><span aria-hidden="true">▤</span> Test Suite ของฉัน</h3><span className="my-work-overview-count">{myOwnSuites.length}</span></div>
+        <div className="my-work-overview-list">
+          {myOwnSuites.length ? myOwnSuites.slice(0, 5).map((s) => (
+            <div key={s.testSuiteId}><b>{s.suiteCode}</b><small>{s.suiteName}</small><span>{(s as any).caseCount ?? (s as any).cases?.length ?? 0} Cases · {s.cycleCount} Cycles</span></div>
+          )) : <p className="muted-text">คุณยังไม่ได้สร้าง Test Suite</p>}
+        </div>
+        <button className="btn" onClick={() => onNavigate("test-suites")}><span aria-hidden="true">→</span> ดูทั้งหมด</button>
+      </section>
+      <section className="card my-work-overview-card">
+        <div className="my-work-overview-head"><h3><span aria-hidden="true">◎</span> Test Cycle ของฉัน</h3><span className="my-work-overview-count">{myOwnCycles.length}</span></div>
+        <div className="my-work-overview-list">
+          {displayedOwnCycles.length ? displayedOwnCycles.slice(0, 5).map((c) => {
+            const isUrgent = c.testCycleId === urgentCycle?.testCycleId;
+            return (
+              <div key={c.testCycleId} className={isUrgent ? "is-urgent" : ""}>
+                <div className="my-work-cycle-row-title">
+                  <b>{c.cycleCode}</b>
+                  <small title={c.cycleName}>{c.cycleName}</small>
+                </div>
+                <div className="my-work-cycle-row-badges">
+                  {/* โชว์ % ต่อ Cycle เฉพาะที่ "กำลังดำเนินการ" ให้ตรงกับเกณฑ์เดียวกับที่การ์ด
+                      "ความคืบหน้าเฉลี่ย" ด้านบนใช้คำนวณ (เฉลี่ยเฉพาะ Cycle สถานะ InProgress) จะได้
+                      เทียบตัวเลขด้วยตาเปล่าได้ว่าค่าเฉลี่ยที่เห็นด้านบนถูกต้องหรือไม่ */}
+                  {c.status === "InProgress" && <Badge tone="blue">{c.progressPercent}%</Badge>}
+                  {isUrgent && urgentDeadline && <Badge tone={urgentDeadline.tone}><span aria-hidden="true">⏰ </span>{urgentDeadline.text}</Badge>}
+                  <Badge tone={c.status === "Completed" || c.status === "Closed" ? "green" : c.status === "Cancelled" ? "red" : "yellow"}>{c.status}</Badge>
+                </div>
+              </div>
+            );
+          }) : <p className="muted-text">ยังไม่มี Test Cycle ของคุณ</p>}
+        </div>
+        <button className="btn" onClick={() => onNavigate("test-cycles")}><span aria-hidden="true">→</span> ดูทั้งหมด</button>
+      </section>
+      <section className="card my-work-overview-card">
+        <div className="my-work-overview-head"><h3><span aria-hidden="true">▶</span> Execution Workspace ของฉัน</h3><span className="my-work-overview-count">{myActiveCycles.length}</span></div>
+        <div className="my-work-overview-list">
+          {myActiveCycles.length ? myActiveCycles.slice(0, 5).map((c) => (
+            <div key={c.testCycleId}><b>{c.cycleCode}</b><small>{c.cycleName}</small><button className="btn" onClick={() => onOpenExecution(c.testCycleId)}>เปิด →</button></div>
+          )) : <p className="muted-text">ไม่มี Test Cycle ที่คุณดำเนินการอยู่ตอนนี้</p>}
+        </div>
+        <button className="btn primary" onClick={() => onNavigate("execution")}><span aria-hidden="true">→</span> ไปที่ Execution Workspace</button>
+      </section>
+    </div>
+  </div>;
 }
 type AdminPermission = {
   permissionId: string;
@@ -5348,7 +6641,7 @@ const masterSettingSections = [
 ];
 type EnvironmentSetting = { testEnvironmentId: string; projectId: string; environmentName: string; baseUrl?: string; isActive: boolean };
 type AiConfiguration = { provider: "OpenAI" | "Google" | "Anthropic" | "OpenRouter" | "Local" | "opencode"; model: string; baseUrl?: string; isEnabled: boolean; hasApiKey: boolean; apiKeyHint?: string; updatedAt?: string };
-const aiProviderModels: Record<AiConfiguration["provider"], string[]> = { OpenAI: ["gpt-5-mini", "gpt-5.4"], Google: ["gemini-3.5-flash", "gemini-3.1-pro"], Anthropic: ["claude-sonnet-5", "claude-haiku-4-5-20251001"], OpenRouter: ["openai/gpt-4o", "anthropic/claude-sonnet-4", "google/gemini-2.5-flash", "meta-llama/llama-4-maverick", "nvidia/nemotron-3.5-lightning:free"], Local: ["qwen3", "llama3.3", "mistral-small"], opencode: ["gpt-5-mini", "gpt-5", "gpt-4o", "claude-sonnet-4", "gemini-2.5-pro", "llama-3.3"] };
+const aiProviderModels: Record<AiConfiguration["provider"], string[]> = { OpenAI: ["gpt-5-mini", "gpt-5.4"], Google: ["gemini-3.5-flash", "gemini-3.1-pro"], Anthropic: ["claude-sonnet-5", "claude-haiku-4-5-20251001"], OpenRouter: ["openai/gpt-4o", "anthropic/claude-sonnet-4", "google/gemini-2.5-flash", "meta-llama/llama-4-maverick", "nvidia/nemotron-3.5-lightning:free"], Local: ["qwen3", "llama3.3", "mistral-small"], opencode: ["gpt-5-mini", "gpt-5", "gpt-4o", "claude-sonnet-4", "gemini-2.5-pro", "llama-3.3", "deepseek-v4-flash", "mimo-v2.5"] };
 type AiModelOption = { id: string; displayName: string };
 function MasterSettingsPage() {
   const [items, setItems] = useState<MasterOption[]>([]), [environments, setEnvironments] = useState<EnvironmentSetting[]>([]), [projects, setProjects] = useState<ProjectItem[]>([]), [reload, setReload] = useState(0);
@@ -5356,7 +6649,7 @@ function MasterSettingsPage() {
   const [environment, setEnvironment] = useState<EnvironmentSetting | null>(null), [environmentFormOpen, setEnvironmentFormOpen] = useState(false), [environmentProjectId, setEnvironmentProjectId] = useState(""), [environmentName, setEnvironmentName] = useState(""), [baseUrl, setBaseUrl] = useState("");
   const [aiConfiguration, setAiConfiguration] = useState<AiConfiguration>({ provider: "OpenAI", model: "gpt-5-mini", isEnabled: true, hasApiKey: false }), [aiApiKey, setAiApiKey] = useState(""), [savingAi, setSavingAi] = useState(false);
   const [aiModels, setAiModels] = useState<AiModelOption[]>([]), [loadingAiModels, setLoadingAiModels] = useState(false), [aiModelsError, setAiModelsError] = useState("");
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
+  const [activeSection, setActiveSection] = useState("AI");
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   useEffect(() => {
     const load = async () => {
@@ -5381,28 +6674,48 @@ function MasterSettingsPage() {
   const openOptionForm = (targetCategory: string, item?: MasterOption) => { setCategory(targetCategory); setFormCategory(targetCategory); setEditing(item ?? null); setValue(item?.value ?? ""); setDisplayName(item?.displayName ?? ""); setSortOrder(item?.sortOrder ?? 10); };
   const saveAiConfiguration = async () => { setSavingAi(true); try { const response = await fetch(`${apiUrl}/master-settings/ai`, { method: "PUT", headers, body: JSON.stringify({ provider: aiConfiguration.provider, model: aiConfiguration.model, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null, isEnabled: aiConfiguration.isEnabled, clearApiKey: false }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } setAiConfiguration(await response.json()); setAiApiKey(""); window.alert("บันทึกการตั้งค่า AI เรียบร้อยแล้ว"); } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } finally { setSavingAi(false); } };
   const loadAiModels = async () => { setLoadingAiModels(true); setAiModelsError(""); try { const response = await fetch(`${apiUrl}/master-settings/ai/models`, { method: "POST", headers, body: JSON.stringify({ provider: aiConfiguration.provider, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "โหลดรายการ Model ไม่สำเร็จ"); } const models = await response.json() as AiModelOption[]; setAiModels(models); if (!models.length) setAiModelsError("Provider ไม่ส่งรายการ Model กลับมา"); } catch (error) { setAiModelsError(error instanceof Error ? error.message : "โหลดรายการ Model ไม่สำเร็จ"); } finally { setLoadingAiModels(false); } };
-  const toggleSection = (name: string) => setExpandedSections((current) => { const next = new Set(current); if (next.has(name)) next.delete(name); else next.add(name); return next; });
-  const optionForm = (targetCategory: string) => formCategory === targetCategory && <div className="master-inline-editor"><label>รหัสค่า<input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="เช่น Major" /></label><label>ชื่อที่แสดง<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></label><label className="master-order-field">ลำดับ<input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} /></label><div className="master-setting-actions"><button className="btn" onClick={resetOption}>ยกเลิก</button><button className="btn primary" disabled={!value.trim() || !displayName.trim()} onClick={saveOption}>{editing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>;
+  const optionForm = (targetCategory: string) => formCategory === targetCategory && <div className="master-inline-editor"><label>รหัสค่า<input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="เช่น Major" /></label><label>ชื่อที่แสดง<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></label><label className="master-order-field">ลำดับ<input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} /></label><div className="master-setting-actions"><button className="btn" onClick={resetOption}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={!value.trim() || !displayName.trim()} onClick={saveOption}>{editing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>;
+  const activeMasterSection = masterSettingSections.find((section) => section.name === activeSection);
+  const aiReady = aiConfiguration.isEnabled && aiConfiguration.hasApiKey;
   return <div className="master-settings-page">
-    <section className="card master-setting-card master-ai-configuration">
-      <div className="master-section-head"><div><span className="master-section-icon">AI</span><div><h3>AI Configuration</h3><p>ค่ากลางสำหรับ AI Generate ของ Requirement, Test Case และ Test Suite</p></div></div><Badge tone={aiConfiguration.isEnabled && aiConfiguration.hasApiKey ? "green" : "yellow"}>{aiConfiguration.isEnabled && aiConfiguration.hasApiKey ? "พร้อมใช้งาน" : "ยังไม่พร้อมใช้งาน"}</Badge></div>
+    <nav className="settings-nav" aria-label="หมวดการตั้งค่า">
+      <button type="button" className={activeSection === "AI" ? "active" : ""} onClick={() => setActiveSection("AI")}>
+        <span className="settings-nav-icon">AI</span><span className="settings-nav-label">AI Configuration</span>
+        <Badge tone={aiReady ? "green" : "yellow"}>{aiReady ? "พร้อม" : "ยังไม่พร้อม"}</Badge>
+      </button>
+      {masterSettingSections.map((section) => <button type="button" key={section.name} className={activeSection === section.name ? "active" : ""} onClick={() => setActiveSection(section.name)}>
+        <span className="settings-nav-icon">{section.name === "Release" ? "R" : section.name === "Test Case" ? "TC" : section.name === "Test Suite" ? "TS" : "CY"}</span>
+        <span className="settings-nav-label">{section.name}</span>
+        <span className="count-pill">{items.filter((x) => section.groups.some((g) => g[0] === x.category) && x.isActive).length}</span>
+      </button>)}
+      <button type="button" className={activeSection === "Environment" ? "active" : ""} onClick={() => setActiveSection("Environment")}>
+        <span className="settings-nav-icon">E</span><span className="settings-nav-label">Environment</span>
+        <span className="count-pill">{environments.filter((x) => x.isActive).length}</span>
+      </button>
+    </nav>
+    {activeSection === "AI" && <section className="settings-panel-card master-ai-configuration">
+      <div className="settings-panel-head"><div><h2>AI Configuration</h2><p>ค่ากลางสำหรับ AI Generate ของ Requirement, Test Case และ Test Suite</p></div><Badge tone={aiReady ? "green" : "yellow"}>{aiReady ? "พร้อมใช้งาน" : "ยังไม่พร้อมใช้งาน"}</Badge></div>
       <div className="master-ai-body">
         <div className="master-ai-note"><b>การจัดเก็บที่ปลอดภัย</b><span>API key ถูกเข้ารหัสและเก็บเฉพาะฝั่ง Server เมื่อเปลี่ยน Provider ต้องกรอกคีย์ใหม่ ส่วน AI Local สามารถเว้นคีย์ได้</span></div>
         <div className="master-ai-form">
-          <label className="master-ai-provider"><span className="master-ai-provider-label"><span>Provider</span><span className="master-ai-provider-badge">{aiConfiguration.provider}</span></span><select value={aiConfiguration.provider} onChange={(e) => { const provider = e.target.value as AiConfiguration["provider"]; setAiApiKey(""); setAiModels([]); setAiModelsError(""); setAiConfiguration((current) => ({ ...current, provider, model: aiProviderModels[provider][0], baseUrl: provider === "Local" ? "http://localhost:11434/v1" : provider === "OpenRouter" ? "https://openrouter.ai/api/v1" : provider === "opencode" ? "https://api.opencode.ai/v1" : undefined, hasApiKey: false, apiKeyHint: undefined })); }}><option value="OpenAI">OpenAI</option><option value="Google">Google Gemini</option><option value="Anthropic">Anthropic Claude</option><option value="OpenRouter">OpenRouter</option><option value="Local">AI Local</option><option value="opencode">opencode</option></select></label>
-          <label>Model<span className="master-model-label"><small>{aiModels.length ? `${aiModels.length} Models` : "เลือกหรือพิมพ์ Model ID"}</small><button type="button" onClick={loadAiModels} disabled={loadingAiModels}>{loadingAiModels ? "กำลังโหลด..." : "โหลดทั้งหมด"}</button></span><input list="ai-model-options" value={aiConfiguration.model} onChange={(e) => setAiConfiguration((current) => ({ ...current, model: e.target.value }))} placeholder="ระบุ Model ID" /><datalist id="ai-model-options">{(aiModels.length ? aiModels : aiProviderModels[aiConfiguration.provider].map((id) => ({ id, displayName: "" }))).map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</datalist>{aiModelsError && <small className="master-model-error">{aiModelsError}</small>}</label>
-          {(aiConfiguration.provider === "Local" || aiConfiguration.provider === "OpenRouter" || aiConfiguration.provider === "opencode") && <label>Base URL<input value={aiConfiguration.baseUrl ?? ""} onChange={(e) => setAiConfiguration((current) => ({ ...current, baseUrl: e.target.value }))} placeholder={aiConfiguration.provider === "Local" ? "http://localhost:11434/v1" : aiConfiguration.provider === "OpenRouter" ? "https://openrouter.ai/api/v1" : "https://api.opencode.ai/v1"} /></label>}
+          <label className="master-ai-provider"><span className="master-ai-provider-label"><span>Provider</span><span className="master-ai-provider-badge">{aiConfiguration.provider}</span></span><select value={aiConfiguration.provider} onChange={(e) => { const provider = e.target.value as AiConfiguration["provider"]; setAiApiKey(""); setAiModels([]); setAiModelsError(""); setAiConfiguration((current) => ({ ...current, provider, model: aiProviderModels[provider][0], baseUrl: provider === "Local" ? "http://localhost:11434/v1" : provider === "OpenRouter" ? "https://openrouter.ai/api/v1" : provider === "opencode" ? "https://opencode.ai/zen/go/v1" : undefined, hasApiKey: false, apiKeyHint: undefined })); }}><option value="OpenAI">OpenAI</option><option value="Google">Google Gemini</option><option value="Anthropic">Anthropic Claude</option><option value="OpenRouter">OpenRouter</option><option value="Local">AI Local</option><option value="opencode">opencode</option></select></label>
+          <label>Model<span className="master-model-label"><small>{aiModels.length ? `${aiModels.length} Models` : "เลือกหรือพิมพ์ Model ID"}</small><button type="button" onClick={loadAiModels} disabled={loadingAiModels}>{loadingAiModels ? <><span className="spinner inline" aria-hidden="true" /> กำลังโหลด...</> : "โหลดทั้งหมด"}</button></span><input list="ai-model-options" value={aiConfiguration.model} onChange={(e) => setAiConfiguration((current) => ({ ...current, model: e.target.value }))} placeholder="ระบุ Model ID" /><datalist id="ai-model-options">{(aiModels.length ? aiModels : aiProviderModels[aiConfiguration.provider].map((id) => ({ id, displayName: "" }))).map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</datalist>{aiModelsError && <small className="master-model-error">{aiModelsError}</small>}</label>
+          {(aiConfiguration.provider === "Local" || aiConfiguration.provider === "OpenRouter" || aiConfiguration.provider === "opencode") && <label>Base URL<input value={aiConfiguration.baseUrl ?? ""} onChange={(e) => setAiConfiguration((current) => ({ ...current, baseUrl: e.target.value }))} placeholder={aiConfiguration.provider === "Local" ? "http://localhost:11434/v1" : aiConfiguration.provider === "OpenRouter" ? "https://openrouter.ai/api/v1" : "https://opencode.ai/zen/go/v1"} /></label>}
           <label>API key {aiConfiguration.provider === "Local" || aiConfiguration.provider === "opencode" ? <small>(ไม่บังคับ)</small> : null}<input type="password" autoComplete="new-password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder={aiConfiguration.hasApiKey ? `ตั้งค่าแล้ว ${aiConfiguration.apiKeyHint ?? ""} — เว้นว่างเพื่อใช้ค่าเดิม` : (aiConfiguration.provider === "Local" || aiConfiguration.provider === "opencode") ? "เว้นว่างได้ หาก Server ไม่ใช้คีย์" : `กรอก API key สำหรับ ${aiConfiguration.provider}`} /></label>
           <label className="master-ai-toggle"><input type="checkbox" checked={aiConfiguration.isEnabled} onChange={(e) => setAiConfiguration((current) => ({ ...current, isEnabled: e.target.checked }))} /><span>เปิดใช้งาน AI ร่วมกันทุกระบบ</span></label>
-          <div className="master-ai-actions"><small className="master-ai-hint">API key ถูกเข้ารหัสและเก็บเฉพาะฝั่ง Server · เมื่อเปลี่ยน Provider ต้องกรอกคีย์ใหม่</small><button className="btn primary" disabled={savingAi || !aiConfiguration.model.trim() || ((aiConfiguration.provider === "Local" || aiConfiguration.provider === "OpenRouter" || aiConfiguration.provider === "opencode") && !aiConfiguration.baseUrl?.trim()) || (aiConfiguration.provider !== "Local" && aiConfiguration.provider !== "opencode" && !aiConfiguration.hasApiKey && !aiApiKey.trim())} onClick={saveAiConfiguration}>{savingAi ? "กำลังบันทึก..." : "บันทึกการตั้งค่า"}</button></div>
+          <div className="master-ai-actions"><small className="master-ai-hint">API key ถูกเข้ารหัสและเก็บเฉพาะฝั่ง Server · เมื่อเปลี่ยน Provider ต้องกรอกคีย์ใหม่</small><button className="btn primary" disabled={savingAi || !aiConfiguration.model.trim() || ((aiConfiguration.provider === "Local" || aiConfiguration.provider === "OpenRouter" || aiConfiguration.provider === "opencode") && !aiConfiguration.baseUrl?.trim()) || (aiConfiguration.provider !== "Local" && aiConfiguration.provider !== "opencode" && !aiConfiguration.hasApiKey && !aiApiKey.trim())} onClick={saveAiConfiguration}>{savingAi ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึกการตั้งค่า</>}</button></div>
         </div>
       </div>
-    </section>
-    {masterSettingSections.map((section) => <section className={`card master-setting-card master-section-${section.name.toLowerCase().replace(" ", "-")} ${expandedSections.has(section.name) ? "is-expanded" : ""}`} key={section.name}>
-      <button type="button" className="master-section-head master-section-toggle" aria-expanded={expandedSections.has(section.name)} onClick={() => toggleSection(section.name)}><span className="master-section-summary"><span className="master-section-icon">{section.name === "Release" ? "R" : section.name === "Test Case" ? "TC" : section.name === "Test Suite" ? "TS" : "CY"}</span><span><strong>{section.name}</strong><small>{section.description}</small></span></span><span className="master-section-meta"><span className="count-pill">{items.filter((x) => section.groups.some((g) => g[0] === x.category) && x.isActive).length + (section.name === "Test Cycle" ? environments.filter((x) => x.isActive).length : 0)} Active</span><span className="master-chevron" aria-hidden="true">⌄</span></span></button>
-      {expandedSections.has(section.name) && <><div className="master-section-groups">{section.groups.map((group) => <div className="master-subgroup" key={group[0]}><div className="master-subgroup-head"><h4>{group[2]}</h4><div><span>{items.filter((x) => x.category === group[0] && x.isActive).length}</span><button className="master-add-button" onClick={() => openOptionForm(group[0])}>+ เพิ่ม</button></div></div>{optionForm(group[0])}<div className="master-setting-list">{items.filter((x) => x.category === group[0]).map((item) => <div key={item.masterOptionId} className={!item.isActive ? "inactive" : ""}><span><b>{item.displayName}</b><small>{item.value} · ลำดับ {item.sortOrder}</small></span><button className="table-action" onClick={() => openOptionForm(group[0], item)}>แก้ไข</button><button className="table-action danger-action" onClick={() => deleteOption(item)}>ลบ</button><button className="table-action" onClick={() => toggleOption(item)}>{item.isActive ? "ปิดใช้" : "เปิดใช้"}</button></div>)}</div></div>)}</div>
-      {section.name === "Test Cycle" && <div className="master-subgroup master-environment-group"><div className="master-subgroup-head"><h4>Environment</h4><div><span>{environments.filter((x) => x.isActive).length}</span><button className="master-add-button" onClick={() => editEnvironment()}>+ เพิ่ม</button></div></div>{environmentFormOpen && <div className="master-setting-form environment-form"><label>Project<select disabled={!!environment} value={environmentProjectId} onChange={(e) => setEnvironmentProjectId(e.target.value)}>{projects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label><label>Environment<input autoFocus value={environmentName} onChange={(e) => setEnvironmentName(e.target.value)} /></label><label>Base URL<input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} /></label><div className="master-setting-actions"><button className="btn" onClick={resetEnvironment}>ยกเลิก</button><button className="btn primary" disabled={!environmentProjectId || !environmentName.trim()} onClick={saveEnvironment}>{environment ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>}<div className="master-setting-list">{environments.map((item) => <div key={item.testEnvironmentId} className={!item.isActive ? "inactive" : ""}><span><b>{item.environmentName}</b><small>{projects.find((x) => x.projectId === item.projectId)?.projectName ?? "-"} · {item.baseUrl || "ไม่ระบุ URL"}</small></span><button className="table-action" onClick={() => editEnvironment(item)}>แก้ไข</button><button className="table-action danger-action" onClick={() => deleteEnvironment(item)}>ลบ</button><button className="table-action" onClick={() => toggleEnvironment(item)}>{item.isActive ? "ปิดใช้" : "เปิดใช้"}</button></div>)}</div></div>}</>}
-    </section>)}
+    </section>}
+    {activeMasterSection && <section className="settings-panel-card">
+      <div className="settings-panel-head"><div><h2>{activeMasterSection.name}</h2><p>{activeMasterSection.description}</p></div></div>
+      <div className="settings-groups">{activeMasterSection.groups.map((group) => <div className="master-subgroup" key={group[0]}><div className="master-subgroup-head"><h4>{group[2]}</h4><div><span>{items.filter((x) => x.category === group[0] && x.isActive).length}</span><button className="master-add-button" onClick={() => openOptionForm(group[0])}>+ เพิ่ม</button></div></div>{optionForm(group[0])}<div className="master-setting-list">{items.filter((x) => x.category === group[0]).map((item) => <div key={item.masterOptionId} className={!item.isActive ? "inactive" : ""}><span><b>{item.displayName}</b><small>{item.value} · ลำดับ {item.sortOrder}</small></span><button className="table-action icon-only" title="แก้ไข" aria-label={`แก้ไข ${item.displayName}`} onClick={() => openOptionForm(group[0], item)}><span aria-hidden="true">✎</span></button><button className="table-action danger-action icon-only" title="ลบ" aria-label={`ลบ ${item.displayName}`} onClick={() => deleteOption(item)}><span aria-hidden="true">✕</span></button><button className="table-action icon-only" title={item.isActive ? "ปิดใช้" : "เปิดใช้"} aria-label={`${item.isActive ? "ปิดใช้" : "เปิดใช้"} ${item.displayName}`} onClick={() => toggleOption(item)}><span aria-hidden="true">⏻</span></button></div>)}</div></div>)}</div>
+    </section>}
+    {activeSection === "Environment" && <section className="settings-panel-card">
+      <div className="settings-panel-head"><div><h2>Environment</h2><p>URL ของแต่ละ Project ที่ใช้อ้างอิงตอนวางแผน Test Cycle และ Execution</p></div><button className="master-add-button" onClick={() => editEnvironment()}>+ เพิ่ม</button></div>
+      {environmentFormOpen && <div className="master-setting-form environment-form"><label>Project<select disabled={!!environment} value={environmentProjectId} onChange={(e) => setEnvironmentProjectId(e.target.value)}>{projects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label><label>Environment<input autoFocus value={environmentName} onChange={(e) => setEnvironmentName(e.target.value)} /></label><label>Base URL<input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} /></label><div className="master-setting-actions"><button className="btn" onClick={resetEnvironment}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={!environmentProjectId || !environmentName.trim()} onClick={saveEnvironment}>{environment ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>}
+      <div className="master-setting-list">{environments.map((item) => <div key={item.testEnvironmentId} className={!item.isActive ? "inactive" : ""}><span><b>{item.environmentName}</b><small>{projects.find((x) => x.projectId === item.projectId)?.projectName ?? "-"} · {item.baseUrl || "ไม่ระบุ URL"}</small></span><button className="table-action icon-only" title="แก้ไข" aria-label={`แก้ไข ${item.environmentName}`} onClick={() => editEnvironment(item)}><span aria-hidden="true">✎</span></button><button className="table-action danger-action icon-only" title="ลบ" aria-label={`ลบ ${item.environmentName}`} onClick={() => deleteEnvironment(item)}><span aria-hidden="true">✕</span></button><button className="table-action icon-only" title={item.isActive ? "ปิดใช้" : "เปิดใช้"} aria-label={`${item.isActive ? "ปิดใช้" : "เปิดใช้"} ${item.environmentName}`} onClick={() => toggleEnvironment(item)}><span aria-hidden="true">⏻</span></button></div>)}</div>
+    </section>}
   </div>;
 }
 
@@ -5443,7 +6756,7 @@ function SystemMonitorPage() {
     finally { setBusy(""); }
   };
   if (loading) return <article className="card empty"><p>กำลังตรวจสอบสถานะระบบ...</p></article>;
-  if (error || !data) return <article className="card empty"><div className="login-error">{error}</div><button className="btn" onClick={() => load()}>ลองใหม่</button></article>;
+  if (error || !data) return <article className="card empty"><div className="login-error">{error}</div><button className="btn" onClick={() => load()}><span aria-hidden="true">↻</span> ลองใหม่</button></article>;
   const statusTone = (status: string) => status === "Online" || status === "Running" ? "green" : status === "Starting" || status === "Stopping" ? "yellow" : "red";
   return <div className="system-monitor-page">
     <div className="monitor-summary">
@@ -5694,28 +7007,39 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
     }
   };
   const [permFilter, setPermFilter] = useState("");
+  // Menu labels/groups below are kept in lockstep with the real sidebar (`nav`, defined near the top of this
+  // file) so the permission page always reflects the menus users actually see.
   const areaMenuMap: Record<string, { group: string; icon: string }> = {
-    PROJECT: { group: "ภาพรวม (Overview)", icon: "O" },
-    REQUIREMENT: { group: "Test Design", icon: "REQ" },
-    TESTCASE: { group: "Test Design", icon: "TC" },
-    TESTSUITE: { group: "Test Design", icon: "TS" },
-    EXECUTION: { group: "Test Execution", icon: "EX" },
-    DEFECT: { group: "Test Execution", icon: "DEF" },
-    REGRESSION: { group: "Test Execution", icon: "REG" },
-    AUTOMATION: { group: "Test Execution", icon: "AUT" },
-    RISK: { group: "Release Governance", icon: "RISK" },
-    RELEASE: { group: "Release Governance", icon: "REL" },
-    REPORT: { group: "Release Governance", icon: "SUM" },
-    ADMIN: { group: "Administration", icon: "ADM" },
+    DASHBOARD: { group: "ภาพรวม", icon: "D" },
+    MYWORK: { group: "ภาพรวม", icon: "MW" },
+    WORKLOAD: { group: "ภาพรวม", icon: "WL" },
+    PROJECT: { group: "ภาพรวม", icon: "P" },
+    REQUIREMENT: { group: "REQUIREMENT & TEST DESIGN", icon: "REQ" },
+    RTM: { group: "REQUIREMENT & TEST DESIGN", icon: "RTM" },
+    TESTCASE: { group: "REQUIREMENT & TEST DESIGN", icon: "TC" },
+    TESTSUITE: { group: "REQUIREMENT & TEST DESIGN", icon: "TS" },
+    TESTCYCLE: { group: "TEST EXECUTION", icon: "TCY" },
+    EXECUTION: { group: "TEST EXECUTION", icon: "EX" },
+    DEFECT: { group: "TEST EXECUTION", icon: "DEF" },
+    REGRESSION: { group: "TEST EXECUTION", icon: "REG" },
+    AUTOMATION: { group: "TEST EXECUTION", icon: "AUT" },
+    REPORT: { group: "RELEASE GOVERNANCE", icon: "SUM" },
+    RISK: { group: "RELEASE GOVERNANCE", icon: "RISK" },
+    RELEASE: { group: "RELEASE GOVERNANCE", icon: "REL" },
+    ADMIN: { group: "ADMINISTRATION", icon: "ADM" },
+    SETTING: { group: "ADMINISTRATION", icon: "SET" },
+    MONITOR: { group: "ADMINISTRATION", icon: "MON" },
+    AUDIT: { group: "ADMINISTRATION", icon: "AUD" },
   };
-  const menuGroupOrder = ["ภาพรวม (Overview)", "Test Design", "Test Execution", "Release Governance", "Administration", "Other"];
+  const menuGroupOrder = ["ภาพรวม", "REQUIREMENT & TEST DESIGN", "TEST EXECUTION", "RELEASE GOVERNANCE", "ADMINISTRATION", "Other"];
   const visiblePermissions = permissions.filter((p) => (p.permissionCode + " " + (p.moduleArea ?? "")).toLowerCase().includes(permFilter.toLowerCase()));
   const grouped = menuGroupOrder.map((group) => ({ group, icon: Object.values(areaMenuMap).find((v) => v.group === group)?.icon ?? "…", items: visiblePermissions.filter((p) => { const area = p.moduleArea || "OTHER"; return (areaMenuMap[area]?.group ?? "Other") === group; }) })).filter((g) => g.items.length > 0 || g.group !== "Other");
+  // Same groups/items/order as the `nav` sidebar menu, so "Menu" rows here match what users see on the left.
   const menuTree = [
-    ["OVERVIEW", [["Dashboard", "DASHBOARD"], ["My Work", "MYWORK"]]],
-    ["REQUIREMENT & TEST DESIGN", [["Project / Module", "PROJECT"], ["Requirement", "REQUIREMENT"], ["RTM", "RTM"], ["Test Case", "TESTCASE"], ["Test Suite", "TESTSUITE"]]],
+    ["ภาพรวม", [["Dashboard", "DASHBOARD"], ["My Work", "MYWORK"], ["Project / Module", "PROJECT"], ["Release / Build", "PROJECT"]]],
+    ["REQUIREMENT & TEST DESIGN", [["Requirement", "REQUIREMENT"], ["RTM", "RTM"], ["Test Case", "TESTCASE"], ["Test Suite", "TESTSUITE"]]],
     ["TEST EXECUTION", [["Test Cycle", "TESTCYCLE"], ["Execution Workspace", "EXECUTION"], ["Defect", "DEFECT"], ["Regression", "REGRESSION"], ["Automation", "AUTOMATION"]]],
-    ["RELEASE GOVERNANCE", [["Workload Summary", "WORKLOAD"], ["Test Summary", "REPORT"], ["Risk Acceptance", "RISK"], ["Release Sign-off", "RELEASE"]]],
+    ["RELEASE GOVERNANCE", [["Test Summary", "REPORT"], ["Risk Acceptance", "RISK"], ["Release Sign-off", "RELEASE"]]],
     ["ADMINISTRATION", [["User / Role", "ADMIN"], ["Setting Center", "SETTING"], ["System Monitor", "MONITOR"], ["Audit Log", "AUDIT"]]],
   ] as const;
   const permissionArea = (permission: AdminPermission) => {
@@ -5839,21 +7163,25 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
                       : <span className="tag-empty">-</span>}
                   </td>
                   <td data-label="จัดการ" className="td-actions">
-                    <button className="table-action" onClick={() => openEdit(x)}>
-                      แก้ไข
+                    <button className="table-action icon-only" title="แก้ไข" aria-label={`แก้ไข ${x.username}`} onClick={() => openEdit(x)}>
+                      <span aria-hidden="true">✎</span>
                     </button>
                     <button
-                      className={`table-action ${x.isActive ? "table-action-warn" : "table-action-green"}`}
+                      className={`table-action icon-only ${x.isActive ? "table-action-warn" : "table-action-green"}`}
+                      title={x.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}
+                      aria-label={`${x.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"} ${x.username}`}
                       onClick={() => toggleActive(x)}
                       disabled={saving}
                     >
-                      {x.isActive ? "ปิด" : "เปิด"}
+                      <span aria-hidden="true">⏻</span>
                     </button>
                     <button
-                      className="table-action table-action-key"
+                      className="table-action table-action-key icon-only"
+                      title="รีเซ็ตรหัสผ่าน"
+                      aria-label={`รีเซ็ตรหัสผ่าน ${x.username}`}
                       onClick={() => { setPasswordUser(x); setNewPassword(""); }}
                     >
-                      รหัสผ่าน
+                      <span aria-hidden="true">⚿</span>
                     </button>
                   </td>
                 </tr>
@@ -5965,13 +7293,13 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
               อนุญาตให้เข้าสู่ระบบ
             </label>
             <div className="modal-actions">
-              <button className="btn" disabled={saving} onClick={() => (creating ? setCreating(false) : setEditing(null))}>ยกเลิก</button>
+              <button className="btn" disabled={saving} onClick={() => (creating ? setCreating(false) : setEditing(null))}><span aria-hidden="true">✕</span> ยกเลิก</button>
               <button
                 className="btn primary"
                 onClick={saveUser}
                 disabled={saving || !displayName.trim() || (creating && (!newUsername.trim() || newPasswordCreate.length < 8))}
               >
-                {saving ? "กำลังบันทึก..." : creating ? "สร้างผู้ใช้" : "บันทึกข้อมูลผู้ใช้"}
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : creating ? <><span aria-hidden="true">+</span> สร้างผู้ใช้</> : <><span aria-hidden="true">✓</span> บันทึกข้อมูลผู้ใช้</>}
               </button>
             </div>
           </div>
@@ -6000,13 +7328,13 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
               />
             </label>
             <div className="modal-actions">
-              <button className="btn" onClick={() => setPasswordUser(null)}>ยกเลิก</button>
+              <button className="btn" onClick={() => setPasswordUser(null)}><span aria-hidden="true">✕</span> ยกเลิก</button>
               <button
                 className="btn primary"
                 onClick={resetPassword}
                 disabled={saving || newPassword.length < 8}
               >
-                {saving ? "กำลังบันทึก..." : "ยืนยันรีเซ็ตรหัสผ่าน"}
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">⚿</span> ยืนยันรีเซ็ตรหัสผ่าน</>}
               </button>
             </div>
           </div>
@@ -6033,9 +7361,9 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
             ))}
           </select>
           <div className="role-actions">
-            <button type="button" className="btn" onClick={() => openRoleModal("create")}>Create group</button>
-            <button type="button" className="btn" onClick={() => openRoleModal("edit")} disabled={!roleId}>Edit</button>
-            <button type="button" className="btn" onClick={deleteRole} disabled={!roleId}>Delete</button>
+            <button type="button" className="btn" onClick={() => openRoleModal("create")}><span aria-hidden="true">+</span> Create group</button>
+            <button type="button" className="btn" onClick={() => openRoleModal("edit")} disabled={!roleId}><span aria-hidden="true">✎</span> Edit</button>
+            <button type="button" className="btn" onClick={deleteRole} disabled={!roleId}><span aria-hidden="true">✕</span> Delete</button>
           </div>
         </label>
         <div className="permission-toolbar">
@@ -6086,7 +7414,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
         <div className="permission-actions">
           <small>เลือกแล้ว {selected.length} สิทธิ์</small>
           <button className="btn primary" onClick={savePermissions} disabled={!roleId || saving}>
-            {saving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
+            {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึกการเปลี่ยนแปลง</>}
           </button>
         </div>
       </article>
@@ -6103,8 +7431,8 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
               <label className="full">รายละเอียด<textarea value={roleDescription} onChange={(e) => setRoleDescription(e.target.value)} rows={3} /></label>
             </div>
             <div className="modal-actions">
-              <button type="button" className="btn" onClick={() => setRoleModal(null)}>ยกเลิก</button>
-              <button type="button" className="btn primary" onClick={saveRole}>บันทึก</button>
+              <button type="button" className="btn" onClick={() => setRoleModal(null)}><span aria-hidden="true">✕</span> ยกเลิก</button>
+              <button type="button" className="btn primary" onClick={saveRole}><span aria-hidden="true">✓</span> บันทึก</button>
             </div>
           </div>
         </div>
@@ -6119,28 +7447,52 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
     [rememberMe, setRememberMe] = useState(false),
     [showPassword, setShowPassword] = useState(false),
     [error, setError] = useState(""),
-    [loading, setLoading] = useState(false);
+    [loading, setLoading] = useState(false),
+    // Shown after the credentials check succeeds, for a beat before the
+    // dashboard actually mounts — without this the app used to jump
+    // straight from the login form to the dashboard with no transition.
+    [entering, setEntering] = useState(false);
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const response = await fetch(`${apiUrl}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, rememberMe: rememberMe }),
-      });
+      // Race the real request against a minimum delay so the "กำลังเข้าสู่ระบบ..."
+      // state is always visible for a moment, even when the API responds
+      // instantly (e.g. local dev) — a flash of loading state feels broken.
+      const [response] = await Promise.all([
+        fetch(`${apiUrl}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password, rememberMe: rememberMe }),
+        }),
+        wait(900),
+      ]);
       if (!response.ok) throw new Error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
       const data = await response.json();
       localStorage.setItem("qa.accessToken", data.accessToken);
       localStorage.setItem("qa.user", JSON.stringify(data.user));
+      setLoading(false);
+      setEntering(true);
+      await wait(1800);
       onLogin(data.user);
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : "ไม่สามารถเชื่อมต่อระบบได้");
-    } finally {
       setLoading(false);
     }
   };
+  if (entering) {
+    return (
+      <div className="login-page">
+        <div className="app-loading-screen">
+          <div className="login-logo"><span className="login-logo-text">QA</span></div>
+          <div className="loading-bar"><span aria-hidden="true" /></div>
+          <p>กำลังเตรียม QA Workspace...</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="login-page">
       <div className="login-visual">
@@ -6201,7 +7553,7 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
           <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} /> จดจำการเข้าสู่ระบบ
         </label>
         <button className="btn primary login-button" disabled={loading}>
-          {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
+          {loading ? <><span className="spinner inline" aria-hidden="true" /> กำลังเข้าสู่ระบบ...</> : "เข้าสู่ระบบ"}
         </button>
         <small>
           หากไม่สามารถเข้าสู่ระบบได้ กรุณาติดต่อ System Administrator
@@ -6217,7 +7569,8 @@ type TestSummaryData = { totalRequirements: number; coveredRequirements: number;
 type TestSummaryEnv = { testEnvironmentId: string; projectId: string; environmentName: string; baseUrl?: string; isActive: boolean };
 type TestSummaryNarrative = { knownIssues: string; remainingRisks: string; qaRecommendation: string };
 
-function TestSummaryPage({ projectId, releaseId: contextReleaseId, canExport, onOpenSignoff }: { projectId?: string; releaseId?: string; buildId?: string; canExport: boolean; onOpenSignoff?: () => void }) {
+function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: contextReleaseId, canExport, onOpenSignoff }: { projects: ProjectItem[]; projectId?: string; releaseId?: string; buildId?: string; canExport: boolean; onOpenSignoff?: () => void }) {
+  const [projectId, setProjectId] = useState(contextProjectId ?? "");
   const [releases, setReleases] = useState<ReleaseItem[]>([]);
   const [releaseId, setReleaseId] = useState(contextReleaseId ?? "");
   const [summary, setSummary] = useState<TestSummaryData | null>(null);
@@ -6228,8 +7581,10 @@ function TestSummaryPage({ projectId, releaseId: contextReleaseId, canExport, on
   const [error, setError] = useState("");
   const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => (r.ok ? r.json() : Promise.resolve(null))), [headers]);
-  useEffect(() => { if (!projectId) return; getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])); }, [projectId, getJson]);
+  useEffect(() => { if (contextProjectId) setProjectId(contextProjectId); }, [contextProjectId]);
+  useEffect(() => { if (!projectId) { setReleases([]); return; } getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])); }, [projectId, getJson]);
   useEffect(() => { if (contextReleaseId && !releaseId && releases.some((x) => x.releaseId === contextReleaseId)) setReleaseId(contextReleaseId); }, [contextReleaseId, releaseId, releases]);
+  useEffect(() => { if (releaseId && !releases.some((x) => x.releaseId === releaseId)) setReleaseId(""); }, [releaseId, releases]);
   const derive = (s: TestSummaryData | null): TestSummaryNarrative => {
     if (!s) return { knownIssues: "", remainingRisks: "", qaRecommendation: "" };
     const issues = [`P0 ที่ยังไม่ผ่าน/ถูกบล็อก: ${s.openP0}`, `P1 ที่ยังไม่ผ่าน/ถูกบล็อก: ${s.openP1}`, `ข้อบกพร่องที่ยังเปิด: ${s.openDefects} (วิกฤต ${s.criticalDefects} / สูง ${s.highDefects})`].filter((x) => !x.endsWith(": 0")).join(" · ") || "ไม่มีข้อบกพร่องหรือเคสค้างที่ต้องติดตาม";
@@ -6304,8 +7659,15 @@ function TestSummaryPage({ projectId, releaseId: contextReleaseId, canExport, on
     <article className="test-summary">
       <header className="test-summary-head">
         <div className="ts-select">
+          <label>Project</label>
+          <select aria-label="เลือก Project" value={projectId} onChange={(e) => { setProjectId(e.target.value); setReleaseId(""); }}>
+            <option value="">เลือก Project</option>
+            {projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.projectCode} · {p.projectName}</option>)}
+          </select>
+        </div>
+        <div className="ts-select">
           <label>Release</label>
-          <select aria-label="เลือก Release" value={releaseId} onChange={(e) => setReleaseId(e.target.value)}>
+          <select aria-label="เลือก Release" value={releaseId} onChange={(e) => setReleaseId(e.target.value)} disabled={!releases.length}>
             <option value="">เลือก Release</option>
             {releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}
           </select>
@@ -6313,12 +7675,12 @@ function TestSummaryPage({ projectId, releaseId: contextReleaseId, canExport, on
         <div>
           {canExport && <button className="btn" disabled={!summary} onClick={exportCsv}>⤓ Export CSV</button>}
           {canExport && <button className="btn" disabled={!summary} onClick={exportExcel}>⤓ Export Excel</button>}
-          <button className="btn primary" disabled={!releaseId || loading} onClick={() => load(true)}>{loading ? "กำลังโหลด..." : "✦ Generate / Regenerate"}</button>
-          {onOpenSignoff && <button className="btn" disabled={!summary} onClick={onOpenSignoff}>ไปหน้า Sign-off</button>}
+          <button className="btn primary" disabled={!releaseId || loading} onClick={() => load(true)}>{loading ? <><span className="spinner inline" aria-hidden="true" /> กำลังโหลด...</> : "✦ Generate / Regenerate"}</button>
+          {onOpenSignoff && <button className="btn" disabled={!summary} onClick={onOpenSignoff}>ไปหน้า Sign-off <span aria-hidden="true">→</span></button>}
         </div>
       </header>
       {error && <div className="inline-alert error"><span>{error}</span></div>}
-      {loading && !summary ? <div className="empty"><p>กำลังโหลด Test Summary...</p></div> : !release ? <div className="empty"><p>เลือก Release เพื่อดูสรุปผลการทดสอบ</p></div> : (
+      {loading && !summary ? <div className="empty"><div className="spinner" /><p>กำลังโหลด Test Summary...</p></div> : !release ? <div className="empty"><p>เลือก Release เพื่อดูสรุปผลการทดสอบ</p></div> : (
         <>
           <section className="card">
             <div className="test-summary-card">
@@ -6418,13 +7780,13 @@ function RiskAcceptancePage({ projectId, releaseId: contextReleaseId, canEdit, c
       </div>
       {error && <div className="inline-alert error"><span>{error}</span></div>}
       <div className="card">
-        {loading && !items.length ? <div className="empty"><p>กำลังโหลด Risk Acceptance...</p></div> : !filtered.length ? <div className="empty"><p>ยังไม่มีรายการ Risk Acceptance</p></div> : (
+        {loading && !items.length ? <div className="empty"><div className="spinner" /><p>กำลังโหลด Risk Acceptance...</p></div> : !filtered.length ? <div className="empty"><p>ยังไม่มีรายการ Risk Acceptance</p></div> : (
           <div className="table-wrap"><table><thead><tr><th>Risk ID</th><th>Title</th><th>Release</th><th>Impact</th><th>Probability</th><th>Risk Level</th><th>Owner</th><th>Status</th><th>Review Date</th></tr></thead><tbody>{filtered.map((x) => <tr key={x.riskAcceptanceId}><td><button className="link-button" onClick={() => setDetail(x)}>{x.riskCode}</button></td><td>{x.title}</td><td>{x.releaseCode ? `${x.releaseCode} · ${x.releaseVersion}` : "-"}</td><td>{x.impact}</td><td>{x.probability}</td><td><span className={`risk-level ${levelClass(x.riskLevel)}`}>{x.riskLevel}</span></td><td>{x.ownerName || "-"}</td><td><Badge tone={statusTone(x.status)}>{x.status}</Badge></td><td>{x.reviewDate ? formatThaiDateTime(x.reviewDate) : "-"}</td></tr>)}</tbody></table></div>
         )}
       </div>
-      {formOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-form-title" onMouseDown={() => !saving && setFormOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-form-title">{editing ? "แก้ไข Risk Acceptance" : "เพิ่ม Risk Acceptance"}</h2><small>{editing ? editing.riskCode : "ประเมินและบันทึกความเสี่ยงของ Release"}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setFormOpen(false)}>×</button></div><div className="form-grid"><label>Release<select value={form.releaseId} onChange={(e) => setForm((f) => ({ ...f, releaseId: e.target.value, defectId: "" }))}>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select></label><label>Defect ที่อ้างอิง<select value={form.defectId} onChange={(e) => setForm((f) => ({ ...f, defectId: e.target.value }))}><option value="">ไม่ระบุ</option>{defects.map((d) => <option key={d.defectId} value={d.defectId}>{d.label}</option>)}</select></label><label className="full">Title<input value={form.title} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="สรุปความเสี่ยง" /></label><label className="full">Issue<input value={form.issue} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, issue: e.target.value }))} placeholder="รายละเอียดปัญหา" /></label><label>Impact<select value={form.impact} onChange={(e) => setForm((f) => ({ ...f, impact: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label>Probability<select value={form.probability} onChange={(e) => setForm((f) => ({ ...f, probability: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label className="full">Workaround<textarea value={form.workaround} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, workaround: e.target.value }))} /></label><label className="full">Target Fix<textarea value={form.targetFix} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, targetFix: e.target.value }))} /></label><label className="full">QA Recommendation<textarea value={form.qaRecommendation} maxLength={4000} onChange={(e) => setForm((f) => ({ ...f, qaRecommendation: e.target.value }))} /></label><label className="full">Owner<select value={form.ownerUserId} onChange={(e) => setForm((f) => ({ ...f, ownerUserId: e.target.value }))}><option value="">ไม่ระบุ</option>{users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setFormOpen(false)}>ยกเลิก</button><button className="btn primary" disabled={saving || !form.title.trim() || !form.releaseId} onClick={save}>{saving ? "กำลังบันทึก..." : "บันทึก"}</button></div></div></div>}
-      {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-detail-title" onMouseDown={() => !saving && setDetail(null)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-detail-title">{detail.riskCode}</h2><small>{detail.releaseCode ? `${detail.releaseCode} · ${detail.releaseVersion}` : ""}</small></div><button aria-label="ปิดรายละเอียด" disabled={saving} onClick={() => setDetail(null)}>×</button></div><div className="risk-detail"><div className="risk-detail-hero"><div><h3>{detail.title}</h3><small>{detail.defectCode ? `Linked Defect: ${detail.defectCode}` : "ไม่ผูก Defect"}</small></div><span className={`risk-level ${levelClass(detail.riskLevel)}`}>{detail.riskLevel}</span></div><div className="risk-grid"><div className="risk-field"><span>Impact</span><b>{detail.impact}</b></div><div className="risk-field"><span>Probability</span><b>{detail.probability}</b></div><div className="risk-field"><span>Owner</span><b>{detail.ownerName || "-"}</b></div><div className="risk-field"><span>Status</span><Badge tone={statusTone(detail.status)}>{detail.status}</Badge></div></div><div className="risk-field"><span>Issue</span><b>{detail.issue || "-"}</b></div>{detail.workaround && <div className="risk-field"><span>Workaround</span><b>{detail.workaround}</b></div>}{detail.targetFix && <div className="risk-field"><span>Target Fix</span><b>{detail.targetFix}</b></div>}{detail.qaRecommendation && <div className="risk-field"><span>QA Recommendation</span><b>{detail.qaRecommendation}</b></div>}{detail.reviewComment && <div className="risk-field"><span>Review Comment ({detail.reviewedByName || "ผู้ประเมิน"})</span><b>{detail.reviewComment}</b></div>}</div><div className="modal-actions"><div className="risk-actions">{detail.status === "Draft" && canEdit && <button className="btn" disabled={saving} onClick={() => { setDetail(null); openEdit(detail); }}>แก้ไข</button>}{detail.status === "Draft" && canEdit && <button className="btn danger" disabled={saving} onClick={() => remove(detail)}>ลบ</button>}{detail.status === "Draft" && <button className="btn primary" disabled={saving} onClick={() => act(detail.riskAcceptanceId, "submit")}>{saving ? "กำลัง..." : "Submit"}</button>}{detail.status === "Submitted" && canApprove && <button className="btn primary" disabled={saving} onClick={() => setDecision({ kind: "approve", item: detail })}>อนุมัติ</button>}{detail.status === "Submitted" && canApprove && <button className="btn danger" disabled={saving} onClick={() => setDecision({ kind: "reject", item: detail })}>ปฏิเสธ</button>}</div><button className="btn" disabled={saving} onClick={() => setDetail(null)}>ปิด</button></div></div></div>}
-      {decision && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-decision-title" onMouseDown={() => !saving && setDecision(null)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-decision-title">{decision.kind === "approve" ? "อนุมัติ Risk" : "ปฏิเสธ Risk"}</h2><small>{decision.item.riskCode}</small></div><button aria-label="ปิด" disabled={saving} onClick={() => setDecision(null)}>×</button></div><label className="full" style={{ display: "grid", gap: 6 }}>Comment<textarea rows={3} autoFocus value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)} placeholder="เหตุผล/เงื่อนไข" /></label><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDecision(null)}>ยกเลิก</button><button className={"btn " + (decision.kind === "approve" ? "primary" : "danger")} disabled={saving} onClick={() => act(decision.item.riskAcceptanceId, decision.kind, decisionComment)}>{saving ? "กำลัง..." : decision.kind === "approve" ? "ยืนยันอนุมัติ" : "ยืนยันปฏิเสธ"}</button></div></div></div>}
+      {formOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-form-title" onMouseDown={() => !saving && setFormOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-form-title">{editing ? "แก้ไข Risk Acceptance" : "เพิ่ม Risk Acceptance"}</h2><small>{editing ? editing.riskCode : "ประเมินและบันทึกความเสี่ยงของ Release"}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setFormOpen(false)}>×</button></div><div className="form-grid"><label>Release<select value={form.releaseId} onChange={(e) => setForm((f) => ({ ...f, releaseId: e.target.value, defectId: "" }))}>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select></label><label>Defect ที่อ้างอิง<select value={form.defectId} onChange={(e) => setForm((f) => ({ ...f, defectId: e.target.value }))}><option value="">ไม่ระบุ</option>{defects.map((d) => <option key={d.defectId} value={d.defectId}>{d.label}</option>)}</select></label><label className="full">Title<input value={form.title} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="สรุปความเสี่ยง" /></label><label className="full">Issue<input value={form.issue} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, issue: e.target.value }))} placeholder="รายละเอียดปัญหา" /></label><label>Impact<select value={form.impact} onChange={(e) => setForm((f) => ({ ...f, impact: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label>Probability<select value={form.probability} onChange={(e) => setForm((f) => ({ ...f, probability: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label className="full">Workaround<textarea value={form.workaround} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, workaround: e.target.value }))} /></label><label className="full">Target Fix<textarea value={form.targetFix} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, targetFix: e.target.value }))} /></label><label className="full">QA Recommendation<textarea value={form.qaRecommendation} maxLength={4000} onChange={(e) => setForm((f) => ({ ...f, qaRecommendation: e.target.value }))} /></label><label className="full">Owner<select value={form.ownerUserId} onChange={(e) => setForm((f) => ({ ...f, ownerUserId: e.target.value }))}><option value="">ไม่ระบุ</option>{users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setFormOpen(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={saving || !form.title.trim() || !form.releaseId} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div></div></div>}
+      {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-detail-title" onMouseDown={() => !saving && setDetail(null)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-detail-title">{detail.riskCode}</h2><small>{detail.releaseCode ? `${detail.releaseCode} · ${detail.releaseVersion}` : ""}</small></div><button aria-label="ปิดรายละเอียด" disabled={saving} onClick={() => setDetail(null)}>×</button></div><div className="risk-detail"><div className="risk-detail-hero"><div><h3>{detail.title}</h3><small>{detail.defectCode ? `Linked Defect: ${detail.defectCode}` : "ไม่ผูก Defect"}</small></div><span className={`risk-level ${levelClass(detail.riskLevel)}`}>{detail.riskLevel}</span></div><div className="risk-grid"><div className="risk-field"><span>Impact</span><b>{detail.impact}</b></div><div className="risk-field"><span>Probability</span><b>{detail.probability}</b></div><div className="risk-field"><span>Owner</span><b>{detail.ownerName || "-"}</b></div><div className="risk-field"><span>Status</span><Badge tone={statusTone(detail.status)}>{detail.status}</Badge></div></div><div className="risk-field"><span>Issue</span><b>{detail.issue || "-"}</b></div>{detail.workaround && <div className="risk-field"><span>Workaround</span><b>{detail.workaround}</b></div>}{detail.targetFix && <div className="risk-field"><span>Target Fix</span><b>{detail.targetFix}</b></div>}{detail.qaRecommendation && <div className="risk-field"><span>QA Recommendation</span><b>{detail.qaRecommendation}</b></div>}{detail.reviewComment && <div className="risk-field"><span>Review Comment ({detail.reviewedByName || "ผู้ประเมิน"})</span><b>{detail.reviewComment}</b></div>}</div><div className="modal-actions"><div className="risk-actions">{detail.status === "Draft" && canEdit && <button className="btn" disabled={saving} onClick={() => { setDetail(null); openEdit(detail); }}><span aria-hidden="true">✎</span> แก้ไข</button>}{detail.status === "Draft" && canEdit && <button className="btn danger" disabled={saving} onClick={() => remove(detail)}><span aria-hidden="true">✕</span> ลบ</button>}{detail.status === "Draft" && <button className="btn primary" disabled={saving} onClick={() => act(detail.riskAcceptanceId, "submit")}>{saving ? "กำลัง..." : "Submit"}</button>}{detail.status === "Submitted" && canApprove && <button className="btn primary" disabled={saving} onClick={() => setDecision({ kind: "approve", item: detail })}><span aria-hidden="true">✓</span> อนุมัติ</button>}{detail.status === "Submitted" && canApprove && <button className="btn danger" disabled={saving} onClick={() => setDecision({ kind: "reject", item: detail })}><span aria-hidden="true">✕</span> ปฏิเสธ</button>}</div><button className="btn" disabled={saving} onClick={() => setDetail(null)}><span aria-hidden="true">✕</span> ปิด</button></div></div></div>}
+      {decision && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-decision-title" onMouseDown={() => !saving && setDecision(null)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-decision-title">{decision.kind === "approve" ? "อนุมัติ Risk" : "ปฏิเสธ Risk"}</h2><small>{decision.item.riskCode}</small></div><button aria-label="ปิด" disabled={saving} onClick={() => setDecision(null)}>×</button></div><label className="full" style={{ display: "grid", gap: 6 }}>Comment<textarea rows={3} autoFocus value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)} placeholder="เหตุผล/เงื่อนไข" /></label><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDecision(null)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className={"btn " + (decision.kind === "approve" ? "primary" : "danger")} disabled={saving} onClick={() => act(decision.item.riskAcceptanceId, decision.kind, decisionComment)}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลัง...</> : decision.kind === "approve" ? <><span aria-hidden="true">✓</span> ยืนยันอนุมัติ</> : <><span aria-hidden="true">✕</span> ยืนยันปฏิเสธ</>}</button></div></div></div>}
     </article>
   );
 }
@@ -6468,7 +7830,7 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
         {canSignoff && <button className="btn primary" disabled={!releaseId || !buildId} onClick={() => { setDecision("GO"); setComment(""); setModalOpen(true); }}>+ สร้าง Sign-off</button>}
       </div>
       {error && <div className="inline-alert error"><span>{error}</span></div>}
-      {loading && !gate ? <div className="empty"><p>กำลังโหลด Release Gate...</p></div> : !releaseId ? <div className="empty"><p>เลือก Release เพื่อดู Release Gate</p></div> : (
+      {loading && !gate ? <div className="empty"><div className="spinner" /><p>กำลังโหลด Release Gate...</p></div> : !releaseId ? <div className="empty"><p>เลือก Release เพื่อดู Release Gate</p></div> : (
         <>
           <section className="card">
             <div className="test-summary-head">
@@ -6486,7 +7848,7 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
           </section>
         </>
       )}
-      {modalOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="signoff-form-title" onMouseDown={() => !saving && setModalOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}>×</button></div><div className="form-grid"><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder="เหตุผล/เงื่อนไขประกอบการตัดสินใจ" /></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}>ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? "กำลังบันทึก..." : "ยืนยัน Sign-off"}</button></div></div></div>}
+      {modalOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="signoff-form-title" onMouseDown={() => !saving && setModalOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}>×</button></div><div className="form-grid"><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder="เหตุผล/เงื่อนไขประกอบการตัดสินใจ" /></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> ยืนยัน Sign-off</>}</button></div></div></div>}
     </article>
   );
 }
@@ -6713,6 +8075,12 @@ function App() {
     setMenu(false);
   };
   const openRegressionCycle=(target:"test-cycles"|"execution",cycleId:string)=>{localStorage.setItem("qa.targetCycleId",cycleId);go(target)};
+  // ปุ่มสร้าง Test Cycle แบบด่วนจากหน้า Test Suite — ฝาก Project/Suite ที่จะ prefill ไว้ใน localStorage
+  // แล้วพาไปหน้า Test Cycle ซึ่งจะเปิดฟอร์มสร้างพร้อมข้อมูลนี้ทันที (ดู useEffect ใน TestCyclesPage)
+  const createCycleFromSuite=(projectId:string,testSuiteId:string)=>{localStorage.setItem("qa.createCycleFromSuite",JSON.stringify({projectId,testSuiteId}));go("test-cycles")};
+  // ปุ่ม "ดูรายละเอียด" บน Test Case ที่เชื่อมโยงกับ Defect — ฝาก id ไว้แล้วพาไปหน้า Test Case ซึ่งจะเปิด
+  // detail ของ Test Case นั้นให้ทันที (ดู useEffect ใน TestCasesPage)
+  const openTestCase=(testCaseId:string)=>{localStorage.setItem("qa.targetTestCaseId",testCaseId);go("test-cases")};
   const logout = () => {
     localStorage.removeItem("qa.accessToken");
     localStorage.removeItem("qa.user");
@@ -6969,7 +8337,7 @@ function App() {
                   placeholder="ค้นหา..."
                 />
               </label>
-              {can("REPORT.EXPORT") && page !== "test-cycles" && <button className="btn">Export</button>}
+              {can("REPORT.EXPORT") && page !== "test-cycles" && <button className="btn"><span aria-hidden="true">⤓</span> Export</button>}
               {page === "dashboard" && <button className="btn share-btn" onClick={shareDashboard}>↗ แชร์ Dashboard</button>}
               {page === "requirements"&&can("REQUIREMENT.EDIT")&&<button className="btn ai-button" onClick={()=>{setCreateProjectId(contextProjectId);setCreateModuleId("");setCreateReleaseId(contextReleaseId);setRequirementAiPrompt("");setRequirementAiFiles([]);setRequirementAiError("");setRequirementAiModal(true)}}><span aria-hidden="true">✦</span> AI Generate</button>}
               {canCreate && (
@@ -6986,10 +8354,11 @@ function App() {
               )}
             </div>
           </div>
+          <div className="page-transition" key={page}>
           {page === "dashboard" ? (
             <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} />
           ) : page === "my-work" ? (
-            <MyWorkPage onOpenExecution={(cycleId) => { localStorage.setItem("qa.targetCycleId", cycleId); go("execution"); }} />
+            <MyWorkPage user={user} onOpenExecution={(cycleId) => { localStorage.setItem("qa.targetCycleId", cycleId); go("execution"); }} onNavigate={go} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (
@@ -7011,16 +8380,17 @@ function App() {
           ) : page === "system-monitor" ? (
             <SystemMonitorPage />
           ) : page === "defects" ? (
-            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("DEFECT.EDIT")} />
+            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("DEFECT.EDIT")} onOpenTestCase={openTestCase} />
           ) : page === "summary" ? (
-            <TestSummaryPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canExport={can("REPORT.EXPORT")} onOpenSignoff={() => setPage("signoff")} />
+            <TestSummaryPage projects={contextProjects} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canExport={can("REPORT.EXPORT")} onOpenSignoff={() => setPage("signoff")} />
           ) : page === "risks" ? (
             <RiskAcceptancePage projectId={contextProjectId} releaseId={contextReleaseId} canEdit={can("PROJECT.EDIT")} canApprove={can("RISK.APPROVE")} />
           ) : page === "signoff" ? (
             <ReleaseSignoffPage projectId={contextProjectId} releaseId={contextReleaseId} canSignoff={can("RELEASE.SIGNOFF")} />
           ) : (
-            <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} />
+            <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} />
           )}
+          </div>
         </div>
       </main>
       {requirementAiModal&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="requirement-ai-title" onMouseDown={()=>!requirementAiGenerating&&setRequirementAiModal(false)}>
@@ -7042,7 +8412,7 @@ function App() {
             {requirementAiError&&<div className="login-error" role="alert">{requirementAiError}</div>}
             <div className="ai-draft-note"><span aria-hidden="true">i</span><p><b>AI จะไม่บันทึกข้อมูลหรือไฟล์แนบอัตโนมัติ</b><small>ไฟล์ใช้วิเคราะห์ในคำขอนี้เท่านั้น จากนั้นระบบจะเปิดฟอร์มพร้อม Draft ให้ตรวจสอบ</small></p></div>
           </div>
-          <div className="modal-actions"><button className="btn" disabled={requirementAiGenerating} onClick={()=>setRequirementAiModal(false)}>ยกเลิก</button><button className="btn ai-button" disabled={requirementAiGenerating||!requirementAiPrompt.trim()||!createProjectId||!createModuleId} onClick={generateRequirementWithAi}>{requirementAiGenerating?"กำลังวิเคราะห์...":"✦ สร้าง Draft ด้วย AI"}</button></div>
+          <div className="modal-actions"><button className="btn" disabled={requirementAiGenerating} onClick={()=>setRequirementAiModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn ai-button" disabled={requirementAiGenerating||!requirementAiPrompt.trim()||!createProjectId||!createModuleId} onClick={generateRequirementWithAi}>{requirementAiGenerating?"กำลังวิเคราะห์...":"✦ สร้าง Draft ด้วย AI"}</button></div>
         </div>
       </div>}
       {modal && (
@@ -7141,7 +8511,7 @@ function App() {
                 }
                 onClick={save}
               >
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}
               </button>
             </div>
           </div>

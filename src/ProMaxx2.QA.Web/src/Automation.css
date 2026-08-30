@@ -7,85 +7,6 @@
   gap: 16px;
 }
 
-.automation-hero,
-.automation-head {
-  background: var(--card, #fff);
-  border: 1px solid var(--line, #e5e7eb);
-  border-radius: 14px;
-  padding: 16px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
-}
-
-.automation-head-title h1 { margin: 2px 0 4px; font-size: 20px; color: var(--text, #1f2937); }
-.automation-head-title p { margin: 0; color: var(--muted, #667085); font-size: 13px; }
-.automation-head-status { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.automation-head-status span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted, #667085); }
-.automation-head-status i { width: 8px; height: 8px; border-radius: 50%; background: var(--green, #169c63); display: inline-block; }
-.automation-head-status span.is-warning i { background: var(--yellow, #d79a00); }
-
-.automation-eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  font-weight: 700;
-  color: var(--primary, #2457d6);
-}
-
-.automation-hero h1 {
-  margin: 4px 0 6px;
-  font-size: clamp(18px, 2vw, 23px);
-  color: var(--text, #1f2937);
-}
-
-.automation-hero-copy p {
-  margin: 0;
-  color: var(--muted, #667085);
-  font-size: 13px;
-  max-width: 640px;
-}
-
-.automation-hero-status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 12px;
-}
-
-.automation-hero-status span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted, #667085);
-}
-
-.automation-hero-status i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--green, #169c63);
-  display: inline-block;
-}
-
-.automation-hero-status span.is-warning i { background: var(--yellow, #d79a00); }
-.automation-hero-status span.is-ready i { background: var(--green, #169c63); }
-
-.automation-hero-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.automation-hero-actions small {
-  color: var(--muted, #667085);
-  font-size: 12px;
-}
-
 .automation-tabs {
   position: sticky;
   top: 60px;
@@ -252,7 +173,10 @@
 
 .automation-kpis {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* auto-fit instead of a fixed 7 columns — a KPI strip with 5 cards (or
+     fewer) used to stretch across 7 empty-looking column tracks; this
+     sizes the columns to however many cards actually render. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
 }
 
@@ -287,11 +211,33 @@
   font-size: 11px;
 }
 
-.automation-dashboard-grid,
-.automation-exec-grid {
+.automation-dashboard-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
+}
+
+/* Job Queue is a short, simple list; Run History is the wide table with
+   all the filters — side by side on a wide screen instead of always
+   stacking full-width (which just wasted the extra horizontal room and
+   pushed Run History's toolbar further down the page). Collapses back to
+   one column under 1100px (see the responsive rule further down). */
+.automation-exec-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Failure Dashboard's By Build / By Agent / Top Automation Case cards —
+   an even, auto-fit row of same-width cards (was wrongly reusing
+   .automation-exec-grid's 2-pane Job-Queue/Run-History split, which made
+   these 3 cards render as one narrow + one wide + one wrapped-orphan). */
+.automation-failure-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  align-items: start;
 }
 
 /* AUT-P2-003: Pass/Fail/Flaky trend chart. */
@@ -341,31 +287,35 @@
 .automation-trend-legend .legend-fail { background: var(--red, #d64545); }
 .automation-trend-legend .legend-flaky { background: #b5540a; }
 
+/* Same pill-tab family as .automation-tabs (the page-level bar) so the
+   "การจัดการ" sub-navigation doesn't switch to a different visual idiom —
+   just smaller and sitting on a tinted track to read as one level down. */
 .automation-subtabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--line, #e5e7eb);
-  margin-bottom: 14px;
-  padding: 0 2px;
+  margin-bottom: 16px;
+  background: #f5f7fb;
+  border-radius: 10px;
+  padding: 4px;
   overflow-x: auto;
 }
 
 .automation-subtabs button {
   border: 1px solid transparent;
   background: transparent;
-  padding: 8px 14px;
+  padding: 7px 14px;
   font-size: 13px;
   font-weight: 600;
   color: var(--muted, #667085);
-  border-radius: 8px 8px 0 0;
+  border-radius: 8px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .automation-subtabs button.active {
   color: var(--primary, #2457d6);
-  border-color: var(--line, #e5e7eb);
-  border-bottom-color: transparent;
   background: var(--card, #fff);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.1);
 }
 
 .automation-cases-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -379,7 +329,8 @@
 .automation-batch-row small { display: block; color: var(--muted, #667085); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .automation-dashboard-grid > .card,
-.automation-exec-grid > .card {
+.automation-exec-grid > .card,
+.automation-failure-grid > .card {
   padding: 16px;
 }
 
@@ -419,14 +370,55 @@
 
 .automation-run-toolbar {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-bottom: 10px;
   flex-wrap: wrap;
 }
 
-.automation-run-toolbar input {
+.automation-run-toolbar input[type="text"] {
   flex: 1;
   min-width: 180px;
+}
+
+/* Every dropdown/date field in this toolbar gets the same footprint —
+   without this each select auto-sized to its longest option text, so
+   "ทุก Build" and "ทุก Failure Type" ended up visibly different widths. */
+.automation-run-toolbar select {
+  flex: 0 0 auto;
+  min-width: 160px;
+}
+
+/* Date inputs need a fixed `width` (not min-width) here: the global
+   input[type="date"] rule sets width:100%, and 100% of an inline-flex
+   <label>'s auto-sized box is a circular calculation that made the field
+   balloon out and overlap the controls next to it. A fixed width breaks
+   that loop. */
+.automation-run-toolbar input[type="date"] {
+  flex: 0 0 auto;
+  width: 150px;
+}
+
+.automation-run-toolbar label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted, #667085);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Advanced filters (date range/Build/Environment/Agent/Target/Failure Type)
+   get their own tinted, bordered row so they read as one distinct group
+   sitting below the primary search + status row, not a second identical
+   line of the same controls. */
+.automation-advanced-filters {
+  padding: 10px 12px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 11px;
+  background: #fafbfc;
 }
 
 .automation-exec-table {
@@ -493,7 +485,7 @@
 .automation-category-summary b { display: block; font-size: 18px; color: var(--text, #1f2937); }
 .automation-category-summary span { color: var(--muted, #667085); font-size: 12px; }
 
-.automation-cases, .automation-actions, .automation-objects, .automation-agents, .automation-execution, .automation-suites {
+.automation-cases, .automation-actions, .automation-objects, .automation-agents, .automation-execution, .automation-suites, .automation-manage {
   background: var(--card, #fff);
   border: 1px solid var(--line, #e5e7eb);
   border-radius: 14px;
@@ -546,6 +538,10 @@
 
 .automation-cases table td span { display: block; }
 .automation-cases table td small { color: var(--muted, #667085); display: block; }
+.automation-cases table .case-select-col { width: 40px; min-width: 40px; text-align: left; vertical-align: middle; }
+.automation-cases table .case-select-col input { width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--primary); }
+.automation-cases table tbody tr.is-selected { background: #eef4ff; }
+.automation-cases table tbody tr.is-selected:hover td { background: #e6efff; }
 
 .automation-cand-filters {
   display: flex;
@@ -993,6 +989,52 @@
   color: var(--muted, #667085);
 }
 
+/* By Build / By Agent / Top Automation Case rows — its own class (not
+   .automation-failure-row, which many other unrelated lists share) so the
+   label fills the row and the fail-count reads as a clear, colored stat
+   instead of two small words floating with empty space to their right. */
+.automation-failure-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.automation-failure-stat-row b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text, #1f2937);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-failure-stat-count {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--red, #d64545);
+}
+
+.automation-failure-stat-count strong {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.automation-failure-stat-count small {
+  color: var(--muted, #667085);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
 .automation-result-card {
   border: 1px solid var(--line, #e5e7eb);
   border-radius: 10px;
@@ -1295,7 +1337,7 @@
 .automation-table-wrap { overflow: auto; }
 .automation-recent-table { min-width: 920px; }
 .automation-recent-table thead th {
-  text-align: left;
+  text-align: center;
   padding: 10px 14px;
   font-size: 10px;
   color: #475569;
@@ -1354,15 +1396,26 @@
   font-size: 12px;
   color: var(--muted, #667085);
 }
+.automation-search-hint strong {
+  color: var(--primary, #2457d6);
+  font-size: 15px;
+  font-weight: 800;
+}
 
 .automation-case-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: flex-start;
   margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 11px;
+  background: #fafbfc;
 }
 .automation-case-toolbar select { min-width: 150px; }
+.automation-case-toolbar input { min-width: 180px; }
 
 .automation-row-actions { display: flex; align-items: center; gap: 6px; }
 .automation-row-actions .automation-more { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
@@ -1462,7 +1515,7 @@
 .acw-table-wrap { border: 1px solid var(--line, #e5e7eb); border-radius: 12px; overflow: auto; }
 .acw-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .acw-table thead th {
-  background: #f8fafc; color: #475569; text-align: left;
+  background: #f8fafc; color: #475569; text-align: center;
   font-size: 11px; padding: 10px 10px; border-bottom: 1px solid var(--line, #e5e7eb);
   white-space: nowrap;
 }

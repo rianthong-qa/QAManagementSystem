@@ -59,6 +59,29 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
 
     public Task AddCaseAsync(AutomationCase entity, CancellationToken ct) => db.AutomationCases.AddAsync(entity, ct).AsTask();
 
+    // ลบถาวร: AutomationVersion เป็น Cascade อยู่แล้วที่ระดับ DB (ลบ Case แล้วตามไปเองพร้อม
+    // AutomationStepResult/AutomationEvidence ที่ Cascade ต่อจาก Execution) แต่ AutomationExecution และ
+    // AutomationSuiteCase เป็น Restrict — ต้องลบเองก่อน ไล่จาก Job (ลูกของ Execution) → Execution → Suite link
+    // → Case ตามลำดับ ไม่งั้น DB จะ throw FK violation. ExecuteDeleteAsync ยิง SQL DELETE ตรงโดยไม่ต้องโหลด
+    // entity เข้า change tracker ก่อน เหมาะกับงานลบเป็นชุดแบบนี้.
+    public async Task HardDeleteCasesAsync(IReadOnlyList<Guid> automationCaseIds, CancellationToken ct)
+    {
+        if (automationCaseIds.Count == 0) return;
+        var execIds = await db.AutomationExecutions.Where(x => automationCaseIds.Contains(x.AutomationCaseId))
+            .Select(x => x.AutomationExecutionId).ToListAsync(ct);
+        if (execIds.Count > 0)
+        {
+            // AutomationScheduleNotification.AutomationExecutionId is a plain column with no FK constraint (only an
+            // index) — it wouldn't block the delete either way, but drop it too so the Notifications list doesn't
+            // keep pointing at an execution that no longer exists.
+            await db.AutomationScheduleNotifications.Where(x => execIds.Contains(x.AutomationExecutionId)).ExecuteDeleteAsync(ct);
+            await db.AutomationJobs.Where(x => execIds.Contains(x.AutomationExecutionId)).ExecuteDeleteAsync(ct);
+            await db.AutomationExecutions.Where(x => execIds.Contains(x.AutomationExecutionId)).ExecuteDeleteAsync(ct);
+        }
+        await db.AutomationSuiteCases.Where(x => automationCaseIds.Contains(x.AutomationCaseId)).ExecuteDeleteAsync(ct);
+        await db.AutomationCases.Where(x => automationCaseIds.Contains(x.AutomationCaseId)).ExecuteDeleteAsync(ct);
+    }
+
     public async Task<IReadOnlyList<AutomationVersionDto>> ListVersionsAsync(Guid caseId, CancellationToken ct)
         => await db.AutomationVersions.AsNoTracking().Where(x => x.AutomationCaseId == caseId).OrderByDescending(x => x.VersionNo)
             .Select(x => new AutomationVersionDto(x.AutomationVersionId, x.AutomationCaseId, x.VersionNo, x.TestCaseRevisionNo, x.DslVersion, x.DslJson, x.GeneratedByAi, x.AiProvider, x.AiModel, x.AiConfidence, x.ValidationStatus, x.ValidationErrors, x.ApprovedBy, x.ApprovedAt, x.ChangeReason, x.CreatedAt)).ToListAsync(ct);

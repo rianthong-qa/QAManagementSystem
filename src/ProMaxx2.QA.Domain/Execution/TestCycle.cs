@@ -53,8 +53,28 @@ public sealed class TestExecution
     public DateTime? DeletedAt { get; private set; }
     public Guid? DeletedBy { get; private set; }
     public TestCycleCase CycleCase { get; private set; } = null!; public ICollection<TestStepResult> StepResults { get; private set; } = []; public void SoftDelete(Guid? userId) { if (IsDeleted) return; IsDeleted = true; DeletedAt = DateTime.UtcNow; DeletedBy = userId; }
-    private static void Validate(string status) { if (!new[] { "Pass", "Fail", "Blocked", "Skipped" }.Contains(status, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("Execution status must be Pass, Fail, Blocked or Skipped."); }
-    private static string Normalize(string status) => new[] { "Pass", "Fail", "Blocked", "Skipped" }.Single(x => x.Equals(status, StringComparison.OrdinalIgnoreCase));
+    // ขยายจาก Pass/Fail/Blocked/Skipped ให้ครอบคลุมสถานะ Overall Result ทั้ง 6 ค่าตาม spec
+    // (test-case-execution-ui-spec.md §4) — เพิ่ม InProgress (Save Progress แบบยังทดสอบไม่ครบ)
+    // และ NotRun (ยังไม่ได้แตะ Step ไหนเลยแต่ยังกด Save Progress) เข้ามา
+    private static readonly string[] AllowedStatuses = ["Pass", "Fail", "Blocked", "Skipped", "InProgress", "NotRun"];
+    private static void Validate(string status) { if (!AllowedStatuses.Contains(status, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("Execution status must be Pass, Fail, Blocked, Skipped, InProgress or NotRun."); }
+    private static string Normalize(string status) => AllowedStatuses.Single(x => x.Equals(status, StringComparison.OrdinalIgnoreCase));
 }
 public sealed record StepResultInput(int StepNo, string Status, string? ActualResult, string? Comment);
 public sealed class TestStepResult { private TestStepResult() { } public TestStepResult(Guid executionId, int stepNo, string status, string? actual, string? comment) { if (!new[] { "Pass", "Fail", "Blocked", "Skipped", "NotRun" }.Contains(status, StringComparer.OrdinalIgnoreCase)) throw new ArgumentException("Invalid step status."); TestStepResultId = Guid.NewGuid(); TestExecutionId = executionId; StepNo = stepNo; Status = status; ActualResult = actual?.Trim(); Comment = comment?.Trim(); } public Guid TestStepResultId { get; private set; } public Guid TestExecutionId { get; private set; } public Guid? TestStepId { get; private set; } public int StepNo { get; private set; } public string Status { get; private set; } = string.Empty; public string? ActualResult { get; private set; } public string? Comment { get; private set; } public TestExecution Execution { get; private set; } = null!; }
+
+// สูตรคำนวณ Overall Result จากผลของแต่ละ Step (test-case-execution-ui-spec.md §5) — ลำดับ Priority:
+// Fail > Blocked > InProgress/NotRun > Pass. ผู้ใช้ห้ามกำหนด Overall Result เองโดยตรง (§25) ยกเว้น
+// Skipped ซึ่งเป็นการกระทำระดับ Test Case โดยเฉพาะ ไม่ผ่านฟังก์ชันนี้ (ดู ExecutionService.CreateAsync)
+public static class OverallResultCalculator
+{
+    public static string Calculate(IEnumerable<string> stepStatuses)
+    {
+        var list = stepStatuses.ToList();
+        if (list.Count == 0 || list.All(s => s == "NotRun")) return "NotRun";
+        if (list.Any(s => s == "Fail")) return "Fail";
+        if (list.Any(s => s == "Blocked")) return "Blocked";
+        if (list.Any(s => s == "NotRun")) return "InProgress";
+        return "Pass";
+    }
+}

@@ -13,6 +13,14 @@ import {
 
 const apiUrl = import.meta.env.VITE_API_URL ?? "/api/v1";
 const token = () => localStorage.getItem("qa.accessToken");
+// Generate-with-AI เรียก AI provider จริง (opencode/OpenAI/ฯลฯ) ซึ่งบาง provider/model ตอบช้ามาก หรือค้างไม่ตอบเลย
+// backend เองมี timeout อยู่แล้วที่ 5 นาที แต่ฝั่งนี้ไม่เคยมี timeout เลยมาก่อน ทำให้ปุ่มค้างแบบไม่มี feedback
+// ใดๆ ให้ผู้ใช้เห็นเลยถ้า provider ไม่ตอบ — ตัดที่ 90 วินาทีแทน ให้พอสำหรับ AI ทั่วไปแต่ไม่ปล่อยให้ค้างเป็นนาทีๆ
+const AI_GENERATE_TIMEOUT_MS = 90_000;
+const aiGenerateErrorMessage = (e: unknown) =>
+  e instanceof DOMException && e.name === "TimeoutError"
+    ? `AI ใช้เวลานานเกินไป (เกิน ${AI_GENERATE_TIMEOUT_MS / 1000} วินาที) ไม่ได้รับคำตอบจาก AI Provider — กรุณาลองใหม่ หรือตรวจสอบการตั้งค่า AI ที่ Setting Center`
+    : e instanceof Error ? e.message : "Generate AI ไม่สำเร็จ";
 
 type AutomationCaseItem = {
   automationCaseId: string; testCaseId: string; testCaseCode: string; testCaseTitle: string; automationCode: string;
@@ -434,7 +442,7 @@ export function AutomationPage({
     setValErrors("");
     setValidatedOk(false);
     try {
-      const r = await fetch(`${apiUrl}/automation/cases/${createdCaseId}/generate?projectId=${pid}`, { method: "POST", headers });
+      const r = await fetch(`${apiUrl}/automation/cases/${createdCaseId}/generate?projectId=${pid}`, { method: "POST", headers, signal: AbortSignal.timeout(AI_GENERATE_TIMEOUT_MS) });
       if (!r.ok) {
         const p = await r.json().catch(() => null);
         throw new Error(p?.detail ?? "Generate AI ไม่สำเร็จ");
@@ -445,7 +453,7 @@ export function AutomationPage({
       setCreatedStatus("NeedsReview");
       setNotice(`AI สร้าง DSL แล้ว (confidence ${v.aiConfidence != null ? `${Math.round(v.aiConfidence * 100)}%` : "-"}) — ตรวจแล้วกด Validate`);
     } catch (e) {
-      setNewVersionError(e instanceof Error ? e.message : "Generate AI ไม่สำเร็จ");
+      setNewVersionError(aiGenerateErrorMessage(e));
     } finally {
       setCreateBusy(false);
     }
@@ -539,7 +547,7 @@ export function AutomationPage({
     setCreateBusy(true);
     setVersionError("");
     try {
-      const r = await fetch(`${apiUrl}/automation/cases/${selectedCase.automationCaseId}/generate?projectId=${pid}`, { method: "POST", headers });
+      const r = await fetch(`${apiUrl}/automation/cases/${selectedCase.automationCaseId}/generate?projectId=${pid}`, { method: "POST", headers, signal: AbortSignal.timeout(AI_GENERATE_TIMEOUT_MS) });
       if (!r.ok) {
         const p = await r.json().catch(() => null);
         throw new Error(p?.detail ?? "Generate AI ไม่สำเร็จ");
@@ -548,7 +556,7 @@ export function AutomationPage({
       setReload((x) => x + 1);
       setNotice("AI สร้าง DSL แล้ว — Version ใหม่เป็น NeedsReview รอตรวจ/Validate/อนุมัติ");
     } catch (e) {
-      setVersionError(e instanceof Error ? e.message : "Generate AI ไม่สำเร็จ");
+      setVersionError(aiGenerateErrorMessage(e));
     } finally {
       setCreateBusy(false);
     }
@@ -850,6 +858,33 @@ export function AutomationPage({
   const [caseSortBy, setCaseSortBy] = useState("created");
   const casePageCount = Math.max(1, Math.ceil(casesPaged.total / casePageSize));
   useEffect(() => setCasePage(1), [headSearch, caseStatusFilter, caseTargetFilter, caseSortBy]);
+  // เลือกได้เฉพาะแถวในหน้าปัจจุบัน — ล้างการเลือกทุกครั้งที่เปลี่ยนหน้า/ตัวกรอง กันเลือก Case จากหน้าอื่นค้างไว้
+  // แล้วโดนลบไปด้วยโดยไม่รู้ตัว
+  const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  useEffect(() => setSelectedCaseIds(new Set()), [pid, casePage, headSearch, caseStatusFilter, caseTargetFilter, caseSortBy]);
+  const toggleCaseSelected = (id: string) => setSelectedCaseIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const allCasesOnPageSelected = casesPaged.rows.length > 0 && casesPaged.rows.every((c) => selectedCaseIds.has(c.automationCaseId));
+  const toggleSelectAllCasesOnPage = () => setSelectedCaseIds((prev) => {
+    const next = new Set(prev);
+    if (allCasesOnPageSelected) casesPaged.rows.forEach((c) => next.delete(c.automationCaseId));
+    else casesPaged.rows.forEach((c) => next.add(c.automationCaseId));
+    return next;
+  });
+  const hardDeleteSelectedCases = async () => {
+    if (!selectedCaseIds.size || !pid) return;
+    const targets = casesPaged.rows.filter((c) => selectedCaseIds.has(c.automationCaseId));
+    const preview = targets.slice(0, 5).map((c) => c.automationCode).join(", ") + (targets.length > 5 ? ` และอีก ${targets.length - 5} รายการ` : "");
+    if (!window.confirm(`ยืนยันลบ Automation Case ถาวร ${selectedCaseIds.size} รายการ (${preview})?\n\nการลบนี้ไม่สามารถกู้คืนได้ รวม Version/DSL และประวัติการรัน (Execution) ทั้งหมดของ Case ที่เลือกไปด้วย`)) return;
+    setBulkDeleteBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/cases/hard-delete?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ automationCaseIds: [...selectedCaseIds] }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ลบ Automation Case ไม่สำเร็จ"); }
+      setSelectedCaseIds(new Set());
+      setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "ลบ Automation Case ไม่สำเร็จ"); }
+    finally { setBulkDeleteBusy(false); }
+  };
   useEffect(() => {
     if (!pid) { setCasesPaged({ total: 0, rows: [] }); return; }
     const qs = new URLSearchParams({ projectId: pid, page: String(casePage), size: String(casePageSize), sortBy: caseSortBy });
@@ -932,32 +967,51 @@ export function AutomationPage({
   if (kFailToday > 0) nextActions.push({ text: `มี Fail วันนี้ ${kFailToday} ครั้ง — ตรวจผล/Evidence และจำแนก Fail ก่อนสร้าง Defect`, btn: "ไป Execution", tab: "execution" });
   if (executions.length > 0 && kFailToday === 0) nextActions.push({ text: "ผลล่าสุดผ่านทั้งหมด — ดูประวัติและ Evidence ในหน้า Execution", btn: "ไป Execution", tab: "execution" });
 
-  const tabs = [
-    { id: "dashboard", label: "ภาพรวม", icon: "◉" },
-    { id: "cases", label: "Automation Cases", icon: "▤" },
-    { id: "suites", label: "Automation Suite", icon: "▶" },
-    { id: "schedules", label: "Schedule", icon: "◷" },
-    { id: "buildTriggers", label: "Build Trigger", icon: "⚡" },
-    { id: "webhooks", label: "Webhook", icon: "🔗" },
-    { id: "dataSnapshots", label: "DB Snapshot", icon: "💾" },
-    { id: "dataSeeds", label: "Seed & Cleanup", icon: "🌱" },
-    { id: "dataProfiles", label: "Environment Data Profile", icon: "🗂" },
-    { id: "execution", label: "Execution", icon: "▶" },
-    { id: "failures", label: "Failure Dashboard", icon: "!" },
-    { id: "manage", label: "การจัดการ", icon: "⚙" },
+  // Grouped instead of one flat row of 12 tabs — that read as cluttered
+  // (a wall of pills, several needing a horizontal scroll to even see).
+  // Each group is one pill in the primary bar; a group with more than one
+  // screen reveals a second, smaller row (reusing the same visual family
+  // "การจัดการ" already used for its own Action Library/Objects/Agents/Retry
+  // sub-nav) so nothing that used to be reachable in one click is lost —
+  // most things are now just one click to reveal, one more to open.
+  const tabGroups = [
+    { id: "dashboard", label: "ภาพรวม", icon: "◉", tabs: [
+      { id: "dashboard", label: "ภาพรวม" },
+    ] },
+    { id: "testing", label: "Automation Testing", icon: "▤", tabs: [
+      { id: "cases", label: "Automation Cases" },
+      { id: "suites", label: "Automation Suite" },
+      { id: "execution", label: "Execution" },
+      { id: "failures", label: "Failure Dashboard" },
+    ] },
+    { id: "scheduling", label: "Scheduling & CI", icon: "◷", tabs: [
+      { id: "schedules", label: "Schedule" },
+      { id: "buildTriggers", label: "Build Trigger" },
+      { id: "webhooks", label: "Webhook" },
+    ] },
+    { id: "data", label: "Test Data", icon: "💾", tabs: [
+      { id: "dataSnapshots", label: "DB Snapshot" },
+      { id: "dataSeeds", label: "Seed & Cleanup" },
+      { id: "dataProfiles", label: "Environment Data Profile" },
+    ] },
+    { id: "manage", label: "การจัดการ", icon: "⚙", tabs: [
+      { id: "manage", label: "การจัดการ" },
+    ] },
   ];
+  const activeGroup = tabGroups.find((g) => g.tabs.some((t) => t.id === tab)) ?? tabGroups[0];
 
   return <article className="automation-page">
     {!pid ? <div className="empty"><p>เลือก Project เพื่อดู Automation Workspace</p></div> : <>
       <section className="automation-page-head">
         <div className="automation-page-actions">
-          <div className="automation-search"><input aria-label="ค้นหา Automation Case" placeholder="ค้นหา Automation Case..." value={headSearch} onChange={(e) => setHeadSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") setTab("cases"); }} /></div>
+          <div className="automation-search"><input type="text" aria-label="ค้นหา Automation Case" placeholder="ค้นหา Automation Case..." value={headSearch} onChange={(e) => setHeadSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") setTab("cases"); }} /></div>
           <button className="btn" type="button" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล" onClick={() => setReload((v) => v + 1)}>↻ <span className="automation-hide-mobile">รีเฟรช</span></button>
           <button className="btn" type="button" disabled={!cases.length} onClick={exportCases}>↥ Export</button>
           {canEdit && <button className="btn primary" type="button" onClick={openCreate}>＋ สร้าง Automation Case</button>}
         </div>
       </section>
-      <nav className="automation-tabs" aria-label="Automation Module"><div className="automation-tabs-inner">{tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}><span aria-hidden="true">{t.icon}</span>{t.label}</button>)}</div></nav>
+      <nav className="automation-tabs" aria-label="Automation Module"><div className="automation-tabs-inner">{tabGroups.map((g) => <button key={g.id} type="button" className={activeGroup.id === g.id ? "active" : ""} aria-current={activeGroup.id === g.id ? "page" : undefined} onClick={() => setTab(g.tabs[0].id)}><span aria-hidden="true">{g.icon}</span>{g.label}</button>)}</div></nav>
+      {activeGroup.tabs.length > 1 && <nav className="automation-subtabs" aria-label={activeGroup.label}>{activeGroup.tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>}
       {error && <div className="inline-alert error"><span>{error}</span></div>}
       {notice && <div className="inline-alert success"><span>{notice}</span></div>}
 
@@ -988,7 +1042,7 @@ export function AutomationPage({
             {nextActions.length ? <div className="automation-task-list">{nextActions.map((a, i) => { const [title, desc] = splitTaskText(a.text); return <button key={i} type="button" className="automation-task" onClick={() => setTab(a.tab)}><span className={`automation-task-icon ${taskClass(a.text, a.tab)}`} aria-hidden="true">{taskIcon(a.tab)}</span><span className="automation-task-body"><strong>{title}</strong>{desc && <p>{desc}</p>}</span><span className="automation-task-go" aria-hidden="true">›</span></button>; })}</div> : <div className="empty"><p>ไม่มีรายการที่ต้องดำเนินการ</p><small>ทุกอย่างพร้อม — สร้างและรัน Automation Case ได้เลย</small></div>}
           </section>
           <section className="automation-panel">
-            <div className="automation-panel-head"><h2>Agent Status</h2>{agents.length > 0 && <button className="automation-panel-link" onClick={() => setTab("manage")}>ดูทั้งหมด</button>}</div>
+            <div className="automation-panel-head"><h2>Agent Status</h2>{agents.length > 0 && <button className="automation-panel-link" onClick={() => setTab("manage")}><span aria-hidden="true">»</span> ดูทั้งหมด</button>}</div>
             {primaryAgent ? <div className="automation-agent-card">
               <div>
                 <div className="automation-agent-status"><span className="automation-online-dot" />{primaryAgent.agentCode}<span className="automation-primary-tag">Primary</span></div>
@@ -1008,7 +1062,7 @@ export function AutomationPage({
         </div>
 
         <section className="automation-panel automation-result-panel">
-          <div className="automation-panel-head"><h2>ผลการรันล่าสุด</h2><button className="automation-panel-link" onClick={() => setTab("execution")}>ดูทั้งหมด</button></div>
+          <div className="automation-panel-head"><h2>ผลการรันล่าสุด</h2><button className="automation-panel-link" onClick={() => setTab("execution")}><span aria-hidden="true">»</span> ดูทั้งหมด</button></div>
           {executions.length ? <>
             <div className="automation-table-wrap">
               <table className="automation-recent-table">
@@ -1039,30 +1093,41 @@ export function AutomationPage({
           <div className="automation-section-head"><h3>Flaky Candidates (AUT-P0-010)</h3><span className="muted-text">Pass/Fail สลับกันบ่อยใน execution ล่าสุด</span></div>
           <div className="automation-result-list">{flakyCandidates.map((f) => <div key={f.automationCaseId} className="automation-failure-row">
             <b>{f.automationCode}</b><span>{f.transitions} transitions / {f.recentRuns} runs</span><span>ล่าสุด {formatThaiDateTime(f.lastExecutedAt)}</span>
-            {canManage && <button type="button" className="table-action" onClick={() => setQuarantineModalFor(f)}>Quarantine</button>}
+            {canManage && <button type="button" className="table-action icon-only" title="Quarantine" aria-label={`Quarantine ${f.automationCode}`} onClick={() => setQuarantineModalFor(f)}><span aria-hidden="true">⚠</span></button>}
           </div>)}</div>
         </section>}
         {cases.length ? <>
-          <div className="automation-case-toolbar">
-            <select aria-label="กรองสถานะ" value={caseStatusFilter} onChange={(e) => setCaseStatusFilter(e.target.value)}>
-              <option value="all">ทุกสถานะ</option>
-              {["Draft", "NeedsReview", "Validated", "Approved", "Ready", "Running", "MaintenanceRequired"].map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select aria-label="กรอง Target App" value={caseTargetFilter} onChange={(e) => setCaseTargetFilter(e.target.value)}>
-              <option value="all">ทุก Target App</option>
-              <option value="Pos">Pos · PromaxxsPos.exe</option>
-              <option value="App">App · Promaxxs.App.exe</option>
-              <option value="WindowsUI">WindowsUI · generic</option>
-            </select>
-            <select aria-label="เรียงตาม" value={caseSortBy} onChange={(e) => setCaseSortBy(e.target.value)}>
-              <option value="created">ล่าสุดก่อน</option>
-              <option value="code">Code (A→Z)</option>
-              <option value="status">สถานะ</option>
-            </select>
-            {(caseStatusFilter !== "all" || caseTargetFilter !== "all" || headSearch.trim()) && <button type="button" className="table-action" onClick={() => { setCaseStatusFilter("all"); setCaseTargetFilter("all"); setHeadSearch(""); }}>ล้างตัวกรอง</button>}
+          <div className="filter-toolbar">
+            <div className="filter-toolbar-top">
+              <div className="result-count"><strong>{casesPaged.total.toLocaleString()}</strong><span>Automation Cases{(headSearch.trim() || caseStatusFilter !== "all" || caseTargetFilter !== "all") ? " ที่ตรงเงื่อนไข" : ""}</span></div>
+              {(caseStatusFilter !== "all" || caseTargetFilter !== "all" || headSearch.trim()) && <button type="button" className="table-action" onClick={() => { setCaseStatusFilter("all"); setCaseTargetFilter("all"); setHeadSearch(""); }}><span aria-hidden="true">✕</span> ล้างตัวกรอง</button>}
+            </div>
+            <div className="filter-toolbar-row automation-case-toolbar">
+              <select aria-label="กรองสถานะ" value={caseStatusFilter} onChange={(e) => setCaseStatusFilter(e.target.value)}>
+                <option value="all">ทุกสถานะ</option>
+                {["Draft", "NeedsReview", "Validated", "Approved", "Ready", "Running", "MaintenanceRequired"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select aria-label="กรอง Target App" value={caseTargetFilter} onChange={(e) => setCaseTargetFilter(e.target.value)}>
+                <option value="all">ทุก Target App</option>
+                <option value="Pos">Pos · PromaxxsPos.exe</option>
+                <option value="App">App · Promaxxs.App.exe</option>
+                <option value="WindowsUI">WindowsUI · generic</option>
+              </select>
+              <select aria-label="เรียงตาม" value={caseSortBy} onChange={(e) => setCaseSortBy(e.target.value)}>
+                <option value="created">ล่าสุดก่อน</option>
+                <option value="code">Code (A→Z)</option>
+                <option value="status">สถานะ</option>
+              </select>
+            </div>
           </div>
-          {(headSearch.trim() || caseStatusFilter !== "all" || caseTargetFilter !== "all") && <div className="automation-search-hint">แสดง {casesPaged.total.toLocaleString()} รายการที่ตรงเงื่อนไข{headSearch.trim() ? ` · ค้นหา "${headSearch}"` : ""}{caseStatusFilter !== "all" ? ` · สถานะ ${caseStatusFilter}` : ""}{caseTargetFilter !== "all" ? ` · Target ${caseTargetFilter}` : ""} — <button type="button" className="table-action" onClick={() => { setHeadSearch(""); setCaseStatusFilter("all"); setCaseTargetFilter("all"); }}>ล้างทั้งหมด</button></div>}
-          {casesPaged.rows.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th></th></tr></thead><tbody>{casesPaged.rows.map((c) => <tr key={c.automationCaseId}><td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td><button className="table-action" onClick={() => openCase(c)}>รายละเอียด</button></td></tr>)}</tbody></table></div>
+          {canManage && selectedCaseIds.size > 0 && (
+            <div className="testcase-bulk-bar" role="region" aria-label="จัดการ Automation Case ที่เลือก">
+              <span className="bulk-count">{selectedCaseIds.size} เลือกแล้ว</span>
+              <button type="button" className="btn danger" disabled={bulkDeleteBusy} onClick={hardDeleteSelectedCases}>{bulkDeleteBusy ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</> : <><span aria-hidden="true">✕</span> ลบถาวร</>}</button>
+              <button type="button" className="bulk-clear" disabled={bulkDeleteBusy} onClick={() => setSelectedCaseIds(new Set())}><span aria-hidden="true">✕</span> ยกเลิกเลือก</button>
+            </div>
+          )}
+          {casesPaged.rows.length ? <div className="table-wrap"><table><thead><tr>{canManage && <th className="case-select-col"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={allCasesOnPageSelected} onChange={toggleSelectAllCasesOnPage} /></th>}<th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th className="actions-col">จัดการ</th></tr></thead><tbody>{casesPaged.rows.map((c) => <tr key={c.automationCaseId} className={selectedCaseIds.has(c.automationCaseId) ? "is-selected" : ""}>{canManage && <td className="case-select-col" data-label="เลือก"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selectedCaseIds.has(c.automationCaseId)} onChange={() => toggleCaseSelected(c.automationCaseId)} /></td>}<td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td className="actions-col"><button className="table-action icon-only" title="รายละเอียด" aria-label={`รายละเอียด ${c.automationCode}`} onClick={() => openCase(c)}><span aria-hidden="true">i</span></button></td></tr>)}</tbody></table></div>
             : <div className="empty"><p>ไม่พบ Automation Case ที่ตรงเงื่อนไข</p><small>ลองเปลี่ยนคำค้นหาหรือตัวกรองด้านบน</small></div>}
           {casesPaged.total > casePageSize && <Pager page={casePage} count={casePageCount} total={casesPaged.total} pageSize={casePageSize} onPrev={() => setCasePage((p) => Math.max(1, p - 1))} onNext={() => setCasePage((p) => Math.min(casePageCount, p + 1))} />}
         </> : <div className="empty"><p>ยังไม่มี Automation Case</p><small>สร้างจาก Test Case ที่เป็น Automation Candidate — จากนั้นเขียน DSL / Generate AI → Validate → อนุมัติ → พร้อมรัน</small>{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div>}
@@ -1106,7 +1171,7 @@ export function AutomationPage({
             <div className="acw-section-head"><div><h2>เลือก Test Case</h2><p>ค้นหาและเลือก Test Case ที่ต้องการสร้าง Automation Case</p></div><button type="button" className="btn" title="รีเฟรชรายการ" aria-label="รีเฟรชรายการ" disabled={createBusy} onClick={openCreate}>↻</button></div>
             <div className="acw-filters">
               {createModules.length > 0 && <select aria-label="กรอง Module" value={createModuleFilter} onChange={(e) => setCreateModuleFilter(e.target.value)}><option value="">ทุก Module</option>{moduleTreeOptions(createModules)}</select>}
-              <input aria-label="ค้นหา Test Case" placeholder="ค้นหา Code / ชื่อ..." value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
+              <input type="text" aria-label="ค้นหา Test Case" placeholder="ค้นหา Code / ชื่อ..." value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
               <select aria-label="กรอง Priority" value={wizardPriority} onChange={(e) => setWizardPriority(e.target.value)}><option value="">ทุก Priority</option><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></select>
             </div>
             {wizardList.length ? <>
@@ -1209,10 +1274,10 @@ export function AutomationPage({
           <div className="acw-card">
             <div className="acw-section-head"><div><h2>Automation Case</h2><p>ตรวจสอบข้อมูล Automation ก่อนอนุมัติ</p></div><span className="badge ai">{aiConf != null ? "AI Generated" : "Manual DSL"}</span></div>
             <div className="acw-form-grid">
-              <label className="field full">Automation Code<input value={createdCode} readOnly /></label>
-              <label className="field full">Automation Name<input value={`Automation - ${createPick?.title ?? ""}`} readOnly /></label>
-              <label className="field">Linked Test Case<input value={createPick?.testCaseCode ?? ""} readOnly /></label>
-              <label className="field">Version<input value="1.0" readOnly /></label>
+              <label className="field full">Automation Code<input type="text" value={createdCode} readOnly /></label>
+              <label className="field full">Automation Name<input type="text" value={`Automation - ${createPick?.title ?? ""}`} readOnly /></label>
+              <label className="field">Linked Test Case<input type="text" value={createPick?.testCaseCode ?? ""} readOnly /></label>
+              <label className="field">Version<input type="text" value="1.0" readOnly /></label>
               <label className="field">Status<span className="acw-status"><Badge tone={caseStatusTone[createdStatus] ?? "blue"}>{createdStatus}</Badge></span></label>
               <label className="field">Agent Target<span className="acw-status">{wizardType} · Windows Agent</span></label>
             </div>
@@ -1228,10 +1293,10 @@ export function AutomationPage({
             </div>
           </div>
           <div className="acw-card">
-            <div className="acw-section-head"><div><h2>Automation DSL</h2><p>ภาษากลางที่ Agent จะนำไป Execute กับ ProMaxx2 Windows</p></div>{canGenerateAi && <button type="button" className="btn" disabled={createBusy} onClick={generateAiForNewCase}>{createBusy ? "AI กำลังสร้าง..." : "↻ Generate AI"}</button>}</div>
+            <div className="acw-section-head"><div><h2>Automation DSL</h2><p>ภาษากลางที่ Agent จะนำไป Execute กับ ProMaxx2 Windows</p></div>{canGenerateAi && <button type="button" className="btn" title={`เรียก AI Provider จริง อาจใช้เวลาถึง ${AI_GENERATE_TIMEOUT_MS / 1000} วินาที`} disabled={createBusy} onClick={generateAiForNewCase}>{createBusy ? <><span className="spinner inline" aria-hidden="true" /> AI กำลังสร้าง... (อาจถึง {AI_GENERATE_TIMEOUT_MS / 1000}s)</> : "↻ Generate AI"}</button>}</div>
             <textarea className="acw-dsl" rows={14} value={newDsl} onChange={(e) => setNewDsl(e.target.value)} spellCheck={false} aria-label="DSL JSON" />
             <div className="acw-action-bar">
-              <button type="button" className="btn" disabled={createBusy} onClick={() => { setNewDsl(sampleDsl); setValErrors(""); setValidatedOk(false); }}>โหลดตัวอย่าง</button>
+              <button type="button" className="btn" disabled={createBusy} onClick={() => { setNewDsl(sampleDsl); setValErrors(""); setValidatedOk(false); }}><span aria-hidden="true">▤</span> โหลดตัวอย่าง</button>
             </div>
             <div className="acw-note">{valErrors ? <span className="warn">✕ Validate Error: {valErrors}</span> : <span className="ok">✓ สถานะ: {validatedOk ? "Validate ผ่าน — พร้อมบันทึก" : "DSL พร้อมตรวจสอบ — กด 'บันทึก + Validate'"}</span>}</div>
           </div>
@@ -1249,16 +1314,16 @@ export function AutomationPage({
               <div className="acw-result-item"><div className="k">Execution Target</div><div className="v">{wizardType} · Windows Agent</div></div>
             </div>
             <div className="acw-action-bar acw-center">
-              <button type="button" className="btn" onClick={openCreatedCase}>ดู Automation Case</button>
-              <button type="button" className="btn" onClick={() => setCreateModal(false)}>ไปหน้า Automation</button>
-              <button type="button" className="btn acw-btn-success" onClick={resetWizard}>สร้าง Case เพิ่ม</button>
+              <button type="button" className="btn" onClick={openCreatedCase}><span aria-hidden="true">i</span> ดู Automation Case</button>
+              <button type="button" className="btn" onClick={() => setCreateModal(false)}>ไปหน้า Automation <span aria-hidden="true">→</span></button>
+              <button type="button" className="btn acw-btn-success" onClick={resetWizard}><span aria-hidden="true">+</span> สร้าง Case เพิ่ม</button>
             </div>
           </div>
         </div>}
       </div>
 
       {wizardStep < 4 && <div className="modal-actions">
-        <button className="btn" disabled={createBusy} onClick={() => setCreateModal(false)}>ยกเลิก</button>
+        <button className="btn" disabled={createBusy} onClick={() => setCreateModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button>
         {wizardStep > 1 && <button className="btn" disabled={createBusy} onClick={() => setWizardStep((s) => s - 1)}>‹ ย้อนกลับ</button>}
         {wizardStep === 1 && <button className="btn primary" disabled={createBusy || !createPick} onClick={() => setWizardStep(2)}>ถัดไป ›</button>}
         {wizardStep === 2 && <button className="btn primary" disabled={createBusy || !createPick} onClick={async () => { const r = await createCase(createPick?.testCaseId ?? "", wizardType); if (r) setWizardStep(3); }}>{createBusy ? "กำลังสร้าง..." : "สร้าง Automation ›"}</button>}
@@ -1277,10 +1342,10 @@ export function AutomationPage({
         <p className="muted-text">เปิดตั้งแต่ {formatThaiDateTime(selectedCase.maintenanceOpenedAt)}{selectedCase.maintenanceOwnerUserId ? ` · ผู้รับผิดชอบ: ${selectedCase.maintenanceOwnerUserId}` : " · ยังไม่ได้มอบหมายผู้รับผิดชอบ"}</p>
         {canEdit && <>
           <div className="form-grid">
-            <label>User Id ผู้รับผิดชอบ<input value={maintenanceOwnerInput} onChange={(e) => setMaintenanceOwnerInput(e.target.value)} placeholder="ระบุ User Id" /></label>
+            <label>User Id ผู้รับผิดชอบ<input type="text" value={maintenanceOwnerInput} onChange={(e) => setMaintenanceOwnerInput(e.target.value)} placeholder="ระบุ User Id" /></label>
           </div>
           <div className="automation-failure-actions">
-            <button type="button" className="btn" disabled={maintenanceBusy || !maintenanceOwnerInput.trim()} onClick={assignMaintenanceOwner}>รับผิดชอบซ่อม</button>
+            <button type="button" className="btn" disabled={maintenanceBusy || !maintenanceOwnerInput.trim()} onClick={assignMaintenanceOwner}><span aria-hidden="true">✓</span> รับผิดชอบซ่อม</button>
           </div>
           <label className="full">บันทึกการแก้ไข<textarea rows={3} value={maintenanceNote} onChange={(e) => setMaintenanceNote(e.target.value)} placeholder="สาเหตุที่แท้จริงและสิ่งที่แก้ไขแล้ว เช่น อัปเดต Object Repository AutomationId ใหม่" /></label>
           <div className="automation-failure-actions">
@@ -1292,11 +1357,11 @@ export function AutomationPage({
       {selectedCase.isQuarantined && <section className="automation-failure-analysis" aria-label="Quarantine">
         <div className="automation-section-head"><h3>Flaky Quarantine</h3><Badge tone="orange">Quarantined</Badge></div>
         <p className="muted-text">เหตุผล: {selectedCase.quarantineReason}{selectedCase.quarantineExpiresAt ? ` · หมดอายุ ${formatThaiDateTime(selectedCase.quarantineExpiresAt)}` : ""}</p>
-        {canManage && <div className="automation-failure-actions"><button type="button" className="btn" disabled={maintenanceBusy} onClick={() => unquarantineCase(selectedCase.automationCaseId)}>Unquarantine</button></div>}
+        {canManage && <div className="automation-failure-actions"><button type="button" className="btn" disabled={maintenanceBusy} onClick={() => unquarantineCase(selectedCase.automationCaseId)}><span aria-hidden="true">✓</span> Unquarantine</button></div>}
       </section>}
 
       <VersionEditor selectedCase={selectedCase} versions={versions} canEdit={canEdit} canValidate={canValidate} canApprove={canApprove} canRun={canRun} canGenerateAi={canGenerateAi} createBusy={createBusy} versionError={versionError} onCreate={createVersion} onValidate={validateVersion} onApprove={approveVersion} onRun={openRun} onGenerateAi={generateAi} />
-      <div className="modal-actions"><button className="btn primary" onClick={() => setSelectedCase(null)}>ปิด</button></div>
+      <div className="modal-actions"><button className="btn primary" onClick={() => setSelectedCase(null)}><span aria-hidden="true">✕</span> ปิด</button></div>
     </div></div>}
 
     {runModal && selectedCase && <RunModal item={selectedCase} versions={versions} builds={builds} environments={environments} agents={agents} busy={createBusy} onClose={() => setRunModal(false)} onRun={runCase} />}
@@ -1343,7 +1408,7 @@ export function AutomationPage({
           <footer>{canViewEvidence && <button className="table-action" disabled={evidenceBusy === ev.automationEvidenceId} onClick={() => openEvidenceFile(ev)}>{evidenceBusy === ev.automationEvidenceId ? "กำลังเปิด..." : "เปิดไฟล์"}</button>}</footer>
         </article>)}
       </section> : null}
-      <div className="modal-actions"><button className="btn primary" onClick={() => setExecDetail(null)}>ปิด</button></div>
+      <div className="modal-actions"><button className="btn primary" onClick={() => setExecDetail(null)}><span aria-hidden="true">✕</span> ปิด</button></div>
     </div></div>}
   </article>;
 }
@@ -1368,8 +1433,8 @@ function VersionEditor({
         <p className="automation-dsl-preview">{v.dslJson.length > 300 ? `${v.dslJson.slice(0, 300)}…` : v.dslJson}</p>
         {v.validationErrors && <p className="automation-validation-errors">{v.validationErrors}</p>}
         <div className="automation-version-actions">
-          {canValidate && v.validationStatus !== "Valid" && <button className="btn" disabled={createBusy} onClick={() => onValidate(v)}>Validate</button>}
-          {canApprove && v.validationStatus === "Valid" && !v.approvedAt && <button className="btn primary" disabled={createBusy} onClick={() => onApprove(v)}>อนุมัติ</button>}
+          {canValidate && v.validationStatus !== "Valid" && <button className="btn" disabled={createBusy} onClick={() => onValidate(v)}><span aria-hidden="true">✓</span> Validate</button>}
+          {canApprove && v.validationStatus === "Valid" && !v.approvedAt && <button className="btn primary" disabled={createBusy} onClick={() => onApprove(v)}><span aria-hidden="true">✓</span> อนุมัติ</button>}
           {canRun && selectedCase.status === "Ready" && <button className="btn primary" disabled={createBusy} onClick={onRun}>▶ สั่งรัน</button>}
         </div>
       </article>) : <div className="empty"><p>ยังไม่มี Version</p><small>สร้าง Version แรกด้วย DSL ด้านล่าง</small></div>}
@@ -1378,9 +1443,9 @@ function VersionEditor({
       <h3>สร้าง Version ใหม่ (DSL v1)</h3>
       <label className="full">DSL JSON<textarea rows={14} value={dsl} onChange={(e) => setDsl(e.target.value)} spellCheck={false} aria-label="DSL JSON" /></label>
       <div className="automation-version-create-actions">
-        {canGenerateAi && <button type="button" className="btn primary" disabled={createBusy} onClick={onGenerateAi}>{createBusy ? "AI กำลังสร้าง..." : "✦ Generate AI"}</button>}
-        <button type="button" className="btn" onClick={() => setDsl(sampleDsl)}>โหลดตัวอย่าง</button>
-        <label className="automation-reason-field">หมายเหตุการเปลี่ยนแปลง<input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="เช่น เพิ่ม step ตรวจ stock" /></label>
+        {canGenerateAi && <button type="button" className="btn primary" title={`เรียก AI Provider จริง อาจใช้เวลาถึง ${AI_GENERATE_TIMEOUT_MS / 1000} วินาที`} disabled={createBusy} onClick={onGenerateAi}>{createBusy ? <><span className="spinner inline" aria-hidden="true" /> AI กำลังสร้าง... (อาจถึง {AI_GENERATE_TIMEOUT_MS / 1000}s)</> : "✦ Generate AI"}</button>}
+        <button type="button" className="btn" onClick={() => setDsl(sampleDsl)}><span aria-hidden="true">▤</span> โหลดตัวอย่าง</button>
+        <label className="automation-reason-field">หมายเหตุการเปลี่ยนแปลง<input type="text" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="เช่น เพิ่ม step ตรวจ stock" /></label>
         <button type="button" className="btn" disabled={createBusy || !dsl.trim()} onClick={() => onCreate(dsl, reason)}>{createBusy ? "กำลังบันทึก..." : "สร้าง Version"}</button>
       </div>
       <p className="muted-text">DSL ต้องเป็น JSON ตามรูปแบบ: <code>{"{ dslVersion, automationType, steps: [{ stepNo, action, parameters }] }"}</code> — Action ต้องมีใน Action Library</p>
@@ -1411,7 +1476,7 @@ function RunModal({
       <label>Agent (ไม่บังคับ)<select value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">ปล่อยให้คิวจัดสรร</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode} · {a.connectivity}</option>)}</select></label>
       <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !versionId || !buildId || !envId} onClick={() => onRun(item, versionId, buildId, envId, agentId, priority)}>{busy ? "กำลังส่งงาน..." : "ส่งเข้าคิว"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !versionId || !buildId || !envId} onClick={() => onRun(item, versionId, buildId, envId, agentId, priority)}>{busy ? "กำลังส่งงาน..." : "ส่งเข้าคิว"}</button></div>
   </div></div>;
 }
 
@@ -1469,22 +1534,22 @@ function ActionLibraryTab({ actions, canManage, headers, onReload, onError, acti
   return <section className="automation-actions" aria-label="Action Library">
     <header className="automation-section-head"><div><h2>Action Library</h2><p>ชุดคำสั่งที่ Agent รองรับ · <code>ActionCode</code> ต้องตรงกับ DSL</p></div>{canManage && <button className="btn primary" onClick={openCreate}>+ เพิ่ม Action</button>}</header>
     <div className="automation-cand-filters" role="group" aria-label="กรอง Action ตาม Category">{cats.map((c) => <button key={c} type="button" className={"chip" + (category === c ? " active" : "")} onClick={() => setCategory(c)}>{c}</button>)}</div>
-    {filtered.length ? <div className="table-wrap"><table><thead><tr><th>Action Code</th><th>Name</th><th>Category</th><th>Handler</th><th>Min Agent</th><th>Retry Safety</th><th>Active</th>{canManage && <th>Actions</th>}</tr></thead><tbody>{filtered.map((a) => <tr key={a.automationActionId}><td><b>{a.actionCode}</b></td><td>{a.actionName}</td><td><Badge tone="blue">{a.category}</Badge></td><td><code>{a.handlerKey}</code></td><td>{a.minimumAgentVersion ?? "-"}</td><td><Badge tone={a.retrySafety === "Safe" ? "green" : a.retrySafety === "Conditional" ? "yellow" : "red"}>{a.retrySafety}</Badge></td><td><Badge tone={a.isActive ? "green" : "gray"}>{a.isActive ? "Active" : "Inactive"}</Badge></td>{canManage && <td><div className="automation-row-actions"><button type="button" className="table-action" disabled={busy} onClick={() => openEdit(a)}>แก้ไข</button><button type="button" className={`table-action${a.isActive ? " danger" : ""}`} disabled={busy} onClick={() => toggle(a)}>{a.isActive ? "ปิด" : "เปิด"}</button></div></td>}</tr>)}</tbody></table></div> : <div className="empty"><p>ไม่พบ Action</p></div>}
+    {filtered.length ? <div className="table-wrap"><table><thead><tr><th>Action Code</th><th>Name</th><th>Category</th><th>Handler</th><th>Min Agent</th><th>Retry Safety</th><th>Active</th>{canManage && <th>Actions</th>}</tr></thead><tbody>{filtered.map((a) => <tr key={a.automationActionId}><td><b>{a.actionCode}</b></td><td>{a.actionName}</td><td><Badge tone="blue">{a.category}</Badge></td><td><code>{a.handlerKey}</code></td><td>{a.minimumAgentVersion ?? "-"}</td><td><Badge tone={a.retrySafety === "Safe" ? "green" : a.retrySafety === "Conditional" ? "yellow" : "red"}>{a.retrySafety}</Badge></td><td><Badge tone={a.isActive ? "green" : "gray"}>{a.isActive ? "Active" : "Inactive"}</Badge></td>{canManage && <td><div className="automation-row-actions"><button type="button" className="table-action" disabled={busy} onClick={() => openEdit(a)}><span aria-hidden="true">✎</span> แก้ไข</button><button type="button" className={`table-action${a.isActive ? " danger" : ""}`} disabled={busy} onClick={() => toggle(a)}><span aria-hidden="true">⏻</span> {a.isActive ? "ปิด" : "เปิด"}</button></div></td>}</tr>)}</tbody></table></div> : <div className="empty"><p>ไม่พบ Action</p></div>}
 
     {actionModal && <div className="modal" role="dialog" aria-modal="true" onMouseDown={() => !busy && setActionModal(false)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head"><div><h2>{editing ? `แก้ไข ${editing.actionCode}` : "เพิ่ม Action"}</h2><small>Action จะถูกใช้ตรวจสอบ (Validate) ว่า DSL ถูกต้อง</small></div><button aria-label="ปิด" disabled={busy} onClick={() => setActionModal(false)}>×</button></div>
       <div className="form-grid">
-        <label>Action Code<input value={form.actionCode} disabled={Boolean(editing)} onChange={(e) => setForm({ ...form, actionCode: e.target.value.toUpperCase() })} placeholder="เช่น SET_QTY" /></label>
-        <label>Name<input value={form.actionName} onChange={(e) => setForm({ ...form, actionName: e.target.value })} /></label>
+        <label>Action Code<input type="text" value={form.actionCode} disabled={Boolean(editing)} onChange={(e) => setForm({ ...form, actionCode: e.target.value.toUpperCase() })} placeholder="เช่น SET_QTY" /></label>
+        <label>Name<input type="text" value={form.actionName} onChange={(e) => setForm({ ...form, actionName: e.target.value })} /></label>
         <label>Category<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}><option>Authentication</option><option>Navigation</option><option>Document</option><option>Item</option><option>Generic UI</option><option>Validation</option></select></label>
-        <label>Minimum Agent Version<input value={form.minimumAgentVersion} onChange={(e) => setForm({ ...form, minimumAgentVersion: e.target.value })} /></label>
-        <label>Handler Key<input value={form.handlerKey || form.actionCode} disabled={!editing} onChange={(e) => setForm({ ...form, handlerKey: e.target.value.toUpperCase() })} /></label>
+        <label>Minimum Agent Version<input type="text" value={form.minimumAgentVersion} onChange={(e) => setForm({ ...form, minimumAgentVersion: e.target.value })} /></label>
+        <label>Handler Key<input type="text" value={form.handlerKey || form.actionCode} disabled={!editing} onChange={(e) => setForm({ ...form, handlerKey: e.target.value.toUpperCase() })} /></label>
         {editing && <label>Retry Safety<select value={form.retrySafety} onChange={(e) => setForm({ ...form, retrySafety: e.target.value })}><option value="Safe">Safe — retry ได้เสมอ</option><option value="Conditional">Conditional — retry ถ้ายังไม่สำเร็จ</option><option value="Unsafe">Unsafe — ห้าม retry (เช่น บันทึกเอกสาร)</option></select></label>}
         {editing && <label className="checkbox-field"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> Active</label>}
         <label className="full">Description<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
         <label className="full">Parameter Schema JSON<textarea rows={6} spellCheck={false} value={form.parameterSchemaJson} onChange={(e) => setForm({ ...form, parameterSchemaJson: e.target.value })} /></label>
       </div>
-      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setActionModal(false)}>ยกเลิก</button><button className="btn primary" disabled={busy || !form.actionCode.trim() || !form.actionName.trim() || (Boolean(editing) && !form.handlerKey.trim())} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setActionModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !form.actionCode.trim() || !form.actionName.trim() || (Boolean(editing) && !form.handlerKey.trim())} onClick={save}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>
     </div></div>}
   </section>;
 }
@@ -1629,34 +1694,34 @@ function ObjectRepositoryTab({ projectId, objects, canManage, headers, onReload,
   };
 
   return <section className="automation-objects" aria-label="Object Repository">
-    <header className="automation-section-head"><div><h2>Object Repository</h2><p>Mapping ชื่อ Business (<code>Screen.Object</code>) ไปยัง Windows Control (<code>AutomationId</code>)</p></div>{canManage && <div className="automation-row-actions"><button className="btn" disabled={busy || !verifySelected.size} onClick={requestVerification}>⌕ ตรวจสอบที่เลือก ({verifySelected.size})</button><button className="btn" onClick={() => setVerifyModal(true)}>ผลตรวจสอบ</button><button className="btn" onClick={() => setImportModal(true)}>Import Scanner</button><button className="btn primary" onClick={openCreate}>+ เพิ่ม Object</button></div>}</header>
+    <header className="automation-section-head"><div><h2>Object Repository</h2><p>Mapping ชื่อ Business (<code>Screen.Object</code>) ไปยัง Windows Control (<code>AutomationId</code>)</p></div>{canManage && <div className="automation-row-actions"><button className="btn" disabled={busy || !verifySelected.size} onClick={requestVerification}>⌕ ตรวจสอบที่เลือก ({verifySelected.size})</button><button className="btn" onClick={() => setVerifyModal(true)}><span aria-hidden="true">i</span> ผลตรวจสอบ</button><button className="btn" onClick={() => setImportModal(true)}><span aria-hidden="true">↑</span> Import Scanner</button><button className="btn primary" onClick={openCreate}>+ เพิ่ม Object</button></div>}</header>
     <div className="automation-cand-filters" role="group" aria-label="กรอง Object ตาม Screen">{screens.map((s) => <button key={s || "all"} type="button" className={"chip" + (screen === s ? " active" : "")} onClick={() => setScreen(s)}>{s || "ทุก Screen"}</button>)}</div>
     {filtered.length ? <div className="table-wrap"><table><thead><tr>{canManage && <th aria-label="เลือก"></th>}<th>Business Key</th><th>Name</th><th>Screen</th><th>ControlType</th><th>AutomationId</th><th>Verification</th><th>Version</th><th>Active</th>{canManage && <th>Actions</th>}</tr></thead><tbody>{filtered.map((o) => { const lastVerify = latestVerificationByObject.get(o.automationObjectId); return <tr key={o.automationObjectId}>
       {canManage && <td><input type="checkbox" aria-label={`เลือกตรวจสอบ ${o.objectCode}`} checked={verifySelected.has(o.automationObjectId)} onChange={() => toggleVerifySelect(o.automationObjectId)} /></td>}
       <td><b>{buildObjectKey(o.screenCode, o.objectCode)}</b></td><td>{o.objectName}</td><td><Badge tone="blue">{o.screenCode}</Badge></td><td>{o.controlType}</td><td><code>{o.automationId ?? "-"}</code></td>
       <td>{lastVerify ? <Badge tone={verificationStatusTone[lastVerify.status] ?? "gray"}>{lastVerify.status}</Badge> : <span className="muted-text">ยังไม่ตรวจ</span>}</td>
       <td>v{o.objectVersion}</td><td><Badge tone={o.isActive ? "green" : "gray"}>{o.isActive ? "Active" : "Inactive"}</Badge></td>
-      {canManage && <td><div className="automation-row-actions"><button type="button" className="table-action" disabled={busy} onClick={() => openEdit(o)}>แก้ไข</button><button type="button" className={`table-action${o.isActive ? " danger" : ""}`} disabled={busy} onClick={() => toggle(o)}>{o.isActive ? "ปิด" : "เปิด"}</button></div></td>}
+      {canManage && <td><div className="automation-row-actions"><button type="button" className="table-action" disabled={busy} onClick={() => openEdit(o)}><span aria-hidden="true">✎</span> แก้ไข</button><button type="button" className={`table-action${o.isActive ? " danger" : ""}`} disabled={busy} onClick={() => toggle(o)}><span aria-hidden="true">⏻</span> {o.isActive ? "ปิด" : "เปิด"}</button></div></td>}
     </tr>; })}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Object</p><small>Agent จะใช้ <code>AutomationId</code> นี้หาคอนโทรลบน Windows UI</small></div>}
 
     {verifyModal && <div className="modal" role="dialog" aria-modal="true" onMouseDown={() => setVerifyModal(false)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head"><div><h2>ผลตรวจสอบ Object (AUT-P0-006)</h2><small>รัน <code>runner verify --exe &lt;path&gt;</code> บนเครื่อง Agent เพื่อสแกนและรายงานผล Found/NotFound/Duplicate/ControlTypeMismatch</small></div><button aria-label="ปิด" onClick={() => setVerifyModal(false)}>×</button></div>
       {verifications.length ? <div className="table-wrap"><table><thead><tr><th>Business Key</th><th>Expected AutomationId</th><th>Actual</th><th>Status</th><th>Agent</th><th>เวลา</th></tr></thead><tbody>{verifications.map((v) => <tr key={v.automationObjectVerificationId}><td><b>{buildObjectKey(v.screenCode, v.objectCode)}</b></td><td><code>{v.expectedAutomationId ?? "-"}</code></td><td>{v.actualAutomationId ? <code>{v.actualAutomationId}</code> : "-"}{v.actualControlType ? ` (${v.actualControlType})` : ""}</td><td><Badge tone={verificationStatusTone[v.status] ?? "gray"}>{v.status}</Badge>{v.message && <small>{v.message}</small>}</td><td>{v.assignedAgentCode ?? "-"}</td><td>{formatThaiDateTime(v.completedAt ?? v.requestedAt)}</td></tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มีการขอตรวจสอบ</p></div>}
-      <div className="modal-actions"><button className="btn primary" onClick={() => setVerifyModal(false)}>ปิด</button></div>
+      <div className="modal-actions"><button className="btn primary" onClick={() => setVerifyModal(false)}><span aria-hidden="true">✕</span> ปิด</button></div>
     </div></div>}
 
     {objectModal && <div className="modal" role="dialog" aria-modal="true" onMouseDown={() => !busy && setObjectModal(false)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head"><div><h2>{editing ? `แก้ไข ${buildObjectKey(editing.screenCode, editing.objectCode)}` : "เพิ่ม Object"}</h2><small>Business Key = <code>ScreenCode.ObjectCode</code> — DSL อ้างอิงด้วยค่านี้</small></div><button aria-label="ปิด" disabled={busy} onClick={() => setObjectModal(false)}>×</button></div>
       <div className="form-grid">
-        <label>Application Code<input value={form.applicationCode} onChange={(e) => setForm({ ...form, applicationCode: e.target.value })} /></label>
-        <label>Screen Code<input value={form.screenCode} onChange={(e) => setForm({ ...form, screenCode: e.target.value })} placeholder="เช่น Sales" /></label>
-        <label>Object Code<input value={form.objectCode} onChange={(e) => setForm({ ...form, objectCode: e.target.value.toUpperCase() })} placeholder="เช่น SAVE" /></label>
-        <label>Object Name<input value={form.objectName} onChange={(e) => setForm({ ...form, objectName: e.target.value })} /></label>
+        <label>Application Code<input type="text" value={form.applicationCode} onChange={(e) => setForm({ ...form, applicationCode: e.target.value })} /></label>
+        <label>Screen Code<input type="text" value={form.screenCode} onChange={(e) => setForm({ ...form, screenCode: e.target.value })} placeholder="เช่น Sales" /></label>
+        <label>Object Code<input type="text" value={form.objectCode} onChange={(e) => setForm({ ...form, objectCode: e.target.value.toUpperCase() })} placeholder="เช่น SAVE" /></label>
+        <label>Object Name<input type="text" value={form.objectName} onChange={(e) => setForm({ ...form, objectName: e.target.value })} /></label>
         <label>Control Type<select value={form.controlType} onChange={(e) => setForm({ ...form, controlType: e.target.value })}><option>Button</option><option>TextBox</option><option>ComboBox</option><option>CheckBox</option><option>Menu</option><option>Window</option></select></label>
-        <label>AutomationId<input value={form.automationId} onChange={(e) => setForm({ ...form, automationId: e.target.value })} placeholder="เช่น btnSave" /></label>
+        <label>AutomationId<input type="text" value={form.automationId} onChange={(e) => setForm({ ...form, automationId: e.target.value })} placeholder="เช่น btnSave" /></label>
         <label className="full">Selector JSON<textarea rows={5} spellCheck={false} value={form.selectorJson} onChange={(e) => setForm({ ...form, selectorJson: e.target.value })} /></label>
       </div>
-      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setObjectModal(false)}>ยกเลิก</button><button className="btn primary" disabled={busy || !form.screenCode.trim() || !form.objectCode.trim() || !form.objectName.trim() || !form.automationId.trim()} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setObjectModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !form.screenCode.trim() || !form.objectCode.trim() || !form.objectName.trim() || !form.automationId.trim()} onClick={save}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>
     </div></div>}
     {importModal && <div className="modal" role="dialog" aria-modal="true" onMouseDown={() => !busy && setImportModal(false)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head"><div><h2>Import Objects from Scanner</h2><small>Paste JSON or CSV, preview duplicates, then import selected rows.</small></div><button aria-label="Close" disabled={busy} onClick={() => setImportModal(false)}>×</button></div>
@@ -1664,13 +1729,13 @@ function ObjectRepositoryTab({ projectId, objects, canManage, headers, onReload,
         <label className="full">Scanner Output<textarea rows={8} spellCheck={false} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={'applicationCode,screenCode,objectCode,objectName,controlType,automationId\nPromaxx2,Sales,SAVE,Save Button,Button,btnSave'} /></label>
       </div>
       <div className="automation-row-actions" style={{ marginBottom: 10 }}>
-        <button className="btn" disabled={busy || !importText.trim()} onClick={() => previewImport()}>Preview Diff</button>
+        <button className="btn" disabled={busy || !importText.trim()} onClick={() => previewImport()}><span aria-hidden="true">⇄</span> Preview Diff</button>
         <label className="btn import-button">Load File<input type="file" accept=".json,.csv,.txt" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; void f.text().then((text) => { setImportText(text); previewImport(text); }); e.target.value = ""; }} /></label>
-        {importRows.length > 0 && <button className="table-action" type="button" onClick={() => setSelectedImport(new Set(readyImportRows.map((r) => r.clientId)))}>Select Ready</button>}
-        {importRows.length > 0 && <button className="table-action" type="button" onClick={() => setSelectedImport(new Set())}>Clear</button>}
+        {importRows.length > 0 && <button className="table-action" type="button" onClick={() => setSelectedImport(new Set(readyImportRows.map((r) => r.clientId)))}><span aria-hidden="true">☑</span> Select Ready</button>}
+        {importRows.length > 0 && <button className="table-action" type="button" onClick={() => setSelectedImport(new Set())}><span aria-hidden="true">✕</span> Clear</button>}
       </div>
       {importRows.length > 0 && <div className="table-wrap"><table><thead><tr><th></th><th>Business Key</th><th>Name</th><th>Control</th><th>AutomationId</th><th>Status</th></tr></thead><tbody>{importRows.map((r) => <tr key={r.clientId}><td><input type="checkbox" aria-label={`Select ${r.objectCode}`} checked={selectedImport.has(r.clientId)} disabled={busy || r.status !== "Ready"} onChange={() => setSelectedImport((prev) => { const next = new Set(prev); if (next.has(r.clientId)) next.delete(r.clientId); else next.add(r.clientId); return next; })} /></td><td><b>{buildObjectKey(r.screenCode, r.objectCode)}</b><small>{r.applicationCode}</small></td><td>{r.objectName}</td><td>{r.controlType}</td><td><code>{r.automationId ?? "-"}</code></td><td><Badge tone={r.status === "Ready" ? "green" : r.status === "Invalid" ? "red" : "yellow"}>{r.status}</Badge><small>{r.message}</small></td></tr>)}</tbody></table></div>}
-      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setImportModal(false)}>Cancel</button><button className="btn primary" disabled={busy || selectedImport.size === 0} onClick={importSelected}>{busy ? "Importing..." : `Import ${selectedImport.size} rows`}</button></div>
+      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setImportModal(false)}><span aria-hidden="true">✕</span> Cancel</button><button className="btn primary" disabled={busy || selectedImport.size === 0} onClick={importSelected}>{busy ? <><span className="spinner inline" aria-hidden="true" /> Importing...</> : <><span aria-hidden="true">↑</span> Import {selectedImport.size} rows</>}</button></div>
     </div></div>}
   </section>;
 }
@@ -1714,7 +1779,7 @@ function BatchRunModal({ cases, releaseId, canRun, busy, onClose, onRunBatch, on
       <div className="automation-batch-head"><input type="checkbox" aria-label="เลือกทั้งหมด" checked={selected.size === readyCases.length && readyCases.length > 0} disabled={!canRun} onChange={toggleAll} /><b>เลือกทั้งหมด ({readyCases.length})</b><span>{selected.size} เลือก</span></div>
       {readyCases.map((c) => <label key={c.automationCaseId} className="automation-batch-row"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selected.has(c.automationCaseId)} disabled={!canRun} onChange={() => toggle(c.automationCaseId)} /><span><b>{c.automationCode}</b><small>{c.testCaseCode} · {c.testCaseTitle}</small></span><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></label>)}
     </div> : <div className="empty"><p>ยังไม่มี Automation Case ที่ Ready</p><small>สร้าง Case แล้ว Validate/อนุมัติให้เป็น Ready ก่อน</small></div>}
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={!canRun || busy || !selected.size || !buildId || !envId} onClick={() => onRunBatch([...selected], buildId, envId, priority)}>{busy ? "กำลังส่ง..." : `▶ รัน ${selected.size} case`}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={!canRun || busy || !selected.size || !buildId || !envId} onClick={() => onRunBatch([...selected], buildId, envId, priority)}>{busy ? "กำลังส่ง..." : `▶ รัน ${selected.size} case`}</button></div>
   </div></div>;
 }
 
@@ -1728,10 +1793,10 @@ function QuarantineModal({ candidate, busy, onClose, onConfirm }: {
     <div className="modal-head"><div><h2 id="automation-quarantine-title">Quarantine {candidate.automationCode}</h2><small>แยกออกจาก Product Fail ชั่วคราวจนกว่าจะแก้ไข Flaky</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <div className="form-grid">
       <label className="full">เหตุผล<textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-      <label>User Id ผู้รับผิดชอบ (ไม่บังคับ)<input value={ownerUserId} onChange={(e) => setOwnerUserId(e.target.value)} /></label>
+      <label>User Id ผู้รับผิดชอบ (ไม่บังคับ)<input type="text" value={ownerUserId} onChange={(e) => setOwnerUserId(e.target.value)} /></label>
       <label>หมดอายุ (ไม่บังคับ)<input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} /></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !reason.trim()} onClick={() => onConfirm(candidate.automationCaseId, reason.trim(), ownerUserId, expiresAt ? new Date(expiresAt).toISOString() : "")}>{busy ? "กำลังบันทึก..." : "Quarantine"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !reason.trim()} onClick={() => onConfirm(candidate.automationCaseId, reason.trim(), ownerUserId, expiresAt ? new Date(expiresAt).toISOString() : "")}>{busy ? "กำลังบันทึก..." : "Quarantine"}</button></div>
   </div></div>;
 }
 
@@ -1751,7 +1816,7 @@ function RetryPolicyTab({ policy, canManage, busy, onSave }: {
       <label className="checkbox-field"><input type="checkbox" checked={enabled} disabled={!canManage} onChange={(e) => setEnabled(e.target.checked)} /> เปิดใช้งาน Auto-Retry</label>
     </div>
     {policy?.updatedAt && <p className="muted-text">แก้ไขล่าสุด {formatThaiDateTime(policy.updatedAt)}</p>}
-    {canManage && <div className="acw-action-bar"><button type="button" className="btn primary" disabled={busy} onClick={() => onSave({ maxAttempts, backoffSeconds, enabled })}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>}
+    {canManage && <div className="acw-action-bar"><button type="button" className="btn primary" disabled={busy} onClick={() => onSave({ maxAttempts, backoffSeconds, enabled })}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>}
   </section>;
 }
 
@@ -1802,8 +1867,8 @@ function AgentWorkloadModal({ agent, headers, onClose }: { agent: AutomationAgen
       {workload.recentHeartbeats.length ? <div className="table-wrap"><table><thead><tr><th>สถานะ</th><th>Execution ที่กำลังรัน</th><th>เวลา</th></tr></thead><tbody>
         {workload.recentHeartbeats.map((h, i) => <tr key={i}><td><Badge tone={h.status === "Busy" ? "blue" : "green"}>{h.status}</Badge></td><td>{h.currentExecutionId ?? "-"}</td><td>{formatThaiDateTime(h.occurredAt)}</td></tr>)}
       </tbody></table></div> : <div className="empty"><p>ยังไม่มีประวัติ Heartbeat</p></div>}
-    </> : !error && <div className="empty"><p>กำลังโหลด...</p></div>}
-    <div className="modal-actions"><button className="btn" onClick={onClose}>ปิดหน้าต่าง</button></div>
+    </> : !error && <div className="empty"><div className="spinner" /><p>กำลังโหลด...</p></div>}
+    <div className="modal-actions"><button className="btn" onClick={onClose}><span aria-hidden="true">✕</span> ปิดหน้าต่าง</button></div>
   </div></div>;
 }
 
@@ -1909,14 +1974,14 @@ function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, hea
       <article className="card">
         <div className="automation-section-head"><h3>Run History ({execPaged.total.toLocaleString()})</h3></div>
         <div className="automation-run-toolbar">
-          <input aria-label="ค้นหาด้วยรหัสหรือ Agent" placeholder="ค้นหา Code / Agent..." value={execSearch} onChange={(e) => setExecSearch(e.target.value)} />
+          <input type="text" aria-label="ค้นหาด้วยรหัสหรือ Agent" placeholder="ค้นหา Code / Agent..." value={execSearch} onChange={(e) => setExecSearch(e.target.value)} />
           <select aria-label="กรองสถานะ" value={execFilter} onChange={(e) => setExecFilter(e.target.value)}>
             <option value="all">ทุกสถานะ</option>
             {["Passed", "Failed", "Running", "Queued", "Blocked", "Cancelled", "Timeout", "AgentLost"].map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         {/* AUT-P2-002: advanced filters — date/Build/Environment/Agent/Target/Failure Type, all server-side. */}
-        <div className="automation-run-toolbar">
+        <div className="automation-run-toolbar automation-advanced-filters">
           <label>จาก<input type="date" value={execFrom} onChange={(e) => setExecFrom(e.target.value)} aria-label="วันที่เริ่ม" /></label>
           <label>ถึง<input type="date" value={execTo} onChange={(e) => setExecTo(e.target.value)} aria-label="วันที่สิ้นสุด" /></label>
           <select aria-label="กรอง Build" value={execBuildFilter} onChange={(e) => setExecBuildFilter(e.target.value)}><option value="">ทุก Build</option>{execBuilds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select>
@@ -1924,7 +1989,7 @@ function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, hea
           <select aria-label="กรอง Agent" value={execAgentFilter} onChange={(e) => setExecAgentFilter(e.target.value)}><option value="">ทุก Agent</option>{agentOptions.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select>
           <select aria-label="กรอง Target" value={execTargetFilter} onChange={(e) => setExecTargetFilter(e.target.value)}><option value="">ทุก Target</option><option value="Pos">Pos</option><option value="App">App</option><option value="WindowsUI">WindowsUI</option></select>
           <select aria-label="กรอง Failure Type" value={execFailureTypeFilter} onChange={(e) => setExecFailureTypeFilter(e.target.value)}><option value="">ทุก Failure Type</option>{failureTypeOptions.map((f) => <option key={f} value={f}>{f}</option>)}</select>
-          {hasAdvancedFilters && <button type="button" className="table-action" onClick={clearAdvancedFilters}>ล้างตัวกรองขั้นสูง</button>}
+          {hasAdvancedFilters && <button type="button" className="table-action" onClick={clearAdvancedFilters}><span aria-hidden="true">✕</span> ล้างตัวกรองขั้นสูง</button>}
         </div>
         {execPaged.rows.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Target</th><th>Agent</th><th>Status</th><th>Duration</th><th>เวลา</th><th></th></tr></thead><tbody>{execPaged.rows.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className="automation-exec-tr"><td><b>{x.automationCode}</b><small>Rev {x.versionNo} · {x.buildNumber}</small></td><td><Badge tone={x.targetApp === "Pos" ? "blue" : x.targetApp === "App" ? "purple" : "gray"}>{x.targetApp ?? "WindowsUI"}</Badge></td><td>{x.agentCode ?? "-"}</td><td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td><td>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)}s` : "-"}</td><td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td><td onClick={(e) => e.stopPropagation()}><div className="automation-row-actions"><button type="button" className="automation-more" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>{canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => onRerun(x)}>▶</button>}{canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => onCancel(x)}>✕</button>}</div></td></tr>)}</tbody></table></div> : <div className="empty"><p>{execSearch || execFilter !== "all" ? "ไม่พบผลการรันที่ตรงเงื่อนไข" : "ยังไม่มีประวัติการรัน"}</p></div>}
         {execPaged.total > pageSize && <Pager page={execPage} count={execPageCount} total={execPaged.total} pageSize={pageSize} onPrev={() => setExecPage((p) => Math.max(1, p - 1))} onNext={() => setExecPage((p) => Math.min(execPageCount, p + 1))} />}
@@ -1983,7 +2048,7 @@ function ExecutionTrendChart({ projectId, releaseId, headers, onDrillDown }: {
         </select>
       </div>
     </div>
-    {busy ? <div className="empty"><p>กำลังโหลด...</p></div> : trend.buckets.length ? <>
+    {busy ? <div className="empty"><div className="spinner" /><p>กำลังโหลด...</p></div> : trend.buckets.length ? <>
       <div className="automation-trend-chart-wrap">
         <svg className="automation-trend-chart" width={trend.buckets.length * (barWidth * 2 + gap) + gap} height={chartHeight + 34} role="img" aria-label="กราฟแนวโน้ม Pass / Fail / Flaky">
           {trend.buckets.map((b, i) => {
@@ -2050,41 +2115,41 @@ function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDet
 
   return <section className="automation-execution" aria-label="Failure Dashboard">
     <header className="automation-section-head"><div><h2>Failure Dashboard</h2><p>วิเคราะห์ Execution ที่ Fail ตาม Failure Type / Build / Agent / วันที่ พร้อม drill down</p></div></header>
-    <div className="automation-run-toolbar">
+    <div className="automation-run-toolbar automation-advanced-filters">
       <label>จาก<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="วันที่เริ่ม" /></label>
       <label>ถึง<input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="วันที่สิ้นสุด" /></label>
       <select aria-label="กรอง Build" value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">ทุก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select>
       <select aria-label="กรอง Agent" value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">ทุก Agent</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select>
       <select aria-label="กรอง Failure Type" value={failureType} onChange={(e) => setFailureType(e.target.value)}><option value="">ทุก Failure Type</option>{failureTypeOptions.map((f) => <option key={f} value={f}>{f}</option>)}</select>
-      {hasFilters && <button type="button" className="table-action" onClick={clearFilters}>ล้างตัวกรอง</button>}
+      {hasFilters && <button type="button" className="table-action icon-only" title="ล้างตัวกรอง" aria-label="ล้างตัวกรอง" onClick={clearFilters}><span aria-hidden="true">✕</span></button>}
     </div>
     {breakdown && <div className="automation-kpis">
       <div className="needs-review"><small>Total Failed</small><strong>{breakdown.totalFailed}</strong><span>ตามตัวกรอง</span></div>
       {breakdown.byFailureType.slice(0, 4).map((x) => <div key={x.key}><small>{x.key}</small><strong>{x.count}</strong><span>Failure Type</span></div>)}
     </div>}
-    <div className="automation-exec-grid">
+    <div className="automation-failure-grid">
       <article className="card">
         <div className="automation-section-head"><h3>By Build</h3></div>
-        {breakdown?.byBuild.length ? <div className="automation-result-list">{breakdown.byBuild.map((x) => <div key={x.key} className="automation-failure-row"><b>{x.key}</b><span>{x.count} fail</span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
+        {breakdown?.byBuild.length ? <div className="automation-result-list">{breakdown.byBuild.map((x) => <div key={x.key} className="automation-failure-stat-row"><b>{x.key}</b><span className="automation-failure-stat-count"><strong>{x.count}</strong><small>fail</small></span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
       </article>
       <article className="card">
         <div className="automation-section-head"><h3>By Agent</h3></div>
-        {breakdown?.byAgent.length ? <div className="automation-result-list">{breakdown.byAgent.map((x) => <div key={x.key} className="automation-failure-row"><b>{x.key}</b><span>{x.count} fail</span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
+        {breakdown?.byAgent.length ? <div className="automation-result-list">{breakdown.byAgent.map((x) => <div key={x.key} className="automation-failure-stat-row"><b>{x.key}</b><span className="automation-failure-stat-count"><strong>{x.count}</strong><small>fail</small></span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
       </article>
       <article className="card">
         <div className="automation-section-head"><h3>Top Automation Case</h3></div>
-        {breakdown?.byAutomationCase.length ? <div className="automation-result-list">{breakdown.byAutomationCase.map((x) => <div key={x.key} className="automation-failure-row"><b>{x.key}</b><span>{x.count} fail</span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
+        {breakdown?.byAutomationCase.length ? <div className="automation-result-list">{breakdown.byAutomationCase.map((x) => <div key={x.key} className="automation-failure-stat-row"><b>{x.key}</b><span className="automation-failure-stat-count"><strong>{x.count}</strong><small>fail</small></span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
       </article>
     </div>
     <article className="card">
-      <div className="automation-section-head"><h3>Failed Executions ({rows.length})</h3>{busy && <span className="muted-text">กำลังโหลด...</span>}</div>
-      {rows.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Classified</th><th>Build</th><th>Agent</th><th>เวลา</th><th></th></tr></thead><tbody>{rows.map((x) => <tr key={x.automationExecutionId} className="automation-exec-tr" onClick={() => setExecDetail(x)}>
+      <div className="automation-section-head"><h3>Failed Executions ({rows.length})</h3>{busy && <span className="muted-text"><span className="spinner inline" aria-hidden="true" /> กำลังโหลด...</span>}</div>
+      {rows.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Classified</th><th>Build</th><th>Agent</th><th>เวลา</th><th className="actions-col">จัดการ</th></tr></thead><tbody>{rows.map((x) => <tr key={x.automationExecutionId} className="automation-exec-tr" onClick={() => setExecDetail(x)}>
         <td><b>{x.automationCode}</b><small>Rev {x.versionNo}</small></td>
         <td>{x.classifiedFailureType ? <Badge tone={failureTone[x.classifiedFailureType] ?? "blue"}>{x.classifiedFailureType}</Badge> : <span className="muted-text">ยังไม่จำแนก</span>}</td>
         <td>{x.buildNumber}</td>
         <td>{x.agentCode ?? "-"}</td>
         <td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td>
-        <td onClick={(e) => e.stopPropagation()}><button type="button" className="table-action" onClick={() => setExecDetail(x)}>ดูรายละเอียด</button></td>
+        <td className="actions-col" onClick={(e) => e.stopPropagation()}><button type="button" className="table-action icon-only" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}><span aria-hidden="true">i</span></button></td>
       </tr>)}</tbody></table></div> : <div className="empty"><p>ไม่พบ Execution ที่ Fail ตามเงื่อนไข</p></div>}
     </article>
   </section>;
@@ -2221,13 +2286,16 @@ function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, ca
   return <section className="automation-cases" aria-label="Automation Suite">
     <header className="automation-section-head"><div><h2>Automation Suite (AUT-P1-001/002)</h2><p>รวม Automation Case เป็นชุดถาวรสำหรับรัน Regression/Smoke ซ้ำได้ — Required/Optional ต่อ Case</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Suite</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
-    <div className="automation-case-toolbar">
-      <input aria-label="ค้นหา Suite" placeholder="ค้นหา Suite..." value={search} onChange={(e) => setSearch(e.target.value)} />
-      <select aria-label="กรองสถานะ Suite" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "closed")}>
-        <option value="active">เปิดใช้งาน</option>
-        <option value="closed">ปิดแล้ว</option>
-        <option value="all">ทั้งหมด</option>
-      </select>
+    <div className="filter-toolbar">
+      <div className="filter-toolbar-top"><div className="result-count"><strong>{suites.length.toLocaleString()}</strong><span>Automation Suite</span></div></div>
+      <div className="filter-toolbar-row automation-case-toolbar">
+        <input type="text" aria-label="ค้นหา Suite" placeholder="ค้นหา Suite..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select aria-label="กรองสถานะ Suite" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "closed")}>
+          <option value="active">เปิดใช้งาน</option>
+          <option value="closed">ปิดแล้ว</option>
+          <option value="all">ทั้งหมด</option>
+        </select>
+      </div>
     </div>
     {suites.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>ชื่อ</th><th>Case</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{suites.map((s) => <tr key={s.automationSuiteId}>
       <td><b>{s.suiteCode}</b></td>
@@ -2235,7 +2303,7 @@ function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, ca
       <td>{s.readyCaseCount}/{s.caseCount} Ready</td>
       <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
       <td>{formatThaiDateTime(s.createdAt)}</td>
-      <td>{canRun && s.isActive && <button type="button" className="table-action" onClick={() => setRunSuiteFor(s)}>▶ รัน</button>}<button type="button" className="table-action" onClick={() => openDetail(s)}>รายละเอียด</button><button type="button" className="table-action" onClick={() => openHistory(s.automationSuiteId)}>ประวัติ</button>{canEdit && s.isActive && <button type="button" className="table-action" onClick={() => setEditSuite(s)}>แก้ไข</button>}{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleSuite(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
+      <td>{canRun && s.isActive && <button type="button" className="table-action" onClick={() => setRunSuiteFor(s)}>▶ รัน</button>}<button type="button" className="table-action" onClick={() => openDetail(s)}><span aria-hidden="true">i</span> รายละเอียด</button><button type="button" className="table-action" onClick={() => openHistory(s.automationSuiteId)}><span aria-hidden="true">↺</span> ประวัติ</button>{canEdit && s.isActive && <button type="button" className="table-action" onClick={() => setEditSuite(s)}><span aria-hidden="true">✎</span> แก้ไข</button>}{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleSuite(s)}><span aria-hidden="true">⏻</span> {s.isActive ? "ปิด" : "เปิด"}</button>}</td>
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Automation Suite</p><small>สร้าง Suite เพื่อรวม Automation Case ที่ต้องรันซ้ำเป็นชุด (Smoke/Regression)</small></div>}
 
     {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
@@ -2253,9 +2321,9 @@ function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, ca
         <td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td>
         <td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></td>
         <td>{canEdit && detail.isActive ? <button type="button" className="table-action" onClick={() => toggleRequired(c)}>{c.isRequired ? "Required" : "Optional"}</button> : <Badge tone={c.isRequired ? "blue" : "gray"}>{c.isRequired ? "Required" : "Optional"}</Badge>}</td>
-        <td>{canEdit && detail.isActive && <button type="button" className="table-action danger" onClick={() => removeCase(c.automationCaseId)}>ลบ</button>}</td>
+        <td>{canEdit && detail.isActive && <button type="button" className="table-action danger" onClick={() => removeCase(c.automationCaseId)}><span aria-hidden="true">✕</span> ลบ</button>}</td>
       </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Case ใน Suite นี้</p></div>}
-      <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}>ปิดหน้าต่าง</button></div>
+      <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}><span aria-hidden="true">✕</span> ปิดหน้าต่าง</button></div>
     </div></div>}
 
     {addCasesModal && detail && <AddSuiteCasesModal cases={cases} existingCaseIds={detail.cases.map((c) => c.automationCaseId)} busy={busy} onClose={() => setAddCasesModal(false)} onAdd={addCases} />}
@@ -2269,7 +2337,7 @@ function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, ca
         {h.changeReason && <span>เหตุผล: {h.changeReason}</span>}
         <span>{h.changedByName ?? (h.changedBy ? h.changedBy : "ระบบ")} · {formatThaiDateTime(h.changedAt)}</span>
       </div>)}</div> : <div className="empty"><p>ยังไม่มีประวัติ</p></div>}
-      <div className="modal-actions"><button className="btn" onClick={() => setHistory(null)}>ปิดหน้าต่าง</button></div>
+      <div className="modal-actions"><button className="btn" onClick={() => setHistory(null)}><span aria-hidden="true">✕</span> ปิดหน้าต่าง</button></div>
     </div></div>}
 
     {runSuiteFor && <RunSuiteModal suite={runSuiteFor} releaseId={releaseId} canRun={canRun} busy={busy} onClose={() => setRunSuiteFor(null)} onRun={(buildId, envId, priority) => runSuite(runSuiteFor.automationSuiteId, runSuiteFor.suiteCode, buildId, envId, priority)} onError={setError} />}
@@ -2278,7 +2346,7 @@ function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, ca
       <div className="modal-head"><div><h2 id="automation-suite-run-result-title">สั่งรัน {runResult.suiteCode} แล้ว</h2></div><button aria-label="ปิด" onClick={() => setRunResult(null)}>×</button></div>
       <p>สร้าง Execution {runResult.created} รายการ</p>
       {runResult.skipped.length > 0 && <p>ข้าม {runResult.skipped.length} รายการ (ไม่ Ready หรือ Quarantined): {runResult.skipped.join(", ")}</p>}
-      <div className="modal-actions"><button className="btn primary" onClick={() => setRunResult(null)}>ตกลง</button></div>
+      <div className="modal-actions"><button className="btn primary" onClick={() => setRunResult(null)}><span aria-hidden="true">✓</span> ตกลง</button></div>
     </div></div>}
   </section>;
 }
@@ -2416,12 +2484,15 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents,
   return <section className="automation-cases" aria-label="Automation Schedule">
     <header className="automation-section-head"><div><h2>Automation Schedule (AUT-P1-005)</h2><p>ตั้งเวลารัน Automation Suite ซ้ำอัตโนมัติ — Once/Daily/Weekly พร้อม timezone และคำนวณรอบถัดไป</p></div><div className="automation-section-head-actions"><button className="btn automation-notif-bell" type="button" onClick={openNotifications} aria-label="การแจ้งเตือน Schedule">🔔 การแจ้งเตือน{unreadCount > 0 && <Badge tone="red">{unreadCount}</Badge>}</button>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Schedule</button>}</div></header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
-    <div className="automation-case-toolbar">
+    <div className="filter-toolbar">
+      <div className="filter-toolbar-top"><div className="result-count"><strong>{schedules.length.toLocaleString()}</strong><span>Schedule</span></div></div>
+    <div className="filter-toolbar-row automation-case-toolbar">
       <select aria-label="กรองสถานะ Schedule" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "inactive")}>
         <option value="active">เปิดใช้งาน</option>
         <option value="inactive">ปิดแล้ว</option>
         <option value="all">ทั้งหมด</option>
       </select>
+    </div>
     </div>
     {schedules.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>Suite</th><th>ตารางเวลา</th><th>Timezone</th><th>รันครั้งถัดไป</th><th>รันล่าสุด</th><th>สถานะ</th><th></th></tr></thead><tbody>{schedules.map((s) => <tr key={s.automationScheduleId}>
       <td><b>{s.name}</b>{s.description && <small>{s.description}</small>}</td>
@@ -2431,7 +2502,7 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents,
       <td>{s.isActive ? formatThaiDateTime(s.nextRunAtUtc) : "-"}</td>
       <td>{s.lastRunAtUtc ? formatThaiDateTime(s.lastRunAtUtc) : "ยังไม่เคยรัน"}</td>
       <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
-      <td>{canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationScheduleId)}>แก้ไข</button>}<button type="button" className="table-action" onClick={() => openRunHistory(s)}>ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
+      <td>{canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationScheduleId)}><span aria-hidden="true">✎</span> แก้ไข</button>}<button type="button" className="table-action" onClick={() => openRunHistory(s)}><span aria-hidden="true">↺</span> ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}><span aria-hidden="true">⏻</span> {s.isActive ? "ปิด" : "เปิด"}</button>}</td>
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Automation Schedule</p><small>ตั้งเวลารัน Automation Suite ที่มีอยู่แล้วให้ทำงานซ้ำอัตโนมัติตามรอบที่กำหนด</small></div>}
 
     {createModal && <ScheduleFormModal projectId={projectId} releaseId={releaseId} headers={headers} agents={agents} busy={busy} onClose={() => setCreateModal(false)} onSave={createSchedule} />}
@@ -2444,22 +2515,22 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents,
         <span>สร้าง Execution {r.executionsCreated} รายการ{r.skippedCount > 0 && ` · ข้าม ${r.skippedCount} รายการ`}</span>
         {r.errorMessage && <span>{r.errorMessage}</span>}
       </div>)}</div> : <div className="empty"><p>ยังไม่เคยถูกรันจาก Schedule นี้</p></div>}
-      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}>ปิดหน้าต่าง</button></div>
+      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}><span aria-hidden="true">✕</span> ปิดหน้าต่าง</button></div>
     </div></div>}
 
     {notifications && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-schedule-notif-title" onMouseDown={() => setNotifications(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head"><div><h2 id="automation-schedule-notif-title">การแจ้งเตือน Schedule (AUT-P1-009)</h2><small>{notifications.length} รายการ — Started/Completed/Failed/No Agent ล่าสุดก่อน</small></div><button aria-label="ปิด" onClick={() => setNotifications(null)}>×</button></div>
-      {notifications.length > 0 && <div className="modal-actions" style={{ justifyContent: "flex-start" }}><button className="btn" type="button" onClick={markAllNotificationsRead}>ทำเครื่องหมายว่าอ่านแล้วทั้งหมด</button></div>}
+      {notifications.length > 0 && <div className="modal-actions" style={{ justifyContent: "flex-start" }}><button className="btn" type="button" onClick={markAllNotificationsRead}><span aria-hidden="true">✓</span> ทำเครื่องหมายว่าอ่านแล้วทั้งหมด</button></div>}
       {notifications.length ? <div className="automation-result-list">{notifications.map((n) => <div key={n.automationScheduleNotificationId} className={`automation-failure-row automation-notif-item${n.isRead ? "" : " is-unread"}`}>
         <b><Badge tone={n.eventType === "Completed" ? "green" : n.eventType === "Failed" ? "red" : n.eventType === "NoAgent" ? "orange" : "blue"}>{n.eventType}</Badge> {n.scheduleName} · {n.automationCode}{!n.isRead && <Badge tone="gray">ใหม่</Badge>}</b>
         <span>{n.message}</span>
         <span className="muted-text">{formatThaiDateTime(n.createdAtUtc)}</span>
         <div className="modal-actions" style={{ justifyContent: "flex-start", padding: 0 }}>
-          <button className="table-action" type="button" onClick={() => openNotificationExecution(n)}>ดู Execution</button>
-          {!n.isRead && <button className="table-action" type="button" onClick={() => markNotificationRead(n)}>ทำเครื่องหมายว่าอ่านแล้ว</button>}
+          <button className="table-action" type="button" onClick={() => openNotificationExecution(n)}><span aria-hidden="true">i</span> ดู Execution</button>
+          {!n.isRead && <button className="table-action" type="button" onClick={() => markNotificationRead(n)}><span aria-hidden="true">✓</span> ทำเครื่องหมายว่าอ่านแล้ว</button>}
         </div>
       </div>)}</div> : <div className="empty"><p>ยังไม่มีการแจ้งเตือน</p><small>จะมีเมื่อ Schedule เริ่มรัน/รันเสร็จ/ล้มเหลว หรือรันแล้วไม่มี Agent ว่าง</small></div>}
-      <div className="modal-actions"><button className="btn" onClick={() => setNotifications(null)}>ปิดหน้าต่าง</button></div>
+      <div className="modal-actions"><button className="btn" onClick={() => setNotifications(null)}><span aria-hidden="true">✕</span> ปิดหน้าต่าง</button></div>
     </div></div>}
   </section>;
 }
@@ -2516,8 +2587,8 @@ function ScheduleFormModal({ projectId, releaseId, headers, agents, schedule, bu
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-schedule-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
     <div className="modal-head"><div><h2 id="automation-schedule-form-title">{isEdit ? `แก้ไข ${schedule!.name}` : "สร้าง Automation Schedule"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <div className="form-grid">
-      <label className="full">Automation Suite{isEdit ? <input value={`${schedule!.suiteCode} · ${schedule!.suiteName}`} disabled /> : <select value={automationSuiteId} onChange={(e) => setAutomationSuiteId(e.target.value)}><option value="">เลือก Suite</option>{suites.map((s) => <option key={s.automationSuiteId} value={s.automationSuiteId}>{s.suiteCode} · {s.suiteName}</option>)}</select>}</label>
-      <label className="full">ชื่อ Schedule<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Nightly Smoke" /></label>
+      <label className="full">Automation Suite{isEdit ? <input type="text" value={`${schedule!.suiteCode} · ${schedule!.suiteName}`} disabled /> : <select value={automationSuiteId} onChange={(e) => setAutomationSuiteId(e.target.value)}><option value="">เลือก Suite</option>{suites.map((s) => <option key={s.automationSuiteId} value={s.automationSuiteId}>{s.suiteCode} · {s.suiteName}</option>)}</select>}</label>
+      <label className="full">ชื่อ Schedule<input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Nightly Smoke" /></label>
       <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
       <label>ความถี่<select value={frequency} onChange={(e) => setFrequency(e.target.value)}><option value="Daily">ทุกวัน</option><option value="Weekly">ทุกสัปดาห์</option><option value="Once">ครั้งเดียว</option></select></label>
       <label>เวลา (ตาม Timezone ที่เลือก)<input type="time" value={runAtTime} onChange={(e) => setRunAtTime(e.target.value)} /></label>
@@ -2529,7 +2600,7 @@ function ScheduleFormModal({ projectId, releaseId, headers, agents, schedule, bu
       <label>Agent (ไม่บังคับ)<select value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">Agent ใดก็ได้</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select></label>
       <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>
   </div></div>;
 }
 
@@ -2598,7 +2669,7 @@ function AutomationBuildTriggerTab({ projectId, headers, canEdit, agents }: {
       <td>{p.agentCode ?? "Agent ใดก็ได้"}</td>
       <td>{p.priority}</td>
       <td><Badge tone={p.isActive ? "green" : "gray"}>{p.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
-      <td>{canEdit && <button type="button" className="table-action" onClick={() => setEditPolicy(p)}>แก้ไข</button>}<button type="button" className="table-action" onClick={() => openRunHistory(p)}>ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${p.isActive ? " danger" : ""}`} onClick={() => toggleActive(p)}>{p.isActive ? "ปิด" : "เปิด"}</button>}</td>
+      <td>{canEdit && <button type="button" className="table-action" onClick={() => setEditPolicy(p)}><span aria-hidden="true">✎</span> แก้ไข</button>}<button type="button" className="table-action" onClick={() => openRunHistory(p)}><span aria-hidden="true">↺</span> ประวัติการรัน</button>{canEdit && <button type="button" className={`table-action${p.isActive ? " danger" : ""}`} onClick={() => toggleActive(p)}><span aria-hidden="true">⏻</span> {p.isActive ? "ปิด" : "เปิด"}</button>}</td>
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Build Trigger Policy</p><small>ตั้ง policy ให้ Build ใหม่รัน Smoke/Regression Suite อัตโนมัติโดยไม่ต้องสั่งรันเอง</small></div>}
 
     {createModal && <BuildTriggerFormModal projectId={projectId} headers={headers} agents={agents} busy={busy} onClose={() => setCreateModal(false)} onSave={createPolicy} />}
@@ -2611,7 +2682,7 @@ function AutomationBuildTriggerTab({ projectId, headers, canEdit, agents }: {
         <span>สร้าง Execution {r.executionsCreated} รายการ{r.skippedCount > 0 && ` · ข้าม ${r.skippedCount} รายการ`}</span>
         {r.errorMessage && <span>{r.errorMessage}</span>}
       </div>)}</div> : <div className="empty"><p>ยังไม่เคยถูกรันจาก Policy นี้</p></div>}
-      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}>ปิดหน้าต่าง</button></div>
+      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}><span aria-hidden="true">✕</span> ปิดหน้าต่าง</button></div>
     </div></div>}
   </section>;
 }
@@ -2653,7 +2724,7 @@ function BuildTriggerFormModal({ projectId, headers, agents, policy, busy, onClo
       <label>Agent (ไม่บังคับ)<select value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">Agent ใดก็ได้</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select></label>
       <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>
   </div></div>;
 }
 
@@ -2703,7 +2774,7 @@ function AutomationWebhookTab({ projectId, headers, canEdit }: { projectId: stri
       <td>{formatThaiDateTime(t.createdAt)}</td>
       <td>{t.lastUsedAtUtc ? formatThaiDateTime(t.lastUsedAtUtc) : "ยังไม่เคยใช้"}</td>
       <td><Badge tone={t.isActive ? "green" : "gray"}>{t.isActive ? "ใช้งานได้" : "เพิกถอนแล้ว"}</Badge></td>
-      <td>{canEdit && t.isActive && <button type="button" className="table-action danger" onClick={() => revokeToken(t)}>เพิกถอน</button>}</td>
+      <td>{canEdit && t.isActive && <button type="button" className="table-action danger" onClick={() => revokeToken(t)}><span aria-hidden="true">✕</span> เพิกถอน</button>}</td>
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Webhook Token</p><small>สร้าง Token ให้ระบบ CI/CD ใช้ authenticate ตอนยิง webhook เข้ามาสร้าง Build</small></div>}
 
     <h3>ประวัติการเรียก Webhook</h3>
@@ -2721,7 +2792,7 @@ function AutomationWebhookTab({ projectId, headers, canEdit }: { projectId: stri
       <div className="inline-alert">⚠ คัดลอก Token นี้เก็บไว้ตอนนี้ — ระบบจะไม่แสดง Token เต็มให้ดูอีกครั้ง</div>
       <p><code>{newToken.plainTextToken}</code></p>
       <p>ใส่ header <code>X-Webhook-Token</code> เวลายิงมาที่ <code>POST /api/v1/webhooks/automation/builds</code> พร้อม <code>releaseId</code>/<code>buildNumber</code>/<code>requestId</code> (idempotency key ป้องกัน trigger ซ้ำ)</p>
-      <div className="modal-actions"><button className="btn primary" onClick={() => setNewToken(null)}>คัดลอกแล้ว ปิดหน้าต่าง</button></div>
+      <div className="modal-actions"><button className="btn primary" onClick={() => setNewToken(null)}><span aria-hidden="true">✓</span> คัดลอกแล้ว ปิดหน้าต่าง</button></div>
     </div></div>}
   </section>;
 }
@@ -2731,9 +2802,9 @@ function WebhookTokenFormModal({ busy, onClose, onSave }: { busy: boolean; onClo
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-webhook-token-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
     <div className="modal-head"><div><h2 id="automation-webhook-token-form-title">สร้าง Webhook Token</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <div className="form-grid">
-      <label className="full">ชื่อ (สำหรับระบุ เช่นชื่อระบบ CI/CD)<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Jenkins Nightly" /></label>
+      <label className="full">ชื่อ (สำหรับระบุ เช่นชื่อระบบ CI/CD)<input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Jenkins Nightly" /></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !name.trim()} onClick={() => onSave(name.trim())}>{busy ? "กำลังสร้าง..." : "สร้าง"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !name.trim()} onClick={() => onSave(name.trim())}>{busy ? "กำลังสร้าง..." : "สร้าง"}</button></div>
   </div></div>;
 }
 
@@ -2803,7 +2874,7 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
       <td>{s.agentCode ?? "-"}</td>
       <td>{formatBytes(s.sizeBytes)}</td>
       <td>{formatThaiDateTime(s.requestedAt)}</td>
-      <td><button type="button" className="table-action" onClick={() => openDetail(s)}>รายละเอียด</button>{canRun && s.status === "Succeeded" && <button type="button" className="table-action danger" onClick={() => requestRestore(s)}>↺ Restore</button>}</td>
+      <td><button type="button" className="table-action" onClick={() => openDetail(s)}><span aria-hidden="true">i</span> รายละเอียด</button>{canRun && s.status === "Succeeded" && <button type="button" className="table-action danger" onClick={() => requestRestore(s)}>↺ Restore</button>}</td>
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Snapshot</p><small>ขอ Snapshot ก่อนรันชุด Automation เพื่อให้เริ่มจาก data state ที่รู้จักได้แน่นอน และ restore ได้ภายหลัง (AUT-DATA-002)</small></div>}
 
     {requestModal && <SnapshotRequestModal projectId={projectId} releaseId={releaseId} headers={headers} busy={busy} onClose={() => setRequestModal(false)} onSave={requestSnapshot} />}
@@ -2830,7 +2901,7 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
       </div>)}</div> : <div className="empty"><p>ยังไม่เคย Restore จาก Snapshot นี้</p></div>}
       {canRun && detail.status === "Succeeded" && <div className="modal-actions" style={{ justifyContent: "flex-start" }}><button className="btn danger" disabled={busy} type="button" onClick={() => requestRestore(detail)}>↺ ขอ Restore จาก Snapshot นี้</button></div>}
 
-      <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}>ปิดหน้าต่าง</button></div>
+      <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}><span aria-hidden="true">✕</span> ปิดหน้าต่าง</button></div>
     </div></div>}
   </section>;
 }
@@ -2862,7 +2933,7 @@ function SnapshotRequestModal({ projectId, releaseId, headers, busy, onClose, on
       <label>Environment<select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
       <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !environmentId || !buildId} onClick={() => onSave(environmentId, buildId)}>{busy ? "กำลังส่งคำขอ..." : "ขอ Snapshot"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !environmentId || !buildId} onClick={() => onSave(environmentId, buildId)}>{busy ? "กำลังส่งคำขอ..." : "ขอ Snapshot"}</button></div>
   </div></div>;
 }
 
@@ -2988,12 +3059,12 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
       <td>{isMasterData ? <Badge tone={approvalStatusTone[s.approvalStatus] ?? "gray"}>{s.approvalStatus}</Badge> : <span className="muted-text">-</span>}</td>
       <td>{formatThaiDateTime(s.createdAt)}</td>
       <td>
-        {canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationDataSeedScriptId)}>แก้ไข</button>}
+        {canEdit && <button type="button" className="table-action" onClick={() => openEdit(s.automationDataSeedScriptId)}><span aria-hidden="true">✎</span> แก้ไข</button>}
         {canEdit && isMasterData && s.approvalStatus !== "Approved" && <button type="button" className="table-action" onClick={() => approveScript(s)}>✓ อนุมัติ</button>}
         {canEdit && isMasterData && s.approvalStatus !== "Rejected" && <button type="button" className="table-action danger" onClick={() => rejectScript(s)}>✗ ไม่อนุมัติ</button>}
         {canRun && canRunNow && <button type="button" className="table-action" onClick={() => setRunModal(s)}>▶ รัน</button>}
-        <button type="button" className="table-action" onClick={() => openRunHistory(s)}>ประวัติการรัน</button>
-        {canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}
+        <button type="button" className="table-action" onClick={() => openRunHistory(s)}><span aria-hidden="true">↺</span> ประวัติการรัน</button>
+        {canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleActive(s)}><span aria-hidden="true">⏻</span> {s.isActive ? "ปิด" : "เปิด"}</button>}
       </td>
     </tr>;
     })}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Script</p><small>สร้าง SQL script ที่รันได้ซ้ำโดยไม่พัง (เช่นใช้ MERGE/UPSERT หรือเช็คก่อน insert/delete) — Seed สั่งก่อนชุด Automation ที่ต้องการ master data, Cleanup สั่งหลังรันเพื่อล้างข้อมูลที่ทิ้งไว้, Master Data เตรียมสินค้า/ราคา/โปรโมชั่นก่อน POS scenario (ต้องอนุมัติก่อนรัน)</small></div>}
@@ -3009,7 +3080,7 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
         <span>{r.status === "Succeeded" ? `Rows affected: ${r.rowsAffected ?? 0}` : (r.agentCode ? `Agent: ${r.agentCode}` : "")}</span>
         {r.errorMessage && <span>{r.errorMessage}</span>}
       </div>)}</div> : <div className="empty"><p>ยังไม่เคยถูกรัน</p></div>}
-      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}>ปิดหน้าต่าง</button></div>
+      <div className="modal-actions"><button className="btn" onClick={() => setRunHistory(null)}><span aria-hidden="true">✕</span> ปิดหน้าต่าง</button></div>
     </div></div>}
   </section>;
 }
@@ -3030,14 +3101,14 @@ function SeedScriptFormModal({ script, busy, onClose, onSave }: {
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-seed-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
     <div className="modal-head"><div><h2 id="automation-seed-form-title">{isEdit ? `แก้ไข ${script!.name}` : "สร้าง Script"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <div className="form-grid">
-      <label className="full">ชื่อ<input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Baseline Products" /></label>
+      <label className="full">ชื่อ<input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น Baseline Products" /></label>
       <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
       <label>ประเภท<select value={scriptType} onChange={(e) => setScriptType(e.target.value)}><option value="Seed">Seed (ใส่ข้อมูลก่อนรัน)</option><option value="Cleanup">Cleanup (ล้างข้อมูลหลังรัน)</option><option value="MasterData">Master Data (สินค้า/ราคา/โปรโมชั่นก่อน POS scenario — ต้องอนุมัติก่อนรัน)</option></select></label>
       {isEdit && script!.scriptType === "MasterData" && <p className="muted-text">แก้ไข SQL แล้วจะต้องขออนุมัติใหม่อีกครั้งก่อนสั่งรันได้ (สถานะอนุมัติปัจจุบันจะถูกรีเซ็ตเป็น Pending)</p>}
       <label>ฐานข้อมูล<select value={dbKind} onChange={(e) => setDbKind(e.target.value)}><option value="Firebird">Firebird</option><option value="SqlServer">SQL Server</option></select></label>
       <label className="full">SQL Script (ต้อง repeatable/idempotent เอง เช่นเช็คก่อน insert — ห้ามใส่ connection string/credential)<textarea rows={10} className="mono" value={sqlScript} onChange={(e) => setSqlScript(e.target.value)} placeholder={"INSERT INTO Products (Code, Name)\nSELECT 'P001', 'Test Product'\nFROM RDB$DATABASE\nWHERE NOT EXISTS (SELECT 1 FROM Products WHERE Code='P001');"} /></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>
   </div></div>;
 }
 
@@ -3084,7 +3155,7 @@ function AutomationEnvironmentDataProfileTab({ projectId, headers, canEdit }: {
       <td><Badge tone={p.dbKind === "Firebird" ? "blue" : "purple"}>{p.dbKind}</Badge></td>
       <td>{p.notes ?? <span className="muted-text">-</span>}</td>
       <td>{formatThaiDateTime(p.updatedAt ?? p.createdAt)}</td>
-      <td>{canEdit && <button type="button" className="table-action" onClick={() => setEditProfile(p)}>แก้ไข</button>}</td>
+      <td>{canEdit && <button type="button" className="table-action" onClick={() => setEditProfile(p)}><span aria-hidden="true">✎</span> แก้ไข</button>}</td>
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Environment Data Profile</p><small>สร้าง Profile ต่อ Environment เพื่อระบุว่าเป็น Firebird หรือ SQL Server — Hub จะใช้เทียบกับ Seed script/Snapshot ก่อนสั่งงานให้อัตโนมัติ</small></div>}
 
     {createModal && <EnvironmentDataProfileFormModal busy={busy} onClose={() => setCreateModal(false)} onSave={createProfile} />}
@@ -3116,12 +3187,12 @@ function EnvironmentDataProfileFormModal({ profile, busy, onClose, onSave }: {
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-data-profile-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
     <div className="modal-head"><div><h2 id="automation-data-profile-form-title">{isEdit ? `แก้ไข ${profile!.environmentName}` : "สร้าง Environment Data Profile"}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <div className="form-grid">
-      {isEdit ? <label>Environment<input value={profile!.environmentName} disabled /></label> :
+      {isEdit ? <label>Environment<input type="text" value={profile!.environmentName} disabled /></label> :
         <label>Environment<select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>}
       <label>DbKind<select value={dbKind} onChange={(e) => setDbKind(e.target.value)}><option value="Firebird">Firebird</option><option value="SqlServer">SQL Server</option></select></label>
       <label className="full">หมายเหตุ (ไม่บังคับ — ห้ามใส่ connection string/credential)<textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="เช่น เครื่อง UAT ทีม Sales" /></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !canSave} onClick={save}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>
   </div></div>;
 }
 
@@ -3136,12 +3207,12 @@ function SuiteFormModal({ title, initialCode = "", initialName = "", initialDesc
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
     <div className="modal-head"><div><h2 id="automation-suite-form-title">{title}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <div className="form-grid">
-      {!isEdit && <label>รหัส Suite (ไม่บังคับ — เว้นว่างให้ระบบสร้างให้)<input value={suiteCode} onChange={(e) => setSuiteCode(e.target.value)} placeholder="เช่น AUT-AS-SMOKE" /></label>}
-      <label className="full">ชื่อ Suite<input value={suiteName} onChange={(e) => setSuiteName(e.target.value)} /></label>
+      {!isEdit && <label>รหัส Suite (ไม่บังคับ — เว้นว่างให้ระบบสร้างให้)<input type="text" value={suiteCode} onChange={(e) => setSuiteCode(e.target.value)} placeholder="เช่น AUT-AS-SMOKE" /></label>}
+      <label className="full">ชื่อ Suite<input type="text" value={suiteName} onChange={(e) => setSuiteName(e.target.value)} /></label>
       <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
-      {isEdit && <label className="full">เหตุผลที่แก้ไข (ไม่บังคับ — บันทึกลงประวัติ)<input value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="เช่น ปรับให้ตรงชื่อ Release ใหม่" /></label>}
+      {isEdit && <label className="full">เหตุผลที่แก้ไข (ไม่บังคับ — บันทึกลงประวัติ)<input type="text" value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="เช่น ปรับให้ตรงชื่อ Release ใหม่" /></label>}
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !suiteName.trim()} onClick={() => onSave(suiteCode, suiteName, description, changeReason)}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !suiteName.trim()} onClick={() => onSave(suiteCode, suiteName, description, changeReason)}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึก</>}</button></div>
   </div></div>;
 }
 
@@ -3175,7 +3246,7 @@ function RunSuiteModal({ suite, releaseId, canRun, busy, onClose, onRun, onError
       <label>Environment<select value={envId} onChange={(e) => setEnvId(e.target.value)}><option value="">เลือก Env</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
       <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={!canRun || busy || !buildId || !envId || suite.readyCaseCount === 0} onClick={() => onRun(buildId, envId, priority)}>{busy ? "กำลังส่ง..." : `▶ รัน ${suite.readyCaseCount} case`}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={!canRun || busy || !buildId || !envId || suite.readyCaseCount === 0} onClick={() => onRun(buildId, envId, priority)}>{busy ? "กำลังส่ง..." : `▶ รัน ${suite.readyCaseCount} case`}</button></div>
   </div></div>;
 }
 
@@ -3191,11 +3262,11 @@ function AddSuiteCasesModal({ cases, existingCaseIds, busy, onClose, onAdd }: {
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-add-cases-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
     <div className="modal-head"><div><h2 id="automation-suite-add-cases-title">เพิ่ม Automation Case เข้า Suite</h2><small>เลือก Case ที่ยังไม่อยู่ใน Suite นี้</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
     <label className="checkbox-field"><input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} /> ตั้งเป็น Required (ต้องผ่านทุกตัว)</label>
-    <label>เหตุผล (ไม่บังคับ — บันทึกลงประวัติ)<input value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="เช่น เพิ่ม case สำหรับ regression รอบนี้" /></label>
+    <label>เหตุผล (ไม่บังคับ — บันทึกลงประวัติ)<input type="text" value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="เช่น เพิ่ม case สำหรับ regression รอบนี้" /></label>
     {available.length ? <div className="automation-batch-list">
       {available.map((c) => <label key={c.automationCaseId} className="automation-batch-row"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selected.has(c.automationCaseId)} onChange={() => toggle(c.automationCaseId)} /><span><b>{c.automationCode}</b><small>{c.testCaseCode} · {c.testCaseTitle}</small></span><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></label>)}
     </div> : <div className="empty"><p>ทุก Automation Case ถูกเพิ่มเข้า Suite นี้หมดแล้ว</p></div>}
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !selected.size} onClick={() => onAdd([...selected], isRequired, changeReason)}>{busy ? "กำลังเพิ่ม..." : `เพิ่ม ${selected.size} case`}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={busy || !selected.size} onClick={() => onAdd([...selected], isRequired, changeReason)}>{busy ? "กำลังเพิ่ม..." : `เพิ่ม ${selected.size} case`}</button></div>
   </div></div>;
 }
 

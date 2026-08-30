@@ -22,9 +22,24 @@ public sealed class WorkloadController(QaDbContext db) : ControllerBase
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(x => x.x.CurrentStatus == status || x.a.Status == status);
         if (today == true) { var todayUtc = DateTime.UtcNow.Date; query = query.Where(x => x.x.Cycle.StartDate >= todayUtc || x.x.Cycle.EndDate >= todayUtc); }
         var rows = await query.OrderBy(x => x.x.Cycle.EndDate).ThenBy(x => x.x.ExecutionOrder)
-            .Select(x => new { x.x.TestCycleCaseId, x.x.TestCaseId, x.x.TestCase.TestCaseCode, x.x.TestCase.Title, x.x.TestCase.ModuleId, x.x.Priority, x.x.TestCase.TestType, TestCycleId = x.x.Cycle.TestCycleId, x.x.Cycle.CycleCode, x.x.Cycle.BuildId, x.x.CurrentStatus, AssignmentStatus = x.a.Status, x.a.DueDate, x.x.EstimatedMinutesSnapshot, x.a.AssignedAt })
+            .Select(x => new { x.x.TestCycleCaseId, x.x.TestCaseId, x.x.TestCase.TestCaseCode, x.x.TestCase.Title, x.x.TestCase.ModuleId, x.x.Priority, x.x.TestCase.TestType, TestCycleId = x.x.Cycle.TestCycleId, x.x.Cycle.CycleCode, x.x.Cycle.BuildId, x.x.CurrentStatus, AssignmentStatus = x.a.Status, x.a.DueDate, x.x.EstimatedMinutesSnapshot, x.a.AssignedAt, x.x.TestCase.IsCritical, x.x.TestCase.ReviewerRequired })
             .ToListAsync(ct);
-        return Ok(new { userId, total = rows.Count, rows });
+        // Module/Build are looked up separately (no navigation property on TestCase/TestCycle) so the
+        // My Work table can show human-readable names instead of raw ids.
+        var moduleIds = rows.Select(x => x.ModuleId).Distinct().ToList();
+        var buildIds = rows.Select(x => x.BuildId).Distinct().ToList();
+        var moduleNames = await db.Modules.Where(m => moduleIds.Contains(m.ModuleId)).ToDictionaryAsync(m => m.ModuleId, m => m.ModuleName, ct);
+        var buildNumbers = await db.Builds.Where(b => buildIds.Contains(b.BuildId)).ToDictionaryAsync(b => b.BuildId, b => b.BuildNumber, ct);
+        var result = rows.Select(x => new
+        {
+            x.TestCycleCaseId, x.TestCaseId, x.TestCaseCode, x.Title,
+            x.ModuleId, ModuleName = moduleNames.GetValueOrDefault(x.ModuleId),
+            x.Priority, x.TestType, x.TestCycleId, x.CycleCode,
+            x.BuildId, BuildNumber = buildNumbers.GetValueOrDefault(x.BuildId),
+            x.CurrentStatus, x.AssignmentStatus, x.DueDate, x.EstimatedMinutesSnapshot, x.AssignedAt,
+            x.IsCritical, x.ReviewerRequired,
+        });
+        return Ok(new { userId, total = rows.Count, rows = result });
     }
 
     [HttpGet("qa-workload"), Authorize(Policy = "QaWorkloadView")]

@@ -199,6 +199,16 @@ public sealed class AutomationController(
 
     [HttpGet("cases/flaky-candidates")] public Task<IReadOnlyList<FlakyCandidateDto>> FlakyCandidates([FromQuery] Guid projectId, CancellationToken ct) => cases.GetFlakyCandidatesAsync(projectId, ct);
 
+    /// <summary>ลบ Automation Case ถาวร (พ่วง Version/DSL, Execution และประวัติการรันทั้งหมดของ Case ที่เลือก) —
+    /// ไม่สามารถกู้คืนได้ จึงจำกัดสิทธิ์ไว้ที่ AutomationManage เท่ากับ Quarantine/ลบ Agent.</summary>
+    [HttpPost("cases/hard-delete"), Authorize(Policy = "AutomationManage")]
+    public async Task<IActionResult> HardDeleteCases([FromQuery] Guid projectId, HardDeleteAutomationCasesRequest request, CancellationToken ct)
+    {
+        try { await cases.HardDeleteCasesAsync(projectId, request, ct); return NoContent(); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (DbUpdateException) { return BadRequest(Problem("ไม่สามารถลบได้", "ยังมีข้อมูลอื่นในระบบอ้างอิง Automation Case นี้อยู่ ไม่สามารถลบถาวรได้", 400)); }
+    }
+
     [HttpPost("cases/{id:guid}/quarantine"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationCaseDto>> Quarantine(Guid id, [FromQuery] Guid projectId, QuarantineCaseRequest request, CancellationToken ct)
     {
         try { return Ok(await cases.QuarantineCaseAsync(id, projectId, request, ct)); }

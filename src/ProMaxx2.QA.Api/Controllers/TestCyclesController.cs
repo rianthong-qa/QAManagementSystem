@@ -22,7 +22,7 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
     public async Task<ActionResult<EnvironmentDto>> CreateEnvironment(SaveEnvironmentRequest request, CancellationToken ct) => Ok(await service.CreateEnvironmentAsync(request, ct));
 
     [HttpGet("test-cycles")]
-    public Task<TestCycleListResultDto> List([FromQuery] Guid? projectId, [FromQuery] Guid? releaseId, [FromQuery] Guid? buildId, [FromQuery] string? search, [FromQuery] string? status, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, releaseId, buildId, search, status, page, size, ct);
+    public Task<TestCycleListResultDto> List([FromQuery] Guid? projectId, [FromQuery] Guid? releaseId, [FromQuery] Guid? buildId, [FromQuery] Guid? moduleId, [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? cycleType, [FromQuery] Guid? createdBy, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, releaseId, buildId, moduleId, search, status, cycleType, createdBy, page, size, ct);
 
     [HttpGet("test-cycles/options")]
     public Task<IReadOnlyList<TestCycleOptionDto>> Options([FromQuery] Guid? projectId, CancellationToken ct = default) => service.ListOptionsAsync(projectId, ct);
