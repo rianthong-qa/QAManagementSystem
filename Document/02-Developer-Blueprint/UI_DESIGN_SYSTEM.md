@@ -476,3 +476,7 @@ git diff --check
 ### 2026-09-03 — Execution Workspace responsive styling
 
 - Execution Workspace-only responsive primitives are scoped in `ExecutionWorkspace.css`, including `min-width: 0`, `overflow-wrap: anywhere`, flexible action wrapping, and mobile touch targets.
+
+### 2026-09-03 — Automation responsive action layout
+
+- Automation section headers and action groups stack/wrap at mobile widths so controls remain reachable without page-level horizontal scrolling.

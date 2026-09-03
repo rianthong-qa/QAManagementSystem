@@ -3,13 +3,13 @@
 /* Hero — Clean White Card, Flat Accent */
 .exec-hero{position:relative;border-radius:14px;background:#fff;box-shadow:none;border:1px solid #e8edf5;overflow:hidden}
 .exec-hero-accent{height:3px;background:#2563eb}
-.exec-hero-body{padding:20px 24px}
+.exec-hero-body{padding:12px 24px 10px}
 .exec-hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
 .exec-hero-info{flex:1;min-width:0}
 .exec-hero-eyebrow{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px}
-.exec-hero-title{margin:0;font-size:36px;font-weight:700;color:#0f172a;line-height:1.2}
+.exec-hero-title{margin:0;font-size:32px;font-weight:700;color:#0f172a;line-height:1.2}
 .exec-hero-score{text-align:right;flex-shrink:0}
-.exec-hero-score strong{display:block;font-size:40px;font-weight:700;color:#2563eb;line-height:1}
+.exec-hero-score strong{display:block;font-size:36px;font-weight:700;color:#2563eb;line-height:1}
 .exec-hero-score small{font-size:12px;color:#94a3b8;font-weight:600;letter-spacing:.04em}
 .exec-hero-score-detail{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;font-size:11px;color:#94a3b8;font-weight:600}
 .exec-hero-progress-track{width:220px;height:8px;margin-top:12px;border-radius:99px;background:#eef2f7;overflow:hidden}
@@ -17,11 +17,11 @@
 .exec-hero-progress-labels{display:flex;justify-content:space-between;gap:10px;width:220px;margin-top:6px;font-size:12px;font-weight:700}
 .exec-hero-progress-labels .done{color:#2563eb}
 .exec-hero-progress-labels .remaining{color:#94a3b8;font-weight:600}
-.exec-hero-bottom{display:flex;align-items:stretch;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid #f1f5f9}
-.exec-hero-decision{display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;flex-shrink:0}
-.decision-icon{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-size:16px;font-weight:700;flex-shrink:0}
+.exec-hero-bottom{display:flex;align-items:center;gap:12px;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9}
+.exec-hero-decision{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:10px;flex-shrink:0}
+.decision-icon{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:14px;font-weight:700;flex-shrink:0}
 .decision-text strong{display:block;font-size:14px;font-weight:800}
-.decision-text span{display:block;font-size:14px;line-height:1.4;margin-top:2px;opacity:.8}
+.decision-text span{display:block;font-size:12px;line-height:1.3;margin-top:2px;opacity:.8}
 .decision-go{background:#f0fdf4;color:#166534}.decision-go .decision-icon{background:#dcfce7;color:#16a34a}
 .decision-no-go{background:#fef2f2;color:#991b1b}.decision-no-go .decision-icon{background:#fee2e2;color:#dc2626}
 .decision-conditional-go{background:#fffbeb;color:#92400e}.decision-conditional-go .decision-icon{background:#fef3c7;color:#d97706}
@@ -29,6 +29,10 @@
 .exec-hero-context{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0;justify-content:flex-end}
 .exec-hero-context span{font-size:14px;color:#64748b;font-weight:600;padding:4px 10px;background:#f8fafc;border-radius:8px;border:1px solid #f1f5f9;white-space:nowrap}
 .exec-hero-context .ctx-alert{background:#fef2f2;border-color:#fecaca;color:#dc2626;font-weight:700}
+.exec-hero-context .ctx-scope{color:#475569;background:#f8fafc}
+.readiness-strip{padding:14px 18px;border:1px solid #e8edf5;border-radius:14px;background:#fff}
+.readiness-head{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}.readiness-head b{font-size:14px;color:#1f2937}.readiness-head span{font-size:11px;color:#94a3b8}
+.readiness-items{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.readiness-item{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 10px;border-radius:10px}.readiness-item>span{display:grid;width:24px;height:24px;flex:0 0 24px;place-items:center;border-radius:50%;font-weight:800}.readiness-item div{min-width:0}.readiness-item b,.readiness-item small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.readiness-item b{font-size:11px;color:#475569}.readiness-item small{margin-top:2px;font-size:11px;font-weight:700}.readiness-item.is-pass{background:#f0fdf4}.readiness-item.is-pass>span{background:#dcfce7;color:#16a34a}.readiness-item.is-pass small{color:#15803d}.readiness-item.is-fail{background:#fef2f2}.readiness-item.is-fail>span{background:#fee2e2;color:#dc2626}.readiness-item.is-fail small{color:#b91c1c}
 .exec-hero-context .ctx-time{background:transparent;border:none;color:#94a3b8;font-weight:500}
 
 /* ===== KPI GRID ===== */
@@ -244,9 +248,11 @@
 .qa-desc{font-size:11px;color:#697386;margin:4px 0 8px}
 .qa-progress{height:6px;background:#e8edf5;border-radius:99px;overflow:hidden}
 .qa-progress span{display:block;height:100%;background:#2563eb;border-radius:99px;transition:width .4s ease}
+.qa-meta{display:flex;justify-content:space-between;gap:12px;margin-top:5px;color:#94a3b8;font-size:10px}
+.qa-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ===== QUALITY OVERVIEW CHARTS ===== */
-.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
 .chart-card{padding:22px;transition:box-shadow .2s ease,border-color .2s ease}
 .chart-card:hover{border-color:#dbe3ef;box-shadow:0 6px 20px rgba(15,23,42,.06)}
 .chart-card-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}
@@ -259,6 +265,18 @@
 .chart-donut-hole span{margin-top:2px;font-size:10.5px;color:#94a3b8;text-align:center}
 .chart-donut-hole small{margin-top:1px;font-size:9.5px;color:#b0b8c4;text-align:center}
 .chart-note{margin:14px 0 0;padding-top:12px;border-top:1px dashed #e8edf5;font-size:11px;color:#94a3b8;line-height:1.5}
+.qa-quality-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid #f1f5f9}
+.qa-quality-metrics>div{min-width:0}
+.qa-quality-metrics span,.qa-quality-metrics small{display:block;color:#94a3b8;font-size:10px;font-weight:600}
+.qa-quality-metrics b{display:block;margin:3px 0 1px;color:#1f2937;font-size:14px;font-weight:800}
+.qa-quality-metrics small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:500}
+.qa-execution-breakdown{display:flex;align-items:center;gap:12px;margin-top:8px;color:#94a3b8;font-size:10px}
+.qa-execution-breakdown span{margin-right:auto;font-weight:700;color:#64748b}
+.qa-execution-breakdown b{font-size:10px;color:#64748b}
+.defect-closure-note{display:grid;grid-template-columns:auto auto;gap:2px 8px;margin-top:14px;padding-top:10px;border-top:1px solid #f1f5f9}
+.defect-closure-note span{color:#64748b;font-size:11px;font-weight:700}
+.defect-closure-note b{color:#16a34a;font-size:13px;text-align:right}
+.defect-closure-note small{grid-column:1/-1;color:#94a3b8;font-size:10px}
 .chart-donut-legend{display:flex;flex-direction:column;gap:4px;flex:1}
 .legend-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:8px;font-size:12px;color:#475569;transition:background .15s ease}
 .legend-item:hover{background:#f8fafc}
@@ -267,11 +285,13 @@
 .legend-count{font-weight:800;min-width:30px;padding:1px 8px;border-radius:99px;text-align:center}
 .legend-pct{color:#94a3b8;font-size:11px;min-width:32px;text-align:right;font-weight:600}
 .chart-bars{display:flex;flex-direction:column;gap:14px}
-.bar-row{display:flex;align-items:center;gap:12px}
+.bar-row{display:grid;grid-template-columns:64px minmax(0,1fr) 34px 42px;align-items:center;gap:10px}
 .bar-label{width:64px;font-size:12px;font-weight:700;color:#475569;text-align:right;flex-shrink:0}
 .bar-track{flex:1;height:28px;background:#f1f5f9;border-radius:8px;overflow:hidden}
 .bar-fill{height:100%;border-radius:8px;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;transition:width .6s cubic-bezier(.2,.7,.3,1)}
 .bar-fill span{font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.2)}
+.severity-count{font-size:12px;color:#1f2937;text-align:right}
+.severity-pct{font-size:11px;color:#94a3b8;text-align:right;font-weight:700}
 .chart-empty{text-align:center;color:#94a3b8;font-size:12px;padding:24px 0;margin:0}
 
 /* ===== EXECUTIVE TIMELINE / ROADMAP LIST ===== */

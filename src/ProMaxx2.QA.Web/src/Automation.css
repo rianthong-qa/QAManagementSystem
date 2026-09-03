@@ -1660,6 +1660,9 @@
 }
 
 @media (max-width: 760px) {
+  .automation-section-head { align-items: stretch; flex-direction: column; gap: 12px; }
+  .automation-section-head-actions, .automation-section-head-actions .btn { width: 100%; }
+  .automation-section-head-actions { display: flex; flex-wrap: wrap; }
   .automation-hero { flex-direction: column; align-items: stretch; padding: 16px; }
   .automation-hero-actions { align-items: stretch; }
   .automation-hero-actions .btn { width: 100%; }

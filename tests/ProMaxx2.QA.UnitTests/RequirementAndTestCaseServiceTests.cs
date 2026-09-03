@@ -99,6 +99,8 @@ public sealed class RequirementAndTestCaseServiceTests
 
         public Task AddModuleAsync(ProductModule module, CancellationToken ct) => Task.CompletedTask;
 
+        public Task<bool> ModuleHasReferencesAsync(Guid moduleId, CancellationToken ct) => Task.FromResult(false);
+
         public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 
         public Task AddProjectUserAsync(Guid userId, Guid projectId, CancellationToken ct) => Task.CompletedTask;

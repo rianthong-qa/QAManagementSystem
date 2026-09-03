@@ -44,6 +44,8 @@
 .ts-kv dt{color:var(--muted);font-weight:700;font-size:12px}
 .ts-kv dd{margin:0;font-weight:700;color:var(--text)}
 .test-summary-narrative{display:grid;gap:14px}
+.test-summary-executive{padding:22px!important}
+.ts-section-heading{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;border-bottom:1px solid #e7edf7;padding-bottom:16px}.ts-section-heading h2,.ts-section-heading h3{margin:4px 0 3px;color:#172b4d}.ts-section-heading h2{font-size:20px}.ts-section-heading h3{font-size:17px}.ts-section-heading p{margin:0;color:var(--muted);font-size:12px}.ts-section-heading.compact{border-bottom:0;padding-bottom:4px;align-items:center}.ts-eyebrow{display:block;color:#6b7fa8;font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.ts-generated{text-align:right;color:var(--muted);font-size:11px}.ts-generated b{display:block;color:var(--text);font-size:12px;margin-top:3px}.ts-executive-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-top:16px}.ts-decision-note{border-radius:12px;padding:16px;background:#f5f8ff;border:1px solid #dbe5ff}.ts-decision-note strong{display:block;font-size:25px;color:#2457d6;margin:5px 0}.ts-decision-note p{margin:0;color:#475467;font-size:13px;line-height:1.6}.ts-mini-list{display:grid;gap:9px}.ts-mini-list>div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:8px;font-size:12px}.ts-mini-list>div span{color:var(--muted)}.ts-mini-list>div b{text-align:right;max-width:70%;overflow-wrap:anywhere}.ts-detail-grid{margin-top:0}.ts-total-count{color:var(--primary);font-size:12px}.ts-status-list{display:grid;gap:13px;margin-top:8px}.ts-status-list>div>div:first-child{display:flex;align-items:center;gap:8px;font-size:12px}.ts-status-list>div>div:first-child b{margin-left:auto}.ts-status-dot{width:9px;height:9px;border-radius:3px}.ts-status-list .ts-bar{margin-top:5px;height:6px}.ts-risk-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.ts-risk-list>div{display:grid;gap:3px;padding:11px;border-radius:10px;background:#f8fafc;border-left:3px solid #94a3b8}.ts-risk-list b{font-size:22px}.ts-risk-list span{font-size:11px;font-weight:700}.ts-risk-list small{font-size:10px;color:var(--muted)}.ts-risk-list .risk-high{border-left-color:#d64545}.ts-risk-list .risk-high b{color:#c03939}.ts-risk-list .risk-medium{border-left-color:#e3a008}.ts-risk-list .risk-medium b{color:#a66b00}.ts-risk-list .risk-ok{border-left-color:#22a06b}.ts-risk-list .risk-ok b{color:#16804f}.ts-env-detail{display:grid;gap:7px;margin-top:17px}.ts-env-detail>div{display:grid;gap:2px}.ts-env-detail small{color:var(--muted);font-size:11px;overflow-wrap:anywhere}.ts-empty-detail{margin:0;color:var(--muted);font-size:12px}
 .test-summary-narrative label{display:grid;gap:6px;color:var(--muted);font-size:12px;font-weight:700}
 .test-summary-narrative textarea{min-height:84px;width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;color:var(--text);resize:vertical;background:#fff}
 .test-summary-narrative textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(36,87,214,.12);outline:none}
@@ -68,6 +70,8 @@
 .test-summary-grid>.card{padding:20px}
 .test-summary-narrative textarea{min-height:104px!important}
 @media(max-width:900px){.test-summary>header:first-child{grid-template-columns:1fr}.test-summary>header:first-child>div:last-child{justify-content:flex-start}}
+@media(max-width:900px){.ts-executive-grid{grid-template-columns:1fr}.ts-generated{text-align:left}}
+@media(max-width:560px){.ts-section-heading{flex-direction:column}.ts-risk-list{grid-template-columns:1fr}.ts-mini-list>div{align-items:flex-start;flex-direction:column;gap:3px}.ts-mini-list>div b{text-align:left;max-width:100%}}
 
 /* Header alignment: plain surface with filters grouped left and actions right. */
 .test-summary>header:first-child{
@@ -92,3 +96,22 @@
   .test-summary>header:first-child>div:last-child{flex:1 1 100%;justify-content:flex-start;margin-left:0}
 }
 @media(max-width:560px){.test-summary>header:first-child{padding:0}.test-summary>header:first-child>div:last-child .btn{flex:1 1 auto}}
+.ts-report-section-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.ts-report-section-grid > div { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; }
+.ts-report-section-grid b { display: block; color: var(--text); font-size: 13px; }
+.ts-report-section-grid p { white-space: pre-line; overflow-wrap: anywhere; margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.ts-evidence-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.ts-evidence-grid > div { display: grid; gap: 6px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; }
+.ts-evidence-grid b { color: var(--text); font-size: 13px; }
+.ts-evidence-grid span, .ts-evidence-grid small { color: var(--muted); font-size: 12px; }
+.ts-evidence-grid strong { color: var(--primary); font-size: 18px; }
+.ts-decision-panel { margin-top: 16px; }
+.ts-decision-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.ts-decision-grid > div { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; }
+.ts-decision-grid b { display: block; font-size: 13px; color: var(--text); }
+.ts-decision-grid p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.ts-decision-actions { justify-content: flex-end; margin-top: 14px; }
+@media (max-width: 760px) { .ts-evidence-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .ts-decision-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .ts-decision-grid { grid-template-columns: 1fr; } .ts-decision-actions { align-items: stretch; flex-direction: column; } }
+@media (max-width: 760px) { .ts-report-section-grid { grid-template-columns: 1fr; } }

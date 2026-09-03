@@ -41,6 +41,7 @@ type Page =
   | "settings"
   | "system-monitor"
   | "audit";
+type AuditLogItem = { timestamp: string; actorName?: string | null; action: string; entity: string; entityId: string; summary?: string | null };
 type SessionUser = {
   userId: string;
   username: string;
@@ -54,13 +55,21 @@ type DashboardSummary = {
   totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
   openP0: number; openP1: number; overallScore?: number; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string;
   totalTestCaseCount: number; testedTestCaseCount: number; testCaseProgress: number; totalExecutionCount: number; generatedAt: string;
-  modules: { moduleId: string; parentModuleId?: string; moduleCode?: string; moduleName: string; sortOrder?: number; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string }[];
+  modules: { moduleId: string; parentModuleId?: string; moduleCode?: string; moduleName: string; sortOrder?: number; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string; openDefects?: number }[];
   users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
   statusDistribution: { status: string; count: number; color: string }[];
   defectSeverityDistribution: { severity: string; count: number; color: string }[];
   projectName?: string;
+  releaseCode?: string; releaseVersion?: string; buildNumber?: string;
 };
 const apiUrl = import.meta.env.VITE_API_URL ?? "/api/v1";
+
+function AuditLogPage() {
+  const [items, setItems] = useState<AuditLogItem[]>([]); const [search, setSearch] = useState(""); const [entity, setEntity] = useState(""); const [page, setPage] = useState(1); const [total, setTotal] = useState(0); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
+  const load = useCallback(() => { setLoading(true); setError(""); const q = new URLSearchParams({ page: String(page), size: "25" }); if (search.trim()) q.set("search", search.trim()); if (entity) q.set("entity", entity); fetch(`${apiUrl}/audit-logs?${q}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } }).then(async r => { if (!r.ok) throw new Error("โหลด Audit Log ไม่สำเร็จ"); return r.json(); }).then(d => { setItems(d.items ?? []); setTotal(d.total ?? 0); }).catch(e => setError(e instanceof Error ? e.message : "โหลด Audit Log ไม่สำเร็จ")).finally(() => setLoading(false)); }, [entity, page, search]);
+  useEffect(() => { void load(); }, [load]);
+  return <section className="content-card audit-log-page"><div className="filter-row"><button className="btn" onClick={() => void load()}>รีเฟรช</button><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="ค้นหา Action, Entity หรือรายละเอียด"/><select value={entity} onChange={e => { setEntity(e.target.value); setPage(1); }}><option value="">ทุก Entity</option><option value="Defect">Defect</option><option value="Regression">Regression</option></select></div>{error && <div className="login-error" role="alert">{error}</div>}{loading ? <div role="status" className="empty-state">กำลังโหลด Audit Log...</div> : items.length === 0 ? <div className="empty-state">ยังไม่มีรายการ Audit Log ตามเงื่อนไขนี้</div> : <div className="table-wrap"><table><thead><tr><th>เวลา</th><th>User</th><th>Action</th><th>Entity</th><th>Summary</th></tr></thead><tbody>{items.map((x, i) => <tr key={`${x.timestamp}-${x.entityId}-${i}`}><td>{formatThaiDateTime(x.timestamp)}</td><td>{x.actorName ?? "System"}</td><td>{x.action}</td><td>{x.entity} · {x.entityId.slice(0, 8)}</td><td>{x.summary ?? "-"}</td></tr>)}</tbody></table></div>}<div className="pagination"><span>ทั้งหมด {total.toLocaleString()} รายการ</span><button className="btn" disabled={page <= 1 || loading} onClick={() => setPage(p => p - 1)}>ก่อนหน้า</button><span>หน้า {page}</span><button className="btn" disabled={page * 25 >= total || loading} onClick={() => setPage(p => p + 1)}>ถัดไป</button></div></section>;
+}
 
 function moduleTreeComparator(a: ModuleItem, b: ModuleItem): number {
   return (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || (a.moduleCode ?? "").localeCompare(b.moduleCode ?? "");
@@ -419,8 +428,8 @@ const testCaseStatusTones: Record<string, string> = { Draft: "gray", Review: "ye
 const defectActionLabels: Record<string, string> = { Created: "สร้าง", Updated: "แก้ไข", StatusChanged: "สถานะ", SeverityChanged: "Severity", Comment: "คอมเมนต์", TestLinked: "เชื่อมโยง Test Case", TestUnlinked: "ยกเลิก Test Case", BulkUpdated: "อัปเดตกลุ่ม", Deleted: "ลบ", CrmSent: "ส่งไป CRM", CrmSyncFailed: "ส่งไป CRM ไม่สำเร็จ", CrmReassigned: "เปลี่ยนผู้รับผิดชอบ CRM", CrmReassignFailed: "เปลี่ยนผู้รับผิดชอบ CRM ไม่สำเร็จ", CrmStatusChanged: "CRM อัปเดตสถานะ/ผู้รับผิดชอบ", CrmReturnedToOwner: "CRM ส่งกลับหาเจ้าของเรื่อง", CrmComment: "คอมเมนต์จาก CRM" };
 
 // เดิมทั้งสองกราฟนี้อยู่ใน component เดียวกัน (QualityOverviewCharts) เรนเดอร์คู่กันใน .charts-grid เสมอ
-// — แยกเป็น 2 component อิสระเพื่อให้ผู้ใช้สลับตำแหน่งได้ (Defect แยกตามความรุนแรง ย้ายไปอยู่คู่กับ
-// Risks & Blockers แทน ส่วนโมดูลที่ต้องให้ความสนใจย้ายมาอยู่คู่กับกราฟสถานะผลการทดสอบแทน)
+// — แยกเป็น 2 component อิสระเพื่อให้ผู้ใช้สลับตำแหน่งได้ (สรุป Defect ตามระดับความรุนแรง ย้ายไปอยู่คู่กับ
+// Risks & Blockers แทน ส่วนโมดูลที่ต้องติดตามเป็นพิเศษย้ายมาอยู่คู่กับกราฟภาพรวมผลการทดสอบแทน)
 function TestStatusChart({ data }: { data: DashboardSummary }) {
   const statusDist = data.statusDistribution || [];
   const totalStatus = Math.max(1, statusDist.reduce((s, x) => s + x.count, 0));
@@ -440,7 +449,7 @@ function TestStatusChart({ data }: { data: DashboardSummary }) {
 
   return <article className="card chart-card">
     <div className="chart-card-head">
-      <h3>สถานะผลการทดสอบ</h3>
+      <h3>ภาพรวมผลการทดสอบ</h3>
       <span>{totalStatus.toLocaleString()} รายการใน Test Cycle</span>
     </div>
     <div className="chart-donut-wrap">
@@ -465,6 +474,15 @@ function TestStatusChart({ data }: { data: DashboardSummary }) {
         Test Case เข้า Test Cycle) ถ้า Test Case เดียวถูกใช้ในหลาย Cycle จะถูกนับซ้ำได้ — ต้องบอกให้ชัด
         ว่าเป็นคนละฐานการนับ ไม่ใช่แค่ "คนละคำถาม" เฉยๆ กันเข้าใจผิดว่า totalCases = จำนวน Test Case จริง */}
     <p className="chart-note">คำนวณจากรายการที่ Assign เข้า Test Cycle ({data.executedCases.toLocaleString()}/{data.totalCases.toLocaleString()} รายการ — นับซ้ำได้หาก Test Case เดียวถูกใช้หลาย Cycle) คนละฐานกับ % ความคืบหน้าการทดสอบด้านบนที่นับ Test Case แบบไม่ซ้ำ</p>
+    <div className="qa-quality-metrics" aria-label="ตัวชี้วัดคุณภาพ QA">
+      <div><span>Test Case</span><b>{data.testedTestCaseCount.toLocaleString()}/{data.totalTestCaseCount.toLocaleString()}</b><small>ทดสอบแล้ว</small></div>
+      <div><span>Pass Rate</span><b>{data.passRate}%</b><small>{data.passedCases.toLocaleString()} ผ่าน</small></div>
+      <div><span>Open Defect</span><b>{data.openDefects.toLocaleString()}</b><small>ยังเปิดอยู่</small></div>
+      <div><span>Coverage</span><b>{data.requirementCoverage}%</b><small>{data.coveredRequirements.toLocaleString()}/{data.totalRequirements.toLocaleString()} Requirement</small></div>
+    </div>
+    <div className="qa-execution-breakdown" aria-label="สรุป Execution Quality">
+      <span>Execution Quality</span><b>Fail {data.statusDistribution.find(x => x.status === "Fail")?.count ?? 0}</b><b>Blocked {data.statusDistribution.find(x => x.status === "Blocked")?.count ?? 0}</b><b>Not Run {data.statusDistribution.find(x => x.status === "Not Run")?.count ?? 0}</b>
+    </div>
   </article>;
 }
 function DefectSeverityChart({ data }: { data: DashboardSummary }) {
@@ -477,20 +495,22 @@ function DefectSeverityChart({ data }: { data: DashboardSummary }) {
 
   return <article className="card chart-card">
     <div className="chart-card-head">
-      <h3>Defect แยกตามความรุนแรง</h3>
-      <span>{totalDefects.toLocaleString()} รายการ</span>
+      <h3>สรุป Defect ตามระดับความรุนแรง</h3>
+      <span>Open {totalDefects.toLocaleString()} / Total {data.totalDefects.toLocaleString()}</span>
     </div>
     <div className="chart-bars">
       {sevCounts.map(x => <div key={x.sev} className="bar-row">
         <div className="bar-label">{x.sev}</div>
         <div className="bar-track">
           <div className="bar-fill" style={{width:`${Math.max(x.count / maxSev * 100, x.count > 0 ? 8 : 0)}%`,background:`linear-gradient(90deg, ${x.color}cc, ${x.color})`}}>
-            {x.count > 0 && <span>{x.count}</span>}
           </div>
         </div>
+        <strong className="severity-count">{x.count.toLocaleString()}</strong>
+        <span className="severity-pct">{totalDefects ? `${(x.count / totalDefects * 100).toFixed(1)}%` : "0%"}</span>
       </div>)}
     </div>
     {totalDefects === 0 && <p className="chart-empty">ยังไม่มีข้อมูล Defect</p>}
+    <div className="defect-closure-note"><span>Defect Closure Rate</span><b>{data.totalDefects ? Math.round((data.totalDefects - totalDefects) / data.totalDefects * 1000) / 10 : 0}%</b><small>{Math.max(0, data.totalDefects - totalDefects).toLocaleString()} Resolved / Closed จากทั้งหมด {data.totalDefects.toLocaleString()}</small></div>
   </article>;
 }
 
@@ -584,17 +604,18 @@ function ModuleAttentionPanel({ projectId, releaseId, buildId, modules, shareCod
       }).catch(() => setCounts(null));
   }, [projectId, releaseId, buildId, shareCode, shareToken]);
 
-  if (!projectId || shareCode || shareToken) return null;
-  const rows = Object.entries(counts ?? {})
-    .map(([moduleId, count]) => ({ moduleId, count, name: modules.find(m => m.moduleId === moduleId)?.moduleName ?? "ไม่ระบุโมดูล" }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 6);
+  if (!projectId && !shareCode && !shareToken) return null;
+  const rows = (shareCode || shareToken
+    ? modules.filter(m => (m.openDefects ?? 0) > 0).map(m => ({ moduleId: m.moduleId, count: m.openDefects ?? 0, name: m.moduleName }))
+    : Object.entries(counts ?? {})
+      .map(([moduleId, count]) => ({ moduleId, count, name: modules.find(m => m.moduleId === moduleId)?.moduleName ?? "ไม่ระบุโมดูล" })))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const maxCount = Math.max(1, ...rows.map(r => r.count));
 
   return <article className="card" style={{padding:24}}>
-    <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>โมดูลที่ต้องให้ความสนใจ</h3>
+    <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>โมดูลที่ต้องติดตามเป็นพิเศษ</h3>
     <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>จัดอันดับโมดูลตามจำนวน Defect ที่ยังเปิดอยู่</p>
-    {counts === null ? <p className="muted-row">กำลังโหลด...</p> : rows.length ? <div className="attention-list">
+    {!shareCode && !shareToken && counts === null ? <p className="muted-row">กำลังโหลด...</p> : rows.length ? <div className="attention-list">
       {rows.map(r => <div className="attention-row" key={r.moduleId}>
         <span className="attention-label" title={r.name}>{r.name}</span>
         <div className="attention-bar-track"><span className="attention-bar-fill" style={{width:`${Math.max(r.count / maxCount * 100, 12)}%`}} /></div>
@@ -605,7 +626,7 @@ function ModuleAttentionPanel({ projectId, releaseId, buildId, modules, shareCod
 }
 
 const healthLabelTH: Record<string, string> = { Healthy: "ปกติ", Watch: "เฝ้าระวัง", Risk: "เสี่ยง", "No Data": "ไม่มีข้อมูล" };
-function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, projectName }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string; projectName?: string }) {
+function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, projectName, releaseLabel, buildLabel }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string; projectName?: string; releaseLabel?: string; buildLabel?: string }) {
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [data, setData] = useState<DashboardSummary | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   useEffect(() => {
@@ -677,7 +698,7 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
       <div className="exec-hero-body">
         <div className="exec-hero-top">
           <div className="exec-hero-info">
-            <span className="exec-hero-eyebrow">ภาพรวมคุณภาพสำหรับผู้บริหาร</span>
+            <span className="exec-hero-eyebrow">Executive Quality Summary</span>
             <h2 className="exec-hero-title">{projectName || data.projectName || "แดชบอร์ดความพร้อมปล่อย Release"}</h2>
           </div>
           <div className="exec-hero-score">
@@ -700,17 +721,30 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
         </div>
         <div className="exec-hero-bottom">
           <div className={`exec-hero-decision decision-${data.recommendedDecision.toLowerCase().replace(" ", "-")}`}>
-            <span className="decision-icon">{data.recommendedDecision === "GO" ? "✓" : data.recommendedDecision === "NO GO" ? "✕" : "!"}</span>
+            <span className="decision-icon">{data.recommendedDecision === "GO" ? "✓" : data.recommendedDecision === "NO-GO" ? "✕" : "!"}</span>
             <div className="decision-text">
               <strong>{data.recommendedDecision}</strong>
               <span>{decisionReason}</span>
             </div>
           </div>
           <div className="exec-hero-context">
+            <span className="ctx-scope">Release: {data.releaseCode ? `${data.releaseCode}${data.releaseVersion ? ` · ${data.releaseVersion}` : ""}` : releaseLabel || "ทุก Release"}</span>
+            <span className="ctx-scope">Build: {data.buildNumber || buildLabel || "ทุก Build"}</span>
             {data.criticalDefects > 0 && <span className="ctx-alert">Defect Critical {data.criticalDefects} รายการ</span>}
             <span className="ctx-time">{formatThaiDateTime(data.generatedAt, {day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit"})}</span>
           </div>
         </div>
+      </div>
+    </section>
+    <section className="readiness-strip" aria-label="Release Readiness">
+      <div className="readiness-head"><b>Release Readiness</b><span>เกณฑ์ประเมินจากข้อมูล QA ปัจจุบัน · P0 Blocker = Test Case ระดับ P0 ที่ Fail หรือ Blocked</span></div>
+      <div className="readiness-items">
+        {[
+          ["Requirement Coverage", `${data.requirementCoverage}%`, data.requirementCoverage >= 90],
+          ["Pass Rate", `${data.passRate}%`, data.passRate >= 90],
+          ["Critical Defect", `${data.criticalDefects} รายการ`, data.criticalDefects === 0],
+          ["P0 Blocker", `${data.openP0} รายการ`, data.openP0 === 0],
+        ].map(([label, value, passed]) => <div className={passed ? "readiness-item is-pass" : "readiness-item is-fail"} key={label as string}><span aria-hidden="true">{passed ? "✓" : "!"}</span><div><b>{label}</b><small>{value}</small></div></div>)}
       </div>
     </section>
     <div className="charts-grid">
@@ -721,7 +755,7 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
       <article className="card" style={{padding:24}}>
         <div className="module-overview-head">
           <div className="module-overview-title">
-            <h3>ภาพรวมโมดูล</h3>
+            <h3>สถานะการทดสอบแต่ละโมดูล</h3>
             <p>โครงสร้าง Module แบบ Tree พร้อมจำนวน Test Case รวมทุกโมดูลย่อยและสถานะการทดสอบ</p>
           </div>
           <div className="module-overview-total">
@@ -737,7 +771,7 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
       <div className="dashboard-module-side">
         <DefectSeverityChart data={data} />
         <article className="card" style={{padding:24}}>
-          <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>ความเสี่ยงและ Blocker</h3>
+          <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>ปัญหาและความเสี่ยงที่ต้องติดตาม</h3>
           <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ความเสี่ยงและสิ่งกีดขวางที่ต้องติดตาม</p>
           <div className="risks-grid">
             {data.criticalDefects > 0 && <div className="risk-card"><div className="risk-icon">!</div><div className="risk-body"><b>Defect Critical</b><span>พบ Critical Defect ค้าง {data.criticalDefects} รายการ ต้องแก้ไขก่อน Release</span></div></div>}
@@ -745,17 +779,17 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
             {data.highDefects > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>Defect High</b><span>พบ High Defect ค้าง {data.highDefects} รายการ ควรตรวจสอบและจัดลำดับ</span></div></div>}
             {data.openP1 > 0 && <div className="risk-card risk-warning"><div className="risk-icon">⚠</div><div className="risk-body"><b>P1 ที่พบปัญหา</b><span>พบ P1 ค้าง {data.openP1} รายการ ตรวจสอบว่าต้องแก้ก่อน Release หรือไม่</span></div></div>}
             {data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).length > 0 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>โมดูลที่ Coverage ต่ำ</b><span>{data.modules.filter(x => !x.parentModuleId && x.coveragePercent < 50).map(x => x.moduleName).join(", ")} มี Coverage ต่ำกว่า 50%</span></div></div>}
-            {data.requirementCoverage < 80 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>ความครอบคลุม Requirement ต่ำ</b><span>Requirement Coverage อยู่ที่ {data.requirementCoverage}% ต่ำกว่าเกณฑ์ 80%</span></div></div>}
+            {data.requirementCoverage < 90 && <div className="risk-card risk-info"><div className="risk-icon">i</div><div className="risk-body"><b>ความครอบคลุม Requirement ต่ำ</b><span>Requirement Coverage อยู่ที่ {data.requirementCoverage}% ต่ำกว่าเกณฑ์ 90%</span></div></div>}
             {data.criticalDefects === 0 && data.openP0 === 0 && data.highDefects === 0 && data.openP1 === 0 && <div className="risk-card" style={{background:"#f0fdf4",borderColor:"#bbf7d0"}}><div className="risk-icon" style={{background:"#dcfce7",color:"#16a34a"}}>✓</div><div className="risk-body"><b>ไม่มีความเสี่ยงร้ายแรง</b><span>ไม่พบ Critical Defect, P0 หรือ High Defect ค้าง — สถานะปกติ</span></div></div>}
           </div>
         </article>
       </div>
     </div>
     <article className="card" style={{padding:24}}>
-      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>ผลการดำเนินงาน QA</h3>
-      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ผลการดำเนินงานของผู้ทดสอบแต่ละคน</p>
+      <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>ภาพรวมงาน QA</h3>
+      <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>ผลการดำเนินงานของผู้ทดสอบแต่ละคน · รวม {data.totalExecutionCount.toLocaleString()} Execution</p>
       <div className="qa-list">
-        {data.users.length ? data.users.map((u, i) => <div className="qa-card" key={u.userId}><div className="qa-icon">{i + 1}</div><div className="qa-body"><div className="qa-top"><b>{u.displayName}</b><span>{u.passRate}%</span></div><div className="qa-desc">{u.executions} Executions · ผ่าน {u.passed} · ไม่ผ่าน {u.failed}</div><div className="qa-progress"><span style={{width:`${u.passRate}%`}} /></div></div></div>) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบ</p>}
+        {data.users.length ? data.users.map((u, i) => { const workload = data.totalExecutionCount ? Math.round(u.executions / data.totalExecutionCount * 1000) / 10 : 0; return <div className="qa-card" key={u.userId}><div className="qa-icon">{i + 1}</div><div className="qa-body"><div className="qa-top"><b>{u.displayName}</b><span>{u.passRate}% Pass Rate</span></div><div className="qa-desc">{u.executions} Executions · ผ่าน {u.passed} · Failed {u.failed} · Blocked {u.blocked}</div><div className="qa-progress"><span style={{width:`${u.passRate}%`}} /></div><div className="qa-meta"><span>สัดส่วนงาน {workload}%</span><span>ล่าสุด {u.lastExecutedAt ? formatThaiDateTime(u.lastExecutedAt, { dateStyle:"short", timeStyle:"short" }) : "ยังไม่มีข้อมูล"}</span></div></div></div>; }) : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบ</p>}
       </div>
     </article>
   </div>;
@@ -936,7 +970,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
     } finally { setCommentSending(false); }
   };
   const bulkStatus = async (status: string) => {
-    if (!selectedIds.length) return;
+    if (canEdit === false || !selectedIds.length) return;
     const response = await fetch(`${apiUrl}/defects/bulk`, { method: "POST", headers, body: JSON.stringify({ ids: selectedIds, status }) });
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${selectedIds.length} รายการ`); setSelectedIds([]); setReload(x => x + 1); }
   };
@@ -968,7 +1002,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
           <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option value="">ทุก Assignee</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
         </div>
         <div>
-          {selectedIds.length > 0 && <>
+          {canEdit !== false && selectedIds.length > 0 && <>
             <button className="btn" onClick={() => bulkStatus("Resolved")}><span aria-hidden="true">✓</span> Resolve ({selectedIds.length})</button>
             <button className="btn" onClick={() => bulkStatus("Closed")}><span aria-hidden="true">⏹</span> Close ({selectedIds.length})</button>
           </>}
@@ -986,7 +1020,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
             {items.map(x => <tr key={x.defectId}>
               <td><input type="checkbox" checked={selectedIds.includes(x.defectId)} onChange={() => setSelectedIds(prev => prev.includes(x.defectId) ? prev.filter(id => id !== x.defectId) : [...prev, x.defectId])} /></td>
               <td><button className="link-button" onClick={() => openDetail(x)}>{x.defectCode}</button></td>
-              <td>{x.title}</td>
+              <td><b>{x.title}</b>{(x.releaseCode || x.buildNumber) && <small className="cell-sub">{x.releaseCode || "Release ไม่ระบุ"}{x.buildNumber ? ` · Build ${x.buildNumber}` : ""}</small>}</td>
               <td><Badge tone={defectSeverityTones[x.severity] ?? "blue"}>{x.severity}</Badge></td>
               <td><Badge tone={defectStatusTones[x.status] ?? "gray"}>{x.status}</Badge></td>
               <td>
@@ -2090,9 +2124,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
     ])
       .then(([releaseData, projectData]) => {
         const allReleases = releaseData as ReleaseItem[];
-        const active = allReleases.filter(
-          (x) => x.status !== "Cancelled",
-        );
+        const active = allReleases.filter((x) => x.status !== "Cancelled" && x.status !== "Closed");
         setAllItems(allReleases);
         setItems(active);
         setProjects((projectData as ProjectItem[]).filter((x) => x.isActive));
@@ -2118,6 +2150,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
       .then((data: BuildItem[]) => setBuilds(data.filter((x) => x.isActive)));
   }, [selectedId, reload]);
   const selected = items.find((x) => x.releaseId === selectedId),
+    selectedIsOpen = !!selected && selected.status !== "Closed" && selected.status !== "Cancelled",
     term = search.toLowerCase(),
     filteredReleases = items.filter((x) =>
       (!contextProjectId || x.projectId === contextProjectId) &&
@@ -2351,10 +2384,10 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
               <button className="btn" onClick={() => setReleaseDetail(selected)}>
                 รายละเอียด Release
               </button>
-              {canEdit && <><button className="btn" onClick={() => openRelease(selected)}>
+              {canEdit && <><button className="btn" disabled={!selectedIsOpen} onClick={() => openRelease(selected)}>
                   แก้ไข Release
                 </button>
-                <button className="btn primary" onClick={() => openBuild()}>
+                <button className="btn primary" disabled={!selectedIsOpen} onClick={() => openBuild()}>
                   + Build
                 </button></>}
             </div>
@@ -2399,6 +2432,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                             className="table-action icon-only"
                             title="แก้ไข"
                             aria-label={`แก้ไข ${x.buildNumber}`}
+                            disabled={!selectedIsOpen}
                             onClick={() => openBuild(x)}
                           >
                             <span aria-hidden="true">✎</span>
@@ -2408,6 +2442,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                               className="table-action icon-only"
                               title="Mark RC"
                               aria-label={`Mark RC ${x.buildNumber}`}
+                              disabled={!selectedIsOpen}
                               onClick={() => markRc(x)}
                             >
                               <span aria-hidden="true">★</span>
@@ -2417,6 +2452,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                             className="table-action danger-action icon-only"
                             title="ลบ"
                             aria-label={`ลบ ${x.buildNumber}`}
+                            disabled={!selectedIsOpen}
                             onClick={() =>
                               remove("build", x.buildId, x.buildNumber)
                             }
@@ -2440,6 +2476,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
           <div className="project-footer">
             <button
               className="danger-link"
+              disabled={!selectedIsOpen}
               onClick={() =>
                 remove("release", selected.releaseId, selected.releaseCode)
               }
@@ -3906,6 +3943,7 @@ function RegressionPage({projectId,releaseId,buildId,search,canEdit,onOpenCycle}
   useEffect(()=>{if(!projectId)return;Promise.all([read(`${apiUrl}/projects/${projectId}/regression-profiles`),read(`${apiUrl}/projects/${projectId}/regression-schedules`),read(`${apiUrl}/projects/${projectId}/regression-notifications`)]).then(([profileRows,scheduleRows,notificationRows])=>{setProfiles((profileRows as {regressionProfileId:string;name:string;visibility:string;isOwner:boolean;settingsJson:string}[]).map(x=>({id:x.regressionProfileId,name:x.name,visibility:x.visibility,isOwner:x.isOwner,...JSON.parse(x.settingsJson)})));setSchedules(scheduleRows);setNotifications(notificationRows)}).catch(e=>setError(e.message));},[projectId,read,success]);
   useEffect(()=>{if(!selectedRelease||!selectedBuild||!baselineBuild||baselineBuild===selectedBuild){setBaseline(null);return}read(`${apiUrl}/releases/${selectedRelease}/regression-baseline?baselineBuildId=${baselineBuild}&targetBuildId=${selectedBuild}`).then(setBaseline).catch(e=>setError(e.message));},[selectedRelease,selectedBuild,baselineBuild,read]);
   useEffect(()=>{if(builds.length&&!builds.some(x=>x.buildId===selectedBuild))setSelectedBuild(builds[0].buildId)},[builds,selectedBuild]);
+  useEffect(()=>{if(selectedBuild&&!builds.some(x=>x.buildId===selectedBuild&&x.releaseId===selectedRelease)){setSelectedBuild("");setImpact(null)}},[builds,selectedBuild,selectedRelease]);
   const analyze=async(page=1,recordAnalysis=true)=>{if(!selectedRelease||!selectedBuild){setError("กรุณาเลือก Release และ Build");return}setLoading(true);setError("");setSuccess("");try{const r=await fetch(`${apiUrl}/releases/${selectedRelease}/regression-impact`,{method:"POST",headers,body:JSON.stringify({buildId:selectedBuild,changedModuleIds:changedModules,includeSharedDependencies:shared,minimumPriority,databaseChange,apiChange,calculationChange,permissionChange,installerChange,defectFix,sharedComponents,changeNotes,page,pageSize,directImpactWeight,historicalDefectWeight,criticalPriorityWeight,sharedDependencyWeight,recordAnalysis})});if(!r.ok){const p=await r.json().catch(()=>null);throw new Error(p?.detail??"วิเคราะห์ Regression Impact ไม่สำเร็จ")}const data=await r.json() as RegressionImpact;setImpact(data);setSelectedCases(current=>recordAnalysis?data.cases.filter(x=>x.isRequired).map(x=>x.testCaseId):[...new Set([...current,...data.cases.filter(x=>x.isRequired).map(x=>x.testCaseId)])]);}catch(e){setError(e instanceof Error?e.message:"วิเคราะห์ไม่สำเร็จ")}finally{setLoading(false)}};
   const currentSettings=()=>({minimumPriority,includeSharedDependencies:shared,databaseChange,apiChange,calculationChange,permissionChange,installerChange,defectFix,directImpactWeight,historicalDefectWeight,criticalPriorityWeight,sharedDependencyWeight});
   const saveProfile=async()=>{const name=profileName.trim();if(!name||!projectId)return;const settings=currentSettings();setSaving(true);try{const r=await fetch(`${apiUrl}/regression-profiles`,{method:"POST",headers,body:JSON.stringify({projectId,name,visibility:profileVisibility,settingsJson:JSON.stringify(settings)})});if(!r.ok)throw new Error("บันทึก Regression Profile ไม่สำเร็จ");const row=await r.json();setProfiles(current=>[{id:row.regressionProfileId,name,visibility:profileVisibility,isOwner:true,...settings},...current]);setSelectedProfileId(row.regressionProfileId);setProfileName("");setSuccess(`บันทึก Profile “${name}” ลงฐานข้อมูลแล้ว`)}catch(e){setError(e instanceof Error?e.message:"บันทึก Profile ไม่สำเร็จ")}finally{setSaving(false)}};
@@ -3963,6 +4001,10 @@ function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: 
   const [detail, setDetail] = useState<RtmItem | null>(null), [caseDetail, setCaseDetail] = useState<RtmLinkedCase | null>(null), [linking, setLinking] = useState<RtmItem | null>(null), [linkModuleFilter, setLinkModuleFilter] = useState(""), [selectedCase, setSelectedCase] = useState(""), [coverageType, setCoverageType] = useState("Direct");
   const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   useEffect(() => setSelectedRelease(releaseId ?? ""), [releaseId]);
+  useEffect(() => {
+    const scoped = releases.filter((x) => !projectId || x.projectId === projectId);
+    if (selectedRelease && !scoped.some((x) => x.releaseId === selectedRelease)) setSelectedRelease("");
+  }, [releases, projectId, selectedRelease]);
   useEffect(() => {
     const readJson = (url: string) => fetch(url, { headers }).then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status} ${url}`)));
     Promise.all([
@@ -4220,6 +4262,8 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
   useEffect(()=>{const target=localStorage.getItem("qa.targetCycleId");if(!target)return;fetch(`${apiUrl}/test-cycles/${target}`,{headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}}).then(r=>r.ok?r.json():null).then((cycle:TestCycleItem|null)=>{if(cycle)setDetail(cycle);localStorage.removeItem("qa.targetCycleId")}).catch(()=>localStorage.removeItem("qa.targetCycleId"))},[]);
   // ปุ่ม "สร้าง Test Cycle" แบบด่วนจากหน้า Test Suite ฝาก Project/Suite ไว้ผ่าน localStorage แล้วพามาที่นี่ —
   // รอจน projects โหลดเสร็จก่อน (openForm ต้องใช้ project code มา gen เลข Cycle Code) แล้วค่อยเปิดฟอร์มสร้าง
+  // openForm is declared below; this effect intentionally depends only on the project load transition.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!projects.length) return;
     const raw = localStorage.getItem("qa.createCycleFromSuite");
@@ -5406,6 +5450,10 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
   // เหลือ submitExecution กลางที่ทุกปุ่มใหม่ (Save Progress/Skip/Complete) เรียกใช้ร่วมกัน
   const submitExecution = async (status: string, opts?: { confirmMessage?: string; commentOverride?: string }) => {
     if (!selected) return;
+    if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
+      window.alert(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถบันทึกผล Execution เพิ่มได้`);
+      return;
+    }
     if (opts?.confirmMessage && !window.confirm(opts.confirmMessage)) return;
     setSaving(true);
     try {
@@ -5542,6 +5590,10 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
     }
   };
   const removeExecution = async (execution: ExecutionCase["history"][number]) => {
+    if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
+      window.alert(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถลบผล Execution ได้`);
+      return;
+    }
     if (!window.confirm(`ยืนยันลบผลการทดสอบ Run #${execution.executionNo}?\nข้อมูลจะถูกซ่อน แต่ยังเก็บไว้สำหรับ Audit`)) return;
     const response = await fetch(`${apiUrl}/executions/${execution.testExecutionId}`, {
       method: "DELETE",
@@ -5848,9 +5900,10 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                       {x.status}
                     </Badge>
                     <span className="history-run">Run #{x.executionNo}</span>
-                    <button className="history-delete" onClick={() => removeExecution(x)} title="ลบผลการทดสอบ"><span aria-hidden="true">✕</span> ลบ</button>
+                    <button className="history-delete" disabled={workspace?.status === "Closed" || workspace?.status === "Cancelled"} onClick={() => removeExecution(x)} title={workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ"}><span aria-hidden="true">✕</span> ลบ</button>
                   </div>
                   <p>{x.actualResult || "-"}</p>
+                  {x.comment && <small className="history-comment">Comment: {x.comment}</small>}
                   <small>
                     {x.testerName} ·{" "}
                     {x.completedAt
@@ -6307,6 +6360,7 @@ function TestSuitesPage({
                   </td>
                   <td data-label="Cases / Cycles">
                     {(x as any).cases?.length ?? (x as any).caseCount ?? 0} Cases
+                    {(x as any).cases?.length ? <small className="cell-sub">Required {(x as any).cases.filter((c: { isRequired: boolean }) => c.isRequired).length} · Optional {(x as any).cases.filter((c: { isRequired: boolean }) => !c.isRequired).length}</small> : null}
                     {x.cycleCount === 0
                       ? <small className="cell-sub cell-sub-warning"><span aria-hidden="true">⚠</span> ยังไม่มี Cycle</small>
                       : <small className="cell-sub">{x.cycleCount} Cycles</small>}
@@ -7860,11 +7914,11 @@ type TestSummaryData = { totalRequirements: number; coveredRequirements: number;
 type TestSummaryEnv = { testEnvironmentId: string; projectId: string; environmentName: string; baseUrl?: string; isActive: boolean };
 type TestSummaryNarrative = { knownIssues: string; remainingRisks: string; qaRecommendation: string };
 
-function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: contextReleaseId, canExport, onOpenSignoff }: { projects: ProjectItem[]; projectId?: string; releaseId?: string; buildId?: string; canExport: boolean; onOpenSignoff?: () => void }) {
+function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: contextReleaseId, canExport, onOpenSignoff, onOpenRisks }: { projects: ProjectItem[]; projectId?: string; releaseId?: string; buildId?: string; canExport: boolean; onOpenSignoff?: () => void; onOpenRisks?: () => void }) {
   const [projectId, setProjectId] = useState(contextProjectId ?? "");
   const [releases, setReleases] = useState<ReleaseItem[]>([]);
   const [releaseId, setReleaseId] = useState(contextReleaseId ?? "");
-  const [summary, setSummary] = useState<TestSummaryData | null>(null);
+  const [summary, setSummary] = useState<TestSummaryData>(null!);
   const [release, setRelease] = useState<ReleaseItem | null>(null);
   const [envs, setEnvs] = useState<TestSummaryEnv[]>([]);
   const [narrative, setNarrative] = useState<TestSummaryNarrative>({ knownIssues: "", remainingRisks: "", qaRecommendation: "" });
@@ -7888,15 +7942,16 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
     return { knownIssues: issues, remainingRisks: risks.length ? risks.join(" · ") : "ไม่พบความเสี่ยงคงค้างที่เกินเกณฑ์", qaRecommendation: recText };
   };
   const load = useCallback(async (regenerate: boolean) => {
-    if (!projectId || !releaseId) { setSummary(null); setRelease(null); return; }
+    if (!projectId || !releaseId) { setSummary(null!); setRelease(null); return; }
     setLoading(true); setError("");
     try {
       const [ts, envList] = await Promise.all([
         getJson(`${apiUrl}/releases/${releaseId}/test-summary`),
         getJson(`${apiUrl}/master-settings/environments`),
       ]);
-      const data = (ts as { release: ReleaseItem; summary: TestSummaryData } | null);
-      setSummary(data?.summary ?? null);
+      const data = (ts as { release: ReleaseItem; summary: TestSummaryData; generatedAt?: string } | null);
+      const generatedAt = data?.generatedAt ?? data?.summary?.generatedAt ?? "";
+      setSummary(data?.summary ? { ...data.summary, generatedAt } : null!);
       setRelease((data?.release as ReleaseItem | null) ?? null);
       setEnvs(Array.isArray(envList) ? (envList as TestSummaryEnv[]).filter((e) => e.projectId === projectId) : []);
       const persisted = (() => { try { return JSON.parse(localStorage.getItem(`qa.testSummaryNarrative.${releaseId}`) ?? "null"); } catch { return null; } })() as TestSummaryNarrative | null;
@@ -7909,6 +7964,7 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
     if (!summary) return;
     const rows: [string, string | number][] = [
       ["Release", `${release?.releaseCode ?? ""} ${release?.version ?? ""}`.trim()],
+      ["Generated At", summary.generatedAt || "ยังไม่ได้ระบุ"],
       ["Status", release?.status ?? ""],
       ["Requirement Coverage", `${summary.requirementCoverage}%`],
       ["Total Test Cases", summary.totalCases],
@@ -7922,6 +7978,10 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
       ["High Defects", summary.highDefects],
       ["Defect Quality", summary.defectQuality],
       ["Recommended Decision", summary.recommendedDecision],
+      ["Requirement Covered / Not Covered", `${summary.coveredRequirements} / ${Math.max(0, summary.totalRequirements - summary.coveredRequirements)}`],
+      ["Defect Total / Open / Resolved-Closed", `${summary.totalDefects} / ${summary.openDefects} / ${Math.max(0, summary.totalDefects - summary.openDefects)}`],
+      ["Hard Blockers", summary.criticalDefects || summary.openP0 ? `Critical ${summary.criticalDefects} · P0 ${summary.openP0}` : "ไม่พบ Hard Blocker"],
+      ["Warnings", summary.openP1 || summary.highDefects || summary.requirementCoverage < 90 || summary.passRate < 90 ? `P1 ${summary.openP1} · High ${summary.highDefects} · Coverage ${summary.requirementCoverage}% · Pass Rate ${summary.passRate}%` : "ไม่พบ Warning ที่เกินเกณฑ์"],
       ["Known Issues", narrative.knownIssues],
       ["Remaining Risks", narrative.remainingRisks],
       ["QA Recommendation", narrative.qaRecommendation],
@@ -7938,7 +7998,7 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
     const s = summary, r = release;
     const esc = (v: string) => v.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
     const row = (cells: string[]) => `<tr>${cells.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`;
-    const body = `<table border="1"><thead><tr><th colspan="2">Test Summary — ${esc(r ? `${r.releaseCode} · ${r.version}` : "")}</th></tr></thead><tbody>${row(["Status", r?.status ?? ""])}${row(["Requirement Coverage", `${s.requirementCoverage}%`])}${row(["Total / Executed", `${s.totalCases} / ${s.executedCases}`])}${row(["Pass Rate", `${s.passRate}%`])}${row(["Open P0 / P1", `${s.openP0} / ${s.openP1}`])}${row(["Open Defects", String(s.openDefects)])}${row(["Critical / High", `${s.criticalDefects} / ${s.highDefects}`])}${row(["Defect Quality", String(s.defectQuality)])}${row(["Recommended Decision", s.recommendedDecision])}${row(["Known Issues", narrative.knownIssues])}${row(["Remaining Risks", narrative.remainingRisks])}${row(["QA Recommendation", narrative.qaRecommendation])}</tbody></table>`;
+    const body = `<table border="1"><thead><tr><th colspan="2">Test Summary — ${esc(r ? `${r.releaseCode} · ${r.version}` : "")}</th></tr></thead><tbody>${row(["Generated At", s.generatedAt || "ยังไม่ได้ระบุ"])}${row(["Status", r?.status ?? ""])}${row(["Requirement Coverage", `${s.requirementCoverage}%`])}${row(["Requirement Covered / Not Covered", `${s.coveredRequirements} / ${Math.max(0, s.totalRequirements - s.coveredRequirements)}`])}${row(["Total / Executed", `${s.totalCases} / ${s.executedCases}`])}${row(["Pass Rate", `${s.passRate}%`])}${row(["Open P0 / P1", `${s.openP0} / ${s.openP1}`])}${row(["Open Defects", String(s.openDefects)])}${row(["Defect Total / Open / Resolved-Closed", `${s.totalDefects} / ${s.openDefects} / ${Math.max(0, s.totalDefects - s.openDefects)}`])}${row(["Critical / High", `${s.criticalDefects} / ${s.highDefects}`])}${row(["Defect Quality", String(s.defectQuality)])}${row(["Recommended Decision", s.recommendedDecision])}${row(["Hard Blockers", s.criticalDefects || s.openP0 ? `Critical ${s.criticalDefects} · P0 ${s.openP0}` : "ไม่พบ Hard Blocker"])}${row(["Warnings", s.openP1 || s.highDefects || s.requirementCoverage < 90 || s.passRate < 90 ? `P1 ${s.openP1} · High ${s.highDefects} · Coverage ${s.requirementCoverage}% · Pass Rate ${s.passRate}%` : "ไม่พบ Warning ที่เกินเกณฑ์"])}${row(["Known Issues", narrative.knownIssues])}${row(["Remaining Risks", narrative.remainingRisks])}${row(["QA Recommendation", narrative.qaRecommendation])}</tbody></table>`;
     const html = `<html><head><meta charset="utf-8"></head><body>${body}</body></html>`;
     const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -7946,6 +8006,7 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
     a.href = url; a.download = `test-summary-${r?.releaseCode || releaseId}.xls`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
+  if (releaseId && !summary && !loading && !error) return <article className="test-summary"><div className="empty"><p>ยังไม่มีข้อมูล Test Summary</p></div></article>;
   return (
     <article className="test-summary">
       <header className="test-summary-head">
@@ -7970,8 +8031,8 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
           {onOpenSignoff && <button className="btn" disabled={!summary} onClick={onOpenSignoff}>ไปหน้า Sign-off <span aria-hidden="true">→</span></button>}
         </div>
       </header>
-      {error && <div className="inline-alert error"><span>{error}</span></div>}
-      {loading && !summary ? <div className="empty"><div className="spinner" /><p>กำลังโหลด Test Summary...</p></div> : !release ? <div className="empty"><p>เลือก Release เพื่อดูสรุปผลการทดสอบ</p></div> : (
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span><button className="btn" disabled={loading || !releaseId} onClick={() => load(false)}>ลองโหลดใหม่</button></div>}
+      {loading && !summary ? <div className="empty" role="status" aria-live="polite"><div className="spinner" aria-hidden="true" /><p>กำลังโหลด Test Summary...</p></div> : !release ? <div className="empty"><p>เลือก Release เพื่อดูสรุปผลการทดสอบ</p></div> : (
         <>
           <section className="card">
             <div className="test-summary-card">
@@ -8001,6 +8062,26 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
               <div className="ts-mini-list"><span className="ts-eyebrow">Release context</span><div><span>สถานะ Release</span><b>{release.status || "-"}</b></div><div><span>Environment</span><b>{envs.length ? envs.map((e) => e.environmentName).join(", ") : "ไม่ระบุ"}</b></div><div><span>Scope</span><b>{release.scope ? `${release.scope.length > 120 ? `${release.scope.slice(0, 120)}…` : release.scope}` : "ไม่ระบุ"}</b></div></div>
             </div>
           </section>
+          <section className="card ts-report-sections">
+            <div className="ts-section-heading compact"><div><span className="ts-eyebrow">Release report</span><h3>ขอบเขตและหลักฐานประกอบ</h3></div><small>ข้อมูลที่ยังไม่มีแหล่งอ้างอิงจะแสดงเป็น “ยังไม่ได้ระบุ”</small></div>
+            <div className="ts-report-section-grid">
+              <div><b>Scope</b><p>{release.scope || "ยังไม่ได้ระบุ"}</p></div>
+              <div><b>Out-of-Scope</b><p>ยังไม่ได้ระบุ</p></div>
+              <div><b>Environment</b><p>{envs.length ? envs.map((e) => `${e.environmentName}${e.baseUrl ? ` · ${e.baseUrl}` : ""}`).join("\n") : "ยังไม่ได้ระบุ"}</p></div>
+              <div><b>Regression</b><p>ยังไม่ได้ระบุ</p></div>
+              <div><b>Installation / Update</b><p>ยังไม่ได้ระบุ</p></div>
+              <div><b>Performance</b><p>ยังไม่ได้ระบุ</p></div>
+            </div>
+          </section>
+          {summary && <section className="card ts-evidence-breakdown">
+            <div className="ts-section-heading compact"><div><span className="ts-eyebrow">Evidence breakdown</span><h3>สรุปหลักฐานคุณภาพ</h3></div><small>คำนวณจากข้อมูล Summary ล่าสุด · รวม 0 จะแสดงเป็น —</small></div>
+            <div className="ts-evidence-grid">
+              <div><b>Requirement</b><span>{summary.totalRequirements.toLocaleString()} รวม</span><strong>{summary.coveredRequirements.toLocaleString()} Covered</strong><small>{Math.max(0, summary.totalRequirements - summary.coveredRequirements).toLocaleString()} Not Covered</small></div>
+              <div><b>Defect</b><span>{summary.totalDefects.toLocaleString()} รวม</span><strong>{summary.openDefects.toLocaleString()} Open</strong><small>{Math.max(0, summary.totalDefects - summary.openDefects).toLocaleString()} Resolved / Closed</small></div>
+              <div><b>Test Case</b><span>{summary.totalCases.toLocaleString()} รวม</span><strong>{summary.passedCases.toLocaleString()} Passed</strong><small>{Math.max(0, summary.totalCases - summary.passedCases).toLocaleString()} อื่น ๆ</small></div>
+            </div>
+          </section>}
+          <section className="card ts-decision-panel"><div className="ts-section-heading compact"><div><span className="ts-eyebrow">Release decision</span><h3>แผงตัดสินใจ Release</h3></div><Badge tone={summary.recommendedDecision === "GO" ? "green" : summary.recommendedDecision === "NO-GO" ? "red" : "yellow"}>{summary.recommendedDecision}</Badge></div><div className="ts-decision-grid"><div><b>Hard Blockers</b><p>{summary.criticalDefects || summary.openP0 ? `Critical ${summary.criticalDefects} · P0 ${summary.openP0}` : "ไม่พบ Hard Blocker"}</p></div><div><b>Warnings</b><p>{summary.openP1 || summary.highDefects || summary.requirementCoverage < 90 || summary.passRate < 90 ? `P1 ${summary.openP1} · High ${summary.highDefects} · Coverage ${summary.requirementCoverage}% · Pass Rate ${summary.passRate}%` : "ไม่พบ Warning ที่เกินเกณฑ์"}</p></div><div><b>Approved Risks</b><p>ตรวจสอบเพิ่มเติมที่หน้า Risk Acceptance</p></div><div><b>Next Action</b><p>{summary.recommendedDecision === "GO" ? "ส่งต่อให้ผู้มีอำนาจทำ Sign-off" : "แก้ไข/ประเมินความเสี่ยงและทดสอบซ้ำก่อน Sign-off"}</p></div></div><div className="modal-actions ts-decision-actions">{onOpenRisks && <button className="btn" onClick={onOpenRisks}>เปิด Risk Acceptance <span aria-hidden="true">→</span></button>}{onOpenSignoff && <button className="btn primary" onClick={onOpenSignoff}>ไปหน้า Sign-off <span aria-hidden="true">→</span></button>}</div></section>
           <div className="test-summary-grid ts-detail-grid">
             <section className="card"><div className="test-summary-card"><div className="ts-section-heading compact"><div><span className="ts-eyebrow">Test execution</span><h3>สถานะ Test Case</h3></div><b className="ts-total-count">{summary?.totalCases ?? 0} Cases</b></div><div className="ts-status-list">{(summary?.statusDistribution ?? []).map((x) => <div key={x.status}><div><span className="ts-status-dot" style={{ background: x.color }} /><span>{x.status}</span><b>{x.count}</b></div><div className="ts-bar"><i style={{ background: x.color, width: `${summary?.totalCases ? Math.min(100, x.count / summary.totalCases * 100) : 0}%` }} /></div></div>)}{!(summary?.statusDistribution?.length) && <p className="ts-empty-detail">ยังไม่มีข้อมูลสถานะ Test Case</p>}</div></div></section>
             <section className="card"><div className="test-summary-card"><div className="ts-section-heading compact"><div><span className="ts-eyebrow">Risk signals</span><h3>ประเด็นที่ต้องติดตาม</h3></div></div><div className="ts-risk-list"><div className={summary?.openP0 ? "risk-high" : "risk-ok"}><b>{summary?.openP0 ?? 0}</b><span>Open P0</span><small>{summary?.openP0 ? "ต้องแก้ก่อนปล่อย" : "ไม่พบรายการ"}</small></div><div className={summary?.openP1 ? "risk-medium" : "risk-ok"}><b>{summary?.openP1 ?? 0}</b><span>Open P1</span><small>{summary?.openP1 ? "ควรประเมินก่อนปล่อย" : "ไม่พบรายการ"}</small></div><div className={summary?.criticalDefects ? "risk-high" : "risk-ok"}><b>{summary?.criticalDefects ?? 0}</b><span>Critical Defects</span><small>{summary?.criticalDefects ? "มีความเสี่ยงสูง" : "ไม่พบรายการ"}</small></div></div><div className="ts-env-detail"><span className="ts-eyebrow">Test environments</span>{envs.length ? envs.map((e) => <div key={e.testEnvironmentId}><b>{e.environmentName}</b><small>{e.isActive ? "Active" : "Inactive"}{e.baseUrl ? ` · ${e.baseUrl}` : ""}</small></div>) : <p className="ts-empty-detail">ยังไม่ได้ระบุ Environment</p>}</div></div></section>
@@ -8217,7 +8298,8 @@ function App() {
     [contextBuildId, setContextBuildId] = useState(
       () => localStorage.getItem("qa.context.build") ?? "",
     ),
-    [blockerCount, setBlockerCount] = useState(0);
+    [blockerCount, setBlockerCount] = useState(0),
+    [contextLoading, setContextLoading] = useState(false);
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
     [details, setDetails] = useState(""),
@@ -8273,10 +8355,16 @@ function App() {
   }, [user, page, refresh]);
   useEffect(() => {
     if (!contextProjectId) {
+      setContextLoading(false);
       setContextReleases([]);
       setContextReleaseId("");
       return;
     }
+    setContextLoading(true);
+    setContextReleases([]);
+    setContextBuilds([]);
+    setContextReleaseId("");
+    setContextBuildId("");
     localStorage.setItem("qa.context.project", contextProjectId);
     const h = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -8291,7 +8379,7 @@ function App() {
             ? current
             : (active[0]?.releaseId ?? ""),
         );
-      });
+      }).finally(() => setContextLoading(false));
   }, [contextProjectId, page, refresh]);
   useEffect(() => {
     if (!contextReleaseId) {
@@ -8299,6 +8387,9 @@ function App() {
       setContextBuildId("");
       return;
     }
+    setContextLoading(true);
+    setContextBuilds([]);
+    setContextBuildId("");
     localStorage.setItem("qa.context.release", contextReleaseId);
     const h = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -8313,7 +8404,7 @@ function App() {
             ? current
             : (active[0]?.buildId ?? ""),
         );
-      });
+      }).finally(() => setContextLoading(false));
   }, [contextReleaseId, page, refresh]);
   useEffect(() => {
     if (!contextBuildId) {
@@ -8373,7 +8464,7 @@ function App() {
   const description = useMemo(
     () =>
       page === "dashboard"
-        ? "สถานะคุณภาพและความพร้อม Release แบบรวมศูนย์"
+        ? "สถานะคุณภาพและความพร้อมใช้งาน"
         : page === "automation"
           ? "สร้างและจัดการ Automation Case, DSL, Action Library, Agent และติดตามผลการรัน"
         : page === "settings"
@@ -8602,10 +8693,12 @@ function App() {
             <span aria-hidden="true">☰</span>
           </button>
           {!["projects","users","settings","system-monitor"].includes(page) && <div className="context">
+            {contextLoading && <span className="context-loading" role="status">กำลังเปลี่ยน Context...</span>}
             <label className="context-field"><span>Project</span><select
               value={contextProjectId}
-              onChange={(e) => setContextProjectId(e.target.value)}
+              onChange={(e) => { setContextLoading(true); setContextProjectId(e.target.value); }}
               aria-label="Project ปัจจุบัน"
+              disabled={contextLoading}
             >
               {!contextProjects.length && (
                 <option value="">ไม่มี Project</option>
@@ -8618,9 +8711,9 @@ function App() {
             </select></label>
             <label className="context-field"><span>Release</span><select
               value={contextReleaseId}
-              onChange={(e) => setContextReleaseId(e.target.value)}
+              onChange={(e) => { setContextLoading(true); setContextReleaseId(e.target.value); }}
               aria-label="Release ปัจจุบัน"
-              disabled={!contextReleases.length}
+              disabled={contextLoading || !contextReleases.length}
             >
               {!contextReleases.length && (
                 <option value="">ไม่มี Release</option>
@@ -8633,9 +8726,9 @@ function App() {
             </select></label>
             <label className="context-field"><span>Build</span><select
               value={contextBuildId}
-              onChange={(e) => setContextBuildId(e.target.value)}
+              onChange={(e) => { setContextLoading(true); setContextBuildId(e.target.value); }}
               aria-label="Build ปัจจุบัน"
-              disabled={!contextBuilds.length}
+              disabled={contextLoading || !contextBuilds.length}
             >
               {!contextBuilds.length && <option value="">ไม่มี Build</option>}
               {contextBuilds.map((x) => (
@@ -8716,7 +8809,7 @@ function App() {
           </div>
           <div className="page-transition" key={page}>
           {page === "dashboard" ? (
-            <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} />
+            <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode ? `${contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} · ${contextReleases.find(x => x.releaseId === contextReleaseId)?.version}` : undefined} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} />
           ) : page === "my-work" ? (
             <MyWorkPage user={user} onOpenExecution={(cycleId) => { localStorage.setItem("qa.targetCycleId", cycleId); go("execution"); }} onNavigate={go} />
           ) : page === "projects" ? (
@@ -8742,11 +8835,13 @@ function App() {
           ) : page === "defects" ? (
             <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("DEFECT.EDIT")} onOpenTestCase={openTestCase} />
           ) : page === "summary" ? (
-            <TestSummaryPage projects={contextProjects} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canExport={can("REPORT.EXPORT")} onOpenSignoff={() => setPage("signoff")} />
+            <TestSummaryPage projects={contextProjects} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canExport={can("REPORT.EXPORT")} onOpenRisks={() => setPage("risks")} onOpenSignoff={() => setPage("signoff")} />
           ) : page === "risks" ? (
             <RiskAcceptancePage projectId={contextProjectId} releaseId={contextReleaseId} canEdit={can("PROJECT.EDIT")} canApprove={can("RISK.APPROVE")} />
           ) : page === "signoff" ? (
             <ReleaseSignoffPage projectId={contextProjectId} releaseId={contextReleaseId} canSignoff={can("RELEASE.SIGNOFF")} />
+          ) : page === "audit" ? (
+            <AuditLogPage />
           ) : (
             <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} />
           )}

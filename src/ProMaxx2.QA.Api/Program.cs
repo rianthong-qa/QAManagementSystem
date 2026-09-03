@@ -123,6 +123,7 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("QaAssignmentAuto",p=>p.RequireClaim("permission","QA.ASSIGN.AUTO"))
     .AddPolicy("RiskApprove",p=>p.RequireClaim("permission","RISK.APPROVE"))
     .AddPolicy("ReleaseSignoff",p=>p.RequireClaim("permission","RELEASE.SIGNOFF"))
+    .AddPolicy("AuditView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","AUDIT.VIEW")))
     .AddAutomationPolicies();
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
 if (allowedOrigins == null || allowedOrigins.Length == 0)

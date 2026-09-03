@@ -597,6 +597,10 @@ export function AutomationPage({
   };
 
   const runCase = async (item: AutomationCaseItem, versionId: string, selBuildId: string, envId: string, agentId: string, priority: number) => {
+    if (!agents.some((agent) => agent.isEnabled && agent.connectivity !== "Offline" && ["Online", "Idle", "Available"].includes(agent.status))) {
+      setError("ยังไม่มี Automation Agent ที่พร้อมทำงาน งานยังไม่ถูกส่งเข้าคิว");
+      return;
+    }
     setCreateBusy(true);
     setError("");
     try {
@@ -618,6 +622,10 @@ export function AutomationPage({
 
   const runBatch = async (caseIds: string[], selBuildId: string, envId: string, priority: number) => {
     if (!caseIds.length || !selBuildId || !envId) return;
+    if (!agents.some((agent) => agent.isEnabled && agent.connectivity !== "Offline" && ["Online", "Idle", "Available"].includes(agent.status))) {
+      setError("ยังไม่มี Automation Agent ที่พร้อมทำงาน งาน Batch ยังไม่ถูกส่งเข้าคิว");
+      return;
+    }
     setCreateBusy(true);
     setError("");
     try {
@@ -653,6 +661,10 @@ export function AutomationPage({
   };
 
   const rerunExecution = async (x: AutomationExecutionItem) => {
+    if (!agents.some((agent) => agent.isEnabled && agent.connectivity !== "Offline" && ["Online", "Idle", "Available"].includes(agent.status))) {
+      setError("ยังไม่มี Automation Agent ที่พร้อมทำงาน จึงยัง Retry ไม่ได้");
+      return;
+    }
     if (!window.confirm(`สั่งรัน "${x.automationCode}" ซ้ำ?\nRev ${x.versionNo} · Build ${x.buildNumber} · ${x.environmentName}`)) return;
     setError("");
     try {
@@ -1012,7 +1024,7 @@ export function AutomationPage({
       </section>
       <nav className="automation-tabs" aria-label="Automation Module"><div className="automation-tabs-inner">{tabGroups.map((g) => <button key={g.id} type="button" className={activeGroup.id === g.id ? "active" : ""} aria-current={activeGroup.id === g.id ? "page" : undefined} onClick={() => setTab(g.tabs[0].id)}><span aria-hidden="true">{g.icon}</span>{g.label}</button>)}</div></nav>
       {activeGroup.tabs.length > 1 && <nav className="automation-subtabs" aria-label={activeGroup.label}>{activeGroup.tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>}
-      {error && <div className="inline-alert error"><span>{error}</span></div>}
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
       {notice && <div className="inline-alert success"><span>{notice}</span></div>}
 
       {tab === "dashboard" && <section className="automation-dashboard" aria-label="Automation Dashboard">
@@ -1270,7 +1282,7 @@ export function AutomationPage({
         </div>}
 
         {wizardStep === 3 && <div className="acw-builder">
-          {newVersionError && <div className="inline-alert error"><span>{newVersionError}</span></div>}
+          {newVersionError && <div className="inline-alert error" role="alert"><span>{newVersionError}</span></div>}
           <div className="acw-card">
             <div className="acw-section-head"><div><h2>Automation Case</h2><p>ตรวจสอบข้อมูล Automation ก่อนอนุมัติ</p></div><span className="badge ai">{aiConf != null ? "AI Generated" : "Manual DSL"}</span></div>
             <div className="acw-form-grid">
@@ -1338,7 +1350,7 @@ export function AutomationPage({
 
       {selectedCase.status === "MaintenanceRequired" && <section className="automation-failure-analysis" aria-label="Maintenance Repair">
         <div className="automation-section-head"><h3>Maintenance Repair (AUT-P0-007)</h3></div>
-        {selectedCase.maintenanceReason && <div className="inline-alert error"><span>สาเหตุ: {selectedCase.maintenanceReason}</span></div>}
+        {selectedCase.maintenanceReason && <div className="inline-alert error" role="alert"><span>สาเหตุ: {selectedCase.maintenanceReason}</span></div>}
         <p className="muted-text">เปิดตั้งแต่ {formatThaiDateTime(selectedCase.maintenanceOpenedAt)}{selectedCase.maintenanceOwnerUserId ? ` · ผู้รับผิดชอบ: ${selectedCase.maintenanceOwnerUserId}` : " · ยังไม่ได้มอบหมายผู้รับผิดชอบ"}</p>
         {canEdit && <>
           <div className="form-grid">
@@ -1379,7 +1391,7 @@ export function AutomationPage({
         {canRun && (execDetail.status === "Running" || execDetail.status === "Queued") && <button type="button" className="btn danger automation-detail-action" onClick={() => cancelExecution(execDetail)}>✕ ยกเลิก</button>}
         {canRun && execDetail.status !== "Running" && execDetail.status !== "Queued" && <button type="button" className="btn automation-detail-action" onClick={() => rerunExecution(execDetail)}>▶ รันซ้ำ</button>}
       </div>
-      {execDetail.errorMessage && <div className="inline-alert error"><span>{execDetail.errorMessage}</span></div>}
+      {execDetail.errorMessage && <div className="inline-alert error" role="alert"><span>{execDetail.errorMessage}</span></div>}
       {execDetail.testExecutionId && <p className="muted-text">สร้าง TestExecution (ExecutionType = Automation) แล้ว</p>}
       {execDetail.status === "Failed" && <section className="automation-failure-analysis">
         <div className="automation-section-head"><h3>Failure Analysis (G9)</h3><div className="automation-failure-actions">
@@ -1407,7 +1419,7 @@ export function AutomationPage({
           <span>{ev.filePath.split("/").pop()}</span>
           <footer>{canViewEvidence && <button className="table-action" disabled={evidenceBusy === ev.automationEvidenceId} onClick={() => openEvidenceFile(ev)}>{evidenceBusy === ev.automationEvidenceId ? "กำลังเปิด..." : "เปิดไฟล์"}</button>}</footer>
         </article>)}
-      </section> : null}
+      </section> : <section className="automation-evidence-list"><h3>Evidence</h3><p className="muted-text">ยังไม่มี Evidence สำหรับ Execution นี้</p></section>}
       <div className="modal-actions"><button className="btn primary" onClick={() => setExecDetail(null)}><span aria-hidden="true">✕</span> ปิด</button></div>
     </div></div>}
   </article>;
@@ -1425,7 +1437,7 @@ function VersionEditor({
   const [reason, setReason] = useState("");
 
   return <div className="automation-version-editor">
-    {versionError && <div className="inline-alert error"><span>{versionError}</span></div>}
+    {versionError && <div className="inline-alert error" role="alert"><span>{versionError}</span></div>}
     <section className="automation-version-list">
       <h3>Version History ({versions.length})</h3>
       {versions.length ? versions.map((v) => <article key={v.automationVersionId} className="automation-version-row">
@@ -2463,6 +2475,7 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents,
   };
 
   const toggleActive = async (row: AutomationScheduleListItem) => {
+    if (busy) return;
     if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Schedule "${row.name}"?`)) return;
     setError("");
     try {

@@ -666,3 +666,10 @@
 - Automation Case AI validation fix: strengthened the generation prompt so UI object parameters must match an exact existing Object Repository BusinessKey; added actionable guidance when validation reports a missing object.
 
 - Execution safety fix: re-validate the selected Automation Version against the current Action Library and Object Repository immediately before creating an Execution, preventing stale `Ready` cases from failing later with `AUT-UI-003`.
+
+- Deep Automation validation: QA Hub unit/integration suite passed 365 tests, Windows Agent Core suite passed 58 tests, and the full Agent solution (Core/Hub/Runner/AgentGui) built successfully with 0 warnings/errors. Coverage includes Safe/Conditional/Unsafe Retry Safety, max-attempt/backoff, duplicate completion, quarantined/maintenance cases, Agent/Environment/DB/UI/DSL/unknown Failure Classification, evidence security, queue claim/recovery, and webhook retry behavior. Live Windows Agent/AUT execution was not performed in this workspace because it requires configured QA Hub credentials, a running API/database, and an approved AUT/Firebird environment; no production or AUT business data was changed.
+
+# Progress Update — 2026-09-03
+- P4.1 UI safety follow-up: Automation Case และ Batch Run จะไม่ส่งงานเข้าคิวเมื่อไม่มี Agent ที่ enabled และ connectivity/status พร้อมทำงาน พร้อมแสดงเหตุผลให้ผู้ใช้ทราบเพื่อลด false confidence; frontend build/lint ผ่าน
+- P4.2 UI evidence state: Execution Detail แสดงสถานะ `ยังไม่มี Evidence สำหรับ Execution นี้` เมื่อไม่มีหลักฐาน แยกจากกรณีโหลดข้อมูลล้มเหลวหรือมี Evidence จริง; frontend build/lint ผ่าน
+- P4.4 UI schedule safety: เพิ่ม guard ไม่ให้กดเปิด/ปิด Schedule ซ้ำระหว่าง request กำลังทำงาน และคง confirmation ก่อนเปลี่ยนสถานะ; frontend build/lint ผ่าน
