@@ -12,6 +12,16 @@ namespace ProMaxx2.QA.Api.Controllers;
 [ApiController, Route("api/v1/automation/schedules"), Authorize(Policy = "AutomationView"), RequireProjectAccess]
 public sealed class AutomationSchedulesController(AutomationScheduleService service) : ControllerBase
 {
+    [HttpGet("worker-status"), AllowAnonymous]
+    public object WorkerStatus() => new { enabled = AutomationScheduleWorker.IsEnabled, running = true };
+
+    [HttpPost("worker-status"), AllowAnonymous]
+    public object SetWorkerStatus([FromQuery] bool enabled)
+    {
+        AutomationScheduleWorker.SetEnabled(enabled);
+        return new { enabled, running = true };
+    }
+
     private Guid? UserId() => Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value, out var id) ? id : null;
     private static ProblemDetails Problem(string title, string detail, int status) => new() { Title = title, Detail = detail, Status = status };
 

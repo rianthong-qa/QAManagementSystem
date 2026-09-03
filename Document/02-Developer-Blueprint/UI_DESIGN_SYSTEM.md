@@ -468,3 +468,11 @@ git diff --check
 - Backend เพิ่ม endpoint `POST /api/v1/test-cases/{id}/automation` (body `{automationCandidate:bool}`) และ domain method `TestCase.SetAutomationCandidate` เพื่อตั้งค่า Automation Candidate โดยไม่ต้องส่ง steps ใหม่ (ป้องกันการลบ Steps); สถานะใช้ endpoint `POST /test-cases/{id}/status` ที่มีอยู่แล้ว ทั้งคู่วนลูปเรียก API ทีละรายการแล้ว reload หน้าปัจจุบัน
 - Bulk กำหนด Automation Candidate ใช้ endpoint ที่มีอยู่แล้ว (`GET /test-cases/{id}` ดึง full รวม Steps แล้ว `PUT /test-cases/{id}` ส่ง `automationCandidate` ใหม่) วนลูปทีละรายการแล้ว reload หน้าปัจจุบัน — จึงทำงานได้โดยไม่ต้องรัน backend ใหม่ (endpoint `POST /test-cases/{id}/automation` ที่เพิ่มไว้ยังคงใช้ได้หากรัน backend ใหม่)
 - แก้ปุ่ม "แก้ไข" ไม่เปิดฟอร์ม: `openForm` เดิมใช้ `item?.steps.length` ซึ่งโยน TypeError เมื่อรายการจากตารางไม่มี field `steps` (list endpoint ไม่คืน steps) จึงคราส handler ก่อนเปิด modal; เปลี่ยนเป็น `item?.steps?.length` และให้ `openForm` ดึงรายละเอียดเต็ม (`GET /test-cases/{id}` ที่มี steps) มาก่อน populate ฟอร์มแก้ไขเพื่อให้บันทึกได้โดยไม่สูญเสีย Steps
+### Test Summary Executive View — 2026-09-03
+
+- Test Summary เพิ่ม Executive Snapshot แบบ read-only สำหรับผู้บริหาร โดยรวม recommendation, release context, timestamp, test status distribution และ risk signals จากข้อมูล summary เดิม
+- ใช้ section heading/eyebrow และ accent risk cards เพื่อแยกข้อมูลสำหรับการตัดสินใจออกจาก narrative ที่ผู้ใช้แก้ไขได้ โดยไม่เปลี่ยน API หรือ workflow เดิม
+- Executive content ต้อง responsive: desktop แบ่งสองคอลัมน์ และ mobile stack เป็นคอลัมน์เดียว พร้อม `overflow-wrap:anywhere` สำหรับ URL และ scope ที่ยาว
+### 2026-09-03 — Execution Workspace responsive styling
+
+- Execution Workspace-only responsive primitives are scoped in `ExecutionWorkspace.css`, including `min-width: 0`, `overflow-wrap: anywhere`, flexible action wrapping, and mobile touch targets.

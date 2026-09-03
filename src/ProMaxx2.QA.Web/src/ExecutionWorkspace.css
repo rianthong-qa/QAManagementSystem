@@ -1,0 +1,33 @@
+/* Execution Workspace-only responsive primitives (Phase 5).
+   Keep these selectors scoped so future responsive changes cannot affect other pages. */
+.execution-page,
+.execution-page .execution-layout,
+.execution-page .execution-main,
+.execution-page .step-table,
+.execution-page .step-row { min-width: 0; }
+
+.execution-page :is(h1, h2, h3, p, span, b, small, label) {
+  overflow-wrap: anywhere;
+}
+
+.execution-page .execution-toolbar,
+.execution-page .execution-actions,
+.execution-page .step-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.execution-page .execution-actions > button,
+.execution-page .step-result-btn,
+.execution-page .history-delete {
+  min-height: 40px;
+}
+
+@media (max-width: 760px) {
+  .execution-page .execution-toolbar,
+  .execution-page .execution-actions,
+  .execution-page .step-bulk-actions { align-items: stretch; }
+  .execution-page .step-bulk-actions > div { width: 100%; }
+  .execution-page .step-bulk-actions > div > button { flex: 1 1 120px; min-height: 40px; }
+}

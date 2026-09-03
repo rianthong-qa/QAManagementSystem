@@ -11,12 +11,20 @@ namespace ProMaxx2.QA.Api.Services;
 public sealed class AutomationScheduleWorker(IServiceScopeFactory scopeFactory, ILogger<AutomationScheduleWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
+    private static volatile bool _enabled = true;
+    public static bool IsEnabled => _enabled;
+    public static void SetEnabled(bool enabled) => _enabled = enabled;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(PollInterval);
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (!IsEnabled)
+            {
+                try { await timer.WaitForNextTickAsync(stoppingToken); } catch (OperationCanceledException) { break; }
+                continue;
+            }
             try
             {
                 using var scope = scopeFactory.CreateScope();

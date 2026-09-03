@@ -20,6 +20,7 @@ internal sealed class MainForm : Form
     private readonly string _root;
     private readonly Label _apiStatus = StatusLabel();
     private readonly Label _webStatus = StatusLabel();
+    private readonly Label _scheduleStatus = StatusLabel();
     private readonly RichTextBox _log = new() { Dock = DockStyle.Fill, ReadOnly = true, BackColor = Color.FromArgb(17,24,39), ForeColor = Color.Gainsboro, Font = new Font("Consolas",9), BorderStyle = BorderStyle.None };
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 3000 };
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(2) };
@@ -39,8 +40,9 @@ internal sealed class MainForm : Form
         header.Controls.Add(new Label { Text = "ProMaxx2 QA System Manager", Font = new Font("Tahoma",17,FontStyle.Bold), AutoSize = true, Location = new Point(22,12), ForeColor = Color.FromArgb(31,41,55) });
         header.Controls.Add(new Label { Text = "จัดการ API และ Web โดยไม่ต้องเปิดหน้าเว็บหลัก", AutoSize = true, Location = new Point(24,45), ForeColor = Color.FromArgb(102,112,133) });
 
-        var services = new TableLayoutPanel { Dock = DockStyle.Top, Height = 190, ColumnCount = 2, Padding = new Padding(16), BackColor = BackColor };
+        var services = new TableLayoutPanel { Dock = DockStyle.Top, Height = 400, ColumnCount = 2, RowCount = 2, Padding = new Padding(16), BackColor = BackColor };
         services.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));services.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
+        services.RowStyles.Add(new RowStyle(SizeType.Percent,50));services.RowStyles.Add(new RowStyle(SizeType.Percent,50));
         services.Controls.Add(ServiceCard("API Service","Port 5038 · ASP.NET Core",_apiStatus,
             ("Start",async()=>await StartApi()),("Stop",async()=>await StopPort(5038,"API")),("Restart",async()=>{await StopPort(5038,"API");await StartApi();})),0,0);
         services.Controls.Add(ServiceCard("Web Application","Port 5173 · Vite",_webStatus,
@@ -52,6 +54,13 @@ internal sealed class MainForm : Form
         toolbar.Controls.Add(ActionButton("เปิดหน้าเว็บ",()=>{Process.Start(new ProcessStartInfo("http://127.0.0.1:5173"){UseShellExecute=true});return Task.CompletedTask;},false));
         toolbar.Controls.Add(ActionButton("ตรวจสถานะ",RefreshStatus,false));
         toolbar.Controls.Add(ActionButton("ล้าง Log",()=>{_log.Clear();return Task.CompletedTask;},false));
+        toolbar.Controls.Add(ActionButton("Start Schedule",async()=>await SetScheduleWorker(true),false));
+        toolbar.Controls.Add(ActionButton("Stop Schedule",async()=>await SetScheduleWorker(false),false));
+
+        services.Controls.Add(ServiceCard("Automation Schedule Worker", "API background worker - Poll 30s", _scheduleStatus,
+            ("Start", async () => await SetScheduleWorker(true)),
+            ("Stop", async () => await SetScheduleWorker(false)),
+            ("Refresh", RefreshStatus)), 0, 1);
 
         var logPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16), BackColor = BackColor };
         var logCard = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = new Padding(1) };
@@ -118,12 +127,33 @@ internal sealed class MainForm : Form
         throw new InvalidOperationException($"{source} ไม่พร้อมใช้งานภายในเวลาที่กำหนด กรุณาตรวจ Activity Log");
     }
 
+    private async Task RefreshScheduleWorkerStatus()
+    {
+        try
+        {
+            using var response = await _http.GetAsync("http://127.0.0.1:5038/api/v1/automation/schedules/worker-status");
+            var json = await response.Content.ReadAsStringAsync();
+            var enabled = json.Contains("\"enabled\":true", StringComparison.OrdinalIgnoreCase);
+            _scheduleStatus.Text = enabled ? "● Worker Enabled" : "● Worker Disabled";
+        }
+        catch { _scheduleStatus.Text = "● Unknown"; }
+    }
+
+    private async Task SetScheduleWorker(bool enabled)
+    {
+        using var response = await _http.PostAsync($"http://127.0.0.1:5038/api/v1/automation/schedules/worker-status?enabled={enabled.ToString().ToLowerInvariant()}", null);
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException("เปลี่ยนสถานะ Schedule Worker ไม่สำเร็จ");
+        Log(enabled ? "เปิด Automation Schedule Worker" : "ปิด Automation Schedule Worker");
+        await RefreshScheduleWorkerStatus();
+    }
+
     private async Task RefreshStatus()
     {
         if(_refreshing)return;_refreshing=true;
         try
         {
             var api=await IsHealthy("http://127.0.0.1:5038/health");var web=await IsHealthy("http://127.0.0.1:5173");
+            if (api) await RefreshScheduleWorkerStatus();
             SetStatus(_apiStatus,api);SetStatus(_webStatus,web);
         }
         finally{_refreshing=false;}

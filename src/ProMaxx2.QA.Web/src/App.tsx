@@ -1,6 +1,7 @@
 ﻿import { Fragment as _F, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import "./App.css";
 import "./styles.css";
+import "./ExecutionWorkspace.css";
 import "./DragDrop.css";
 import "./ReleaseBuild.css";
 import "./TestManagement.css";
@@ -5466,6 +5467,24 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       : `ยืนยันบันทึกผล ${liveOverall} สำหรับ ${selected.testCaseCode}?\nผลที่บันทึกแล้วจะไม่สามารถแก้ไขทับได้`;
     submitExecution(liveOverall, { confirmMessage });
   };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!selected || skipModalOpen || target?.matches("input, textarea, select, [contenteditable=\"true\"]")) return;
+      const key = event.key.toLowerCase();
+      if (["p", "f", "b"].includes(key)) {
+        const status = key === "p" ? "Pass" : key === "f" ? "Fail" : "Blocked";
+        setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
+        event.preventDefault();
+      } else if (key === "n") {
+        const index = filteredCases.findIndex((item) => item.testCycleCaseId === selectedId);
+        const next = index >= 0 ? filteredCases[index + 1] : undefined;
+        if (next) { setSelectedId(next.testCycleCaseId); event.preventDefault(); }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected, selectedId, filteredCases, skipModalOpen]);
   // §18 Skip Test Case — เปิด modal เลือก Reason + Comment ก่อนเสมอ ไม่มีปุ่มลัด
   const openSkipModal = () => { setSkipReason(""); setSkipComment(""); setSkipModalOpen(true); };
   const confirmSkip = () => {
@@ -5709,11 +5728,12 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                       <span>{x.expectedResult}</span>
                       <span className="step-result-control">
                         {(["Pass", "Fail", "Blocked", "NotRun"] as const).map((opt) => (
-                          <button
-                            type="button"
-                            key={opt}
-                            className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
-                            title={opt === "NotRun" ? "Not Run" : opt}
+                        <button
+                          type="button"
+                          key={opt}
+                          className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
+                          title={opt === "NotRun" ? "Not Run" : opt}
+                          aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${opt === "NotRun" ? "Not Run" : opt}`}
                             onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
                           >
                             {opt === "Pass" ? "✓" : opt === "Fail" ? "✕" : opt === "Blocked" ? "⊘" : "○"}
@@ -5784,12 +5804,13 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                 <button className="result-btn pass" disabled={saving} onClick={completeTest}>
                   Complete Test
                 </button>
+                <small className="execution-shortcut-hint">Shortcuts: P = Pass · F = Fail · B = Blocked · N = Next Case</small>
               </div>
               {skipModalOpen && (
-                <div className="modal" onMouseDown={() => setSkipModalOpen(false)}>
+                <div className="modal" role="dialog" aria-modal="true" aria-labelledby="skip-test-case-title" onMouseDown={() => setSkipModalOpen(false)}>
                   <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
                     <div className="modal-head">
-                      <h2>Skip Test Case</h2>
+                      <h2 id="skip-test-case-title">Skip Test Case</h2>
                       <button aria-label="ปิดหน้าต่าง" onClick={() => setSkipModalOpen(false)}>×</button>
                     </div>
                     <div className="form-grid">
@@ -7973,6 +7994,17 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
               </div>
             </div>
           </section>
+          <section className="test-summary-executive card">
+            <div className="ts-section-heading"><div><span className="ts-eyebrow">Executive view</span><h2>ภาพรวมสำหรับการตัดสินใจ</h2><p>สรุปสถานะคุณภาพของ {release.releaseCode} · Version {release.version} จากข้อมูลการทดสอบล่าสุด</p></div><div className="ts-generated"><span>ข้อมูล ณ</span><b>{summary?.generatedAt ? new Date(summary.generatedAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "-"}</b></div></div>
+            <div className="ts-executive-grid">
+              <div className="ts-decision-note"><span className="ts-eyebrow">Recommendation</span><strong>{summary?.recommendedDecision ?? "ยังไม่มีข้อมูล"}</strong><p>{narrative.qaRecommendation || "กด Generate / Regenerate เพื่อสร้างคำแนะนำจากข้อมูลล่าสุด"}</p></div>
+              <div className="ts-mini-list"><span className="ts-eyebrow">Release context</span><div><span>สถานะ Release</span><b>{release.status || "-"}</b></div><div><span>Environment</span><b>{envs.length ? envs.map((e) => e.environmentName).join(", ") : "ไม่ระบุ"}</b></div><div><span>Scope</span><b>{release.scope ? `${release.scope.length > 120 ? `${release.scope.slice(0, 120)}…` : release.scope}` : "ไม่ระบุ"}</b></div></div>
+            </div>
+          </section>
+          <div className="test-summary-grid ts-detail-grid">
+            <section className="card"><div className="test-summary-card"><div className="ts-section-heading compact"><div><span className="ts-eyebrow">Test execution</span><h3>สถานะ Test Case</h3></div><b className="ts-total-count">{summary?.totalCases ?? 0} Cases</b></div><div className="ts-status-list">{(summary?.statusDistribution ?? []).map((x) => <div key={x.status}><div><span className="ts-status-dot" style={{ background: x.color }} /><span>{x.status}</span><b>{x.count}</b></div><div className="ts-bar"><i style={{ background: x.color, width: `${summary?.totalCases ? Math.min(100, x.count / summary.totalCases * 100) : 0}%` }} /></div></div>)}{!(summary?.statusDistribution?.length) && <p className="ts-empty-detail">ยังไม่มีข้อมูลสถานะ Test Case</p>}</div></div></section>
+            <section className="card"><div className="test-summary-card"><div className="ts-section-heading compact"><div><span className="ts-eyebrow">Risk signals</span><h3>ประเด็นที่ต้องติดตาม</h3></div></div><div className="ts-risk-list"><div className={summary?.openP0 ? "risk-high" : "risk-ok"}><b>{summary?.openP0 ?? 0}</b><span>Open P0</span><small>{summary?.openP0 ? "ต้องแก้ก่อนปล่อย" : "ไม่พบรายการ"}</small></div><div className={summary?.openP1 ? "risk-medium" : "risk-ok"}><b>{summary?.openP1 ?? 0}</b><span>Open P1</span><small>{summary?.openP1 ? "ควรประเมินก่อนปล่อย" : "ไม่พบรายการ"}</small></div><div className={summary?.criticalDefects ? "risk-high" : "risk-ok"}><b>{summary?.criticalDefects ?? 0}</b><span>Critical Defects</span><small>{summary?.criticalDefects ? "มีความเสี่ยงสูง" : "ไม่พบรายการ"}</small></div></div><div className="ts-env-detail"><span className="ts-eyebrow">Test environments</span>{envs.length ? envs.map((e) => <div key={e.testEnvironmentId}><b>{e.environmentName}</b><small>{e.isActive ? "Active" : "Inactive"}{e.baseUrl ? ` · ${e.baseUrl}` : ""}</small></div>) : <p className="ts-empty-detail">ยังไม่ได้ระบุ Environment</p>}</div></div></section>
+          </div>
           <div className="test-summary-grid">
             <section className="card"><div className="test-summary-card"><h3 style={{ margin: 0 }}>Metrics</h3><dl className="ts-kv">
               <div><dt>Requirement Coverage</dt><dd>{summary?.requirementCoverage ?? 0}%</dd></div>
