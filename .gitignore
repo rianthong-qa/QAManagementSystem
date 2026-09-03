@@ -27,3 +27,7 @@ cloudflared-create.txt
 agent/publish/
 agent/**/agent-config.json
 publish/
+
+# Local build output (agent artifact test runs) + runtime automation evidence
+/artifacts/
+src/ProMaxx2.QA.Api/App_Data/

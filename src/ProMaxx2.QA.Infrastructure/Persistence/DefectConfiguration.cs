@@ -24,6 +24,12 @@ public sealed class DefectConfiguration : IEntityTypeConfiguration<Defect>
         b.Property(x => x.StepsToReproduce).HasMaxLength(4000);
         b.Property(x => x.ExpectedResult).HasMaxLength(2000);
         b.Property(x => x.ActualResult).HasMaxLength(2000);
+        b.Property(x => x.CrmTicketId).HasMaxLength(50);
+        b.Property(x => x.CrmSyncStatus).HasMaxLength(20).IsRequired().HasDefaultValue("None");
+        b.Property(x => x.CrmLastSyncedAt).HasPrecision(0);
+        b.Property(x => x.CrmLastKnownStatus).HasMaxLength(50);
+        b.Property(x => x.CrmLastKnownAssignto).HasMaxLength(20);
+        b.Property(x => x.CrmLastSeenAnswerNo).HasMaxLength(20);
         b.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Release>().WithMany().HasForeignKey(x => x.ReleaseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Build>().WithMany().HasForeignKey(x => x.BuildId).OnDelete(DeleteBehavior.Restrict);

@@ -476,7 +476,7 @@ export function AutomationPage({
       const vd = await vr.json();
       if (vd.validationStatus !== "Valid") {
         const msg = vd.validationErrors || "Validate ไม่ผ่าน";
-        setValErrors(msg);
+        setValErrors(msg.includes("Object Repository") ? `${msg} Fix: add the missing Object to Object Repository or change the object parameter to an existing BusinessKey, then Validate again.` : msg);
         throw new Error(msg);
       }
       setValidatedOk(true);

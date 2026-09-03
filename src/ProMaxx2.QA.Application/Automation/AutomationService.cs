@@ -395,6 +395,9 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             if (approved is null) throw new ArgumentException("No approved automation version exists for this case.");
             versionId = approved.AutomationVersionId;
         }
+        var version = await repository.FindVersionAsync(versionId, ct) ?? throw new ArgumentException("Automation version not found.");
+        var validation = AutomationValidator.Validate(version.ToDsl() ?? new DslDocument(), await repository.ListActionCodesAsync(ct), await repository.ListObjectKeysAsync(projectId, ct), null);
+        if (!validation.IsValid) throw new ArgumentException($"Automation Case ต้อง Validate ใหม่ก่อนรัน: {string.Join("; ", validation.Errors)}");
         var execution = new AutomationExecution(r.CaseId, versionId, null, r.BuildId, r.EnvironmentId, userId?.ToString(), caseEntity.AutomationType);
         if (r.AgentId.HasValue) execution.AssignAgent(r.AgentId.Value);
         await repository.AddExecutionAsync(execution, ct);

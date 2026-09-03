@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ProMaxx2.QA.Application.Execution;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Domain.Defects;
@@ -6,9 +7,14 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 
 namespace ProMaxx2.QA.Api.Services;
 
-public sealed class DefectAutoCreateService(QaDbContext db)
+// Skip (มี Defect เปิดอยู่แล้ว) กับ Error (ล้มเหลวจริง เช่น DB exception) ต้องแยกกันชัดเจน — ผู้เรียก
+// (ExecutionsController) ใช้ผลนี้ map เข้า ExecutionHistoryDto เพื่อแจ้งผู้ใช้ต่างข้อความกัน แทนที่จะ
+// เงียบไปเฉยๆ เหมือนเดิมที่คืนแค่ string? เดียวแล้วสองกรณีนี้แยกไม่ออกจากฝั่ง caller/UI เลย
+public sealed record DefectAutoCreateResult(string? CreatedDefectCode, string? ExistingDefectCode, string? Error);
+
+public sealed class DefectAutoCreateService(QaDbContext db, ILogger<DefectAutoCreateService> logger)
 {
-    public async Task<string?> CreateFromFailAsync(Guid cycleCaseId, CreateExecutionRequest r, Guid? testerId, CancellationToken ct)
+    public async Task<DefectAutoCreateResult> CreateFromFailAsync(Guid cycleCaseId, CreateExecutionRequest r, Guid? testerId, CancellationToken ct)
     {
         try
         {
@@ -16,12 +22,14 @@ public sealed class DefectAutoCreateService(QaDbContext db)
                 .Include(x => x.Cycle)
                 .Include(x => x.TestCase).ThenInclude(x => x.Steps)
                 .SingleOrDefaultAsync(x => x.TestCycleCaseId == cycleCaseId && !x.Cycle.IsDeleted, ct);
-            if (cycleCase is null) return null;
+            if (cycleCase is null) return new DefectAutoCreateResult(null, null, "ไม่พบข้อมูล Test Cycle Case สำหรับสร้าง Defect อัตโนมัติ");
             var tc = cycleCase.TestCase;
-            if (await db.DefectTestCaseLinks.Where(l => l.TestCaseId == tc.TestCaseId)
+            var existingDefectCode = await db.DefectTestCaseLinks.Where(l => l.TestCaseId == tc.TestCaseId)
                     .Join(db.Defects, l => l.DefectId, d => d.DefectId, (l, d) => d)
-                    .AnyAsync(d => !d.IsDeleted && !new[] { "Resolved", "Closed", "Rejected" }.Contains(d.Status), ct))
-                return null;
+                    .Where(d => !d.IsDeleted && !new[] { "Resolved", "Closed", "Rejected" }.Contains(d.Status))
+                    .Select(d => d.DefectCode)
+                    .FirstOrDefaultAsync(ct);
+            if (existingDefectCode is not null) return new DefectAutoCreateResult(null, existingDefectCode, null);
             var failedSteps = r.StepResults.Where(s => s.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase)).ToList();
             var firstFailed = failedSteps.FirstOrDefault();
             var testerName = testerId.HasValue ? await db.Users.Where(u => u.UserId == testerId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct) : null;
@@ -74,12 +82,12 @@ public sealed class DefectAutoCreateService(QaDbContext db)
             db.DefectActivities.Add(new DefectActivity(defect.DefectId, "Created", $"สร้าง Defect อัตโนมัติจากผลการทดสอบ Fail ของ {tc.TestCaseCode} (Cycle {cycleCase.Cycle.CycleCode})", testerId));
             db.DefectActivities.Add(new DefectActivity(defect.DefectId, "TestLinked", $"เชื่อมโยง Test Case {tc.TestCaseCode} ({tc.Title})", testerId));
             await db.SaveChangesAsync(ct);
-            return code;
+            return new DefectAutoCreateResult(code, null, null);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[DefectAutoCreate] สร้าง Defect อัตโนมัติไม่สำเร็จ: {ex.Message}");
-            return null;
+            logger.LogError(ex, "[DefectAutoCreate] สร้าง Defect อัตโนมัติไม่สำเร็จสำหรับ TestCycleCaseId={CycleCaseId}", cycleCaseId);
+            return new DefectAutoCreateResult(null, null, "เกิดข้อผิดพลาดขณะสร้าง Defect อัตโนมัติ กรุณาตรวจสอบกับผู้ดูแลระบบ หรือสร้าง Defect ด้วยตนเอง");
         }
     }
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];

@@ -1811,6 +1811,12 @@ button.icon-button:hover {
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1200px) {
+  /* Tablet navigation is an off-canvas drawer. Remove its grid track too,
+     otherwise the hidden sidebar still leaves a blank 278px column on iPad. */
+  .app {
+    grid-template-columns: 1fr;
+  }
+
   .admin-stats-row {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -2748,36 +2754,65 @@ input[type="radio"] {
 .cycle-detail-hero p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
 .cycle-detail-hero p span { margin: 0 5px; color: #9db2e8; }
 .cycle-detail-badges { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.cycle-detail-progress { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; padding: 14px 16px; }
-.cycle-detail-progress-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-.cycle-detail-progress-head > div { display: flex; align-items: baseline; gap: 9px; }
-.cycle-detail-progress-head span { color: var(--muted); font-size: 12px; font-weight: 700; }
-.cycle-detail-progress-head strong { color: var(--primary); font-size: 22px; }
-.cycle-detail-progress-head small { color: var(--muted); font-size: 11px; }
-.cycle-detail-progress-track { height: 9px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: #e9eef8; }
+.cycle-detail-badges .badge span { margin-right: 3px; }
+/* แถว breadcrumb บนสุดของ Test Cycle detail — แทนที่ eyebrow "TEST CYCLE" เดิมที่แปะติดกับ h2 ให้ขึ้นมา
+   เป็นแถวของตัวเอง เพื่อเปิดที่ให้ h2/ไอคอน/badge ย้ายลงมาอยู่แถวถัดไปแทน (ดูรูป Test Cycle detail spec) */
+.cycle-detail-crumb-head { margin-bottom: 14px; padding-bottom: 12px; border-bottom: none; }
+.cycle-detail-crumb { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.cycle-detail-crumb i { color: #c7cedb; font-style: normal; }
+.cycle-detail-title-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+/* .suite-detail-hero-icon ให้ทรงกรอบ gradient มาแล้ว แค่ปรับขนาดให้เล็กลงนิดหน่อยสำหรับ header นี้ —
+   ใช้ selector element+class (span.cycle-detail-title-icon) เพื่อให้ specificity สูงกว่า .suite-detail-hero-icon
+   เสมอไม่ว่าลำดับ CSS ในไฟล์จะเป็นอย่างไร (กัน .suite-detail-hero-icon ทับค่านี้ในภายหลัง) */
+span.cycle-detail-title-icon { width: 56px; height: 56px; font-size: 22px; }
+.cycle-detail-title-text { flex: 1; min-width: 0; }
+.cycle-detail-title-text h2 { margin: 0; color: var(--text); font-size: 23px; font-weight: 800; letter-spacing: 0; }
+.cycle-detail-title-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 7px; color: var(--muted); font-size: 13px; }
+.cycle-detail-id-pill { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: #f5f7fb; padding: 3px 10px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.cycle-detail-title-badges { flex: 0 0 auto; align-items: flex-start; padding-top: 3px; }
+.cycle-detail-hero-text { display: flex; align-items: center; gap: 14px; }
+.cycle-detail-hero-icon { display: grid; flex: 0 0 auto; width: 44px; height: 44px; place-items: center; border-radius: 50%; background: #fff; box-shadow: 0 3px 10px rgba(36,87,214,.16); color: var(--primary); font-size: 19px; }
+.cycle-detail-progress-count { color: var(--primary); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.cycle-detail-progress { display: flex; align-items: center; gap: 22px; border: 1px solid var(--line); border-radius: 14px; background: #fff; padding: 16px; }
+.cycle-detail-progress-ring { position: relative; flex: 0 0 auto; width: 128px; height: 128px; }
+.cycle-detail-progress-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cycle-detail-progress-ring-inner { position: relative; display: grid; width: 100%; height: 100%; place-items: center; text-align: center; }
+.cycle-detail-progress-ring-inner strong { color: var(--text); font-size: 26px; font-weight: 800; line-height: 1.1; }
+.cycle-detail-progress-ring-inner small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.cycle-detail-progress-side { flex: 1; min-width: 0; }
+.cycle-detail-progress-track { height: 9px; overflow: hidden; border-radius: 999px; background: #e9eef8; }
 .cycle-detail-progress-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#2457d6,#4f7cf0); box-shadow: 0 0 10px rgba(36,87,214,.22); }
-.cycle-detail-progress-stats { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
-.cycle-detail-progress-stats span { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--line); color: var(--muted); font-size: 8px; text-align: center; }
-.cycle-detail-progress-stats span:last-child { border-right: 0; }
-.cycle-detail-progress-stats b { color: var(--text); font-size: 13px; }
+.cycle-detail-progress-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-top: 14px; }
+.cycle-detail-progress-stat { display: flex; align-items: center; gap: 10px; }
+.cycle-detail-progress-stat-icon { display: grid; flex: 0 0 auto; width: 34px; height: 34px; place-items: center; border-radius: 50%; font-size: 14px; }
+.cycle-detail-progress-stat-icon.blue { background: #eaf0ff; color: var(--primary); }
+.cycle-detail-progress-stat-icon.orange { background: #fff4e5; color: #c9711b; }
+.cycle-detail-progress-stat-icon.green { background: #e6f9f0; color: #168b58; }
+.cycle-detail-progress-stat b { display: block; color: var(--text); font-size: 15px; line-height: 1.2; }
+.cycle-detail-progress-stat small { color: var(--muted); font-size: 11px; }
 .cycle-detail-section { margin-top: 14px; }
 .cycle-detail-section > h3 { margin: 0 0 8px; color: #344054; font-size: 15px; }
 .cycle-list-table .cycle-select-col { width: 42px; min-width: 42px; vertical-align: middle; padding-left: 14px; text-align: left; }
 .cycle-list-table .cycle-select-col input { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; margin: 0; }
 .cycle-list-table tbody tr.is-selected { background: #eef4ff; }
 .cycle-list-table tbody tr.is-selected:hover td { background: #e6efff; }
-.cycle-detail-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin: 0; }
-.cycle-detail-grid > div { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; padding: 10px 11px; }
+.cycle-detail-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin: 0; }
+.cycle-detail-grid > div { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; padding: 13px 14px; }
 .cycle-detail-grid > .wide { grid-column: span 3; }
-.cycle-detail-grid dt { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.cycle-detail-grid dt span { display: grid; width: 18px; height: 18px; place-items: center; border-radius: 5px; background: #eaf0ff; color: var(--primary); font-size: 9px; }
-.cycle-detail-grid dd { overflow-wrap: anywhere; margin: 0; color: var(--text); font-size: 14px; font-weight: 700; line-height: 1.45; }
-.cycle-detail-timeline { display: grid; grid-template-columns: minmax(0,1fr) 50px minmax(0,1fr); align-items: center; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; padding: 11px; }
-.cycle-detail-timeline > div { display: grid; grid-template-columns: 28px 1fr; gap: 1px 9px; align-items: center; }
-.cycle-detail-timeline > div > span { grid-row: 1 / 3; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: #eaf0ff; color: var(--primary); font-size: 9px; font-weight: 800; }
+.cycle-detail-grid dt { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.cycle-detail-grid dt span { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #eaf0ff; color: var(--primary); font-size: 13px; }
+.cycle-detail-grid dt span.purple { background: #f3eefa; color: #7c4fd1; }
+.cycle-detail-grid dt span.orange { background: #fff4e5; color: #c9711b; }
+.cycle-detail-grid dd { overflow-wrap: anywhere; margin: 0; color: var(--text); font-size: 15px; font-weight: 700; line-height: 1.45; }
+/* กำหนดการ — Start/End Date เป็นการ์ดแยกจากกันคนละใบ เชื่อมด้วยเส้นประ+หัวลูกศรตรงกลาง (ไม่ใช่การ์ดใบ
+   เดียวครอบทั้งคู่แบบเดิม) border/background เลยย้ายจาก container หลักไปอยู่ที่การ์ดย่อยแต่ละใบแทน */
+.cycle-detail-timeline { display: grid; grid-template-columns: minmax(0,1fr) 56px minmax(0,1fr); align-items: center; gap: 10px; }
+.cycle-detail-timeline > div { display: grid; grid-template-columns: 28px 1fr; gap: 1px 9px; align-items: center; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; padding: 12px 13px; }
+.cycle-detail-timeline > div > span { grid-row: 1 / 3; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: #eaf0ff; color: var(--primary); font-size: 13px; }
 .cycle-detail-timeline small { color: var(--muted); font-size: 11px; }
 .cycle-detail-timeline b { font-size: 13px; }
-.cycle-detail-timeline i { height: 2px; background: repeating-linear-gradient(90deg,#b8c8ed 0 5px,transparent 5px 9px); }
+.cycle-detail-timeline i { position: relative; display: block; height: 2px; background: repeating-linear-gradient(90deg,#b8c8ed 0 5px,transparent 5px 9px); }
+.cycle-detail-timeline i::after { content: "→"; position: absolute; top: 50%; right: -3px; transform: translateY(-50%); color: #9db2e8; font-size: 15px; line-height: 1; }
 .cycle-detail-notes { display: flex; gap: 10px; margin-top: 14px; border: 1px solid #f0d48b; border-radius: 11px; background: #fff9e9; padding: 11px 12px; }
 .cycle-detail-notes > div { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 50%; background: #e5a900; color: #fff; font-family: Georgia,serif; font-size: 13px; font-weight: 800; }
 .cycle-detail-notes > span { min-width: 0; }
@@ -2863,7 +2898,7 @@ td.actions-col .row-actions { justify-content: center; }
 .suite-info-card-label span { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 7px; background: #eaf0ff; color: var(--primary); font-size: 11px; }
 .suite-info-card b { overflow-wrap: anywhere; color: var(--text); font-size: 14px; font-weight: 700; }
 .cycle-detail-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
-.cycle-detail-section-head h3 { margin: 0; }
+.cycle-detail-section-head h3 { margin: 0; color: #344054; font-size: 15px; }
 .cycle-detail-section-head .link-button { font-size: 10px; font-weight: 700; white-space: nowrap; }
 .suite-detail-split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); align-items: start; gap: 16px; }
 .suite-cycle-cards { display: grid; gap: 10px; max-height: 420px; overflow: auto; padding-right: 3px; }
@@ -2932,11 +2967,15 @@ td.actions-col .row-actions { justify-content: center; }
   .cycle-detail-hero { flex-direction: column; padding: 13px; }
   .cycle-detail-hero h3 { font-size: 16px; }
   .cycle-detail-badges { justify-content: flex-start; }
-  .cycle-detail-progress-head { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .cycle-detail-title-row { flex-wrap: wrap; }
+  .cycle-detail-title-badges { flex: 1 0 100%; justify-content: flex-start; padding-top: 8px; }
+  .cycle-detail-progress { flex-direction: column; align-items: stretch; text-align: center; }
+  .cycle-detail-progress-ring { margin: 0 auto; }
   .cycle-detail-grid { grid-template-columns: 1fr; }
   .cycle-detail-grid > .wide { grid-column: 1; }
   .cycle-detail-timeline { grid-template-columns: 1fr; gap: 8px; }
   .cycle-detail-timeline i { width: 2px; height: 16px; margin-left: 13px; background: repeating-linear-gradient(180deg,#b8c8ed 0 5px,transparent 5px 9px); }
+  .cycle-detail-timeline i::after { content: "↓"; top: auto; bottom: -3px; right: auto; left: 50%; transform: translateX(-50%); }
   .form-grid-2col { grid-template-columns: 1fr; }
   .cycle-form-columns { grid-template-columns: 1fr; row-gap: 16px; }
   .cycle-form-columns .modal-section:last-child { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); padding-top: 16px; }
@@ -3209,6 +3248,12 @@ textarea::placeholder {
 .defect-form-modal { width: min(1200px, calc(100vw - 32px)) !important; max-width: 1200px !important; }
 .defect-copy-btn { display: inline-grid; width: 22px; height: 22px; margin-left: 8px; place-items: center; border: 0; border-radius: 6px; background: #eef3ff; color: var(--primary); font-size: 11px; cursor: pointer; vertical-align: middle; }
 .defect-copy-btn:hover { background: #e0e9ff; }
+/* คอลัมน์ CRM ในตาราง Defect list — ถ้ายังไม่เคยส่งไป CRM (สถานะ None) ให้ badge กดได้ทันทีเพื่อเปิด
+   dialog เลือกผู้รับผิดชอบแล้วส่งไป CRM เลย ไม่ต้องเปิด detail modal ก่อน (ปุ่มล้วนๆ ไม่มีกรอบ/พื้นหลัง
+   ของตัวเอง ให้ badge ข้างในเป็นตัวรับผิดชอบหน้าตาแทน) */
+.crm-badge-btn { border: 0; background: none; padding: 0; cursor: pointer; font: inherit; }
+.crm-badge-btn .badge { transition: box-shadow .12s ease; }
+.crm-badge-btn:hover .badge, .crm-badge-btn:focus-visible .badge { box-shadow: 0 0 0 2px var(--primary-soft); }
 .defect-detail-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
 .defect-detail-stat { display: flex; align-items: center; gap: 9px; min-width: 0; border: 1px solid var(--line); border-radius: 11px; background: #fff; padding: 10px; }
 .defect-detail-stat-icon { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border-radius: 9px; font-size: 13px; }
@@ -3220,6 +3265,8 @@ textarea::placeholder {
 .defect-detail-stat > div { min-width: 0; }
 .defect-detail-stat small { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
 .defect-detail-stat b { display: block; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.defect-detail-stat a { display: block; overflow: hidden; color: var(--primary); font-size: 14px; font-weight: 700; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.defect-detail-stat a:hover { text-decoration: underline; }
 .defect-detail-stat-sub { margin-top: 1px; font-weight: 400; }
 .defect-detail-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; }
 /* input/textarea ในหน้าสร้าง/แก้ไข Defect ที่วางอยู่ใต้ h3 ของ .cycle-detail-section โดยตรง (ไม่ผ่าน
@@ -3241,6 +3288,11 @@ textarea.defect-form-field { resize: vertical; line-height: 1.6; }
 .defect-linked-case b { color: var(--primary); font-size: 14px; }
 .defect-linked-case small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .defect-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick-action-item { display: inline-flex; align-items: center; gap: 4px; }
+/* ไอคอน info เล็กๆ ข้างปุ่ม Quick Action แต่ละปุ่ม — hover/focus โชว์คำอธิบายผ่าน title (คีย์บอร์ดกด Tab ได้ด้วย
+   เพราะมี tabIndex) ไม่ผูกกับปุ่มเอง เพื่อไม่ให้บังโดยไม่ได้ตั้งใจกดปุ่มจริงตอน hover คำอธิบาย */
+.quick-action-info { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; color: var(--muted); font-size: 13px; line-height: 1; cursor: help; }
+.quick-action-info:hover, .quick-action-info:focus-visible { color: var(--primary); outline: none; }
 .quick-action-blue { border-color: #bcd0f7 !important; color: var(--primary) !important; }
 .quick-action-green { border-color: #b7e3cb !important; color: var(--green) !important; }
 .quick-action-purple { border-color: #d9c8f0 !important; color: #7c4dc4 !important; }

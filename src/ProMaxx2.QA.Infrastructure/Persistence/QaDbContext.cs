@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProMaxx2.QA.Domain.Identity;
 using ProMaxx2.QA.Domain.Projects;
 using ProMaxx2.QA.Domain.Releases;
@@ -10,6 +12,7 @@ using ProMaxx2.QA.Domain.Settings;
 using ProMaxx2.QA.Domain.Dashboard;
 using ProMaxx2.QA.Domain.Governance;
 using ProMaxx2.QA.Domain.Automation;
+using ProMaxx2.QA.Domain.Integrations;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -51,6 +54,10 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<DefectTestCaseLink> DefectTestCaseLinks => Set<DefectTestCaseLink>();
     public DbSet<MasterOption> MasterOptions => Set<MasterOption>();
     public DbSet<AiConfiguration> AiConfigurations => Set<AiConfiguration>();
+    public DbSet<EmailConfiguration> EmailConfigurations => Set<EmailConfiguration>();
+    public DbSet<CrmConfiguration> CrmConfigurations => Set<CrmConfiguration>();
+    public DbSet<CrmProjectMapping> CrmProjectMappings => Set<CrmProjectMapping>();
+    public DbSet<CrmSyncSettings> CrmSyncSettings => Set<CrmSyncSettings>();
     public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
     public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
     public DbSet<RiskAcceptance> RiskAcceptances => Set<RiskAcceptance>();
@@ -83,6 +90,28 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationDataSeedScript> AutomationDataSeedScripts => Set<AutomationDataSeedScript>();
     public DbSet<AutomationDataSeedRun> AutomationDataSeedRuns => Set<AutomationDataSeedRun>();
     public DbSet<AutomationEnvironmentDataProfile> AutomationEnvironmentDataProfiles => Set<AutomationEnvironmentDataProfile>();
+    public DbSet<AutomationCaptureSession> AutomationCaptureSessions => Set<AutomationCaptureSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
+
+    // ทุก DateTime ในระบบเก็บเป็น UTC เสมอ (DateTime.UtcNow — ไม่มีที่ไหนใช้ DateTime.Now) แต่ SQL Server
+    // datetime2 ไม่เก็บ DateTimeKind ไว้ พออ่านค่ากลับมาจาก DB ผ่าน EF Core ค่าจะกลายเป็น Kind=Unspecified
+    // เสมอ ทำให้ System.Text.Json serialize ออกไปโดยไม่มี "Z" ต่อท้าย (เช่น "2026-08-30T10:15:00" แทนที่จะ
+    // เป็น "...Z") ฝั่ง frontend (browser) จึงตีความผิดว่าเป็นเวลา local แทน UTC — ทำให้หน้า Defect (และ
+    // หน้าอื่นที่อ่านค่าจาก DB) แสดงวันที่/เวลาเพี้ยนไปเท่ากับ timezone offset ของเครื่อง (เช่น ผิดไป 7
+    // ชั่วโมงถ้าเทียบกับเวลาไทย) ใช้ convention นี้ทวง Kind=Utc กลับคืนให้ทุก DateTime/DateTime? property
+    // ทุกครั้งที่อ่านออกจาก DB เพื่อให้ serialize มี Z แนบมาด้วยเสมอ — ไม่ต้องแก้ทีละ entity/DTO
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+        configurationBuilder.Properties<DateTime?>().HaveConversion<UtcNullableDateTimeConverter>();
+    }
 }
+
+file sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>(
+    v => v,
+    v => v.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(v, DateTimeKind.Utc) : v.ToUniversalTime());
+
+file sealed class UtcNullableDateTimeConverter() : ValueConverter<DateTime?, DateTime?>(
+    v => v,
+    v => v.HasValue ? (v.Value.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v.Value.ToUniversalTime()) : v);

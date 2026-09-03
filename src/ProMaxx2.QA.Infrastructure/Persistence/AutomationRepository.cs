@@ -571,6 +571,7 @@ public sealed class AutomationObjectConfiguration : Microsoft.EntityFrameworkCor
         b.Property(x => x.AutomationId).HasMaxLength(200);
         b.Property(x => x.SelectorJson).HasColumnType("nvarchar(max)");
         b.HasIndex(x => new { x.ProjectId, x.ApplicationCode, x.ScreenCode, x.ObjectCode });
+        b.HasIndex(x => new { x.ProjectId, x.ApplicationCode, x.AutomationId }).IsUnique();
     }
 }
 

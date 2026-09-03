@@ -1,4 +1,4 @@
-import { Fragment as _F, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+﻿import { Fragment as _F, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import "./App.css";
 import "./styles.css";
 import "./DragDrop.css";
@@ -15,7 +15,7 @@ import "./Automation.css";
 import "./TestSummary.css";
 import "./RiskAcceptance.css";
 import "./ReleaseSignoff.css";
-import { formatThaiDateTime } from "./dateTime";
+import { formatThaiDateTime, toUtcDate, bangkokMidnightMs } from "./dateTime";
 import { calculateOverallResult, type StepStatus } from "./overallResult";
 import { AutomationPage } from "./AutomationPage";
 
@@ -387,10 +387,15 @@ function Badge({
   return <span className={`badge ${effectiveTone}`}>{children}</span>;
 }
 
-type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string; projectId?:string; releaseId?:string|null; buildId?:string|null; moduleId?:string|null; description?:string|null; stepsToReproduce?:string|null; expectedResult?:string|null; actualResult?:string|null; assigneeUserId?:string|null; updatedAt?:string|null; createdByName?:string|null; updatedByName?:string|null; releaseCode?:string|null; buildNumber?:string|null; assigneeName?:string|null };
+type DefectItem = { defectId:string; defectCode:string; title:string; severity:string; status:string; createdAt:string; projectId?:string; releaseId?:string|null; buildId?:string|null; moduleId?:string|null; description?:string|null; stepsToReproduce?:string|null; expectedResult?:string|null; actualResult?:string|null; assigneeUserId?:string|null; updatedAt?:string|null; createdByName?:string|null; updatedByName?:string|null; releaseCode?:string|null; buildNumber?:string|null; assigneeName?:string|null; crmTicketId?:string|null; crmSyncStatus?:string; crmLastSyncedAt?:string|null };
 type DefectActivityItem = { activityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string; performedByUserId?: string | null; performedAt?: string };
 type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority?: string; status?: string; linkedAt?: string };
 const cycleStatusOptions = ["Draft", "InProgress", "Completed", "Closed", "Cancelled"];
+// ไอคอนประกอบ Badge สถานะ/ประเภทใน Test Cycle detail modal — สถานะเป็น enum ตายตัว (cycleStatusOptions
+// ด้านบน) เลย map ตรงๆ ได้ครบทุกค่า ส่วนประเภท (cycleType) มาจาก Master Setting ("TestCycleType") ที่แอดมิน
+// เพิ่มค่าใหม่ได้เอง เลยต้องมี fallback ไอคอน generic ไว้เผื่อค่าที่ไม่ได้ map ไว้ล่วงหน้า
+const cycleStatusIcons: Record<string, string> = { Draft: "📝", InProgress: "▶️", Completed: "✅", Closed: "🔒", Cancelled: "🚫" };
+const cycleTypeIcons: Record<string, string> = { Smoke: "🔥", Regression: "🔁", Sanity: "🧪", UAT: "👤", Functional: "🧩", Performance: "⚡" };
 // เหตุผลของ Skip Test Case (test-case-execution-ui-spec.md §18) — ไม่มีคอลัมน์ DB แยกเก็บ Reason
 // เลยเข้ารหัสรวมไว้ใน Comment field เดิมตอนส่ง (ดู confirmSkip ใน ExecutionWorkspacePage)
 const skipReasonOptions = [
@@ -405,8 +410,12 @@ const defectSeverities = ["Critical", "High", "Medium", "Low"];
 const defectStatuses = ["Open", "In Progress", "Resolved", "Closed", "Rejected"];
 const defectSeverityTones: Record<string, string> = { Critical: "red", High: "yellow", Medium: "blue", Low: "green" };
 const defectStatusTones: Record<string, string> = { Open: "yellow", "In Progress": "blue", Resolved: "green", Closed: "green", Rejected: "gray" };
+// สถานะการส่งเคสไป CRM (BlueSea Helpdesk) — ใช้แสดงคอลัมน์ CRM ในตาราง Defect list เพื่อให้เห็นได้ทันที
+// ว่ารายการไหนส่งไปแล้วบ้าง โดยไม่ต้องเปิด detail ทีละรายการ (เดิมมีแสดงแค่ใน detail modal เท่านั้น)
+const defectCrmSyncTones: Record<string, string> = { Linked: "green", Failed: "red", None: "gray" };
+const defectCrmSyncLabels: Record<string, string> = { Linked: "ส่งแล้ว", Failed: "ส่งไม่สำเร็จ", None: "ยังไม่ส่ง" };
 const testCaseStatusTones: Record<string, string> = { Draft: "gray", Review: "yellow", Ready: "green", Deprecated: "red" };
-const defectActionLabels: Record<string, string> = { Created: "สร้าง", Updated: "แก้ไข", StatusChanged: "สถานะ", SeverityChanged: "Severity", Comment: "คอมเมนต์", TestLinked: "เชื่อมโยง Test Case", TestUnlinked: "ยกเลิก Test Case", BulkUpdated: "อัปเดตกลุ่ม", Deleted: "ลบ" };
+const defectActionLabels: Record<string, string> = { Created: "สร้าง", Updated: "แก้ไข", StatusChanged: "สถานะ", SeverityChanged: "Severity", Comment: "คอมเมนต์", TestLinked: "เชื่อมโยง Test Case", TestUnlinked: "ยกเลิก Test Case", BulkUpdated: "อัปเดตกลุ่ม", Deleted: "ลบ", CrmSent: "ส่งไป CRM", CrmSyncFailed: "ส่งไป CRM ไม่สำเร็จ", CrmReassigned: "เปลี่ยนผู้รับผิดชอบ CRM", CrmReassignFailed: "เปลี่ยนผู้รับผิดชอบ CRM ไม่สำเร็จ", CrmStatusChanged: "CRM อัปเดตสถานะ/ผู้รับผิดชอบ", CrmReturnedToOwner: "CRM ส่งกลับหาเจ้าของเรื่อง", CrmComment: "คอมเมนต์จาก CRM" };
 
 // เดิมทั้งสองกราฟนี้อยู่ใน component เดียวกัน (QualityOverviewCharts) เรนเดอร์คู่กันใน .charts-grid เสมอ
 // — แยกเป็น 2 component อิสระเพื่อให้ผู้ใช้สลับตำแหน่งได้ (Defect แยกตามความรุนแรง ย้ายไปอยู่คู่กับ
@@ -485,8 +494,12 @@ function DefectSeverityChart({ data }: { data: DashboardSummary }) {
 }
 
 function fmtAgo(iso?: string | null): string {
-  if (!iso) return "-";
-  const ms = Date.now() - new Date(iso).getTime();
+  // toUtcDate เติม "Z" ให้ก่อนถ้า backend ส่ง DateTime ที่เป็น UTC มาแบบไม่มี timezone indicator (บั๊ก
+  // SQL Server datetime2 ไม่เก็บ Kind — ดู dateTime.ts) ไม่งั้นค่า ms ที่คำนวณจะเพี้ยนไปเท่ากับ timezone
+  // offset ของเครื่อง ทำให้ "x ชม./วันที่แล้ว" ผิด
+  const parsed = toUtcDate(iso);
+  if (!parsed) return "-";
+  const ms = Date.now() - parsed.getTime();
   if (ms < 60_000) return "เมื่อสักครู่";
   const m = Math.floor(ms / 60_000);
   if (m < 60) return `${m} นาทีที่แล้ว`;
@@ -510,16 +523,24 @@ function executionStatusTone(status: string): string {
     default: return "gray"; // NotRun
   }
 }
-// รูปแบบ DD/MM/YYYY HH:MM:SS แบบปี พ.ศ. (เช่น 28/08/2569 14:35:02) — จัดรูปแบบเองแทนการพึ่ง
-// toLocaleString เพราะ locale/timezone ของแต่ละเบราว์เซอร์อาจให้ผลลัพธ์ไม่ตรงตามที่ต้องการเป๊ะๆ
+// รูปแบบ DD/MM/YYYY HH:MM:SS แบบปี พ.ศ. (เช่น 28/08/2569 14:35:02) — เดิมใช้ d.getDate()/d.getHours()
+// ฯลฯ ตรงๆ ซึ่งอ่านค่าตาม timezone ของเครื่อง (ถูกก็ต่อเมื่อเครื่องตั้งเป็นไทยพอดี) เปลี่ยนมาใช้ toUtcDate
+// (เติม Z ให้ก่อนถ้า backend ส่งมาไม่มี) + Intl.DateTimeFormat บังคับ timeZone: Asia/Bangkok แทน เพื่อให้
+// ได้ผลลัพธ์ถูกต้องเสมอไม่ว่าเครื่อง client จะตั้ง timezone เป็นอะไร (ใช้ locale "en-GB" ดึงเป็นเลขฐาน
+// สากลก่อน แล้วค่อย +543 เอง เพราะ locale "th-TH" ของ Intl จะคืนปี พ.ศ. มาให้อยู่แล้วซึ่งจะกลายเป็นบวกซ้ำ)
 function fmtDateTimeBE(iso?: string | null): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear() + 543} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const d = toUtcDate(iso);
+  if (!d) return "-";
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok", hour12: false, hourCycle: "h23",
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(d);
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? "00";
+  return `${get("day")}/${get("month")}/${Number(get("year")) + 543} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 function defectAgeDays(createdAt: string): number {
-  return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000));
+  const d = toUtcDate(createdAt); // เติม Z ให้ก่อน — เหตุผลเดียวกับ fmtAgo ด้านบน
+  return d ? Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000)) : 0;
 }
 type DefectReproStep = { stepNo: number; action: string; status?: "Pass" | "Fail"; detail: string };
 // "Steps to Reproduce" เป็น freeform text — ถ้าเขียนตามรูปแบบ "1. Action (Pass/Fail) | รายละเอียด" จะแปลงเป็น
@@ -686,7 +707,7 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
           </div>
           <div className="exec-hero-context">
             {data.criticalDefects > 0 && <span className="ctx-alert">Defect Critical {data.criticalDefects} รายการ</span>}
-            <span className="ctx-time">{new Date(data.generatedAt).toLocaleString("th-TH", {timeZone:"Asia/Bangkok", day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit"})}</span>
+            <span className="ctx-time">{formatThaiDateTime(data.generatedAt, {day:"numeric", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit"})}</span>
           </div>
         </div>
       </div>
@@ -756,6 +777,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
   const [linkedCases, setLinkedCases] = useState<DefectTestCaseItem[]>([]);
   const [_detailLoading, setDetailLoading] = useState(false);
   const [commentText, setCommentText] = useState("");
+  const [commentSending, setCommentSending] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<DefectItem | null>(null);
@@ -773,6 +795,18 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
   const [summaryStats, setSummaryStats] = useState({ total: 0, open: 0, inProgress: 0, resolved: 0, critical: 0 });
+  const [crmDialogOpen, setCrmDialogOpen] = useState(false);
+  // Defect ที่ dialog นี้กำลังทำงานด้วย — แยกจาก `detail` (Defect ที่เปิด detail modal อยู่) เพราะตอนนี้
+  // เปิด dialog นี้ได้ 2 ทาง: จากปุ่มใน detail modal (item = detail อยู่แล้ว) หรือจากคอลัมน์ CRM ในตาราง
+  // list โดยตรง (ไม่ได้เปิด detail modal เลย) — ต้องรู้ว่ากำลังส่งให้ Defect ตัวไหนโดยไม่พึ่ง `detail`
+  const [crmTargetItem, setCrmTargetItem] = useState<DefectItem | null>(null);
+  const [crmDevUsers, setCrmDevUsers] = useState<{ staffCode: string; name: string; email?: string | null }[]>([]);
+  const [crmDevUsersLoading, setCrmDevUsersLoading] = useState(false);
+  const [crmDevUsersError, setCrmDevUsersError] = useState("");
+  const [crmAssignTo, setCrmAssignTo] = useState("");
+  const [crmSending, setCrmSending] = useState(false);
+  // "send" = ยังไม่เคยผูก CRM มาก่อน (สร้าง ticket ใหม่); "reassign" = ผูกแล้ว แค่เปลี่ยนผู้รับผิดชอบบน ticket เดิม
+  const [crmMode, setCrmMode] = useState<"send" | "reassign">("send");
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   const load = useCallback(() => {
     void reload; // refresh the list after create, edit, delete, or bulk updates
@@ -847,6 +881,37 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
     const response = await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status }) });
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1); }
   };
+  const openCrmDialog = async (mode: "send" | "reassign", item: DefectItem) => {
+    setCrmMode(mode); setCrmTargetItem(item);
+    setCrmAssignTo(""); setCrmDialogOpen(true); setCrmDevUsersLoading(true); setCrmDevUsersError("");
+    try {
+      const response = await fetch(`${apiUrl}/defects/crm/dev-users`, { headers });
+      if (!response.ok) { const p = await response.json().catch(() => null); throw new Error(p?.detail ?? "โหลดรายชื่อผู้รับผิดชอบไม่สำเร็จ"); }
+      setCrmDevUsers(await response.json());
+    } catch (e) { setCrmDevUsersError(e instanceof Error ? e.message : "โหลดรายชื่อผู้รับผิดชอบไม่สำเร็จ"); }
+    finally { setCrmDevUsersLoading(false); }
+  };
+  // ป้องกันกดซ้ำระหว่างรอ response — backend เองก็กัน re-send ซ้ำอีกชั้นด้วย CrmSyncStatus=="Linked" (409 ตอน send,
+  // เช็ค Linked แล้วเท่านั้นตอน reassign) — mode "reassign" ยิงคนละ endpoint แต่ใช้ dialog/ผู้รับผิดชอบชุดเดียวกัน
+  const sendToCrm = async () => {
+    const item = crmTargetItem;
+    if (!item || crmSending) return;
+    setCrmSending(true);
+    try {
+      const url = crmMode === "reassign" ? `${apiUrl}/defects/${item.defectId}/crm-reassign` : `${apiUrl}/defects/${item.defectId}/send-to-crm`;
+      const response = await fetch(url, { method: "POST", headers, body: JSON.stringify({ assignToStaffCode: crmAssignTo }) });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.detail ?? (crmMode === "reassign" ? "เปลี่ยนผู้รับผิดชอบใน CRM ไม่สำเร็จ" : "ส่งไป CRM ไม่สำเร็จ"));
+      setNotice(crmMode === "reassign" ? `เปลี่ยนผู้รับผิดชอบใน CRM Ticket #${item.crmTicketId} สำเร็จ` : `ส่งไป CRM สำเร็จ Ticket #${body.crmTicketId}`);
+      setCrmDialogOpen(false);
+      setReload(x => x + 1);
+      // เปิด/รีเฟรช detail modal ต่อให้เห็น badge/activity อัปเดตทันที เฉพาะกรณีเปิด dialog นี้มาจาก detail
+      // modal ของ Defect ตัวเดียวกันอยู่แล้ว — ถ้าส่งจากคอลัมน์ CRM ในตาราง list โดยตรง (ไม่ได้เปิด detail
+      // ไว้) ก็ไม่ต้องเด้ง detail มาให้ ปล่อยให้ตาราง reload แล้วเห็น badge เปลี่ยนในแถวเดิมพอ
+      if (detail && detail.defectId === item.defectId) openDetail(item);
+    } catch (e) { window.alert(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ"); }
+    finally { setCrmSending(false); }
+  };
   const openDetail = async (item: DefectItem) => {
     setDetail(item); setActivities([]); setLinkedCases([]); setCommentText(""); setCodeCopied(false); setDetailLoading(true);
     try {
@@ -860,9 +925,14 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
     } catch {} finally { setDetailLoading(false); }
   };
   const postComment = async () => {
-    if (!detail || !commentText.trim()) return;
-    const response = await fetch(`${apiUrl}/defects/${detail.defectId}/comments`, { method: "POST", headers, body: JSON.stringify({ body: commentText.trim() }) });
-    if (response.ok) { setCommentText(""); openDetail(detail); }
+    // ตอนนี้ endpoint นี้ยังรอ sync ไป CRM ด้วย (best-effort, ดู CrmSendToCrmService.AppendCommentAsync) ถ้า Defect
+    // ผูก CRM แล้ว เลยอาจใช้เวลานานกว่าคอมเมนต์ปกติเล็กน้อย — ต้องกันกดซ้ำ + โชว์สถานะกำลังส่งให้ชัดเจน
+    if (!detail || !commentText.trim() || commentSending) return;
+    setCommentSending(true);
+    try {
+      const response = await fetch(`${apiUrl}/defects/${detail.defectId}/comments`, { method: "POST", headers, body: JSON.stringify({ body: commentText.trim() }) });
+      if (response.ok) { setCommentText(""); await openDetail(detail); }
+    } finally { setCommentSending(false); }
   };
   const bulkStatus = async (status: string) => {
     if (!selectedIds.length) return;
@@ -870,7 +940,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${selectedIds.length} รายการ`); setSelectedIds([]); setReload(x => x + 1); }
   };
   const exportCsv = () => {
-    const rows = [["Defect ID", "Title", "Severity", "Status", "Module", "Created", "Assignee"], ...items.map(x => [x.defectCode, x.title, x.severity, x.status, modules.find(m => m.moduleId === x.moduleId)?.moduleName ?? "", new Date(x.createdAt).toLocaleDateString("th-TH"), x.assigneeName ?? ""])];
+    const rows = [["Defect ID", "Title", "Severity", "Status", "CRM", "Module", "Created", "Assignee"], ...items.map(x => [x.defectCode, x.title, x.severity, x.status, defectCrmSyncLabels[x.crmSyncStatus ?? "None"] ?? "ยังไม่ส่ง", modules.find(m => m.moduleId === x.moduleId)?.moduleName ?? "", formatThaiDateTime(x.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" }), x.assigneeName ?? ""])];
     const csv = "\ufeff" + rows.map(row => row.map(v => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a"); a.href = url; a.download = "defects.csv"; a.click(); URL.revokeObjectURL(url);
@@ -909,7 +979,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
         <table>
           <thead><tr>
             <th><input type="checkbox" checked={selectedIds.length === items.length && items.length > 0} onChange={toggleSelectAll} /></th>
-            <th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>Module</th><th>Age</th><th>Created</th><th className="actions-col">จัดการ</th>
+            <th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>CRM</th><th>Module</th><th>Age</th><th>Created</th><th className="actions-col">จัดการ</th>
           </tr></thead>
           <tbody>
             {items.map(x => <tr key={x.defectId}>
@@ -918,6 +988,11 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
               <td>{x.title}</td>
               <td><Badge tone={defectSeverityTones[x.severity] ?? "blue"}>{x.severity}</Badge></td>
               <td><Badge tone={defectStatusTones[x.status] ?? "gray"}>{x.status}</Badge></td>
+              <td>
+                {canEdit !== false && (x.crmSyncStatus ?? "None") === "None"
+                  ? <button className="crm-badge-btn" title={`ส่ง ${x.defectCode} ไป CRM`} aria-label={`ส่ง ${x.defectCode} ไป CRM`} onClick={() => openCrmDialog("send", x)}><Badge tone="gray"><span aria-hidden="true">⇪</span> ส่งไป CRM</Badge></button>
+                  : <Badge tone={defectCrmSyncTones[x.crmSyncStatus ?? "None"] ?? "gray"}>{defectCrmSyncLabels[x.crmSyncStatus ?? "None"] ?? "ยังไม่ส่ง"}</Badge>}
+              </td>
               <td>{modules.find(m => m.moduleId === x.moduleId)?.moduleName ?? "-"}</td>
               <td>{defectAgeDays(x.createdAt)} วัน</td>
               <td>{fmtAgo(x.createdAt)}</td>
@@ -931,7 +1006,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
                 </>}
               </div></td>
             </tr>)}
-            {!loading && !items.length && <tr><td colSpan={9} className="muted-row">ยังไม่มี Defect ในขอบเขตที่เลือก</td></tr>}
+            {!loading && !items.length && <tr><td colSpan={10} className="muted-row">ยังไม่มี Defect ในขอบเขตที่เลือก</td></tr>}
           </tbody>
           </table>
         </div>
@@ -1024,8 +1099,10 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
               <div className="defect-detail-stat"><span className="defect-detail-stat-icon green" aria-hidden="true">✓</span><div><small>Status</small><Badge tone={defectStatusTones[detail.status] ?? "gray"}>{detail.status}</Badge></div></div>
               <div className="defect-detail-stat"><span className="defect-detail-stat-icon blue" aria-hidden="true">▢</span><div><small>Module</small><b>{moduleName}</b></div></div>
               <div className="defect-detail-stat"><span className="defect-detail-stat-icon purple" aria-hidden="true">◔</span><div><small>Age</small><b>{defectAgeDays(detail.createdAt)} วัน</b></div></div>
-              <div className="defect-detail-stat"><span className="defect-detail-stat-icon blue" aria-hidden="true">▤</span><div><small>Created</small><b>{fmtAgo(detail.createdAt)}</b><small className="defect-detail-stat-sub">{new Date(detail.createdAt).toLocaleString("th-TH", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small></div></div>
+              <div className="defect-detail-stat"><span className="defect-detail-stat-icon blue" aria-hidden="true">▤</span><div><small>Created</small><b>{fmtAgo(detail.createdAt)}</b><small className="defect-detail-stat-sub">{formatThaiDateTime(detail.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small></div></div>
               <div className="defect-detail-stat"><span className="defect-detail-stat-icon gray" aria-hidden="true">U</span><div><small>Assignee</small><b>{detail.assigneeName ?? "ไม่ระบุ"}</b></div></div>
+              {detail.crmSyncStatus === "Linked" && detail.crmTicketId && <div className="defect-detail-stat"><span className="defect-detail-stat-icon green" aria-hidden="true">⇪</span><div><small>CRM Ticket</small><a href={`https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo=${detail.crmTicketId}&JobType=HD`} target="_blank" rel="noreferrer" title={`เปิด Ticket #${detail.crmTicketId} ใน CRM`}>#{detail.crmTicketId}</a></div></div>}
+              {detail.crmSyncStatus === "Failed" && <div className="defect-detail-stat"><span className="defect-detail-stat-icon red" aria-hidden="true">⚠</span><div><small>CRM</small><Badge tone="red">ส่งไม่สำเร็จ</Badge></div></div>}
             </div>
             <div className="defect-detail-split">
               <section className="cycle-detail-section">
@@ -1069,11 +1146,44 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
               <section className="cycle-detail-section">
                 <h3>Quick Actions</h3>
                 <div className="defect-quick-actions">
-                  {detail.status !== "In Progress" && detail.status !== "Closed" && <button className="btn quick-action-blue" onClick={() => { quickStatus(detail, "In Progress"); setDetail(null); }}><span aria-hidden="true">→</span> In Progress</button>}
-                  {detail.status !== "Resolved" && detail.status !== "Closed" && <button className="btn quick-action-green" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}><span aria-hidden="true">✓</span> Resolve</button>}
-                  {detail.status !== "Closed" && <button className="btn quick-action-purple" onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}><span aria-hidden="true">⏹</span> Closed</button>}
-                  <button className="btn" onClick={() => { openForm(detail); setDetail(null); }}><span aria-hidden="true">✎</span> แก้ไข</button>
-                  <button className="btn quick-action-red" onClick={() => { const item = detail; setDetail(null); removeDefect(item); }}><span aria-hidden="true">🗑</span> ลบ</button>
+                  {detail.status !== "In Progress" && detail.status !== "Closed" && (
+                    <span className="quick-action-item">
+                      <button className="btn quick-action-blue" onClick={() => { quickStatus(detail, "In Progress"); setDetail(null); }}><span aria-hidden="true">→</span> In Progress</button>
+                      <span className="quick-action-info" tabIndex={0} title="เปลี่ยนสถานะ Defect นี้เป็น In Progress" aria-label="เปลี่ยนสถานะ Defect นี้เป็น In Progress">ⓘ</span>
+                    </span>
+                  )}
+                  {detail.status !== "Resolved" && detail.status !== "Closed" && (
+                    <span className="quick-action-item">
+                      <button className="btn quick-action-green" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}><span aria-hidden="true">✓</span> Resolve</button>
+                      <span className="quick-action-info" tabIndex={0} title="เปลี่ยนสถานะ Defect นี้เป็น Resolved" aria-label="เปลี่ยนสถานะ Defect นี้เป็น Resolved">ⓘ</span>
+                    </span>
+                  )}
+                  {detail.status !== "Closed" && (
+                    <span className="quick-action-item">
+                      <button className="btn quick-action-purple" onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}><span aria-hidden="true">⏹</span> Closed</button>
+                      <span className="quick-action-info" tabIndex={0} title="เปลี่ยนสถานะ Defect นี้เป็น Closed" aria-label="เปลี่ยนสถานะ Defect นี้เป็น Closed">ⓘ</span>
+                    </span>
+                  )}
+                  <span className="quick-action-item">
+                    <button className="btn" onClick={() => { openForm(detail); setDetail(null); }}><span aria-hidden="true">✎</span> แก้ไข</button>
+                    <span className="quick-action-info" tabIndex={0} title="เปิดฟอร์มแก้ไขรายละเอียด Defect นี้ (หัวข้อ, Severity, คำอธิบาย, ผู้รับผิดชอบ ฯลฯ)" aria-label="เปิดฟอร์มแก้ไขรายละเอียด Defect นี้">ⓘ</span>
+                  </span>
+                  <span className="quick-action-item">
+                    <button className="btn quick-action-red" onClick={() => { const item = detail; setDetail(null); removeDefect(item); }}><span aria-hidden="true">🗑</span> ลบ</button>
+                    <span className="quick-action-info" tabIndex={0} title="ลบ Defect นี้ออกจากระบบ (soft delete — ยังกู้คืนได้จากฐานข้อมูล ไม่แสดงในรายการอีก)" aria-label="ลบ Defect นี้ออกจากระบบ">ⓘ</span>
+                  </span>
+                  {detail.crmSyncStatus !== "Linked" && (
+                    <span className="quick-action-item">
+                      <button className="btn quick-action-blue" onClick={() => openCrmDialog("send", detail)}><span aria-hidden="true">⇪</span> ส่งไป CRM</button>
+                      <span className="quick-action-info" tabIndex={0} title="สร้าง Ticket ใหม่ใน CRM (BlueSea Helpdesk) จากข้อมูล Defect นี้ ให้เลือกผู้รับผิดชอบฝั่ง Dev แล้วผูก Ticket ID ไว้กับ Defect นี้" aria-label="สร้าง Ticket ใหม่ใน CRM จากข้อมูล Defect นี้">ⓘ</span>
+                    </span>
+                  )}
+                  {detail.crmSyncStatus === "Linked" && (
+                    <span className="quick-action-item">
+                      <button className="btn quick-action-blue" onClick={() => openCrmDialog("reassign", detail)}><span aria-hidden="true">↺</span> เปลี่ยนผู้รับผิดชอบ CRM</button>
+                      <span className="quick-action-info" tabIndex={0} title={`เปลี่ยนผู้รับผิดชอบ (Assignto) บน CRM Ticket #${detail.crmTicketId} เดิมที่ผูกไว้แล้ว ไม่สร้าง Ticket ใหม่`} aria-label="เปลี่ยนผู้รับผิดชอบบน CRM Ticket เดิม ไม่สร้าง Ticket ใหม่">ⓘ</span>
+                    </span>
+                  )}
                 </div>
               </section>
             )}
@@ -1089,8 +1199,10 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
               </div>
               {canEdit !== false && (
                 <div className="defect-comment-box">
-                  <input value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="เพิ่มคอมเมนต์..." onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }} />
-                  <button className="btn primary" onClick={postComment} disabled={!commentText.trim()}><span aria-hidden="true">➤</span> ส่ง</button>
+                  <input value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="เพิ่มคอมเมนต์..." disabled={commentSending} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }} />
+                  <button className="btn primary" onClick={postComment} disabled={!commentText.trim() || commentSending}>
+                    {commentSending ? <><span className="spinner inline" aria-hidden="true" /> กำลังส่ง...</> : <><span aria-hidden="true">➤</span> ส่ง</>}
+                  </button>
                 </div>
               )}
             </section>
@@ -1099,6 +1211,36 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
         </div>
       );
     })()}
+    {/* Dialog เลือกผู้รับผิดชอบฝั่ง Dev แล้วส่ง/เปลี่ยนผู้รับผิดชอบใน CRM — อยู่นอก {detail && ...} ตั้งใจ
+        เพราะตอนนี้เปิดได้ทั้งจาก detail modal (ปุ่ม Quick Action) และจากคอลัมน์ CRM ในตาราง list โดยตรง
+        (ไม่เปิด detail modal เลย) ใช้ crmTargetItem แทน detail เป็นตัวอ้างอิงว่ากำลังทำงานกับ Defect ตัวไหน */}
+    {crmDialogOpen && (
+      <div className="modal" role="presentation" onMouseDown={() => !crmSending && setCrmDialogOpen(false)}>
+        <div className="modal-box" role="dialog" aria-modal="true" aria-labelledby="crm-send-title" onMouseDown={e => e.stopPropagation()}>
+          <div className="modal-head">
+            <h2 id="crm-send-title">{crmMode === "reassign" ? "เปลี่ยนผู้รับผิดชอบ CRM" : "ส่งไป CRM"}</h2>
+            <button aria-label="ปิด" disabled={crmSending} onClick={() => setCrmDialogOpen(false)}>×</button>
+          </div>
+          <p><b>{crmTargetItem?.defectCode}</b> — {crmMode === "reassign" ? <>เลือกผู้รับผิดชอบฝั่ง Dev คนใหม่สำหรับ Ticket #{crmTargetItem?.crmTicketId} เดิม (ไม่สร้าง Ticket ใหม่)</> : "เลือกผู้รับผิดชอบฝั่ง Dev สำหรับ Ticket ใน CRM"}</p>
+          {crmDevUsersLoading ? <span className="spinner inline" aria-hidden="true" /> : crmDevUsersError ? (
+            <div className="inline-alert error"><span>{crmDevUsersError}</span></div>
+          ) : (
+            <label>ผู้รับผิดชอบ (Dev)
+              <select value={crmAssignTo} onChange={e => setCrmAssignTo(e.target.value)}>
+                <option value="">-- เลือก --</option>
+                {[...crmDevUsers].sort((a, b) => a.staffCode.localeCompare(b.staffCode, undefined, { numeric: true })).map(u => <option key={u.staffCode} value={u.staffCode}>{u.staffCode} {u.name}</option>)}
+              </select>
+            </label>
+          )}
+          <div className="modal-actions">
+            <button className="btn" disabled={crmSending} onClick={() => setCrmDialogOpen(false)}>ยกเลิก</button>
+            <button className="btn primary" disabled={!crmAssignTo || crmSending} onClick={sendToCrm}>
+              {crmSending ? <><span className="spinner inline" aria-hidden="true" /> กำลังส่ง...</> : crmMode === "reassign" ? "ยืนยันเปลี่ยนผู้รับผิดชอบ" : "ยืนยันส่งไป CRM"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </>;
 }
 
@@ -2189,7 +2331,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
               <button className="release-card-select" aria-label={`เลือก ${x.releaseCode} Version ${x.version}`} aria-pressed={selectedId === x.releaseId} onClick={() => setSelectedId(x.releaseId)}>
                 <span>{x.releaseCode}</span>
                 <b>Version {x.version}</b>
-                <small><span>{x.releaseType || "ไม่ระบุประเภท"}</span><span>{x.plannedReleaseDate ? new Date(x.plannedReleaseDate).toLocaleDateString("th-TH") : "ไม่ระบุวัน"}</span></small>
+                <small><span>{x.releaseType || "ไม่ระบุประเภท"}</span><span>{x.plannedReleaseDate ? formatThaiDateTime(x.plannedReleaseDate, { day: "numeric", month: "numeric", year: "numeric" }) : "ไม่ระบุวัน"}</span></small>
                 <Badge tone={x.status === "Ready" || x.status === "Released" ? "green" : "yellow"}>{x.status}</Badge>
               </button>
               <button className="release-card-detail" aria-label={`ดูรายละเอียด ${x.releaseCode}`} onClick={() => setReleaseDetail(x)}>รายละเอียด <span aria-hidden="true">›</span></button>
@@ -2243,7 +2385,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                     <td>{x.commitReference || "-"}</td>
                     <td>
                       {x.buildDate
-                        ? new Date(x.buildDate).toLocaleDateString("th-TH")
+                        ? formatThaiDateTime(x.buildDate, { day: "numeric", month: "numeric", year: "numeric" })
                         : "-"}
                     </td>
                     <td>
@@ -2310,7 +2452,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
         <div className="modal" role="dialog" aria-modal="true" aria-labelledby="release-detail-title" onMouseDown={() => setReleaseDetail(null)}>
           <div className="modal-box release-build-detail" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head"><div><h2 id="release-detail-title">รายละเอียด Release</h2><small>{releaseDetail.releaseCode}</small></div><button aria-label="ปิดรายละเอียด Release" onClick={() => setReleaseDetail(null)}>×</button></div>
-            <div className="release-detail-hero"><div><span className="release-detail-eyebrow">Release</span><b>{releaseDetail.releaseCode}</b><h3>Version {releaseDetail.version}</h3><div className="release-detail-badges"><Badge tone={releaseDetail.status === "Ready" || releaseDetail.status === "Released" ? "green" : "yellow"}>{releaseDetail.status}</Badge>{releaseDetail.releaseType && <Badge tone="blue">{releaseDetail.releaseType}</Badge>}</div></div><div className="release-date-card"><span aria-hidden="true">◫</span><small>Planned Release</small><b>{releaseDetail.plannedReleaseDate ? new Date(releaseDetail.plannedReleaseDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุวัน"}</b></div></div>
+            <div className="release-detail-hero"><div><span className="release-detail-eyebrow">Release</span><b>{releaseDetail.releaseCode}</b><h3>Version {releaseDetail.version}</h3><div className="release-detail-badges"><Badge tone={releaseDetail.status === "Ready" || releaseDetail.status === "Released" ? "green" : "yellow"}>{releaseDetail.status}</Badge>{releaseDetail.releaseType && <Badge tone="blue">{releaseDetail.releaseType}</Badge>}</div></div><div className="release-date-card"><span aria-hidden="true">◫</span><small>Planned Release</small><b>{releaseDetail.plannedReleaseDate ? formatThaiDateTime(releaseDetail.plannedReleaseDate, { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุวัน"}</b></div></div>
             <div className="release-detail-meta"><div><span aria-hidden="true">P</span><small>Project<b>{projects.find((x) => x.projectId === releaseDetail.projectId)?.projectName || "-"}</b></small></div><div><span aria-hidden="true">#</span><small>Builds<b>{releaseDetail.releaseId === selectedId ? builds.length : "เลือก Release เพื่อดู"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{releaseDetail.status}</b></small></div></div>
             <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">≡</span><div><h3>Release Scope</h3><small>ขอบเขตและเป้าหมายของ Release</small></div></div><p>{releaseDetail.scope || "ยังไม่ได้ระบุขอบเขตของ Release"}</p></section>
             <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">▤</span><div><h3>Builds ใน Release</h3><small>รายการ Build ที่พร้อมใช้งาน</small></div></div>{releaseDetail.releaseId === selectedId && builds.length ? <div className="release-detail-builds">{builds.map((build) => <button key={build.buildId} onClick={() => { setReleaseDetail(null); setBuildDetail(build); }}><span><b>{build.buildNumber}</b><small>{build.applicationVersion || "ไม่ระบุ Application Version"}</small></span><span><Badge tone={build.status === "Ready" ? "green" : "yellow"}>{build.status}</Badge>{build.isReleaseCandidate && <Badge tone="blue">RC</Badge>}<i aria-hidden="true">›</i></span></button>)}</div> : <div className="release-detail-empty">ยังไม่มี Build ที่ใช้งานใน Release นี้</div>}</section>
@@ -2323,7 +2465,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
           <div className="modal-box release-build-detail build-read-detail" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head"><div><h2 id="build-detail-title">รายละเอียด Build</h2><small>{selected?.releaseCode || "Release"}</small></div><button aria-label="ปิดรายละเอียด Build" onClick={() => setBuildDetail(null)}>×</button></div>
             <div className="build-detail-hero"><div><span className="release-detail-eyebrow">Build Number</span><h3>{buildDetail.buildNumber}</h3><div className="release-detail-badges"><Badge tone={buildDetail.status === "Ready" ? "green" : "yellow"}>{buildDetail.status}</Badge>{buildDetail.isReleaseCandidate && <Badge tone="blue">Release Candidate</Badge>}</div></div><div className="build-version-card"><small>Application Version</small><b>{buildDetail.applicationVersion || "-"}</b><span>Package {buildDetail.packageVersion || "-"}</span></div></div>
-            <div className="release-detail-meta build-detail-meta"><div><span aria-hidden="true">◫</span><small>Build Date<b>{buildDetail.buildDate ? new Date(buildDetail.buildDate).toLocaleDateString("th-TH") : "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">C</span><small>Commit Reference<b>{buildDetail.commitReference || "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{buildDetail.status}</b></small></div></div>
+            <div className="release-detail-meta build-detail-meta"><div><span aria-hidden="true">◫</span><small>Build Date<b>{buildDetail.buildDate ? formatThaiDateTime(buildDetail.buildDate, { day: "numeric", month: "numeric", year: "numeric" }) : "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">C</span><small>Commit Reference<b>{buildDetail.commitReference || "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{buildDetail.status}</b></small></div></div>
             <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">+</span><div><h3>Change Notes</h3><small>รายการเปลี่ยนแปลงใน Build นี้</small></div></div><p>{buildDetail.changeNotes || "ไม่มี Change Notes"}</p></section>
             <section className="release-detail-section known-issues"><div className="release-detail-heading"><span aria-hidden="true">!</span><div><h3>Known Issues</h3><small>ปัญหาที่ทราบและควรระวัง</small></div></div><p>{buildDetail.knownIssues || "ไม่พบ Known Issues"}</p></section>
             <div className="modal-actions"><button className="btn" onClick={() => setBuildDetail(null)}><span aria-hidden="true">✕</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = buildDetail; setBuildDetail(null); openBuild(item); }}><span aria-hidden="true">✎</span> แก้ไข Build</button>}</div>
@@ -4636,37 +4778,77 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       {detail && (
         <div className="modal" role="presentation" onMouseDown={() => setDetail(null)}>
           <div className="modal-box cycle-modal cycle-detail-modal" role="dialog" aria-modal="true" aria-labelledby="cycle-detail-title" onMouseDown={event => event.stopPropagation()}>
-            <div className="modal-head">
-              <div><span className="cycle-detail-eyebrow">TEST CYCLE</span><h2 id="cycle-detail-title">{detail.cycleCode}</h2><small>{projects.find(project => project.projectId === detail.projectId)?.projectName ?? "-"}</small></div>
+            <div className="modal-head cycle-detail-crumb-head">
+              <div className="cycle-detail-crumb"><span>Test Cycle</span><i aria-hidden="true">/</i><span>รายละเอียด</span></div>
               <button aria-label="ปิดรายละเอียด Test Cycle" onClick={() => setDetail(null)}>×</button>
             </div>
+            <div className="cycle-detail-title-row">
+              <span className="suite-detail-hero-icon cycle-detail-title-icon" aria-hidden="true">📋</span>
+              <div className="cycle-detail-title-text">
+                <h2 id="cycle-detail-title">{detail.cycleCode}</h2>
+                <div className="cycle-detail-title-meta">
+                  <span>{projects.find(project => project.projectId === detail.projectId)?.projectName ?? "-"}</span>
+                  <span className="cycle-detail-id-pill">Test Cycle ID</span>
+                </div>
+              </div>
+              <div className="cycle-detail-badges cycle-detail-title-badges">
+                <Badge tone={detail.status === "Completed" || detail.status === "Closed" ? "green" : detail.status === "Cancelled" ? "red" : "yellow"}><span aria-hidden="true">{cycleStatusIcons[detail.status] ?? "▶️"}</span> {detail.status}</Badge>
+                {detail.cycleType && <Badge tone="blue"><span aria-hidden="true">{cycleTypeIcons[detail.cycleType] ?? "🏷️"}</span> {detail.cycleType}</Badge>}
+              </div>
+            </div>
             <section className="cycle-detail-hero">
-              <div><h3>{detail.cycleName}</h3><p>{detail.releaseCode} <span aria-hidden="true">•</span> Build {detail.buildNumber}</p></div>
-              <div className="cycle-detail-badges"><Badge tone={detail.status === "Completed" || detail.status === "Closed" ? "green" : detail.status === "Cancelled" ? "red" : "yellow"}>{detail.status}</Badge>{detail.cycleType && <Badge tone="blue">{detail.cycleType}</Badge>}</div>
+              <div className="cycle-detail-hero-text">
+                <span className="cycle-detail-hero-icon" aria-hidden="true">🖥️</span>
+                <div><h3>{detail.cycleName}</h3><p>{detail.releaseCode} <span aria-hidden="true">•</span> Build {detail.buildNumber}</p></div>
+              </div>
             </section>
-            <section className="cycle-detail-progress" aria-label={`ดำเนินการแล้ว ${detail.progressPercent}%`}>
-              <div className="cycle-detail-progress-head"><div><span>Execution Progress</span><strong>{detail.progressPercent}%</strong></div><small>{detail.executedCount.toLocaleString()} จาก {detail.caseCount.toLocaleString()} Test Cases</small></div>
-              <div className="cycle-detail-progress-track"><span style={{ width: `${Math.min(100, Math.max(0, detail.progressPercent))}%` }} /></div>
-              <div className="cycle-detail-progress-stats"><span><b>{detail.executedCount.toLocaleString()}</b>ดำเนินการแล้ว</span><span><b>{Math.max(0, detail.caseCount - detail.executedCount).toLocaleString()}</b>คงเหลือ</span><span><b>{detail.caseCount.toLocaleString()}</b>ทั้งหมด</span></div>
+            <section className="cycle-detail-section" aria-label={`ดำเนินการแล้ว ${Math.min(100, Math.max(0, detail.progressPercent))}%`}>
+              <div className="cycle-detail-section-head"><h3>ความคืบหน้าการทดสอบ</h3><span className="cycle-detail-progress-count">{detail.executedCount.toLocaleString()} จาก {detail.caseCount.toLocaleString()} Test Cases</span></div>
+              <div className="cycle-detail-progress">
+                {/* วงแหวน % ใช้ SVG stroke-dasharray/dashoffset ล้วนๆ (ไม่ใช้ CSS conic-gradient) เพราะ
+                    geometry ของ SVG circle ตายตัวแน่นอน ไม่ขึ้นกับการคำนวณ flex/grid ของ parent เหมือน
+                    div+conic-gradient ที่เคยพังกลายเป็นแท่งสี่เหลี่ยมยาวเต็มความกว้างในบางเบราว์เซอร์/เครื่อง */}
+                <div className="cycle-detail-progress-ring">
+                  <svg viewBox="0 0 128 128" width="128" height="128" aria-hidden="true">
+                    <circle cx="64" cy="64" r="54" fill="none" stroke="#e9eef8" strokeWidth="12" />
+                    <circle cx="64" cy="64" r="54" fill="none" stroke="#2457d6" strokeWidth="12" strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 54}
+                      strokeDashoffset={2 * Math.PI * 54 * (1 - Math.min(100, Math.max(0, detail.progressPercent)) / 100)}
+                      transform="rotate(-90 64 64)" />
+                  </svg>
+                  <div className="cycle-detail-progress-ring-inner">
+                    <strong>{Math.min(100, Math.max(0, detail.progressPercent))}%</strong>
+                    <small>{detail.progressPercent >= 100 ? "เสร็จสมบูรณ์" : detail.progressPercent <= 0 ? "ยังไม่เริ่ม" : "กำลังดำเนินการ"}</small>
+                  </div>
+                </div>
+                <div className="cycle-detail-progress-side">
+                  <div className="cycle-detail-progress-track"><span style={{ width: `${Math.min(100, Math.max(0, detail.progressPercent))}%` }} /></div>
+                  <div className="cycle-detail-progress-stats">
+                    <div className="cycle-detail-progress-stat"><span className="cycle-detail-progress-stat-icon blue" aria-hidden="true">✅</span><div><b>{detail.executedCount.toLocaleString()}</b><small>ดำเนินการแล้ว</small></div></div>
+                    <div className="cycle-detail-progress-stat"><span className="cycle-detail-progress-stat-icon orange" aria-hidden="true">⏳</span><div><b>{Math.max(0, detail.caseCount - detail.executedCount).toLocaleString()}</b><small>ค้างอยู่</small></div></div>
+                    <div className="cycle-detail-progress-stat"><span className="cycle-detail-progress-stat-icon green" aria-hidden="true">🏁</span><div><b>{detail.caseCount.toLocaleString()}</b><small>ทั้งหมด</small></div></div>
+                  </div>
+                </div>
+              </div>
             </section>
             <section className="cycle-detail-section">
               <h3>ข้อมูลการทดสอบ</h3>
               <dl className="cycle-detail-grid">
-                <div><dt><span aria-hidden="true">◫</span> Release</dt><dd>{detail.releaseCode || "-"}</dd></div>
-                <div><dt><span aria-hidden="true">#</span> Build</dt><dd>{detail.buildNumber || "-"}</dd></div>
-                <div><dt><span aria-hidden="true">◎</span> Environment</dt><dd>{detail.environmentName || "-"}</dd></div>
-                <div><dt><span aria-hidden="true">U</span> สร้างโดย</dt><dd>{detail.createdByName || "-"}</dd></div>
-                <div><dt><span aria-hidden="true">D</span> สร้างเมื่อ</dt><dd>{detail.createdAt ? new Date(detail.createdAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "-"}</dd></div>
-                <div className="wide"><dt><span aria-hidden="true">▤</span> Test Suite</dt><dd>{detail.suiteName || "ไม่ระบุ Suite"}</dd></div>
-                <div className="wide"><dt><span aria-hidden="true">M</span> Module</dt><dd>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</dd></div>
+                <div><dt><span className="purple" aria-hidden="true">📅</span> Release</dt><dd>{detail.releaseCode || "-"}</dd></div>
+                <div><dt><span className="blue" aria-hidden="true">💻</span> Build</dt><dd>{detail.buildNumber || "-"}</dd></div>
+                <div><dt><span className="blue" aria-hidden="true">🖥️</span> Environment</dt><dd>{detail.environmentName || "-"}</dd></div>
+                <div><dt><span className="orange" aria-hidden="true">👤</span> สร้างโดย</dt><dd>{detail.createdByName || "-"}</dd></div>
+                <div><dt><span className="purple" aria-hidden="true">📅</span> สร้างเมื่อ</dt><dd>{formatThaiDateTime(detail.createdAt, { day: "numeric", month: "short", year: "numeric" })}</dd></div>
+                <div><dt><span className="blue" aria-hidden="true">📁</span> Test Suite</dt><dd>{detail.suiteName || "ไม่ระบุ Suite"}</dd></div>
+                <div className="wide"><dt><span className="purple" aria-hidden="true">🧩</span> Module</dt><dd>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</dd></div>
               </dl>
             </section>
             <section className="cycle-detail-section">
               <h3>กำหนดการ</h3>
               <div className="cycle-detail-timeline">
-                <div><span aria-hidden="true">S</span><small>Start Date</small><b>{detail.startDate ? new Date(detail.startDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ"}</b></div>
+                <div><span aria-hidden="true">📅</span><small>Start Date</small><b>{detail.startDate ? formatThaiDateTime(detail.startDate, { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ"}</b></div>
                 <i aria-hidden="true" />
-                <div><span aria-hidden="true">E</span><small>End Date</small><b>{detail.endDate ? new Date(detail.endDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ"}</b></div>
+                <div><span aria-hidden="true">📅</span><small>End Date</small><b>{detail.endDate ? formatThaiDateTime(detail.endDate, { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ"}</b></div>
               </div>
             </section>
             <section className="cycle-detail-notes"><div aria-hidden="true">i</div><span><b>Notes</b><p>{detail.notes || "ไม่มี Notes สำหรับ Test Cycle นี้"}</p></span></section>
@@ -5248,11 +5430,15 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
         const problem = await response.json();
         throw new Error(problem.detail ?? "บันทึกผลไม่สำเร็จ");
       }
-      // ExecutionHistoryDto.CreatedDefectCode มีให้ "ครั้งเดียว" ตรงนี้เท่านั้น — GET .../cases/{id}
-      // (ที่ setReload ทำให้ refetch ใหม่) ไม่ได้ persist/ผูกกลับมาให้ query ซ้ำได้ทีหลัง เลยต้องแจ้ง
-      // ผู้ใช้ตรงนี้ทันทีถ้ามี Defect ถูก auto-create ให้ ไม่งั้นข้อมูลนี้จะหายไปเงียบๆ
-      const result: { createdDefectCode?: string } = await response.json();
+      // ExecutionHistoryDto.CreatedDefectCode/ExistingDefectCode/DefectAutoCreateError มีให้ "ครั้งเดียว"
+      // ตรงนี้เท่านั้น — GET .../cases/{id} (ที่ setReload ทำให้ refetch ใหม่) ไม่ได้ persist/ผูกกลับมาให้
+      // query ซ้ำได้ทีหลัง เลยต้องแจ้งผู้ใช้ตรงนี้ทันที ไม่งั้นข้อมูลนี้จะหายไปเงียบๆ — ต้องแยก 3 กรณีให้
+      // ชัดว่า auto-create สำเร็จ / ข้ามเพราะมี Defect เปิดอยู่แล้ว / ล้มเหลวจริง ไม่ให้ผู้ใช้เข้าใจว่า
+      // ระบบไม่ทำงานทั้งที่ตั้งใจข้ามให้ (เช่น สร้าง Defect รายสเต็ปไว้ก่อนหน้าแล้ว)
+      const result: { createdDefectCode?: string; existingDefectCode?: string; defectAutoCreateError?: string } = await response.json();
       if (result.createdDefectCode) window.alert(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ เนื่องจากผลเป็น Fail`);
+      else if (result.existingDefectCode) window.alert(`ไม่ได้สร้าง Defect ใหม่ให้อัตโนมัติ เนื่องจากมี Defect ${result.existingDefectCode} ที่ยังเปิดอยู่ผูกกับ Test Case นี้อยู่แล้ว`);
+      else if (result.defectAutoCreateError) window.alert(`คำเตือน: ${result.defectAutoCreateError}`);
       setReload((x) => x + 1);
       if (status === "Skipped") { setSkipModalOpen(false); setSkipReason(""); setSkipComment(""); }
     } catch (e) {
@@ -5737,10 +5923,13 @@ function TestSuitesPage({
     [caseSearch, setCaseSearch] = useState(""),
     [casePriorityFilter, setCasePriorityFilter] = useState(""),
     [caseTypeFilter, setCaseTypeFilter] = useState(""),
+    // เฉพาะตอนแก้ไข Suite ที่มีอยู่แล้ว — ตอนสร้างใหม่ใช้ formModuleId (ช่อง Module ที่บังคับเลือก) กรองอยู่แล้ว
+    [caseModuleFilter, setCaseModuleFilter] = useState(""),
     [addRequired, setAddRequired] = useState(true),
     [suiteAiModal,setSuiteAiModal]=useState(false),[suiteAiGenerating,setSuiteAiGenerating]=useState(false),[suiteAiError,setSuiteAiError]=useState(""),
     [suiteAiProjectId,setSuiteAiProjectId]=useState(""),[suiteAiModuleId,setSuiteAiModuleId]=useState(""),[suiteAiModules,setSuiteAiModules]=useState<ModuleItem[]>([]),
-    [suiteAiDrafts,setSuiteAiDrafts]=useState<GeneratedTestSuiteDraft[]>([]),[suiteAiExpanded,setSuiteAiExpanded]=useState<number|undefined>(undefined);
+    [suiteAiDrafts,setSuiteAiDrafts]=useState<GeneratedTestSuiteDraft[]>([]),[suiteAiExpanded,setSuiteAiExpanded]=useState<number|undefined>(undefined),
+    [suiteAiCaseSearch,setSuiteAiCaseSearch]=useState(""),[suiteAiPriorityFilter,setSuiteAiPriorityFilter]=useState(""),[suiteAiTypeFilter,setSuiteAiTypeFilter]=useState("");
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
     [formModuleId, setFormModuleId] = useState(""),
@@ -5833,6 +6022,7 @@ function TestSuitesPage({
     setCaseSearch("");
     setCasePriorityFilter("");
     setCaseTypeFilter("");
+    setCaseModuleFilter("");
     setAddRequired(true);
     setError("");
     const targetProjectId = suite?.projectId ?? projects[0]?.projectId ?? "";
@@ -5856,7 +6046,7 @@ function TestSuitesPage({
     // case manager below can show and edit real data instead of the summary row from the list fetch.
     setManaging(suite ? await fetchFullSuite(suite) : null);
   };
-  const openSuiteAi=()=>{const targetProject=contextProjectId||projectFilter||projects[0]?.projectId||"";setSuiteAiProjectId(targetProject);setSuiteAiModuleId("");setSuiteAiError("");setSuiteAiDrafts([]);setSuiteAiExpanded(undefined);setSuiteAiModal(true);};
+  const openSuiteAi=()=>{const targetProject=contextProjectId||projectFilter||projects[0]?.projectId||"";setSuiteAiProjectId(targetProject);setSuiteAiModuleId("");setSuiteAiError("");setSuiteAiDrafts([]);setSuiteAiExpanded(undefined);setSuiteAiCaseSearch("");setSuiteAiPriorityFilter("");setSuiteAiTypeFilter("");setSuiteAiModal(true);};
   const generateSuiteWithAi=async()=>{if(!suiteAiProjectId||!suiteAiModuleId)return;setSuiteAiGenerating(true);setSuiteAiError("");try{const response=await fetch(`${apiUrl}/test-suites/generate-ai`,{method:"POST",headers,body:JSON.stringify({projectId:suiteAiProjectId,moduleId:suiteAiModuleId,suiteTypes:suiteTypes.map(x=>x.value),riskTiers:riskTiers.map(x=>x.value)})});if(!response.ok){const problem=await response.json().catch(()=>null);throw new Error(problem?.detail??"AI Generate Test Suite ไม่สำเร็จ");}const drafts:GeneratedTestSuiteDraft[]=await response.json();if(!Array.isArray(drafts)||!drafts.length)throw new Error("AI ไม่ได้สร้าง Test Suite กลับมา");setSuiteAiDrafts(drafts);setSuiteAiExpanded(0);}catch(error){if(error instanceof SyntaxError)setSuiteAiError("AI ส่งข้อมูลกลับมาในรูปแบบที่ไม่ถูกต้อง กรุณาลองใหม่");else setSuiteAiError(error instanceof Error?error.message:"AI Generate Test Suite ไม่สำเร็จ");}finally{setSuiteAiGenerating(false);}};
   const removeSuiteAiDraft=(index:number)=>setSuiteAiDrafts(drafts=>{const next=drafts.filter((_,i)=>i!==index);if(next.length===0){setSuiteAiModal(false);}return next;});
   const saveAllSuiteDrafts=async()=>{if(!suiteAiDrafts.length)return;setSuiteAiGenerating(true);setSuiteAiError("");try{let created=0;for(const draft of suiteAiDrafts){const body={projectId:suiteAiProjectId,suiteCode:"",suiteName:draft.suiteName,suiteType:draft.suiteType,riskTier:draft.riskTier,description:draft.description,isActive:true};const res=await fetch(`${apiUrl}/test-suites`,{method:"POST",headers,body:JSON.stringify(body)});if(!res.ok){const problem=await res.json().catch(()=>null);throw new Error(`สร้าง Suite "${draft.suiteName}" ไม่สำเร็จ: ${problem?.detail??""}`);}const saved:TestSuiteItem=await res.json();const required=draft.testCases.filter(x=>x.isRequired).map(x=>x.testCaseId),optional=draft.testCases.filter(x=>!x.isRequired).map(x=>x.testCaseId);for(const [ids,isRequired] of [[required,true],[optional,false]] as const){if(!ids.length)continue;const ar=await fetch(`${apiUrl}/test-suites/${saved.testSuiteId}/cases`,{method:"POST",headers,body:JSON.stringify({testCaseIds:ids,isRequired})});if(!ar.ok)throw new Error(`สร้าง "${draft.suiteName}" แล้ว แต่กำหนด Test Case ไม่สำเร็จ`);}created++;}setSuiteAiDrafts([]);setSuiteAiModal(false);setReload(x=>x+1);}catch(error){setSuiteAiError(error instanceof Error?error.message:"บันทึก Test Suite ไม่สำเร็จ");}finally{setSuiteAiGenerating(false);}};
@@ -5973,7 +6163,7 @@ function TestSuitesPage({
       ["Status", suite.isActive ? "ใช้งาน" : "ปิดใช้งาน"],
       ["Module", suite.modules?.length ? suite.modules.map(m => m.moduleName).join(", ") : "-"],
       ["สร้างโดย", suite.createdByName ?? "-"],
-      ["สร้างเมื่อ", suite.createdAt ? new Date(suite.createdAt).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"],
+      ["สร้างเมื่อ", formatThaiDateTime(suite.createdAt, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })],
       [],
       ["Test Cases", suite.cases.length],
       ["#", "Test Case Code", "Title", "Priority", "Required"],
@@ -6020,8 +6210,11 @@ function TestSuitesPage({
       x.status === "Ready" && // only fully reviewed cases belong in a suite — Draft/Review/Deprecated aren't addable
       !existingCaseIds.has(x.testCaseId) &&
       (editing || !checked.includes(x.testCaseId)), // while creating, a staged pick moves out of "available" into the staged panel
-  ).filter(x => (!caseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseSearch.toLowerCase())) && (editing || !formModuleId || x.moduleId === formModuleId) && (!casePriorityFilter || x.priority === casePriorityFilter) && (!caseTypeFilter || x.testType === caseTypeFilter));
+  ).filter(x => (!caseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseSearch.toLowerCase())) && (editing ? (!caseModuleFilter || x.moduleId === caseModuleFilter) : (!formModuleId || x.moduleId === formModuleId)) && (!casePriorityFilter || x.priority === casePriorityFilter) && (!caseTypeFilter || x.testType === caseTypeFilter));
   const stagedCases = testCases.filter((x) => checked.includes(x.testCaseId));
+  // ตัวเลขที่ส่งให้ AI วิเคราะห์จริง (ทั้ง Module ไม่ผ่าน filter ตัวอย่างด้านล่าง) เทียบกับรายการที่กรองแล้วซึ่งไว้ preview ก่อนกด Generate
+  const suiteAiModuleCases = testCases.filter(x => x.moduleId === suiteAiModuleId && x.status !== "Deprecated");
+  const suiteAiCandidates = suiteAiModuleCases.filter(x => (!suiteAiCaseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(suiteAiCaseSearch.toLowerCase())) && (!suiteAiPriorityFilter || x.priority === suiteAiPriorityFilter) && (!suiteAiTypeFilter || x.testType === suiteAiTypeFilter));
   return (
     <>
       <article className="card">
@@ -6149,7 +6342,7 @@ function TestSuitesPage({
           </table>
         </div>
       </article>
-      {suiteAiModal&&<div className="modal" onMouseDown={()=>!suiteAiGenerating&&setSuiteAiModal(false)}><div className="modal-box requirement-ai-modal suite-ai-modal" role="dialog" aria-modal="true" aria-labelledby="suite-ai-title" onMouseDown={event=>event.stopPropagation()} style={{position:"relative"}}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}>×</button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(suiteAiModules)}</select></label></div><div className="ai-draft-note"><span aria-hidden="true">i</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<div className="requirement-ai-actions"><small>{testCases.filter(testCase=>testCase.moduleId===suiteAiModuleId&&testCase.status!=="Deprecated").length} Test Cases พร้อมวิเคราะห์</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}><span aria-hidden="true">↻</span> สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</div></div>}
+      {suiteAiModal&&<div className="modal" onMouseDown={()=>!suiteAiGenerating&&setSuiteAiModal(false)}><div className="modal-box requirement-ai-modal suite-ai-modal" role="dialog" aria-modal="true" aria-labelledby="suite-ai-title" onMouseDown={event=>event.stopPropagation()} style={{position:"relative"}}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}>×</button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(suiteAiModules)}</select></label></div><div className="ai-draft-note"><span aria-hidden="true">i</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<><div className="suite-case-toolbar"><div className="suite-case-search"><span aria-hidden="true">⌕</span><input value={suiteAiCaseSearch} onChange={e=>setSuiteAiCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." /></div><select value={suiteAiPriorityFilter} onChange={e=>setSuiteAiPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(suiteAiModuleCases.map(x=>x.priority))].map(x=><option key={x}>{x}</option>)}</select><select value={suiteAiTypeFilter} onChange={e=>setSuiteAiTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(suiteAiModuleCases.map(x=>x.testType).filter(Boolean))].map(x=><option key={x} value={x}>{x}</option>)}</select></div><section className="suite-panel suite-ai-candidate-panel"><div className="suite-panel-head"><h3><span aria-hidden="true">▤</span> Test Case ที่ AI จะวิเคราะห์</h3><span className="suite-panel-count">{suiteAiCandidates.length}</span></div><div className="suite-panel-body">{suiteAiCandidates.length?suiteAiCandidates.map(x=><div className="suite-case" key={x.testCaseId}><span className="suite-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small></span><Badge tone={x.priority==="P0"||x.priority==="P1"?"red":"blue"}>{x.priority}</Badge></div>):<div className="suite-panel-empty"><span aria-hidden="true">◎</span><p>ไม่พบ Test Case ที่ตรงกับตัวกรอง</p></div>}</div></section><div className="requirement-ai-actions"><small>{suiteAiModuleCases.length} Test Cases พร้อมวิเคราะห์{suiteAiCandidates.length!==suiteAiModuleCases.length?` (แสดง ${suiteAiCandidates.length} รายการตามตัวกรอง)`:""}</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div></>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}><span aria-hidden="true">↻</span> สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</div></div>}
       {form && (
         <div className="modal" onMouseDown={() => setForm(false)}>
           <div className="modal-box suite-editor" onMouseDown={(e) => e.stopPropagation()}>
@@ -6251,6 +6444,12 @@ function TestSuitesPage({
                     <span aria-hidden="true">⌕</span>
                     <input value={caseSearch} onChange={e => setCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." />
                   </div>
+                  {editing && (
+                    <select className="testcase-module-filter" value={caseModuleFilter} onChange={e => setCaseModuleFilter(e.target.value)}>
+                      <option value="">ทุก Module</option>
+                      {renderModuleSelectOptions(modules)}
+                    </select>
+                  )}
                   <select value={casePriorityFilter} onChange={e => setCasePriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(testCases.map(x => x.priority))].map(x => <option key={x}>{x}</option>)}</select>
                   <select value={caseTypeFilter} onChange={e => setCaseTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(testCases.map(x => x.testType).filter(Boolean))].map(x => <option key={x} value={x}>{x}</option>)}</select>
                   <small className="suite-case-toolbar-note"><span aria-hidden="true">✓</span> เฉพาะสถานะ Ready</small>
@@ -6428,7 +6627,7 @@ function TestSuitesPage({
                 <div className="suite-info-cards">
                   <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">M</span> Module</span><b>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</b></div>
                   <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">U</span> สร้างโดย</span><b>{detail.createdByName || "-"}</b></div>
-                  <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">D</span> สร้างเมื่อ</span><b>{detail.createdAt ? new Date(detail.createdAt).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</b></div>
+                  <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">D</span> สร้างเมื่อ</span><b>{formatThaiDateTime(detail.createdAt, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</b></div>
                 </div>
               </section>
               <div className="suite-detail-split">
@@ -6443,8 +6642,8 @@ function TestSuitesPage({
                         </div>
                         <p className="suite-cycle-card-sub">{c.cycleName}{c.buildNumber ? ` · Build ${c.buildNumber}` : ""}</p>
                         <div className="suite-cycle-card-meta">
-                          <div><span aria-hidden="true">S</span><span><small>เริ่มต้น</small><b>{c.startDate ? new Date(c.startDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "-"}</b></span></div>
-                          <div><span aria-hidden="true">E</span><span><small>สิ้นสุด</small><b>{c.endDate ? new Date(c.endDate).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "-"}</b></span></div>
+                          <div><span aria-hidden="true">S</span><span><small>เริ่มต้น</small><b>{formatThaiDateTime(c.startDate, { day: "numeric", month: "short", year: "numeric" })}</b></span></div>
+                          <div><span aria-hidden="true">E</span><span><small>สิ้นสุด</small><b>{formatThaiDateTime(c.endDate, { day: "numeric", month: "short", year: "numeric" })}</b></span></div>
                         </div>
                         <div className="suite-cycle-card-owner"><span aria-hidden="true">U</span><span><small>ผู้ดำเนินการ</small><b>{c.ownerName || "-"}</b></span></div>
                         <div className="suite-cycle-card-progress">
@@ -6544,13 +6743,13 @@ function MyWorkPage({ user, onOpenExecution, onNavigate }: { user: SessionUser |
   const avgActiveProgress = myActiveCycles.length ? Math.round(myActiveCycles.reduce((sum, c) => sum + c.progressPercent, 0) / myActiveCycles.length) : 0;
   // การ์ดชวนทำงานต่อ — เลือก Cycle ที่กำลังดำเนินการอยู่และใกล้ครบกำหนดที่สุด (ไม่มี endDate ก็อยู่ท้ายสุด) แทนที่การไฮไลต์
   // "งานที่ควรทำก่อน" แบบ Test Case รายตัวเดิม ซึ่งอิงระบบ assignment ที่เลิกใช้แล้ว
-  const urgentCycle = [...myActiveCycles].sort((a, b) => (a.endDate ? new Date(a.endDate).getTime() : Number.MAX_SAFE_INTEGER) - (b.endDate ? new Date(b.endDate).getTime() : Number.MAX_SAFE_INTEGER))[0];
+  const urgentCycle = [...myActiveCycles].sort((a, b) => (bangkokMidnightMs(a.endDate) ?? Number.MAX_SAFE_INTEGER) - (bangkokMidnightMs(b.endDate) ?? Number.MAX_SAFE_INTEGER))[0];
   // แปลง endDate เป็นข้อความ + สีที่บอก "เร่งด่วนแค่ไหน" ตรงๆ แทนป้าย "กำหนดส่ง" สีเหลืองตายตัวเดิม
   // ที่ไม่บอกว่าใกล้หรือไกลแค่ไหน (ต้องมานั่งคำนวณเทียบวันที่เอง) — ให้เห็นปุ๊บเข้าใจปั๊บว่าด่วนแค่ไหน
   const urgentDeadline = (() => {
     if (!urgentCycle?.endDate) return null;
-    const daysLeft = Math.ceil((new Date(urgentCycle.endDate).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
-    const dateLabel = new Date(urgentCycle.endDate).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+    const daysLeft = Math.ceil(((bangkokMidnightMs(urgentCycle.endDate) ?? 0) - (bangkokMidnightMs(new Date()) ?? 0)) / 86_400_000);
+    const dateLabel = formatThaiDateTime(urgentCycle.endDate, { day: "numeric", month: "short" });
     if (daysLeft < 0) return { text: `เลยกำหนดมาแล้ว ${-daysLeft} วัน`, tone: "red" };
     if (daysLeft === 0) return { text: "ครบกำหนดวันนี้", tone: "red" };
     if (daysLeft <= 3) return { text: `เหลืออีก ${daysLeft} วัน (${dateLabel})`, tone: "red" };
@@ -6643,18 +6842,26 @@ type EnvironmentSetting = { testEnvironmentId: string; projectId: string; enviro
 type AiConfiguration = { provider: "OpenAI" | "Google" | "Anthropic" | "OpenRouter" | "Local" | "opencode"; model: string; baseUrl?: string; isEnabled: boolean; hasApiKey: boolean; apiKeyHint?: string; updatedAt?: string };
 const aiProviderModels: Record<AiConfiguration["provider"], string[]> = { OpenAI: ["gpt-5-mini", "gpt-5.4"], Google: ["gemini-3.5-flash", "gemini-3.1-pro"], Anthropic: ["claude-sonnet-5", "claude-haiku-4-5-20251001"], OpenRouter: ["openai/gpt-4o", "anthropic/claude-sonnet-4", "google/gemini-2.5-flash", "meta-llama/llama-4-maverick", "nvidia/nemotron-3.5-lightning:free"], Local: ["qwen3", "llama3.3", "mistral-small"], opencode: ["gpt-5-mini", "gpt-5", "gpt-4o", "claude-sonnet-4", "gemini-2.5-pro", "llama-3.3", "deepseek-v4-flash", "mimo-v2.5"] };
 type AiModelOption = { id: string; displayName: string };
+type CrmSyncSettingsView = { pollIntervalMinutes: number; updatedAt?: string | null };
+type CrmProjectMapping = { crmProjectMappingId: string; projectId: string; crmProductId: string; crmVersionId?: string | null };
+type EmailConfig = { smtpHost: string; smtpPort: number; senderEmail: string; senderDisplayName?: string | null; hasPassword: boolean; passwordHint?: string | null; isEnabled: boolean; updatedAt?: string | null };
 function MasterSettingsPage() {
   const [items, setItems] = useState<MasterOption[]>([]), [environments, setEnvironments] = useState<EnvironmentSetting[]>([]), [projects, setProjects] = useState<ProjectItem[]>([]), [reload, setReload] = useState(0);
   const [category, setCategory] = useState("ReleaseType"), [formCategory, setFormCategory] = useState<string | null>(null), [value, setValue] = useState(""), [displayName, setDisplayName] = useState(""), [sortOrder, setSortOrder] = useState(10), [editing, setEditing] = useState<MasterOption | null>(null);
   const [environment, setEnvironment] = useState<EnvironmentSetting | null>(null), [environmentFormOpen, setEnvironmentFormOpen] = useState(false), [environmentProjectId, setEnvironmentProjectId] = useState(""), [environmentName, setEnvironmentName] = useState(""), [baseUrl, setBaseUrl] = useState("");
   const [aiConfiguration, setAiConfiguration] = useState<AiConfiguration>({ provider: "OpenAI", model: "gpt-5-mini", isEnabled: true, hasApiKey: false }), [aiApiKey, setAiApiKey] = useState(""), [savingAi, setSavingAi] = useState(false);
   const [aiModels, setAiModels] = useState<AiModelOption[]>([]), [loadingAiModels, setLoadingAiModels] = useState(false), [aiModelsError, setAiModelsError] = useState("");
+  const [crmSyncSettings, setCrmSyncSettings] = useState<CrmSyncSettingsView>({ pollIntervalMinutes: 2 }), [savingCrmSync, setSavingCrmSync] = useState(false);
+  const [crmMappings, setCrmMappings] = useState<CrmProjectMapping[]>([]);
+  const [crmMappingEditing, setCrmMappingEditing] = useState<CrmProjectMapping | null>(null), [crmMappingFormOpen, setCrmMappingFormOpen] = useState(false), [crmMappingProjectId, setCrmMappingProjectId] = useState(""), [crmMappingProductId, setCrmMappingProductId] = useState(""), [crmMappingVersionId, setCrmMappingVersionId] = useState("");
+  const [emailConfig, setEmailConfig] = useState<EmailConfig>({ smtpHost: "smtp.gmail.com", smtpPort: 587, senderEmail: "", hasPassword: false, isEnabled: true }), [emailPassword, setEmailPassword] = useState(""), [savingEmail, setSavingEmail] = useState(false);
+  const [emailTestTo, setEmailTestTo] = useState(""), [sendingTestEmail, setSendingTestEmail] = useState(false), [testEmailResult, setTestEmailResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [activeSection, setActiveSection] = useState("AI");
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   useEffect(() => {
     const load = async () => {
       const read = async (url: string) => { const response = await fetch(url, { headers }); if (!response.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (${response.status})`); return response.json(); };
-      try { const [masterData, environmentData, projectData, aiData] = await Promise.all([read(`${apiUrl}/master-settings?includeInactive=true`), read(`${apiUrl}/master-settings/environments`), read(`${apiUrl}/projects`), read(`${apiUrl}/master-settings/ai`)]); setItems(masterData); setEnvironments(environmentData); setProjects(projectData); setAiConfiguration(aiData); setEnvironmentProjectId((x) => x || projectData[0]?.projectId || ""); }
+      try { const [masterData, environmentData, projectData, aiData, crmSyncData, crmMappingData, emailData] = await Promise.all([read(`${apiUrl}/master-settings?includeInactive=true`), read(`${apiUrl}/master-settings/environments`), read(`${apiUrl}/projects`), read(`${apiUrl}/master-settings/ai`), read(`${apiUrl}/master-settings/crm-sync`), read(`${apiUrl}/master-settings/crm-mappings`), read(`${apiUrl}/master-settings/email`)]); setItems(masterData); setEnvironments(environmentData); setProjects(projectData); setAiConfiguration(aiData); setCrmSyncSettings(crmSyncData); setCrmMappings(crmMappingData); setEmailConfig(emailData); setEnvironmentProjectId((x) => x || projectData[0]?.projectId || ""); }
       catch (error) { window.alert(error instanceof Error ? `${error.message} กรุณาตรวจสอบว่า API ใช้งานเวอร์ชันล่าสุด` : "โหลดการตั้งค่ากลางไม่สำเร็จ"); }
     };
     load();
@@ -6674,9 +6881,20 @@ function MasterSettingsPage() {
   const openOptionForm = (targetCategory: string, item?: MasterOption) => { setCategory(targetCategory); setFormCategory(targetCategory); setEditing(item ?? null); setValue(item?.value ?? ""); setDisplayName(item?.displayName ?? ""); setSortOrder(item?.sortOrder ?? 10); };
   const saveAiConfiguration = async () => { setSavingAi(true); try { const response = await fetch(`${apiUrl}/master-settings/ai`, { method: "PUT", headers, body: JSON.stringify({ provider: aiConfiguration.provider, model: aiConfiguration.model, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null, isEnabled: aiConfiguration.isEnabled, clearApiKey: false }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } setAiConfiguration(await response.json()); setAiApiKey(""); window.alert("บันทึกการตั้งค่า AI เรียบร้อยแล้ว"); } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } finally { setSavingAi(false); } };
   const loadAiModels = async () => { setLoadingAiModels(true); setAiModelsError(""); try { const response = await fetch(`${apiUrl}/master-settings/ai/models`, { method: "POST", headers, body: JSON.stringify({ provider: aiConfiguration.provider, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "โหลดรายการ Model ไม่สำเร็จ"); } const models = await response.json() as AiModelOption[]; setAiModels(models); if (!models.length) setAiModelsError("Provider ไม่ส่งรายการ Model กลับมา"); } catch (error) { setAiModelsError(error instanceof Error ? error.message : "โหลดรายการ Model ไม่สำเร็จ"); } finally { setLoadingAiModels(false); } };
+  const saveCrmSyncSettings = async () => { setSavingCrmSync(true); try { const response = await fetch(`${apiUrl}/master-settings/crm-sync`, { method: "PUT", headers, body: JSON.stringify({ pollIntervalMinutes: crmSyncSettings.pollIntervalMinutes }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกรอบ Poll ไม่สำเร็จ"); } setCrmSyncSettings(await response.json()); window.alert("บันทึกรอบ Poll เรียบร้อยแล้ว"); } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกรอบ Poll ไม่สำเร็จ"); } finally { setSavingCrmSync(false); } };
+  // ค่าเริ่มต้น CRM Product Id = "34" — ตอนนี้ทุก Project ที่เจอใน CRM จริงใช้ Product เดียวกันนี้ (ยืนยันจากผู้ใช้)
+  // ยังแก้ไขเป็นค่าอื่นได้ตามปกติ นี่แค่ prefill ให้ไม่ต้องพิมพ์ซ้ำทุกครั้งตอนเพิ่ม Mapping ใหม่
+  const editCrmMapping = (item?: CrmProjectMapping) => { setCrmMappingEditing(item ?? null); setCrmMappingFormOpen(true); setCrmMappingProjectId(item?.projectId ?? projects.find((p) => !crmMappings.some((m) => m.projectId === p.projectId))?.projectId ?? projects[0]?.projectId ?? ""); setCrmMappingProductId(item?.crmProductId ?? "34"); setCrmMappingVersionId(item?.crmVersionId ?? ""); };
+  const resetCrmMapping = () => { setCrmMappingEditing(null); setCrmMappingFormOpen(false); setCrmMappingProductId(""); setCrmMappingVersionId(""); };
+  const saveCrmMapping = async () => { const response = await fetch(`${apiUrl}/master-settings/crm-mappings${crmMappingEditing ? `/${crmMappingEditing.crmProjectMappingId}` : ""}`, { method: crmMappingEditing ? "PUT" : "POST", headers, body: JSON.stringify({ projectId: crmMappingProjectId, crmProductId: crmMappingProductId, crmVersionId: crmMappingVersionId || null }) }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "บันทึก CRM Mapping ไม่สำเร็จ"); return; } resetCrmMapping(); setReload((x) => x + 1); };
+  const deleteCrmMapping = async (item: CrmProjectMapping) => { if (!window.confirm("ยืนยันลบ CRM Mapping นี้?")) return; const response = await fetch(`${apiUrl}/master-settings/crm-mappings/${item.crmProjectMappingId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "ลบ CRM Mapping ไม่สำเร็จ"); return; } if (crmMappingEditing?.crmProjectMappingId === item.crmProjectMappingId) resetCrmMapping(); setReload((x) => x + 1); };
+  const saveEmailConfig = async () => { setSavingEmail(true); try { const response = await fetch(`${apiUrl}/master-settings/email`, { method: "PUT", headers, body: JSON.stringify({ smtpHost: emailConfig.smtpHost, smtpPort: emailConfig.smtpPort, senderEmail: emailConfig.senderEmail, senderDisplayName: emailConfig.senderDisplayName || null, password: emailPassword || null, isEnabled: emailConfig.isEnabled, clearPassword: false }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกการตั้งค่า Email ไม่สำเร็จ"); } setEmailConfig(await response.json()); setEmailPassword(""); window.alert("บันทึกการตั้งค่า Email เรียบร้อยแล้ว"); } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกการตั้งค่า Email ไม่สำเร็จ"); } finally { setSavingEmail(false); } };
+  // ทดสอบด้วยค่าที่บันทึกไว้แล้วในฐานข้อมูล (ไม่ใช่ค่าที่กำลังพิมพ์ในฟอร์ม) — ต้องกด "บันทึกการตั้งค่า" ก่อนถึงจะทดสอบค่าล่าสุดได้
+  const sendTestEmail = async () => { if (!emailTestTo.trim()) return; setSendingTestEmail(true); setTestEmailResult(null); try { const response = await fetch(`${apiUrl}/master-settings/email/test`, { method: "POST", headers, body: JSON.stringify({ toEmail: emailTestTo.trim() }) }); if (!response.ok) { const p = await response.json(); throw new Error(p.detail ?? "ส่งอีเมลทดสอบไม่สำเร็จ"); } setTestEmailResult({ ok: true, message: `ส่งอีเมลทดสอบไปที่ ${emailTestTo.trim()} สำเร็จ` }); } catch (error) { setTestEmailResult({ ok: false, message: error instanceof Error ? error.message : "ส่งอีเมลทดสอบไม่สำเร็จ" }); } finally { setSendingTestEmail(false); } };
   const optionForm = (targetCategory: string) => formCategory === targetCategory && <div className="master-inline-editor"><label>รหัสค่า<input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="เช่น Major" /></label><label>ชื่อที่แสดง<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></label><label className="master-order-field">ลำดับ<input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} /></label><div className="master-setting-actions"><button className="btn" onClick={resetOption}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={!value.trim() || !displayName.trim()} onClick={saveOption}>{editing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>;
   const activeMasterSection = masterSettingSections.find((section) => section.name === activeSection);
   const aiReady = aiConfiguration.isEnabled && aiConfiguration.hasApiKey;
+  const emailReady = emailConfig.isEnabled && emailConfig.hasPassword && !!emailConfig.senderEmail;
   return <div className="master-settings-page">
     <nav className="settings-nav" aria-label="หมวดการตั้งค่า">
       <button type="button" className={activeSection === "AI" ? "active" : ""} onClick={() => setActiveSection("AI")}>
@@ -6691,6 +6909,18 @@ function MasterSettingsPage() {
       <button type="button" className={activeSection === "Environment" ? "active" : ""} onClick={() => setActiveSection("Environment")}>
         <span className="settings-nav-icon">E</span><span className="settings-nav-label">Environment</span>
         <span className="count-pill">{environments.filter((x) => x.isActive).length}</span>
+      </button>
+      <button type="button" className={activeSection === "CrmSync" ? "active" : ""} onClick={() => setActiveSection("CrmSync")}>
+        <span className="settings-nav-icon">C</span><span className="settings-nav-label">CRM Sync</span>
+        <span className="count-pill">{crmSyncSettings.pollIntervalMinutes} นาที</span>
+      </button>
+      <button type="button" className={activeSection === "CrmMapping" ? "active" : ""} onClick={() => setActiveSection("CrmMapping")}>
+        <span className="settings-nav-icon">CM</span><span className="settings-nav-label">CRM Mapping</span>
+        <span className="count-pill">{crmMappings.length}</span>
+      </button>
+      <button type="button" className={activeSection === "Email" ? "active" : ""} onClick={() => setActiveSection("Email")}>
+        <span className="settings-nav-icon">✉</span><span className="settings-nav-label">Email / SMTP</span>
+        <Badge tone={emailReady ? "green" : "yellow"}>{emailReady ? "พร้อม" : "ยังไม่พร้อม"}</Badge>
       </button>
     </nav>
     {activeSection === "AI" && <section className="settings-panel-card master-ai-configuration">
@@ -6715,6 +6945,46 @@ function MasterSettingsPage() {
       <div className="settings-panel-head"><div><h2>Environment</h2><p>URL ของแต่ละ Project ที่ใช้อ้างอิงตอนวางแผน Test Cycle และ Execution</p></div><button className="master-add-button" onClick={() => editEnvironment()}>+ เพิ่ม</button></div>
       {environmentFormOpen && <div className="master-setting-form environment-form"><label>Project<select disabled={!!environment} value={environmentProjectId} onChange={(e) => setEnvironmentProjectId(e.target.value)}>{projects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label><label>Environment<input autoFocus value={environmentName} onChange={(e) => setEnvironmentName(e.target.value)} /></label><label>Base URL<input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} /></label><div className="master-setting-actions"><button className="btn" onClick={resetEnvironment}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={!environmentProjectId || !environmentName.trim()} onClick={saveEnvironment}>{environment ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>}
       <div className="master-setting-list">{environments.map((item) => <div key={item.testEnvironmentId} className={!item.isActive ? "inactive" : ""}><span><b>{item.environmentName}</b><small>{projects.find((x) => x.projectId === item.projectId)?.projectName ?? "-"} · {item.baseUrl || "ไม่ระบุ URL"}</small></span><button className="table-action icon-only" title="แก้ไข" aria-label={`แก้ไข ${item.environmentName}`} onClick={() => editEnvironment(item)}><span aria-hidden="true">✎</span></button><button className="table-action danger-action icon-only" title="ลบ" aria-label={`ลบ ${item.environmentName}`} onClick={() => deleteEnvironment(item)}><span aria-hidden="true">✕</span></button><button className="table-action icon-only" title={item.isActive ? "ปิดใช้" : "เปิดใช้"} aria-label={`${item.isActive ? "ปิดใช้" : "เปิดใช้"} ${item.environmentName}`} onClick={() => toggleEnvironment(item)}><span aria-hidden="true">⏻</span></button></div>)}</div>
+    </section>}
+    {activeSection === "CrmSync" && <section className="settings-panel-card master-ai-configuration">
+      <div className="settings-panel-head"><div><h2>CRM Sync</h2><p>รอบเวลาที่ Background Worker เช็คว่า Ticket ที่ผูกกับ CRM มีการเปลี่ยน Status/ผู้รับผิดชอบไหม — ค่ากลางของทั้งระบบ (Login เข้า CRM เป็นแบบ self-service ต่อ user แล้ว ดูที่ปุ่ม "บัญชี CRM ของฉัน" มุมขวาบน)</p></div></div>
+      <div className="master-ai-body">
+        <div className="master-ai-form">
+          <label>รอบ Poll การเปลี่ยนแปลงจาก CRM (นาที)<input type="number" min={1} max={60} value={crmSyncSettings.pollIntervalMinutes} onChange={(e) => setCrmSyncSettings((current) => ({ ...current, pollIntervalMinutes: Number(e.target.value) }))} /><small>1-60 นาที — เปลี่ยนค่านี้มีผลตั้งแต่รอบถัดไปเลย ไม่ต้อง restart</small></label>
+          <div className="master-ai-actions"><button className="btn primary" disabled={savingCrmSync || crmSyncSettings.pollIntervalMinutes < 1 || crmSyncSettings.pollIntervalMinutes > 60} onClick={saveCrmSyncSettings}>{savingCrmSync ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึกการตั้งค่า</>}</button></div>
+        </div>
+      </div>
+    </section>}
+    {activeSection === "CrmMapping" && <section className="settings-panel-card">
+      <div className="settings-panel-head"><div><h2>CRM Mapping</h2><p>ผูก Project ของ QA Hub เข้ากับ SysProductId/SysVersionId จริงของ CRM สำหรับใช้ตอนสร้าง Ticket</p></div><button className="master-add-button" disabled={crmMappings.length >= projects.length} onClick={() => editCrmMapping()}>+ เพิ่ม</button></div>
+      {crmMappingFormOpen && <div className="master-setting-form environment-form"><label>Project<select disabled={!!crmMappingEditing} value={crmMappingProjectId} onChange={(e) => setCrmMappingProjectId(e.target.value)}>{projects.filter((x) => crmMappingEditing || !crmMappings.some((m) => m.projectId === x.projectId)).map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select></label><label>CRM Product Id<input autoFocus value={crmMappingProductId} onChange={(e) => setCrmMappingProductId(e.target.value)} /></label><label>CRM Version Id (ไม่บังคับ)<input value={crmMappingVersionId} onChange={(e) => setCrmMappingVersionId(e.target.value)} /></label><div className="master-setting-actions"><button className="btn" onClick={resetCrmMapping}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={!crmMappingProjectId || !crmMappingProductId.trim()} onClick={saveCrmMapping}>{crmMappingEditing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>}
+      <div className="master-setting-list">{crmMappings.map((item) => <div key={item.crmProjectMappingId}><span><b>{projects.find((x) => x.projectId === item.projectId)?.projectName ?? "-"}</b><small>Product: {item.crmProductId}{item.crmVersionId ? ` · Version: ${item.crmVersionId}` : ""}</small></span><button className="table-action icon-only" title="แก้ไข" aria-label="แก้ไข CRM Mapping" onClick={() => editCrmMapping(item)}><span aria-hidden="true">✎</span></button><button className="table-action danger-action icon-only" title="ลบ" aria-label="ลบ CRM Mapping" onClick={() => deleteCrmMapping(item)}><span aria-hidden="true">✕</span></button></div>)}</div>
+    </section>}
+    {activeSection === "Email" && <section className="settings-panel-card master-ai-configuration">
+      <div className="settings-panel-head"><div><h2>Email / SMTP</h2><p>ค่ากลางสำหรับส่งอีเมลแจ้งเตือน (เช่น ตอนมอบหมายงานผ่าน CRM หรือ CRM ส่งเคสกลับมาหาเจ้าของเรื่อง) — ใช้ Gmail App Password</p></div><Badge tone={emailReady ? "green" : "yellow"}>{emailReady ? "พร้อมใช้งาน" : "ยังไม่พร้อมใช้งาน"}</Badge></div>
+      <div className="master-ai-body">
+        <div className="master-ai-note"><b>การจัดเก็บที่ปลอดภัย</b><span>App Password ถูกเข้ารหัสและเก็บเฉพาะฝั่ง Server เว้นว่างไว้เพื่อคงค่าเดิม — สร้าง App Password ได้ที่ Google Account &gt; Security &gt; App passwords (ต้องเปิด 2-Step Verification ก่อน)</span></div>
+        <div className="master-ai-form">
+          <label>SMTP Host<input value={emailConfig.smtpHost} onChange={(e) => setEmailConfig((current) => ({ ...current, smtpHost: e.target.value }))} placeholder="smtp.gmail.com" /></label>
+          <label>SMTP Port<input type="number" value={emailConfig.smtpPort} onChange={(e) => setEmailConfig((current) => ({ ...current, smtpPort: Number(e.target.value) }))} placeholder="587" /></label>
+          <label>อีเมลผู้ส่ง (Gmail)<input value={emailConfig.senderEmail} onChange={(e) => setEmailConfig((current) => ({ ...current, senderEmail: e.target.value }))} placeholder="เช่น qahub@yourcompany.com" /></label>
+          <label>ชื่อผู้ส่งที่แสดง (ไม่บังคับ)<input value={emailConfig.senderDisplayName ?? ""} onChange={(e) => setEmailConfig((current) => ({ ...current, senderDisplayName: e.target.value }))} placeholder="เช่น QA Hub" /></label>
+          <label>App Password<input type="password" autoComplete="new-password" value={emailPassword} onChange={(e) => setEmailPassword(e.target.value)} placeholder={emailConfig.hasPassword ? "ตั้งค่าแล้ว — เว้นว่างเพื่อใช้ค่าเดิม" : "กรอก App Password 16 หลักของ Gmail"} /></label>
+          <label className="master-ai-toggle"><input type="checkbox" checked={emailConfig.isEnabled} onChange={(e) => setEmailConfig((current) => ({ ...current, isEnabled: e.target.checked }))} /><span>เปิดใช้งานการส่งอีเมล</span></label>
+          <div className="master-ai-actions"><small className="master-ai-hint">App Password ถูกเข้ารหัสและเก็บเฉพาะฝั่ง Server</small><button className="btn primary" disabled={savingEmail || !emailConfig.smtpHost.trim() || !emailConfig.senderEmail.trim() || (!emailConfig.hasPassword && !emailPassword.trim())} onClick={saveEmailConfig}>{savingEmail ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึกการตั้งค่า</>}</button></div>
+        </div>
+        <div className="master-ai-note">
+          <b>ทดสอบส่งอีเมล</b>
+          <span>ทดสอบด้วยค่าที่บันทึกไว้แล้ว (กด "บันทึกการตั้งค่า" ก่อน ถ้าเพิ่งแก้ไข)</span>
+          <div className="master-ai-form" style={{ marginTop: 8 }}>
+            <label>ส่งถึง<input value={emailTestTo} onChange={(e) => setEmailTestTo(e.target.value)} placeholder="อีเมลปลายทางสำหรับทดสอบ" /></label>
+            <div className="master-ai-actions">
+              {testEmailResult && <small className={testEmailResult.ok ? "master-ai-hint" : "master-model-error"}>{testEmailResult.message}</small>}
+              <button className="btn" disabled={sendingTestEmail || !emailTestTo.trim()} onClick={sendTestEmail}>{sendingTestEmail ? <><span className="spinner inline" aria-hidden="true" /> กำลังส่ง...</> : "ส่งอีเมลทดสอบ"}</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>}
   </div>;
 }
@@ -7791,8 +8061,11 @@ function RiskAcceptancePage({ projectId, releaseId: contextReleaseId, canEdit, c
   );
 }
 
-type ReleaseGateData = { openP0: number; p1Blockers: number; requirementCoverage: number; regressionPassRate: number; updateTestPassed: boolean; approvedRisks: number; recommendedDecision: string };
+type ReleaseGateData = { openP0: number; p1Blockers: number; requirementCoverage: number; regressionPassRate: number; updateTestPassed: boolean; approvedRisks: number; recommendedDecision: string; smokeStatus?: string };
 type SignoffItem = { releaseSignoffId: string; releaseId: string; buildId: string; buildNumber: string; signoffType: string; decision: string; comment?: string | null; signoffBy?: string | null; createdAt: string };
+
+const signoffRoles = ["QA", "DEVELOPMENT", "PRODUCT_OWNER", "RELEASE_OWNER"] as const;
+const signoffRoleLabels: Record<string, string> = { QA: "QA", DEVELOPMENT: "Development", PRODUCT_OWNER: "Product", RELEASE_OWNER: "Release Owner" };
 
 function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff }: { projectId?: string; releaseId?: string; canSignoff: boolean }) {
   const [releases, setReleases] = useState<ReleaseItem[]>([]);
@@ -7801,7 +8074,8 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
   const [buildId, setBuildId] = useState("");
   const [gate, setGate] = useState<ReleaseGateData | null>(null);
   const [signoffs, setSignoffs] = useState<SignoffItem[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
+ const [modalOpen, setModalOpen] = useState(false);
+  const [signoffType, setSignoffType] = useState("QA");
   const [decision, setDecision] = useState("GO");
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
@@ -7811,9 +8085,11 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
   const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => (r.ok ? r.json() : Promise.resolve(null))), [headers]);
   useEffect(() => { if (!projectId) return; getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])); }, [projectId, getJson]);
   useEffect(() => { if (contextReleaseId && !releaseId) setReleaseId(contextReleaseId); }, [contextReleaseId, releaseId]);
+  useEffect(() => { if (releaseId && !releases.some((x) => x.releaseId === releaseId)) { setReleaseId(""); setBuildId(""); } }, [releaseId, releases]);
   useEffect(() => { if (!releaseId) { setBuilds([]); setBuildId(""); return; } getJson(`${apiUrl}/releases/${releaseId}/builds`).then((b) => { const list = Array.isArray(b) ? b : []; setBuilds(list); if (list.length && !buildId) setBuildId(list[0].buildId); }); }, [releaseId, buildId, getJson]);
   useEffect(() => { if (!releaseId) { setGate(null); setSignoffs([]); return; } setLoading(true); getJson(`${apiUrl}/releases/${releaseId}/release-gate${buildId ? `?buildId=${buildId}` : ""}`).then((g) => setGate((g as ReleaseGateData) ?? null)).finally(() => setLoading(false)); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])); }, [releaseId, buildId, getJson]);
-  const submit = async () => { if (!buildId) { setError("กรุณาเลือก Build"); return; } setSaving(true); setError(""); try { const r = await fetch(`${apiUrl}/releases/${releaseId}/signoffs`, { method: "POST", headers, body: JSON.stringify({ buildId, signoffType: "QA", decision, comment: comment || null }) }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Sign-off ไม่สำเร็จ"); } setModalOpen(false); setComment(""); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])); } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Sign-off ไม่สำเร็จ"); } finally { setSaving(false); } };
+  const submit = async () => { if (!buildId) { setError("กรุณาเลือก Build"); return; } setSaving(true); setError(""); try { const r = await fetch(`${apiUrl}/releases/${releaseId}/signoffs`, { method: "POST", headers, body: JSON.stringify({ buildId, signoffType, decision, comment: comment || null }) }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Sign-off ไม่สำเร็จ"); } setModalOpen(false); setComment(""); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])); } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Sign-off ไม่สำเร็จ"); } finally { setSaving(false); } };
+  useEffect(() => { const activeBuilds = builds.filter((b) => b.isActive && b.status.toLowerCase() !== "cancelled"); if (activeBuilds.length !== builds.length) { setBuilds(activeBuilds); if (buildId && !activeBuilds.some((b) => b.buildId === buildId)) setBuildId(activeBuilds[0]?.buildId ?? ""); } }, [builds, buildId]);
   const decisionClass = (d: string) => d === "GO" ? "go" : d === "CONDITIONAL_GO" ? "conditional" : "nogo";
   const gateLabels: { key: keyof ReleaseGateData; label: string; hint: (d: ReleaseGateData) => string }[] = [
     { key: "requirementCoverage", label: "Requirement Coverage", hint: (d) => `${d.requirementCoverage}% Covered` },
@@ -7837,18 +8113,21 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
               <div><h3 style={{ margin: 0 }}>Release Gate Panel</h3><small style={{ color: "var(--muted)" }}>ตรวจสอบเกณฑ์ก่อน Sign-off ตามขั้นตอน Release Governance</small></div>
               {gate && <span className={`signoff-decision ${decisionClass(gate.recommendedDecision)}`}>{gate.recommendedDecision.replaceAll("_", " ")}</span>}
             </div>
-            <div className="gate-grid">
+            <div className="gate-grid"><div className="gate-cell"><small>Smoke</small><b>{gate?.smokeStatus === "Succeeded" ? "Pass" : gate?.smokeStatus === "NOT_RUN" ? "Not Run" : "Fail"}</b><span>{gate?.smokeStatus ?? "NOT_RUN"}</span></div>
               {gateLabels.map((g) => <div className="gate-cell" key={g.key}><small>{g.label}</small><b>{typeof gate?.[g.key] === "boolean" ? (gate?.[g.key] ? "Pass" : "Fail") : String(gate?.[g.key] ?? "–")}</b><span>{gate ? g.hint(gate) : "…"}</span></div>)}
             </div>
             {gate && <div className="ts-progress" style={{ marginTop: 12 }}><div className="ts-progress-row"><span>P0 ยังไม่ผ่าน/ถูกบล็อก</span><b>{gate.openP0}</b></div><div className="ts-progress-row"><span>P1 Blocker</span><b>{gate.p1Blockers}</b></div><div className="ts-progress-row"><span>Update Test Passed</span><b>{gate.updateTestPassed ? "Passed" : "Not passed"}</b></div></div>}
           </section>
+          <section className="card signoff-final-card"><div className="test-summary-head"><div><h3 style={{ margin: 0 }}>Final Decision</h3><small style={{ color: "var(--muted)" }}>สถานะรวมของ Release จาก Gate และผู้อนุมัติ</small></div>{gate && <span className={`signoff-decision ${decisionClass(gate.recommendedDecision)}`}>{gate.recommendedDecision.replaceAll("_", " ")}</span>}</div></section>
+          <section className="signoff-cards">{signoffRoles.map((role) => { const item = signoffs.find((x) => x.signoffType === role && x.buildId === buildId); return <article className="card signoff-role-card" key={role}><div className="signoff-role-head"><div className="signoff-role-avatar">{role === "QA" ? "Q" : role === "DEVELOPMENT" ? "D" : role === "PRODUCT_OWNER" ? "P" : "R"}</div><div><h3>{signoffRoleLabels[role]}</h3><small>{item ? item.signoffBy || "บันทึกแล้ว" : "Pending sign-off"}</small></div></div>{item ? <><span className={`signoff-decision ${decisionClass(item.decision)}`}>{item.decision.replaceAll("_", " ")}</span><p>{item.comment || "ไม่มี comment"}</p><small>{formatThaiDateTime(item.createdAt)}</small></> : <span className="signoff-pending">ยังไม่มีการอนุมัติ</span>}</article>; })}</section>
           <section className="card">
             <div className="test-summary-head"><div><h3 style={{ margin: 0 }}>Sign-off History</h3></div><span className="count-pill">{signoffs.length} รายการ</span></div>
             {signoffs.length ? <div className="table-wrap"><table><thead><tr><th>Build</th><th>Type</th><th>Decision</th><th>Sign-off By</th><th>Comment</th><th>Date</th></tr></thead><tbody>{signoffs.map((x) => <tr key={x.releaseSignoffId}><td>{x.buildNumber}</td><td>{x.signoffType}</td><td><span className={`signoff-decision ${decisionClass(x.decision)}`}>{x.decision.replaceAll("_", " ")}</span></td><td>{x.signoffBy || "-"}</td><td>{x.comment || "-"}</td><td>{formatThaiDateTime(x.createdAt)}</td></tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มีรายการ Sign-off</p></div>}
           </section>
         </>
       )}
-      {modalOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="signoff-form-title" onMouseDown={() => !saving && setModalOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}>×</button></div><div className="form-grid"><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder="เหตุผล/เงื่อนไขประกอบการตัดสินใจ" /></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> ยืนยัน Sign-off</>}</button></div></div></div>}
+     {modalOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="signoff-form-title" onMouseDown={() => !saving && setModalOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}>×</button></div><div className="form-grid"><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder="เหตุผล/เงื่อนไขประกอบการตัดสินใจ" /></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> ยืนยัน Sign-off</>}</button></div></div></div>}
+      {modalOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="signoff-form-title" onMouseDown={() => !saving && setModalOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}>×</button></div><div className="form-grid"><label className="full">Sign-off Role<select value={signoffType} onChange={(e) => setSignoffType(e.target.value)}><option value="QA">QA</option><option value="DEVELOPMENT">Development</option><option value="PRODUCT_OWNER">Product</option><option value="RELEASE_OWNER">Release Owner</option></select></label><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder="เหตุผล/เงื่อนไขประกอบการตัดสินใจ" /></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}><span aria-hidden="true">✕</span> ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> ยืนยัน Sign-off</>}</button></div></div></div>}
     </article>
   );
 }
@@ -8086,6 +8365,31 @@ function App() {
     localStorage.removeItem("qa.user");
     setUser(null);
   };
+  // CRM แยกงานตามคนที่ login จริง — แต่ละ user จัดการบัญชี CRM ของตัวเองที่นี่ (self-service, ไม่ใช่ Service
+  // Account กลางที่ Admin ตั้งให้ทุกคนแล้ว) ปุ่มเปิด modal นี้อยู่ข้างๆ ปุ่ม logout ใน topbar
+  const [myCrmOpen, setMyCrmOpen] = useState(false);
+  const [myCrmConfig, setMyCrmConfig] = useState<{ merchantId: string; username: string; hasPassword: boolean; passwordHint?: string | null; isEnabled: boolean }>({ merchantId: "", username: "", hasPassword: false, isEnabled: true });
+  const [myCrmPassword, setMyCrmPassword] = useState("");
+  const [savingMyCrm, setSavingMyCrm] = useState(false);
+  const openMyCrmModal = async () => {
+    setMyCrmOpen(true);
+    setMyCrmPassword("");
+    try {
+      const response = await fetch(`${apiUrl}/auth/me/crm`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
+      if (response.ok) setMyCrmConfig(await response.json());
+    } catch {}
+  };
+  const saveMyCrmConfig = async () => {
+    setSavingMyCrm(true);
+    try {
+      const response = await fetch(`${apiUrl}/auth/me/crm`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ merchantId: myCrmConfig.merchantId, username: myCrmConfig.username, password: myCrmPassword || null, isEnabled: myCrmConfig.isEnabled, clearPassword: false }) });
+      if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกบัญชี CRM ไม่สำเร็จ"); }
+      setMyCrmConfig(await response.json());
+      setMyCrmPassword("");
+      window.alert("บันทึกบัญชี CRM ของคุณเรียบร้อยแล้ว");
+    } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกบัญชี CRM ไม่สำเร็จ"); }
+    finally { setSavingMyCrm(false); }
+  };
   const shareDashboard = async () => {
     try {
       const response = await fetch(`${apiUrl}/dashboard/share`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ projectId: contextProjectId || null, releaseId: contextReleaseId || null, buildId: contextBuildId || null, validHours: 24 * 30 }) });
@@ -8319,9 +8623,33 @@ function App() {
               <b>{user.displayName}</b>
               <small>{user.roles.includes("SYS_ADMIN")?"System Administrator":"QA Workspace"}</small>
             </div>
+            <button className="table-action icon-only" aria-label="บัญชี CRM ของฉัน" title="บัญชี CRM ของฉัน" onClick={openMyCrmModal}><span aria-hidden="true">⇪</span></button>
             <button className="logout" aria-label="ออกจากระบบ" title="ออกจากระบบ" onClick={logout}><span aria-hidden="true">↪</span><span>ออกจากระบบ</span></button>
           </div>
         </header>
+        {myCrmOpen && (
+          <div className="modal" role="presentation" onMouseDown={() => !savingMyCrm && setMyCrmOpen(false)}>
+            <div className="modal-box" role="dialog" aria-modal="true" aria-labelledby="my-crm-title" onMouseDown={e => e.stopPropagation()}>
+              <div className="modal-head">
+                <h2 id="my-crm-title">บัญชี CRM ของฉัน</h2>
+                <button aria-label="ปิด" disabled={savingMyCrm} onClick={() => setMyCrmOpen(false)}>×</button>
+              </div>
+              <p>Login ของคุณเข้า CRM (BlueSea Helpdesk) — ใช้ข้อมูลเดียวกับที่ Login เข้า BlueID (Employee) ของคุณเอง ใช้ตอนกด "ส่งไป CRM"/"เปลี่ยนผู้รับผิดชอบ CRM"/คอมเมนต์ที่ sync ไป CRM</p>
+              <div className="master-ai-form">
+                <label>Merchant ID<input value={myCrmConfig.merchantId} onChange={(e) => setMyCrmConfig((current) => ({ ...current, merchantId: e.target.value }))} placeholder="เช่น 10000001 (เลข 8 หลัก ตามที่ BlueID กำหนด)" /></label>
+                <label>Username (รหัสพนักงาน)<input value={myCrmConfig.username} onChange={(e) => setMyCrmConfig((current) => ({ ...current, username: e.target.value }))} placeholder="เช่น 6101" /></label>
+                <label>Password<input type="password" autoComplete="new-password" value={myCrmPassword} onChange={(e) => setMyCrmPassword(e.target.value)} placeholder={myCrmConfig.hasPassword ? "ตั้งค่าแล้ว — เว้นว่างเพื่อใช้ค่าเดิม" : "กรอก Password สำหรับ Login เข้า CRM"} /></label>
+                <label className="master-ai-toggle"><input type="checkbox" checked={myCrmConfig.isEnabled} onChange={(e) => setMyCrmConfig((current) => ({ ...current, isEnabled: e.target.checked }))} /><span>เปิดใช้งานการเชื่อมต่อ CRM ของฉัน</span></label>
+              </div>
+              <div className="modal-actions">
+                <small className="master-ai-hint">Password ถูกเข้ารหัสและเก็บเฉพาะฝั่ง Server</small>
+                <button className="btn primary" disabled={savingMyCrm || !myCrmConfig.merchantId.trim() || !myCrmConfig.username.trim() || (!myCrmConfig.hasPassword && !myCrmPassword.trim())} onClick={saveMyCrmConfig}>
+                  {savingMyCrm ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">✓</span> บันทึกการตั้งค่า</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="content">
           <div className="page-head">
             <div>

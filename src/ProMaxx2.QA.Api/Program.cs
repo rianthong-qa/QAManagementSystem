@@ -83,6 +83,15 @@ builder.Services.AddScoped<TestCycleAiService>();
 builder.Services.AddScoped<DefectAutoCreateService>();
 builder.Services.AddScoped<DefectActivityService>();
 builder.Services.AddScoped<SharedAiConfigurationService>();
+builder.Services.AddSingleton<CrmTokenService>(); // must outlive request scope to actually cache the ~24h BlueID token
+builder.Services.AddScoped<CrmConfigurationService>();
+builder.Services.AddScoped<CrmSyncSettingsService>();
+builder.Services.AddScoped<CrmApiClient>();
+builder.Services.AddScoped<CrmSendToCrmService>();
+builder.Services.AddScoped<EmailConfigurationService>();
+builder.Services.AddScoped<EmailSenderService>();
+builder.Services.AddScoped<CrmSyncService>();
+builder.Services.AddHostedService<CrmSyncWorker>(); // Phase 2: polls Linked Defects every 2min for CRM status/assignto changes
 builder.Services.AddScoped<ProjectAccessContext>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "";

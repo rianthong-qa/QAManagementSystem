@@ -2,12 +2,13 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProMaxx2.QA.Application.Identity;
+using ProMaxx2.QA.Api.Services;
 
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/auth")]
-public sealed class AuthController(AuthenticationService authentication, IIdentityRepository repository) : ControllerBase
+public sealed class AuthController(AuthenticationService authentication, IIdentityRepository repository, CrmConfigurationService crmConfiguration) : ControllerBase
 {
     [HttpPost("login")]
     [AllowAnonymous]
@@ -29,4 +30,33 @@ public sealed class AuthController(AuthenticationService authentication, IIdenti
         var profile=await repository.GetProfileAsync(userId,cancellationToken);
         return profile is null ? Unauthorized() : Ok(profile);
     }
+
+    // CRM login เป็น self-service ต่อ user (CRM แยกงานตามคนที่ login จริง — ไม่ใช่ Service Account กลางอีกต่อไป)
+    // ทุกคนจัดการบัญชี CRM ของตัวเองเท่านั้น ไม่ต้องมี Policy="AdminUser" เหมือน /master-settings/*
+    [HttpGet("me/crm")]
+    [Authorize]
+    public async Task<ActionResult<CrmConfigurationView>> MyCrmConfiguration(CancellationToken ct)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+        return Ok(await crmConfiguration.GetViewAsync(userId.Value, ct));
+    }
+
+    [HttpPut("me/crm")]
+    [Authorize]
+    public async Task<ActionResult<CrmConfigurationView>> SaveMyCrmConfiguration(SaveMyCrmConfigurationRequest request, CancellationToken ct)
+    {
+        var userId = CurrentUserId();
+        if (userId is null) return Unauthorized();
+        try { return Ok(await crmConfiguration.SaveAsync(userId.Value, request.MerchantId, request.Username, request.Password, request.IsEnabled, request.ClearPassword, ct)); }
+        catch (ArgumentException ex) { return BadRequest(new ProblemDetails { Detail = ex.Message }); }
+    }
+
+    private Guid? CurrentUserId()
+    {
+        var subject = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        return Guid.TryParse(subject, out var id) ? id : null;
+    }
 }
+
+public sealed record SaveMyCrmConfigurationRequest(string MerchantId, string Username, string? Password, bool IsEnabled = true, bool ClearPassword = false);

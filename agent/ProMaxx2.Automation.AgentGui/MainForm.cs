@@ -12,7 +12,7 @@ public sealed class MainForm : Form
     private readonly TextBox _autExe = new(), _autExe2 = new(), _autUser = new(), _autPassword = new();
     private readonly ComboBox _dbType = new();
     private readonly TextBox _dbHost = new(), _dbPort = new(), _dbUser = new(), _dbPassword = new(), _dbDatabase = new();
-    private readonly Button _btnStart = new(), _btnStop = new(), _btnSave = new(), _btnTest = new();
+    private readonly Button _btnStart = new(), _btnStop = new(), _btnSave = new(), _btnTest = new(), _btnCapture = new(), _btnOpenPos = new(), _btnOpenApp = new();
     private readonly Label _status = new();
     private readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Font = new Font("Consolas", 9F) };
     private Process? _process;
@@ -22,10 +22,10 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Text = "ProMaxx2 Automation Agent — ตั้งค่าและเปิดทำงาน";
-        Width = 760;
+        Width = 980;
         Height = 830;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(620, 620);
+        MinimumSize = new Size(820, 620);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Tahoma", 9.5F);
 
@@ -52,6 +52,9 @@ public sealed class MainForm : Form
         _btnStop.Click += (_, _) => StopAgent();
         _btnSave.Click += (_, _) => SaveConfig();
         _btnTest.Click += async (_, _) => await TestConnectionAsync();
+        _btnCapture.Click += (_, _) => new CaptureForm(_hubUrl.Text, _username.Text, _password.Text).Show(this);
+        _btnOpenPos.Click += (_, _) => OpenAut(_autExe.Text, "POS");
+        _btnOpenApp.Click += (_, _) => OpenAut(_autExe2.Text, "App");
         FormClosing += (_, e) => { StopAgent(); };
 
         LoadConfig();
@@ -158,11 +161,25 @@ public sealed class MainForm : Form
         _status.Text = "● หยุด"; _status.ForeColor = Color.FromArgb(214, 69, 69); _status.Font = new Font("Tahoma", 10F, FontStyle.Bold); _status.Left = 236; _status.Top = 14; _status.AutoSize = true;
         _btnStart.Text = "▶ เริ่ม Agent (Pos + App)"; _btnStart.Width = 190; _btnStart.Top = 8; _btnStart.Left = 420; _btnStart.BackColor = Color.FromArgb(22, 156, 99); _btnStart.ForeColor = Color.White;
         _btnStop.Text = "■ หยุด"; _btnStop.Width = 70; _btnStop.Top = 8; _btnStop.Left = 620; _btnStop.Enabled = false;
-        p.Controls.AddRange(new Control[] { _btnSave, _btnTest, _status, _btnStart, _btnStop });
+        _btnCapture.Text = "Capture UIA"; _btnCapture.Width = 100; _btnCapture.Top = 8; _btnCapture.Left = 700;
+        _btnOpenPos.Text = "เปิด POS"; _btnOpenPos.Width = 78; _btnOpenPos.Top = 8; _btnOpenPos.Left = 808;
+        _btnOpenApp.Text = "เปิด App"; _btnOpenApp.Width = 78; _btnOpenApp.Top = 8; _btnOpenApp.Left = 892;
+        p.Controls.AddRange(new Control[] { _btnSave, _btnTest, _status, _btnStart, _btnStop, _btnCapture, _btnOpenPos, _btnOpenApp });
         return p;
     }
 
     private static Label MakeLabel(string text) => new() { Text = text, TextAlign = ContentAlignment.MiddleLeft, Width = 110, AutoSize = false, ForeColor = Color.FromArgb(102, 112, 133) };
+
+    private void OpenAut(string path, string name)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            MessageBox.Show($"ไม่พบไฟล์ {name}:\r\n{path}", "เปิด ProMaxx2", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(path) ?? string.Empty }); AppendLog($"[gui] เปิด ProMaxx2 {name} แล้ว"); }
+        catch (Exception ex) { MessageBox.Show($"เปิด {name} ไม่สำเร็จ: {ex.Message}", "เปิด ProMaxx2", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
 
     private void LoadConfig()
     {
