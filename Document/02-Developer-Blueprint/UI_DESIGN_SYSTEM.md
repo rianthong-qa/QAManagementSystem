@@ -227,7 +227,7 @@ git diff --check
 |---:|---|
 | 1450px | ลดความกว้าง execution columns |
 | 1100px | Execution history ลงแถวใหม่ |
-| 800px | App shell เป็น Mobile navigation |
+| 900px | App shell เป็น Tablet/Mobile navigation เพื่อรองรับ iPad แนวตั้ง |
 | 760px | Modal เต็มหน้าจอและ form stack |
 | 420px | Test Case compact fields เหลือหนึ่งคอลัมน์ |
 
@@ -257,6 +257,14 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-09-07 — Cross-page responsive data integrity
+
+- ตรวจ responsive inventory ทุกหน้าจาก application routes และ stylesheet ทั้งหมด แล้วเพิ่ม safety layer กลางให้ page/card/grid children ใช้ `min-width: 0`, ข้อความและ identifier ยาว wrap ได้, media จำกัดตาม container และ wide table/permission matrix เลื่อนแนวนอนภายใน container เท่านั้นโดยไม่ดันทั้งหน้า
+- Tablet/Mobile ≤900px เปลี่ยน application shell และ topbar พร้อมกันเพื่อให้ iPad แนวตั้งแสดง content เต็มพื้นที่ และทำให้ filter/tool/action groups wrap โดยไม่บีบหรือซ่อนข้อมูล พร้อมคงปุ่ม primary/secondary ทุก action; modal ทุกชนิดใช้ `100dvh` เต็มจอตามมาตรฐาน ≤760px
+- แก้ mobile sidebar ที่ถูก desktop selector `.app.menu-closed .sidebar` บังคับให้แสดงค้างทับเนื้อหา: สถานะปิดต้อง translate ออกนอกจอเสมอ; เมื่อเปิดใน collapsed mode แถบกว้าง 64px และปุ่มกว้าง 46px เท่าพื้นที่ไอคอน โดยแบ่งพื้นที่ให้ `<main>` และไม่ใช้ backdrop บังข้อมูล ส่วนเมนูแบบเต็มยังใช้ backdrop ตามเดิม
+- Popup/Modal ทุกหน้าต้องยึดกับ viewport และเปิดตรงกลางจอเสมอ: `.page-transition` ห้ามคง `transform` หรือ `will-change: transform` เพราะจะสร้าง containing block ให้ `position: fixed` จน Popup เคลื่อนตาม scroll; page transition ใช้ opacity animation เท่านั้น
+- Small phone ≤560px ลด page/card padding, ให้หัวข้อ wrap และ action/pagination มี touch target ที่เหมาะสม โดยใช้ breakpoint และ component pattern เดิมของระบบ
 
 ### 2026-08-28 (Weighted Auto Assignment)
 

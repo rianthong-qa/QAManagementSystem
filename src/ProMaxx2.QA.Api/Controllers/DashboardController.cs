@@ -22,8 +22,8 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
     [Authorize(Policy = "ProjectView")]
     public async Task<ActionResult<object>> CreateShareLink([FromBody] DashboardShareRequest request,CancellationToken ct)
     {
-        // allow share links up to 30 days (720 hours)
-        var expiresAt = DateTimeOffset.UtcNow.AddHours(Math.Clamp(request.ValidHours, 1, 720));
+        // allow share links up to 90 days (2160 hours)
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(Math.Clamp(request.ValidHours, 1, 2160));
         var share=await dashboard.CreateShareAsync(request.ProjectId,request.ReleaseId,request.BuildId,expiresAt.UtcDateTime,ct);
         return Ok(new { code = share.Code, expiresAt });
     }
@@ -83,4 +83,4 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
     }
 }
 
-public sealed record DashboardShareRequest(Guid? ProjectId, Guid? ReleaseId, Guid? BuildId, int ValidHours = 720);
+public sealed record DashboardShareRequest(Guid? ProjectId, Guid? ReleaseId, Guid? BuildId, int ValidHours = 2160);

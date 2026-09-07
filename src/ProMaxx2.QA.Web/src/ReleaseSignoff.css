@@ -1,24 +1,43 @@
 .signoff-page{display:grid;gap:16px;min-width:0}
-.signoff-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.signoff-page > .card{box-shadow:0 4px 16px rgba(16,24,40,.04)}
+.signoff-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid #dfe7f5;border-radius:14px;background:rgba(255,255,255,.86);padding:16px;box-shadow:0 4px 16px rgba(16,24,40,.035)}
 .signoff-toolbar .signoff-selects{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.signoff-toolbar select{border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:#fff;color:var(--text);font:inherit;font-size:13px}
+.signoff-toolbar-label{color:#10224a;font-size:13px;white-space:nowrap}
+.signoff-toolbar select{min-width:220px;border:1px solid var(--line);border-radius:9px;padding:10px 36px 10px 12px;background:#fff;color:var(--text);font:inherit;font-size:13px}
+.signoff-toolbar select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(36,87,214,.1)}
 .gate-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.gate-cell{background:#fafcff;border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:4px;min-width:0}
+.gate-cell{position:relative;background:linear-gradient(135deg,#fbfdff,#f4f8ff);border:1px solid #dce7f8;border-radius:12px;padding:18px 18px 16px 22px;display:grid;gap:7px;min-width:0;overflow:hidden;min-height:112px}
+.gate-cell::before{position:absolute;inset:0 auto 0 0;width:3px;background:#cbd5e1;content:""}
+.gate-cell:nth-child(1)::before,.gate-cell:nth-child(2)::before{background:var(--primary)}
+.gate-cell:nth-child(3)::before{background:var(--green)}
+.gate-cell:nth-child(4)::before{background:var(--yellow)}
 .gate-cell small{color:var(--muted);font-size:11px;font-weight:700}
-.gate-cell b{font-size:20px;line-height:1}
+.gate-cell b{font-size:20px;line-height:1.15}
 .gate-cell span{color:var(--muted);font-size:11px}
+.gate-cell b{color:#10224a}
 .signoff-decision{display:inline-flex;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
 .signoff-decision.go{background:#eaf8f1;color:#168b58}
 .signoff-decision.conditional{background:#fff5d9;color:#9a6d00}
 .signoff-decision.nogo{background:#fdecec;color:#c83a3a}
 .signoff-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.signoff-role-card{display:grid;gap:10px;align-content:start;min-width:0}
+.signoff-role-card{display:grid;gap:10px;align-content:start;min-width:0;position:relative;overflow:hidden}
+.signoff-role-card::before{position:absolute;inset:0 0 auto;height:3px;background:#cbd5e1;content:""}
+.signoff-role-card:has(.signoff-decision.go)::before{background:var(--green)}
+.signoff-role-card:has(.signoff-decision.nogo)::before{background:var(--red)}
+.signoff-role-card:has(.signoff-decision.conditional)::before{background:var(--yellow)}
 .signoff-role-head{display:flex;align-items:center;gap:10px}
 .signoff-role-head h3{margin:0;font-size:15px}.signoff-role-head small,.signoff-role-card>small{color:var(--muted);font-size:11px}
 .signoff-role-avatar{display:grid;place-items:center;width:36px;height:36px;border-radius:11px;background:#eaf0ff;color:var(--primary);font-weight:800}
 .signoff-role-card p{margin:0;color:var(--text);font-size:12px;line-height:1.5;min-height:36px}
-.signoff-pending{padding:8px 10px;border-radius:8px;background:#f8fafc;color:var(--muted);font-size:12px}
-.signoff-final-card{border-left:4px solid var(--primary)}
+.signoff-pending{padding:9px 10px;border:1px dashed #cbd5e1;border-radius:8px;background:#f8fafc;color:var(--muted);font-size:12px}
+.signoff-final-card{border-left:4px solid var(--primary);background:linear-gradient(135deg,#fff,#f7f9ff)}
+.signoff-cards{position:relative}
+.signoff-cards::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px dashed #c8d4e8;z-index:0}
+.signoff-role-card{z-index:1;background:#fff}
+.signoff-role-card:not(:last-child)::after{content:"›";position:absolute;right:-19px;top:50%;z-index:3;transform:translateY(-50%);color:#42618f;font-size:25px;font-weight:400}
+.signoff-final-card .signoff-decision{padding:7px 14px;font-size:13px}
+.signoff-page .table-wrap{border-radius:10px}
+.signoff-page table td{vertical-align:middle}
 @media(max-width:1000px){.signoff-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:560px){.gate-grid{grid-template-columns:1fr}.signoff-cards{grid-template-columns:1fr}.signoff-toolbar{flex-direction:column;align-items:stretch}}
+@media(max-width:560px){.gate-grid{grid-template-columns:1fr}.signoff-cards{grid-template-columns:1fr}.signoff-toolbar{flex-direction:column;align-items:stretch}.signoff-toolbar .signoff-selects{display:grid;grid-template-columns:1fr}.signoff-toolbar select{width:100%;min-width:0}.signoff-toolbar .btn{width:100%}}

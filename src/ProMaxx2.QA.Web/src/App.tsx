@@ -208,46 +208,46 @@ const nav: {
   {
     label: "ภาพรวม",
     items: [
-      { id: "dashboard", icon: "▦", label: "Dashboard" },
-      { id: "my-work", icon: "MW", label: "My Work" },
-      { id: "projects", icon: "P", label: "Project / Module" },
-      { id: "releases", icon: "◫", label: "Release / Build" },
+      { id: "dashboard", icon: "dashboard", label: "Dashboard" },
+      { id: "my-work", icon: "assignment_ind", label: "My Work" },
+      { id: "projects", icon: "account_tree", label: "Project / Module" },
+      { id: "releases", icon: "inventory_2", label: "Release / Build" },
     ],
   },
   {
     label: "REQUIREMENT & TEST DESIGN",
     items: [
-      { id: "requirements", icon: "R", label: "Requirement" },
-      { id: "rtm", icon: "⇄", label: "RTM" },
-      { id: "test-cases", icon: "TC", label: "Test Case" },
-      { id: "test-suites", icon: "▤", label: "Test Suite" },
+      { id: "requirements", icon: "description", label: "Requirement" },
+      { id: "rtm", icon: "account_tree", label: "RTM" },
+      { id: "test-cases", icon: "fact_check", label: "Test Case" },
+      { id: "test-suites", icon: "library_books", label: "Test Suite" },
     ],
   },
   {
     label: "TEST EXECUTION",
     items: [
-      { id: "test-cycles", icon: "◎", label: "Test Cycle" },
-      { id: "execution", icon: "▶", label: "Execution Workspace" },
-      { id: "defects", icon: "!", label: "Defect" },
-      { id: "regression", icon: "↻", label: "Regression" },
-      { id: "automation", icon: "A", label: "Automation" },
+      { id: "test-cycles", icon: "cycle", label: "Test Cycle" },
+      { id: "execution", icon: "play_circle", label: "Execution Workspace" },
+      { id: "defects", icon: "bug_report", label: "Defect" },
+      { id: "regression", icon: "replay", label: "Regression" },
+      { id: "automation", icon: "smart_toy", label: "Automation" },
     ],
   },
   {
     label: "RELEASE GOVERNANCE",
     items: [
-      { id: "summary", icon: "Σ", label: "Test Summary" },
-      { id: "risks", icon: "⚠", label: "Risk Acceptance" },
-      { id: "signoff", icon: "✓", label: "Release Sign-off" },
+      { id: "summary", icon: "summarize", label: "Test Summary" },
+      { id: "risks", icon: "warning", label: "Risk Acceptance" },
+      { id: "signoff", icon: "verified", label: "Release Sign-off" },
     ],
   },
   {
     label: "ADMINISTRATION",
     items: [
-      { id: "users", icon: "U", label: "User / Role" },
-      { id: "settings", icon: "⚙", label: "Setting Center" },
-      { id: "system-monitor", icon: "M", label: "System Monitor" },
-      { id: "audit", icon: "⌕", label: "Audit Log" },
+      { id: "users", icon: "manage_accounts", label: "User / Role" },
+      { id: "settings", icon: "settings", label: "Setting Center" },
+      { id: "system-monitor", icon: "monitor_heart", label: "System Monitor" },
+      { id: "audit", icon: "manage_search", label: "Audit Log" },
     ],
   },
 ];
@@ -455,9 +455,9 @@ function TestStatusChart({ data }: { data: DashboardSummary }) {
     <div className="chart-donut-wrap">
       <div className="chart-donut" style={{background:`conic-gradient(${donutSegments})`}}>
         <div className="chart-donut-hole">
-          <b>{data.passRate}%</b>
+          <b style={{color: data.passRate >= 90 ? "#16a36a" : data.passRate >= 70 ? "#d97706" : "#dc2626"}}>{data.passRate}%</b>
           <span>อัตราผ่าน</span>
-          <small>{data.passedCases.toLocaleString()}/{data.executedCases.toLocaleString()} ผ่าน</small>
+          <small>เกณฑ์ผ่าน ≥ 90%</small>
         </div>
       </div>
       <div className="chart-donut-legend">
@@ -1020,7 +1020,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
             {items.map(x => <tr key={x.defectId}>
               <td><input type="checkbox" checked={selectedIds.includes(x.defectId)} onChange={() => setSelectedIds(prev => prev.includes(x.defectId) ? prev.filter(id => id !== x.defectId) : [...prev, x.defectId])} /></td>
               <td><button className="link-button" onClick={() => openDetail(x)}>{x.defectCode}</button></td>
-              <td><b>{x.title}</b>{(x.releaseCode || x.buildNumber) && <small className="cell-sub">{x.releaseCode || "Release ไม่ระบุ"}{x.buildNumber ? ` · Build ${x.buildNumber}` : ""}</small>}</td>
+              <td><span className="defect-title-text">{x.title}</span>{(x.releaseCode || x.buildNumber) && <small className="cell-sub">{x.releaseCode || "Release ไม่ระบุ"}{x.buildNumber ? ` · Build ${x.buildNumber}` : ""}</small>}</td>
               <td><Badge tone={defectSeverityTones[x.severity] ?? "blue"}>{x.severity}</Badge></td>
               <td><Badge tone={defectStatusTones[x.status] ?? "gray"}>{x.status}</Badge></td>
               <td>
@@ -1142,7 +1142,12 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
             <div className="defect-detail-split">
               <section className="cycle-detail-section">
                 <h3><span aria-hidden="true">▤</span> Description</h3>
-                <p className="defect-detail-text">{detail.description || "ไม่มีคำอธิบาย"}</p>
+                <div className="defect-detail-text defect-description-text">
+                  {(detail.description || "ไม่มีคำอธิบาย").split(/\r?\n/).map((line, index) => {
+                    const labeledLine = line.match(/^(.{2,40}):\s*(.*)$/);
+                    return <span key={`${index}-${line}`}>{labeledLine ? <><b>{labeledLine[1]}:</b>{labeledLine[2] && <span className="defect-description-value"> {labeledLine[2]}</span>}</> : (line || "\u00a0")}</span>;
+                  })}
+                </div>
               </section>
               <section className="cycle-detail-section">
                 <h3><span aria-hidden="true">▤</span> Steps to Reproduce</h3>
@@ -4711,19 +4716,16 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                 {canEdit && <th className="cycle-select-col"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={rows.length > 0 && rows.every((x) => cycleSelected.has(x.testCycleId))} onChange={toggleCycleSelectPage} /></th>}
                 <th>Cycle Code</th>
                 <th>Name</th>
-                <th>Module</th>
                 <th>Release / Build / Environment</th>
                 <th>Progress</th>
                 <th>Status</th>
-                <th>สร้างเมื่อ</th>
                 {canEdit && <th className="actions-col">จัดการ</th>}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td className="empty-cell" colSpan={canEdit ? 9 : 7}><div className="empty-state"><div className="spinner" /><b>กำลังโหลด Test Cycle...</b></div></td></tr>}
-              {!loading && !error && rows.length === 0 && <tr><td className="empty-cell" colSpan={canEdit ? 9 : 7}><div className="empty-state"><span aria-hidden="true">◎</span><b>ไม่พบ Test Cycle</b><small>ลองเปลี่ยน Project, Release, Build หรือคำค้นหา</small></div></td></tr>}
+              {loading && <tr><td className="empty-cell" colSpan={canEdit ? 7 : 5}><div className="empty-state"><div className="spinner" /><b>กำลังโหลด Test Cycle...</b></div></td></tr>}
+              {!loading && !error && rows.length === 0 && <tr><td className="empty-cell" colSpan={canEdit ? 7 : 5}><div className="empty-state"><span aria-hidden="true">◎</span><b>ไม่พบ Test Cycle</b><small>ลองเปลี่ยน Project, Release, Build หรือคำค้นหา</small></div></td></tr>}
               {rows.map((x) => {
-                const extraModules = Math.max(0, (x.modules?.length ?? 0) - 2);
                 return (
                 <tr key={x.testCycleId} className={cycleSelected.has(x.testCycleId) ? "is-selected" : ""}>
                   {canEdit && <td className="cycle-select-col"><input type="checkbox" aria-label={`เลือก ${x.cycleCode}`} checked={cycleSelected.has(x.testCycleId)} onChange={() => toggleCycleSelect(x.testCycleId)} /></td>}
@@ -4733,19 +4735,11 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                   </td>
                   <td>{x.cycleName}</td>
                   <td>
-                    {x.modules?.length
-                      ? <div className="role-tags" title={x.modules.map(m => m.moduleName).join(", ")}>
-                          {x.modules.slice(0, 2).map((m) => <span key={m.moduleId}>{m.moduleName}</span>)}
-                          {extraModules > 0 && <span className="role-tags-more">+{extraModules}</span>}
-                        </div>
-                      : "-"}
-                  </td>
-                  <td>
                     {x.releaseCode}
                     <small className="cell-sub">Build {x.buildNumber} · {x.environmentName}</small>
                   </td>
                   <td>
-                    <div className="progress-cell">
+                    <div className={`progress-cell ${x.progressPercent >= 100 ? "is-complete" : x.progressPercent >= 50 ? "is-progress" : x.progressPercent > 0 ? "is-low" : "is-empty"}`}>
                       <span>
                         <i style={{ width: `${x.progressPercent}%` }} />
                       </span>
@@ -4767,7 +4761,6 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                       {x.status}
                     </Badge>
                   </td>
-                  <td>{fmtDateTimeBE(x.createdAt)}</td>
                   {canEdit && <td className="actions-col">
                     <div className="row-actions">
                       <button
@@ -5335,7 +5328,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       .then((data: TestCycleItem[]) => {
         // Only offer cycles that are actively being executed — Draft hasn't started yet, and
         // Completed/Closed/Cancelled have no more work to do, so none of them belong in this dropdown.
-        // "เฉพาะ Cycle ของฉัน" further narrows to cycles created by the logged-in user — toggleable,
+        // "เฉพาะฉัน" further narrows to cycles created by the logged-in user — toggleable,
         // since a lead/admin may still need to see everyone's cycles. (Not ownerUserId: Test Cycle has
         // no "ผู้ดำเนินการ" field in the create/edit form, so that column is always null for every cycle.)
         const myId = currentUserId();
@@ -5351,6 +5344,10 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
   }, [reload, cycleModuleFilter, myCyclesOnly]);
   useEffect(() => {
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+    // Keep the filter options stable while the cycle list is being reloaded
+    // for the selected module; otherwise the selected result would empty the
+    // source used to build the Module dropdown and disable it.
+    if (cycleModuleFilter) return;
     const projectIds = contextProjectId ? [contextProjectId] : [...new Set(cycles.map((x) => x.projectId))];
     if (!projectIds.length) { setCycleModules([]); return; }
     Promise.all(projectIds.map((id) => fetch(`${apiUrl}/projects/${id}/modules`, { headers: h }).then((r) => r.ok ? r.json() : [])))
@@ -5359,7 +5356,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
         groups.flat().filter((m) => m.isActive).forEach((m) => { if (!seen.has(m.moduleId)) seen.set(m.moduleId, m); });
         setCycleModules([...seen.values()].sort((a, b) => a.moduleCode.localeCompare(b.moduleCode)));
       });
-  }, [contextProjectId, cycles]);
+  }, [contextProjectId, cycles, cycleModuleFilter]);
   useEffect(() => {
     if (!cycleId) {
       setWorkspace(null);
@@ -5620,7 +5617,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       <div className="execution-toolbar card">
         <label className="check-line">
           <input type="checkbox" checked={myCyclesOnly} onChange={(e) => setMyCyclesOnly(e.target.checked)} />
-          เฉพาะ Cycle ของฉัน
+          เฉพาะฉัน
         </label>
         <label>
           Module
@@ -5666,7 +5663,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
           <div className="metric-pending"><small>Not Run</small><strong>{executionStats.pending}</strong></div>
           <div className="execution-progress-summary">
             <span><i style={{width:`${executionStats.total ? ((executionStats.total-executionStats.pending)/executionStats.total)*100 : 0}%`}} /></span>
-            <small>{executionStats.total ? Math.round(((executionStats.total-executionStats.pending)/executionStats.total)*100) : 0}% executed</small>
+            <small><b>{executionStats.total - executionStats.pending}/{executionStats.total}</b> Test Cases executed · {executionStats.total ? Math.round(((executionStats.total-executionStats.pending)/executionStats.total)*100) : 0}%</small>
           </div>
         </div>
       )}
@@ -5754,7 +5751,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                           setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
                         }}
                       >
-                        <span aria-hidden="true">{status === "Pass" ? "✓" : status === "Fail" ? "✕" : status === "Blocked" ? "⊘" : "○"}</span> Set All {label}
+                        <span className="material-symbols-outlined bulk-result-icon" aria-hidden="true">{status === "Pass" ? "check_circle" : status === "Fail" ? "cancel" : status === "Blocked" ? "block" : "radio_button_unchecked"}</span> Set All {label}
                       </button>
                     );
                   })}</div>
@@ -5788,7 +5785,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                           aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${opt === "NotRun" ? "Not Run" : opt}`}
                             onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
                           >
-                            {opt === "Pass" ? "✓" : opt === "Fail" ? "✕" : opt === "Blocked" ? "⊘" : "○"}
+                            <span className="material-symbols-outlined step-result-icon" aria-hidden="true">{opt === "Pass" ? "check_circle" : opt === "Fail" ? "cancel" : opt === "Blocked" ? "block" : "radio_button_unchecked"}</span>
                           </button>
                         ))}
                       </span>
@@ -5991,7 +5988,7 @@ function TestSuitesPage({
     [suiteModuleFilter, setSuiteModuleFilter] = useState(""),
     [typeFilter, setTypeFilter] = useState(""),
     [riskFilter, setRiskFilter] = useState(""),
-    [createdByFilter, setCreatedByFilter] = useState(currentUserId),
+    [createdByFilter, setCreatedByFilter] = useState(""),
     [activeFilter, setActiveFilter] = useState("active"),
     [noCycleOnly, setNoCycleOnly] = useState(false),
     [caseSearch, setCaseSearch] = useState(""),
@@ -6277,6 +6274,7 @@ function TestSuitesPage({
   // until the suite is actually created (then added in one batch right after).
   const caseProjectId = editing ? managing?.projectId : projectId;
   const existingCaseIds = new Set((managing?.cases ?? []).map((c) => c.testCaseId));
+  const caseCodeSort = (a: { testCaseCode: string }, b: { testCaseCode: string }) => a.testCaseCode.localeCompare(b.testCaseCode, undefined, { numeric: true, sensitivity: "base" });
   const available = testCases.filter(
     (x) =>
       !!caseProjectId &&
@@ -6284,8 +6282,8 @@ function TestSuitesPage({
       x.status === "Ready" && // only fully reviewed cases belong in a suite — Draft/Review/Deprecated aren't addable
       !existingCaseIds.has(x.testCaseId) &&
       (editing || !checked.includes(x.testCaseId)), // while creating, a staged pick moves out of "available" into the staged panel
-  ).filter(x => (!caseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseSearch.toLowerCase())) && (editing ? (!caseModuleFilter || x.moduleId === caseModuleFilter) : (!formModuleId || x.moduleId === formModuleId)) && (!casePriorityFilter || x.priority === casePriorityFilter) && (!caseTypeFilter || x.testType === caseTypeFilter));
-  const stagedCases = testCases.filter((x) => checked.includes(x.testCaseId));
+  ).filter(x => (!caseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseSearch.toLowerCase())) && (editing ? (!caseModuleFilter || x.moduleId === caseModuleFilter) : (!formModuleId || x.moduleId === formModuleId)) && (!casePriorityFilter || x.priority === casePriorityFilter) && (!caseTypeFilter || x.testType === caseTypeFilter)).sort(caseCodeSort);
+  const stagedCases = checked.map((id) => testCases.find((x) => x.testCaseId === id)).filter((x): x is TestCaseItem => Boolean(x));
   // ตัวเลขที่ส่งให้ AI วิเคราะห์จริง (ทั้ง Module ไม่ผ่าน filter ตัวอย่างด้านล่าง) เทียบกับรายการที่กรองแล้วซึ่งไว้ preview ก่อนกด Generate
   const suiteAiModuleCases = testCases.filter(x => x.moduleId === suiteAiModuleId && x.status !== "Deprecated");
   const suiteAiCandidates = suiteAiModuleCases.filter(x => (!suiteAiCaseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(suiteAiCaseSearch.toLowerCase())) && (!suiteAiPriorityFilter || x.priority === suiteAiPriorityFilter) && (!suiteAiTypeFilter || x.testType === suiteAiTypeFilter));
@@ -6570,14 +6568,18 @@ function TestSuitesPage({
                           </div>
                         )
                       ) : stagedCases.length ? (
-                        stagedCases.map((x) => (
+                        stagedCases.map((x, index) => (
                           <div className="suite-case" key={x.testCaseId}>
-                            <span className="suite-case-info">
-                              <b>{x.testCaseCode}</b>
-                              <small>{x.title}</small>
-                            </span>
-                            <Badge tone={x.priority === "P0" || x.priority === "P1" ? "red" : "blue"}>{x.priority}</Badge>
-                            <button
+                              <span className="suite-case-info">
+                                <b>{x.testCaseCode}</b>
+                                <small>{x.title}</small>
+                              </span>
+                              <Badge tone={x.priority === "P0" || x.priority === "P1" ? "red" : "blue"}>{x.priority}</Badge>
+                              <div className="suite-case-actions">
+                                <button disabled={index === 0} title="เลื่อนขึ้น" onClick={() => setChecked(c => { const next = [...c]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })}>↑</button>
+                                <button disabled={index === stagedCases.length - 1} title="เลื่อนลง" onClick={() => setChecked(c => { const next = [...c]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; })}>↓</button>
+                              </div>
+                              <button
                               className="suite-case-remove"
                               title="เอาออกจากรายการที่จะเพิ่ม"
                               aria-label={`เอา ${x.testCaseCode} ออกจากรายการที่จะเพิ่ม`}
@@ -8213,8 +8215,8 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
     <article className="signoff-page">
       <div className="signoff-toolbar">
         <div className="signoff-selects">
-          <select aria-label="Release" value={releaseId} onChange={(e) => { setReleaseId(e.target.value); setBuildId(""); }}><option value="">เลือก Release</option>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select>
-          <select aria-label="Build" value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber} · {b.applicationVersion || "-"}</option>)}</select>
+          <b className="signoff-toolbar-label">Build / Version</b><select aria-label="Release" value={releaseId} onChange={(e) => { setReleaseId(e.target.value); setBuildId(""); }}><option value="">เลือก Release</option>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select>
+          <b className="signoff-toolbar-label">Release Type</b><select aria-label="Build" value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber} · {b.applicationVersion || "-"}</option>)}</select>
         </div>
         {canSignoff && <button className="btn primary" disabled={!releaseId || !buildId} onClick={() => { setDecision("GO"); setComment(""); setModalOpen(true); }}>+ สร้าง Sign-off</button>}
       </div>
@@ -8251,8 +8253,14 @@ function App() {
   const shareToken = shareParams.get("dashboardShare") ?? "";
   const [page, setPage] = useState<Page>(restoredActivePage),
     [menu, setMenu] = useState(false),
+    [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("qa.sidebar.collapsed") === "true"),
     [search, setSearch] = useState(""),
     [modal, setModal] = useState(false);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(false); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, []);
   const [user, setUser] = useState<SessionUser | null>(() => {
     try {
       const value = localStorage.getItem("qa.user");
@@ -8515,7 +8523,14 @@ function App() {
   };
   const shareDashboard = async () => {
     try {
-      const response = await fetch(`${apiUrl}/dashboard/share`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ projectId: contextProjectId || null, releaseId: contextReleaseId || null, buildId: contextBuildId || null, validHours: 24 * 30 }) });
+      const selectedProject = contextProjects.find(x => x.projectId === contextProjectId);
+      const shareReleaseId = contextReleaseId || contextReleases[0]?.releaseId || "";
+      const selectedRelease = contextReleases.find(x => x.releaseId === shareReleaseId);
+      const shareBuildId = contextBuildId || contextBuilds[0]?.buildId || "";
+      const selectedBuild = contextBuilds.find(x => x.buildId === shareBuildId);
+      const scopeMessage = [`Project: ${selectedProject?.projectName ?? "ทุก Project"}`, `Release: ${selectedRelease ? `${selectedRelease.releaseCode} · ${selectedRelease.version}` : "ทุก Release"}`, `Build: ${selectedBuild?.buildNumber ?? "ทุก Build"}`].join("\n");
+      if (!window.confirm(`กำลังจะสร้างลิงก์แชร์ Dashboard ด้วยข้อมูลนี้:\n\n${scopeMessage}\n\nลิงก์มีอายุ 90 วัน ต้องการดำเนินการต่อหรือไม่?`)) return;
+      const response = await fetch(`${apiUrl}/dashboard/share`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ projectId: contextProjectId || null, releaseId: shareReleaseId || null, buildId: shareBuildId || null, validHours: 24 * 90 }) });
       if (!response.ok) throw new Error("ไม่สามารถสร้างลิงก์แชร์ได้");
       const result: { code: string; expiresAt: string } = await response.json();
       const url = `${window.location.origin}${window.location.pathname}?s=${encodeURIComponent(result.code)}`;
@@ -8659,8 +8674,8 @@ function App() {
   const canCreate =
     editPermission[page] !== undefined && can(editPermission[page]!);
   return (
-    <div className="app">
-      <aside className={menu ? "sidebar open" : "sidebar"}>
+    <div className={`${menu ? "app menu-open" : "app menu-closed"}${sidebarCollapsed ? " sidebar-is-collapsed" : ""}`}>
+      <aside className={`${menu ? "sidebar open" : "sidebar"}${sidebarCollapsed ? " collapsed" : ""}`}>
         <div className="brand">
           <div className="logo">QA</div>
           <div>
@@ -8677,9 +8692,12 @@ function App() {
                 <button
                   key={i.id}
                   className={page === i.id ? "active" : ""}
+                  title={sidebarCollapsed ? i.label : undefined}
+                  data-tooltip={sidebarCollapsed ? i.label : undefined}
+                  aria-label={i.label}
                   onClick={() => go(i.id)}
                 >
-                  <i>{i.icon}</i>
+                  <i className="material-symbols-outlined" aria-hidden="true">{i.icon}</i>
                   {i.label}
                 </button>
               ))}
@@ -8687,9 +8705,10 @@ function App() {
           ) : null;
         })}
       </aside>
+      {menu && !sidebarCollapsed && <button className="sidebar-backdrop" type="button" aria-label="ปิดเมนู" onClick={() => setMenu(false)} />}
       <main>
         <header className="topbar qa-topbar">
-          <button className="menu-btn topbar-menu" aria-label={menu?"ปิดเมนู":"เปิดเมนู"} onClick={() => setMenu((v) => !v)}>
+          <button className="menu-btn topbar-menu" aria-label={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} title={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} onClick={() => { if (window.matchMedia("(max-width: 900px)").matches) setMenu((v) => !v); else { const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("qa.sidebar.collapsed", String(next)); } }}>
             <span aria-hidden="true">☰</span>
           </button>
           {!["projects","users","settings","system-monitor"].includes(page) && <div className="context">

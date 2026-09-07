@@ -250,6 +250,11 @@
 .qa-progress span{display:block;height:100%;background:#2563eb;border-radius:99px;transition:width .4s ease}
 .qa-meta{display:flex;justify-content:space-between;gap:12px;margin-top:5px;color:#94a3b8;font-size:10px}
 .qa-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Collapsed sidebar: keep the brand mark and navigation icons visible. */
+.app.sidebar-is-collapsed .sidebar .brand{justify-content:center;padding-inline:0}
+.app.sidebar-is-collapsed .sidebar .brand>div:last-child,.app.sidebar-is-collapsed .sidebar .nav-group p{display:none!important}
+.app.sidebar-is-collapsed .sidebar .nav-group button{justify-content:center;gap:0;padding-inline:0;font-size:0}
+.app.sidebar-is-collapsed .sidebar .nav-group button i{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;font-size:21px}
 
 /* ===== QUALITY OVERVIEW CHARTS ===== */
 .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
@@ -385,6 +390,14 @@
   .roadmap-status-badge{margin-left:0;flex-basis:100%}
   .charts-grid{grid-template-columns:1fr}
   .chart-donut-wrap{flex-direction:column;align-items:center}
+  .readiness-strip{padding:12px}
+  .readiness-head{display:block;margin-bottom:10px}
+  .readiness-head b,.readiness-head span{display:block}
+  .readiness-head span{margin-top:3px;line-height:1.4}
+  .readiness-items{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .readiness-item{align-items:flex-start;padding:9px 8px}
+  .readiness-item b{overflow:visible;white-space:normal;font-size:10px;line-height:1.25}
+  .readiness-item small{font-size:11px}
 }
 
 /* ===== SMALL PHONE ===== */
