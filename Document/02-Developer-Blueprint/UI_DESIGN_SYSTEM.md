@@ -258,6 +258,14 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-09-09 — Dashboard attention modules scalability
+
+- การ์ด “โมดูลที่ต้องติดตามเป็นพิเศษ” แสดง Top 8 โมดูลเป็นค่าเริ่มต้น พร้อมจำนวนโมดูลที่มีปัญหา ยอด Open Defect และอันดับรายโมดูลจาก Dashboard Summary ชุดเดียวกัน โดยห้ามยิง Defect list API ซ้ำ เพื่อให้ข้อมูลปรากฏพร้อม Dashboard และลดความสูงเมื่อข้อมูลเพิ่มขึ้น
+- รายการใช้ลำดับ ชื่อโมดูลที่ wrap ได้ จำนวน Defect และ progress bar แยกสองบรรทัด พร้อมปุ่มขยายดูทั้งหมด/ย่อกลับที่เข้าถึงด้วย keyboard และมี `aria-expanded`
+- Desktop จัดความสูงเริ่มต้นให้สมดุลกับกราฟผลการทดสอบ ส่วน Mobile ให้ summary wrap และชื่อยาวตัดบรรทัดโดยไม่สร้าง horizontal scroll ระดับหน้า
+- การ์ด “ภาพรวมผลการทดสอบ” และ “โมดูลที่ต้องติดตามเป็นพิเศษ” ต้องยืดเต็มความสูงของแถวเดียวกันบน Desktop; ฝั่งภาพรวมใช้พื้นที่เพิ่มสำหรับสถานะเทียบเกณฑ์ คำอธิบายฐานการนับแบบย่อ และการ์ดประเด็นดำเนินการ (Not Run, Fail/Blocked และ Coverage Gap) จาก Dashboard Summary เดิม โดยพื้นที่ส่วนเกินต้องกระจายรอบกราฟ ห้ามเว้นช่องว่างก้อนใหญ่ระหว่าง KPI กับประเด็นดำเนินการ
+- เมื่อกดดูโมดูลทั้งหมดบน Desktop รายการต้องเลื่อนภายในพื้นที่การ์ดเดิมและห้ามทำให้การ์ด “ภาพรวมผลการทดสอบ” ยืดตาม; Mobile ให้รายการขยายตามเนื้อหาปกติเพื่อหลีกเลี่ยง nested scroll
+
 ### 2026-09-07 — Cross-page responsive data integrity
 
 - ตรวจ responsive inventory ทุกหน้าจาก application routes และ stylesheet ทั้งหมด แล้วเพิ่ม safety layer กลางให้ page/card/grid children ใช้ `min-width: 0`, ข้อความและ identifier ยาว wrap ได้, media จำกัดตาม container และ wide table/permission matrix เลื่อนแนวนอนภายใน container เท่านั้นโดยไม่ดันทั้งหน้า

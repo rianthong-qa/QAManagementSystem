@@ -433,6 +433,11 @@ const defectActionLabels: Record<string, string> = { Created: "สร้าง",
 function TestStatusChart({ data }: { data: DashboardSummary }) {
   const statusDist = data.statusDistribution || [];
   const totalStatus = Math.max(1, statusDist.reduce((s, x) => s + x.count, 0));
+  const countStatus = (status: string) => statusDist.find(x => x.status === status)?.count ?? 0;
+  const failCount = countStatus("Fail");
+  const blockedCount = countStatus("Blocked");
+  const notRunCount = countStatus("Not Run");
+  const coverageGap = Math.max(0, 90 - data.requirementCoverage);
 
   // Build conic gradient for donut — เว้นช่องว่างเล็กๆ ระหว่างเซกเมนต์ให้ดูเป็นสัดส่วนชัดเจนขึ้น
   // (ไม่เว้นช่องถ้ามีสถานะเดียวที่มีค่า เพราะจะกลายเป็นวงแหวนขาดครึ่งดวง)
@@ -449,8 +454,14 @@ function TestStatusChart({ data }: { data: DashboardSummary }) {
 
   return <article className="card chart-card">
     <div className="chart-card-head">
-      <h3>ภาพรวมผลการทดสอบ</h3>
-      <span>{totalStatus.toLocaleString()} รายการใน Test Cycle</span>
+      <div className="chart-card-heading">
+        <h3>ภาพรวมผลการทดสอบ</h3>
+        <p>สรุปผลล่าสุดจากรายการที่อยู่ใน Test Cycle</p>
+      </div>
+      <div className="chart-card-meta">
+        <span>{totalStatus.toLocaleString()} รายการ</span>
+        <strong className={data.passRate >= 90 ? "is-pass" : "is-warning"}>{data.passRate >= 90 ? "ผ่านเกณฑ์คุณภาพ" : `ต่ำกว่าเกณฑ์ ${(90 - data.passRate).toFixed(1)}%`}</strong>
+      </div>
     </div>
     <div className="chart-donut-wrap">
       <div className="chart-donut" style={{background:`conic-gradient(${donutSegments})`}}>
@@ -473,15 +484,17 @@ function TestStatusChart({ data }: { data: DashboardSummary }) {
         distinct Test Case) ส่วน executedCases/totalCases ตรงนี้นับจาก cycleCases (แถว Assign
         Test Case เข้า Test Cycle) ถ้า Test Case เดียวถูกใช้ในหลาย Cycle จะถูกนับซ้ำได้ — ต้องบอกให้ชัด
         ว่าเป็นคนละฐานการนับ ไม่ใช่แค่ "คนละคำถาม" เฉยๆ กันเข้าใจผิดว่า totalCases = จำนวน Test Case จริง */}
-    <p className="chart-note">คำนวณจากรายการที่ Assign เข้า Test Cycle ({data.executedCases.toLocaleString()}/{data.totalCases.toLocaleString()} รายการ — นับซ้ำได้หาก Test Case เดียวถูกใช้หลาย Cycle) คนละฐานกับ % ความคืบหน้าการทดสอบด้านบนที่นับ Test Case แบบไม่ซ้ำ</p>
+    <div className="chart-note"><span className="material-symbols-outlined" aria-hidden="true">info</span><p><b>ฐานการคำนวณ</b> กราฟนี้นับรายการที่ Assign เข้า Test Cycle ({data.executedCases.toLocaleString()}/{data.totalCases.toLocaleString()}) จึงอาจนับ Test Case เดิมซ้ำเมื่ออยู่หลาย Cycle</p></div>
     <div className="qa-quality-metrics" aria-label="ตัวชี้วัดคุณภาพ QA">
       <div><span>Test Case</span><b>{data.testedTestCaseCount.toLocaleString()}/{data.totalTestCaseCount.toLocaleString()}</b><small>ทดสอบแล้ว</small></div>
       <div><span>Pass Rate</span><b>{data.passRate}%</b><small>{data.passedCases.toLocaleString()} ผ่าน</small></div>
       <div><span>Open Defect</span><b>{data.openDefects.toLocaleString()}</b><small>ยังเปิดอยู่</small></div>
       <div><span>Coverage</span><b>{data.requirementCoverage}%</b><small>{data.coveredRequirements.toLocaleString()}/{data.totalRequirements.toLocaleString()} Requirement</small></div>
     </div>
-    <div className="qa-execution-breakdown" aria-label="สรุป Execution Quality">
-      <span>Execution Quality</span><b>Fail {data.statusDistribution.find(x => x.status === "Fail")?.count ?? 0}</b><b>Blocked {data.statusDistribution.find(x => x.status === "Blocked")?.count ?? 0}</b><b>Not Run {data.statusDistribution.find(x => x.status === "Not Run")?.count ?? 0}</b>
+    <div className="qa-action-summary" aria-label="ประเด็นที่ต้องดำเนินการ">
+      <div className="is-neutral"><span className="material-symbols-outlined" aria-hidden="true">pending_actions</span><p><small>ยังไม่ทดสอบ</small><b>{notRunCount.toLocaleString()} รายการ</b></p></div>
+      <div className="is-danger"><span className="material-symbols-outlined" aria-hidden="true">error</span><p><small>Fail / Blocked</small><b>{(failCount + blockedCount).toLocaleString()} รายการ</b></p></div>
+      <div className="is-warning"><span className="material-symbols-outlined" aria-hidden="true">fact_check</span><p><small>Coverage Gap</small><b>{data.totalRequirements === 0 ? "ยังไม่มีข้อมูล" : coverageGap === 0 ? "ผ่านเกณฑ์แล้ว" : `ขาดอีก ${coverageGap}%`}</b></p></div>
     </div>
   </article>;
 }
@@ -588,40 +601,45 @@ function parseReproSteps(text: string): DefectReproStep[] | null {
   return steps;
 }
 
-function ModuleAttentionPanel({ projectId, releaseId, buildId, modules, shareCode, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; modules: DashboardSummary["modules"]; shareCode?: string; shareToken?: string }) {
-  const [counts, setCounts] = useState<Record<string, number> | null>(null);
-  useEffect(() => {
-    if (!projectId || shareCode || shareToken) { setCounts(null); return; }
-    const headers = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
-    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), page: "1", size: "500" });
-    fetch(`${apiUrl}/defects?${q}`, { headers })
-      .then(r => r.ok ? r.json() : null)
-      .then((res: { rows?: DefectItem[] } | null) => {
-        const closed = new Set(["Resolved", "Closed", "Rejected"]);
-        const map: Record<string, number> = {};
-        for (const d of res?.rows ?? []) { if (d.moduleId && !closed.has(d.status)) map[d.moduleId] = (map[d.moduleId] ?? 0) + 1; }
-        setCounts(map);
-      }).catch(() => setCounts(null));
-  }, [projectId, releaseId, buildId, shareCode, shareToken]);
+function ModuleAttentionPanel({ projectId, releaseId, buildId, modules, totalOpenDefects, shareCode, shareToken }: { projectId?: string; releaseId?: string; buildId?: string; modules: DashboardSummary["modules"]; totalOpenDefects: number; shareCode?: string; shareToken?: string }) {
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => setShowAll(false), [projectId, releaseId, buildId, shareCode, shareToken]);
 
   if (!projectId && !shareCode && !shareToken) return null;
-  const rows = (shareCode || shareToken
-    ? modules.filter(m => (m.openDefects ?? 0) > 0).map(m => ({ moduleId: m.moduleId, count: m.openDefects ?? 0, name: m.moduleName }))
-    : Object.entries(counts ?? {})
-      .map(([moduleId, count]) => ({ moduleId, count, name: modules.find(m => m.moduleId === moduleId)?.moduleName ?? "ไม่ระบุโมดูล" })))
+  const rows = modules
+    .filter(m => (m.openDefects ?? 0) > 0)
+    .map(m => ({ moduleId: m.moduleId, count: m.openDefects ?? 0, name: m.moduleName }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const maxCount = Math.max(1, ...rows.map(r => r.count));
+  const previewLimit = 8;
+  const visibleRows = showAll ? rows : rows.slice(0, previewLimit);
+  const hasMore = rows.length > previewLimit;
 
-  return <article className="card" style={{padding:24}}>
-    <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#1f2937"}}>โมดูลที่ต้องติดตามเป็นพิเศษ</h3>
-    <p style={{margin:"0 0 20px",fontSize:12,color:"#697386",lineHeight:1.5}}>จัดอันดับโมดูลตามจำนวน Defect ที่ยังเปิดอยู่</p>
-    {!shareCode && !shareToken && counts === null ? <p className="muted-row">กำลังโหลด...</p> : rows.length ? <div className="attention-list">
-      {rows.map(r => <div className="attention-row" key={r.moduleId}>
-        <span className="attention-label" title={r.name}>{r.name}</span>
-        <div className="attention-bar-track"><span className="attention-bar-fill" style={{width:`${Math.max(r.count / maxCount * 100, 12)}%`}} /></div>
-        <span className="attention-count">{r.count} Defect</span>
-      </div>)}
-    </div> : <p className="muted-row">ยังไม่มี Defect ที่เปิดอยู่ในระบบ</p>}
+  return <article className="card attention-card">
+    <div className="attention-head">
+      <div className="attention-heading">
+        <h3>โมดูลที่ต้องติดตามเป็นพิเศษ</h3>
+        <p>จัดอันดับโมดูลตามจำนวน Defect ที่ยังเปิดอยู่</p>
+      </div>
+      {rows.length > 0 && <div className="attention-summary" aria-label={`${rows.length} โมดูลมีปัญหา และ ${totalOpenDefects} Open Defects`}>
+        <span className="attention-summary-chip is-warning"><span className="material-symbols-outlined" aria-hidden="true">warning</span>{rows.length} โมดูลมีปัญหา</span>
+        <span className="attention-summary-chip is-info"><span className="material-symbols-outlined" aria-hidden="true">bug_report</span>{totalOpenDefects.toLocaleString()} Open Defects</span>
+      </div>}
+    </div>
+    {rows.length ? <>
+      <div className={`attention-list${showAll ? " is-expanded" : ""}`} id="attention-module-list">
+        {visibleRows.map((r, index) => <div className={`attention-row ${index < 3 ? "is-risk" : index < previewLimit ? "is-warning" : "is-info"}`} key={r.moduleId}>
+          <span className="attention-rank" aria-hidden="true">{index + 1}</span>
+          <span className="attention-label" title={r.name}>{r.name}</span>
+          <span className="attention-count">{r.count} Defect</span>
+          <div className="attention-bar-track" aria-hidden="true"><span className="attention-bar-fill" style={{width:`${Math.max(r.count / maxCount * 100, 8)}%`}} /></div>
+        </div>)}
+      </div>
+      {hasMore && <button type="button" className="attention-toggle" aria-expanded={showAll} aria-controls="attention-module-list" onClick={() => setShowAll(value => !value)}>
+        {showAll ? `แสดงเฉพาะ Top ${previewLimit}` : `ดูทั้งหมด ${rows.length} โมดูล`}
+        <span className="material-symbols-outlined" aria-hidden="true">{showAll ? "expand_less" : "chevron_right"}</span>
+      </button>}
+    </> : <p className="muted-row">ยังไม่มี Defect ที่เปิดอยู่ในระบบ</p>}
   </article>;
 }
 
@@ -749,7 +767,7 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
     </section>
     <div className="charts-grid">
       <TestStatusChart data={data} />
-      <ModuleAttentionPanel projectId={projectId} releaseId={releaseId} buildId={buildId} modules={data.modules} shareCode={shareCode} shareToken={shareToken} />
+      <ModuleAttentionPanel projectId={projectId} releaseId={releaseId} buildId={buildId} modules={data.modules} totalOpenDefects={data.openDefects} shareCode={shareCode} shareToken={shareToken} />
     </div>
     <div className="dashboard-module-row">
       <article className="card" style={{padding:24}}>
