@@ -124,3 +124,22 @@ Risk: Draft, PendingApproval, Approved, Rejected, Expired, Closed
 - vw_ModuleQuality
 - vw_ReleaseReadiness
 - vw_TesterWorkload
+## 8. Test Cycle Clone Design (Implemented 2026-09-16)
+
+เพิ่ม field ใน `TestCycles`:
+
+- `CopiedFromTestCycleId` nullable FK กลับมายัง `TestCycles.TestCycleId`
+- Index `TestCycles(CopiedFromTestCycleId, CreatedAt)` สำหรับแสดง lineage และค้นหา Target Cycle
+
+กติกาข้อมูล:
+
+- Source และ Target เป็นคนละ row และคนละ `TestCycleId`
+- Clone สร้าง `TestCycleCases` row ใหม่ทั้งหมด โดยคัดลอก `TestCaseId`, `TestCaseRevisionNo`, `Priority` และ `ExecutionOrder` ตาม mode
+- ห้ามคัดลอก `TestExecutions`, `TestStepResults`, `Attachments`, `AssignedTesterUserId` หรือผล `CurrentStatus` เดิม
+- `TestCycleCase.CurrentStatus` ของ Target ต้องเป็น `NotRun`
+- การสร้าง Test Cycle + Cases + Audit ต้องอยู่ใน transaction เดียว; หาก validation หรือ insert ใดล้มเหลวต้อง rollback ทั้งชุด
+- FK แบบ self-reference ใช้ `ON DELETE SET NULL` หรือห้ามลบ Source ที่มี Target เพื่อไม่ให้ lineage ชี้ไปยัง row ที่หายไป
+
+## 9. Test Cycle Clone Audit
+
+Audit log ของ Clone ต้องเก็บอย่างน้อย: Source Cycle ID/Code, Target Cycle ID/Code, Source/Target Release, Build, Environment, Clone Mode, Case Count, User และ Timestamp โดยไม่บันทึก token หรือข้อมูลทดสอบอ่อนไหว

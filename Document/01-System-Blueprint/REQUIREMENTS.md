@@ -185,3 +185,18 @@ Phase 1: Login/User/Role, Project/Module, Release/Build, Requirement/RTM, Test C
 Phase 2: Test Data, Environment, Evidence, Regression, Summary, Risk, Sign-off, Audit
 
 Phase 3: Notification, Import/Export, Integration API, CI/CD, Analytics
+### FR-035 Test Cycle Clone / Target Reuse
+
+ผู้ใช้สามารถสร้าง Test Cycle ใหม่จาก Cycle เดิมเพื่อทดสอบ Release + Build + Environment ใหม่ได้ โดย Source Cycle ยังคงประวัติเดิมแบบ Immutable และ Target Cycle ต้องเป็นคนละ Cycle ID
+
+- Clone ต้องเลือก Target Release, Build และ Environment ใหม่ได้
+- Target Build ต้องอยู่ใต้ Target Release และ Target ทั้งหมดต้องอยู่ใน Project เดียวกัน
+- Default clone mode คัดลอก Test Case membership, order และ `TestCaseRevisionNo` จาก Source Cycle
+- Alternative clone mode ใช้สมาชิกจาก Test Suite ปัจจุบันและ Revision ล่าสุด
+- ไม่คัดลอก Execution, Step Result, Evidence, Assignment, CurrentStatus หรือ Defect record
+- Cycle ใหม่เริ่ม `Draft`; Case ใหม่เริ่ม `NotRun`
+- ต้องแสดง Source/Target lineage และบันทึก Audit
+
+### Additional Business Rule
+
+Test Cycle Clone ต้องสร้าง Target Cycle ใหม่เสมอ ห้ามย้าย Source Cycle ไปชี้ Release/Build/Environment ใหม่ เพราะจะทำให้ประวัติผลทดสอบเดิมคลาดเคลื่อน

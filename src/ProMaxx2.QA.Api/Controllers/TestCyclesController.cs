@@ -43,6 +43,15 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
         catch (Exception exception) { return StatusCode(500, new ProblemDetails { Title = "เกิดข้อผิดพลาด", Detail = exception.Message, Status = 500 }); }
     }
 
+    [HttpPost("test-cycles/{sourceCycleId:guid}/clone")]
+    public async Task<ActionResult<TestCycleDto>> Clone(Guid sourceCycleId, CloneTestCycleRequest request, CancellationToken ct)
+    {
+        try { return Ok(await service.CloneAsync(sourceCycleId, request, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (DuplicateCodeException exception) { return Conflict(new ProblemDetails { Title = "รหัส Test Cycle ซ้ำ", Detail = exception.Message, Status = 409 }); }
+        catch (ArgumentException exception) { return BadRequest(new ProblemDetails { Title = "ข้อมูล Clone Test Cycle ไม่ถูกต้อง", Detail = exception.Message, Status = 400 }); }
+    }
+
     [HttpPut("test-cycles/{id:guid}")]
     public async Task<ActionResult<TestCycleDto>> Update(Guid id, SaveTestCycleRequest request, CancellationToken ct)
     {

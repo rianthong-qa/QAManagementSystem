@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(QaDbContext))]
-    partial class QaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260916031322_AddTestCycleCloneLineageAndAudit")]
+    partial class AddTestCycleCloneLineageAndAudit
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1713,8 +1716,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("DefectId");
 
-                    b.HasIndex("CreatedAt", "DefectActivityId");
-
                     b.ToTable("DefectActivities", (string)null);
                 });
 
@@ -1917,8 +1918,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("RegressionActivityId");
-
-                    b.HasIndex("CreatedAt", "RegressionActivityId");
 
                     b.HasIndex("ReleaseId", "CreatedAt");
 
@@ -2424,10 +2423,6 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasKey("AuditLogId");
 
                     b.HasIndex("UserId");
-
-                    b.HasIndex("CreatedAt", "AuditLogId");
-
-                    b.HasIndex("EntityType", "CreatedAt", "AuditLogId");
 
                     b.HasIndex("EntityType", "EntityId", "CreatedAt");
 

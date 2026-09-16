@@ -62,6 +62,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
     public DbSet<RiskAcceptance> RiskAcceptances => Set<RiskAcceptance>();
     public DbSet<ReleaseSignoff> ReleaseSignoffs => Set<ReleaseSignoff>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AutomationCase> AutomationCases => Set<AutomationCase>();
     public DbSet<AutomationVersion> AutomationVersions => Set<AutomationVersion>();
     public DbSet<AutomationAction> AutomationActions => Set<AutomationAction>();

@@ -100,7 +100,7 @@ git diff --check
 | Administration | User / Role | User, role และ permission grid |
 | Administration | การตั้งค่ากลาง | Master data และ Environment ที่จัดเก็บในฐานข้อมูล |
 | Administration | System Monitor | API/Database health, allowlisted Windows Service status และ privileged Start/Restart actions |
-| Administration | Audit Log | Audit table/filter |
+| Administration | Audit Log | Activity overview, search/entity filter, desktop table, mobile cards และ read-only detail |
 
 ## 6. Card, Table และ Status
 
@@ -258,6 +258,28 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-09-16 — Audit Log visual refresh
+
+- หน้า Audit Log ใช้ Page Header ของแอปเป็นหัวเรื่องชุดเดียว ไม่ซ้ำหัวเรื่องในการ์ด; แสดงจำนวนผลลัพธ์ในหัวรายการ พร้อมตัวค้นหา ตัวกรองประเภทข้อมูล สถานะ loading/error/empty และปุ่ม retry ที่ชัดเจน
+- Desktop ใช้ตารางเรียงใหม่ล่าสุดก่อน แยกเวลา ผู้ดำเนินการ Action ข้อมูลที่เกี่ยวข้อง และสรุป; Mobile แปลงแต่ละแถวเป็น card ไม่ให้เกิด horizontal scroll ระดับหน้า
+- รายละเอียดเปิดใน read-only modal มาตรฐาน โดยแสดงเฉพาะข้อมูลที่ API ส่งจริง (เวลา ผู้ดำเนินการ Action ประเภท/รหัสข้อมูล และสรุป) ไม่แสดง Before/After diff ที่ API ยังไม่มี
+
+### 2026-09-10 — Test Summary readiness gap unit
+
+- การ์ด Pass Rate ในส่วน “Release readiness gaps” แสดงส่วนต่างต่ำกว่าเกณฑ์ด้วยหน่วย `%` แทนคำว่า “จุด” เพื่อให้ตรงกับรูปแบบเปอร์เซ็นต์ที่ผู้ใช้ต้องการ
+
+### 2026-09-09 — Regression workspace visual refresh
+
+- หน้า Regression ใช้ workspace hero เพื่อสรุป Release, Target Build, Progress และสถานะรอบปัจจุบันจากข้อมูลเดิม พร้อมทางลัดไปยังการตั้งค่า Impact Analysis โดยไม่เพิ่ม API request
+- KPI 5 ด้านใช้ icon, accent color และคำอธิบายร่วมกับสี; workflow 3 ขั้นปรับเป็น step navigation ที่แยกสถานะ Done/Active/Next ชัดเจนและเข้าถึงด้วย keyboard
+- Impact Analysis, Recommended Cases, Schedule, Trend, Activity, Baseline และ History ใช้ลำดับชั้น card เดียวกัน; form control สูงอย่างน้อย 42px, focus ring ตาม primary token และรายการ Module/Test Case แสดง selected state ชัดเจน
+- Responsive hero/KPI/workflow ลดจากหลายคอลัมน์เป็น 1–2 คอลัมน์ตามพื้นที่จริง และข้อความ Release, Build, Module รวมถึง Test Case ต้อง wrap โดยไม่สร้าง horizontal scroll ระดับหน้า
+
+### 2026-09-09 — Risk Acceptance detail typography
+
+- Modal รายละเอียด Risk Acceptance ใช้น้ำหนักตัวอักษรปกติสำหรับเนื้อหา Issue, Workaround, Target Fix, QA Recommendation และ Review Comment พร้อมเพิ่ม line-height เพื่อให้อ่านข้อความยาวได้ง่าย โดยคงหัวข้อ ค่า Impact/Probability/Owner และสถานะไว้ที่น้ำหนักกึ่งหนาเพื่อรักษาลำดับชั้นข้อมูล
+- ชื่อ Risk ใน hero ใช้ขนาด 17px น้ำหนัก 600 และข้อความยาวต้อง wrap ภายใน modal โดยไม่สร้าง horizontal scroll บน Desktop หรือ Mobile
+
 ### 2026-09-09 — Dashboard attention modules scalability
 
 - การ์ด “โมดูลที่ต้องติดตามเป็นพิเศษ” แสดง Top 8 โมดูลเป็นค่าเริ่มต้น พร้อมจำนวนโมดูลที่มีปัญหา ยอด Open Defect และอันดับรายโมดูลจาก Dashboard Summary ชุดเดียวกัน โดยห้ามยิง Defect list API ซ้ำ เพื่อให้ข้อมูลปรากฏพร้อม Dashboard และลดความสูงเมื่อข้อมูลเพิ่มขึ้น
@@ -266,6 +288,124 @@ git diff --check
 - การ์ด “ภาพรวมผลการทดสอบ” และ “โมดูลที่ต้องติดตามเป็นพิเศษ” ต้องยืดเต็มความสูงของแถวเดียวกันบน Desktop; ฝั่งภาพรวมใช้พื้นที่เพิ่มสำหรับสถานะเทียบเกณฑ์ คำอธิบายฐานการนับแบบย่อ และการ์ดประเด็นดำเนินการ (Not Run, Fail/Blocked และ Coverage Gap) จาก Dashboard Summary เดิม โดยพื้นที่ส่วนเกินต้องกระจายรอบกราฟ ห้ามเว้นช่องว่างก้อนใหญ่ระหว่าง KPI กับประเด็นดำเนินการ
 - เมื่อกดดูโมดูลทั้งหมดบน Desktop รายการต้องเลื่อนภายในพื้นที่การ์ดเดิมและห้ามทำให้การ์ด “ภาพรวมผลการทดสอบ” ยืดตาม; Mobile ให้รายการขยายตามเนื้อหาปกติเพื่อหลีกเลี่ยง nested scroll
 
+### 2026-09-09 — Requirement list visual refresh
+
+- หน้า Requirement แสดง KPI 4 ด้านจากข้อมูลจริง (ทั้งหมด, In Scope, Approved และ Test Coverage) เป็นปุ่มกรองที่เข้าถึงด้วย keyboard และต้องแสดงสถานะที่เลือกด้วย `aria-pressed`
+- แสดง Workflow status chips พร้อมจำนวน, filter controls และ removable active-filter chips ภายใน card รายการเดียวกัน โดยการล้างตัวกรองต้องคืนค่าทุกเงื่อนไขของหน้า
+- ตาราง Desktop รวม Code/Title/Module และ Priority/Risk เป็นกลุ่มข้อมูลเดียวกัน ลดจำนวนคอลัมน์ พร้อมแสดง Scope/Coverage ด้วยข้อความร่วมกับสี; Requirement ใน Scope ที่ยังไม่มี Test Case ต้องเห็นจุดเตือนชัดเจน
+- Responsive KPI ใช้ 4/2/1 คอลัมน์ตามพื้นที่ และตาราง Mobile ใช้ labeled card rows โดยไม่สร้าง horizontal scroll ระดับหน้า
+- App shell ช่วง Tablet ≤1200px ต้องใช้ content track เต็มความกว้างและแสดง sidebar เป็น off-canvas; selector ของสถานะเมนูต้องไม่คืนค่า desktop grid จนบีบเนื้อหาเหลือเท่าความกว้าง sidebar
+
+### 2026-09-09 — Test Summary executive message readability
+
+- “ข้อความสรุปสำหรับผู้บริหาร” ต้องไม่แสดงเป็นย่อหน้ายาวต่อเนื่อง ให้แยกเป็นหัวข้อสถานะ, Fact cards 4 ด้าน (Execution, Test Result, Coverage, Risk) และแถบข้อสรุปเพื่อสแกนข้อมูลได้เร็ว
+- Fact cards ใช้ตัวเลขจาก Test Summary แหล่งเดียวกัน จัดวางสูงสุด 4 คอลัมน์และลดเป็น 2/1 คอลัมน์ตามพื้นที่ภายใน card จริง ไม่ยึดเฉพาะ viewport breakpoint และต้องแสดงสถานะด้วยข้อความร่วมกับสี
+
+### 2026-09-08 — Test Summary narrative persistence
+
+- การบันทึก Known Issues, Remaining Risks และ QA Recommendation ต้องเริ่มหลังโหลด Narrative ของ Release ปัจจุบันเสร็จแล้วเท่านั้น เพื่อไม่ให้ค่าเริ่มต้นว่างเขียนทับ `qa.testSummaryNarrative.{releaseId}` ระหว่าง refresh หรือเปลี่ยน Release
+- ข้อความที่ผู้ใช้แก้ไขต้องคงอยู่หลัง refresh; ปุ่ม Generate / Regenerate ยังคงแทนค่าด้วยข้อความที่ derive จาก Summary ล่าสุดตามพฤติกรรมเดิม
+
+### 2026-09-08 — Test Summary executive readiness gaps
+
+- Executive view ต้องมีข้อความสรุปและตัวเลข Readiness Gap ที่คำนวณจาก Test Summary แหล่งเดียวกัน เพื่อไม่ให้ข้อความขัดกับ KPI ที่แสดงบนหน้า
+- Readiness Gap ใช้เกณฑ์ Coverage/Pass Rate ≥ 90%, Execution 100% และ P0 = 0 พร้อมจัดวาง 4/2/1 คอลัมน์บน Desktop/Tablet/Mobile
+
+### 2026-09-08 — Test Summary decision support
+
+- หน้า Test Summary ต้องสรุป Quality Gate 6 ด้านด้วยสถานะ Pass/Fail/No Data โดยห้ามตีความข้อมูล Regression ว่าผ่านเมื่อ API ยังไม่มีหลักฐาน
+- Presentation Forecast ใช้วันที่นำเสนอที่ผู้ใช้ปรับได้และจำค่าแยกตาม Release พร้อมคำนวณจำนวน Test Case ขั้นต่ำต่อวันจาก Snapshot ล่าสุด; ต้องระบุว่าไม่รวมเวลาแก้ไขและ Retest
+- Top Blockers แสดง Open Defect สูงสุด 5 รายการ เรียง Severity และอายุ พร้อม Owner จากข้อมูลจริง; ฟิลด์ที่ระบบไม่มี เช่น ETA ต้องแสดง “ยังไม่ระบุ” และห้ามสร้างข้อมูลสมมติ
+- Quality Gate/Forecast จัดวาง 2/1 คอลัมน์ และ Top Blocker เปลี่ยนเป็น stacked row บน Mobile โดยไม่สร้าง horizontal scroll ระดับหน้า
+
+### 2026-09-08 — Test Summary trends and presenter mode
+
+- Test Summary เก็บ Daily Snapshot สูงสุด 30 วันแยกตาม Release ใน browser storage และเปรียบเทียบ Pass Rate, Execution, Open P0 และ Open Defects กับ Snapshot วันก่อนหน้า; วันแรกต้องแสดงสถานะรอข้อมูลแทนค่าการเปลี่ยนแปลงสมมติ
+- Data Confidence คำนวณจากความพร้อมของ Scope, Environment, Out-of-Scope, Regression, Installation/Update และ Performance พร้อมแสดงหมวดที่ขาดอย่างชัดเจน
+- Presenter Mode เป็น full-viewport read-only view สำหรับการประชุม แสดงเฉพาะ KPI, Executive View, Quality Gate, Forecast, Top Blockers, Trend และ Data Confidence; ปิดได้ด้วยปุ่มหรือ Escape และต้องรองรับ safe area/Mobile โดยไม่เกิด horizontal scroll
+
+### 2026-09-08 — Test Summary interactive drill-down
+
+- Readiness และ Quality Gate cards ต้องเป็น keyboard-accessible buttons พร้อม `aria-pressed`; เมื่อเลือกให้แสดงหลักฐานปัจจุบันและ Next Action ของ Gate เดียวกัน
+- Top Blockers ใช้ accordion button พร้อม `aria-expanded` เพื่อเปิดรายละเอียดและ Expected/Actual โดยค่าไม่ครบต้องแสดง “ยังไม่ระบุ”
+- Data Confidence chips ต้องกดเพื่อนำผู้ใช้ไปยังหมวด Release Report ที่เกี่ยวข้องและไฮไลต์หมวดนั้น; หากอยู่ใน Presenter Mode ให้กลับสู่หน้าปกติก่อนเลื่อนไปยังรายละเอียด
+
+### 2026-09-08 — Service Manager resource chart
+
+- ช่องว่างด้านขวาของ Automation Schedule Worker ใช้แสดงการ์ด `Service Resources` โดยกราฟเส้นสีน้ำเงินแทน CPU และสีเขียวแทน RAM ของ API + Web
+- เก็บข้อมูลสูงสุด 120 จุดทุก 1 วินาที, แสดงค่าปัจจุบันพร้อมหน่วย และวาดด้วย double buffering เพื่อให้หน้าจอลื่นโดยไม่สะสม control หรือ drawing resource
+
+### 2026-09-08 — Service Manager Activity Log layout
+
+- หน้าต่าง Service Manager ต้องมีความสูงขั้นต่ำ 640px และพื้นที่ Service Cards ต้องไม่เบียด Activity Log จนช่องข้อความมองไม่เห็น โดยสงวนพื้นที่แนวตั้งให้ Log ใช้งานได้ในขนาดหน้าต่างเริ่มต้น
+
+### 2026-09-08 — Test Case sortable columns
+
+- หัวตารางหน้า Test Case ใช้ขนาดตัวอักษร 12px และคอลัมน์ `Test Case ID` กับ `สร้างเมื่อ` เป็นปุ่มเรียงข้อมูลที่เข้าถึงด้วย keyboard ได้ พร้อมไอคอนแสดงสถานะและ `aria-sort`
+- การเรียงต้องทำฝั่ง Server ก่อนแบ่งหน้า รองรับน้อยไปมาก/มากไปน้อย และบันทึกคอลัมน์กับทิศทางล่าสุดไว้ใน `localStorage` ด้วย key `qa.testCases.listSort`
+- Frontend ต้องเรียงข้อมูลในหน้าปัจจุบันซ้ำตามค่าเดียวกัน โดย Test Case ID ใช้ natural numeric comparison เพื่อให้การคลิกตอบสนองถูกต้องแม้ API instance ที่กำลังรันยังเป็นเวอร์ชันก่อนรองรับ sort
+
+### 2026-09-08 — Execution Workspace Test Case queue
+
+- ส่วน Test Cases ใน Execution Workspace ต้องจัดหัวข้อ เครื่องมือ และข้อมูลภายในรายการชิดซ้ายอย่างสม่ำเสมอ
+- รายการ Test Case ต้องเรียง `Test Case ID` จากน้อยไปมากด้วย natural numeric order เพื่อให้รหัสที่ลงท้ายด้วย `2` อยู่ก่อน `10`; หากรหัสซ้ำให้ใช้ Cycle Case ID เป็นลำดับสำรองเพื่อให้ผลลัพธ์คงที่
+
+### 2026-09-07 — Test Case mobile text containment
+
+- การ์ดรายการ Test Case บน Mobile ต้องกว้างไม่เกินพื้นที่ของ table container และใช้ fixed table layout หลังแปลงตารางเป็น card
+- Test Case ID, Title และค่าทุกคอลัมน์ต้องตัดบรรทัดด้วย `overflow-wrap:anywhere` โดยห้ามดันการ์ดหรือทำให้เกิด horizontal scroll ระดับหน้า
+
+### 2026-09-07 — Global back-to-top control
+
+- ทุกหน้าภายใน App shell แสดงปุ่ม `กลับไปด้านบน` แบบลอยเมื่อ scroll container หลักเลื่อนเกิน 480px และกดแล้วเลื่อนกลับด้านบนแบบ smooth
+- ทุกขนาดหน้าจอใช้ปุ่มวงกลมขนาด 44px แสดงเฉพาะ Material Symbol `arrow_upward` โดยมี `aria-label` และ `title` อธิบายการทำงาน
+- ปุ่มต้องรองรับ keyboard focus, safe-area และ `prefers-reduced-motion` รวมทั้งใช้ z-index ต่ำกว่า modal เพื่อไม่ทับหน้าต่างโต้ตอบ
+
+### 2026-09-07 — Test Suite list visual refresh
+
+- ปรับหน้า Test Suite ให้ summary/actions, status chips, filters และ table อยู่ใน card เดียวที่แบ่งพื้นที่ชัดเจน
+- ลด visual weight ของ row actions โดย Desktop เรียง action ในแถวเดียวเพื่อลดความสูงของ data row; Mobile ใช้ touch target 34px และเรียงตามพื้นที่
+- สถานะ `ยังไม่มี Cycle` ในตาราง Test Suite ใช้สีแดงทั้งข้อความและ Material Symbol เพื่อสื่อว่าต้องดำเนินการต่อ
+- Test Suite pagination เริ่มต้น 30 รายการต่อหน้า และเลือก 30/50/100/150 ได้; เมื่อเปลี่ยน filter หรือจำนวนต่อหน้าต้องกลับหน้าแรก และแสดงจำนวนผลลัพธ์หลังกรอง
+- Filter รองรับ 5/3/2/1 ช่องตามพื้นที่ และ Mobile แสดง Suite เป็น labeled card rows โดยไม่เกิด horizontal scroll ระดับหน้า
+
+### 2026-09-07 — Test Case list visual refresh
+
+- ปรับหน้า Test Case ให้ summary/actions, filter และ table อยู่ใน card เดียวที่แบ่งพื้นที่ชัดเจน พร้อมลด visual weight ของ row actions
+- Template และ Import ใช้ Material Symbols พร้อม label ที่อ่านง่าย; filter ใช้ responsive grid 6/3/2/1 ช่องตามพื้นที่
+- Desktop ใช้ compact data table และ Mobile เปลี่ยนเป็น card rows ภายใน container โดยไม่สร้าง horizontal scroll ระดับหน้า
+- Pagination ใช้รูปแบบเดียวกับ Test Suite: ค่าเริ่มต้น 30 รายการ ตัวเลือก 30/50/100/150 แสดงจำนวนทั้งหมด และใช้ Material Symbols สำหรับก่อนหน้า/ถัดไป
+
+### 2026-09-07 — RTM dashboard visual refresh
+
+- ปรับ RTM summary เป็น icon-based coverage cards แยก Requirements, Covered, Partial และ Not Covered ด้วยสีเชิงความหมาย
+- จัด filter toolbar และตารางเป็น card เดียวกัน ลด visual weight ของ action buttons และเพิ่ม hover/readability สำหรับข้อมูล Requirement
+- Responsive ใช้ KPI 4/2 คอลัมน์ตามพื้นที่, filter 4/2/1 คอลัมน์ และ labeled table rows บน Mobile โดยไม่สร้าง horizontal scroll ระดับหน้า
+
+### 2026-09-07 — My Work dashboard visual refresh
+
+- ปรับหน้า My Work ให้ใช้ profile strip, icon-based metric cards, compact filter chips และ assignment card ที่แบ่ง header/filter/content ชัดเจน
+- Empty state ต้องอยู่กึ่งกลางพื้นที่ข้อมูลและใช้ Material Symbol ภายในกรอบสีอ่อน แทนการแสดงชิดมุมใต้หัวตาราง
+- Metric grid รองรับ 5/3/2/1 คอลัมน์ตามพื้นที่ และตาราง Mobile ใช้ labeled rows เดิมโดยไม่เกิด horizontal scroll ระดับหน้า
+
+### 2026-09-07 — My Work assigned-case data source
+
+- หน้า My Work ต้องใช้ `GET /api/v1/my-work` ซึ่งอ้างอิงผู้ใช้จาก Authentication Context และแสดง Test Cycle Case ที่ `AssignedTesterUserId` ตรงกับผู้ใช้ปัจจุบัน ห้ามใช้รายการที่ผู้ใช้สร้างเองแทนงานที่ได้รับมอบหมาย
+- แสดง summary และ filter จาก execution status พร้อม Module, Priority, Test Type, Test Cycle, Build, Due Date, Estimated Time และ action เข้า Execution Workspace
+- ตาราง Desktop ต้องเลื่อนภายใน container และ Mobile แปลงเป็น labeled rows โดยไม่สร้าง horizontal scroll ระดับหน้า
+
+### 2026-09-07 — Test Cycle detail visual hierarchy refresh
+
+- ปรับ modal รายละเอียด Test Cycle ให้มีความกว้างที่อ่านง่ายขึ้น พร้อม sticky breadcrumb header ภายใน modal
+- ปรับ progress summary เป็น responsive grid และแยก KPI เป็นการ์ดย่อยเพื่อสแกนข้อมูลได้เร็วขึ้น
+- เพิ่ม Material Symbols ให้หัวข้อข้อมูลหลัก และรองรับการจัดวางแบบเต็มจอบน Mobile โดยไม่เกิด horizontal scroll
+- Pagination หน้า Test Cycle ใช้รูปแบบเดียวกับ Test Suite: ค่าเริ่มต้น 30 รายการ ตัวเลือก 30/50/100/150 แสดงจำนวนทั้งหมด และรองรับ API สูงสุด 150 รายการต่อหน้า
+
+### 2026-09-07 — Material Symbols across all pages
+
+- ตรวจ React components ทุกหน้าและแทน icon แบบ emoji/text glyph ที่ยังเหลือสำหรับ action มาตรฐาน เช่น close, confirm, edit, refresh, download, AI, run, warning, navigation, power และ empty state ด้วย `Material Symbols Outlined`; ส่วนที่ใช้ Material Symbols อยู่แล้วคงเดิม
+- เพิ่มกฎกลางสำหรับขนาด line-height น้ำหนัก และ alignment ของ Material Symbols ภายใน button/table action/modal header เพื่อให้ไอคอนสม่ำเสมอทุกหน้า โดยข้อความ ลูกศรที่เป็นส่วนของข้อมูล และเครื่องหมายสถานะที่ไม่ใช่ icon ยังคงเดิม
+
 ### 2026-09-07 — Cross-page responsive data integrity
 
 - ตรวจ responsive inventory ทุกหน้าจาก application routes และ stylesheet ทั้งหมด แล้วเพิ่ม safety layer กลางให้ page/card/grid children ใช้ `min-width: 0`, ข้อความและ identifier ยาว wrap ได้, media จำกัดตาม container และ wide table/permission matrix เลื่อนแนวนอนภายใน container เท่านั้นโดยไม่ดันทั้งหน้า
@@ -273,6 +413,17 @@ git diff --check
 - แก้ mobile sidebar ที่ถูก desktop selector `.app.menu-closed .sidebar` บังคับให้แสดงค้างทับเนื้อหา: สถานะปิดต้อง translate ออกนอกจอเสมอ; เมื่อเปิดใน collapsed mode แถบกว้าง 64px และปุ่มกว้าง 46px เท่าพื้นที่ไอคอน โดยแบ่งพื้นที่ให้ `<main>` และไม่ใช้ backdrop บังข้อมูล ส่วนเมนูแบบเต็มยังใช้ backdrop ตามเดิม
 - Popup/Modal ทุกหน้าต้องยึดกับ viewport และเปิดตรงกลางจอเสมอ: `.page-transition` ห้ามคง `transform` หรือ `will-change: transform` เพราะจะสร้าง containing block ให้ `position: fixed` จน Popup เคลื่อนตาม scroll; page transition ใช้ opacity animation เท่านั้น
 - Small phone ≤560px ลด page/card padding, ให้หัวข้อ wrap และ action/pagination มี touch target ที่เหมาะสม โดยใช้ breakpoint และ component pattern เดิมของระบบ
+
+### 2026-09-07 — Test Cycle detail Material Symbols
+
+- หน้า Test Cycle/รายละเอียดใช้ `Material Symbols Outlined` จาก Google Fonts สำหรับไอคอนทั้งหมดแทน emoji และ text glyph ได้แก่ breadcrumb/close, cycle/status/type, environment, progress statistics, release/build/ผู้สร้าง/วันที่/suite/module, timeline, notes และปุ่มปิด/แก้ไข
+- หน้า Test Cycle ส่วนรายการและ action ที่นำไปยังรายละเอียดใช้ Material Symbols ชุดเดียวกันด้วย ได้แก่ retry/close notice, export, AI generate, create, bulk status, empty state, edit/start/close/delete และ pagination เพื่อไม่ให้มี glyph หรือ emoji เก่าปะปนใน flow หน้า Test Cycle
+- ไอคอนใช้ชื่อ ligature ที่สื่อความหมายพร้อม `aria-hidden="true"`; สี ขนาด วงกลมพื้นหลัง และ responsive timeline arrow กำหนดผ่าน class เฉพาะ `.cycle-detail-*` เพื่อไม่กระทบหน้าอื่น
+
+### 2026-09-07 — Test Suite detail Material Symbols
+
+- หน้า Test Suite/แสดงรายละเอียดใช้ `Material Symbols Outlined` แทน emoji, ตัวอักษรย่อ และ glyph ทั้งหมดใน header/close, hero, KPI, ข้อมูล Module/ผู้สร้าง/วันที่, กำหนดการและผู้ดำเนินการของ Test Cycle, ลิงก์เปิดรายละเอียด, expand list และ footer actions
+- กำหนดขนาด น้ำหนัก และ alignment ผ่าน selector ภายใต้ `.suite-detail` เพื่อรักษารูปทรง icon container และไม่เปลี่ยน icon ของหน้าอื่น
 
 ### 2026-08-28 (Weighted Auto Assignment)
 
@@ -496,3 +647,11 @@ git diff --check
 ### 2026-09-03 — Automation responsive action layout
 
 - Automation section headers and action groups stack/wrap at mobile widths so controls remain reachable without page-level horizontal scrolling.
+### 2026-09-16 — Test Cycle Clone to New Target (Implemented)
+
+- Test Cycle Clone ใช้แนวคิด `Clone as New Cycle`: Source Cycle เป็น read-only reference และ Target ใช้ Cycle/Case ID ใหม่เสมอ เพื่อไม่เขียนทับ Execution History
+- Clone modal แบ่งข้อมูลเป็น Source Summary, Target Scope และ Clone Options; Target Release → Build เป็น dependent selector และ Environment ต้องกรองตาม Project/Active
+- แสดง preview จำนวน Test Case และ warning ที่อ่านได้ชัดเจนว่า Execution, Evidence, Assignment และผลเดิมไม่ถูกคัดลอก
+- ปุ่ม Clone ใช้ permission/disabled state และต้องมี inline loading/error/success feedback ตามมาตรฐาน modal เดิม
+- Desktop ใช้ modal สูงสุด 900px แบบ 2 คอลัมน์; Mobile ≤760px ใช้ full-screen modal, form 1 คอลัมน์, header/footer sticky และ action group wrap ได้ โดยห้ามเกิด page-level horizontal scroll
+- Detail ของ Target แสดง lineage badge/text `Cloned from <Source Cycle>` และใช้สี/Badge ตาม status เดิมของระบบ

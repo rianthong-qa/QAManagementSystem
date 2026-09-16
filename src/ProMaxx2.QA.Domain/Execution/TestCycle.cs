@@ -13,13 +13,15 @@ public sealed class TestEnvironment
 public sealed class TestCycle
 {
     private TestCycle() { }
-    public TestCycle(Guid projectId, Guid releaseId, Guid buildId, Guid environmentId, Guid? suiteId, string code, string name, string? type, DateTime? start, DateTime? end, Guid? owner, string? notes, Guid? createdBy) { if (new[] { projectId, releaseId, buildId, environmentId }.Any(x => x == Guid.Empty)) throw new ArgumentException("Project, release, build and environment are required."); Validate(code, name, start, end); TestCycleId = Guid.NewGuid(); ProjectId = projectId; ReleaseId = releaseId; BuildId = buildId; EnvironmentId = environmentId; TestSuiteId = suiteId; CycleCode = code.Trim().ToUpperInvariant(); CycleName = name.Trim(); CycleType = type?.Trim(); StartDate = start; EndDate = end; OwnerUserId = owner; Notes = notes?.Trim(); Status = "Draft"; CreatedAt = DateTime.UtcNow; CreatedBy = createdBy; }
+    public TestCycle(Guid projectId, Guid releaseId, Guid buildId, Guid environmentId, Guid? suiteId, string code, string name, string? type, DateTime? start, DateTime? end, Guid? owner, string? notes, Guid? createdBy, Guid? copiedFromTestCycleId = null) { if (new[] { projectId, releaseId, buildId, environmentId }.Any(x => x == Guid.Empty)) throw new ArgumentException("Project, release, build and environment are required."); Validate(code, name, start, end); TestCycleId = Guid.NewGuid(); ProjectId = projectId; ReleaseId = releaseId; BuildId = buildId; EnvironmentId = environmentId; TestSuiteId = suiteId; CopiedFromTestCycleId = copiedFromTestCycleId; CycleCode = code.Trim().ToUpperInvariant(); CycleName = name.Trim(); CycleType = type?.Trim(); StartDate = start; EndDate = end; OwnerUserId = owner; Notes = notes?.Trim(); Status = "Draft"; CreatedAt = DateTime.UtcNow; CreatedBy = createdBy; }
     public Guid TestCycleId { get; private set; }
     public Guid ProjectId { get; private set; }
     public Guid ReleaseId { get; private set; }
     public Guid BuildId { get; private set; }
     public Guid EnvironmentId { get; private set; }
     public Guid? TestSuiteId { get; private set; }
+    public Guid? CopiedFromTestCycleId { get; private set; }
+    public TestCycle? CopiedFromTestCycle { get; private set; }
     public string CycleCode { get; private set; } = string.Empty; public string CycleName { get; private set; } = string.Empty; public string? CycleType { get; private set; }
     public DateTime? StartDate { get; private set; }
     public DateTime? EndDate { get; private set; }

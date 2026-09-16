@@ -21,3 +21,65 @@
 .regression-analyze-action{display:flex;flex-direction:column;align-items:flex-end;gap:5px}.regression-analyze-action .btn{white-space:nowrap}.regression-analyze-hint{color:var(--muted);font-size:12px;text-align:right}
 @media(max-width:900px){.regression-steps{grid-template-columns:1fr}}
 @media(max-width:700px){.regression-section-head>.regression-analyze-action{width:100%;align-items:stretch}.regression-analyze-action .btn{width:100%}.regression-analyze-hint{text-align:left}}
+
+/* 2026 Regression workspace visual hierarchy */
+.regression-page{gap:18px}
+.regression-hero{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:24px;min-width:0;overflow:hidden;border:1px solid #264b9b;border-radius:16px;background:linear-gradient(125deg,#102a62 0%,#17469d 56%,#2457d6 100%);padding:24px;color:#fff;box-shadow:0 14px 30px rgba(23,70,157,.18)}
+.regression-hero::after{position:absolute;right:-70px;bottom:-110px;width:280px;height:280px;border:55px solid rgba(255,255,255,.07);border-radius:50%;content:"";pointer-events:none}
+.regression-hero-copy,.regression-hero-status,.regression-hero-action{position:relative;z-index:1}
+.regression-eyebrow{display:inline-flex;align-items:center;gap:6px;margin-bottom:8px;color:#dbe7ff;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.regression-eyebrow .material-symbols-outlined{font-size:17px}
+.regression-hero h2{max-width:680px;margin:0;font-size:22px;font-weight:700;line-height:1.35;color:#fff}
+.regression-hero-copy>p{max-width:700px;margin:7px 0 13px;color:#d6e2fa;font-size:13px;line-height:1.55}
+.regression-context-chips{display:flex;flex-wrap:wrap;gap:7px}
+.regression-context-chips>span{display:inline-flex;align-items:center;gap:5px;min-width:0;border:1px solid rgba(255,255,255,.2);border-radius:999px;background:rgba(255,255,255,.1);padding:5px 9px;color:#f5f8ff;font-size:11px;font-weight:600}
+.regression-context-chips .material-symbols-outlined{font-size:15px}
+.regression-hero-status{display:flex;align-items:center;gap:12px;min-width:240px;border-left:1px solid rgba(255,255,255,.2);padding-left:22px}
+.regression-progress-ring{--regression-progress:0%;display:grid;flex:0 0 72px;width:72px;height:72px;place-items:center;border-radius:50%;background:conic-gradient(#72e6af var(--regression-progress),rgba(255,255,255,.18) 0);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.regression-progress-ring::before{grid-area:1/1;width:58px;height:58px;border-radius:50%;background:#17438f;content:""}
+.regression-progress-ring>span{z-index:1;grid-area:1/1;display:flex;flex-direction:column;align-items:center}
+.regression-progress-ring b{font-size:17px;line-height:1.1}
+.regression-progress-ring small{color:#dbe7ff;font-size:9px}
+.regression-hero-status>div:last-child{display:flex;min-width:0;flex-direction:column;gap:2px}
+.regression-hero-status>div:last-child small{color:#c9d8f5;font-size:10px}
+.regression-hero-status>div:last-child b{font-size:14px}
+.regression-hero-status>div:last-child span{color:#dbe7ff;font-size:11px;white-space:nowrap}
+.regression-hero-action{min-height:42px;border-color:#fff!important;background:#fff!important;color:#17469d!important;box-shadow:0 6px 16px rgba(6,24,61,.18)!important;white-space:nowrap}
+.regression-hero-action:hover{background:#eef4ff!important}
+.regression-summary{gap:12px}
+.regression-summary article{position:relative;overflow:hidden;min-height:92px;border-color:#e1e7f0;border-radius:14px;padding:15px 14px;box-shadow:0 6px 18px rgba(31,42,68,.055);transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+.regression-summary article::before{position:absolute;inset:0 auto 0 0;width:3px;background:#2457d6;content:""}
+.regression-summary article.is-violet::before{background:#6938ef}.regression-summary article.is-green::before{background:#169c63}.regression-summary article.is-amber::before{background:#d79a00}.regression-summary article.is-red::before{background:#d64545}
+.regression-summary article:hover{transform:translateY(-2px);border-color:#c8d4e8;box-shadow:0 10px 24px rgba(31,42,68,.09)}
+.regression-summary-icon{flex-basis:42px;height:42px;border-radius:12px;font-size:20px;font-weight:500}
+.regression-summary b{font-size:22px;font-weight:750}
+.regression-summary article>div>span{white-space:normal;line-height:1.35}
+.regression-steps{position:relative;gap:0;border:1px solid #dfe6f1;border-radius:14px;background:#fff;padding:6px;box-shadow:0 4px 14px rgba(31,42,68,.04)}
+.regression-steps>button{position:relative;border:0;border-radius:10px;background:transparent;padding:12px 14px;box-shadow:none}
+.regression-steps>button+button::before{position:absolute;top:17px;bottom:17px;left:0;width:1px;background:#e6eaf0;content:""}
+.regression-steps>button:hover{background:#f7f9fd}
+.regression-steps>button.active{border:0;background:#eef4ff;box-shadow:none}
+.regression-steps>button.done{border:0;background:#f7fcf9}
+.regression-analysis,.regression-results,.regression-schedule,.regression-trend,.regression-activity,.regression-baseline,.regression-history{border:1px solid #e1e7f0;border-radius:15px;box-shadow:0 6px 20px rgba(31,42,68,.05)}
+.regression-analysis{background:linear-gradient(180deg,#fbfdff 0,#fff 130px)}
+.regression-section-head{border-bottom:1px solid #edf0f4;padding-bottom:14px}
+.regression-title-icon{background:#eaf1ff;font-size:18px;font-weight:700}
+.regression-profile-bar{border-color:#dce5f3;background:#f5f8fd;padding:12px}
+.regression-context-grid label,.regression-change-panel>label,.regression-notes{font-weight:600}
+.regression-context-grid select,.regression-change-panel input,.regression-notes textarea,.regression-filters select,.regression-existing-cycle select,.regression-profile-bar select,.regression-profile-bar input,.regression-schedule-form input,.regression-schedule-form select{min-height:42px;border-color:#d6dde8;background:#fff;font-weight:400}
+.regression-context-grid select:focus,.regression-change-panel input:focus,.regression-notes textarea:focus,.regression-filters select:focus,.regression-profile-bar select:focus,.regression-profile-bar input:focus{border-color:var(--primary);outline:3px solid rgba(36,87,214,.12);outline-offset:0}
+.regression-module-picker,.regression-change-panel{border-color:#dce3ed;background:#f8fafc;padding:14px}
+.regression-module-options{gap:8px;max-height:260px}
+.regression-module-options label{min-height:52px;border-color:#e0e5ec;padding:9px 10px;transition:border-color .15s ease,background .15s ease,box-shadow .15s ease}
+.regression-module-options label:hover{border-color:#b7c8eb;background:#f8faff}
+.regression-module-options label.selected{border-color:#7d9ee8;background:#edf3ff;box-shadow:0 0 0 2px rgba(36,87,214,.08)}
+.regression-impact-options label{min-height:42px;border-color:#e0e5ec;padding:9px}
+.regression-case{border-color:#e0e5ec;border-radius:12px;padding:13px 12px;box-shadow:0 2px 8px rgba(31,42,68,.025)}
+.regression-case:hover{border-color:#9fb5e7;background:#fbfcff;box-shadow:0 5px 14px rgba(31,42,68,.06)}
+.regression-case.selected{border-color:#7597e5;background:#f2f6ff;box-shadow:inset 3px 0 #2457d6}
+.regression-empty{min-height:220px;border-color:#cbd6e7;background:linear-gradient(180deg,#fafcff,#f7f9fc)}
+
+@media(max-width:1200px){.regression-hero{grid-template-columns:minmax(0,1fr) auto}.regression-hero-action{grid-column:1/-1;width:max-content}.regression-hero-status{border-left:0}}
+@media(max-width:900px){.regression-hero{grid-template-columns:1fr}.regression-hero-status{border-top:1px solid rgba(255,255,255,.2);padding:16px 0 0}.regression-hero-action{grid-column:auto}.regression-steps{grid-template-columns:1fr;gap:4px}.regression-steps>button+button::before{display:none}}
+@media(max-width:700px){.regression-hero{gap:18px;padding:19px}.regression-hero h2{font-size:19px}.regression-hero-status{min-width:0}.regression-hero-action{width:100%}.regression-summary article{min-height:88px}.regression-steps{padding:5px}.regression-section-head{width:100%}}
+@media(max-width:420px){.regression-hero{padding:17px}.regression-context-chips{display:grid}.regression-context-chips>span{width:100%;white-space:normal}.regression-hero-status>div:last-child span{white-space:normal}.regression-summary{grid-template-columns:1fr 1fr}.regression-summary article:last-child{grid-column:1/-1}}

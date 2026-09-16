@@ -116,3 +116,46 @@ Code Review, Build, Migration, Unit/Integration Test, QA Functional, Permission,
 
 ## 22. First Iteration
 เริ่ม Solution+DB → Auth/User/Role → Project/Module → Release/Build → Requirement → Test Case → RTM แล้วจึงเข้าสู่ Execution ซึ่งเป็น Core ที่ซับซ้อนที่สุด
+## 23. Planned Enhancement: Clone Test Cycle to a New Target
+
+**Status:** Implemented (2026-09-16)
+**Requested:** 2026-09-16
+**Priority:** P1
+**Scope:** Test Cycle / Execution planning
+
+ผู้ใช้สามารถเริ่มจาก Test Cycle เดิม แล้วสร้าง Test Cycle ใหม่สำหรับ Release + Build + Environment เป้าหมายใหม่ได้ โดยใช้ Cycle เดิมเป็นต้นแบบเท่านั้น ไม่เปลี่ยนการอ้างอิงของ Cycle เดิม
+
+### เป้าหมายและกติกาหลัก
+
+- เพิ่ม action `Clone to new target` จาก Test Cycle list และ detail
+- Target Release, Build และ Environment ต้องเลือกใหม่ได้ตาม Project เดิม
+- สร้าง Cycle ใหม่ด้วย `TestCycleId`, `TestCycleCaseId` และ Cycle Code ใหม่
+- คัดลอกสมาชิก Test Case และลำดับจาก Source Cycle เป็นค่าเริ่มต้น โดยเก็บ `TestCaseRevisionNo` เดิมของ Source Cycle
+- สถานะของ Test Cycle ใหม่และทุก Test Cycle Case เริ่มต้นเป็น `Draft` / `NotRun`
+- ไม่คัดลอก Test Execution, Step Result, Evidence, Assignment หรือผล Pass/Fail เดิม
+- ไม่คัดลอก Defect เป็นข้อมูลใหม่ เพราะ Defect ต้องยังอ้างอิง Build Found และ Execution เดิม; ผู้ใช้สามารถ Link Defect เดิมกับผลการทดสอบใหม่ภายหลัง
+- รองรับตัวเลือกขั้นสูง `ใช้ Test Suite ปัจจุบัน` เพื่อดึงสมาชิกและ Revision ล่าสุดจาก Suite แทน Source Snapshot เมื่อทีมต้องการให้ Test Case ที่แก้ไขแล้วมีผลกับรอบใหม่
+- Source Cycle ต้องไม่ถูกแก้ไข และอนุญาตให้ใช้ Cycle ที่ `Completed` หรือ `Closed` เป็นต้นแบบได้
+
+### Vertical Slice ที่ต้องพัฒนา
+
+1. Database/Migration: เพิ่มความสัมพันธ์ `CopiedFromTestCycleId` แบบ nullable และ index สำหรับค้นหา lineage
+2. Domain: เพิ่มคำสั่ง Clone ที่สร้าง Cycle/Case ใหม่ใน transaction เดียว และบังคับไม่ให้คัดลอก execution history
+3. Application: เพิ่ม `CloneTestCycleRequest`, validation target references และ clone mode
+4. API: เพิ่ม `POST /api/v1/test-cycles/{sourceCycleId}/clone`
+5. UI: เพิ่ม Clone modal ที่แสดง Source summary แบบ read-only และเลือก Target Release/Build/Environment พร้อม preview จำนวน Cases
+6. Audit/Reporting: บันทึก source/target, clone mode, ผู้ดำเนินการ และแยก KPI ของ Source กับ Target Cycle
+
+**Implementation result:** เพิ่ม API/EF migration/UI clone modal แล้ว รองรับ `SourceSnapshot` และ `SuiteLatest`; Target เริ่ม `Draft`/`NotRun`, ไม่คัดลอก Execution, Step Result, Evidence หรือ Assignment และมี automated coverage ยืนยัน source ไม่ถูกแก้ไข
+7. Test: Unit, integration, API contract, permission, negative validation, database integrity และ functional test บน Desktop/Mobile
+
+### Acceptance Criteria
+
+- Clone จาก Cycle เดิมไปยัง Release + Build + Environment ใหม่สำเร็จเมื่อ target อยู่ใน Project เดียวกันและ Build อยู่ใต้ Release ที่เลือก
+- ปฏิเสธ target ที่ Build ไม่อยู่ใน Release, Environment ไม่ Active/ไม่ใช่ Project เดียวกัน หรือ Release ปิดแล้ว
+- Cycle ใหม่มี Case count และ Execution order ตรงตาม Source Snapshot หรือ Suite Latest ตาม mode ที่เลือก
+- Cycle ใหม่ไม่มี Execution, Step Result, Evidence และ Assignment ของ Source
+- การแก้ไขหรือการรัน Cycle ใหม่ไม่เปลี่ยนผลและประวัติของ Source Cycle
+- รายการและ detail แสดงความสัมพันธ์ `Cloned from` และ filter/search lineage ได้
+- ผู้ไม่มี `EXECUTION.RUN` ไม่เห็นหรือเรียกใช้ Clone action ได้ และ Backend ต้องตรวจซ้ำ
+- Audit log ระบุ Source Cycle, Target Cycle, target Release/Build/Environment และจำนวน Case ที่สร้าง

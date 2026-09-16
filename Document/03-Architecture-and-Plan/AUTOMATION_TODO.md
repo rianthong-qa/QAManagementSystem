@@ -673,3 +673,12 @@
 - P4.1 UI safety follow-up: Automation Case และ Batch Run จะไม่ส่งงานเข้าคิวเมื่อไม่มี Agent ที่ enabled และ connectivity/status พร้อมทำงาน พร้อมแสดงเหตุผลให้ผู้ใช้ทราบเพื่อลด false confidence; frontend build/lint ผ่าน
 - P4.2 UI evidence state: Execution Detail แสดงสถานะ `ยังไม่มี Evidence สำหรับ Execution นี้` เมื่อไม่มีหลักฐาน แยกจากกรณีโหลดข้อมูลล้มเหลวหรือมี Evidence จริง; frontend build/lint ผ่าน
 - P4.4 UI schedule safety: เพิ่ม guard ไม่ให้กดเปิด/ปิด Schedule ซ้ำระหว่าง request กำลังทำงาน และคง confirmation ก่อนเปลี่ยนสถานะ; frontend build/lint ผ่าน
+
+# Progress Update — 2026-09-08
+- Service Manager long-running stability: เปลี่ยนการรับ stdout/stderr ของ API/Web จากการส่ง `BeginInvoke` ทีละบรรทัดเป็น concurrent queue ที่ drain แบบ batch ทุก 250ms, จำกัด backlog 5,000 บรรทัดและ RichTextBox ราว 200,000 ตัวอักษร, รักษาตำแหน่ง scroll เมื่อผู้ใช้กำลังอ่าน log และ dispose timer/HttpClient/process handle เมื่อสิ้นสุด เพื่อป้องกัน UI queue, memory และ native handle สะสมเมื่อเปิดโปรแกรมเป็นเวลานาน
+- Service Manager Activity Log layout: ลดความสูง Service Cards จาก 400px เป็น 320px และเพิ่มความสูงขั้นต่ำของหน้าต่างเป็น 640px เพื่อให้ RichTextBox ของ Activity Log แสดงข้อความได้จริงในขนาดเริ่มต้น
+- Service Manager resource monitoring: เพิ่มกราฟ CPU/RAM รวมของ API และ Web จาก process ที่ฟัง port 5038/5173, sample ทุก 1 วินาทีและเก็บย้อนหลัง 120 จุด พร้อมล้าง process snapshot ที่หมดอายุเพื่อไม่ให้ memory/handle สะสม
+
+# Progress Update — 2026-09-16
+
+- Build Release reassignment guard: การแก้ไข Release ของ Build จะตรวจรายการ Automation ที่อ้างอิง Build (Execution, Schedule, Trigger Run, Webhook Delivery, DB Snapshot, Data Seed Run) ก่อนย้าย เพื่อคงความสัมพันธ์ Release/Build ในประวัติ Automation; งานนี้ไม่เปลี่ยนสถานะรายการ Automation TODO เดิม

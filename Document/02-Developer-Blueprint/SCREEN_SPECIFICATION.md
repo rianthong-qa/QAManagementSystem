@@ -219,6 +219,7 @@ Tree + Table
 
 ## Create/Edit Fields
 - Build Number
+- Release (แก้ไข Build ได้เฉพาะ Release ภายใน Project เดียวกัน; ย้ายไม่ได้เมื่อ Build มีรายการอ้างอิง)
 - Application Version
 - Package Version
 - Commit Reference
@@ -1201,3 +1202,29 @@ Component ที่ควรมี reusable:
 - KPI 5 ใบแสดง Candidate, Ready, POS, Master Data และ Route ที่ต้องตรวจสอบ ตามด้วย sticky section navigation
 - ลำดับเนื้อหา: Flow guide → Runner → Scheduling/Alerts → Queue → Quality Gate → Candidate table → Run History
 - Desktop เน้นข้อมูลแบบ dashboard; Mobile เปลี่ยน KPI, section header, modal form, queue, candidate table และ run result เป็น card/คอลัมน์เดียว
+## Addendum: Clone Test Cycle to New Target
+
+### Entry points
+
+- Action `Clone` จาก Test Cycle List
+- Action `Clone to new target` จาก Test Cycle Detail
+- แสดงเฉพาะผู้มี `EXECUTION.RUN`; Source Cycle ที่ Completed/Closed ใช้เป็นต้นแบบได้
+
+### Clone modal
+
+- Source summary แบบ read-only: Cycle Code, Release, Build, Environment, Suite, Case count, Revision/Status
+- Target Project แสดงแบบ read-only และต้องเป็น Project เดียวกับ Source
+- Target Release, Target Build และ Target Environment เป็น dropdown ที่ dependent กัน
+- Cycle Code สร้างอัตโนมัติและแก้ได้ตามสิทธิ์/กติกา code เดิม
+- Cycle Name, Cycle Type, Start/End, Owner และ Notes แก้ไขได้
+- Clone mode: `Source Snapshot` เป็นค่าเริ่มต้น หรือ `Suite Latest` เมื่อ Source มี Test Suite
+- Preview แสดงจำนวน Case ที่จะสร้างและข้อความชัดเจนว่า Execution/หลักฐาน/Assignment เดิมจะไม่ถูกคัดลอก
+- หลังบันทึกให้เปิด Target Cycle detail พร้อมแสดง `Cloned from <Source Cycle>`
+
+### Validation / error
+
+- Build ต้องอยู่ใน Target Release เดียวกัน
+- Target Release ต้องไม่เป็น Released/Cancelled และ Target Build/Environment ต้อง Active
+- ห้ามเปลี่ยน Source Cycle เดิมหรือเขียนทับผล Execution เดิม
+- ถ้าเลือก Suite Latest แต่ Source ไม่มี Suite ให้แจ้งข้อผิดพลาดและไม่สร้างข้อมูลบางส่วน
+- ถ้า API ล้มเหลวต้องแสดง inline error และคงค่าที่ผู้ใช้กรอกไว้

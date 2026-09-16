@@ -166,3 +166,15 @@ Phase E: Regression → Dashboard → Daily/Weekly
 Phase F: Summary → Risk → Sign-off → Audit
 
 จากนั้นเพิ่ม Import/Export, Notification และ Integration API
+## Addendum: Reuse Test Cycle กับ Target ใหม่
+
+เมื่อมี Release + Build + Environment ใหม่ และต้องการใช้ชุดทดสอบเดิม:
+
+1. เปิด Source Test Cycle ที่เคยใช้ทดสอบ
+2. เลือก `Clone to new target`
+3. เลือก Target Release, Build และ Environment
+4. เลือกวิธีสร้าง Case: `Source Snapshot` เพื่อคงชุดและ Revision เดิม หรือ `Suite Latest` เพื่อใช้สมาชิก/Revision ล่าสุดจาก Test Suite
+5. ตรวจจำนวน Case และรายละเอียด Target แล้วสร้าง Cycle ใหม่
+6. Assign Tester และ Execute Target Cycle ตามปกติ
+
+Source Cycle, Execution, Evidence และ Defect เดิมต้องไม่ถูกแก้หรือย้ายไป Target ใหม่ การรายงานต้องแยกผลตาม Source/Target Release และ Build ได้

@@ -181,6 +181,8 @@ Request:
 ### PUT `/builds/{buildId}`
 ### POST `/builds/{buildId}/mark-release-candidate`
 
+`PUT /builds/{buildId}` รับ `releaseId` เพิ่มเป็น optional เพื่อย้าย Build ไป Release อื่นใน Project เดียวกัน (ไม่รับ Released/Cancelled) และคืน `409` หาก Build Number ซ้ำหรือมี Test Cycle, Defect, Sign-off, Regression, Dashboard share หรือ Automation record อ้างอิง Build อยู่
+
 Request:
 
 ```json
@@ -865,3 +867,39 @@ Filter:
 - `GET /api/v1/automation/notifications?projectId=` — alerts จาก retry queued และ terminal failed
 - Schedule payload: project/release/build, name, targetApp, pack, frequency `Daily|Weekdays`, `runAtUtc`, `maxAttempts` 1–5
 - Queue status update เพิ่ม `errorType`; retry ได้เฉพาะ Infrastructure, Timeout และ ApplicationStart
+## Addendum: Test Cycle Clone API
+
+### POST `/test-cycles/{sourceCycleId}/clone`
+
+สร้าง Target Test Cycle ใหม่จาก Source Cycle โดยไม่แก้ Source Cycle และไม่คัดลอก Execution History
+
+```json
+{
+  "targetReleaseId": "...",
+  "targetBuildId": "...",
+  "targetEnvironmentId": "...",
+  "cycleCode": "",
+  "cycleName": "Regression on new build",
+  "cycleType": "Regression",
+  "startDate": "2026-09-16T00:00:00Z",
+  "endDate": "2026-09-20T00:00:00Z",
+  "ownerUserId": "...",
+  "notes": "",
+  "cloneMode": "SourceSnapshot"
+}
+```
+
+`cloneMode` รองรับ:
+
+- `SourceSnapshot`: คัดลอก Test Case membership, order และ `TestCaseRevisionNo` จาก Source Cycle
+- `SuiteLatest`: ใช้ Test Suite ของ Source Cycle และดึง membership/Revision ล่าสุด; ถ้า Source ไม่มี Suite ให้ตอบ validation error
+
+กติกา response และ transaction:
+
+- Response เป็น `TestCycleDto` ของ Target Cycle ที่สร้างใหม่
+- `TestCycleDto` ของ Target เพิ่ม `copiedFromTestCycleId` และ `copiedFromCycleCode` สำหรับแสดง lineage
+- Target ต้องอยู่ใน Project เดียวกับ Source, Build ต้องอยู่ใต้ Target Release และ Environment ต้อง Active
+- Release ที่ `Released` หรือ `Cancelled` ห้ามใช้เป็น Target
+- Target Cycle เริ่ม `Draft`; Target Cases เริ่ม `NotRun` และไม่มี Assignment/Execution/Step Result/Evidence
+- บันทึก `CopiedFromTestCycleId` และ Audit log ที่มี Source/Target กับจำนวน Case
+- ผู้เรียกต้องมี JWT, `EXECUTION.RUN` และ Project access; ตรวจ permission ที่ Backend เสมอ

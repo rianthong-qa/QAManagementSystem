@@ -50,6 +50,7 @@ public sealed class DefectActivityConfiguration : IEntityTypeConfiguration<Defec
         b.HasOne<Defect>().WithMany().HasForeignKey(x => x.DefectId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.DefectId);
         b.HasIndex(x => x.ActorUserId);
+        b.HasIndex(x => new { x.CreatedAt, x.DefectActivityId });
     }
 }
 

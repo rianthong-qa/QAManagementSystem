@@ -11,13 +11,13 @@ type MyWorkDetail = {
 export function MyWorkDetailModal({ detail, onClose, onRun }: { detail: MyWorkDetail; onClose: () => void; onRun?: () => void }) {
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="my-work-detail-title" onMouseDown={onClose}>
     <div className="modal-box testcase-detail" onMouseDown={(event) => event.stopPropagation()}>
-      <div className="modal-head"><h2 id="my-work-detail-title">{detail.testCaseCode}</h2><button type="button" onClick={onClose} aria-label="ปิด">×</button></div>
+      <div className="modal-head"><h2 id="my-work-detail-title">{detail.testCaseCode}</h2><button type="button" onClick={onClose} aria-label="ปิด"><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
       <h3>{detail.title}</h3>
       <p>{detail.objective || "ยังไม่มี Objective"}</p>
       {detail.preconditions && <p><b>Preconditions:</b> {detail.preconditions}</p>}
       <h3>Test Steps ({detail.steps?.length ?? 0})</h3>
       <ol>{(detail.steps ?? []).map((step) => <li key={step.stepNo}><b>{step.action}</b>{step.testData && <small> · {step.testData}</small>}<div>{step.expectedResult}</div></li>)}</ol>
-      <div className="modal-actions"><button type="button" className="btn" onClick={onClose}><span aria-hidden="true">✕</span> ปิด</button>{onRun && <button type="button" className="btn primary" onClick={onRun}><span aria-hidden="true">▶</span> Run Test Case</button>}</div>
+      <div className="modal-actions"><button type="button" className="btn" onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>{onRun && <button type="button" className="btn primary" onClick={onRun}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> Run Test Case</button>}</div>
     </div>
   </div>;
 }

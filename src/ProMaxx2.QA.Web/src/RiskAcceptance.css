@@ -6,13 +6,14 @@
 .risk-level.high{background:#fdecec;color:#c83a3a}
 .risk-level.medium{background:#fff5d9;color:#9a6d00}
 .risk-level.low{background:#eaf8f1;color:#168b58}
-.risk-detail{display:grid;gap:10px}
+.risk-detail{display:grid;gap:14px}
 .risk-detail-hero{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fafcff}
-.risk-detail-hero h3{margin:0;font-size:18px}
-.risk-detail-hero small{color:var(--muted)}
+.risk-detail-hero h3{margin:0;font-size:17px;font-weight:600;line-height:1.45}
+.risk-detail-hero small{color:var(--muted);font-weight:400}
 .risk-field{display:grid;gap:4px}
-.risk-field>span{color:var(--muted);font-size:11px;font-weight:700}
-.risk-field>b{font-size:14px;font-weight:600;color:var(--text)}
+.risk-field>span{color:var(--muted);font-size:11px;font-weight:600}
+.risk-field>b{font-size:14px;font-weight:400;line-height:1.65;color:var(--text);overflow-wrap:anywhere}
+.risk-grid .risk-field>b{font-weight:600;line-height:1.45}
 .risk-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .risk-modal{width:min(760px,100%)}
 .risk-actions{display:flex;gap:8px;flex-wrap:wrap}
