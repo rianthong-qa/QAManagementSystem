@@ -19,82 +19,13 @@ public sealed class RegressionController(QaDbContext db) : ControllerBase
     {
         var release = await db.Releases.AsNoTracking().SingleOrDefaultAsync(x => x.ReleaseId == releaseId, ct);
         if (release is null) return NotFound();
-        var buildExists = await db.Builds.AnyAsync(x => x.BuildId == request.BuildId && x.ReleaseId == releaseId && x.IsActive, ct);
-        if (!buildExists) return BadRequest(new ProblemDetails { Title = "Build ไม่ถูกต้อง", Detail = "Build ที่เลือกไม่ได้อยู่ใน Release นี้", Status = 400 });
-
-        var changedModules = request.ChangedModuleIds.Distinct().ToArray();
-        var priorityLimit = PriorityRank(request.MinimumPriority);
-        var specialImpact = request.DatabaseChange || request.ApiChange || request.CalculationChange || request.PermissionChange || request.InstallerChange;
-        var linkedDefectCases = request.DefectFix
-            ? await db.DefectTestCaseLinks.AsNoTracking().Where(link => db.Defects.Any(defect => defect.DefectId == link.DefectId && defect.ProjectId == release.ProjectId && !defect.IsDeleted)).Select(x => x.TestCaseId).Distinct().ToListAsync(ct)
-            : [];
-
-        var rows = await db.TestCases.AsNoTracking()
-            .Where(x => x.ProjectId == release.ProjectId && !x.IsDeleted && x.Status != "Deprecated")
-            .Where(x => changedModules.Contains(x.ModuleId)
-                || linkedDefectCases.Contains(x.TestCaseId)
-                || (request.IncludeSharedDependencies && (x.Priority == "P0" || x.Priority == "P1" || x.TestType == "Regression"))
-                || (specialImpact && x.TestType == "Regression"))
-            .Where(x => (x.Priority == "P0" ? 0 : x.Priority == "P1" ? 1 : x.Priority == "P2" ? 2 : 3) <= priorityLimit || changedModules.Contains(x.ModuleId) || linkedDefectCases.Contains(x.TestCaseId))
-            .Select(x => new { x.TestCaseId, x.TestCaseCode, x.Title, x.ModuleId, ModuleName = db.Modules.Where(m => m.ModuleId == x.ModuleId).Select(m => m.ModuleName).FirstOrDefault() ?? "-", x.Priority, x.TestType, x.RevisionNo, x.Status })
-            .OrderBy(x => x.Priority).ThenBy(x => x.TestCaseCode).ToListAsync(ct);
-
-        var caseIds = rows.Select(x => x.TestCaseId).ToArray();
-        var executionRows = await db.TestExecutions.AsNoTracking()
-            .Where(x => !x.IsDeleted && x.BuildId == request.BuildId && caseIds.Contains(x.CycleCase.TestCaseId))
-            .Select(x => new { x.CycleCase.TestCaseId, x.Status, x.CompletedAt, x.ExecutionNo }).ToListAsync(ct);
-        var lastResults = executionRows.GroupBy(x => x.TestCaseId).ToDictionary(x => x.Key, x => x.OrderByDescending(y => y.CompletedAt).ThenByDescending(y => y.ExecutionNo).First().Status);
-
-        var allCases = rows.Select(x =>
-        {
-            var historical = linkedDefectCases.Contains(x.TestCaseId);
-            var direct = changedModules.Contains(x.ModuleId);
-            var critical = x.Priority is "P0" or "P1";
-            var impactType = direct ? "Direct Impact" : historical ? "Historical Defect" : critical ? "Critical P0/P1" : "Shared Dependency";
-            var reason = direct ? $"อยู่ใน Module ที่มีการเปลี่ยนแปลง: {x.ModuleName}"
-                : historical ? "เคยเชื่อมโยงกับ Defect ในโครงการ"
-                : critical ? $"Test Case ระดับ {x.Priority} ควรอยู่ใน Critical Regression"
-                : "เป็น Regression case หรือเกี่ยวข้องกับ shared impact";
-            var score = Math.Clamp((direct ? request.DirectImpactWeight : 0) + (historical ? request.HistoricalDefectWeight : 0) + (critical ? request.CriticalPriorityWeight : 0) + (!direct && !historical ? request.SharedDependencyWeight : 0), 0, 100);
-            return new RegressionCaseDto(x.TestCaseId, x.TestCaseCode, x.Title, x.ModuleId, x.ModuleName, x.Priority, x.TestType, x.RevisionNo, x.Status, lastResults.GetValueOrDefault(x.TestCaseId), impactType, reason, direct || historical || x.Priority == "P0", score);
-        }).OrderByDescending(x=>x.RiskScore).ThenBy(x=>x.Priority).ThenBy(x=>x.TestCaseCode).ToList();
-        var pageSize=Math.Clamp(request.PageSize,10,200);var totalPages=Math.Max(1,(int)Math.Ceiling(allCases.Count/(double)pageSize));var page=Math.Clamp(request.Page,1,totalPages);
-        var cases=allCases.Skip((page-1)*pageSize).Take(pageSize).ToList();
-
-        var cycleCases = await db.TestCycleCases.AsNoTracking().Where(x => x.Cycle.ReleaseId == releaseId && x.Cycle.BuildId == request.BuildId && x.Cycle.CycleType == "Regression" && !x.Cycle.IsDeleted).Select(x => x.CurrentStatus).ToListAsync(ct);
-        var cycleCount = await db.TestCycles.CountAsync(x => x.ReleaseId == releaseId && x.BuildId == request.BuildId && x.CycleType == "Regression" && !x.IsDeleted, ct);
-        var executed = cycleCases.Count(x => x != "NotRun");
-        var passed = cycleCases.Count(x => x == "Pass");
-        var failed = cycleCases.Count(x => x is "Fail" or "Blocked");
-        var openDefects = await db.Defects.CountAsync(x => x.ReleaseId == releaseId && !x.IsDeleted && x.Status != "Closed" && x.Status != "Rejected", ct);
-        var progress = cycleCases.Count == 0 ? 0 : Math.Round(executed * 100m / cycleCases.Count, 1);
-        var passRate = executed == 0 ? 0 : Math.Round(passed * 100m / executed, 1);
-        var overall = cycleCases.Count == 0 ? "Not Started" : failed > 0 || openDefects > 0 ? "At Risk" : progress < 100 ? "In Progress" : "Passed";
-        var metrics = new RegressionMetricsDto(changedModules.Length, allCases.Count, cycleCount, cycleCases.Count, executed, passed, failed, progress, passRate, openDefects, overall);
-        if(request.RecordAnalysis){db.RegressionAnalyses.Add(new RegressionAnalysis(release.ProjectId,releaseId,request.BuildId,changedModules.Length,allCases.Count,request.MinimumPriority,request.ChangeNotes,UserId()));db.RegressionActivities.Add(new RegressionActivity(release.ProjectId,releaseId,request.BuildId,"ImpactAnalyzed",$"{changedModules.Length} modules, {allCases.Count} recommended cases",UserId()));await db.SaveChangesAsync(ct);}
-        return Ok(new RegressionImpactDto(releaseId, request.BuildId, metrics, cases,page,pageSize,allCases.Count,totalPages,request.IncludeAllCaseIds?allCases.Select(x=>x.TestCaseId).ToArray():[]));
+        try { return Ok(await RegressionImpactAnalyzer.RunAsync(db, release, request, UserId(), ct)); }
+        catch (ArgumentException ex) { return BadRequest(new ProblemDetails { Title = "Build ไม่ถูกต้อง", Detail = ex.Message, Status = 400 }); }
     }
 
     [HttpPost("regression/automation-run-preview")]
     public async Task<ActionResult<RegressionAutomationPreviewDto>> AutomationRunPreview(RegressionAutomationPreviewRequest request, CancellationToken ct)
-    {
-        var testCaseIds = request.TestCaseIds.Distinct().ToArray();
-        var testCases = await db.TestCases.AsNoTracking().Where(x => testCaseIds.Contains(x.TestCaseId))
-            .Select(x => new { x.TestCaseId, x.TestCaseCode, x.Title, x.Status, x.AutomationCandidate, x.AutomationTarget }).ToListAsync(ct);
-        var automationCases = await db.AutomationCases.AsNoTracking().Where(x => testCaseIds.Contains(x.TestCaseId))
-            .Select(x => new { x.AutomationCaseId, x.TestCaseId, x.Status, x.IsQuarantined }).ToListAsync(ct);
-        var automationByTestCase = automationCases.ToDictionary(x => x.TestCaseId, x => new AutomationCaseSnapshot(x.AutomationCaseId, x.Status, x.IsQuarantined));
-
-        var items = testCases.Select(x =>
-        {
-            var automationCase = automationByTestCase.GetValueOrDefault(x.TestCaseId);
-            var (eligible, skipReason) = RegressionAutomationEligibility.Evaluate(x.Status, x.AutomationCandidate, x.AutomationTarget, automationCase);
-            return new RegressionAutomationPreviewItemDto(x.TestCaseId, x.TestCaseCode, x.Title, automationCase?.AutomationCaseId, automationCase?.Status, eligible, skipReason);
-        }).OrderBy(x => x.TestCaseCode).ToList();
-
-        var eligibleIds = items.Where(x => x.Eligible && x.AutomationCaseId.HasValue).Select(x => x.AutomationCaseId!.Value).ToArray();
-        return Ok(new RegressionAutomationPreviewDto(items, eligibleIds, eligibleIds.Length, items.Count));
-    }
+        => Ok(await RegressionAutomationRunPlanner.ResolveEligibleAsync(db, request.TestCaseIds, ct));
 
     [HttpGet("releases/{releaseId:guid}/regression-history")]
     public async Task<ActionResult<IReadOnlyList<RegressionHistoryDto>>> History(Guid releaseId,[FromQuery]int size=20,CancellationToken ct=default)
@@ -124,11 +55,11 @@ public sealed class RegressionController(QaDbContext db) : ControllerBase
     {var entity=await db.RegressionProfiles.SingleOrDefaultAsync(x=>x.RegressionProfileId==id&&x.IsActive,ct);if(entity is null)return NotFound();if(entity.OwnerUserId.HasValue&&entity.OwnerUserId!=UserId()&&!User.IsInRole("SYS_ADMIN"))return Forbid();entity.Deactivate();await db.SaveChangesAsync(ct);return NoContent();}
 
     [HttpGet("projects/{projectId:guid}/regression-schedules")]
-    public async Task<ActionResult<IReadOnlyList<RegressionScheduleDto>>> Schedules(Guid projectId,CancellationToken ct)=>Ok(await db.RegressionSchedules.AsNoTracking().Where(x=>x.ProjectId==projectId&&x.IsActive).OrderBy(x=>x.Name).Select(x=>new RegressionScheduleDto(x.RegressionScheduleId,x.ProjectId,x.ReleaseId,x.RegressionProfileId,x.Name,x.IsActive,x.CreatedAt)).ToListAsync(ct));
+    public async Task<ActionResult<IReadOnlyList<RegressionScheduleDto>>> Schedules(Guid projectId,CancellationToken ct)=>Ok(await db.RegressionSchedules.AsNoTracking().Where(x=>x.ProjectId==projectId&&x.IsActive).OrderBy(x=>x.Name).Select(x=>new RegressionScheduleDto(x.RegressionScheduleId,x.ProjectId,x.ReleaseId,x.RegressionProfileId,x.Name,x.IsActive,x.CreatedAt,x.EnvironmentId,x.EnvironmentId.HasValue?db.TestEnvironments.Where(e=>e.TestEnvironmentId==x.EnvironmentId).Select(e=>e.EnvironmentName).FirstOrDefault():null,x.Priority)).ToListAsync(ct));
 
     [HttpPost("regression-schedules"),Authorize(Policy="RegressionManage")]
     public async Task<ActionResult<RegressionScheduleDto>> SaveSchedule(SaveRegressionScheduleRequest request,CancellationToken ct)
-    {var release=await db.Releases.AsNoTracking().SingleOrDefaultAsync(x=>x.ReleaseId==request.ReleaseId&&x.Status!="Cancelled",ct);if(release is null)return BadRequest();var entity=new RegressionSchedule(release.ProjectId,release.ReleaseId,request.RegressionProfileId,string.IsNullOrWhiteSpace(request.Name)?"Regression on new build":request.Name,UserId());db.RegressionSchedules.Add(entity);await db.SaveChangesAsync(ct);return Ok(new RegressionScheduleDto(entity.RegressionScheduleId,entity.ProjectId,entity.ReleaseId,entity.RegressionProfileId,entity.Name,entity.IsActive,entity.CreatedAt));}
+    {var release=await db.Releases.AsNoTracking().SingleOrDefaultAsync(x=>x.ReleaseId==request.ReleaseId&&x.Status!="Cancelled",ct);if(release is null)return BadRequest();var entity=new RegressionSchedule(release.ProjectId,release.ReleaseId,request.RegressionProfileId,string.IsNullOrWhiteSpace(request.Name)?"Regression on new build":request.Name,UserId());entity.ConfigureAutomation(request.EnvironmentId,request.Priority);db.RegressionSchedules.Add(entity);await db.SaveChangesAsync(ct);var environmentName=entity.EnvironmentId.HasValue?await db.TestEnvironments.Where(e=>e.TestEnvironmentId==entity.EnvironmentId).Select(e=>e.EnvironmentName).FirstOrDefaultAsync(ct):null;return Ok(new RegressionScheduleDto(entity.RegressionScheduleId,entity.ProjectId,entity.ReleaseId,entity.RegressionProfileId,entity.Name,entity.IsActive,entity.CreatedAt,entity.EnvironmentId,environmentName,entity.Priority));}
 
     [HttpDelete("regression-schedules/{id:guid}"),Authorize(Policy="RegressionManage")]
     public async Task<IActionResult> DeleteSchedule(Guid id,CancellationToken ct)
@@ -182,7 +113,6 @@ public sealed class RegressionController(QaDbContext db) : ControllerBase
         return request.AutoAssignPreview ? Accepted($"/api/v1/test-cycles/{cycleId}/auto-assign/regression-auto-preview", new { previewRequested = true, cycleId }) : NoContent();
     }
 
-    private static int PriorityRank(string value) => value.ToUpperInvariant() switch { "P0" => 0, "P1" => 1, "P2" => 2, "P3" => 3, _ => 1 };
     private Guid? UserId(){var principal=ControllerContext.HttpContext?.User;return principal is not null&&Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier)??principal.FindFirstValue("sub"),out var id)?id:null;}
     private async Task<RegressionBuildMetricsDto> BuildMetrics(Guid buildId,CancellationToken ct){var number=await db.Builds.Where(x=>x.BuildId==buildId).Select(x=>x.BuildNumber).SingleAsync(ct);var statuses=await db.TestCycleCases.AsNoTracking().Where(x=>x.Cycle.BuildId==buildId&&x.Cycle.CycleType=="Regression"&&!x.Cycle.IsDeleted).Select(x=>x.CurrentStatus).ToListAsync(ct);var executed=statuses.Count(x=>x!="NotRun");var passed=statuses.Count(x=>x=="Pass");var failed=statuses.Count(x=>x=="Fail");var blocked=statuses.Count(x=>x=="Blocked");return new RegressionBuildMetricsDto(buildId,number,statuses.Count,executed,passed,failed,blocked,statuses.Count-executed,executed==0?0:Math.Round(passed*100m/executed,1));}
 }

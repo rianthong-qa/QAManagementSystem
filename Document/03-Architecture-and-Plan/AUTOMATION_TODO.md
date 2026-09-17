@@ -124,7 +124,7 @@
 | ID | งาน | สถานะ | Owner | Acceptance Criteria / หลักฐาน |
 |---|---|---|---|---|
 | AUT-REG-001 | Regression Impact → Run List | DONE | Claude | เพิ่ม `RegressionAutomationEligibility` (pure evaluator: Ready/Candidate/Target/AutomationCase Ready/Quarantine) และ endpoint `POST regression/automation-run-preview` แปลง TestCaseId ที่เลือกจาก Impact Analysis เป็น eligible AutomationCaseId พร้อมเหตุผลรายการที่ข้าม แล้วนำไปสั่งรันผ่าน `automation/batch-run` เดิม (ไม่ต้อง migration ใหม่); UI: ปุ่ม "ส่ง Automation Run" ใน RegressionPage selection bar เปิด modal preview + เลือก Build/Environment/Priority; unit test 7 เคส + integration test ครบ eligible/not-ready/not-candidate/quarantined ผ่านทั้งหมด (2026-09-16) |
-| AUT-REG-002 | Scheduled Regression → Automation | TODO | - | notification/build event เริ่ม workflow ได้อัตโนมัติและไม่สร้างงานซ้ำ |
+| AUT-REG-002 | Scheduled Regression → Automation | DONE | Claude | Hook ที่ `ReleasesController.MarkRc` (RC event เดียวกับที่ Automation "Regression" Build Trigger ใช้อยู่แล้ว) เรียก `RegressionScheduleTriggerService.FireForBuildAsync` — รัน Impact Analysis (ใช้ Profile settings ถ้ามี ไม่มีก็ default) → หา eligible Automation Case ผ่าน `RegressionAutomationRunPlanner` (AUT-REG-001) → สั่ง `automation/batch-run` ถ้า Schedule ตั้งค่า Environment ไว้ (opt-in, ไม่ตั้งค่าก็ยังทำงานแบบเดิมคือแจ้งเตือนเฉยๆ); กันงานซ้ำด้วย `LastNotifiedBuildId`/`Acknowledge` เดิม (fire ซ้ำ build เดิมเป็น no-op, error ไม่ acknowledge เพื่อให้ notification เดิมยังเตือน); บันทึกผลลง `RegressionActivity` action `ScheduledAutomationRun` (โชว์ใน Recent Activity panel เดิม ไม่ต้องทำ UI ใหม่); เพิ่ม EnvironmentId/Priority ใน RegressionSchedule (migration `AddRegressionScheduleAutomationTarget`, apply บน dev DB แล้ว) + UI เลือก Environment/Priority ตอนสร้าง Schedule; รีแฟกเตอร์ `RegressionController.Impact`/`AutomationRunPreview` เป็น static helper (`RegressionImpactAnalyzer`/`RegressionAutomationRunPlanner`) ให้ endpoint เดิมกับ trigger service เรียกโค้ดเดียวกัน; unit+integration test 4 เคสใหม่ (auto-run, no-environment fallback, no-duplicate-on-refire, malformed-profile-fallback) + test เดิมทั้งหมดผ่านหลัง refactor (2026-09-17) |
 | AUT-REG-003 | Multi-Agent Result Merge | TODO | - | รวมผลจากหลาย Agent ใน Test Cycle เดียวและแสดง partial/complete |
 | AUT-REG-004 | TestExecution Write-back Verification | TODO | - | step result/evidence/source=Automation ครบและ dashboard อัปเดตถูกต้อง |
 | AUT-REG-005 | Defect Closed Loop | TODO | - | Product Fail สร้าง draft defect หลัง QA confirm พร้อม evidence และ classification |
@@ -180,6 +180,17 @@
 8. `AUT-P2-001` ถึง `AUT-P2-008` — Monitoring, UX และ Scalability
 
 ## 11. Progress Log
+
+### 2026-09-17 — AUT-REG-002: Scheduled Regression → Automation
+
+- ปิด `AUT-REG-002` (งานที่สองในกลุ่ม `AUT-REG-001`–`006`; ตามคำขอผู้ใช้ให้ทำทีละ ID แล้ว commit+push ก่อนเริ่ม ID ถัดไป)
+- ใช้ precedent ที่มีอยู่แล้วในระบบ (`AutomationBuildTriggerService`, AUT-P1-007): "Regression" pack ของ Build Trigger fire เฉพาะตอน Build ถูก Mark Release Candidate ไม่ใช่ทุก Build — เอา logic ใหม่ไป hook ที่จุดเดียวกัน (`ReleasesController.MarkRc`) แทนที่จะสร้าง background worker ใหม่ เพราะ AC ใช้คำว่า "build event" ตรงตัวอยู่แล้วและมี event-driven hook ให้ใช้ต่อยอด
+- เพิ่มคอลัมน์ `EnvironmentId`/`Priority` ให้ `RegressionSchedule` (migration `AddRegressionScheduleAutomationTarget`, apply บน dev DB แล้ว) — ออกแบบเป็น opt-in ตามปรัชญาเดียวกับ `AUT-DATA-006`: Schedule ที่ไม่ได้ตั้งค่า Environment ยังทำงานแบบเดิม (แจ้งเตือนอย่างเดียว) ไม่กระทบ Schedule เก่าที่มีอยู่แล้ว
+- Refactor `RegressionController.Impact`/`AutomationRunPreview` ออกเป็น static helper (`RegressionImpactAnalyzer`, `RegressionAutomationRunPlanner` ใน `src/ProMaxx2.QA.Api/Services/`) เพื่อให้ `RegressionScheduleTriggerService` เรียกใช้ logic เดียวกันกับ endpoint ที่มีอยู่ ไม่ต้องเขียนซ้ำ — เป็น behavior-preserving move ยืนยันด้วย integration test เดิมที่ผ่านหมดหลัง refactor
+- De-dup ไม่สร้างงานซ้ำ ใช้ฟิลด์ `LastNotifiedBuildId`/`Acknowledge` เดิมที่ passive notification ใช้อยู่แล้ว (ยิง build เดียวกันซ้ำ = no-op ให้ schedule นั้น); ตั้งใจไม่ acknowledge เมื่อ error เพื่อให้ notification เดิมยังเตือนกรณีระบบ auto-run ล้มเหลวจริง
+- ผลลัพธ์การรันอัตโนมัติบันทึกลง `RegressionActivity` (action `ScheduledAutomationRun`) แทนที่จะสร้างตาราง/UI audit ใหม่ — ขึ้นแสดงใน "Recent Activity" panel ของหน้า Regression ที่มีอยู่แล้วทันที
+- หลักฐาน: `dotnet build src/ProMaxx2.QA.Api` ผ่าน 0 warning/0 error; migration apply บน dev DB สำเร็จ; `dotnet test tests/ProMaxx2.QA.UnitTests` ผ่านทั้งหมด 383 เทส (รวม 4 เทสใหม่ของ `RegressionScheduleTriggerServiceTests` และเทส Regression เดิมทั้งหมดที่ยังผ่านหลัง refactor); frontend `npm run build`/`npx tsc --noEmit`/`npm run lint` ผ่าน; smoke test ยิง endpoint จริงได้ 401 (ยืนยัน route ถูกลงทะเบียน ไม่ได้ 404/500)
+- ยังไม่ได้ field test จริงกับ Agent (mark build เป็น RC แล้วเห็น Automation Execution เกิดขึ้นจริงบนเครื่องจริง) — ต้องให้ QA ทดสอบภาคสนามก่อนใช้งานจริงเหมือนงาน Automation อื่นที่ผ่านมา
 
 ### 2026-09-16 — AUT-REG-001: Regression Impact → Automation Run List
 

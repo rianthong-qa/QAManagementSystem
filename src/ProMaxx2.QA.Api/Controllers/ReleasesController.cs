@@ -1,7 +1,7 @@
 using System.Security.Claims;using Microsoft.AspNetCore.Authorization;using Microsoft.AspNetCore.Mvc;using ProMaxx2.QA.Application.Projects;using ProMaxx2.QA.Application.Releases;using ProMaxx2.QA.Api.Services;
 namespace ProMaxx2.QA.Api.Controllers;
 [ApiController,Route("api/v1"),Authorize(Policy="ProjectView"),RequireProjectAccess]
-public sealed class ReleasesController(ReleaseService service):ControllerBase
+public sealed class ReleasesController(ReleaseService service,RegressionScheduleTriggerService regressionScheduleTriggers):ControllerBase
 {
  [HttpGet("releases")]public Task<IReadOnlyList<ReleaseDto>>List([FromQuery]Guid? projectId,CancellationToken ct)=>service.ListAsync(projectId,ct);
  [HttpGet("projects/{projectId:guid}/releases")]public Task<IReadOnlyList<ReleaseDto>>ListForProject(Guid projectId,CancellationToken ct)=>service.ListAsync(projectId,ct);
@@ -15,7 +15,7 @@ public sealed class ReleasesController(ReleaseService service):ControllerBase
  [HttpGet("builds/{id:guid}")]public async Task<ActionResult<BuildDto>>GetBuild(Guid id,CancellationToken ct){try{return Ok(await service.GetBuildAsync(id,ct));}catch(EntityNotFoundException){return NotFound();}}
  [HttpGet("builds/{id:guid}/blocked-count")]public async Task<ActionResult<object>>BlockedCount(Guid id,CancellationToken ct)=>Ok(new{count=await service.CountBlockedAsync(id,ct)});
  [HttpPut("builds/{id:guid}"),Authorize(Policy="ProjectEdit")]public async Task<ActionResult<BuildDto>>UpdateBuild(Guid id,UpdateBuildRequest request,CancellationToken ct){try{return Ok(await service.UpdateBuildAsync(id,request,ct));}catch(EntityNotFoundException){return NotFound();}catch(DuplicateCodeException ex){return Conflict(Problem("หมายเลข Build ซ้ำ",ex.Message,409));}catch(InvalidOperationException ex){return Conflict(Problem("ไม่สามารถย้าย Build",ex.Message,409));}catch(ArgumentException ex){return BadRequest(Problem("ข้อมูลไม่ถูกต้อง",ex.Message,400));}}
- [HttpPost("builds/{id:guid}/mark-release-candidate"),Authorize(Policy="ProjectEdit")]public async Task<ActionResult<BuildDto>>MarkRc(Guid id,CancellationToken ct){try{return Ok(await service.MarkRcAsync(id,ct));}catch(EntityNotFoundException){return NotFound();}}
+ [HttpPost("builds/{id:guid}/mark-release-candidate"),Authorize(Policy="ProjectEdit")]public async Task<ActionResult<BuildDto>>MarkRc(Guid id,CancellationToken ct){try{var build=await service.MarkRcAsync(id,ct);await regressionScheduleTriggers.FireForBuildAsync(build.ReleaseId,build.BuildId,ct);return Ok(build);}catch(EntityNotFoundException){return NotFound();}}
  [HttpPost("builds/{id:guid}/status"),Authorize(Policy="ProjectEdit")]public async Task<ActionResult<BuildDto>>BuildStatus(Guid id,ChangeBuildStatusRequest request,CancellationToken ct){try{return Ok(await service.ChangeBuildStatusAsync(id,request.Status,ct));}catch(EntityNotFoundException){return NotFound();}catch(ArgumentException ex){return BadRequest(Problem("สถานะ Build ไม่ถูกต้อง",ex.Message,400));}}
  [HttpDelete("builds/{id:guid}"),Authorize(Policy="ProjectEdit")]public async Task<IActionResult>DeleteBuild(Guid id,CancellationToken ct){try{await service.DeactivateBuildAsync(id,ct);return NoContent();}catch(EntityNotFoundException){return NotFound();}}
  private Guid? UserId()=>Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier)??User.FindFirstValue("sub"),out var id)?id:null;private static ProblemDetails Problem(string title,string detail,int status)=>new(){Title=title,Detail=detail,Status=status};
