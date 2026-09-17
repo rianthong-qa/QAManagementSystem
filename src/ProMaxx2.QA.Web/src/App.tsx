@@ -1,4 +1,4 @@
-﻿import { Fragment as _F, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+﻿import { Fragment as _F, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import "./App.css";
 import "./styles.css";
 import "./ExecutionWorkspace.css";
@@ -2182,11 +2182,11 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
         setAllItems(allReleases);
         setItems(active);
         setProjects((projectData as ProjectItem[]).filter((x) => x.isActive));
-        setSelectedId((current) =>
-          active.some((x) => x.releaseId === current)
-            ? current
-            : (active[0]?.releaseId ?? ""),
-        );
+        setSelectedId((current) => {
+          if (active.some((x) => x.releaseId === current)) return current;
+          const scoped = contextProjectId ? active.filter((x) => x.projectId === contextProjectId) : active;
+          return scoped[0]?.releaseId ?? active[0]?.releaseId ?? "";
+        });
       })
       .catch(() => setError("โหลดข้อมูล Release ไม่สำเร็จ"))
       .finally(() => setLoading(false));
@@ -4061,7 +4061,55 @@ type RegressionActivity = {regressionActivityId:string;action:string;details?:st
 type RegressionProfile = {id:string;name:string;visibility?:string;isOwner?:boolean;minimumPriority:string;includeSharedDependencies:boolean;databaseChange:boolean;apiChange:boolean;calculationChange:boolean;permissionChange:boolean;installerChange:boolean;defectFix:boolean;directImpactWeight:number;historicalDefectWeight:number;criticalPriorityWeight:number;sharedDependencyWeight:number};
 type RegressionSchedule = {regressionScheduleId:string;releaseId:string;regressionProfileId?:string;name:string;isActive:boolean;createdAt:string};
 type RegressionNotification = {regressionScheduleId:string;buildId:string;buildNumber:string;scheduleName:string;message:string;createdAt:string};
-function RegressionPage({projectId,releaseId,buildId,search,canEdit,onOpenCycle}:{projectId?:string;releaseId?:string;buildId?:string;search:string;canEdit:boolean;onOpenCycle:(page:"test-cycles"|"execution",cycleId:string)=>void}){
+type RegressionAutomationPreviewItem = {testCaseId:string;testCaseCode:string;title:string;automationCaseId?:string;automationCaseStatus?:string;eligible:boolean;skipReason?:string};
+type RegressionAutomationPreview = {items:RegressionAutomationPreviewItem[];eligibleAutomationCaseIds:string[];eligibleCount:number;totalCount:number};
+
+function RegressionAutomationRunModal({testCaseIds,projectId,builds,environments,headers,onClose,onDone}:{testCaseIds:string[];projectId?:string;builds:BuildItem[];environments:RegressionEnvironment[];headers:Record<string,string>;onClose:()=>void;onDone:(message:string)=>void}){
+  const [preview,setPreview]=useState<RegressionAutomationPreview|null>(null),[loadingPreview,setLoadingPreview]=useState(true),[error,setError]=useState("");
+  const [buildId,setBuildId]=useState(""),[environmentId,setEnvironmentId]=useState(""),[priority,setPriority]=useState(5),[running,setRunning]=useState(false);
+  useEffect(()=>{
+    setLoadingPreview(true);
+    fetch(`${apiUrl}/regression/automation-run-preview`,{method:"POST",headers,body:JSON.stringify({testCaseIds})})
+      .then(r=>r.ok?r.json():Promise.reject())
+      .then((data:RegressionAutomationPreview)=>setPreview(data))
+      .catch(()=>setError("โหลด Automation Run Preview ไม่สำเร็จ"))
+      .finally(()=>setLoadingPreview(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+  const run=async()=>{
+    if(!preview||!buildId||!environmentId)return;
+    setRunning(true);setError("");
+    try{
+      const r=await fetch(`${apiUrl}/automation/batch-run?projectId=${projectId}`,{method:"POST",headers,body:JSON.stringify({caseIds:preview.eligibleAutomationCaseIds,buildId,environmentId,agentId:null,priority})});
+      if(!r.ok){const p=await r.json().catch(()=>null);throw new Error(p?.detail??"สั่งรัน Automation ไม่สำเร็จ")}
+      const result=await r.json() as {created:unknown[];skippedCodes:string[];total:number};
+      onDone(`สั่งรัน Automation แล้ว ${result.created.length} รายการ${result.skippedCodes.length?` (ข้าม ${result.skippedCodes.length} รายการที่ไม่ผ่านเงื่อนไข)`:""}`);
+    }catch(e){setError(e instanceof Error?e.message:"สั่งรัน Automation ไม่สำเร็จ")}finally{setRunning(false)}
+  };
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-automation-run-title" onMouseDown={()=>!running&&onClose()}>
+    <div className="modal-box" onMouseDown={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><h2 id="regression-automation-run-title">ส่ง Automation Run</h2><small>ตรวจสอบ Test Case ที่พร้อมรันอัตโนมัติจากรายการที่เลือก</small></div><button aria-label="ปิด" disabled={running} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+      {error&&<div className="inline-alert error"><span>{error}</span></div>}
+      {loadingPreview?<div className="empty"><div className="spinner" /><p>กำลังตรวจสอบ...</p></div>:preview&&<>
+        <p>พร้อมรัน {preview.eligibleCount} / {preview.totalCount} รายการ</p>
+        <div className="table-wrap"><table><thead><tr><th>Test Case</th><th>สถานะ</th></tr></thead><tbody>
+          {preview.items.map(x=><tr key={x.testCaseId}><td>{x.testCaseCode} · {x.title}</td><td>{x.eligible?<Badge tone="green">พร้อมรัน</Badge>:<span className="muted-text">{x.skipReason}</span>}</td></tr>)}
+        </tbody></table></div>
+        {preview.eligibleCount>0&&<div className="form-grid">
+          <label>Build<select value={buildId} onChange={e=>setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber} · {x.applicationVersion||"-"}</option>)}</select></label>
+          <label>Environment<select value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map(x=><option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label>
+          <label>Priority<input type="number" min={1} max={10} value={priority} onChange={e=>setPriority(Number(e.target.value))} /></label>
+        </div>}
+      </>}
+      <div className="modal-actions">
+        <button className="btn" disabled={running} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button>
+        <button className="btn primary" disabled={running||!preview?.eligibleCount||!buildId||!environmentId} onClick={run}>{running?<><span className="spinner inline" aria-hidden="true" /> กำลังสั่งรัน...</>:<><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> สั่งรัน {preview?.eligibleCount??0} รายการ</>}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function RegressionPage({projectId,releaseId,buildId,search,canEdit,canRunAutomation,onOpenCycle}:{projectId?:string;releaseId?:string;buildId?:string;search:string;canEdit:boolean;canRunAutomation:boolean;onOpenCycle:(page:"test-cycles"|"execution",cycleId:string)=>void}){
   const [releases,setReleases]=useState<ReleaseItem[]>([]),[builds,setBuilds]=useState<BuildItem[]>([]),[modules,setModules]=useState<ModuleItem[]>([]),[environments,setEnvironments]=useState<RegressionEnvironment[]>([]),[cycles,setCycles]=useState<TestCycleItem[]>([]);
   const [selectedRelease,setSelectedRelease]=useState(releaseId??""),[selectedBuild,setSelectedBuild]=useState(buildId??""),[changedModules,setChangedModules]=useState<string[]>([]),[minimumPriority,setMinimumPriority]=useState("P1"),[shared,setShared]=useState(true),[databaseChange,setDatabaseChange]=useState(false),[apiChange,setApiChange]=useState(false),[calculationChange,setCalculationChange]=useState(false),[permissionChange,setPermissionChange]=useState(false),[installerChange,setInstallerChange]=useState(false),[defectFix,setDefectFix]=useState(false),[sharedComponents,setSharedComponents]=useState(""),[changeNotes,setChangeNotes]=useState("");
   const [impact,setImpact]=useState<RegressionImpact|null>(null),[selectedCases,setSelectedCases]=useState<string[]>([]),[loading,setLoading]=useState(false),[initialLoading,setInitialLoading]=useState(true),[error,setError]=useState(""),[success,setSuccess]=useState(""),[impactFilter,setImpactFilter]=useState(""),[moduleFilter,setModuleFilter]=useState(""),[priorityFilter,setPriorityFilter]=useState("");
@@ -4069,6 +4117,7 @@ function RegressionPage({projectId,releaseId,buildId,search,canEdit,onOpenCycle}
   const [history,setHistory]=useState<RegressionHistory[]>([]),[baselineBuild,setBaselineBuild]=useState(""),[baseline,setBaseline]=useState<RegressionBaseline|null>(null),[resultFilter,setResultFilter]=useState(""),[defectOnly,setDefectOnly]=useState(false);
   const [activities,setActivities]=useState<RegressionActivity[]>([]),[pageSize,setPageSize]=useState(50),[profileName,setProfileName]=useState(""),[profileVisibility,setProfileVisibility]=useState("Private"),[selectedProfileId,setSelectedProfileId]=useState(""),[profiles,setProfiles]=useState<RegressionProfile[]>([]),[schedules,setSchedules]=useState<RegressionSchedule[]>([]),[notifications,setNotifications]=useState<RegressionNotification[]>([]),[scheduleName,setScheduleName]=useState("Regression เมื่อมี Build ใหม่"),[directImpactWeight,setDirectImpactWeight]=useState(40),[historicalDefectWeight,setHistoricalDefectWeight]=useState(30),[criticalPriorityWeight,setCriticalPriorityWeight]=useState(20),[sharedDependencyWeight,setSharedDependencyWeight]=useState(10);
   const [suiteModal,setSuiteModal]=useState(false),[suiteName,setSuiteName]=useState(""),[suiteDescription,setSuiteDescription]=useState(""),[riskTier,setRiskTier]=useState("High"),[createCycle,setCreateCycle]=useState(true),[environmentId,setEnvironmentId]=useState(""),[cycleName,setCycleName]=useState(""),[startDate,setStartDate]=useState(""),[endDate,setEndDate]=useState(""),[existingCycle,setExistingCycle]=useState(""),[saving,setSaving]=useState(false);
+  const [automationRunModal,setAutomationRunModal]=useState(false);
   const headers=useMemo(()=>({"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}),[]);
   const read=useCallback(async(url:string)=>{const r=await fetch(url,{headers});if(!r.ok)throw new Error("โหลดข้อมูล Regression ไม่สำเร็จ");return r.json();},[headers]);
   useEffect(()=>{setSelectedRelease(releaseId??"")},[releaseId]);useEffect(()=>{setSelectedBuild(buildId??"")},[buildId]);
@@ -4131,7 +4180,8 @@ function RegressionPage({projectId,releaseId,buildId,search,canEdit,onOpenCycle}
     <section className="card regression-schedule"><div className="regression-section-head"><div><span className="regression-title-icon">◷</span><div><h2>Scheduled Regression</h2><p>เตรียม Regression อัตโนมัติและแจ้งเตือนเมื่อมี Active Build ใหม่</p></div></div><Badge tone={notifications.length?"yellow":"green"}>{notifications.length} Notifications</Badge></div>{notifications.length>0&&<div className="regression-notifications">{notifications.map(x=><div key={`${x.regressionScheduleId}-${x.buildId}`}><span>!</span><p><b>{x.message}</b><small>{x.scheduleName} · {formatThaiDateTime(x.createdAt)}</small></p><button className="btn" disabled={!canEdit||saving} onClick={()=>acknowledgeNotification(x)}><span className="material-symbols-outlined" aria-hidden="true">check</span> รับทราบ</button></div>)}</div>}<div className="regression-schedule-form"><input aria-label="ชื่อ Scheduled Regression" value={scheduleName} onChange={e=>setScheduleName(e.target.value)}/><select aria-label="Profile สำหรับ Scheduled Regression" value={selectedProfileId} onChange={e=>{setSelectedProfileId(e.target.value);applyProfile(e.target.value)}}><option value="">ไม่ใช้ Profile</option>{profiles.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><button className="btn primary" disabled={!selectedRelease||!scheduleName.trim()||saving} onClick={saveSchedule}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Schedule</button></div>{schedules.length>0&&<ul className="regression-schedule-list">{schedules.map(x=><li key={x.regressionScheduleId}><span><b>{x.name}</b><small>{releases.find(r=>r.releaseId===x.releaseId)?.releaseCode??"-"} · เปิดใช้งานอยู่</small></span><button className="btn danger" disabled={!canEdit||saving} onClick={()=>removeSchedule(x.regressionScheduleId)}><span aria-hidden="true">⏹</span> ปิด Schedule</button></li>)}</ul>}</section>
     <section className="regression-dashboard-grid"><article className="card regression-trend"><div className="regression-section-head"><div><span className="regression-title-icon">↗</span><div><h2>Regression Trend</h2><p>จำนวน Test Case ที่ระบบแนะนำจากการวิเคราะห์ 6 ครั้งล่าสุด</p></div></div></div><div className="regression-trend-bars">{history.slice(0,6).reverse().map(x=>{const max=Math.max(1,...history.slice(0,6).map(h=>h.recommendedCases));return <div key={x.regressionAnalysisId}><span style={{height:`${Math.max(8,x.recommendedCases*100/max)}%`}} title={`${x.recommendedCases} cases`}></span><small>{x.buildNumber}</small><b>{x.recommendedCases}</b></div>})}{history.length===0&&<p className="regression-helper">ยังไม่มีข้อมูลแนวโน้ม</p>}</div></article><article className="card regression-activity"><div className="regression-section-head"><div><span className="regression-title-icon">⌁</span><div><h2>Recent Activity</h2><p>กิจกรรม Regression ล่าสุดของ Release</p></div></div><Badge tone="blue">{activities.length}</Badge></div><div className="regression-activity-list">{activities.slice(0,6).map(x=><div key={x.regressionActivityId}><span></span><p><b>{x.action}</b><small>{x.details||"-"} · {x.actorName||"System"}</small></p><time>{formatThaiDateTime(x.createdAt,{dateStyle:"short",timeStyle:"short"})}</time></div>)}{activities.length===0&&<p className="regression-helper">ยังไม่มีกิจกรรม</p>}</div></article></section>
     <section className="regression-phase-grid"><article className="card regression-baseline"><div className="regression-section-head"><div><span className="regression-title-icon">Δ</span><div><h2>Baseline Comparison</h2><p>เปรียบเทียบผล Regression ของ Target Build กับ Build ก่อนหน้า</p></div></div></div><label>Baseline Build<select value={baselineBuild} onChange={e=>setBaselineBuild(e.target.value)}><option value="">เลือก Build สำหรับเปรียบเทียบ</option>{builds.filter(x=>x.buildId!==selectedBuild).map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber} · {x.applicationVersion||"-"}</option>)}</select></label>{baseline?<div className="regression-compare"><div><small>Executed</small><b>{baseline.target.executedCases}</b><span className={baseline.executedDelta>=0?"positive":"negative"}>{baseline.executedDelta>=0?"+":""}{baseline.executedDelta}</span></div><div><small>Passed</small><b>{baseline.target.passedCases}</b><span className={baseline.passedDelta>=0?"positive":"negative"}>{baseline.passedDelta>=0?"+":""}{baseline.passedDelta}</span></div><div><small>Failed</small><b>{baseline.target.failedCases+baseline.target.blockedCases}</b><span className={baseline.failedDelta<=0?"positive":"negative"}>{baseline.failedDelta>=0?"+":""}{baseline.failedDelta}</span></div><div><small>Pass Rate</small><b>{baseline.target.passRate}%</b><span className={baseline.passRateDelta>=0?"positive":"negative"}>{baseline.passRateDelta>=0?"+":""}{baseline.passRateDelta}%</span></div></div>:<p className="regression-helper">{builds.length<2?"Release นี้ยังไม่มี Build อื่นสำหรับเปรียบเทียบ":"เลือก Baseline Build เพื่อดูแนวโน้ม"}</p>}</article><article className="card regression-history"><div className="regression-section-head"><div><span className="regression-title-icon">↺</span><div><h2>Regression History</h2><p>ประวัติการวิเคราะห์ Impact ล่าสุด</p></div></div><Badge tone="blue">{history.length}</Badge></div>{history.length?<div className="regression-history-list">{history.slice(0,6).map(x=><div key={x.regressionAnalysisId}><span><b>Build {x.buildNumber}</b><small>{formatThaiDateTime(x.analyzedAt)} · {x.analyzedByName||"System"}</small></span><span><b>{x.recommendedCases}</b><small>Cases · {x.impactedModules} Modules · {x.minimumPriority}</small></span>{x.changeNotes&&<p>{x.changeNotes}</p>}</div>)}</div>:<p className="regression-helper">ยังไม่มีประวัติการวิเคราะห์สำหรับ Release นี้</p>}</article></section>
-    {impact&&selectedCases.length>0&&<div className="regression-selection-bar"><div><b>{selectedCases.length}</b><span>Test Cases ที่เลือก</span></div><div className="regression-existing-cycle"><select aria-label="Regression Cycle ที่มีอยู่" value={existingCycle} onChange={e=>setExistingCycle(e.target.value)}><option value="">เพิ่มเข้า Regression Cycle ที่มีอยู่</option>{cycles.filter(x=>x.releaseId===selectedRelease&&x.buildId===selectedBuild).map(x=><option key={x.testCycleId} value={x.testCycleId}>{x.cycleCode} · {x.cycleName}</option>)}</select><button className="btn" disabled={!existingCycle||saving||!canEdit} onClick={addToCycle}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่มเข้า Cycle</button>{existingCycle&&<><button className="btn" onClick={()=>onOpenCycle("test-cycles",existingCycle)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Cycle</button><button className="btn" onClick={()=>onOpenCycle("execution",existingCycle)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Execution</button></>}</div><button className="btn primary" disabled={!canEdit} onClick={openSuite}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Regression Suite / Cycle</button></div>}
+    {impact&&selectedCases.length>0&&<div className="regression-selection-bar"><div><b>{selectedCases.length}</b><span>Test Cases ที่เลือก</span></div><div className="regression-existing-cycle"><select aria-label="Regression Cycle ที่มีอยู่" value={existingCycle} onChange={e=>setExistingCycle(e.target.value)}><option value="">เพิ่มเข้า Regression Cycle ที่มีอยู่</option>{cycles.filter(x=>x.releaseId===selectedRelease&&x.buildId===selectedBuild).map(x=><option key={x.testCycleId} value={x.testCycleId}>{x.cycleCode} · {x.cycleName}</option>)}</select><button className="btn" disabled={!existingCycle||saving||!canEdit} onClick={addToCycle}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่มเข้า Cycle</button>{existingCycle&&<><button className="btn" onClick={()=>onOpenCycle("test-cycles",existingCycle)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Cycle</button><button className="btn" onClick={()=>onOpenCycle("execution",existingCycle)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Execution</button></>}</div><button className="btn" disabled={!canRunAutomation} onClick={()=>setAutomationRunModal(true)}><span className="material-symbols-outlined" aria-hidden="true">smart_toy</span> ส่ง Automation Run</button><button className="btn primary" disabled={!canEdit} onClick={openSuite}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Regression Suite / Cycle</button></div>}
+    {automationRunModal&&<RegressionAutomationRunModal testCaseIds={selectedCases} projectId={projectId} builds={builds} environments={environments} headers={headers} onClose={()=>setAutomationRunModal(false)} onDone={(message)=>{setAutomationRunModal(false);setSuccess(message);setSelectedCases([]);}} />}
     {suiteModal&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-suite-title" onMouseDown={()=>!saving&&setSuiteModal(false)}><div className="modal-box regression-suite-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-suite-title">สร้าง Regression Suite</h2><small>{selectedCases.length} Test Cases ที่เลือก</small></div><button disabled={saving} onClick={()=>setSuiteModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label className="full">Suite Name<input value={suiteName} onChange={e=>setSuiteName(e.target.value)}/></label><label>Risk Tier<select value={riskTier} onChange={e=>setRiskTier(e.target.value)}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></label><label className="full">Description<textarea rows={3} value={suiteDescription} onChange={e=>setSuiteDescription(e.target.value)}/></label></div><label className="regression-create-cycle"><input type="checkbox" checked={createCycle} onChange={e=>setCreateCycle(e.target.checked)}/><span><b>สร้าง Regression Cycle ต่อทันที</b><small>ระบบจะนำ Test Case ทั้งหมดใน Suite เข้า Cycle</small></span></label>{createCycle&&<div className="form-grid regression-cycle-fields"><label className="full">Cycle Name<input value={cycleName} onChange={e=>setCycleName(e.target.value)}/></label><label>Environment<select value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map(x=><option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label><label>Start Date<input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></label><label>End Date<input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/></label></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={()=>setSuiteModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving||!suiteName.trim()||(createCycle&&!environmentId)} onClick={generateSuite}>{saving?<><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง...</>:createCycle?<><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Suite และ Cycle</>:<><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Suite</>}</button></div></div></div>}
     {caseDetail&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-case-detail-title" onMouseDown={()=>setCaseDetail(null)}><div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-case-detail-title">{caseDetail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleName||"-"}</small></div><button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setCaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="tc-detail-hero"><h3>{caseDetail.title}</h3><div className="tc-detail-badges"><Badge tone={caseDetail.priority==="P0"||caseDetail.priority==="P1"?"red":"blue"}>{caseDetail.priority}</Badge><Badge tone={caseDetail.status==="Ready"?"green":caseDetail.status==="Deprecated"?"yellow":"blue"}>{caseDetail.status}</Badge>{caseDetail.testType&&<Badge tone="yellow">{caseDetail.testType}</Badge>}</div></div><div className="tc-detail-meta"><div className="tc-detail-meta-item"><span>Revision</span><b>Rev. {caseDetail.revisionNo}</b></div><div className="tc-detail-meta-item"><span>Module</span><b>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleCode||"-"}</b></div><div className="tc-detail-meta-item"><span>Execution Type</span><b>{caseDetail.automationCandidate?"Automation Candidate":"Manual"}</b></div></div><section className="tc-detail-section"><h3>Objective</h3><p className="tc-detail-body">{caseDetail.objective||"ไม่ระบุวัตถุประสงค์"}</p></section>{caseDetail.preconditions&&<section className="tc-detail-section"><h3>Preconditions</h3><p className="tc-detail-body">{caseDetail.preconditions}</p></section>}<section className="tc-detail-section"><h3>Test Steps ({caseDetail.steps?.length??0})</h3><div className="tc-detail-steps">{(caseDetail.steps??[]).map(x=><div key={x.stepNo} className="tc-detail-step"><div className="tc-detail-step-no">{x.stepNo}</div><div className="tc-detail-step-body"><div className="tc-detail-step-action"><strong>Action</strong><p>{x.action}</p></div>{x.testData&&<div className="tc-detail-step-data"><strong>Test Data</strong><p>{x.testData}</p></div>}<div className="tc-detail-step-expect"><strong>Expected Result</strong><p>{x.expectedResult}</p></div></div></div>)}</div></section><div className="modal-actions"><button className="btn primary" onClick={()=>setCaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div></div></div>}
   </div>
@@ -4143,13 +4193,16 @@ function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: 
   const [items, setItems] = useState<RtmItem[]>([]), [releases, setReleases] = useState<ReleaseItem[]>([]), [modules, setModules] = useState<ModuleItem[]>([]), [cases, setCases] = useState<TestCaseItem[]>([]);
   const [selectedRelease, setSelectedRelease] = useState(releaseId ?? ""), [moduleFilter, setModuleFilter] = useState(""), [coverageFilter, setCoverageFilter] = useState(""), [statusFilter, setStatusFilter] = useState("");  const [busy, setBusy] = useState(false), [reload, setReload] = useState(0), [error, setError] = useState(""), [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<RtmItem | null>(null), [caseDetail, setCaseDetail] = useState<RtmLinkedCase | null>(null), [linking, setLinking] = useState<RtmItem | null>(null), [linkModuleFilter, setLinkModuleFilter] = useState(""), [selectedCase, setSelectedCase] = useState(""), [coverageType, setCoverageType] = useState("Direct");
+  const [releasesLoaded, setReleasesLoaded] = useState(false);
   const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   useEffect(() => setSelectedRelease(releaseId ?? ""), [releaseId]);
   useEffect(() => {
+    if (!releasesLoaded) return;
     const scoped = releases.filter((x) => !projectId || x.projectId === projectId);
     if (selectedRelease && !scoped.some((x) => x.releaseId === selectedRelease)) setSelectedRelease("");
-  }, [releases, projectId, selectedRelease]);
+  }, [releasesLoaded, releases, projectId, selectedRelease]);
   useEffect(() => {
+    setReleasesLoaded(false);
     const readJson = (url: string) => fetch(url, { headers }).then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status} ${url}`)));
     Promise.all([
       readJson(`${apiUrl}/releases`),
@@ -4160,7 +4213,7 @@ function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: 
       setModules((moduleRows as ModuleItem[]).filter(x => x.isActive));
       const tcRows = Array.isArray(caseData) ? caseData : (caseData as { items?: { rows: unknown[] } })?.items?.rows ?? (caseData as { rows?: unknown[] })?.rows ?? [];
       setCases(tcRows as TestCaseItem[]);
-    }).catch(() => setError("โหลดข้อมูลตัวกรอง RTM ไม่สำเร็จ"));
+    }).catch(() => setError("โหลดข้อมูลตัวกรอง RTM ไม่สำเร็จ")).finally(() => setReleasesLoaded(true));
   }, [headers, projectId, refresh]);
   useEffect(() => { if (!selectedRelease) { setItems([]); setLoading(false); return; } setLoading(true); setError(""); fetch(`${apiUrl}/releases/${selectedRelease}/rtm`, { headers }).then(r => r.ok ? r.json() : Promise.reject()).then((data: unknown) => { const rows = Array.isArray(data) ? data : (data as { items?: { rows: unknown[] } }).items?.rows ?? []; setItems(rows as RtmItem[]); }).catch(() => setError("โหลด RTM ไม่สำเร็จ")).finally(() => setLoading(false)); }, [headers, selectedRelease, refresh, reload]);
   const filtered = items.filter(x => (!moduleFilter || x.moduleId === moduleFilter) && (!coverageFilter || x.coverageStatus === coverageFilter) && (!statusFilter || x.status === statusFilter) && (!search || `${x.requirementCode} ${x.title} ${x.moduleName} ${x.testCases.map(t => t.testCaseCode).join(" ")}`.toLowerCase().includes(search.toLowerCase())));
@@ -6429,8 +6482,10 @@ function TestSuitesPage({
         body: JSON.stringify({ testCaseIds: checked, isRequired: addRequired }),
       });
       if (!response.ok) throw new Error(await response.text() || "เพิ่ม Test Case ไม่สำเร็จ");
+      const fresh = await fetch(`${apiUrl}/test-suites/${managing.testSuiteId}`, { headers }).then(r => r.json());
       setChecked([]);
-      setManaging(null);
+      setManaging(fresh);
+      setItems((current) => current.map((x) => x.testSuiteId === fresh.testSuiteId ? fresh : x));
       setReload((x) => x + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "เพิ่ม Test Case ไม่สำเร็จ");
@@ -6444,7 +6499,9 @@ function TestSuitesPage({
       headers,
     });
     if (!response.ok) { setError("นำ Test Case ออกจาก Suite ไม่สำเร็จ"); return; }
-    setManaging(null);
+    const fresh = await fetch(`${apiUrl}/test-suites/${suiteId}`, { headers }).then(r => r.json());
+    setManaging(fresh);
+    setItems((current) => current.map((x) => x.testSuiteId === fresh.testSuiteId ? fresh : x));
     setReload((x) => x + 1);
   };
   const updateCase = async (suite: TestSuiteItem, caseId: string, sortOrder: number, isRequired: boolean) => {
@@ -7415,13 +7472,16 @@ function SystemMonitorPage() {
     [busy, setBusy] = useState("");
   const headers = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
   const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    setError("");
+    if (!silent) { setLoading(true); setError(""); }
     try {
       const response = await fetch(`${apiUrl}/system-monitor`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
       if (!response.ok) throw new Error(response.status === 403 ? "หน้านี้สำหรับ System Admin เท่านั้น" : "โหลดสถานะระบบไม่สำเร็จ");
       setData(await response.json());
-    } catch (e) { setError(e instanceof Error ? e.message : "โหลดสถานะระบบไม่สำเร็จ"); }
+      if (silent) setError("");
+    } catch (e) {
+      // silent background poll failures keep the last-known-good data on screen instead of blanking the whole dashboard
+      if (!silent) setError(e instanceof Error ? e.message : "โหลดสถานะระบบไม่สำเร็จ");
+    }
     finally { if (!silent) setLoading(false); }
   }, []);
   useEffect(() => { load(); const timer = window.setInterval(() => load(true), 15000); return () => window.clearInterval(timer); }, [load]);
@@ -7479,6 +7539,8 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
   };
+  const roleIdRef = useRef(roleId);
+  useEffect(() => { roleIdRef.current = roleId; }, [roleId]);
   useEffect(() => {
     const requestHeaders = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -7498,11 +7560,14 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
       setRoles(r);
       setPermissions(p);
       if (r.length) {
-        setRoleId(r[0].roleId);
+        // keep the admin's currently-viewed role selected across refreshes triggered by unrelated
+        // actions (e.g. toggling a user's active state) instead of always snapping back to roles[0]
+        const target = r.find((x: AdminRole) => x.roleId === roleIdRef.current) ?? r[0];
+        setRoleId(target.roleId);
         setSelected(
           p
             .filter((x: AdminPermission) =>
-              r[0].permissions.includes(x.permissionCode),
+              target.permissions.includes(x.permissionCode),
             )
             .map((x: AdminPermission) => x.permissionId),
         );
@@ -8269,12 +8334,13 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
   const [narrativeReleaseId, setNarrativeReleaseId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [releasesLoaded, setReleasesLoaded] = useState(false);
   const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => (r.ok ? r.json() : Promise.resolve(null))), [headers]);
   useEffect(() => { if (contextProjectId) setProjectId(contextProjectId); }, [contextProjectId]);
-  useEffect(() => { if (!projectId) { setReleases([]); return; } getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])); }, [projectId, getJson]);
+  useEffect(() => { if (!projectId) { setReleases([]); setReleasesLoaded(true); return; } setReleasesLoaded(false); getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])).finally(() => setReleasesLoaded(true)); }, [projectId, getJson]);
   useEffect(() => { if (contextReleaseId && !releaseId && releases.some((x) => x.releaseId === contextReleaseId)) setReleaseId(contextReleaseId); }, [contextReleaseId, releaseId, releases]);
-  useEffect(() => { if (releaseId && !releases.some((x) => x.releaseId === releaseId)) setReleaseId(""); }, [releaseId, releases]);
+  useEffect(() => { if (releasesLoaded && releaseId && !releases.some((x) => x.releaseId === releaseId)) setReleaseId(""); }, [releasesLoaded, releaseId, releases]);
   useEffect(() => {
     if (!presenterMode) return;
     const exitPresenter = (event: KeyboardEvent) => { if (event.key === "Escape") setPresenterMode(false); };
@@ -9369,7 +9435,7 @@ function App() {
           ) : page === "rtm" ? (
             <RtmPage refresh={refresh} projectId={contextProjectId} releaseId={contextReleaseId} search={search} canEdit={can("TESTCASE.EDIT")} />
           ) : page === "regression" ? (
-            <RegressionPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("REGRESSION.MANAGE")} onOpenCycle={openRegressionCycle} />
+            <RegressionPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("REGRESSION.MANAGE")} canRunAutomation={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} onOpenCycle={openRegressionCycle} />
           ) : page === "automation" ? (
             <AutomationPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canView={can("AUTOMATION.VIEW")} canEdit={can("AUTOMATION.EDIT")} canValidate={can("AUTOMATION.VALIDATE")} canApprove={can("AUTOMATION.APPROVE")} canRun={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} canManage={can("AUTOMATION.MANAGE")} canViewEvidence={can("AUTOMATION.VIEWEVIDENCE")} canGenerateAi={can("AUTOMATION.GENERATEAI")} />
           ) : page === "users" ? (

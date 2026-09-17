@@ -75,6 +75,27 @@ public sealed class RegressionController(QaDbContext db) : ControllerBase
         return Ok(new RegressionImpactDto(releaseId, request.BuildId, metrics, cases,page,pageSize,allCases.Count,totalPages,request.IncludeAllCaseIds?allCases.Select(x=>x.TestCaseId).ToArray():[]));
     }
 
+    [HttpPost("regression/automation-run-preview")]
+    public async Task<ActionResult<RegressionAutomationPreviewDto>> AutomationRunPreview(RegressionAutomationPreviewRequest request, CancellationToken ct)
+    {
+        var testCaseIds = request.TestCaseIds.Distinct().ToArray();
+        var testCases = await db.TestCases.AsNoTracking().Where(x => testCaseIds.Contains(x.TestCaseId))
+            .Select(x => new { x.TestCaseId, x.TestCaseCode, x.Title, x.Status, x.AutomationCandidate, x.AutomationTarget }).ToListAsync(ct);
+        var automationCases = await db.AutomationCases.AsNoTracking().Where(x => testCaseIds.Contains(x.TestCaseId))
+            .Select(x => new { x.AutomationCaseId, x.TestCaseId, x.Status, x.IsQuarantined }).ToListAsync(ct);
+        var automationByTestCase = automationCases.ToDictionary(x => x.TestCaseId, x => new AutomationCaseSnapshot(x.AutomationCaseId, x.Status, x.IsQuarantined));
+
+        var items = testCases.Select(x =>
+        {
+            var automationCase = automationByTestCase.GetValueOrDefault(x.TestCaseId);
+            var (eligible, skipReason) = RegressionAutomationEligibility.Evaluate(x.Status, x.AutomationCandidate, x.AutomationTarget, automationCase);
+            return new RegressionAutomationPreviewItemDto(x.TestCaseId, x.TestCaseCode, x.Title, automationCase?.AutomationCaseId, automationCase?.Status, eligible, skipReason);
+        }).OrderBy(x => x.TestCaseCode).ToList();
+
+        var eligibleIds = items.Where(x => x.Eligible && x.AutomationCaseId.HasValue).Select(x => x.AutomationCaseId!.Value).ToArray();
+        return Ok(new RegressionAutomationPreviewDto(items, eligibleIds, eligibleIds.Length, items.Count));
+    }
+
     [HttpGet("releases/{releaseId:guid}/regression-history")]
     public async Task<ActionResult<IReadOnlyList<RegressionHistoryDto>>> History(Guid releaseId,[FromQuery]int size=20,CancellationToken ct=default)
     {

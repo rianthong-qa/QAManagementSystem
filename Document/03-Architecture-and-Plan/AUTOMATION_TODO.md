@@ -123,7 +123,7 @@
 
 | ID | งาน | สถานะ | Owner | Acceptance Criteria / หลักฐาน |
 |---|---|---|---|---|
-| AUT-REG-001 | Regression Impact → Run List | TODO | - | นำ recommended case IDs มาสร้าง Automation run list โดยตรวจ Ready/Target |
+| AUT-REG-001 | Regression Impact → Run List | DONE | Claude | เพิ่ม `RegressionAutomationEligibility` (pure evaluator: Ready/Candidate/Target/AutomationCase Ready/Quarantine) และ endpoint `POST regression/automation-run-preview` แปลง TestCaseId ที่เลือกจาก Impact Analysis เป็น eligible AutomationCaseId พร้อมเหตุผลรายการที่ข้าม แล้วนำไปสั่งรันผ่าน `automation/batch-run` เดิม (ไม่ต้อง migration ใหม่); UI: ปุ่ม "ส่ง Automation Run" ใน RegressionPage selection bar เปิด modal preview + เลือก Build/Environment/Priority; unit test 7 เคส + integration test ครบ eligible/not-ready/not-candidate/quarantined ผ่านทั้งหมด (2026-09-16) |
 | AUT-REG-002 | Scheduled Regression → Automation | TODO | - | notification/build event เริ่ม workflow ได้อัตโนมัติและไม่สร้างงานซ้ำ |
 | AUT-REG-003 | Multi-Agent Result Merge | TODO | - | รวมผลจากหลาย Agent ใน Test Cycle เดียวและแสดง partial/complete |
 | AUT-REG-004 | TestExecution Write-back Verification | TODO | - | step result/evidence/source=Automation ครบและ dashboard อัปเดตถูกต้อง |
@@ -180,6 +180,16 @@
 8. `AUT-P2-001` ถึง `AUT-P2-008` — Monitoring, UX และ Scalability
 
 ## 11. Progress Log
+
+### 2026-09-16 — AUT-REG-001: Regression Impact → Automation Run List
+
+- ปิด `AUT-REG-001` (งานแรกในกลุ่ม P1 "Regression Closed Loop" `AUT-REG-001`–`006`; ตามคำขอผู้ใช้ให้เริ่มเฉพาะ ID นี้ก่อน ไม่แตะ 002-006)
+- ไม่ต้องมี migration ใหม่ — ใช้ความสัมพันธ์ `AutomationCase.TestCaseId`, `TestCase.AutomationCandidate/AutomationTarget` และ `AutomationCase.Status/IsQuarantined` ที่มีอยู่แล้วทั้งหมด
+- เพิ่ม `RegressionAutomationEligibility.Evaluate` (pure static evaluator ตามแบบ `AutomationFailureClassifier`) และ endpoint `POST regression/automation-run-preview` ใน `RegressionController` แปลง TestCaseId ที่เลือกจาก Impact Analysis เป็นรายการ eligible `AutomationCaseId` พร้อมเหตุผลของรายการที่ถูกข้าม (ยังไม่ Ready / ไม่ใช่ Automation Candidate / ยังไม่มี Automation Case / Quarantined / Automation Case ยังไม่ Ready)
+- การสั่งรันจริงใช้ endpoint เดิม `POST automation/batch-run` ไม่ได้เพิ่ม endpoint ใหม่สำหรับ execution
+- UI: เพิ่มปุ่ม "ส่ง Automation Run" ใน selection bar ของ `RegressionPage` (เปิดเมื่อมี Test Case ที่เลือกและมีสิทธิ์ `AUTOMATION.EXECUTE`/`EXECUTION.RUN`) เปิด modal `RegressionAutomationRunModal` แสดง preview eligible/skip reason แล้วเลือก Build/Environment/Priority ก่อนสั่งรัน
+- หลักฐานรอบนี้: `dotnet build src/ProMaxx2.QA.Api` ผ่าน 0 warning/0 error; `dotnet test tests/ProMaxx2.QA.UnitTests` ผ่านทั้งหมด 379 เทส (รวม 7 unit test ของ `RegressionAutomationEligibilityTests` และ integration test `AutomationRunPreview_splits_eligible_and_ineligible_cases`); frontend `npm run build`/`npx tsc -p tsconfig.app.json --noEmit`/`npm run lint` ผ่าน (มี lint warning เดิม 2 จุดที่ไม่เกี่ยวข้องกับงานนี้)
+- ยังไม่ได้ field test กับ Agent จริง (สั่งรันแล้ว Job เข้าคิวจริงหรือไม่) — ต้องให้ QA ทดสอบภาคสนามก่อนใช้งานจริง เช่นเดียวกับงาน Automation อื่นที่ยังไม่ได้ verify บนเครื่องจริง
 
 ### 2026-08-28 — Weighted Auto Assignment: foundation
 

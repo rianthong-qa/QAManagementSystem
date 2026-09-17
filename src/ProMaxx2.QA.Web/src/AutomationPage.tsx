@@ -1818,17 +1818,18 @@ function RetryPolicyTab({ policy, canManage, busy, onSave }: {
   const [maxAttempts, setMaxAttempts] = useState(policy?.maxAttempts ?? 2);
   const [backoffSeconds, setBackoffSeconds] = useState(policy?.backoffSeconds ?? 30);
   const [enabled, setEnabled] = useState(policy?.enabled ?? true);
-  useEffect(() => { if (policy) { setMaxAttempts(policy.maxAttempts); setBackoffSeconds(policy.backoffSeconds); setEnabled(policy.enabled); } }, [policy]);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (policy && !dirty) { setMaxAttempts(policy.maxAttempts); setBackoffSeconds(policy.backoffSeconds); setEnabled(policy.enabled); } }, [policy, dirty]);
 
   return <section className="automation-actions" aria-label="Retry Policy">
     <header className="automation-section-head"><div><h2>Retry Policy (AUT-P0-009)</h2><p>กำหนดจำนวนครั้ง/ระยะเวลา backoff สำหรับ auto-retry เมื่อ Execution ล้มเหลวจาก Environment/Agent — ไม่ retry เมื่อมี Step ที่ไม่ปลอดภัย (Unsafe) สำเร็จไปแล้ว</p></div></header>
     <div className="form-grid">
-      <label>Max Attempts<input type="number" min={0} max={10} value={maxAttempts} disabled={!canManage} onChange={(e) => setMaxAttempts(Number(e.target.value))} /></label>
-      <label>Backoff (วินาที)<input type="number" min={0} max={3600} value={backoffSeconds} disabled={!canManage} onChange={(e) => setBackoffSeconds(Number(e.target.value))} /></label>
-      <label className="checkbox-field"><input type="checkbox" checked={enabled} disabled={!canManage} onChange={(e) => setEnabled(e.target.checked)} /> เปิดใช้งาน Auto-Retry</label>
+      <label>Max Attempts<input type="number" min={0} max={10} value={maxAttempts} disabled={!canManage} onChange={(e) => { setMaxAttempts(Number(e.target.value)); setDirty(true); }} /></label>
+      <label>Backoff (วินาที)<input type="number" min={0} max={3600} value={backoffSeconds} disabled={!canManage} onChange={(e) => { setBackoffSeconds(Number(e.target.value)); setDirty(true); }} /></label>
+      <label className="checkbox-field"><input type="checkbox" checked={enabled} disabled={!canManage} onChange={(e) => { setEnabled(e.target.checked); setDirty(true); }} /> เปิดใช้งาน Auto-Retry</label>
     </div>
     {policy?.updatedAt && <p className="muted-text">แก้ไขล่าสุด {formatThaiDateTime(policy.updatedAt)}</p>}
-    {canManage && <div className="acw-action-bar"><button type="button" className="btn primary" disabled={busy} onClick={() => onSave({ maxAttempts, backoffSeconds, enabled })}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}</button></div>}
+    {canManage && <div className="acw-action-bar"><button type="button" className="btn primary" disabled={busy} onClick={() => { setDirty(false); onSave({ maxAttempts, backoffSeconds, enabled }); }}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}</button></div>}
   </section>;
 }
 

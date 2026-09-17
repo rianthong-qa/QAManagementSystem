@@ -81,3 +81,7 @@ public sealed record UpdateRegressionProfileRequest(string Name,string Visibilit
 public sealed record RegressionScheduleDto(Guid RegressionScheduleId,Guid ProjectId,Guid ReleaseId,Guid?RegressionProfileId,string Name,bool IsActive,DateTime CreatedAt);
 public sealed record SaveRegressionScheduleRequest(Guid ReleaseId,Guid?RegressionProfileId,string Name);
 public sealed record RegressionNotificationDto(Guid RegressionScheduleId,Guid BuildId,string BuildNumber,string ScheduleName,string Message,DateTime CreatedAt);
+
+public sealed record RegressionAutomationPreviewRequest(IReadOnlyList<Guid> TestCaseIds);
+public sealed record RegressionAutomationPreviewItemDto(Guid TestCaseId,string TestCaseCode,string Title,Guid?AutomationCaseId,string?AutomationCaseStatus,bool Eligible,string?SkipReason);
+public sealed record RegressionAutomationPreviewDto(IReadOnlyList<RegressionAutomationPreviewItemDto> Items,IReadOnlyList<Guid> EligibleAutomationCaseIds,int EligibleCount,int TotalCount);

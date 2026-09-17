@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Api.Controllers;
 using ProMaxx2.QA.Application.Regression;
 using ProMaxx2.QA.Application.Execution;
+using ProMaxx2.QA.Domain.Automation;
 using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Projects;
 using ProMaxx2.QA.Domain.Releases;
@@ -42,6 +43,62 @@ public sealed class RegressionControllerIntegrationTests
         var history = Assert.IsType<List<RegressionHistoryDto>>(Assert.IsType<OkObjectResult>(historyResult.Result).Value);
         Assert.Equal(1, Assert.Single(history).ImpactedModules);
         Assert.Contains(await db.RegressionActivities.ToListAsync(), x => x.Action == "ImpactAnalyzed");
+    }
+
+    [Fact]
+    public async Task AutomationRunPreview_splits_eligible_and_ineligible_cases()
+    {
+        await using var db = CreateDatabase();
+        var data = await SeedAsync(db);
+        var controller = new RegressionController(db);
+
+        // data.TestCase (from SeedAsync) is still Draft -> ineligible ("not Ready"), no linked AutomationCase.
+        var readyCandidate = new TestCase(data.Project.ProjectId, data.Module.ModuleId, "TC-002", "Ready candidate", null, null,
+            "P1", "Regression", true, null, [new TestStepInput(1, "Run", null, "Pass")], null);
+        readyCandidate.SetAutomationTarget("pos", null);
+        readyCandidate.ChangeStatus("Ready", null);
+        var readyAutomationCase = new AutomationCase(readyCandidate.TestCaseId, "AUT-002", "Pos", null, null);
+        readyAutomationCase.ChangeStatus("Ready");
+
+        var quarantinedCandidate = new TestCase(data.Project.ProjectId, data.Module.ModuleId, "TC-003", "Quarantined candidate", null, null,
+            "P1", "Regression", true, null, [new TestStepInput(1, "Run", null, "Pass")], null);
+        quarantinedCandidate.SetAutomationTarget("pos", null);
+        quarantinedCandidate.ChangeStatus("Ready", null);
+        var quarantinedAutomationCase = new AutomationCase(quarantinedCandidate.TestCaseId, "AUT-003", "Pos", null, null);
+        quarantinedAutomationCase.ChangeStatus("Ready");
+        quarantinedAutomationCase.Quarantine("Flaky", null, null);
+
+        var readyNotCandidate = new TestCase(data.Project.ProjectId, data.Module.ModuleId, "TC-004", "Ready but not a candidate", null, null,
+            "P1", "Regression", false, null, [new TestStepInput(1, "Run", null, "Pass")], null);
+        readyNotCandidate.ChangeStatus("Ready", null);
+
+        db.AddRange(readyCandidate, readyAutomationCase, quarantinedCandidate, quarantinedAutomationCase, readyNotCandidate);
+        await db.SaveChangesAsync();
+
+        var result = await controller.AutomationRunPreview(
+            new RegressionAutomationPreviewRequest([data.TestCase.TestCaseId, readyCandidate.TestCaseId, quarantinedCandidate.TestCaseId, readyNotCandidate.TestCaseId]), CancellationToken.None);
+        var preview = Assert.IsType<RegressionAutomationPreviewDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Equal(4, preview.TotalCount);
+        Assert.Equal(1, preview.EligibleCount);
+        Assert.Equal(readyAutomationCase.AutomationCaseId, Assert.Single(preview.EligibleAutomationCaseIds));
+
+        var notReadyItem = preview.Items.Single(x => x.TestCaseId == data.TestCase.TestCaseId);
+        Assert.False(notReadyItem.Eligible);
+        Assert.Equal("Test Case ยังไม่ Ready", notReadyItem.SkipReason);
+
+        var notCandidateItem = preview.Items.Single(x => x.TestCaseId == readyNotCandidate.TestCaseId);
+        Assert.False(notCandidateItem.Eligible);
+        Assert.Equal("ไม่ได้ตั้งเป็น Automation Candidate", notCandidateItem.SkipReason);
+
+        var eligibleItem = preview.Items.Single(x => x.TestCaseId == readyCandidate.TestCaseId);
+        Assert.True(eligibleItem.Eligible);
+        Assert.Null(eligibleItem.SkipReason);
+        Assert.Equal(readyAutomationCase.AutomationCaseId, eligibleItem.AutomationCaseId);
+
+        var quarantinedItem = preview.Items.Single(x => x.TestCaseId == quarantinedCandidate.TestCaseId);
+        Assert.False(quarantinedItem.Eligible);
+        Assert.Equal("Automation Case ถูก Quarantine", quarantinedItem.SkipReason);
     }
 
     [Fact]
