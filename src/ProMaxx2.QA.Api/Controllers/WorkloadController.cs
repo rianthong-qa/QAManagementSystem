@@ -9,7 +9,7 @@ using ProMaxx2.QA.Api.Services;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController, Route("api/v1"), Authorize, RequireProjectAccess]
-public sealed class WorkloadController(QaDbContext db) : ControllerBase
+public sealed class WorkloadController(QaDbContext db, ProMaxx2.QA.Application.Common.ProjectAccessContext projectCtx) : ControllerBase
 {
     [HttpGet("my-work"), Authorize(Policy = "QaMyWorkView")]
     public async Task<IActionResult> MyWork(string? status, bool? today, CancellationToken ct)
@@ -46,7 +46,9 @@ public sealed class WorkloadController(QaDbContext db) : ControllerBase
     public async Task<IActionResult> QaWorkload(Guid? projectId, Guid? testCycleId, CancellationToken ct)
     {
         var query = db.TestCycleCases.AsNoTracking().Where(x => !x.Cycle.IsDeleted);
+        // ไม่ระบุ projectId ต้องจำกัดเฉพาะ Project ที่ผู้ใช้เป็นสมาชิก — เดิมคืน workload ของทุก Project ในระบบ
         if (projectId.HasValue) query = query.Where(x => x.Cycle.ProjectId == projectId);
+        else { var allowed = projectCtx.AllowedProjectIds; query = query.Where(x => allowed.Contains(x.Cycle.ProjectId)); }
         if (testCycleId.HasValue) query = query.Where(x => x.TestCycleId == testCycleId);
         var rows = await (from x in query
                           join a in db.TestCycleCaseAssignments.AsNoTracking() on x.TestCycleCaseId equals a.TestCycleCaseId
@@ -68,12 +70,14 @@ public sealed class WorkloadController(QaDbContext db) : ControllerBase
         if (request.TesterUserId == Guid.Empty || request.TestCycleCaseIds is null || request.TestCycleCaseIds.Count == 0) return BadRequest("Tester and cases are required.");
         var cases = await db.TestCycleCases.Where(x => x.TestCycleId == cycleId && request.TestCycleCaseIds.Contains(x.TestCycleCaseId)).ToListAsync(ct);
         if (cases.Count != request.TestCycleCaseIds.Distinct().Count()) return BadRequest("One or more cases do not belong to the cycle.");
+        // โหลด assignment metadata ครั้งเดียวทั้งชุด แทน query ต่อ 1 case (N+1)
+        var caseIds = cases.Select(x => x.TestCycleCaseId).ToList();
+        var metadataByCase = await db.TestCycleCaseAssignments.Where(x => caseIds.Contains(x.TestCycleCaseId)).ToDictionaryAsync(x => x.TestCycleCaseId, ct);
         foreach (var item in cases)
         {
             var old = item.AssignedTesterUserId;
             item.AssignTester(request.TesterUserId);
-            var metadata = await db.TestCycleCaseAssignments.SingleOrDefaultAsync(x => x.TestCycleCaseId == item.TestCycleCaseId, ct);
-            if (metadata is null) db.TestCycleCaseAssignments.Add(metadata = new TestCycleCaseAssignment(item.TestCycleCaseId));
+            if (!metadataByCase.TryGetValue(item.TestCycleCaseId, out var metadata)) db.TestCycleCaseAssignments.Add(metadata = new TestCycleCaseAssignment(item.TestCycleCaseId));
             metadata.Assign(actor, request.DueDate);
             db.AssignmentHistories.Add(new AssignmentHistory(item.TestCycleCaseId, old, request.TesterUserId, item.CaseWeight, 0, request.Reason ?? "Manual assignment", old.HasValue ? "Reassigned" : "Assigned", actor, "manual-v1"));
         }

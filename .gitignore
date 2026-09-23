@@ -31,3 +31,9 @@ publish/
 # Local build output (agent artifact test runs) + runtime automation evidence
 /artifacts/
 src/ProMaxx2.QA.Api/App_Data/
+
+# Temporary build/verify output from local tooling (not source)
+/.tmp-*/
+**/.tmp-*-obj/
+/tmp/
+/output/

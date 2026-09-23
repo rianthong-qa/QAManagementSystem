@@ -12,14 +12,28 @@ namespace ProMaxx2.QA.Api.Controllers;
 [ApiController, Route("api/v1/automation/schedules"), Authorize(Policy = "AutomationView"), RequireProjectAccess]
 public sealed class AutomationSchedulesController(AutomationScheduleService service) : ControllerBase
 {
+    // worker-status ถูกเรียกแบบไม่มี JWT จาก tools/ProMaxx2.ServiceManager บนเครื่องเดียวกัน (127.0.0.1) จึงยังเป็น
+    // AllowAnonymous แต่จำกัดเฉพาะ request ที่มาจาก loopback จริงและไม่ผ่าน proxy — traffic จาก Cloudflare Tunnel
+    // ก็มาจาก loopback เหมือนกัน แต่จะมี header CF-Connecting-IP/X-Forwarded-For ติดมาเสมอ จึงถูกปฏิเสธ
+    // ผู้ใช้ที่ login แล้วและเป็น SYS_ADMIN หรือมีสิทธิ์ AUTOMATION.MANAGE ยังเรียกผ่าน public domain ได้
     [HttpGet("worker-status"), AllowAnonymous]
-    public object WorkerStatus() => new { enabled = AutomationScheduleWorker.IsEnabled, running = true };
+    public IActionResult WorkerStatus()
+        => CanControlWorker() ? Ok(new { enabled = AutomationScheduleWorker.IsEnabled, running = true }) : StatusCode(StatusCodes.Status403Forbidden);
 
     [HttpPost("worker-status"), AllowAnonymous]
-    public object SetWorkerStatus([FromQuery] bool enabled)
+    public IActionResult SetWorkerStatus([FromQuery] bool enabled)
     {
+        if (!CanControlWorker()) return StatusCode(StatusCodes.Status403Forbidden);
         AutomationScheduleWorker.SetEnabled(enabled);
-        return new { enabled, running = true };
+        return Ok(new { enabled, running = true });
+    }
+
+    private bool CanControlWorker()
+    {
+        if (User.Identity?.IsAuthenticated == true && (User.IsInRole("SYS_ADMIN") || User.HasClaim("permission", "AUTOMATION.MANAGE"))) return true;
+        var remote = HttpContext.Connection.RemoteIpAddress;
+        var proxied = Request.Headers.ContainsKey("CF-Connecting-IP") || Request.Headers.ContainsKey("X-Forwarded-For") || Request.Headers.ContainsKey("Forwarded");
+        return remote is not null && System.Net.IPAddress.IsLoopback(remote) && !proxied;
     }
 
     private Guid? UserId() => Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value, out var id) ? id : null;

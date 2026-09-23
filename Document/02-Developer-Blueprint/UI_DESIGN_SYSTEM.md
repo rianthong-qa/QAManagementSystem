@@ -17,7 +17,7 @@
 > RTM rule (13 สิงหาคม 2026): หน้า RTM ต้องอ้างอิง Project/Release ที่ผู้ใช้เลือก, แสดง KPI Covered/Partial/Not Covered, กรอง Module/Requirement Status/Coverage ได้, เปิดดู Requirement และ Test Case แบบ read-only modal, จัดการ Direct/Indirect Link ตามสิทธิ์, Export CSV และเปลี่ยนตารางเป็น card บน Mobile
 
 > สถานะ: **UI Single Source of Truth**
-> อัปเดตล่าสุด: 13 สิงหาคม 2026
+> อัปเดตล่าสุด: 23 กันยายน 2026
 > ขอบเขต: Web frontend ทั้งหมดใน `src/ProMaxx2.QA.Web`
 
 เอกสารนี้เป็นหลักสำหรับการออกแบบ สร้าง และแก้ไข UI ทุกหน้า หากโค้ดเดิมไม่สอดคล้องกับเอกสารนี้ ให้ปรับโค้ดเข้าหาเอกสาร เว้นแต่ requirement ใหม่ระบุเป็นอย่างอื่นอย่างชัดเจน ทุกครั้งที่มีการเปลี่ยนแปลง UI ต้องอัปเดตหัวข้อที่เกี่ยวข้องและ Change Log ในไฟล์นี้ในงานเดียวกัน
@@ -61,6 +61,8 @@ git diff --check
 | `--green` | `#169c63` | Pass/Success |
 | `--yellow` | `#d79a00` | Warning/Pending/Blocked |
 | `--red` | `#d64545` | Fail/Danger/Delete |
+| `--warning-text` | `#9a6d00` | ข้อความ/ไอคอนสถานะ Warning/Blocked บนพื้นเหลืองอ่อน (contrast ผ่านกว่า `--yellow`) |
+| `--info` | `#2563eb` | ข้อความสถานะ In Progress/Informational |
 
 หลักการทั่วไป:
 
@@ -257,6 +259,16 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-09-23 — System review: workspace stability, defect modal a11y, tokens
+
+- Execution Workspace: บันทึกผล (Save/Complete/Skip) หรือลบประวัติแล้วต้องคง Test Case ที่เลือกและตำแหน่ง scroll ไว้ — spinner เต็มหน้าแสดงเฉพาะตอนเปลี่ยน Test Cycle; ป้าย `Defect: <code>` ของ Step ต้องไม่หายหลัง reload (ล้างเฉพาะตอนเปลี่ยน Test Case)
+- Modal แก้ Defect ใน Workspace: focus ช่องชื่อ Defect ตอนเปิด, ปิดด้วย Escape ได้, ถ้ามีข้อมูลที่ยังไม่บันทึก (รวมรูปที่เลือก) ต้องยืนยันก่อนปิดทั้งจากปุ่ม ✕/ยกเลิก/คลิกพื้นหลัง/Escape; ถ้าสร้าง Defect สำเร็จแต่แนบรูปหรือเชื่อม Test Case ไม่สำเร็จ Defect ต้องขึ้นใน Linked Defects ทันที; ปุ่ม "เพิ่มรูป" ต้องแสดง focus ring (`:focus-within`) เพราะ input ถูกซ่อน; ปุ่ม Edit ของ Linked Defect ต้องมี `aria-label` ระบุรหัส Defect
+- หน้า Defect: โหลดสรุป (`/defects/stats`) ไม่สำเร็จต้องแสดง inline error + ปุ่มลองใหม่ ห้ามแสดงเป็น "ยังไม่มี Defect"; ปุ่มปิดข้อความ (icon-only) ทุกจุดต้องมี `aria-label="ปิดข้อความ"`
+- Dashboard share: ต้องเลือก Project ที่ Topbar ก่อนสร้างลิงก์ (ลิงก์แบบ "ทุก Project" ถูกยกเลิก) และแสดงข้อความ detail จาก server เมื่อสร้างไม่สำเร็จ
+- เพิ่ม token `--warning-text` และ `--info` (ดู §3) และใช้แทน hex ใน Test Summary release impact/unrun, Test Cycle case summary และ Execution Workspace metrics/step result; ข้อความประกอบใหม่ต้องมีขนาดอย่างน้อย 11px
+- หน้า Automation และ Audit Log โหลดแบบ lazy (แยก chunk) — ระหว่างโหลดแสดง card `.empty` + `.spinner` พร้อม `role="status"`
+- PDF Defect ตามโมดูลใช้ฟอนต์ตาม §3 (`Tahoma, "Noto Sans Thai", Arial`)
 
 ### 2026-09-16 — Audit Log visual refresh
 
@@ -655,3 +667,61 @@ git diff --check
 - ปุ่ม Clone ใช้ permission/disabled state และต้องมี inline loading/error/success feedback ตามมาตรฐาน modal เดิม
 - Desktop ใช้ modal สูงสุด 900px แบบ 2 คอลัมน์; Mobile ≤760px ใช้ full-screen modal, form 1 คอลัมน์, header/footer sticky และ action group wrap ได้ โดยห้ามเกิด page-level horizontal scroll
 - Detail ของ Target แสดง lineage badge/text `Cloned from <Source Cycle>` และใช้สี/Badge ตาม status เดิมของระบบ
+
+### 2026-09-18 — Defect module ranking
+
+- หน้า Defect แสดงอันดับจำนวน Defect รายโมดูลจาก `GET /defects/stats` ตาม Project/Release/Build context เดียวกับ KPI โดยรวมทุกสถานะและไม่ผูกกับตัวกรองของตารางที่แบ่งหน้า
+- เรียงจำนวนมากไปน้อย (จำนวนเท่ากันเรียง Module Code) พร้อมลำดับ จำนวน และแถบเทียบกับอันดับแรก; รวมกลุ่มไม่ระบุโมดูลและโมดูลที่ถูกลบเพื่อให้ยอดรวมตรงกับ Total
+- รายการใช้ `min-width: 0` และ `overflow-wrap: anywhere`; บน Mobile หัวการ์ด wrap และไม่ทำให้เกิด page-level horizontal scroll
+- คลิกอันดับโมดูลได้ทั้งเมาส์และ keyboard เพื่อกรองตาราง Defect ตามโมดูลนั้นและเลื่อนไปยังรายการ; ล้าง search และตัวกรองอื่นก่อนแสดงผล รองรับกลุ่มไม่ระบุโมดูลด้วย
+
+### 2026-09-18 — Defect module A4 PDF export
+
+- หน้า Defect มีปุ่มส่งออก PDF A4 ในหัวการ์ดอันดับโมดูลสำหรับผู้มีสิทธิ์ REPORT.EXPORT; ปุ่มปิดระหว่างโหลดสรุปหรือสร้างไฟล์ และแสดงสถานะกำลังสร้าง
+- รายงานใช้ Project/Release/Build context และข้อมูล summary ทั้งหมด ไม่อิงรายการตารางที่แบ่งหน้า; แสดงยอดสำคัญ โมดูลอันดับหนึ่ง และอันดับครบทุกโมดูล
+- รายงานแบ่งหน้าตามความสูงจริงของแถว มีหัวหน้าต่อและเลขหน้าทุกหน้า; ใช้สีและตัวอักษรสอดคล้องกับ design tokens และรองรับชื่อโมดูลภาษาไทยที่ยาว
+
+### 2026-09-20 — Execution Workspace inline Defect management
+
+- ปุ่ม `+ Defect` ของ Step ที่ Fail เปิด Unified modal ภายใน Execution Workspace พร้อมข้อมูล Test Case, Step, Cycle, Build, Environment และ Tester ที่เติมให้อัตโนมัติ ผู้ใช้แก้ Title, Severity, Status, Description, Steps to Reproduce, Expected และ Actual Result ก่อนบันทึกได้
+- Modal รองรับรูป PNG/JPG/WebP สูงสุด 5 รูป รูปละไม่เกิน 5 MB รวมไม่เกิน 20 MB พร้อม thumbnail, ลบรูปก่อนบันทึก และจัดการรูปของ Defect เดิม
+- แสดง Linked Defects ของ Test Case เหนือรายการ Step และเปิดแก้ไขรายละเอียด/รูปได้โดยไม่ออกจาก Workspace เฉพาะผู้มีสิทธิ์ `DEFECT.EDIT`
+- Desktop ใช้ modal สูงสุด 900px; Mobile ≤760px ใช้ full-screen modal, form หนึ่งคอลัมน์ และ image grid สองคอลัมน์โดยไม่เกิด page-level horizontal scroll
+
+### 2026-09-21 — Defect workspace visual hierarchy
+
+- หน้า Defect ใช้ลำดับการอ่าน 4 ช่วง: context ของข้อมูล, KPI สุขภาพรวม, ranking โมดูล และ Defect queue เพื่อให้เริ่มจากภาพรวมแล้วลงไปที่งานที่ต้องทำได้เร็วขึ้น
+- Ranking โมดูลแสดงอันดับต้น ๆ ก่อนและมีปุ่มขยายรายการทั้งหมด; queue แยกหัวข้อกับ filter bar พร้อมปุ่มล้างตัวกรองเมื่อมี filter active
+- เพิ่ม responsive rules สำหรับ intro/context, filter controls และ queue header ที่ breakpoint 760px; ตารางยังเลื่อนได้ภายใน table wrapper โดยไม่ทำให้เกิด page-level horizontal scroll
+
+### 2026-09-21 — Test Summary module readiness
+
+- หน้า Test Summary แสดงโมดูลที่ยังไม่เริ่มทดสอบและโมดูลที่ทดสอบแล้วแต่ยังไม่ครบ โดยใช้ข้อมูล Module Health จาก Summary เดียวกับ Execution Progress
+- รายการแสดง Module Code, ชื่อโมดูล, จำนวน Test Case และสัดส่วนที่ Execute แล้ว พร้อมสถานะว่างเมื่อไม่มีโมดูลค้าง
+- Layout แบ่งเป็น summary highlight และรายการสองกลุ่ม; บนจอเล็กจัดเป็นคอลัมน์เดียวและตัดข้อความยาวภายใน card
+
+### 2026-09-21 — Defect priority filter
+
+- หน้า Defect เพิ่มตัวกรอง Priority แยกจาก Severity และรองรับตัวเลือก P0–P3 เพื่อให้ค้นหารายการตามความสำคัญได้ตรงความหมาย
+- ตัวกรอง Priority ใช้ความสำคัญของ Test Case ที่เชื่อมโยงกับ Defect และยังคง responsive โดยไม่ทำให้เกิด horizontal scroll ระดับหน้า
+
+### 2026-09-21 — Test Summary release impact
+
+- เพิ่มส่วน Release Impact ใน Executive View เพื่อสรุประดับผลกระทบต่อการส่งมอบ โมดูลที่มีสัญญาณความเสี่ยง กำหนด Release และ Build ที่ใช้ประเมิน
+- แสดง Change Notes, Known Issues และข้อเสนอการจัดการจากข้อมูล Release, Build และ Test Summary ล่าสุด โดยข้อความยาวต้อง wrap ได้และไม่ทำให้เกิด horizontal scroll ระดับหน้า
+- รองรับ responsive layout: ข้อมูลผลกระทบและโมดูลเรียงเป็นคอลัมน์เดียวบนหน้าจอแคบ และใช้สีตามระดับ High/Medium/Low/Unknown ให้สอดคล้องกับสถานะคุณภาพเดิม
+
+### 2026-09-21 — Test Cycle detail Test Case list
+
+- หน้า Test Cycle Detail แสดงรายการ Test Case ใน Cycle พร้อมลำดับ, Code, Title, Priority, Module และสถานะล่าสุด
+- แสดง Expected Result ของ Step แรกในแต่ละ Test Case เป็นข้อความประกอบแบบตัดไม่เกิน 3 บรรทัด พร้อม title สำหรับดูข้อความเต็ม
+- แสดง Actual Result จากผล Execute ล่าสุดของ Test Case คู่กับ Expected Result และใช้สีฟ้าเพื่อแยกผลที่เกิดขึ้นจริงจากผลที่คาดหวัง
+- รายการโหลดจาก Execution Workspace endpoint เดิม และจำกัดความสูงด้วย internal scroll เพื่อไม่ให้ Modal ยาวจนใช้งานยากเมื่อมีหลายเคส
+- เพิ่มสถานะโหลด/ผิดพลาด/ไม่มีข้อมูล และ responsive layout สำหรับหน้าจอแคบโดยไม่ทำให้เกิด page-level horizontal scroll
+
+### 2026-09-21 — Test Suite context scope
+
+- Test Suite ใช้ขอบเขตระดับ Project จึงให้ตัวกรอง Project ด้านบนมีผลกับรายการโดยตรง
+- Release และ Build ไม่กรองรายการ Test Suite เพราะ Suite เป็นชุดทดสอบที่นำกลับมาใช้ซ้ำได้; สองบริบทนี้จะถูกใช้เมื่อเลือก Suite ไปสร้าง Test Cycle
+- เพิ่มข้อความอธิบายขอบเขตบนหน้า Test Suite เพื่อไม่ให้ผู้ใช้เข้าใจว่า Release/Build กำลังกรอง Suite อยู่
+- ในรายละเอียด Test Suite ให้แสดง Release/Build ที่ถูกใช้งานผ่าน Test Cycle พร้อมสรุปแบบไม่ซ้ำ และแสดงข้อมูลเดียวกันในรายงานส่งออก

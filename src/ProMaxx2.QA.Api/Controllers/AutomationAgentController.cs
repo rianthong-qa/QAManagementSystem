@@ -56,6 +56,9 @@ public sealed class AutomationAgentController(AutomationAgentService service, Au
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (!allowed.Contains(ext)) return BadRequest(Problem("Evidence type not supported", "Supported: PNG, JPG, WEBP, TXT, LOG, JSON, CSV.", 400));
         var type = string.IsNullOrWhiteSpace(evidenceType) ? "AutomationLog" : evidenceType.Trim();
+        // evidenceType ถูกฝังลงชื่อไฟล์ตรงๆ — รับเฉพาะ A-Z a-z 0-9 _ - เพื่อไม่ให้ค่าอย่าง "../<executionอื่น>/x" เขียนข้าม
+        // โฟลเดอร์ของ execution อื่นได้ (guard StartsWith(root) ด้านล่างกันได้แค่การหลุดออกนอก evidence root ทั้งหมด)
+        if (type.Length > 50 || !type.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')) return BadRequest();
         var safeName = Path.GetFileName(file.FileName);
         var relative = Path.Combine(id.ToString("N"), $"{type}_{stepNo?.ToString() ?? "exec"}_{DateTime.UtcNow:HHmmss}{ext}");
         var root = EvidenceRoot();

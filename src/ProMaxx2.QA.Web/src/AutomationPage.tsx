@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { formatThaiDateTime } from "./dateTime";
+import { apiUrl } from "./api";
 import {
   automationCaseTone as caseStatusTone,
   automationExecutionTone as executionStatusTone,
@@ -11,7 +12,6 @@ import {
   buildObjectKey,
 } from "./automationUtils";
 
-const apiUrl = import.meta.env.VITE_API_URL ?? "/api/v1";
 const token = () => localStorage.getItem("qa.accessToken");
 // Generate-with-AI เรียก AI provider จริง (opencode/OpenAI/ฯลฯ) ซึ่งบาง provider/model ตอบช้ามาก หรือค้างไม่ตอบเลย
 // backend เองมี timeout อยู่แล้วที่ 5 นาที แต่ฝั่งนี้ไม่เคยมี timeout เลยมาก่อน ทำให้ปุ่มค้างแบบไม่มี feedback

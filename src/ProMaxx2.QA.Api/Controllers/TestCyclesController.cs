@@ -93,7 +93,11 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
         catch (ArgumentException exception) { return BadRequest(new ProblemDetails { Title = "ข้อมูลไม่ครบ", Detail = exception.Message, Status = 400 }); }
         catch (InvalidOperationException exception) { var status = ai.IsConfigured ? 502 : 503; return StatusCode(status, new ProblemDetails { Title = "AI Generate Test Cycle ไม่พร้อมใช้งาน", Detail = exception.Message, Status = status }); }
         catch (OperationCanceledException) { return StatusCode(504, new ProblemDetails { Title = "AI ใช้เวลาประมวลผลนานเกินไป", Detail = "กรุณาลองใหม่อีกครั้ง", Status = 504 }); }
-        catch (Exception exception) { return StatusCode(500, new ProblemDetails { Title = "AI Generate Test Cycle ไม่สำเร็จ", Detail = exception.InnerException?.Message ?? exception.Message, Status = 500 }); }
+        catch (Exception exception)
+        {
+            HttpContext.RequestServices.GetRequiredService<ILogger<AiEndpointLog>>().LogError(exception, "AI generate failed ({Path})", HttpContext.Request.Path);
+            return StatusCode(500, new ProblemDetails { Title = "AI Generate Test Cycle ไม่สำเร็จ", Detail = $"เกิดข้อผิดพลาดระหว่างเรียก AI กรุณาลองใหม่ หรือแจ้งผู้ดูแลพร้อมรหัส {HttpContext.TraceIdentifier}", Status = 500 });
+        }
     }
 
     private Guid? UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;

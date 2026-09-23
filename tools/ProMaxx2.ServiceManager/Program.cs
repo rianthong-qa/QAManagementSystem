@@ -112,7 +112,13 @@ internal sealed class MainForm : Form
     private async Task StartApi()
     {
         if(await PortOpen(5038)){Log("API ทำงานอยู่แล้ว");return;}
-        StartProcess("dotnet.exe",$"run --project \"{Path.Combine(_root,"src","ProMaxx2.QA.Api","ProMaxx2.QA.Api.csproj")}\" --launch-profile http",_root,"API");
+        // API สาธารณะต้องรันแบบ Production ด้วย JWT key จาก User environment variable (อ่านใหม่จาก registry ทุกครั้ง
+        // เพราะ process ของ Service Manager ที่เปิดค้างไว้จะไม่เห็นตัวแปรที่ตั้งหลังจากเปิดโปรแกรม) — ถ้ายังไม่ได้ตั้ง
+        // Jwt__Key จะ fallback เป็น Development profile เดิมเพื่อไม่ให้ API สตาร์ทไม่ขึ้น
+        var jwtKey=Environment.GetEnvironmentVariable("Jwt__Key",EnvironmentVariableTarget.User);
+        var profile=string.IsNullOrWhiteSpace(jwtKey)?"http":"production";
+        if(profile=="http")Log("ไม่พบ User environment variable Jwt__Key — เริ่ม API แบบ Development");
+        StartProcess("dotnet.exe",$"run --project \"{Path.Combine(_root,"src","ProMaxx2.QA.Api","ProMaxx2.QA.Api.csproj")}\" --launch-profile {profile}",_root,"API",string.IsNullOrWhiteSpace(jwtKey)?null:new Dictionary<string,string>{["Jwt__Key"]=jwtKey});
         await WaitForPort(5038,"API");
     }
 
@@ -124,9 +130,10 @@ internal sealed class MainForm : Form
         await WaitForPort(5173,"Web");
     }
 
-    private void StartProcess(string file,string args,string workingDirectory,string source)
+    private void StartProcess(string file,string args,string workingDirectory,string source,IReadOnlyDictionary<string,string>? environment=null)
     {
         var info=new ProcessStartInfo(file,args){WorkingDirectory=workingDirectory,UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
+        if(environment is not null)foreach(var (name,value) in environment)info.Environment[name]=value;
         var process=new Process{StartInfo=info,EnableRaisingEvents=true};
         process.OutputDataReceived+=(_,e)=>{if(e.Data is not null)Log($"[{source}] {e.Data}");};process.ErrorDataReceived+=(_,e)=>{if(e.Data is not null)Log($"[{source}] {e.Data}");};
         process.Start();var pid=process.Id;process.Exited+=(_,_)=>process.Dispose();process.BeginOutputReadLine();process.BeginErrorReadLine();Log($"เริ่ม {source} (PID {pid})");

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatThaiDateTime } from "./dateTime";
+import { apiUrl } from "./api";
 import "./AuditLog.css";
 
 type AuditLogItem = {
@@ -11,7 +12,6 @@ type AuditLogItem = {
   summary?: string | null;
 };
 
-const apiUrl = import.meta.env.VITE_API_URL ?? "/api/v1";
 const pageSize = 25;
 const dateOptions: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
 const timeOptions: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };

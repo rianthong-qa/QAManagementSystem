@@ -1,4 +1,4 @@
-﻿import { Fragment as _F, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { Fragment as _F, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import "./App.css";
 import "./styles.css";
 import "./ExecutionWorkspace.css";
@@ -16,10 +16,15 @@ import "./Automation.css";
 import "./TestSummary.css";
 import "./RiskAcceptance.css";
 import "./ReleaseSignoff.css";
-import { AuditLogPage } from "./AuditLogPage";
 import { formatThaiDateTime, toUtcDate, bangkokMidnightMs } from "./dateTime";
 import { calculateOverallResult, type StepStatus } from "./overallResult";
-import { AutomationPage } from "./AutomationPage";
+import { exportDefectModulePdf } from "./DefectModulePdf";
+import { ExecutionDefectEditor, type WorkspaceDefect, type WorkspaceDefectContext } from "./ExecutionDefectEditor";
+import { apiUrl, escapeHtml, isApiRequest } from "./api";
+// หน้า Automation (~3,000 บรรทัด) และ Audit Log โหลดแยก chunk เมื่อเปิดหน้าเท่านั้น เพื่อลดขนาด bundle หลัก
+const AutomationPage = lazy(() => import("./AutomationPage").then((m) => ({ default: m.AutomationPage })));
+const AuditLogPage = lazy(() => import("./AuditLogPage").then((m) => ({ default: m.AuditLogPage })));
+const pageLoading = <article className="card empty" role="status" aria-live="polite"><div className="spinner" /><h3>กำลังโหลดหน้า...</h3></article>;
 
 type Page =
   | "dashboard"
@@ -62,7 +67,7 @@ type DashboardSummary = {
   projectName?: string;
   releaseCode?: string; releaseVersion?: string; buildNumber?: string;
 };
-const apiUrl = import.meta.env.VITE_API_URL ?? "/api/v1";
+// apiUrl มาจาก ./api (แหล่งเดียวทั้งแอป)
 const contextReleaseStorageKey = (projectId: string) => `qa.context.release.${projectId}`;
 const contextBuildStorageKey = (releaseId: string) => `qa.context.build.${releaseId}`;
 const contextRequestTimeoutMs = 10000;
@@ -126,7 +131,6 @@ if (typeof window !== "undefined") {
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const resp = await __origFetch(input, init);
     if (resp.status === 401) {
-      try { localStorage.removeItem("qa.accessToken"); localStorage.removeItem("qa.user"); } catch {}
       // determine request url (string)
       let reqUrl = "";
       try {
@@ -134,8 +138,10 @@ if (typeof window !== "undefined") {
         else if (input instanceof Request) reqUrl = input.url;
         else reqUrl = String(input);
       } catch {}
-      // Don't redirect when the failing request is the login call itself
-      if (reqUrl.includes("/auth/login")) return resp;
+      // 401 ที่แปลว่า session หมดอายุต้องมาจาก QA Hub API เท่านั้น — ไม่ล้าง token เพราะ 401 จากบริการอื่น,
+      // จากการ login เอง หรือจากลิงก์แชร์ Dashboard ที่หมดอายุ (endpoint anonymous)
+      if (!isApiRequest(reqUrl) || reqUrl.includes("/auth/login") || reqUrl.includes("/dashboard/shared")) return resp;
+      try { localStorage.removeItem("qa.accessToken"); localStorage.removeItem("qa.user"); } catch {}
       const isLoginPath = window.location.pathname === "/" || window.location.pathname.startsWith("/login");
       if (!isLoginPath) {
         // add a query flag so login page can show a message if desired
@@ -406,6 +412,17 @@ const cycleStatusOptions = ["Draft", "InProgress", "Completed", "Closed", "Cance
 // ด้านบน) เลย map ตรงๆ ได้ครบทุกค่า ส่วนประเภท (cycleType) มาจาก Master Setting ("TestCycleType") ที่แอดมิน
 // เพิ่มค่าใหม่ได้เอง เลยต้องมี fallback ไอคอน generic ไว้เผื่อค่าที่ไม่ได้ map ไว้ล่วงหน้า
 const cycleStatusIcons: Record<string, string> = { Draft: "draft", InProgress: "play_circle", Completed: "check_circle", Closed: "lock", Cancelled: "cancel" };
+const cycleCaseStatusLabels: Record<string, string> = { Pass: "ผ่าน", Fail: "ไม่ผ่าน", Blocked: "ติดปัญหา", Skipped: "ข้าม", InProgress: "กำลังทำ", NotRun: "ยังไม่เริ่ม" };
+const cycleCaseStatusTones: Record<string, string> = { Pass: "green", Fail: "red", Blocked: "yellow", Skipped: "gray", InProgress: "blue", NotRun: "gray" };
+// ความหมายสถานะ Test Cycle (TestCycle.cs) — โชว์ใน Test Cycle detail modal เหมือนรูปแบบเดียวกับ
+// requirementStatusInformation/testCaseStatusInfo ด้านล่าง
+const cycleStatusInfo = [
+  { value: "Draft", label: "ฉบับร่าง", meaning: "สร้าง Cycle และเลือก Test Case แล้ว แต่ยังไม่เริ่ม Assign หรือ Execute", impact: "แก้ไขรายการ Test Case ในรอบนี้ได้อิสระ" },
+  { value: "InProgress", label: "กำลังทดสอบ", meaning: "อยู่ระหว่างทดสอบจริง ผู้ทดสอบบันทึกผลผ่าน Execution Workspace ได้", impact: "บันทึก Save Progress/Skip/Complete Test และสร้าง Defect ต่อ Step ได้ตามปกติ" },
+  { value: "Completed", label: "ทดสอบครบแล้ว", meaning: "Execute ครบทุก Test Case ในรอบนี้แล้ว ไม่ได้แปลว่าผลทั้งหมดคือ Pass", impact: "หากยังมี Fail ที่รอ Fix/Retest ต้องเปิด Cycle ใหม่หรือกลับไป InProgress เพื่อ Retest" },
+  { value: "Closed", label: "ปิดรอบแล้ว", meaning: "ปิดรอบทดสอบอย่างเป็นทางการ ถือเป็นผลสรุปสุดท้ายของรอบนี้", impact: "บันทึกหรือแก้ไขผล Execution เพิ่มไม่ได้อีก (read-only)" },
+  { value: "Cancelled", label: "ยกเลิก", meaning: "ยกเลิกรอบทดสอบนี้ ไม่นำผลไปใช้อ้างอิง", impact: "บันทึกหรือแก้ไขผล Execution เพิ่มไม่ได้อีกเช่นเดียวกับ Closed" },
+] as const;
 const cycleTypeIcons: Record<string, string> = { Smoke: "local_fire_department", Regression: "sync", Sanity: "science", UAT: "person", Functional: "extension", Performance: "bolt" };
 // เหตุผลของ Skip Test Case (test-case-execution-ui-spec.md §18) — ไม่มีคอลัมน์ DB แยกเก็บ Reason
 // เลยเข้ารหัสรวมไว้ใน Comment field เดิมตอนส่ง (ดู confirmSkip ใน ExecutionWorkspacePage)
@@ -419,7 +436,8 @@ const skipReasonOptions = [
 ];
 const defectSeverities = ["Critical", "High", "Medium", "Low"];
 const defectStatuses = ["Open", "In Progress", "Resolved", "Closed", "Rejected"];
-const emptyDefectStats = { total: 0, open: 0, inProgress: 0, resolved: 0, closed: 0, rejected: 0, critical: 0, high: 0, medium: 0, low: 0, oldestOpenAgeDays: 0, unassignedActive: 0, closureRate: 0 };
+type DefectModuleCount = { moduleId: string | null; moduleCode: string | null; moduleName: string; count: number };
+const emptyDefectStats = { total: 0, open: 0, inProgress: 0, resolved: 0, closed: 0, rejected: 0, critical: 0, high: 0, medium: 0, low: 0, oldestOpenAgeDays: 0, unassignedActive: 0, closureRate: 0, modules: [] as DefectModuleCount[] };
 const defectPct = (count: number, total: number): number => total > 0 ? Math.round((count / total) * 100) : 0;
 const defectSeverityTones: Record<string, string> = { Critical: "red", High: "yellow", Medium: "blue", Low: "green" };
 const defectStatusTones: Record<string, string> = { Open: "yellow", "In Progress": "blue", Resolved: "green", Closed: "green", Rejected: "gray" };
@@ -816,14 +834,16 @@ function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, proje
   </div>;
 }
 
-function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTestCase }: { projectId?: string; releaseId?: string; buildId?: string; search: string; canEdit?: boolean; onOpenTestCase?: (testCaseId: string) => void }) {
+function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel, buildLabel, search, onClearSearch, canEdit, canExport, onOpenTestCase }: { projectId?: string; releaseId?: string; buildId?: string; projectName?: string; releaseLabel?: string; buildLabel?: string; search: string; onClearSearch?: () => void; canEdit?: boolean; canExport?: boolean; onOpenTestCase?: (testCaseId: string) => void }) {
   const [items, setItems] = useState<DefectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(30);
   const [moduleFilter, setModuleFilter] = useState("");
+  const [jumpToList, setJumpToList] = useState(false);
   const [severityFilter, setSeverityFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [modules, setModules] = useState<ModuleItem[]>([]);
@@ -851,6 +871,11 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
   const [summaryStats, setSummaryStats] = useState(emptyDefectStats);
+  const [statsLoaded, setStatsLoaded] = useState(false);
+  const [statsError, setStatsError] = useState("");
+  const [statsReload, setStatsReload] = useState(0);
+  const [exportingModulePdf, setExportingModulePdf] = useState(false);
+  const [showAllModules, setShowAllModules] = useState(false);
   const [crmDialogOpen, setCrmDialogOpen] = useState(false);
   // Defect ที่ dialog นี้กำลังทำงานด้วย — แยกจาก `detail` (Defect ที่เปิด detail modal อยู่) เพราะตอนนี้
   // เปิด dialog นี้ได้ 2 ทาง: จากปุ่มใน detail modal (item = detail อยู่แล้ว) หรือจากคอลัมน์ CRM ในตาราง
@@ -861,14 +886,16 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
   const [crmDevUsersError, setCrmDevUsersError] = useState("");
   const [crmAssignTo, setCrmAssignTo] = useState("");
   const [crmSending, setCrmSending] = useState(false);
+  const defectRequestVersion = useRef(0);
   // "send" = ยังไม่เคยผูก CRM มาก่อน (สร้าง ticket ใหม่); "reassign" = ผูกแล้ว แค่เปลี่ยนผู้รับผิดชอบบน ticket เดิม
   const [crmMode, setCrmMode] = useState<"send" | "reassign">("send");
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   const load = useCallback(() => {
     void reload; // refresh the list after create, edit, delete, or bulk updates
+    const requestVersion = ++defectRequestVersion.current;
     if (!projectId) { setItems([]); setTotalCount(0); setLoading(false); return; }
     setLoading(true); setError("");
-    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(search && { search }), ...(moduleFilter && { moduleId: moduleFilter }), ...(severityFilter && { severity: severityFilter }), ...(statusFilter && { status: statusFilter }), ...(assigneeFilter && { assigneeUserId: assigneeFilter }), page: String(page), size: String(pageSize) });
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(search && { search }), ...(moduleFilter && moduleFilter !== "unassigned" && { moduleId: moduleFilter }), ...(moduleFilter === "unassigned" && { unassignedModule: "true" }), ...(severityFilter && { severity: severityFilter }), ...(priorityFilter && { priority: priorityFilter }), ...(statusFilter && { status: statusFilter }), ...(assigneeFilter && { assigneeUserId: assigneeFilter }), page: String(page), size: String(pageSize) });
     fetch(`${apiUrl}/defects?${q}`, { headers }).then(async r => {
       if (!r.ok) throw new Error("โหลด Defect ไม่สำเร็จ");
       const json = await r.json();
@@ -880,24 +907,32 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
         : Array.isArray(nestedItems?.rows) ? nestedItems.rows
         : [];
       const total = Number(response?.total ?? response?.totalCount ?? nestedItems?.total ?? nestedItems?.totalCount ?? rows.length);
+      if (requestVersion !== defectRequestVersion.current) return;
       setItems(rows as DefectItem[]);
       setTotalCount(Number.isFinite(total) ? total : rows.length);
-    }).catch(e => setError(e instanceof Error ? e.message : "โหลด Defect ไม่สำเร็จ")).finally(() => setLoading(false));
-  }, [projectId, releaseId, buildId, search, moduleFilter, severityFilter, statusFilter, assigneeFilter, page, pageSize, headers, reload]);
+    }).catch(e => { if (requestVersion === defectRequestVersion.current) setError(e instanceof Error ? e.message : "โหลด Defect ไม่สำเร็จ"); }).finally(() => { if (requestVersion === defectRequestVersion.current) setLoading(false); });
+  }, [projectId, releaseId, buildId, search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter, page, pageSize, headers, reload]);
   useEffect(load, [load]);
   // การ์ดสรุปด้านบน — ขอบเขตตาม Project/Release/Build ที่เลือก (ไม่ผูกกับตัวกรองของตารางด้านล่าง) เพื่อให้เห็น
   // ภาพรวมทั้งหมดของบริบทนั้นเสมอ ไม่ว่าจะกรอง/ค้นหาตารางด้วยอะไรอยู่
   useEffect(() => {
-    if (!projectId) { setSummaryStats(emptyDefectStats); return; }
+    if (!projectId) { setSummaryStats(emptyDefectStats); setStatsLoaded(false); setStatsError(""); return; }
+    setStatsLoaded(false);
+    setStatsError("");
+    const controller = new AbortController();
     const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
-    fetch(`${apiUrl}/defects/stats?${q}`, { headers }).then(r => r.ok ? r.json() : null).then(d => {
+    fetch(`${apiUrl}/defects/stats?${q}`, { headers, signal: controller.signal }).then(r => { if (!r.ok) throw new Error(`โหลดสรุป Defect ไม่สำเร็จ (${r.status})`); return r.json(); }).then(d => {
+      if (controller.signal.aborted) return;
       if (d && typeof d === "object") setSummaryStats({
         total: d.total ?? 0, open: d.open ?? 0, inProgress: d.inProgress ?? 0, resolved: d.resolved ?? 0, closed: d.closed ?? 0, rejected: d.rejected ?? 0,
         critical: d.critical ?? 0, high: d.high ?? 0, medium: d.medium ?? 0, low: d.low ?? 0,
         oldestOpenAgeDays: d.oldestOpenAgeDays ?? 0, unassignedActive: d.unassignedActive ?? 0, closureRate: d.closureRate ?? 0,
+        modules: Array.isArray(d.modules) ? d.modules as DefectModuleCount[] : [],
       });
-    }).catch(() => {});
-  }, [projectId, releaseId, buildId, headers, reload]);
+      if (d && typeof d === "object") setStatsLoaded(true);
+    }).catch((e) => { if (!controller.signal.aborted) setStatsError(e instanceof Error ? e.message : "โหลดสรุป Defect ไม่สำเร็จ"); });
+    return () => controller.abort();
+  }, [projectId, releaseId, buildId, headers, reload, statsReload]);
   useEffect(() => {
     if (!projectId) return;
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
@@ -906,7 +941,24 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
       fetch(`${apiUrl}/lookups/users`, { headers: h }).then(r => r.ok ? r.json() : []),
     ]).then(([m, u]) => { setModules((m as ModuleItem[]).filter(x => x.isActive)); setUsers(u as UserLookup[]); }).catch(() => {});
   }, [projectId]);
-  useEffect(() => { setPage(1); }, [moduleFilter, severityFilter, statusFilter, assigneeFilter]);
+  useEffect(() => { setPage(1); }, [search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter]);
+  useEffect(() => {
+    if (!jumpToList || loading) return;
+    const target = document.getElementById("defect-list-results");
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setJumpToList(false);
+  }, [jumpToList, loading, items]);
+  const openModuleDefects = (moduleId: string | null) => {
+    onClearSearch?.();
+    setModuleFilter(moduleId ?? "unassigned");
+    setSeverityFilter("");
+    setPriorityFilter("");
+    setStatusFilter("");
+    setAssigneeFilter("");
+    setPage(1);
+    setJumpToList(true);
+  };
   const openForm = (item?: DefectItem) => {
     setEditing(item ?? null);
     setFormTitle(item?.title ?? "");
@@ -1004,19 +1056,54 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a"); a.href = url; a.download = "defects.csv"; a.click(); URL.revokeObjectURL(url);
   };
+  const downloadModulePdf = async () => {
+    if (!statsLoaded || exportingModulePdf) return;
+    setExportingModulePdf(true);
+    setError("");
+    try {
+      await exportDefectModulePdf(summaryStats, { project: projectName || "ไม่ระบุ", release: releaseLabel || "ทุก Release", build: buildLabel || "ทุก Build" });
+    } catch {
+      setError("สร้างไฟล์ PDF ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setExportingModulePdf(false);
+    }
+  };
   const toggleSelectAll = () => { setSelectedIds(selectedIds.length === items.length ? [] : items.map(x => x.defectId)); };
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  const activeDefectFilterCount = [search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter].filter(Boolean).length;
+  const clearDefectFilters = () => {
+    onClearSearch?.();
+    setModuleFilter("");
+    setSeverityFilter("");
+    setPriorityFilter("");
+    setStatusFilter("");
+    setAssigneeFilter("");
+    setPage(1);
+  };
+  const visibleModuleRanking = showAllModules ? summaryStats.modules : summaryStats.modules.slice(0, 8);
+  const defectContextLabel = [projectName, releaseLabel, buildLabel].filter(Boolean).join(" · ") || "ยังไม่ได้เลือก Project / Release / Build";
   if (loading && !items.length) return <article className="card empty"><div className="spinner" /><p>กำลังโหลด Defect...</p></article>;
-  return <>
-    {error && <div className="inline-alert error"><span>{error}</span><button onClick={() => setError("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
-    {notice && <div className="inline-alert success"><span>{notice}</span><button onClick={() => setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
+  return <div className="defect-page defect-page-modern">
+    {error && <div className="inline-alert error"><span>{error}</span><button type="button" aria-label="ปิดข้อความ" onClick={() => setError("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
+    {notice && <div className="inline-alert success"><span>{notice}</span><button type="button" aria-label="ปิดข้อความ" onClick={() => setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
+    <section className="defect-page-intro" aria-labelledby="defect-workspace-title">
+      <div className="defect-page-intro-copy">
+        <span className="defect-page-eyebrow">DEFECT WORKSPACE</span>
+        <h2 id="defect-workspace-title">ภาพรวมและรายการ Defect</h2>
+        <p>เริ่มจากดูสถานะรวม แล้วเลือกโมดูลเพื่อเปิดรายการที่ต้องติดตามได้ทันที</p>
+      </div>
+      <div className="defect-page-context" aria-label="ขอบเขตข้อมูลที่กำลังดู">
+        <span className="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+        <span>{defectContextLabel}</span>
+      </div>
+    </section>
     <div className="kpi-grid defect-summary-grid">
-      <article className="card kpi"><span>Total</span><strong>{summaryStats.total}</strong><small>Defects ทั้งหมด</small></article>
-      <article className="card kpi"><span>Open</span><strong>{summaryStats.open}</strong><small className="yellow">ต้องแก้ไข</small><small className="defect-kpi-pct">{defectPct(summaryStats.open, summaryStats.total)}% ของทั้งหมด</small></article>
-      <article className="card kpi"><span>In Progress</span><strong>{summaryStats.inProgress}</strong><small className="blue">กำลังแก้ไข</small><small className="defect-kpi-pct">{defectPct(summaryStats.inProgress, summaryStats.total)}% ของทั้งหมด</small></article>
-      <article className="card kpi"><span>Resolved</span><strong>{summaryStats.resolved}</strong><small className="green">แก้ไขแล้ว</small><small className="defect-kpi-pct">{defectPct(summaryStats.resolved, summaryStats.total)}% ของทั้งหมด</small></article>
-      <article className="card kpi"><span>Closed</span><strong>{summaryStats.closed}</strong><small className="green">ปิดงานแล้ว</small><small className="defect-kpi-pct">{defectPct(summaryStats.closed, summaryStats.total)}% ของทั้งหมด</small></article>
-      <article className="card kpi"><span>Rejected</span><strong>{summaryStats.rejected}</strong><small className="gray">ปฏิเสธ</small><small className="defect-kpi-pct">{defectPct(summaryStats.rejected, summaryStats.total)}% ของทั้งหมด</small></article>
+      <article className="card kpi defect-kpi defect-kpi-total"><span>Total</span><strong>{summaryStats.total}</strong><small>Defects ทั้งหมด</small></article>
+      <article className="card kpi defect-kpi"><span>Open</span><strong>{summaryStats.open}</strong><small className="yellow">ต้องแก้ไข</small><small className="defect-kpi-pct">{defectPct(summaryStats.open, summaryStats.total)}% ของทั้งหมด</small></article>
+      <article className="card kpi defect-kpi"><span>In Progress</span><strong>{summaryStats.inProgress}</strong><small className="blue">กำลังแก้ไข</small><small className="defect-kpi-pct">{defectPct(summaryStats.inProgress, summaryStats.total)}% ของทั้งหมด</small></article>
+      <article className="card kpi defect-kpi"><span>Resolved</span><strong>{summaryStats.resolved}</strong><small className="green">แก้ไขแล้ว</small><small className="defect-kpi-pct">{defectPct(summaryStats.resolved, summaryStats.total)}% ของทั้งหมด</small></article>
+      <article className="card kpi defect-kpi"><span>Closed</span><strong>{summaryStats.closed}</strong><small className="green">ปิดงานแล้ว</small><small className="defect-kpi-pct">{defectPct(summaryStats.closed, summaryStats.total)}% ของทั้งหมด</small></article>
+      <article className="card kpi defect-kpi"><span>Rejected</span><strong>{summaryStats.rejected}</strong><small className="gray">ปฏิเสธ</small><small className="defect-kpi-pct">{defectPct(summaryStats.rejected, summaryStats.total)}% ของทั้งหมด</small></article>
     </div>
     <div className="defect-summary-insights">
       <article className="card chart-card defect-summary-severity">
@@ -1040,11 +1127,60 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
         <div className="defect-detail-stat"><span className="defect-detail-stat-icon gray" aria-hidden="true">U</span><div><small>ยังไม่มอบหมาย</small><b>{summaryStats.unassignedActive.toLocaleString()} รายการ</b><small className="defect-detail-stat-sub">Open/In Progress ที่ยังไม่มีผู้รับผิดชอบ</small></div></div>
       </div>
     </div>
-    <article className="card">
-      <div className="table-tools">
+    <section className="card defect-module-ranking" aria-labelledby="defect-module-ranking-title">
+      <div className="defect-module-ranking-head">
         <div>
-          <select aria-label="กรองตาม Module" value={moduleFilter} onChange={e => setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}</select>
+          <h3 id="defect-module-ranking-title">Defect ตามโมดูล</h3>
+          <p>เรียงตามจำนวนที่พบมากที่สุด · รวมทุกสถานะใน Project / Release / Build ที่เลือก</p>
+        </div>
+        <div className="defect-module-ranking-actions">
+          <span>{summaryStats.modules.length.toLocaleString()} กลุ่ม</span>
+          {canExport !== false && <button type="button" className="btn" disabled={!statsLoaded || exportingModulePdf} onClick={downloadModulePdf}>{exportingModulePdf ? <><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง PDF...</> : <><span className="material-symbols-outlined" aria-hidden="true">picture_as_pdf</span> ส่งออก PDF A4</>}</button>}
+        </div>
+      </div>
+      {statsError ? <div className="inline-alert error" role="alert"><span>{statsError}</span><button type="button" onClick={() => setStatsReload(value => value + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div> : summaryStats.modules.length > 0 ? <>
+        <ol className="defect-module-ranking-list">
+        {visibleModuleRanking.map((module, index) => <li key={module.moduleId ?? "unassigned"}>
+          <span className="defect-module-rank">{index + 1}</span>
+          <button type="button" className={`defect-module-ranking-body${moduleFilter === (module.moduleId ?? "unassigned") ? " is-selected" : ""}`} aria-pressed={moduleFilter === (module.moduleId ?? "unassigned")} aria-label={`ดู Defect ของ ${module.moduleCode ? `${module.moduleCode} ` : ""}${module.moduleName} ${module.count} รายการ`} onClick={() => openModuleDefects(module.moduleId)}>
+            <span className="defect-module-ranking-label">
+              <span>{module.moduleCode && <b>{module.moduleCode}</b>}{module.moduleName}</span>
+              <strong>{module.count.toLocaleString()} <small>Defect</small></strong>
+            </span>
+            <span className="defect-module-ranking-track" aria-hidden="true"><span style={{ width: `${(module.count / Math.max(1, summaryStats.modules[0].count)) * 100}%` }} /></span>
+          </button>
+        </li>)}
+        </ol>
+        {summaryStats.modules.length > 8 && <button type="button" className="defect-ranking-toggle" onClick={() => setShowAllModules(value => !value)}>
+          <span className="material-symbols-outlined" aria-hidden="true">{showAllModules ? "expand_less" : "expand_more"}</span>
+          {showAllModules ? "แสดงเฉพาะอันดับต้น ๆ" : `แสดงทั้งหมด ${summaryStats.modules.length} กลุ่ม`}
+        </button>}
+      </> : <p className="chart-empty">ยังไม่มี Defect ในขอบเขตที่เลือก</p>}
+    </section>
+    <article className="card defect-list-card" id="defect-list-results" tabIndex={-1} aria-label="รายการ Defect">
+      <div className="defect-list-head">
+        <div>
+          <span className="defect-page-eyebrow">DEFECT QUEUE</span>
+          <h3>รายการ Defect</h3>
+          <p>ตรวจสอบรายละเอียด เปลี่ยนสถานะ และส่งต่อให้ทีมที่เกี่ยวข้องจากรายการเดียว</p>
+        </div>
+        <div className="defect-list-head-meta">
+          <strong>{totalCount.toLocaleString()}</strong>
+          <span>รายการในผลลัพธ์</span>
+        </div>
+      </div>
+      <div className="defect-filter-bar">
+        <div className="defect-filter-bar-title">
+          <span className="material-symbols-outlined" aria-hidden="true">tune</span>
+          <div><b>ตัวกรองรายการ</b><small>{activeDefectFilterCount ? `ใช้ตัวกรองอยู่ ${activeDefectFilterCount} รายการ` : "เลือกตัวกรองเพื่อโฟกัสงานที่ต้องติดตาม"}</small></div>
+        </div>
+        {activeDefectFilterCount > 0 && <button type="button" className="defect-clear-filters" onClick={clearDefectFilters}><span className="material-symbols-outlined" aria-hidden="true">restart_alt</span> ล้างตัวกรอง</button>}
+      </div>
+      <div className="table-tools defect-table-tools">
+        <div>
+          <select aria-label="กรองตาม Module" value={moduleFilter} onChange={e => setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}{summaryStats.modules.some(x => x.moduleId === null) && <option value="unassigned">ไม่ระบุโมดูล</option>}{moduleFilter && moduleFilter !== "unassigned" && !modules.some(x => x.moduleId === moduleFilter) && <option value={moduleFilter}>{summaryStats.modules.find(x => x.moduleId === moduleFilter)?.moduleName ?? "โมดูลที่ถูกลบ"}</option>}</select>
           <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value)}><option value="">ทุก Severity</option>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select>
+          <select aria-label="กรองตาม Priority" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{["P0", "P1", "P2", "P3"].map(priority => <option key={priority}>{priority}</option>)}</select>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">ทุก Status</option>{defectStatuses.map(s => <option key={s}>{s}</option>)}</select>
           <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option value="">ทุก Assignee</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
         </div>
@@ -1067,7 +1203,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
             {items.map(x => <tr key={x.defectId}>
               <td><input type="checkbox" checked={selectedIds.includes(x.defectId)} onChange={() => setSelectedIds(prev => prev.includes(x.defectId) ? prev.filter(id => id !== x.defectId) : [...prev, x.defectId])} /></td>
               <td><button className="link-button" onClick={() => openDetail(x)}>{x.defectCode}</button></td>
-              <td><span className="defect-title-text">{x.title}</span>{(x.releaseCode || x.buildNumber) && <small className="cell-sub">{x.releaseCode || "Release ไม่ระบุ"}{x.buildNumber ? ` · Build ${x.buildNumber}` : ""}</small>}</td>
+              <td><span className="defect-title-text" title={x.title}>{x.title}</span>{(x.releaseCode || x.buildNumber) && <small className="cell-sub">{x.releaseCode || "Release ไม่ระบุ"}{x.buildNumber ? ` · Build ${x.buildNumber}` : ""}</small>}</td>
               <td><Badge tone={defectSeverityTones[x.severity] ?? "blue"}>{x.severity}</Badge></td>
               <td><Badge tone={defectStatusTones[x.status] ?? "gray"}>{x.status}</Badge></td>
               <td>
@@ -1092,12 +1228,12 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
           </tbody>
           </table>
         </div>
-        <div className="pagination">
-        <label>แสดง<select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}><option>10</option><option>20</option><option>50</option></select> รายการ</label>
-        <span>หน้า {Math.min(page, pageCount)} / {pageCount} ({totalCount} รายการ)</span>
-        <button className="btn" disabled={page <= 1} onClick={() => setPage(x => x - 1)}><span aria-hidden="true">‹</span> ก่อนหน้า</button>
-        <button className="btn" disabled={page >= pageCount} onClick={() => setPage(x => x + 1)}>ถัดไป <span aria-hidden="true">›</span></button>
-      </div>
+        <div className="pagination suite-pagination">
+          <label>แสดง<select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}><option value="30">30</option><option value="50">50</option><option value="100">100</option><option value="150">150</option></select> รายการ</label>
+          <span>หน้า {Math.min(page, pageCount)} / {pageCount} · ทั้งหมด {totalCount.toLocaleString()} รายการ</span>
+          <button className="btn" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span> ก่อนหน้า</button>
+          <button className="btn" disabled={loading || page >= pageCount} onClick={() => setPage(value => value + 1)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+        </div>
     </article>
     {/* หน้าสร้าง/แก้ไข Defect ปรับให้ใช้ภาษาภาพเดียวกับหน้ารายละเอียด Defect (defect-detail ด้านล่าง) —
         eyebrow เหนือหัวข้อ, ส่วนต่างๆ ใช้ .cycle-detail-section (ไอคอน+h3) แทน label เดี่ยวๆ, และ
@@ -1183,7 +1319,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
               <div className="defect-detail-stat"><span className="defect-detail-stat-icon purple" aria-hidden="true">◔</span><div><small>Age</small><b>{defectAgeDays(detail.createdAt)} วัน</b></div></div>
               <div className="defect-detail-stat"><span className="defect-detail-stat-icon blue" aria-hidden="true">▤</span><div><small>Created</small><b>{fmtAgo(detail.createdAt)}</b><small className="defect-detail-stat-sub">{formatThaiDateTime(detail.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small></div></div>
               <div className="defect-detail-stat"><span className="defect-detail-stat-icon gray" aria-hidden="true">U</span><div><small>Assignee</small><b>{detail.assigneeName ?? "ไม่ระบุ"}</b></div></div>
-              {detail.crmSyncStatus === "Linked" && detail.crmTicketId && <div className="defect-detail-stat"><span className="defect-detail-stat-icon green" aria-hidden="true">⇪</span><div><small>CRM Ticket</small><a href={`https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo=${detail.crmTicketId}&JobType=HD`} target="_blank" rel="noreferrer" title={`เปิด Ticket #${detail.crmTicketId} ใน CRM`}>#{detail.crmTicketId}</a></div></div>}
+              {detail.crmSyncStatus === "Linked" && detail.crmTicketId && <div className="defect-detail-stat"><span className="defect-detail-stat-icon green" aria-hidden="true">⇪</span><div><small>CRM Ticket</small><a href={`https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo=${encodeURIComponent(detail.crmTicketId)}&JobType=HD`} target="_blank" rel="noreferrer" title={`เปิด Ticket #${detail.crmTicketId} ใน CRM`}>#{detail.crmTicketId}</a></div></div>}
               {detail.crmSyncStatus === "Failed" && <div className="defect-detail-stat"><span className="defect-detail-stat-icon red" aria-hidden="true">⚠</span><div><small>CRM</small><Badge tone="red">ส่งไม่สำเร็จ</Badge></div></div>}
             </div>
             <div className="defect-detail-split">
@@ -1328,7 +1464,7 @@ function DefectsPage({ projectId, releaseId, buildId, search, canEdit, onOpenTes
         </div>
       </div>
     )}
-  </>;
+  </div>;
 }
 
 function DataPage({ page, search, projectId, releaseId, buildId, canAssignExecution = false, canExport = false, onOpenCycle, onCreateCycle }: { page: Page; search: string; projectId?: string; releaseId?: string; buildId?: string; canAssignExecution?: boolean; canExport?: boolean; onOpenCycle?: (page: "test-cycles" | "execution", cycleId: string) => void; onCreateCycle?: (projectId: string, testSuiteId: string) => void }) {
@@ -2123,6 +2259,22 @@ type BuildItem = {
   isActive: boolean;
   status: string;
 };
+// ความหมายสถานะ Release/Build (ReleaseStatuses/BuildStatuses ใน Release.cs) — รูปแบบเดียวกับ
+// requirementStatusInformation/testCaseStatusInfo/cycleStatusInfo
+const releaseStatusInfo = [
+  { value: "Draft", label: "ฉบับร่าง", meaning: "อยู่ระหว่างวางแผน Release ยังไม่เริ่ม Test Cycle ของ Build ใดใน Release นี้", impact: "แก้ไข Version/Scope/Planned Date ได้อิสระ" },
+  { value: "Testing", label: "กำลังทดสอบ", meaning: "อยู่ระหว่างทดสอบ (Smoke/Functional/Regression) ยังไม่ผ่านเกณฑ์ Release Gate", impact: "ยังไม่สามารถเข้าสู่ขั้นตอน Sign-off ได้จนกว่าจะผ่านเกณฑ์" },
+  { value: "Ready", label: "พร้อมปล่อย", meaning: "ผ่านเกณฑ์ Release Gate แล้ว (P0=0, P1 Blocker=0, Regression/Coverage ผ่าน threshold)", impact: "พร้อมเข้าสู่ขั้นตอน Sign-off (QA Recommendation → Dev Ack → Product Approval → Final Decision)" },
+  { value: "Released", label: "ปล่อยแล้ว", meaning: "ปล่อยใช้งานจริงแล้ว ระบบบันทึก Actual Release Date ให้อัตโนมัติ", impact: "ถือเป็นสถานะปิดท้ายของ Release นี้ ไม่ควรย้อนกลับไปสถานะก่อนหน้า" },
+  { value: "Cancelled", label: "ยกเลิก", meaning: "ยกเลิก Release นี้ ไม่ปล่อยจริง", impact: "Build/Test Cycle ที่ผูกอยู่ยังอยู่ในระบบเพื่อการตรวจสอบย้อนหลัง แต่ไม่นำไปนับความคืบหน้า Release อีก" },
+] as const;
+const buildStatusInfo = [
+  { value: "Ready", label: "พร้อมทดสอบ", meaning: "Build เข้าระบบแล้ว (QA ตรวจ Package/DB Migration/Module Version แล้ว) รอเริ่ม Smoke Cycle", impact: "ยังไม่มีผลทดสอบผูกกับ Build นี้" },
+  { value: "Testing", label: "กำลังทดสอบ", meaning: "มี Test Cycle ที่ใช้ Build นี้กำลัง Execute อยู่", impact: "ยังสรุปผลไม่ได้จนกว่ารอบทดสอบที่เกี่ยวข้องจะเสร็จ" },
+  { value: "Passed", label: "ผ่าน", meaning: "ทดสอบผ่านเกณฑ์ที่กำหนดสำหรับ Build นี้ (เช่น Smoke หรือ Full Test)", impact: "ใช้เป็น Candidate Build สำหรับ Test Summary/Release Gate ต่อได้" },
+  { value: "Failed", label: "ไม่ผ่าน", meaning: "ทดสอบไม่ผ่าน (เช่น P0 Fail ตอน Smoke)", impact: "ตาม Workflow ต้อง Hold Build นี้ไว้และรอ Build ใหม่จาก Developer" },
+  { value: "Blocked", label: "ติดปัญหา", meaning: "ทดสอบต่อไม่ได้เพราะติดปัญหาที่ควบคุมไม่ได้ (Environment ไม่พร้อม, Data ไม่ครบ ฯลฯ) ไม่ใช่บั๊กของ Build โดยตรง", impact: "ต้องแก้ปัญหาที่บล็อกอยู่ก่อน ถึงจะประเมินผลทดสอบของ Build นี้ต่อได้" },
+] as const;
 function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: number; contextProjectId?: string }) {
   const masterOptions = useMasterOptions(), releaseTypes = masterOptions("ReleaseType");
   let canEdit = false;
@@ -2167,6 +2319,8 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
   };
+  const contextProjectIdRef = useRef(contextProjectId);
+  contextProjectIdRef.current = contextProjectId;
   useEffect(() => {
     setLoading(true);
     const h = {
@@ -2184,7 +2338,9 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
         setProjects((projectData as ProjectItem[]).filter((x) => x.isActive));
         setSelectedId((current) => {
           if (active.some((x) => x.releaseId === current)) return current;
-          const scoped = contextProjectId ? active.filter((x) => x.projectId === contextProjectId) : active;
+          // อ่าน Project context ผ่าน ref — ใช้เลือก Release เริ่มต้นเท่านั้น การเปลี่ยน context ภายหลังมี effect แยกจัดการ
+          const ctxProjectId = contextProjectIdRef.current;
+          const scoped = ctxProjectId ? active.filter((x) => x.projectId === ctxProjectId) : active;
           return scoped[0]?.releaseId ?? active[0]?.releaseId ?? "";
         });
       })
@@ -2637,18 +2793,35 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                     </select>
                   </label>
                   {editRelease && (
-                    <label>
-                      สถานะ Release
-                      <select
-                        value={releaseStatus}
-                        onChange={(e) => setReleaseStatus(e.target.value)}
-                      >
-                        <option value="Draft">Draft</option>
-                        <option value="Testing">Testing</option>
-                        <option value="Ready">Ready</option>
-                        <option value="Released">Released</option>
-                      </select>
-                    </label>
+                    <>
+                      <label>
+                        สถานะ Release
+                        <select
+                          value={releaseStatus}
+                          onChange={(e) => setReleaseStatus(e.target.value)}
+                        >
+                          <option value="Draft">Draft</option>
+                          <option value="Testing">Testing</option>
+                          <option value="Ready">Ready</option>
+                          <option value="Released">Released</option>
+                          <option value="Cancelled">Cancelled</option>
+                        </select>
+                      </label>
+                      <details className="requirement-status-information full">
+                        <summary>
+                          <span className="information-icon" aria-hidden="true">i</span>
+                          <span><b>{releaseStatus} · {releaseStatusInfo.find((x) => x.value === releaseStatus)?.label}</b><small>{releaseStatusInfo.find((x) => x.value === releaseStatus)?.meaning}</small></span>
+                          <em>ดูความหมายทั้งหมด</em>
+                        </summary>
+                        <div className="requirement-status-list">
+                          {releaseStatusInfo.map((item) => <article key={item.value} className={releaseStatus === item.value ? "active" : ""}>
+                            <div><b>{item.value}</b><span>{item.label}</span></div>
+                            <p>{item.meaning}</p>
+                            <small><strong>ผลต่อการใช้งาน:</strong> {item.impact}</small>
+                          </article>)}
+                        </div>
+                      </details>
+                    </>
                   )}
                   <label>
                     Planned Date
@@ -2681,19 +2854,35 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                     </label>
                   )}
                   {editBuild && (
-                    <label>
-                      สถานะ Build
-                      <select
-                        value={buildStatus}
-                        onChange={(e) => setBuildStatus(e.target.value)}
-                      >
-                        <option value="Ready">Ready</option>
-                        <option value="Testing">Testing</option>
-                        <option value="Passed">Passed</option>
-                        <option value="Failed">Failed</option>
-                        <option value="Blocked">Blocked</option>
-                      </select>
-                    </label>
+                    <>
+                      <label>
+                        สถานะ Build
+                        <select
+                          value={buildStatus}
+                          onChange={(e) => setBuildStatus(e.target.value)}
+                        >
+                          <option value="Ready">Ready</option>
+                          <option value="Testing">Testing</option>
+                          <option value="Passed">Passed</option>
+                          <option value="Failed">Failed</option>
+                          <option value="Blocked">Blocked</option>
+                        </select>
+                      </label>
+                      <details className="requirement-status-information full">
+                        <summary>
+                          <span className="information-icon" aria-hidden="true">i</span>
+                          <span><b>{buildStatus} · {buildStatusInfo.find((x) => x.value === buildStatus)?.label}</b><small>{buildStatusInfo.find((x) => x.value === buildStatus)?.meaning}</small></span>
+                          <em>ดูความหมายทั้งหมด</em>
+                        </summary>
+                        <div className="requirement-status-list">
+                          {buildStatusInfo.map((item) => <article key={item.value} className={buildStatus === item.value ? "active" : ""}>
+                            <div><b>{item.value}</b><span>{item.label}</span></div>
+                            <p>{item.meaning}</p>
+                            <small><strong>ผลต่อการใช้งาน:</strong> {item.impact}</small>
+                          </article>)}
+                        </div>
+                      </details>
+                    </>
                   )}
                   <label>
                     Package Version
@@ -3582,7 +3771,7 @@ function TestCasesPage({
     <>
       <article className="card testcase-list-card">
         {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>{setError("");setReload(x=>x+1)}}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div>}
-        {notice&&<div className="inline-alert success"><span>{notice}</span><button onClick={()=>setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
+        {notice&&<div className="inline-alert success"><span>{notice}</span><button type="button" aria-label="ปิดข้อความ" onClick={()=>setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
         <div className="testcase-toolbar">
           <div className="testcase-toolbar-head">
             <div className="result-count"><strong>{totalCount.toLocaleString()}</strong><span>Test Cases</span></div>
@@ -4163,7 +4352,7 @@ function RegressionPage({projectId,releaseId,buildId,search,canEdit,canRunAutoma
     </section>
     <section className="regression-summary" aria-label="Regression summary"><article className="is-blue"><span className="regression-summary-icon blue material-symbols-outlined" aria-hidden="true">account_tree</span><div><small>Impacted Modules</small><b>{metrics.impactedModules.toLocaleString()}</b><span>Module ที่เปลี่ยนแปลง</span></div></article><article className="is-violet"><span className="regression-summary-icon violet material-symbols-outlined" aria-hidden="true">fact_check</span><div><small>Recommended Cases</small><b>{metrics.recommendedCases.toLocaleString()}</b><span>{selectedCases.length.toLocaleString()} รายการที่เลือก</span></div></article><article className="is-green"><span className="regression-summary-icon green material-symbols-outlined" aria-hidden="true">data_check</span><div><small>Regression Progress</small><b>{metrics.progressPercent}%</b><span>{metrics.executedCases.toLocaleString()}/{metrics.totalCycleCases.toLocaleString()} Executed</span></div></article><article className="is-amber"><span className="regression-summary-icon amber material-symbols-outlined" aria-hidden="true">task_alt</span><div><small>Pass Rate</small><b>{metrics.passRate}%</b><span>{metrics.failedCases.toLocaleString()} Failed/Blocked</span></div></article><article className="is-red"><span className="regression-summary-icon red material-symbols-outlined" aria-hidden="true">bug_report</span><div><small>Open Defects</small><b>{metrics.openDefects.toLocaleString()}</b><span className={`regression-health ${metrics.overallStatus.toLowerCase().replaceAll(" ","-")}`}>{metrics.overallStatus}</span></div></article></section>
     <nav className="regression-steps" aria-label="ขั้นตอนการทำ Regression">{([["เลือกบริบทและการเปลี่ยนแปลง","Release · Target Build · Changed Modules",stepDone1,"regression-analysis"],["วิเคราะห์และเลือก Test Case","กด “วิเคราะห์ Impact” แล้วติ๊กรายการที่จะทดสอบ",stepDone2,impact?"regression-results":"regression-analysis"],["สร้าง Suite / Cycle","เพิ่มเข้า Cycle เดิมหรือสร้างใหม่",stepDone3,"regression-results"]] as [string,string,boolean,string][]).map(([title,desc,done,target],index)=>(<button key={String(index)} type="button" aria-current={!done&&index===activeStepIndex?"step":undefined} className={done?"done":index===activeStepIndex?"active":""} onClick={()=>document.getElementById(target)?.scrollIntoView({behavior:"smooth",block:"start"})}><span className="regression-step-no" aria-hidden="true">{done?"✓":String(index+1)}</span><span className="regression-step-text"><b>{title}</b><small>{desc}</small></span></button>))}</nav>
-    {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>setError("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}{success&&<div className="inline-alert success"><span>{success}</span><button onClick={()=>setSuccess("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
+    {error&&<div className="inline-alert error"><span>{error}</span><button type="button" aria-label="ปิดข้อความ" onClick={()=>setError("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}{success&&<div className="inline-alert success"><span>{success}</span><button onClick={()=>setSuccess("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
     <section id="regression-analysis" className="card regression-analysis"><div className="regression-section-head"><div><span className="regression-title-icon">◎</span><div><h2><span className="regression-step-chip">ขั้นตอน 1</span>Impact Analysis</h2><p>ระบุส่วนที่เปลี่ยนแปลงเพื่อค้นหา Test Case ที่ควร Regression</p></div></div><span className="regression-analyze-action"><button className="btn primary" disabled={loading||!selectedBuild} onClick={()=>analyze()}>{loading?<><span className="spinner inline" aria-hidden="true" /> กำลังวิเคราะห์...</>:<><span aria-hidden="true">⚡</span> วิเคราะห์ Impact</>}</button>{!selectedBuild&&<small className="regression-analyze-hint">เลือก Release และ Target Build ก่อน</small>}</span></div>
       <div className="regression-profile-bar"><select aria-label="Regression Profile" value={selectedProfileId} onChange={e=>{setSelectedProfileId(e.target.value);applyProfile(e.target.value)}}><option value="">เลือก Profile / Template</option>{profiles.map(x=><option key={x.id} value={x.id}>{x.name}{x.isOwner?"":" (Shared)"}</option>)}</select><input aria-label="ชื่อ Regression Profile" value={profileName} onChange={e=>setProfileName(e.target.value)} placeholder="ชื่อ Profile"/><select aria-label="การมองเห็น Regression Profile" value={profileVisibility} onChange={e=>setProfileVisibility(e.target.value)}><option value="Private">Owner / Private</option><option value="Shared">Shared with Team</option></select><button className="btn" disabled={!profileName.trim()||saving} onClick={saveProfile}><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึกใหม่</button><button className="btn" disabled={!profiles.find(x=>x.id===selectedProfileId)?.isOwner||!profileName.trim()||saving} onClick={updateProfile}><span className="material-symbols-outlined" aria-hidden="true">edit</span> อัปเดต Profile</button><button className="btn danger" disabled={!selectedProfileId} onClick={deleteProfile}><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบ Profile</button></div>
       <div className="regression-context-grid"><label>Release<select value={selectedRelease} onChange={e=>{setSelectedRelease(e.target.value);setImpact(null)}}><option value="">เลือก Release</option>{releases.filter(x=>!projectId||x.projectId===projectId).map(x=><option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}</select></label><label>Target Build<select value={selectedBuild} onChange={e=>{setSelectedBuild(e.target.value);setImpact(null)}}><option value="">เลือก Build</option>{builds.map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber} · {x.applicationVersion||"-"}</option>)}</select></label><label>Minimum Priority<select value={minimumPriority} onChange={e=>setMinimumPriority(e.target.value)}><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label></div>
@@ -4282,6 +4471,19 @@ type TestCycleItem = {
   copiedFromTestCycleId?: string;
   copiedFromCycleCode?: string;
 };
+type TestCycleCaseSummary = {
+  testCycleCaseId: string;
+  testCaseId: string;
+  testCaseCode: string;
+  title: string;
+  priority: string;
+  currentStatus: string;
+  executionOrder: number;
+  moduleCode?: string | null;
+  moduleName?: string | null;
+  expectedResult?: string | null;
+  actualResult?: string | null;
+};
 type GeneratedTestCycleDraft = { cycleName: string; cycleType: string; startDate?: string; endDate?: string; notes?: string; selectionSummary: string };
 function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextReleaseId, contextBuildId }: { search: string; canEdit: boolean; canExport: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
   const masterOptions = useMasterOptions(), cycleTypes = masterOptions("TestCycleType");
@@ -4328,6 +4530,9 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     [cloneNotes, setCloneNotes] = useState(""),
     [cloneSaving, setCloneSaving] = useState(false),
     [cloneError, setCloneError] = useState("");
+  const [detailCases, setDetailCases] = useState<TestCycleCaseSummary[]>([]),
+    [detailCasesLoading, setDetailCasesLoading] = useState(false),
+    [detailCasesError, setDetailCasesError] = useState("");
   const [projectId, setProjectId] = useState(""),
     [releaseId, setReleaseId] = useState(""),
     [buildId, setBuildId] = useState(""),
@@ -4359,6 +4564,28 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
+  };
+  const detailCasesRequest = useRef(0);
+  const loadDetailCases = (cycleId: string) => {
+    const requestId = ++detailCasesRequest.current;
+    setDetailCases([]);
+    setDetailCasesError("");
+    setDetailCasesLoading(true);
+    fetch(`${apiUrl}/test-cycles/${cycleId}/execution`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } })
+      .then(async response => {
+        if (!response.ok) throw new Error(`โหลด Test Case ของ Cycle ไม่สำเร็จ (${response.status})`);
+        return response.json();
+      })
+      .then(data => {
+        if (requestId !== detailCasesRequest.current) return;
+        const cases = Array.isArray(data?.cases) ? data.cases : Array.isArray(data) ? data : [];
+        setDetailCases(cases as TestCycleCaseSummary[]);
+      })
+      .catch(reason => {
+        if (requestId !== detailCasesRequest.current) return;
+        setDetailCasesError(reason instanceof Error ? reason.message : "โหลด Test Case ของ Cycle ไม่สำเร็จ");
+      })
+      .finally(() => { if (requestId === detailCasesRequest.current) setDetailCasesLoading(false); });
   };
   useEffect(() => {
     const h = {
@@ -4474,11 +4701,13 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
         setListModules([...seen.values()].sort((a, b) => a.moduleCode.localeCompare(b.moduleCode)));
       });
   }, [contextProjectId, items]);
-  useEffect(()=>{const target=localStorage.getItem("qa.targetCycleId");if(!target)return;fetch(`${apiUrl}/test-cycles/${target}`,{headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}}).then(r=>r.ok?r.json():null).then((cycle:TestCycleItem|null)=>{if(cycle)setDetail(cycle);localStorage.removeItem("qa.targetCycleId")}).catch(()=>localStorage.removeItem("qa.targetCycleId"))},[]);
+  // เปิดจากหน้าอื่นแล้วโหลดรายละเอียด Test Case ของ Cycle ต่อทันที
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(()=>{const target=localStorage.getItem("qa.targetCycleId");if(!target)return;fetch(`${apiUrl}/test-cycles/${target}`,{headers:{Authorization:`Bearer ${localStorage.getItem("qa.accessToken")}`}}).then(r=>r.ok?r.json():null).then((cycle:TestCycleItem|null)=>{if(cycle){setDetail(cycle);loadDetailCases(cycle.testCycleId);}localStorage.removeItem("qa.targetCycleId")}).catch(()=>localStorage.removeItem("qa.targetCycleId"))},[]);
   // ปุ่ม "สร้าง Test Cycle" แบบด่วนจากหน้า Test Suite ฝาก Project/Suite ไว้ผ่าน localStorage แล้วพามาที่นี่ —
   // รอจน projects โหลดเสร็จก่อน (openForm ต้องใช้ project code มา gen เลข Cycle Code) แล้วค่อยเปิดฟอร์มสร้าง
-  // openForm is declared below; this effect intentionally depends only on the project load transition.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // openForm ประกาศด้านล่าง จึงเรียกผ่าน ref — effect นี้ผูกกับการโหลด projects เสร็จเท่านั้น
+  const openFormRef = useRef<((cycle?: TestCycleItem, prefill?: { projectId?: string; testSuiteId?: string }) => void) | null>(null);
   useEffect(() => {
     if (!projects.length) return;
     const raw = localStorage.getItem("qa.createCycleFromSuite");
@@ -4486,7 +4715,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     localStorage.removeItem("qa.createCycleFromSuite");
     try {
       const prefill: { projectId?: string; testSuiteId?: string } = JSON.parse(raw);
-      if (prefill.projectId) openForm(undefined, prefill);
+      if (prefill.projectId) openFormRef.current?.(undefined, prefill);
     } catch { /* ignore malformed prefill */ }
   }, [projects]);
   useEffect(() => {
@@ -4607,7 +4836,8 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     setNotes(cycle?.notes ?? "");
     setForm(true);
   };
-  const openDetail = (cycle: TestCycleItem) => setDetail(cycle);
+  openFormRef.current = openForm;
+  const openDetail = (cycle: TestCycleItem) => { setDetail(cycle); loadDetailCases(cycle.testCycleId); };
   const openClone = (cycle: TestCycleItem) => {
     const targetReleases = releases.filter((x) => x.projectId === cycle.projectId);
     const targetRelease = targetReleases.find((x) => x.releaseId === cycle.releaseId) ?? targetReleases[0];
@@ -4664,7 +4894,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       setCloneSource(null);
       setNotice(`สร้าง ${created.cycleCode} จาก ${cloneSource.cycleCode} แล้ว`);
       setReload((x) => x + 1);
-      setDetail(created);
+      openDetail(created);
     } catch (reason) {
       setCloneError(reason instanceof Error ? reason.message : "Clone Test Cycle ไม่สำเร็จ");
     } finally {
@@ -4915,6 +5145,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
       .includes(search.toLowerCase()),
   );
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  const detailCaseStatusCounts = detailCases.reduce<Record<string, number>>((counts, item) => { counts[item.currentStatus] = (counts[item.currentStatus] ?? 0) + 1; return counts; }, {});
   return (
     <>
       <article className="card">
@@ -5113,6 +5344,20 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                 {detail.cycleType && <Badge tone="blue"><span className="material-symbols-outlined cycle-detail-badge-icon" aria-hidden="true">{cycleTypeIcons[detail.cycleType] ?? "label"}</span> {detail.cycleType}</Badge>}
               </div>
             </div>
+            <details className="requirement-status-information full">
+              <summary>
+                <span className="information-icon" aria-hidden="true">i</span>
+                <span><b>{detail.status} · {cycleStatusInfo.find((x) => x.value === detail.status)?.label}</b><small>{cycleStatusInfo.find((x) => x.value === detail.status)?.meaning}</small></span>
+                <em>ดูความหมายทั้งหมด</em>
+              </summary>
+              <div className="requirement-status-list">
+                {cycleStatusInfo.map((item) => <article key={item.value} className={detail.status === item.value ? "active" : ""}>
+                  <div><b>{item.value}</b><span>{item.label}</span></div>
+                  <p>{item.meaning}</p>
+                  <small><strong>ผลต่อการใช้งาน:</strong> {item.impact}</small>
+                </article>)}
+              </div>
+            </details>
             <section className="cycle-detail-hero">
               <div className="cycle-detail-hero-text">
                 <span className="cycle-detail-hero-icon material-symbols-outlined" aria-hidden="true">desktop_windows</span>
@@ -5147,6 +5392,17 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                   </div>
                 </div>
               </div>
+            </section>
+            <section className="cycle-detail-section cycle-detail-cases" aria-labelledby="cycle-detail-cases-title">
+              <div className="cycle-detail-section-head"><h3 id="cycle-detail-cases-title"><span className="material-symbols-outlined cycle-detail-section-icon" aria-hidden="true">checklist</span>Test Cases ใน Cycle</h3><span className="cycle-detail-progress-count">{detailCases.length || detail.caseCount} รายการ</span></div>
+              {detailCasesLoading ? <div className="cycle-detail-cases-state" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังโหลด Test Case...</div> : detailCasesError ? <div className="cycle-detail-cases-state is-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span><span>{detailCasesError}</span><button type="button" className="btn" onClick={() => loadDetailCases(detail.testCycleId)}>ลองใหม่</button></div> : !detailCases.length ? <div className="cycle-detail-cases-state"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span>ยังไม่มี Test Case ใน Cycle นี้</div> : <>
+                <div className="cycle-detail-case-summary" aria-label="สรุปสถานะ Test Case">{Object.entries(detailCaseStatusCounts).map(([status, count]) => <span key={status} className={`cycle-detail-case-summary-item is-${status.toLowerCase()}`}><b>{count.toLocaleString()}</b>{cycleCaseStatusLabels[status] ?? status}</span>)}</div>
+                <div className="cycle-detail-case-list">{detailCases.map((testCase, index) => <article key={testCase.testCycleCaseId} className="cycle-detail-case-row">
+                  <span className="cycle-detail-case-order">{String(index + 1).padStart(2, "0")}</span>
+                  <div className="cycle-detail-case-main"><div><b>{testCase.testCaseCode}</b><Badge tone={testCase.priority === "P0" || testCase.priority === "P1" ? "red" : "blue"}>{testCase.priority}</Badge></div><strong>{testCase.title}</strong><small>{[testCase.moduleCode, testCase.moduleName].filter(Boolean).join(" · ") || "ไม่ระบุ Module"}</small><small className="cycle-detail-case-expected" title={testCase.expectedResult || "ไม่ระบุ Expected Result"}><b>Expected Result (Step แรก):</b> {testCase.expectedResult || "ไม่ระบุ"}</small><small className="cycle-detail-case-actual" title={testCase.actualResult || "ยังไม่มี Actual Result"}><b>Actual Result (ผลล่าสุด):</b> {testCase.actualResult || "ยังไม่มีผลการรัน"}</small></div>
+                  <Badge tone={cycleCaseStatusTones[testCase.currentStatus] ?? "blue"}>{cycleCaseStatusLabels[testCase.currentStatus] ?? testCase.currentStatus}</Badge>
+                </article>)}</div>
+              </>}
             </section>
             <section className="cycle-detail-section">
               <h3><span className="material-symbols-outlined cycle-detail-section-icon" aria-hidden="true">dataset</span>ข้อมูลการทดสอบ</h3>
@@ -5543,6 +5799,7 @@ type ExecutionCase = {
   title: string;
   preconditions?: string;
   priority: string;
+  moduleId?: string;
   currentStatus: string;
   executionOrder: number;
   steps: {
@@ -5574,6 +5831,7 @@ type ExecutionWorkspace = {
 };
 function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBuildId }: { contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
   const [cycles, setCycles] = useState<TestCycleItem[]>([]),
+    [cyclesLoaded, setCyclesLoaded] = useState(false),
     [cycleId, setCycleId] = useState(()=>localStorage.getItem("qa.targetCycleId")??""),
     [workspace, setWorkspace] = useState<ExecutionWorkspace | null>(null),
     [selectedId, setSelectedId] = useState(""),
@@ -5589,15 +5847,26 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
     // ปิดเป็นค่าเริ่มต้นเสมอ (ไม่กรอง) — Test Cycle ไม่มีช่องให้กำหนด "ผู้ดำเนินการ" (ownerUserId) ตอนสร้าง/แก้ไข
     // เลยเป็น null เสมอทุก Cycle ในระบบ ถ้า default เปิดไว้จะกรองจนไม่เหลือ Cycle ให้เลือกเลยสำหรับทุกคน
     [myCyclesOnly, setMyCyclesOnly] = useState(false),
+    [workspaceLoading, setWorkspaceLoading] = useState(false),
     [saving, setSaving] = useState(false),
     [reload, setReload] = useState(0),
     // สถานะสำหรับ Skip Test Case modal (§18) และปุ่ม Create Defect ต่อ Step (§19)
     [skipModalOpen, setSkipModalOpen] = useState(false),
     [skipReason, setSkipReason] = useState(""),
     [skipComment, setSkipComment] = useState(""),
-    [defectCodes, setDefectCodes] = useState<Record<number, string>>({}),
-    [creatingDefectStep, setCreatingDefectStep] = useState<number | null>(null);
+    [linkedDefects, setLinkedDefects] = useState<WorkspaceDefect[]>([]),
+    [defectEditor, setDefectEditor] = useState<{ context: WorkspaceDefectContext; existing?: WorkspaceDefect } | null>(null),
+    // Defect code ที่เพิ่งสร้างจาก step นี้ในรอบทำงานปัจจุบัน — เหมือน defectCodes เดิม ยังต้องเก็บแยก
+    // เป็น local state เพราะ Defect ไม่มีคอลัมน์ stepNo ให้ map กลับจาก linkedDefects ที่ persist จริงได้
+    [stepDefectCodes, setStepDefectCodes] = useState<Record<number, string>>({}),
+    [deletingHistoryId, setDeletingHistoryId] = useState<string | null>(null),
+    // สถานะ error แยกต่อจุดโหลดข้อมูล (spec §4.2) — เพื่อแยกให้ชัดว่า "ยังไม่มี Cycle ให้เลือก" กับ
+    // "โหลดข้อมูลไม่สำเร็จจริงๆ" เป็นคนละกรณี ไม่ให้ error เงียบๆ กลายเป็น empty state ธรรมดา
+    [cycleLoadError, setCycleLoadError] = useState(""),
+    [workspaceLoadError, setWorkspaceLoadError] = useState(""),
+    [caseDetailLoadError, setCaseDetailLoadError] = useState("");
   const currentUser = useMemo(() => { try { return JSON.parse(localStorage.getItem("qa.user") ?? "{}") as SessionUser; } catch { return null; } }, []);
+  const canEditDefect = Boolean(currentUser?.roles?.includes("SYS_ADMIN") || currentUser?.permissions?.includes("DEFECT.EDIT"));
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -5607,6 +5876,8 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
     const query = cycleModuleFilter ? `?moduleId=${cycleModuleFilter}&size=100` : "?size=100";
+    setCyclesLoaded(false);
+    setCycleLoadError("");
     fetch(`${apiUrl}/test-cycles${query}`, { headers: h })
       .then(async (r) => {
         if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
@@ -5622,12 +5893,15 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
         const myId = currentUserId();
         const openCycles = data.filter((x) => x.status === "InProgress" && (!myCyclesOnly || x.createdBy === myId));
         setCycles(openCycles);
+        setCyclesLoaded(true);
         setCycleId((current) => openCycles.some(x=>x.testCycleId===current)?current:(openCycles[0]?.testCycleId||""));
         localStorage.removeItem("qa.targetCycleId");
       })
-      .catch(() => {
+      .catch((e) => {
         setCycles([]);
+        setCyclesLoaded(true);
         setCycleId("");
+        setCycleLoadError(e instanceof Error ? e.message : "โหลด Test Cycle ไม่สำเร็จ");
       });
   }, [reload, cycleModuleFilter, myCyclesOnly]);
   useEffect(() => {
@@ -5645,33 +5919,84 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
         setCycleModules([...seen.values()].sort((a, b) => a.moduleCode.localeCompare(b.moduleCode)));
       });
   }, [contextProjectId, cycles, cycleModuleFilter]);
+  // Cycle ที่ workspace ปัจจุบันเป็นของ — ใช้แยก "เปลี่ยน Cycle" (ล้าง state + spinner เต็มหน้า) ออกจาก
+  // "reload หลังบันทึกผล" (refetch เงียบๆ คง Test Case ที่เลือกและตำแหน่ง scroll ไว้)
+  const workspaceCycleRef = useRef("");
   useEffect(() => {
-    if (!cycleId) {
+    const cycleChanged = workspaceCycleRef.current !== cycleId;
+    workspaceCycleRef.current = cycleId;
+    if (cycleChanged) {
       setWorkspace(null);
+      setSelectedId("");
+      setCaseDetail(null);
+      setLinkedDefects([]);
+      setStepDefectCodes({});
+      setStepStatuses({});
+      setStepActuals({});
+      setActual("");
+      setComment("");
+      setDefectEditor(null);
+    }
+    setWorkspaceLoadError("");
+    if (!cycleId) {
+      setWorkspaceLoading(false);
       return;
     }
     const h = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
-    fetch(`${apiUrl}/test-cycles/${cycleId}/execution`, { headers: h })
-      .then((r) => (r.ok ? r.json() : null))
+    const controller = new AbortController();
+    if (cycleChanged) setWorkspaceLoading(true);
+    fetch(`${apiUrl}/test-cycles/${cycleId}/execution`, { headers: h, signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`โหลด Execution Workspace ไม่สำเร็จ (${r.status})`);
+        return r.json();
+      })
       .then((data: ExecutionWorkspace | null) => {
+        if (controller.signal.aborted) return;
         setWorkspace(data);
         setSelectedId((current) =>
           data?.cases.some((x) => x.testCycleCaseId === current)
             ? current
             : (data?.cases[0]?.testCycleCaseId ?? ""),
         );
-      });
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setWorkspace(null);
+        setWorkspaceLoadError(e instanceof Error ? e.message : "โหลด Execution Workspace ไม่สำเร็จ");
+      })
+      .finally(() => { if (!controller.signal.aborted) setWorkspaceLoading(false); });
+    return () => controller.abort();
   }, [cycleId, reload]);
   useEffect(() => {
-    if (!selectedId || !cycleId) { setCaseDetail(null); return; }
+    if (!selectedId || !cycleId) { setCaseDetail(null); setCaseDetailLoadError(""); return; }
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
-    fetch(`${apiUrl}/test-cycles/${cycleId}/cases/${selectedId}`, { headers: h })
-      .then(r => r.ok ? r.json() : null)
-      .then((data) => setCaseDetail(data))
-      .catch(() => setCaseDetail(null));
+    const controller = new AbortController();
+    setCaseDetailLoadError("");
+    fetch(`${apiUrl}/test-cycles/${cycleId}/cases/${selectedId}`, { headers: h, signal: controller.signal })
+      .then(r => {
+        if (!r.ok) throw new Error(`โหลดรายละเอียด Test Case ไม่สำเร็จ (${r.status})`);
+        return r.json();
+      })
+      .then((data) => { if (!controller.signal.aborted) setCaseDetail(data); })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setCaseDetail(null);
+        setCaseDetailLoadError(e instanceof Error ? e.message : "โหลดรายละเอียด Test Case ไม่สำเร็จ");
+      });
+    return () => controller.abort();
   }, [selectedId, cycleId, reload]);
+  useEffect(() => {
+    const testCaseId = caseDetail?.testCaseId;
+    if (!testCaseId) { setLinkedDefects([]); return; }
+    const controller = new AbortController();
+    fetch(`${apiUrl}/defects/by-test-case/${testCaseId}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, signal: controller.signal })
+      .then((response) => response.ok ? response.json() : [])
+      .then((rows: WorkspaceDefect[]) => { if (!controller.signal.aborted) setLinkedDefects(rows); })
+      .catch(() => { if (!controller.signal.aborted) setLinkedDefects([]); });
+    return () => controller.abort();
+  }, [caseDetail?.testCaseId, reload]);
   const selected = useMemo(
     () => {
       const base = workspace?.cases.find((x) => x.testCycleCaseId === selectedId);
@@ -5716,12 +6041,14 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       const latest = selected.history[0];
       setActual(latest?.actualResult ?? "");
       setComment(latest?.comment ?? "");
-      setDefectCodes({});
       setSkipModalOpen(false);
       setSkipReason("");
       setSkipComment("");
     }
   }, [selected]);
+  // ล้าง Defect code รายสเต็ปเฉพาะตอนเปลี่ยน Test Case — ถ้าล้างทุกครั้งที่ selected เปลี่ยน (รวม reload
+  // หลังบันทึก) ปุ่ม "+ Defect" จะกลับมาบนสเต็ปที่เพิ่งสร้าง Defect ไปแล้ว ชวนให้สร้างซ้ำ
+  useEffect(() => { setStepDefectCodes({}); }, [selectedId]);
   // Overall Result แบบ live พรีวิวจากสถานะ Step ปัจจุบันที่กำลังแก้ (test-case-execution-ui-spec.md §4-5)
   // — คำนวณด้วยฟังก์ชันเดียวกับที่ backend ใช้จริงตอนบันทึก (ดู overallResult.ts)
   const liveStepStatuses = useMemo(
@@ -5808,7 +6135,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (!selected || skipModalOpen || target?.matches("input, textarea, select, [contenteditable=\"true\"]")) return;
+      if (!selected || skipModalOpen || defectEditor || target?.matches("input, textarea, select, [contenteditable=\"true\"]")) return;
       const key = event.key.toLowerCase();
       if (["p", "f", "b"].includes(key)) {
         const status = key === "p" ? "Pass" : key === "f" ? "Fail" : "Blocked";
@@ -5822,7 +6149,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected, selectedId, filteredCases, skipModalOpen]);
+  }, [selected, selectedId, filteredCases, skipModalOpen, defectEditor]);
   // §18 Skip Test Case — เปิด modal เลือก Reason + Comment ก่อนเสมอ ไม่มีปุ่มลัด
   const openSkipModal = () => { setSkipReason(""); setSkipComment(""); setSkipModalOpen(true); };
   const confirmSkip = () => {
@@ -5830,54 +6157,52 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
     const label = skipReasonOptions.find((r) => r.value === skipReason)?.label ?? skipReason;
     submitExecution("Skipped", { commentOverride: `[${label}] ${skipComment}`.trim() });
   };
-  // §19 Create Defect ต่อ Step ที่ Fail — ใช้ endpoint Defect create + link ที่มีอยู่แล้ว ไม่ต้องเพิ่ม
-  // backend ใหม่ (auto-fill Test Case/Step/Build/Environment/Tester ตาม spec ไว้ใน description เพราะ
-  // Defect ไม่มีคอลัมน์แยกสำหรับแต่ละอย่างเหล่านี้) — ไม่ชนกับ Defect ที่ auto-create ตอน Complete เป็น
-  // Fail เพราะฝั่งนั้นเช็คก่อนแล้วว่ามี Defect เปิดอยู่ของ Test Case นี้หรือยัง ถ้ามีจะไม่สร้างซ้ำ
-  const createDefectForStep = async (step: { stepNo: number; action: string; expectedResult: string }) => {
-    if (!selected) return;
-    if (!contextProjectId) { window.alert("ไม่พบ Project ของ Test Cycle นี้ ไม่สามารถสร้าง Defect ได้"); return; }
-    setCreatingDefectStep(step.stepNo);
-    try {
-      const description = [
-        "สร้างจาก Execution Workspace",
-        `Test Case: ${selected.testCaseCode} - ${selected.title}`,
-        `Step ${step.stepNo}: ${step.action}`,
-        `Expected Result: ${step.expectedResult}`,
-        `Actual Result: ${stepActuals[step.stepNo] || "-"}`,
-        `Build: ${workspace?.buildNumber ?? "-"}`,
-        `Environment: ${workspace?.environmentName ?? "-"}`,
-        `Tester: ${currentUser?.displayName ?? "-"}`,
-      ].join("\n");
-      const createRes = await fetch(`${apiUrl}/defects`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          projectId: contextProjectId,
-          releaseId: contextReleaseId || null,
-          buildId: contextBuildId || null,
-          title: `${selected.testCaseCode} Step ${step.stepNo} Fail: ${step.action}`.slice(0, 200),
-          severity: "Medium",
-          status: "Open",
-          description,
-          stepsToReproduce: step.action,
-          expectedResult: step.expectedResult,
-          actualResult: stepActuals[step.stepNo] || "",
-        }),
-      });
-      if (!createRes.ok) throw new Error("สร้าง Defect ไม่สำเร็จ");
-      const defect = await createRes.json();
-      await fetch(`${apiUrl}/defects/${defect.defectId}/test-cases`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ testCaseId: selected.testCaseId }),
-      });
-      setDefectCodes((d) => ({ ...d, [step.stepNo]: defect.defectCode }));
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "สร้าง Defect ไม่สำเร็จ");
-    } finally {
-      setCreatingDefectStep(null);
-    }
+  // §19 Create Defect ต่อ Step ที่ Fail — เดิมยิง POST /defects ตรงๆ ด้วย description คงที่ ตอนนี้เปลี่ยน
+  // มาเปิด ExecutionDefectEditor แทน เพื่อให้กรอก Severity/รายละเอียด/แนบรูปเองก่อนบันทึกได้ (ตัว editor
+  // เป็นคนยิง POST + link ให้เองเมื่อกด บันทึก) — ไม่ชนกับ Defect ที่ auto-create ตอน Complete เป็น Fail
+  // เพราะฝั่งนั้นเช็คก่อนแล้วว่ามี Defect เปิดอยู่ของ Test Case นี้หรือยัง ถ้ามีจะไม่สร้างซ้ำ
+  const buildDefectContext = (step?: { stepNo: number; action: string; expectedResult: string }): WorkspaceDefectContext | null => {
+    const cycle = cycles.find((item) => item.testCycleId === cycleId);
+    if (!selected || !cycle?.projectId) return null;
+    return {
+      projectId: cycle.projectId,
+      releaseId: cycle.releaseId || contextReleaseId,
+      buildId: cycle.buildId || contextBuildId,
+      moduleId: selected.moduleId,
+      testCaseId: selected.testCaseId,
+      testCaseCode: selected.testCaseCode,
+      testCaseTitle: selected.title,
+      cycleCode: workspace?.cycleCode ?? "",
+      buildNumber: workspace?.buildNumber ?? "",
+      environmentName: workspace?.environmentName ?? "",
+      testerName: currentUser?.displayName ?? "",
+      step: step ? { ...step, actualResult: stepActuals[step.stepNo] || "" } : undefined,
+    };
+  };
+  const openDefectEditorForStep = (step: { stepNo: number; action: string; expectedResult: string }) => {
+    const context = buildDefectContext(step);
+    if (!context) { window.alert("ไม่พบ Project ของ Test Cycle นี้ ไม่สามารถสร้าง Defect ได้"); return; }
+    setDefectEditor({ context });
+  };
+  const editLinkedDefect = (defect: WorkspaceDefect) => {
+    const context = buildDefectContext();
+    if (!context) return;
+    setDefectEditor({ context, existing: defect });
+  };
+  // บันทึก Defect ลงรายการ Linked Defects + ผูก code กับ Step — ใช้ทั้งตอนบันทึกครบ และตอนสร้างสำเร็จแต่
+  // link/อัปโหลดรูปล้มเหลว (modal ยังเปิดอยู่) เพื่อไม่ให้ Defect ที่สร้างไปแล้วหายจากหน้าจอ
+  const mergeLinkedDefect = (defect: WorkspaceDefect) => {
+    const stepNo = defectEditor?.context.step?.stepNo;
+    if (stepNo) setStepDefectCodes((d) => ({ ...d, [stepNo]: defect.defectCode }));
+    setLinkedDefects((current) =>
+      current.some((x) => x.defectId === defect.defectId)
+        ? current.map((x) => (x.defectId === defect.defectId ? defect : x))
+        : [...current, defect],
+    );
+  };
+  const handleDefectSaved = (defect: WorkspaceDefect) => {
+    mergeLinkedDefect(defect);
+    setDefectEditor(null);
   };
   const removeExecution = async (execution: ExecutionCase["history"][number]) => {
     if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
@@ -5885,15 +6210,20 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       return;
     }
     if (!window.confirm(`ยืนยันลบผลการทดสอบ Run #${execution.executionNo}?\nข้อมูลจะถูกซ่อน แต่ยังเก็บไว้สำหรับ Audit`)) return;
-    const response = await fetch(`${apiUrl}/executions/${execution.testExecutionId}`, {
-      method: "DELETE",
-      headers,
-    });
-    if (!response.ok) {
-      window.alert("ลบผลการทดสอบไม่สำเร็จ");
-      return;
+    setDeletingHistoryId(execution.testExecutionId);
+    try {
+      const response = await fetch(`${apiUrl}/executions/${execution.testExecutionId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        window.alert("ลบผลการทดสอบไม่สำเร็จ");
+        return;
+      }
+      setReload((x) => x + 1);
+    } finally {
+      setDeletingHistoryId(null);
     }
-    setReload((x) => x + 1);
   };
   const filteredCycles = useMemo(() => cycles.filter((x) =>
     (!contextProjectId || x.projectId === contextProjectId) &&
@@ -5901,20 +6231,23 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
     (!contextBuildId || x.buildId === contextBuildId)
   ), [cycles, contextProjectId, contextReleaseId, contextBuildId]);
   useEffect(() => {
-    if (filteredCycles.length && !filteredCycles.some((x) => x.testCycleId === cycleId)) {
+    if (!cyclesLoaded) return;
+    if (!filteredCycles.length) {
+      setCycleId("");
+    } else if (!filteredCycles.some((x) => x.testCycleId === cycleId)) {
       setCycleId(filteredCycles[0].testCycleId);
     }
-  }, [filteredCycles, cycleId]);
+  }, [filteredCycles, cycleId, cyclesLoaded]);
   return (
     <div className="execution-page">
       <div className="execution-toolbar card">
         <label className="check-line">
-          <input type="checkbox" checked={myCyclesOnly} onChange={(e) => setMyCyclesOnly(e.target.checked)} />
+          <input type="checkbox" checked={myCyclesOnly} onChange={(e) => { setCycleId(""); setMyCyclesOnly(e.target.checked); }} />
           เฉพาะฉัน
         </label>
         <label>
           Module
-          <select className="testcase-module-filter" aria-label="กรอง Test Cycle ตาม Module" value={cycleModuleFilter} onChange={(e) => setCycleModuleFilter(e.target.value)} disabled={!cycleModules.length}>
+          <select className="testcase-module-filter" aria-label="กรอง Test Cycle ตาม Module" value={cycleModuleFilter} onChange={(e) => { setCycleId(""); setCycleModuleFilter(e.target.value); }} disabled={!cycleModules.length}>
             <option value="">ทุก Module</option>
             {renderModuleSelectOptions(cycleModules)}
           </select>
@@ -5960,14 +6293,28 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
           </div>
         </div>
       )}
-      {!workspace ? (
+      {cycleLoadError ? (
         <article className="card empty">
-          <h3>เลือก Test Cycle เพื่อเริ่มทดสอบ</h3>
-          <p>
-            สร้าง Cycle และ Populate Test Case จาก Test Suite ก่อนเข้า Execution
-            Workspace
-          </p>
+          <h3>โหลดรายการ Test Cycle ไม่สำเร็จ</h3>
+          <div className="login-error">{cycleLoadError}</div>
         </article>
+      ) : workspaceLoading ? (
+        <article className="card empty" role="status" aria-live="polite">
+          <div className="spinner" />
+          <h3>กำลังโหลด Execution Workspace...</h3>
+        </article>
+      ) : !workspace ? (
+        workspaceLoadError ? (
+          <article className="card empty">
+            <h3>โหลด Execution Workspace ไม่สำเร็จ</h3>
+            <div className="login-error">{workspaceLoadError}</div>
+          </article>
+        ) : (
+          <article className="card empty">
+            <h3>{cycleId ? "ไม่พบข้อมูล Execution Workspace" : "เลือก Test Cycle เพื่อเริ่มทดสอบ"}</h3>
+            <p>{cycleId ? "Cycle นี้ยังไม่มีข้อมูลสำหรับการ Execute หรือข้อมูลถูกเปลี่ยนแปลงแล้ว" : "สร้าง Cycle และ Populate Test Case จาก Test Suite ก่อนเข้า Execution Workspace"}</p>
+          </article>
+        )
       ) : !workspace.cases.length ? (
         <article className="card empty">
           <h3>Cycle นี้ยังไม่มี Test Case</h3>
@@ -5992,6 +6339,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
             {filteredCases.map((x) => (
               <button
                 className={selectedId === x.testCycleCaseId ? "active" : ""}
+                aria-current={selectedId === x.testCycleCaseId ? "true" : undefined}
                 key={x.testCycleCaseId}
                 onClick={() => setSelectedId(x.testCycleCaseId)}
               >
@@ -6009,6 +6357,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
           </aside>
           {selected && (
             <main className="card execution-main">
+              {caseDetailLoadError && <div className="login-error" role="alert">{caseDetailLoadError}</div>}
               <div className="execution-case-head">
                 <div>
                   <span>{selected.testCaseCode}</span>
@@ -6028,6 +6377,22 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                 <div className="precondition">
                   <b>Preconditions</b>
                   <p>{selected.preconditions}</p>
+                </div>
+              )}
+              {linkedDefects.length > 0 && (
+                <div className="execution-linked-defects">
+                  <b>Linked Defects</b>
+                  {linkedDefects.map((d) => (
+                    <span className="execution-linked-defect" key={d.defectId}>
+                      <Badge tone={defectStatusTones[d.status] ?? "gray"}>{d.defectCode}</Badge>
+                      <small>{d.title}</small>
+                      {canEditDefect && (
+                        <button type="button" className="link-btn" aria-label={`แก้ไข ${d.defectCode}`} onClick={() => editLinkedDefect(d)}>
+                          Edit
+                        </button>
+                      )}
+                    </span>
+                  ))}
                 </div>
               )}
               <div className="step-table">
@@ -6060,55 +6425,79 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                   const status = (stepStatuses[x.stepNo] ?? "NotRun") as StepStatus;
                   const requiresActual = status === "Fail" || status === "Blocked";
                   const missingActual = requiresActual && !stepActuals[x.stepNo]?.trim();
+                  const actualInputId = `step-actual-${x.stepNo}`;
+                  const actualErrorId = `step-actual-error-${x.stepNo}`;
                   return (
                     <div className="step-row" key={x.stepNo}>
-                      <span>{x.stepNo}</span>
-                      <span>
-                        <b>{x.action}</b>
-                        {x.testData && <small>{x.testData}</small>}
+                      <span className="step-field step-field-no">{x.stepNo}</span>
+                      {/* .step-field-label แทน CSS ::before ที่อิง nth-child (spec §2.2/§5.2) — label
+                          เป็น element จริงในทุก breakpoint แต่ซ่อนด้วย CSS บน desktop เพราะ .step-head
+                          ทำหน้าที่เป็นหัวคอลัมน์อยู่แล้ว ไม่ต้องพึ่งตำแหน่ง DOM มาสร้าง label */}
+                      <span className="step-field">
+                        <span className="step-field-label" aria-hidden="true">Action / Test Data</span>
+                        <span className="step-field-value">
+                          <b>{x.action}</b>
+                          {x.testData && <small>{x.testData}</small>}
+                        </span>
                       </span>
-                      <span>{x.expectedResult}</span>
-                      <span className="step-result-control">
-                        {(["Pass", "Fail", "Blocked", "NotRun"] as const).map((opt) => (
-                        <button
-                          type="button"
-                          key={opt}
-                          className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
-                          title={opt === "NotRun" ? "Not Run" : opt}
-                          aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${opt === "NotRun" ? "Not Run" : opt}`}
-                            onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
-                          >
-                            <span className="material-symbols-outlined step-result-icon" aria-hidden="true">{opt === "Pass" ? "check_circle" : opt === "Fail" ? "cancel" : opt === "Blocked" ? "block" : "radio_button_unchecked"}</span>
-                          </button>
-                        ))}
+                      <span className="step-field">
+                        <span className="step-field-label" aria-hidden="true">Expected Result</span>
+                        <span className="step-field-value">{x.expectedResult}</span>
                       </span>
-                      <span className="step-actual-cell">
-                        <input
-                          className={missingActual ? "input-required" : ""}
-                          value={stepActuals[x.stepNo] ?? ""}
-                          onChange={(e) =>
-                            setStepActuals((s) => ({
-                              ...s,
-                              [x.stepNo]: e.target.value,
-                            }))
-                          }
-                          placeholder={requiresActual ? "ผลที่ได้จริง (บังคับกรอก) *" : "ผลที่ได้จริง / Comment"}
-                        />
-                        {status === "Fail" && (
-                          defectCodes[x.stepNo]
-                            ? <small className="step-defect-linked">Defect: {defectCodes[x.stepNo]}</small>
-                            : (
-                              <button
-                                type="button"
-                                className="step-create-defect"
-                                title="Create Defect"
-                                disabled={creatingDefectStep === x.stepNo}
-                                onClick={() => createDefectForStep(x)}
-                              >
-                                {creatingDefectStep === x.stepNo ? "..." : "+ Defect"}
-                              </button>
-                            )
-                        )}
+                      <span className="step-field">
+                        <span className="step-field-label" aria-hidden="true">Step Result</span>
+                        <span className="step-result-control">
+                          {(["Pass", "Fail", "Blocked", "NotRun"] as const).map((opt) => (
+                          <button
+                            type="button"
+                            key={opt}
+                            className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
+                            title={opt === "NotRun" ? "Not Run" : opt}
+                            aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${opt === "NotRun" ? "Not Run" : opt}`}
+                              onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
+                            >
+                              <span className="material-symbols-outlined step-result-icon" aria-hidden="true">{opt === "Pass" ? "check_circle" : opt === "Fail" ? "cancel" : opt === "Blocked" ? "block" : "radio_button_unchecked"}</span>
+                            </button>
+                          ))}
+                        </span>
+                      </span>
+                      <span className="step-field">
+                        <span className="step-field-label" aria-hidden="true">Actual Result / Comment</span>
+                        <span className="step-actual-cell">
+                          <label className="sr-only" htmlFor={actualInputId}>
+                            {`Actual Result Step ${x.stepNo}${requiresActual ? " (บังคับกรอก)" : ""}`}
+                          </label>
+                          <input
+                            id={actualInputId}
+                            className={missingActual ? "input-required" : ""}
+                            aria-required={requiresActual || undefined}
+                            aria-invalid={missingActual || undefined}
+                            aria-describedby={missingActual ? actualErrorId : undefined}
+                            value={stepActuals[x.stepNo] ?? ""}
+                            onChange={(e) =>
+                              setStepActuals((s) => ({
+                                ...s,
+                                [x.stepNo]: e.target.value,
+                              }))
+                            }
+                            placeholder={requiresActual ? "ผลที่ได้จริง (บังคับกรอก) *" : "ผลที่ได้จริง / Comment"}
+                          />
+                          {missingActual && <small id={actualErrorId} className="step-actual-error">กรุณาระบุผลที่เกิดขึ้นจริง</small>}
+                          {status === "Fail" && canEditDefect && (
+                            stepDefectCodes[x.stepNo]
+                              ? <small className="step-defect-linked">Defect: {stepDefectCodes[x.stepNo]}</small>
+                              : (
+                                <button
+                                  type="button"
+                                  className="step-create-defect"
+                                  title="Create Defect"
+                                  onClick={() => openDefectEditorForStep(x)}
+                                >
+                                  + Defect
+                                </button>
+                              )
+                          )}
+                        </span>
                       </span>
                     </div>
                   );
@@ -6175,6 +6564,16 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                   </div>
                 </div>
               )}
+              {defectEditor && (
+                <ExecutionDefectEditor
+                  apiUrl={apiUrl}
+                  context={defectEditor.context}
+                  existing={defectEditor.existing}
+                  onClose={() => setDefectEditor(null)}
+                  onSaved={handleDefectSaved}
+                  onPartialSave={mergeLinkedDefect}
+                />
+              )}
             </main>
           )}
           <aside className="card execution-history">
@@ -6190,7 +6589,6 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                       {x.status}
                     </Badge>
                     <span className="history-run">Run #{x.executionNo}</span>
-                    <button className="history-delete" disabled={workspace?.status === "Closed" || workspace?.status === "Cancelled"} onClick={() => removeExecution(x)} title={workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ"}><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบ</button>
                   </div>
                   <p>{x.actualResult || "-"}</p>
                   {x.comment && <small className="history-comment">Comment: {x.comment}</small>}
@@ -6200,6 +6598,19 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                       ? formatThaiDateTime(x.completedAt)
                       : "-"}
                   </small>
+                  {/* แยกตำแหน่งปุ่มลบออกจาก Run number (spec §3.3) ลดโอกาสกดพลาดบนมือถือ */}
+                  <div className="history-item-foot">
+                    <button
+                      className="history-delete"
+                      disabled={deletingHistoryId === x.testExecutionId || workspace?.status === "Closed" || workspace?.status === "Cancelled"}
+                      onClick={() => removeExecution(x)}
+                      title={workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ"}
+                    >
+                      {deletingHistoryId === x.testExecutionId
+                        ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>
+                        : <><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบ</>}
+                    </button>
+                  </div>
                 </div>
               ))
             ) : (
@@ -6239,6 +6650,8 @@ type TestSuiteItem = {
     cycleName: string;
     status: string;
     isDeleted: boolean;
+    releaseCode?: string;
+    releaseVersion?: string;
     buildNumber?: string;
     startDate?: string;
     endDate?: string;
@@ -6553,8 +6966,8 @@ function TestSuitesPage({
       ...suite.cases.map(c => [c.sortOrder, c.testCaseCode, c.title, c.priority, c.isRequired ? "Required" : "Optional"]),
       [],
       ["Test Cycles", activeCycles.length],
-      ["Cycle Code", "Cycle Name", "Status", "Progress %"],
-      ...activeCycles.map(c => [c.cycleCode, c.cycleName, c.status, c.progressPercent]),
+      ["Cycle Code", "Cycle Name", "Release", "Build", "Status", "Progress %"],
+      ...activeCycles.map(c => [c.cycleCode, c.cycleName, [c.releaseCode, c.releaseVersion].filter(Boolean).join(" · ") || "-", c.buildNumber || "-", c.status, c.progressPercent]),
     ];
     const csv = "﻿" + rows.map(row => row.map(v => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -6606,6 +7019,7 @@ function TestSuitesPage({
   return (
     <>
       <article className="card suite-list-card">
+        <div className="suite-scope-note" role="note"><span className="material-symbols-outlined" aria-hidden="true">info</span><span><b>ขอบเขตการกรอง:</b> Project มีผลกับรายการ Test Suite โดยตรง ส่วน Release และ Build จะใช้ตอนนำ Suite ไปสร้าง Test Cycle และดูประวัติการใช้งานได้ในรายละเอียด Suite</span></div>
         <div className="filter-toolbar">
           <div className="filter-toolbar-top">
             <div className="result-count"><strong>{rows.length.toLocaleString()}</strong><span>Test Suites</span></div>
@@ -6993,6 +7407,7 @@ function TestSuitesPage({
         const totalCycleCases = activeLinkedCycles.reduce((sum, c) => sum + c.caseCount, 0);
         const totalCycleExecuted = activeLinkedCycles.reduce((sum, c) => sum + c.executedCount, 0);
         const cyclesProgressPercent = totalCycleCases ? Math.round((totalCycleExecuted * 100) / totalCycleCases) : 0;
+        const linkedReleaseBuilds = Array.from(new Map(activeLinkedCycles.map(c => [`${c.releaseCode ?? ""}|${c.buildNumber ?? ""}`, c])).values());
         const visibleCases = caseListExpanded ? detail.cases : detail.cases.slice(0, 5);
         return (
           <div className="modal" role="presentation" onMouseDown={() => setDetail(null)}>
@@ -7031,6 +7446,17 @@ function TestSuitesPage({
               </section>
               <div className="suite-detail-split">
                 <section className="cycle-detail-section">
+                  <div className="cycle-detail-section-head"><div><h3>Release / Build ที่ใช้งาน ({linkedReleaseBuilds.length})</h3><small className="suite-usage-helper">สรุปจาก Test Cycle ที่อ้างอิง Suite นี้</small></div></div>
+                  <div className="suite-release-build-list">
+                    {linkedReleaseBuilds.length ? linkedReleaseBuilds.map(c => (
+                      <div className="suite-release-build-row" key={`${c.releaseCode ?? ""}|${c.buildNumber ?? ""}`}>
+                        <span className="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+                        <span><b>{c.releaseCode || "ไม่ระบุ Release"}{c.releaseVersion ? ` · ${c.releaseVersion}` : ""}</b><small>Build {c.buildNumber || "ไม่ระบุ"}</small></span>
+                      </div>
+                    )) : <p className="muted-text">ยังไม่มี Test Cycle ผูกกับ Suite นี้</p>}
+                  </div>
+                </section>
+                <section className="cycle-detail-section">
                   <h3>Test Cycles ทั้งหมด ({activeLinkedCycles.length})</h3>
                   <div className="suite-cycle-cards">
                     {activeLinkedCycles.length ? activeLinkedCycles.map(c => (
@@ -7039,7 +7465,8 @@ function TestSuitesPage({
                           <b>{c.cycleCode}</b>
                           <Badge tone={c.status === "Completed" || c.status === "Closed" ? "green" : c.status === "Cancelled" ? "red" : "yellow"}>{c.status}</Badge>
                         </div>
-                        <p className="suite-cycle-card-sub">{c.cycleName}{c.buildNumber ? ` · Build ${c.buildNumber}` : ""}</p>
+                        <p className="suite-cycle-card-sub">{c.cycleName}</p>
+                        <div className="suite-cycle-card-scope"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span><span><b>{c.releaseCode || "ไม่ระบุ Release"}{c.releaseVersion ? ` · ${c.releaseVersion}` : ""}</b><small>Build {c.buildNumber || "ไม่ระบุ"}</small></span></div>
                         <div className="suite-cycle-card-meta">
                           <div><span className="material-symbols-outlined" aria-hidden="true">event_available</span><span><small>เริ่มต้น</small><b>{formatThaiDateTime(c.startDate, { day: "numeric", month: "short", year: "numeric" })}</b></span></div>
                           <div><span className="material-symbols-outlined" aria-hidden="true">event</span><span><small>สิ้นสุด</small><b>{formatThaiDateTime(c.endDate, { day: "numeric", month: "short", year: "numeric" })}</b></span></div>
@@ -7057,7 +7484,7 @@ function TestSuitesPage({
                     <p className="muted-text">มี Test Cycle ที่ถูกลบไปแล้ว {detail.linkedCycles.filter(c => c.isDeleted).length} รายการ (ไม่แสดงในนี้)</p>
                   )}
                 </section>
-                <section className="cycle-detail-section">
+                <section className="cycle-detail-section suite-detail-cases-section">
                   <div className="cycle-detail-section-head">
                     <h3>Test Cases ({detail.cases.length})</h3>
                     {detail.cases.length > 5 && (
@@ -8311,7 +8738,8 @@ function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
 
 type TestSummaryStatusSlice = { status: string; count: number; color: string };
 type TestSummarySeveritySlice = { severity: string; count: number; color: string };
-type TestSummaryData = { totalRequirements: number; coveredRequirements: number; requirementCoverage: number; totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number; openP0: number; openP1: number; overallScore: number | null; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string; statusDistribution: TestSummaryStatusSlice[]; defectSeverityDistribution: TestSummarySeveritySlice[]; generatedAt: string };
+type TestSummaryModule = { moduleId: string; parentModuleId?: string | null; moduleCode: string; moduleName: string; testCases: number; executed: number; executionPercent: number; passRate: number; health: string; openDefects?: number };
+type TestSummaryData = { totalRequirements: number; coveredRequirements: number; requirementCoverage: number; totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number; openP0: number; openP1: number; overallScore: number | null; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string; statusDistribution: TestSummaryStatusSlice[]; defectSeverityDistribution: TestSummarySeveritySlice[]; modules?: TestSummaryModule[]; generatedAt: string };
 type TestSummaryEnv = { testEnvironmentId: string; projectId: string; environmentName: string; baseUrl?: string; isActive: boolean };
 type TestSummaryNarrative = { knownIssues: string; remainingRisks: string; qaRecommendation: string };
 type TestSummarySnapshot = { date: string; passRate: number; executionProgress: number; openP0: number; openDefects: number };
@@ -8322,6 +8750,7 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
   const [releaseId, setReleaseId] = useState(contextReleaseId ?? "");
   const [summary, setSummary] = useState<TestSummaryData>(null!);
   const [release, setRelease] = useState<ReleaseItem | null>(null);
+  const [builds, setBuilds] = useState<BuildItem[]>([]);
   const [envs, setEnvs] = useState<TestSummaryEnv[]>([]);
   const [topDefects, setTopDefects] = useState<DefectItem[]>([]);
   const [presentationDate, setPresentationDate] = useState("");
@@ -8335,6 +8764,7 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [releasesLoaded, setReleasesLoaded] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => (r.ok ? r.json() : Promise.resolve(null))), [headers]);
   useEffect(() => { if (contextProjectId) setProjectId(contextProjectId); }, [contextProjectId]);
@@ -8360,18 +8790,20 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
     return { knownIssues: issues, remainingRisks: risks.length ? risks.join(" · ") : "ไม่พบความเสี่ยงคงค้างที่เกินเกณฑ์", qaRecommendation: recText };
   };
   const load = useCallback(async (regenerate: boolean) => {
-    if (!projectId || !releaseId) { setSummary(null!); setRelease(null); setTopDefects([]); setPresentationDate(""); setPreviousSnapshot(null); setNarrativeReleaseId(""); return; }
+    if (!projectId || !releaseId) { setSummary(null!); setRelease(null); setBuilds([]); setTopDefects([]); setPresentationDate(""); setPreviousSnapshot(null); setNarrativeReleaseId(""); return; }
     setLoading(true); setError("");
     try {
-      const [ts, envList, defectList] = await Promise.all([
+      const [ts, envList, defectList, buildList] = await Promise.all([
         getJson(`${apiUrl}/releases/${releaseId}/test-summary`),
         getJson(`${apiUrl}/master-settings/environments`),
         getJson(`${apiUrl}/defects?projectId=${projectId}&releaseId=${releaseId}&page=1&size=100`),
+        getJson(`${apiUrl}/releases/${releaseId}/builds`),
       ]);
       const data = (ts as { release: ReleaseItem; summary: TestSummaryData; generatedAt?: string } | null);
       const generatedAt = data?.generatedAt ?? data?.summary?.generatedAt ?? "";
       setSummary(data?.summary ? { ...data.summary, generatedAt } : null!);
       setRelease((data?.release as ReleaseItem | null) ?? null);
+      setBuilds(Array.isArray(buildList) ? (buildList as BuildItem[]).filter((b) => b.isActive) : []);
       setEnvs(Array.isArray(envList) ? (envList as TestSummaryEnv[]).filter((e) => e.projectId === projectId) : []);
       const defectRows = Array.isArray(defectList) ? defectList : Array.isArray(defectList?.rows) ? defectList.rows : Array.isArray(defectList?.items) ? defectList.items : Array.isArray(defectList?.items?.rows) ? defectList.items.rows : [];
       const severityOrder: Record<string, number> = { Critical: 0, High: 1, Medium: 2, Low: 3 };
@@ -8430,6 +8862,11 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
       ["Defect Total / Open / Resolved-Closed", `${summary.totalDefects} / ${summary.openDefects} / ${Math.max(0, summary.totalDefects - summary.openDefects)}`],
       ["Hard Blockers", summary.criticalDefects || summary.openP0 ? `Critical ${summary.criticalDefects} · P0 ${summary.openP0}` : "ไม่พบ Hard Blocker"],
       ["Warnings", summary.openP1 || summary.highDefects || summary.requirementCoverage < 90 || summary.passRate < 90 ? `P1 ${summary.openP1} · High ${summary.highDefects} · Coverage ${summary.requirementCoverage}% · Pass Rate ${summary.passRate}%` : "ไม่พบ Warning ที่เกินเกณฑ์"],
+      ["Release Impact", `ระดับ${releaseImpactLevelLabel}`],
+      ["Release Impact Modules", releaseImpactModules.length ? releaseImpactModules.map((module) => `${module.moduleCode || module.moduleName} (${module.openDefects ?? 0} Open Defect)`).join(" · ") : "ไม่พบโมดูลที่มีสัญญาณผลกระทบ"],
+      ["Planned Release Date", releaseImpactDate],
+      ["Build Change Notes", releaseImpactBuild?.changeNotes?.trim() || "ยังไม่ได้ระบุ"],
+      ["Release Impact Action", releaseImpactAction],
       ["Known Issues", narrative.knownIssues],
       ["Remaining Risks", narrative.remainingRisks],
       ["QA Recommendation", narrative.qaRecommendation],
@@ -8444,15 +8881,160 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
   const exportExcel = () => {
     if (!summary) return;
     const s = summary, r = release;
-    const esc = (v: string) => v.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    const esc = escapeHtml;
     const row = (cells: string[]) => `<tr>${cells.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`;
-    const body = `<table border="1"><thead><tr><th colspan="2">Test Summary — ${esc(r ? `${r.releaseCode} · ${r.version}` : "")}</th></tr></thead><tbody>${row(["Generated At", s.generatedAt || "ยังไม่ได้ระบุ"])}${row(["Status", r?.status ?? ""])}${row(["Requirement Coverage", `${s.requirementCoverage}%`])}${row(["Requirement Covered / Not Covered", `${s.coveredRequirements} / ${Math.max(0, s.totalRequirements - s.coveredRequirements)}`])}${row(["Total / Executed", `${s.totalCases} / ${s.executedCases}`])}${row(["Pass Rate", `${s.passRate}%`])}${row(["Open P0 / P1", `${s.openP0} / ${s.openP1}`])}${row(["Open Defects", String(s.openDefects)])}${row(["Defect Total / Open / Resolved-Closed", `${s.totalDefects} / ${s.openDefects} / ${Math.max(0, s.totalDefects - s.openDefects)}`])}${row(["Critical / High", `${s.criticalDefects} / ${s.highDefects}`])}${row(["Defect Quality", String(s.defectQuality)])}${row(["Recommended Decision", s.recommendedDecision])}${row(["Hard Blockers", s.criticalDefects || s.openP0 ? `Critical ${s.criticalDefects} · P0 ${s.openP0}` : "ไม่พบ Hard Blocker"])}${row(["Warnings", s.openP1 || s.highDefects || s.requirementCoverage < 90 || s.passRate < 90 ? `P1 ${s.openP1} · High ${s.highDefects} · Coverage ${s.requirementCoverage}% · Pass Rate ${s.passRate}%` : "ไม่พบ Warning ที่เกินเกณฑ์"])}${row(["Known Issues", narrative.knownIssues])}${row(["Remaining Risks", narrative.remainingRisks])}${row(["QA Recommendation", narrative.qaRecommendation])}</tbody></table>`;
+    const body = `<table border="1"><thead><tr><th colspan="2">Test Summary — ${esc(r ? `${r.releaseCode} · ${r.version}` : "")}</th></tr></thead><tbody>${row(["Generated At", s.generatedAt || "ยังไม่ได้ระบุ"])}${row(["Status", r?.status ?? ""])}${row(["Requirement Coverage", `${s.requirementCoverage}%`])}${row(["Requirement Covered / Not Covered", `${s.coveredRequirements} / ${Math.max(0, s.totalRequirements - s.coveredRequirements)}`])}${row(["Total / Executed", `${s.totalCases} / ${s.executedCases}`])}${row(["Pass Rate", `${s.passRate}%`])}${row(["Open P0 / P1", `${s.openP0} / ${s.openP1}`])}${row(["Open Defects", String(s.openDefects)])}${row(["Defect Total / Open / Resolved-Closed", `${s.totalDefects} / ${s.openDefects} / ${Math.max(0, s.totalDefects - s.openDefects)}`])}${row(["Critical / High", `${s.criticalDefects} / ${s.highDefects}`])}${row(["Defect Quality", String(s.defectQuality)])}${row(["Recommended Decision", s.recommendedDecision])}${row(["Hard Blockers", s.criticalDefects || s.openP0 ? `Critical ${s.criticalDefects} · P0 ${s.openP0}` : "ไม่พบ Hard Blocker"])}${row(["Warnings", s.openP1 || s.highDefects || s.requirementCoverage < 90 || s.passRate < 90 ? `P1 ${s.openP1} · High ${s.highDefects} · Coverage ${s.requirementCoverage}% · Pass Rate ${s.passRate}%` : "ไม่พบ Warning ที่เกินเกณฑ์"])}${row(["Release Impact", `ระดับ${releaseImpactLevelLabel}`])}${row(["Release Impact Modules", releaseImpactModules.length ? releaseImpactModules.map((module) => `${module.moduleCode || module.moduleName} (${module.openDefects ?? 0} Open Defect)`).join(" · ") : "ไม่พบโมดูลที่มีสัญญาณผลกระทบ"])}${row(["Planned Release Date", releaseImpactDate])}${row(["Build Change Notes", releaseImpactBuild?.changeNotes?.trim() || "ยังไม่ได้ระบุ"])}${row(["Release Impact Action", releaseImpactAction])}${row(["Known Issues", narrative.knownIssues])}${row(["Remaining Risks", narrative.remainingRisks])}${row(["QA Recommendation", narrative.qaRecommendation])}</tbody></table>`;
     const html = `<html><head><meta charset="utf-8"></head><body>${body}</body></html>`;
     const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `test-summary-${r?.releaseCode || releaseId}.xls`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+  const exportPdf = async () => {
+    if (!summary || exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4", compress: true });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const toneGood = { bg: "#eaf8f1", fg: "#168b58", accent: "#169c63" };
+      const toneWarn = { bg: "#fff5d9", fg: "#9a6d00", accent: "#d79a00" };
+      const toneBad = { bg: "#fdecec", fg: "#c83a3a", accent: "#d64545" };
+      const toneByLevel = (level: "good" | "warn" | "bad") => level === "good" ? toneGood : level === "warn" ? toneWarn : toneBad;
+      const decisionTone = summary.recommendedDecision === "GO" ? toneGood : summary.recommendedDecision === "CONDITIONAL GO" ? toneWarn : toneBad;
+      // สีของ KPI แต่ละตัวอิงเกณฑ์เดียวกับ Quality Gates ของหน้าจอ (Coverage/Pass Rate ≥ 90%, Execution ต้องครบ 100%)
+      const passRateTone = toneByLevel(summary.passRate >= 90 ? "good" : summary.passRate >= 75 ? "warn" : "bad");
+      const coverageTone = toneByLevel(summary.requirementCoverage >= 90 ? "good" : summary.requirementCoverage >= 75 ? "warn" : "bad");
+      const executionTone = toneByLevel(summary.executionProgress >= 100 ? "good" : summary.executionProgress >= 75 ? "warn" : "bad");
+      const defectQualityTone = toneByLevel(summary.defectQuality >= 80 ? "good" : summary.defectQuality >= 50 ? "warn" : "bad");
+      const hardBlockersTone = summary.criticalDefects || summary.openP0 ? toneBad : toneGood;
+      const warningsTone = summary.openP1 || summary.highDefects || summary.requirementCoverage < 90 || summary.passRate < 90 ? toneWarn : toneGood;
+      const openRiskTone = summary.openP0 > 0 ? toneBad : summary.openP1 > 0 ? toneWarn : toneGood;
+      const impactTone = releaseImpactLevel === "high" ? toneBad : releaseImpactLevel === "medium" ? toneWarn : releaseImpactLevel === "low" ? toneGood : { bg: "#eef4ff", fg: "#2457d6", accent: "#5b8cff" };
+      const currentProject = projects.find((p) => p.projectId === projectId);
+      const projectName = currentProject?.projectName ?? "";
+      const projectCode = currentProject?.projectCode || projectName || "Project";
+      const rcBuild = builds.find((b) => b.isReleaseCandidate) ?? builds[0] ?? null;
+      const versionLine = `Version ${release?.version ?? "-"}${rcBuild?.applicationVersion ? ` ${rcBuild.applicationVersion}` : ""}${rcBuild?.buildNumber ? ` ${rcBuild.buildNumber}` : ""}`;
+      const generatedAtLabel = summary.generatedAt ? `ข้อมูล ณ ${new Date(summary.generatedAt).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}` : "";
+      const margin = 24;
+      const contentWidth = pageWidth - margin * 2;
+      const usableHeight = pageHeight - margin * 2;
+      // บังคับความกว้างของพื้นที่แคปให้ใกล้เคียงสัดส่วนจริงของหน้า A4 (แทนความกว้างจอเดสก์ท็อป)
+      // ไม่งั้นตัวอักษรจะถูกย่อเล็กลงมากเวลาบีบภาพความกว้างจอกว้าง ๆ ให้พอดีหน้ากระดาษ
+      const printFontScale = 0.85;
+      const printWidthPx = Math.round(contentWidth / printFontScale);
+      const esc = escapeHtml;
+
+      // เนื้อหาหน้าถัดจากปก: คัดเฉพาะสิ่งที่ผู้บริหารต้องใช้ตัดสินใจ (ไม่ใช่ทุกอย่างที่อยู่บนหน้าจอ)
+      const pdfRemainingCases = Math.max(0, summary.totalCases - summary.executedCases);
+      const pdfUncoveredRequirements = Math.max(0, summary.totalRequirements - summary.coveredRequirements);
+      const pdfPassRateGap = Math.max(0, Number((90 - summary.passRate).toFixed(1)));
+      const headline = summary.recommendedDecision === "GO" ? "ผลการทดสอบผ่านเกณฑ์ความพร้อม" : summary.recommendedDecision === "CONDITIONAL GO" ? "พร้อมดำเนินการแบบมีเงื่อนไข" : "ผลการทดสอบยังไม่พร้อมอนุมัติ Release";
+      const conclusion = summary.recommendedDecision === "GO" ? "พร้อมเสนออนุมัติ Release และดำเนินการ Sign-off" : summary.recommendedDecision === "CONDITIONAL GO" ? "เสนออนุมัติได้เมื่อระบุ Owner เงื่อนไข และกำหนดปิดความเสี่ยงที่เหลือครบถ้วน" : `ยังไม่ควรอนุมัติ Release — เร่งดำเนินการ ${pdfRemainingCases.toLocaleString()} Test Cases ที่เหลือ และจัดการ P0 ${summary.openP0.toLocaleString()} รายการก่อน Sign-off`;
+      const hardBlockersText = summary.criticalDefects || summary.openP0 ? `Critical ${summary.criticalDefects} · P0 ${summary.openP0}` : "ไม่พบ Hard Blocker";
+      const warningsText = summary.openP1 || summary.highDefects || summary.requirementCoverage < 90 || summary.passRate < 90 ? `P1 ${summary.openP1} · High ${summary.highDefects} · Coverage ${summary.requirementCoverage}% · Pass Rate ${summary.passRate}%` : "ไม่พบ Warning ที่เกินเกณฑ์";
+      const nextActionText = summary.recommendedDecision === "GO" ? "ส่งต่อให้ผู้มีอำนาจทำ Sign-off" : "แก้ไข/ประเมินความเสี่ยงและทดสอบซ้ำก่อน Sign-off";
+      const pdfImpactModules = releaseImpactModules.length ? releaseImpactModules.map((module) => `${module.moduleCode || module.moduleName} · ${module.openDefects ?? 0} Open Defect · ${module.executionPercent}% Executed`).join(" | ") : "ไม่พบโมดูลที่มีสัญญาณผลกระทบจากข้อมูลการทดสอบ";
+      const kpiTiles = [
+        ["Pass Rate", `${summary.passRate}%`, `${summary.passedCases}/${summary.executedCases} Passed`, passRateTone],
+        ["Requirement Coverage", `${summary.requirementCoverage}%`, `${summary.coveredRequirements}/${summary.totalRequirements} Covered`, coverageTone],
+        ["Execution Progress", `${summary.executionProgress}%`, `${summary.executedCases}/${summary.totalCases} Executed`, executionTone],
+        ["Defect Quality", `${summary.defectQuality}`, `${summary.openDefects} Open Defects`, defectQualityTone],
+      ] as const;
+      const facts = [
+        ["ความคืบหน้าการทดสอบ", `${summary.executedCases.toLocaleString()}/${summary.totalCases.toLocaleString()}`, `ดำเนินการแล้ว ${summary.executionProgress}% · เหลือ ${pdfRemainingCases.toLocaleString()} รายการ`, executionTone],
+        ["ผลการทดสอบ", `${summary.passedCases.toLocaleString()} Passed`, `Pass Rate ${summary.passRate}%${pdfPassRateGap > 0 ? ` · ต่ำกว่าเกณฑ์ ${pdfPassRateGap} จุด` : " · ผ่านเกณฑ์"}`, passRateTone],
+        ["Requirement Coverage", `${summary.coveredRequirements.toLocaleString()}/${summary.totalRequirements.toLocaleString()}`, `Coverage ${summary.requirementCoverage}% · เหลือ ${pdfUncoveredRequirements.toLocaleString()} Requirement`, coverageTone],
+        ["ความเสี่ยงคงค้าง", `${summary.openP0.toLocaleString()} P0 · ${summary.openP1.toLocaleString()} P1`, `Open Defect ${summary.openDefects.toLocaleString()} · Critical ${summary.criticalDefects.toLocaleString()}`, openRiskTone],
+      ] as const;
+      const contentHost = document.createElement("div");
+      contentHost.style.cssText = `position:fixed;left:-99999px;top:0;width:${printWidthPx}px;pointer-events:none;font-family:'Kanit',Tahoma,'Noto Sans Thai',Arial,sans-serif;color:#1f2937;`;
+      contentHost.innerHTML = `
+        <div style="border-radius:16px;background:linear-gradient(135deg,#2457d6,#15306f);padding:22px 26px;color:#fff;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex:0 0 auto;">QA</div>
+              <div>
+                <div style="font-size:11px;letter-spacing:.4px;opacity:.85;">ProMaxx2 QA Management System</div>
+                <div style="font-size:10px;opacity:.65;margin-top:1px;">Executive Test Summary Report</div>
+              </div>
+            </div>
+            ${generatedAtLabel ? `<div style="text-align:right;font-size:10px;opacity:.8;flex:0 0 auto;">${esc(generatedAtLabel)}</div>` : ""}
+          </div>
+          <div style="margin-top:18px;">
+            <div style="font-size:11px;opacity:.75;text-transform:uppercase;letter-spacing:.4px;">Release</div>
+            <div style="font-size:22px;font-weight:800;margin-top:4px;">${esc(release?.releaseCode ?? "-")} · ${esc(versionLine)}</div>
+            ${projectName ? `<div style="font-size:12px;opacity:.75;margin-top:4px;">${esc(projectName)}</div>` : ""}
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="display:inline-block;background:${decisionTone.bg};color:${decisionTone.fg};padding:9px 18px;border-radius:999px;font-size:14px;font-weight:800;line-height:10px;white-space:nowrap;"><span style="display:inline-block;vertical-align:middle;width:8px;height:8px;margin-right:8px;border-radius:50%;background:${decisionTone.accent};"></span><span style="display:inline-block;vertical-align:middle;">${esc(summary.recommendedDecision)}</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;">
+          ${kpiTiles.map(([label, value, note, tone]) => `<div style="border:1px solid #e5e7eb;border-left:4px solid ${tone.accent};border-radius:14px;padding:16px;background:#fff;"><div style="font-size:11px;color:#667085;">${label}</div><div style="font-size:24px;font-weight:800;color:${tone.fg};margin-top:5px;">${value}</div><div style="font-size:11px;color:#667085;margin-top:3px;">${note}</div></div>`).join("")}
+        </div>
+        <div style="border:1px solid #dbe5ff;border-left:4px solid ${decisionTone.accent};border-radius:14px;padding:20px 22px;background:#f8faff;margin-top:16px;">
+          <div style="font-size:10px;color:#6b7fa8;text-transform:uppercase;letter-spacing:.08em;font-weight:800;">ข้อความสรุปสำหรับผู้บริหาร</div>
+          <div style="font-size:17px;font-weight:800;color:#172b4d;margin-top:6px;">${headline}</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px;">
+            ${facts.map(([label, value, note, tone]) => `<div style="padding:12px;border:1px solid #e3eaf5;border-radius:10px;background:#fff;border-left:3px solid ${tone.accent};"><div style="font-size:10px;color:#667085;font-weight:700;">${label}</div><div style="font-size:15px;font-weight:800;color:${tone.fg};margin-top:4px;">${value}</div><div style="font-size:11px;color:#667085;margin-top:2px;">${note}</div></div>`).join("")}
+          </div>
+          <div style="padding:12px 14px;border-radius:10px;background:${decisionTone.bg};color:${decisionTone.fg};font-size:12px;line-height:1.6;margin-top:14px;"><b>ข้อสรุป: </b>${conclusion}</div>
+        </div>
+        <div style="border:1px solid ${impactTone.bg};border-left:4px solid ${impactTone.accent};border-radius:14px;padding:16px 18px;background:${impactTone.bg};margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;"><div style="font-size:11px;color:#667085;font-weight:800;text-transform:uppercase;letter-spacing:.08em;">Release Impact</div><div style="font-size:12px;color:${impactTone.fg};font-weight:800;white-space:nowrap;">ระดับ${esc(releaseImpactLevelLabel)}</div></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;">
+            <div style="padding:10px;border:1px solid #e3eaf5;border-radius:10px;background:#fff;"><div style="font-size:10px;color:#667085;font-weight:700;">กำหนด Release</div><div style="font-size:12px;color:#172b4d;font-weight:800;margin-top:4px;">${esc(releaseImpactDate)}</div></div>
+            <div style="padding:10px;border:1px solid #e3eaf5;border-radius:10px;background:#fff;"><div style="font-size:10px;color:#667085;font-weight:700;">โมดูลที่มีสัญญาณกระทบ</div><div style="font-size:12px;color:#172b4d;font-weight:800;margin-top:4px;">${releaseImpactModules.length}/${summaryModules.length}</div></div>
+            <div style="padding:10px;border:1px solid #e3eaf5;border-radius:10px;background:#fff;"><div style="font-size:10px;color:#667085;font-weight:700;">Build อ้างอิง</div><div style="font-size:12px;color:#172b4d;font-weight:800;margin-top:4px;">${esc(releaseImpactBuild?.buildNumber || "ยังไม่ได้ระบุ")}</div></div>
+          </div>
+          <div style="font-size:11px;color:#344054;line-height:1.6;margin-top:12px;"><b>โมดูลที่ควรติดตาม: </b>${esc(pdfImpactModules)}</div>
+          <div style="font-size:11px;color:#344054;line-height:1.6;margin-top:5px;"><b>ข้อเสนอถัดไป: </b>${esc(releaseImpactAction)}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px;">
+          <div style="border:1px solid #e5e7eb;border-left:3px solid ${hardBlockersTone.accent};border-radius:12px;padding:14px 16px;background:#fff;"><div style="font-size:11px;color:#667085;font-weight:800;">Hard Blockers</div><div style="font-size:12px;color:${hardBlockersTone.fg};font-weight:700;margin-top:6px;line-height:1.55;">${esc(hardBlockersText)}</div></div>
+          <div style="border:1px solid #e5e7eb;border-left:3px solid ${warningsTone.accent};border-radius:12px;padding:14px 16px;background:#fff;"><div style="font-size:11px;color:#667085;font-weight:800;">Warnings</div><div style="font-size:12px;color:${warningsTone.fg};font-weight:700;margin-top:6px;line-height:1.55;">${esc(warningsText)}</div></div>
+          <div style="border:1px solid #e5e7eb;border-left:3px solid #94a3b8;border-radius:12px;padding:14px 16px;background:#fff;"><div style="font-size:11px;color:#667085;font-weight:800;">Next Action</div><div style="font-size:12px;color:#344054;margin-top:6px;line-height:1.55;">${esc(nextActionText)}</div></div>
+        </div>
+        <div style="display:grid;gap:12px;margin-top:16px;">
+          <div style="border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#fff;"><div style="font-size:11px;color:#667085;font-weight:800;text-transform:uppercase;">Known Issues</div><div style="font-size:12px;color:#344054;margin-top:6px;line-height:1.6;white-space:pre-line;">${esc(narrative.knownIssues || "-")}</div></div>
+          <div style="border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#fff;"><div style="font-size:11px;color:#667085;font-weight:800;text-transform:uppercase;">Remaining Risks</div><div style="font-size:12px;color:#344054;margin-top:6px;line-height:1.6;white-space:pre-line;">${esc(narrative.remainingRisks || "-")}</div></div>
+          <div style="border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#fff;"><div style="font-size:11px;color:#667085;font-weight:800;text-transform:uppercase;">QA Recommendation</div><div style="font-size:12px;color:#344054;margin-top:6px;line-height:1.6;white-space:pre-line;">${esc(narrative.qaRecommendation || "-")}</div></div>
+        </div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:10px;color:#667085;">เอกสารนี้จัดทำโดยระบบ ProMaxx2 QA Management System · สำหรับใช้ภายในองค์กร</div>`;
+      document.body.appendChild(contentHost);
+      try {
+        // แคปรูปทีละบล็อกก่อน แล้วรวมความสูงทั้งหมด ถ้าเกิน 1 หน้าให้ย่อสัดส่วนทุกบล็อกลงเท่า ๆ กัน
+        // เพื่อบังคับให้เอกสารจบภายในหน้าเดียวเสมอ แทนที่จะขึ้นหน้าใหม่
+        const gap = 10;
+        const captures: { canvas: HTMLCanvasElement; height: number }[] = [];
+        for (const el of Array.from(contentHost.children)) {
+          const canvas = await html2canvas(el as HTMLElement, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+          captures.push({ canvas, height: (canvas.height * contentWidth) / canvas.width });
+        }
+        const totalHeight = captures.reduce((sum, c) => sum + c.height, 0) + gap * (captures.length - 1);
+        const fitScale = totalHeight > usableHeight ? usableHeight / totalHeight : 1;
+        let cursorY = margin;
+        for (const { canvas, height } of captures) {
+          const drawWidth = contentWidth * fitScale;
+          const drawHeight = height * fitScale;
+          const x = margin + (contentWidth - drawWidth) / 2;
+          pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", x, cursorY, drawWidth, drawHeight);
+          cursorY += drawHeight + gap * fitScale;
+        }
+      } finally {
+        document.body.removeChild(contentHost);
+      }
+      const fileVersion = `${release?.version ?? ""}${rcBuild?.applicationVersion ? ` ${rcBuild.applicationVersion}` : ""}${rcBuild?.buildNumber ? ` ${rcBuild.buildNumber}` : ""}`.trim();
+      pdf.save(`Report Test Summary ${projectCode}-${fileVersion}.pdf`);
+    } catch {
+      setError("สร้างไฟล์ PDF ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setExportingPdf(false);
+    }
   };
   const remainingCases = Math.max(0, (summary?.totalCases ?? 0) - (summary?.executedCases ?? 0));
   const uncoveredRequirements = Math.max(0, (summary?.totalRequirements ?? 0) - (summary?.coveredRequirements ?? 0));
@@ -8499,6 +9081,20 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
     setPresenterMode(false);
     setTimeout(() => document.getElementById("ts-release-report")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
   };
+  const summaryModules = (summary?.modules ?? []).filter((module) => module.testCases > 0);
+  const untestedModules = summaryModules.filter((module) => module.executed === 0);
+  const incompleteModules = summaryModules.filter((module) => module.executed > 0 && module.executed < module.testCases);
+  const releaseImpactBuild = builds.find((build) => build.isReleaseCandidate) ?? builds[0] ?? null;
+  const releaseImpactModules = [...summaryModules]
+    .filter((module) => (module.openDefects ?? 0) > 0 || module.executed < module.testCases || module.health === "Risk" || module.health === "Watch")
+    .sort((a, b) => (b.openDefects ?? 0) - (a.openDefects ?? 0) || (a.executionPercent ?? 0) - (b.executionPercent ?? 0) || a.moduleName.localeCompare(b.moduleName))
+    .slice(0, 6);
+  const releaseImpactLevel = !summary ? "unknown" : summary.criticalDefects > 0 || summary.openP0 > 0 ? "high" : summary.openP1 > 0 || summary.highDefects > 0 || summary.executionProgress < 100 || summary.passRate < 90 ? "medium" : "low";
+  const releaseImpactLevelLabel = releaseImpactLevel === "high" ? "สูง" : releaseImpactLevel === "medium" ? "กลาง" : releaseImpactLevel === "low" ? "ต่ำ" : "ยังไม่มีข้อมูล";
+  const releaseImpactDelivery = !summary ? "ยังไม่มีข้อมูล Test Summary" : remainingCases > 0 ? `เหลือ ${remainingCases.toLocaleString()} Test Cases ที่ยังไม่รัน` : summary.passRate < 90 ? `Execution ครบแล้ว แต่ Pass Rate ยังอยู่ที่ ${summary.passRate}%` : "Execution ครบและ Pass Rate ผ่านเกณฑ์";
+  const releaseImpactAction = !summary ? "Generate Test Summary เพื่อประเมินผลกระทบ" : summary.criticalDefects > 0 || summary.openP0 > 0 ? "แก้ไขหรือทำ Risk Acceptance สำหรับ P0/Critical ก่อน Sign-off" : remainingCases > 0 ? "จัดลำดับรัน Test Case ของโมดูลที่ได้รับผลกระทบและทำ Retest" : summary.passRate < 90 ? "วิเคราะห์ Fail และทำ Retest ให้ Pass Rate ถึงเกณฑ์" : "ยืนยันผลกระทบกับ Business Owner ก่อนอนุมัติ Release";
+  const releaseImpactDateValue = release?.plannedReleaseDate ? new Date(release.plannedReleaseDate) : null;
+  const releaseImpactDate = releaseImpactDateValue && !Number.isNaN(releaseImpactDateValue.getTime()) ? releaseImpactDateValue.toLocaleDateString("th-TH", { dateStyle: "medium" }) : "ยังไม่ได้ระบุ";
   if (releaseId && !summary && !loading && !error) return <article className="test-summary"><div className="empty"><p>ยังไม่มีข้อมูล Test Summary</p></div></article>;
   return (
     <article className={`test-summary${presenterMode ? " is-presenter" : ""}`}>
@@ -8521,6 +9117,7 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
         <div>
           {canExport && <button className="btn" disabled={!summary} onClick={exportCsv}><span className="material-symbols-outlined" aria-hidden="true">download</span> Export CSV</button>}
           {canExport && <button className="btn" disabled={!summary} onClick={exportExcel}><span className="material-symbols-outlined" aria-hidden="true">download</span> Export Excel</button>}
+          {canExport && <button className="btn" disabled={!summary || exportingPdf} onClick={exportPdf}>{exportingPdf ? <><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง PDF...</> : <><span className="material-symbols-outlined" aria-hidden="true">picture_as_pdf</span> Export PDF</>}</button>}
           <button className="btn" disabled={!summary} onClick={() => setPresenterMode(true)}><span className="material-symbols-outlined" aria-hidden="true">present_to_all</span> Presenter Mode</button>
           <button className="btn primary" disabled={!releaseId || loading} onClick={() => load(true)}>{loading ? <><span className="spinner inline" aria-hidden="true" /> กำลังโหลด...</> : "✦ Generate / Regenerate"}</button>
           {onOpenSignoff && <button className="btn" disabled={!summary} onClick={onOpenSignoff}>ไปหน้า Sign-off <span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>}
@@ -8566,6 +9163,17 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
               </div>
               <div className="ts-management-conclusion"><span className="material-symbols-outlined" aria-hidden="true">campaign</span><p><b>ข้อสรุป</b><span>{summary.recommendedDecision === "GO" ? "พร้อมเสนออนุมัติ Release และดำเนินการ Sign-off" : summary.recommendedDecision === "CONDITIONAL GO" ? "เสนออนุมัติได้เมื่อระบุ Owner เงื่อนไข และกำหนดปิดความเสี่ยงครบถ้วน" : `ยังไม่ควรอนุมัติ Release — เร่งดำเนินการ ${remainingCases.toLocaleString()} Test Cases ที่เหลือ และจัดการ P0 ${summary.openP0.toLocaleString()} รายการก่อน Sign-off`}</span></p></div>
             </div>
+            <section className={`ts-release-impact is-${releaseImpactLevel}`} aria-labelledby="ts-release-impact-title">
+              <div className="ts-section-heading compact"><div><span className="ts-eyebrow">Release impact</span><h3 id="ts-release-impact-title">ผลกระทบต่อการส่งมอบ</h3></div><span className="ts-impact-level"><span className="material-symbols-outlined" aria-hidden="true">{releaseImpactLevel === "high" ? "error" : releaseImpactLevel === "medium" ? "warning" : releaseImpactLevel === "low" ? "check_circle" : "help"}</span>ผลกระทบระดับ{releaseImpactLevelLabel}</span></div>
+              <div className="ts-impact-grid">
+                <article className="ts-impact-summary"><span className="material-symbols-outlined" aria-hidden="true">campaign</span><div><b>{releaseImpactLevel === "high" ? "มีความเสี่ยงต่อการอนุมัติ Release" : releaseImpactLevel === "medium" ? "อาจกระทบกำหนดการหรือขอบเขต Release" : releaseImpactLevel === "low" ? "ยังไม่พบผลกระทบสำคัญจากข้อมูลล่าสุด" : "ยังไม่มีข้อมูลสำหรับประเมินผลกระทบ"}</b><p>{releaseImpactDelivery}</p></div></article>
+                <div className="ts-impact-facts"><div><small>กำหนด Release</small><b>{releaseImpactDate}</b></div><div><small>โมดูลที่มีสัญญาณกระทบ</small><b>{releaseImpactModules.length.toLocaleString()} / {summaryModules.length.toLocaleString()}</b></div><div><small>Build อ้างอิง</small><b>{releaseImpactBuild?.buildNumber || "ยังไม่ได้ระบุ"}</b></div></div>
+              </div>
+              <div className="ts-impact-columns">
+                <div><h4>โมดูลที่ควรติดตาม</h4>{releaseImpactModules.length ? <ul>{releaseImpactModules.map((module) => <li key={module.moduleId}><span><b>{module.moduleCode || "-"}</b> {module.moduleName}</span><small>{(module.openDefects ?? 0).toLocaleString()} Open Defect · {module.executionPercent}% Executed</small></li>)}</ul> : <p className="ts-empty-detail">ไม่พบโมดูลที่มีสัญญาณผลกระทบจากข้อมูลการทดสอบ</p>}</div>
+                <div><h4>ข้อมูลที่ผู้บริหารควรพิจารณา</h4><dl className="ts-impact-details"><div><dt>Change Notes</dt><dd>{releaseImpactBuild?.changeNotes?.trim() || "ยังไม่ได้ระบุ"}</dd></div><div><dt>Known Issues</dt><dd>{releaseImpactBuild?.knownIssues?.trim() || (summary.openDefects ? `มี Open Defect ${summary.openDefects.toLocaleString()} รายการ` : "ไม่พบ Known Issue จากข้อมูลล่าสุด")}</dd></div><div><dt>ข้อเสนอถัดไป</dt><dd>{releaseImpactAction}</dd></div></dl></div>
+              </div>
+            </section>
             <div className="ts-readiness-heading"><span className="ts-eyebrow">Release readiness gaps</span><small>ตัวเลขคำนวณจาก Test Summary ล่าสุด · เกณฑ์ Coverage/Pass Rate ≥ 90%</small></div>
             <div className="ts-readiness-grid">
               <button type="button" className={`${remainingCases === 0 ? "is-ok" : "is-warning"}${selectedGateLabel === "Execution Progress" ? " is-selected" : ""}`} aria-pressed={selectedGateLabel === "Execution Progress"} onClick={() => openGateDetail("Execution Progress")}><small>Execution Progress</small><b>{summary?.executionProgress ?? 0}%</b><span>{remainingCases.toLocaleString()} Test Cases ยังไม่รัน</span><em>เป้าหมาย 100% · กดดูรายละเอียด</em></button>
@@ -8633,6 +9241,29 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
             <section className="card"><div className="test-summary-card"><div className="ts-section-heading compact"><div><span className="ts-eyebrow">Test execution</span><h3>สถานะ Test Case</h3></div><b className="ts-total-count">{summary?.totalCases ?? 0} Cases</b></div><div className="ts-status-list">{(summary?.statusDistribution ?? []).map((x) => <div key={x.status}><div><span className="ts-status-dot" style={{ background: x.color }} /><span>{x.status}</span><b>{x.count}</b></div><div className="ts-bar"><i style={{ background: x.color, width: `${summary?.totalCases ? Math.min(100, x.count / summary.totalCases * 100) : 0}%` }} /></div></div>)}{!(summary?.statusDistribution?.length) && <p className="ts-empty-detail">ยังไม่มีข้อมูลสถานะ Test Case</p>}</div></div></section>
             <section className="card"><div className="test-summary-card"><div className="ts-section-heading compact"><div><span className="ts-eyebrow">Risk signals</span><h3>ประเด็นที่ต้องติดตาม</h3></div></div><div className="ts-risk-list"><div className={summary?.openP0 ? "risk-high" : "risk-ok"}><b>{summary?.openP0 ?? 0}</b><span>Open P0</span><small>{summary?.openP0 ? "ต้องแก้ก่อนปล่อย" : "ไม่พบรายการ"}</small></div><div className={summary?.openP1 ? "risk-medium" : "risk-ok"}><b>{summary?.openP1 ?? 0}</b><span>Open P1</span><small>{summary?.openP1 ? "ควรประเมินก่อนปล่อย" : "ไม่พบรายการ"}</small></div><div className={summary?.criticalDefects ? "risk-high" : "risk-ok"}><b>{summary?.criticalDefects ?? 0}</b><span>Critical Defects</span><small>{summary?.criticalDefects ? "มีความเสี่ยงสูง" : "ไม่พบรายการ"}</small></div></div><div className="ts-env-detail"><span className="ts-eyebrow">Test environments</span>{envs.length ? envs.map((e) => <div key={e.testEnvironmentId}><b>{e.environmentName}</b><small>{e.isActive ? "Active" : "Inactive"}{e.baseUrl ? ` · ${e.baseUrl}` : ""}</small></div>) : <p className="ts-empty-detail">ยังไม่ได้ระบุ Environment</p>}</div></div></section>
           </div>
+          <section className="card ts-unrun-modules" aria-labelledby="ts-unrun-modules-title">
+            <div className="ts-section-heading compact">
+              <div><span className="ts-eyebrow">Module readiness</span><h3 id="ts-unrun-modules-title">โมดูลที่ยังไม่ได้ทดสอบ</h3></div>
+              <small>{untestedModules.length ? `ยังไม่เริ่ม ${untestedModules.length} โมดูล` : "ทุกโมดูลมีผลทดสอบแล้วอย่างน้อย 1 ครั้ง"}</small>
+            </div>
+            {summaryModules.length ? <div className="ts-unrun-module-body">
+              <div className={`ts-unrun-highlight${untestedModules.length ? " has-gap" : " is-ready"}`}>
+                <b>{untestedModules.length.toLocaleString()}</b>
+                <span>โมดูลยังไม่เริ่มทดสอบ</span>
+                <small>{summaryModules.length.toLocaleString()} โมดูลที่มี Test Case ในขอบเขตนี้</small>
+              </div>
+              <div className="ts-unrun-module-lists">
+                <div>
+                  <h4>ยังไม่เริ่มทดสอบ</h4>
+                  {untestedModules.length ? <ul>{untestedModules.map((module) => <li key={module.moduleId}><span><b>{module.moduleCode}</b> {module.moduleName}</span><small>{module.testCases.toLocaleString()} Test Cases</small></li>)}</ul> : <p className="ts-empty-detail">ไม่มีโมดูลที่ยังไม่เริ่มทดสอบ</p>}
+                </div>
+                <div>
+                  <h4>ทดสอบแล้วแต่ยังไม่ครบ</h4>
+                  {incompleteModules.length ? <ul>{incompleteModules.map((module) => <li key={module.moduleId}><span><b>{module.moduleCode}</b> {module.moduleName}</span><small>{module.executed.toLocaleString()} / {module.testCases.toLocaleString()} Cases · {module.executionPercent}%</small></li>)}</ul> : <p className="ts-empty-detail">ไม่มีโมดูลที่ทดสอบค้างอยู่</p>}
+                </div>
+              </div>
+            </div> : <div className="ts-blocker-empty"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span><p><b>ยังไม่มีข้อมูลโมดูล</b><small>ไม่พบ Module ที่มี Test Case ในขอบเขต Release นี้</small></p></div>}
+          </section>
           <div className="test-summary-grid">
             <section className="card"><div className="test-summary-card"><h3 style={{ margin: 0 }}>Metrics</h3><dl className="ts-kv">
               <div><dt>Requirement Coverage</dt><dd>{summary?.requirementCoverage ?? 0}%</dd></div>
@@ -9070,6 +9701,8 @@ function App() {
           ? "จัดการค่ากลางและบริการ AI ที่ทุกระบบใช้งานร่วมกัน"
         : page === "audit"
           ? "ตรวจสอบประวัติการเปลี่ยนแปลงและกิจกรรมในระบบ"
+        : page === "test-suites"
+          ? "Test Suite จัดเก็บระดับ Project · เลือก Release/Build ตอนนำไปสร้าง Test Cycle"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
     [page],
   );
@@ -9116,6 +9749,8 @@ function App() {
   };
   const shareDashboard = async () => {
     try {
+      // ลิงก์แชร์เปิดให้คนนอกอ่านได้ จึงต้องผูกกับ Project เดียวเสมอ (server ปฏิเสธลิงก์แบบทุก Project)
+      if (!contextProjectId) { window.alert("กรุณาเลือก Project ที่ Topbar ก่อนสร้างลิงก์แชร์ Dashboard"); return; }
       const selectedProject = contextProjects.find(x => x.projectId === contextProjectId);
       const shareReleaseId = contextReleaseId || contextReleases[0]?.releaseId || "";
       const selectedRelease = contextReleases.find(x => x.releaseId === shareReleaseId);
@@ -9124,7 +9759,7 @@ function App() {
       const scopeMessage = [`Project: ${selectedProject?.projectName ?? "ทุก Project"}`, `Release: ${selectedRelease ? `${selectedRelease.releaseCode} · ${selectedRelease.version}` : "ทุก Release"}`, `Build: ${selectedBuild?.buildNumber ?? "ทุก Build"}`].join("\n");
       if (!window.confirm(`กำลังจะสร้างลิงก์แชร์ Dashboard ด้วยข้อมูลนี้:\n\n${scopeMessage}\n\nลิงก์มีอายุ 90 วัน ต้องการดำเนินการต่อหรือไม่?`)) return;
       const response = await fetch(`${apiUrl}/dashboard/share`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ projectId: contextProjectId || null, releaseId: shareReleaseId || null, buildId: shareBuildId || null, validHours: 24 * 90 }) });
-      if (!response.ok) throw new Error("ไม่สามารถสร้างลิงก์แชร์ได้");
+      if (!response.ok) { const problem = await response.json().catch(() => null); throw new Error(problem?.detail ?? "ไม่สามารถสร้างลิงก์แชร์ได้"); }
       const result: { code: string; expiresAt: string } = await response.json();
       const url = `${window.location.origin}${window.location.pathname}?s=${encodeURIComponent(result.code)}`;
       const copied = await copyText(url);
@@ -9437,7 +10072,7 @@ function App() {
           ) : page === "regression" ? (
             <RegressionPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("REGRESSION.MANAGE")} canRunAutomation={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} onOpenCycle={openRegressionCycle} />
           ) : page === "automation" ? (
-            <AutomationPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canView={can("AUTOMATION.VIEW")} canEdit={can("AUTOMATION.EDIT")} canValidate={can("AUTOMATION.VALIDATE")} canApprove={can("AUTOMATION.APPROVE")} canRun={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} canManage={can("AUTOMATION.MANAGE")} canViewEvidence={can("AUTOMATION.VIEWEVIDENCE")} canGenerateAi={can("AUTOMATION.GENERATEAI")} />
+            <Suspense fallback={pageLoading}><AutomationPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canView={can("AUTOMATION.VIEW")} canEdit={can("AUTOMATION.EDIT")} canValidate={can("AUTOMATION.VALIDATE")} canApprove={can("AUTOMATION.APPROVE")} canRun={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} canManage={can("AUTOMATION.MANAGE")} canViewEvidence={can("AUTOMATION.VIEWEVIDENCE")} canGenerateAi={can("AUTOMATION.GENERATEAI")} /></Suspense>
           ) : page === "users" ? (
             <AdministrationPage refresh={refresh} allProjects={contextProjects} />
           ) : page === "settings" ? (
@@ -9445,7 +10080,7 @@ function App() {
           ) : page === "system-monitor" ? (
             <SystemMonitorPage />
           ) : page === "defects" ? (
-            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("DEFECT.EDIT")} onOpenTestCase={openTestCase} />
+            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} search={search} onClearSearch={() => setSearch("")} canEdit={can("DEFECT.EDIT")} canExport={can("REPORT.EXPORT")} onOpenTestCase={openTestCase} />
           ) : page === "summary" ? (
             <TestSummaryPage projects={contextProjects} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canExport={can("REPORT.EXPORT")} onOpenRisks={() => setPage("risks")} onOpenSignoff={() => setPage("signoff")} />
           ) : page === "risks" ? (
@@ -9453,7 +10088,7 @@ function App() {
           ) : page === "signoff" ? (
             <ReleaseSignoffPage projectId={contextProjectId} releaseId={contextReleaseId} canSignoff={can("RELEASE.SIGNOFF")} />
           ) : page === "audit" ? (
-            <AuditLogPage />
+            <Suspense fallback={pageLoading}><AuditLogPage /></Suspense>
           ) : (
             <DataPage page={page} search={search} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canAssignExecution={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} />
           )}

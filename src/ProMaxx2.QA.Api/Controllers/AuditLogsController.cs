@@ -13,12 +13,18 @@ public sealed class AuditLogsController(QaDbContext db) : ControllerBase
     {
         page = Math.Clamp(page, 1, 10000); size = Math.Clamp(size, 1, 100);
         // Keep all three sources queryable without materializing their history in the API process.
-        IQueryable<AuditLogRow> query = db.DefectActivities.AsNoTracking()
-            .Select(x => new AuditLogRow(x.CreatedAt, x.ActorUserId, x.ActionType, "Defect", x.DefectId.ToString(), x.Message, 0, x.DefectActivityId))
+        // Project into an anonymous type here, not the AuditLogRow record below — EF Core cannot
+        // translate a call into a named type's constructor when the query is combined with Concat,
+        // and silently falls back to evaluating that projection client-side; once one side of a
+        // Concat needs client evaluation, the whole set operation fails at runtime with
+        // "Unable to translate set operation after client projection has been applied." Anonymous
+        // types don't have this limitation, so materialize into AuditLogRow only after the DB round-trip.
+        var query = db.DefectActivities.AsNoTracking()
+            .Select(x => new { Timestamp = x.CreatedAt, x.ActorUserId, Action = x.ActionType, Entity = "Defect", EntityId = x.DefectId.ToString(), Summary = (string?)x.Message, Source = 0, SourceId = x.DefectActivityId })
             .Concat(db.RegressionActivities.AsNoTracking()
-                .Select(x => new AuditLogRow(x.CreatedAt, x.ActorUserId, x.Action, "Regression", x.ReleaseId.ToString(), x.Details, 1, x.RegressionActivityId)))
+                .Select(x => new { Timestamp = x.CreatedAt, x.ActorUserId, x.Action, Entity = "Regression", EntityId = x.ReleaseId.ToString(), Summary = x.Details, Source = 1, SourceId = x.RegressionActivityId }))
             .Concat(db.AuditLogs.AsNoTracking()
-                .Select(x => new AuditLogRow(x.CreatedAt, x.UserId, x.Action, x.EntityType, x.EntityId, x.ChangeSummary, 2, x.AuditLogId)));
+                .Select(x => new { Timestamp = x.CreatedAt, ActorUserId = x.UserId, x.Action, Entity = x.EntityType, x.EntityId, Summary = x.ChangeSummary, Source = 2, SourceId = x.AuditLogId }));
 
         if (!string.IsNullOrWhiteSpace(entity))
         {
@@ -43,7 +49,6 @@ public sealed class AuditLogsController(QaDbContext db) : ControllerBase
         return Ok(new AuditLogPage(items.Select(x => new AuditLogDto(x.Timestamp, x.ActorUserId, x.ActorUserId.HasValue && names.TryGetValue(x.ActorUserId.Value, out var name) ? name : null, x.Action, x.Entity, x.EntityId, x.Summary)).ToList(), total, page, size));
     }
     private static string EscapeLike(string value) => value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("[", "[[]");
-    private sealed record AuditLogRow(DateTime Timestamp, Guid? ActorUserId, string Action, string Entity, string EntityId, string? Summary, int Source, Guid SourceId);
 }
 public sealed record AuditLogDto(DateTime Timestamp, Guid? ActorUserId, string? ActorName, string Action, string Entity, string EntityId, string? Summary);
 public sealed record AuditLogPage(IReadOnlyList<AuditLogDto> Items, int Total, int Page, int Size);

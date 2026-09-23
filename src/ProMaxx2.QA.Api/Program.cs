@@ -46,6 +46,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddHealthChecks();
 builder.Services.AddHttpClient();
 builder.Services.AddDataProtection();
@@ -94,6 +95,7 @@ builder.Services.AddScoped<EmailSenderService>();
 builder.Services.AddScoped<CrmSyncService>();
 builder.Services.AddHostedService<CrmSyncWorker>(); // Phase 2: polls Linked Defects every 2min for CRM status/assignto changes
 builder.Services.AddScoped<ProjectAccessContext>();
+builder.Services.AddScoped<ProjectScopeGuard>();
 var jwt = builder.Configuration.GetSection(JwtOptions.Section).Get<JwtOptions>() ?? throw new InvalidOperationException("Missing Jwt configuration.");
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "";
 if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32) throw new InvalidOperationException("Jwt:Key must contain at least 32 bytes. Set it via an environment variable or secret store — do not commit a signing key.");
@@ -125,7 +127,19 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RiskApprove",p=>p.RequireClaim("permission","RISK.APPROVE"))
     .AddPolicy("ReleaseSignoff",p=>p.RequireClaim("permission","RELEASE.SIGNOFF"))
     .AddPolicy("AuditView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","AUDIT.VIEW")))
-    .AddAutomationPolicies();
+    .AddAutomationPolicies()
+    // endpoint ที่ลืมใส่ [Authorize] ต้องไม่กลายเป็น public โดยปริยาย — endpoint anonymous ต้องประกาศ [AllowAnonymous] เอง
+    .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+// จำกัดความถี่ endpoint anonymous ที่เดารหัสได้ — key ตาม IP จริงของ client (หลัง Cloudflare ใช้ CF-Connecting-IP)
+static string ClientKey(HttpContext http) => http.Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.AddPolicy("webhook", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
 if (allowedOrigins == null || allowedOrigins.Length == 0)
 {
@@ -140,11 +154,13 @@ app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
     context.Response.Headers["X-Trace-Id"] = context.TraceIdentifier;
+    // Defect attachment/evidence ถูกเสิร์ฟแบบ inline — ห้าม browser เดา content-type เองจากเนื้อไฟล์
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     await next();
 });
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
     app.UseSwagger();
     app.UseSwaggerUI(options =>
     {
@@ -156,7 +172,8 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHealthChecks("/health");
+app.UseRateLimiter();
+app.MapHealthChecks("/health").AllowAnonymous();
 app.MapControllers();
 if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
     await app.Services.InitializeDatabaseAsync(builder.Configuration["Seed:AdminPassword"]);

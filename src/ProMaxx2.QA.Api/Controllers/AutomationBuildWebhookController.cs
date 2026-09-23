@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using ProMaxx2.QA.Application.Automation;
 using ProMaxx2.QA.Application.Projects;
 
@@ -8,7 +10,7 @@ namespace ProMaxx2.QA.Api.Controllers;
 /// and carries no <c>[Authorize]</c>/<c>RequireProjectAccess</c> — a CI system has no user JWT, so the caller is
 /// authenticated manually here by hashing the <c>X-Webhook-Token</c> header and looking it up
 /// (<c>AutomationWebhookService.ReceiveBuildAsync</c>), which is also what resolves which project the call is for.</summary>
-[ApiController, Route("api/v1/webhooks/automation/builds")]
+[ApiController, Route("api/v1/webhooks/automation/builds"), AllowAnonymous, EnableRateLimiting("webhook")]
 public sealed class AutomationBuildWebhookController(AutomationWebhookService service) : ControllerBase
 {
     private static ProblemDetails Problem(string title, string detail, int status) => new() { Title = title, Detail = detail, Status = status };

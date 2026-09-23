@@ -9,7 +9,7 @@ namespace ProMaxx2.QA.Api.Controllers;
 [ApiController]
 [Route("api/v1/dashboard")]
 [RequireProjectAccess]
-public sealed class DashboardController(DashboardService dashboard, IDataProtectionProvider dataProtection) : ControllerBase
+public sealed class DashboardController(DashboardService dashboard, IDataProtectionProvider dataProtection, ProMaxx2.QA.Application.Common.ProjectAccessContext projectCtx) : ControllerBase
 {
     private readonly IDataProtector _shareProtector = dataProtection.CreateProtector("ProMaxx2.QA.DashboardShare.v1");
 
@@ -22,18 +22,30 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
     [Authorize(Policy = "ProjectView")]
     public async Task<ActionResult<object>> CreateShareLink([FromBody] DashboardShareRequest request,CancellationToken ct)
     {
+        // ลิงก์แชร์เปิดอ่านได้แบบ anonymous — ต้องผูกกับ Project ที่ผู้สร้างมีสิทธิ์เท่านั้น ถ้าปล่อย ProjectId ว่าง
+        // endpoint shared/* จะไม่มี project filter และคืนข้อมูลของทุก Project ในระบบให้คนนอก
+        if (request.ProjectId is not { } projectId || projectId == Guid.Empty)
+            return BadRequest(new ProblemDetails { Title = "Project is required.", Detail = "กรุณาเลือก Project ก่อนสร้างลิงก์แชร์ Dashboard" });
+        if (!projectCtx.AllowedProjectIds.Contains(projectId))
+            return Forbid();
         // allow share links up to 90 days (2160 hours)
         var expiresAt = DateTimeOffset.UtcNow.AddHours(Math.Clamp(request.ValidHours, 1, 2160));
         var share=await dashboard.CreateShareAsync(request.ProjectId,request.ReleaseId,request.BuildId,expiresAt.UtcDateTime,ct);
         return Ok(new { code = share.Code, expiresAt });
     }
 
+    /// <summary>ยกเลิกลิงก์แชร์ก่อนหมดอายุ — ทำได้เฉพาะลิงก์ของ Project ที่ผู้ใช้เป็นสมาชิก</summary>
+    [HttpDelete("share/{code}")]
+    [Authorize(Policy = "ProjectView")]
+    public async Task<IActionResult> RevokeShareLink(string code, CancellationToken ct)
+        => await dashboard.RevokeShareAsync(code, projectCtx.AllowedProjectIds, ct) ? NoContent() : NotFound();
+
     [HttpGet("shared/{code}")]
     [AllowAnonymous]
     public async Task<ActionResult<DashboardSummary>> GetShortShared(string code,CancellationToken ct)
     {
         var share=await dashboard.FindShareAsync(code,ct);
-        if(share is null)return Unauthorized(new ProblemDetails{Title="Dashboard share link is invalid or expired."});
+        if(share?.ProjectId is null)return Unauthorized(new ProblemDetails{Title="Dashboard share link is invalid or expired."});
         return Ok(await dashboard.GetAsync(share.ProjectId,share.ReleaseId,share.BuildId,ct));
     }
 
@@ -42,7 +54,7 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
     public async Task<ActionResult<DashboardTimeline>> GetShortSharedTimeline(string code,CancellationToken ct)
     {
         var share=await dashboard.FindShareAsync(code,ct);
-        if(share is null)return Unauthorized(new ProblemDetails{Title="Dashboard share link is invalid or expired."});
+        if(share?.ProjectId is null)return Unauthorized(new ProblemDetails{Title="Dashboard share link is invalid or expired."});
         return Ok(await dashboard.GetTimelineAsync(share.ProjectId,share.ReleaseId,share.BuildId,ct));
     }
 
@@ -56,6 +68,8 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
             if (parts.Length != 4 || !long.TryParse(parts[3], out var unix) || DateTimeOffset.FromUnixTimeSeconds(unix) <= DateTimeOffset.UtcNow)
                 return Unauthorized(new ProblemDetails { Title = "Dashboard share link has expired." });
             Guid? Parse(string value) => Guid.TryParse(value, out var id) ? id : null;
+            // token แบบเดิมที่ไม่มี Project จะเปิดข้อมูลทุก Project — ปฏิเสธเหมือน short code
+            if (Parse(parts[0]) is null) return Unauthorized(new ProblemDetails { Title = "Dashboard share link is invalid." });
             return Ok(await dashboard.GetTimelineAsync(Parse(parts[0]), Parse(parts[1]), Parse(parts[2]), ct));
         }
         catch
@@ -74,6 +88,8 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
             if (parts.Length != 4 || !long.TryParse(parts[3], out var unix) || DateTimeOffset.FromUnixTimeSeconds(unix) <= DateTimeOffset.UtcNow)
                 return Unauthorized(new ProblemDetails { Title = "Dashboard share link has expired." });
             Guid? Parse(string value) => Guid.TryParse(value, out var id) ? id : null;
+            // token แบบเดิมที่ไม่มี Project จะเปิดข้อมูลทุก Project — ปฏิเสธเหมือน short code
+            if (Parse(parts[0]) is null) return Unauthorized(new ProblemDetails { Title = "Dashboard share link is invalid." });
             return Ok(await dashboard.GetAsync(Parse(parts[0]), Parse(parts[1]), Parse(parts[2]), ct));
         }
         catch

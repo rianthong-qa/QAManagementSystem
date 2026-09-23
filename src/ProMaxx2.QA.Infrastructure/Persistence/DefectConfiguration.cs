@@ -34,6 +34,23 @@ public sealed class DefectConfiguration : IEntityTypeConfiguration<Defect>
         b.HasOne<Release>().WithMany().HasForeignKey(x => x.ReleaseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Build>().WithMany().HasForeignKey(x => x.BuildId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ProductModule>().WithMany().HasForeignKey(x => x.ModuleId).OnDelete(DeleteBehavior.Restrict);
+        // รายการ Defect กรองตาม Project + IsDeleted แล้วเรียงตาม CreatedAt เสมอ (List/Stats)
+        b.HasIndex(x => new { x.ProjectId, x.IsDeleted, x.CreatedAt });
+    }
+}
+
+public sealed class DefectAttachmentConfiguration : IEntityTypeConfiguration<DefectAttachment>
+{
+    public void Configure(EntityTypeBuilder<DefectAttachment> b)
+    {
+        b.ToTable("DefectAttachments");
+        b.HasKey(x => x.DefectAttachmentId);
+        b.Property(x => x.FileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.StoredFileName).HasMaxLength(300).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(100).IsRequired();
+        b.Property(x => x.UploadedAt).HasPrecision(0);
+        b.HasOne<Defect>().WithMany().HasForeignKey(x => x.DefectId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.DefectId);
     }
 }
 
