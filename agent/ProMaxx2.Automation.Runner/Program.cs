@@ -42,19 +42,34 @@ if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(conf
 }
 
 using var client = new QaHubClient(config);
-
-if (!await client.LoginAsync(CancellationToken.None))
-{
-    Console.Error.WriteLine($"Login ไป QA Hub ล้มเหลว ({config.HubBaseUrl}). ตรวจ Username/Password และสิทธิ์ AUTOMATION.EXECUTE");
-    return 2;
-}
-Console.WriteLine($"[agent] Logged in to {config.HubBaseUrl} as {config.Username}");
-
-await client.RegisterAsync(CancellationToken.None);
-Console.WriteLine($"[agent] Registered agent '{config.AgentCode}' v{config.AgentVersion}");
-
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+// AUT-AGT-001: Hub อาจยังไม่พร้อมตอน Agent เริ่ม (เช่น เปิดเครื่องพร้อมกัน/ Hub restart) — รอแล้วลองใหม่แทนการปิดตัว;
+// ปิดตัวเฉพาะเมื่อ Hub ปฏิเสธ credential จริง ๆ
+var retryDelay = TimeSpan.FromSeconds(5);
+while (true)
+{
+    try
+    {
+        if (!await client.LoginAsync(cts.Token))
+        {
+            Console.Error.WriteLine($"Login ไป QA Hub ล้มเหลว ({config.HubBaseUrl}). ตรวจ Username/Password และสิทธิ์ AUTOMATION.EXECUTE");
+            return 2;
+        }
+        await client.RegisterAsync(cts.Token);
+        break;
+    }
+    catch (OperationCanceledException) { Console.WriteLine("[agent] stopped."); return 0; }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"[agent] QA Hub ยังติดต่อไม่ได้ ({ex.Message}) — ลองใหม่ใน {retryDelay.TotalSeconds:0} วินาที");
+        try { await Task.Delay(retryDelay, cts.Token); } catch (OperationCanceledException) { Console.WriteLine("[agent] stopped."); return 0; }
+        retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, 60));
+    }
+}
+Console.WriteLine($"[agent] Logged in to {config.HubBaseUrl} as {config.Username}");
+Console.WriteLine($"[agent] Registered agent '{config.AgentCode}' v{config.AgentVersion}");
 
 while (!cts.IsCancellationRequested)
 {
@@ -77,7 +92,9 @@ while (!cts.IsCancellationRequested)
     catch (Exception ex)
     {
         Console.Error.WriteLine($"[agent] error: {ex.Message}");
-        await Task.Delay(TimeSpan.FromSeconds(config.HeartbeatSeconds), cts.Token);
+        // Ctrl+C ระหว่างรอต้องจบโปรแกรมอย่างปกติ — เดิม OperationCanceledException จาก Task.Delay ใน catch หลุดออกไปทำให้ crash
+        try { await Task.Delay(TimeSpan.FromSeconds(config.HeartbeatSeconds), cts.Token); }
+        catch (OperationCanceledException) { break; }
     }
 }
 
@@ -427,6 +444,22 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
     log.AppendLine($"AUTOMATION LOG - {package.AutomationCode} (exec {package.AutomationExecutionId})");
     log.AppendLine($"Build: {package.BuildNumber} | DSL v{package.DslVersion} | Started: {DateTime.UtcNow:O}");
     void Log(string line) => log.AppendLine($"{DateTime.UtcNow:HH:mm:ss.fff}  {line}");
+    var completionSent = false;
+
+    // AUT-AGT-001: ส่ง heartbeat "Busy" พร้อม execution ที่กำลังรันเป็นระยะระหว่างทำงาน — Hub มองว่า Agent Offline เมื่อ
+    // ไม่ได้ heartbeat เกิน 60 วินาที เดิมส่งแค่ตอนว่างก่อน claim ทำให้งานยาวเห็น Agent เป็น Offline ทั้งที่ยังรันอยู่
+    using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+    var heartbeatTask = Task.Run(async () =>
+    {
+        while (!heartbeatCts.IsCancellationRequested)
+        {
+            try { await client.HeartbeatAsync("Busy", package.AutomationExecutionId, heartbeatCts.Token); }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { Console.Error.WriteLine($"[job] heartbeat failed: {ex.Message}"); }
+            try { await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, config.HeartbeatSeconds)), heartbeatCts.Token); }
+            catch (OperationCanceledException) { break; }
+        }
+    });
 
     try
     {
@@ -442,6 +475,7 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
         if (dsl?.Steps is null || dsl.Steps.Count == 0)
         {
             Log("DSL has no steps.");
+            completionSent = true;
             await client.CompleteAsync(package.AutomationExecutionId, "Failed", "AutomationFailure", "AUT-DSL-001", "DSL has no steps.", ct);
             await UploadLogAsync(client, package, log, ct);
             return;
@@ -481,6 +515,7 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
         var errorCode = overall ? null : (failedStep?.ErrorCode ?? "AUT-UI-003");
         var errorMessage = overall ? null : (failedStep?.ErrorMessage ?? "One or more automation steps failed.");
         log.AppendLine($"Result: {status} in {(DateTime.UtcNow - started).TotalSeconds:0.0}s");
+        completionSent = true;
         await client.CompleteAsync(package.AutomationExecutionId, status, failureType, errorCode, errorMessage, ct);
         await UploadLogAsync(client, package, log, ct);
         Console.WriteLine($"[job] {package.AutomationCode} => {status} ({(DateTime.UtcNow - started).TotalSeconds:0.0}s)");
@@ -491,10 +526,16 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
         Console.Error.WriteLine($"[job] fatal: {ex.Message}");
         try
         {
-            await client.CompleteAsync(package.AutomationExecutionId, "Failed", "AgentFailure", "AUT-AGENT-001", ex.Message, CancellationToken.None);
+            // ถ้าส่งผลสรุปไปแล้วแต่ขั้นหลังจากนั้นล้ม (เช่นอัปโหลด log) ห้ามส่ง AgentFailure ทับผลจริงอีกรอบ
+            if (!completionSent) await client.CompleteAsync(package.AutomationExecutionId, "Failed", "AgentFailure", "AUT-AGENT-001", ex.Message, CancellationToken.None);
             await UploadLogAsync(client, package, log, CancellationToken.None);
         }
         catch { }
+    }
+    finally
+    {
+        heartbeatCts.Cancel();
+        try { await heartbeatTask; } catch { }
     }
 }
 

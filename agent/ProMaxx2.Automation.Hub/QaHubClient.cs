@@ -27,24 +27,39 @@ public sealed record SeedRunPackage(Guid AutomationDataSeedRunId, string ScriptN
 
 public sealed class QaHubClient : IDisposable
 {
-    private readonly HttpClient _http = new();
+    private readonly HttpClient _http;
     private readonly AgentConfig _config;
     private string? _token;
 
-    public QaHubClient(AgentConfig config) => _config = config;
+    public QaHubClient(AgentConfig config) : this(config, null) { }
+
+    /// <summary><paramref name="innerHandler"/> ใช้แทน network จริงใน test</summary>
+    public QaHubClient(AgentConfig config, HttpMessageHandler? innerHandler, Func<int, TimeSpan>? backoff = null)
+    {
+        _config = config;
+        // AUT-AGT-001: token ถูกใส่ต่อ request โดย HubResilienceHandler (ไม่ใช้ DefaultRequestHeaders) เพื่อให้ login ใหม่แล้ว
+        // request ถัดไปและ request ที่ส่งซ้ำได้ token ใหม่ทันที
+        async Task<string?> Relogin(CancellationToken ct) => await LoginAsync(ct) ? _token : null;
+        var handler = backoff is null
+            ? new HubResilienceHandler(Relogin, () => _token, innerHandler)
+            : new HubResilienceHandler(Relogin, () => _token, innerHandler) { Backoff = backoff };
+        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
+    }
 
     public void Dispose() => _http.Dispose();
 
+    /// <summary>true = login สำเร็จ, false = Hub ปฏิเสธ credential (400/401/403). Hub ติดต่อไม่ได้หรือตอบผิดปกติจะ throw
+    /// เพื่อให้ผู้เรียกแยกได้ว่าควรหยุด (รหัสผิด) หรือรอแล้วลองใหม่ (Hub ล่ม/เครือข่ายขาด)</summary>
     public async Task<bool> LoginAsync(CancellationToken ct)
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/auth/login", new { username = _config.Username, password = _config.Password }, ct);
-        if (!response.IsSuccessStatusCode) return false;
+        if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden) return false;
+        response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(ct);
         var doc = JsonSerializer.Deserialize<JsonElement>(json);
         var token = doc.TryGetProperty("accessToken", out var at) ? at.GetString() : doc.TryGetProperty("token", out var tk) ? tk.GetString() : null;
         if (string.IsNullOrWhiteSpace(token)) return false;
         _token = token;
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return true;
     }
 

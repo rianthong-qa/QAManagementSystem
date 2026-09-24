@@ -53,7 +53,9 @@ public sealed class ActionExecutor
         }
         catch (OperationCanceledException)
         {
-            return new StepOutcome(false, null, "AUT-UI-003", "Execution cancelled.", null, startedAt, DateTime.UtcNow, [new EvidenceAttachment(await CaptureFailScreenshot(driver) ?? [], $"step{step.StepNo}.png", "Screenshot")]);
+            // ไม่แนบไฟล์ว่างเมื่อจับภาพไม่ได้ (เดิมอัปโหลด screenshot 0 byte)
+            var cancelledShot = await CaptureFailScreenshot(driver);
+            return new StepOutcome(false, null, "AUT-UI-003", "Execution cancelled.", null, startedAt, DateTime.UtcNow, cancelledShot is null ? null : [new EvidenceAttachment(cancelledShot, $"step{step.StepNo}.png", "Screenshot")]);
         }
         catch (Exception ex)
         {
@@ -112,7 +114,8 @@ public sealed class ActionExecutor
         "EXPECT_STOCK" => await ExpectStockAsync(step, ctx),
         "EXPECT_LOT" => await ExpectLotAsync(step, ctx),
         "EXPECT_TRANSACTION" => await ExpectTransactionAsync(step, ctx),
-        _ => throw new InvalidOperationException($"Unsupported action '{action}' in this agent version."),
+        // AUT-AGENT-002: ให้ Hub แยกได้ว่าเป็นเพราะ Agent เวอร์ชันเก่ากว่า Action Library ไม่ใช่ UI ของ AUT ผิดปกติ
+        _ => throw new InvalidOperationException($"Unsupported action '{action}' in this agent version (AUT-AGENT-002)."),
     };
 
     private async Task<bool> LoginAsync(DslStep step, IActionContext ctx)
@@ -211,10 +214,12 @@ public sealed class ActionExecutor
 
     private Task<bool> WaitScreenAsync(DslStep step, IActionContext ctx)
     {
+        // AUT-AGT-002: รอหน้าจอที่ระบุจริง (title/AutomationId ของ screen) — เดิมส่ง MachineName เป็นชื่อ process แล้วผ่านทันที
         var screen = step.Parameters.GetValueOrDefault("screen");
-        var window = ctx.Resolve(screen)?.ScreenCode ?? screen;
-        if (string.IsNullOrWhiteSpace(window)) return Task.FromResult(false);
-        return ctx.Driver.WaitForMainWindowAsync(_config.MachineName, ctx.Config.ActionTimeout);
+        var obj = ctx.Resolve(screen);
+        var target = obj?.AutomationId ?? obj?.ScreenCode ?? screen;
+        if (string.IsNullOrWhiteSpace(target)) return Task.FromResult(false);
+        return ctx.Driver.WaitForWindowAsync(target, ctx.Config.ActionTimeout);
     }
 
     private async Task<bool> ExpectMessageAsync(DslStep step, IActionContext ctx)
@@ -237,16 +242,25 @@ public sealed class ActionExecutor
     {
         var obj = ResolveRequired(step, ctx, null);
         if (obj is null) return false;
-        var exists = await ctx.Driver.ExistsAsync(obj.AutomationId!, obj.ControlType, ctx.Config.ActionTimeout);
-        return exists == visible;
+        if (visible) return await ctx.Driver.ExistsAsync(obj.AutomationId!, obj.ControlType, ctx.Config.ActionTimeout);
+        // EXPECT_NOT_VISIBLE: ตรวจถี่ ๆ ด้วย timeout สั้นจนกว่า control จะหาย — เดิมต้องรอครบ ActionTimeout ทุกครั้งก่อนผ่าน
+        var deadline = DateTime.UtcNow + ctx.Config.ActionTimeout;
+        do
+        {
+            if (!await ctx.Driver.ExistsAsync(obj.AutomationId!, obj.ControlType, TimeSpan.FromMilliseconds(300))) return true;
+            await Task.Delay(TimeSpan.FromMilliseconds(500), ctx.Cancellation);
+        } while (DateTime.UtcNow < deadline);
+        return false;
     }
 
     private async Task<bool> ExpectEnabledAsync(DslStep step, IActionContext ctx, bool expectDisabled = false)
     {
         var obj = ResolveRequired(step, ctx, null);
         if (obj is null) return false;
-        var exists = await ctx.Driver.ExistsAsync(obj.AutomationId!, obj.ControlType, ctx.Config.ActionTimeout);
-        return expectDisabled ? !exists : exists;
+        // AUT-AGT-002: ตรวจ IsEnabled จริง — เดิมตรวจแค่ว่ามี control ทำให้ EXPECT_DISABLED ผ่านเมื่อ control หายไป (ผ่านเท็จ)
+        var enabled = await ctx.Driver.IsEnabledAsync(obj.AutomationId!, obj.ControlType, ctx.Config.ActionTimeout);
+        if (enabled is null) return false;
+        return expectDisabled ? enabled == false : enabled == true;
     }
 
     private ObjectDescriptor? ResolveRequired(DslStep step, IActionContext ctx, string? fallback)
