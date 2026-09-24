@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { formatThaiDateTime } from "./dateTime";
 import { apiUrl } from "./api";
 import {
@@ -13,6 +13,22 @@ import {
 } from "./automationUtils";
 
 const token = () => localStorage.getItem("qa.accessToken");
+// AUT-UI-001: โหลดข้อมูลแบบแยก "โหลดไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" — เดิม `r.ok ? r.json() : []` ทำให้ 401/403/500 แสดงเป็น empty state
+const fetchJson = async (url: string, headers: Record<string, string>, signal?: AbortSignal) => {
+  const r = await fetch(url, { headers, signal });
+  if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? `HTTP ${r.status}`); }
+  return r.json();
+};
+const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortError";
+/** AUT-UI-001: หน่วงค่าที่พิมพ์ในช่องค้นหาก่อนยิง API — เดิมยิงทุกตัวอักษรและผลของคำขอเก่าอาจมาทับคำขอใหม่ */
+function useDebounced<T>(value: T, delayMs = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
 // Generate-with-AI เรียก AI provider จริง (opencode/OpenAI/ฯลฯ) ซึ่งบาง provider/model ตอบช้ามาก หรือค้างไม่ตอบเลย
 // backend เองมี timeout อยู่แล้วที่ 5 นาที แต่ฝั่งนี้ไม่เคยมี timeout เลยมาก่อน ทำให้ปุ่มค้างแบบไม่มี feedback
 // ใดๆ ให้ผู้ใช้เห็นเลยถ้า provider ไม่ตอบ — ตัดที่ 90 วินาทีแทน ให้พอสำหรับ AI ทั่วไปแต่ไม่ปล่อยให้ค้างเป็นนาทีๆ
@@ -233,9 +249,9 @@ const taskClass = (text: string, tab: string) => {
 const taskIcon = (tab: string) => (tab === "execution" ? "!" : tab === "suites" ? "▶" : tab === "manage" || tab === "agents" ? "◉" : "▤");
 
 export function AutomationPage({
-  projectId, releaseId, buildId, canEdit, canValidate, canApprove, canRun, canManage, canViewEvidence, canGenerateAi,
+  projectId, releaseId, buildId, canEdit, canValidate, canApprove, canRun, canManage, canViewEvidence, canGenerateAi, canCreateDefect,
 }: {
-  projectId?: string; releaseId?: string; buildId?: string; canView: boolean; canEdit: boolean; canValidate: boolean; canApprove: boolean; canRun: boolean; canManage: boolean; canViewEvidence: boolean; canGenerateAi: boolean;
+  projectId?: string; releaseId?: string; buildId?: string; canView: boolean; canEdit: boolean; canValidate: boolean; canApprove: boolean; canRun: boolean; canManage: boolean; canViewEvidence: boolean; canGenerateAi: boolean; canCreateDefect: boolean;
 }) {
   const [tab, setTab] = useState("dashboard");
   const [headSearch, setHeadSearch] = useState("");
@@ -308,24 +324,32 @@ export function AutomationPage({
 
   const pid = projectId ?? "";
 
+  // AUT-UI-001: ผลจำแนก/วิเคราะห์ AI/Defect เป็นของ execution ใดตัวหนึ่ง — เปลี่ยน execution ต้องล้าง ไม่ให้ผลของตัวก่อนค้างใน modal
+  const execDetailId = execDetail?.automationExecutionId;
+  useEffect(() => { setClassification(null); setAiAnalysis(null); setDefectResult(""); setClassifyBusy(""); }, [execDetailId]);
+
   useEffect(() => {
     if (!pid) { setCases([]); setObjects([]); setExecutions([]); setDash(null); return; }
     const h = { Authorization: `Bearer ${token()}` };
+    const ctrl = new AbortController();
+    const signal = ctrl.signal;
+    // endpoint เสริม (flaky/retry-policy/agents/actions) อาจตอบ 403 ตามสิทธิ์ — ใช้ค่าว่างได้; ส่วน cases/jobs/executions/dashboard ต้องแจ้ง error
+    const optional = (url: string, fallback: unknown) => fetch(url, { headers: h, signal }).then((r) => (r.ok ? r.json() : fallback));
     setError("");
     // Cases/jobs/executions here deliberately stay a flat "up to 200" load (AUT-P2-001 kept this shared, cross-
     // cutting fetch as-is) — it feeds dashboard KPIs, CSV export, and the batch-run/suite case pickers, none of
     // which need true pagination. The three endpoints now always return a PagedResult ({total, rows}) — see
     // AutomationCasesTab/ExecutionTab below for the components that fetch real server-paginated pages of their own.
     Promise.all([
-      fetch(`${apiUrl}/automation/cases?projectId=${pid}&page=1&size=200`, { headers: h }).then((r) => (r.ok ? r.json() : { rows: [] })),
-      fetch(`${apiUrl}/automation/objects?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/jobs?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&page=1&size=200`, { headers: h }).then((r) => (r.ok ? r.json() : { rows: [] })),
-      fetch(`${apiUrl}/automation/executions?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&page=1&size=200`, { headers: h }).then((r) => (r.ok ? r.json() : { rows: [] })),
-      fetch(`${apiUrl}/automation/agents`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/actions`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/dashboard?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
-      fetch(`${apiUrl}/automation/cases/flaky-candidates?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/settings/retry-policy`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
+      fetchJson(`${apiUrl}/automation/cases?projectId=${pid}&page=1&size=200`, h, signal),
+      optional(`${apiUrl}/automation/objects?projectId=${pid}`, []),
+      fetchJson(`${apiUrl}/automation/jobs?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&page=1&size=200`, h, signal),
+      fetchJson(`${apiUrl}/automation/executions?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&page=1&size=200`, h, signal),
+      optional(`${apiUrl}/automation/agents`, []),
+      optional(`${apiUrl}/automation/actions`, []),
+      fetchJson(`${apiUrl}/automation/dashboard?projectId=${pid}`, h, signal),
+      optional(`${apiUrl}/automation/cases/flaky-candidates?projectId=${pid}`, []),
+      optional(`${apiUrl}/automation/settings/retry-policy`, null),
     ])
       .then(([c, o, j, e, a, ac, d, fk, rp]) => {
         setCases(Array.isArray(c?.rows) ? c.rows : []);
@@ -336,9 +360,10 @@ export function AutomationPage({
         setActions(Array.isArray(ac) ? ac : []);
         setDash(d && typeof d === "object" && d.automationCases != null ? d : null);
         setFlakyCandidates(Array.isArray(fk) ? fk : []);
-        setRetryPolicy(rp && typeof rp === "object" ? rp : null);
+        setRetryPolicy(rp && typeof rp === "object" ? (rp as RetryPolicyItem) : null);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "โหลดข้อมูล Automation ไม่สำเร็จ"));
+      .catch((err) => { if (!isAbort(err)) setError(`โหลดข้อมูล Automation ไม่สำเร็จ${err instanceof Error ? ` (${err.message})` : ""} — ข้อมูลที่แสดงอาจไม่ครบ`); });
+    return () => ctrl.abort();
   }, [pid, buildId, reload]);
 
   const openCase = async (item: AutomationCaseItem) => {
@@ -736,7 +761,7 @@ export function AutomationPage({
 
   const runClassify = async () => {
     if (!execDetail) return;
-    setClassifyBusy("classify"); setClassification(null); setAiAnalysis(null); setDefectResult("");
+    setClassifyBusy("classify"); setClassification(null);
     try {
       const r = await fetch(`${apiUrl}/automation/executions/${execDetail.automationExecutionId}/classify?projectId=${pid}`, { method: "POST", headers: { Authorization: `Bearer ${token()}` } });
       if (!r.ok) throw new Error("จำแนก Fail ไม่สำเร็จ");
@@ -755,13 +780,19 @@ export function AutomationPage({
   };
 
   const runCreateDefect = async () => {
-    if (!execDetail) return;
+    if (!execDetail || execDetail.defectId || defectResult) return;
+    if (!window.confirm(`สร้าง Defect จาก Execution "${execDetail.automationCode}" (Build ${execDetail.buildNumber}) ?`)) return;
+    const executionId = execDetail.automationExecutionId;
     setClassifyBusy("defect");
     try {
       const r = await fetch(`${apiUrl}/automation/executions/${execDetail.automationExecutionId}/defect?projectId=${pid}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` }, body: JSON.stringify({ classification: aiAnalysis?.classification ?? null, severity: "High", title: null, description: null }) });
       if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Defect ไม่สำเร็จ"); }
       const d = await r.json();
       setDefectResult(d.defectCode);
+      // เชื่อม defect กับ execution ใน state ทันที — ปุ่ม "สร้าง Defect" จะหายไปทั้งใน modal และเมื่อเปิดซ้ำจากรายการ
+      const link = (x: AutomationExecutionItem) => (x.automationExecutionId === executionId ? { ...x, defectId: d.defectId ?? x.defectId ?? executionId } : x);
+      setExecDetail((prev) => (prev ? link(prev) : prev));
+      setExecutions((prev) => prev.map(link));
       setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Defect ไม่สำเร็จ"); } finally { setClassifyBusy(""); }
   };
@@ -868,6 +899,8 @@ export function AutomationPage({
   const casePageSize = 15;
   const [casesPaged, setCasesPaged] = useState<{ total: number; rows: AutomationCaseItem[] }>({ total: 0, rows: [] });
   const [caseSortBy, setCaseSortBy] = useState("created");
+  const [casesError, setCasesError] = useState("");
+  const debouncedHeadSearch = useDebounced(headSearch.trim());
   const casePageCount = Math.max(1, Math.ceil(casesPaged.total / casePageSize));
   useEffect(() => setCasePage(1), [headSearch, caseStatusFilter, caseTargetFilter, caseSortBy]);
   // เลือกได้เฉพาะแถวในหน้าปัจจุบัน — ล้างการเลือกทุกครั้งที่เปลี่ยนหน้า/ตัวกรอง กันเลือก Case จากหน้าอื่นค้างไว้
@@ -899,15 +932,16 @@ export function AutomationPage({
   };
   useEffect(() => {
     if (!pid) { setCasesPaged({ total: 0, rows: [] }); return; }
+    const ctrl = new AbortController();
     const qs = new URLSearchParams({ projectId: pid, page: String(casePage), size: String(casePageSize), sortBy: caseSortBy });
-    if (headSearch.trim()) qs.set("search", headSearch.trim());
+    if (debouncedHeadSearch) qs.set("search", debouncedHeadSearch);
     if (caseStatusFilter !== "all") qs.set("status", caseStatusFilter);
     if (caseTargetFilter !== "all") qs.set("automationTarget", caseTargetFilter);
-    fetch(`${apiUrl}/automation/cases?${qs}`, { headers })
-      .then((r) => (r.ok ? r.json() : { total: 0, rows: [] }))
-      .then((d) => setCasesPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }))
-      .catch(() => setCasesPaged({ total: 0, rows: [] }));
-  }, [pid, casePage, casePageSize, headSearch, caseStatusFilter, caseTargetFilter, caseSortBy, headers, reload]);
+    fetchJson(`${apiUrl}/automation/cases?${qs}`, headers, ctrl.signal)
+      .then((d) => { setCasesError(""); setCasesPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }); })
+      .catch((e) => { if (!isAbort(e)) setCasesError("โหลดรายการ Automation Case ไม่สำเร็จ"); });
+    return () => ctrl.abort();
+  }, [pid, casePage, casePageSize, debouncedHeadSearch, caseStatusFilter, caseTargetFilter, caseSortBy, headers, reload]);
 
   const hasActiveWork = kRunning > 0 || jobs.some((j) => j.status === "Queued" || j.status === "Assigned" || j.status === "Running");
   useEffect(() => {
@@ -1139,6 +1173,7 @@ export function AutomationPage({
               <button type="button" className="bulk-clear" disabled={bulkDeleteBusy} onClick={() => setSelectedCaseIds(new Set())}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิกเลือก</button>
             </div>
           )}
+          {casesError && <div className="inline-alert error" role="alert"><span>{casesError}</span><button type="button" className="btn" onClick={() => setReload((v) => v + 1)}>ลองใหม่</button></div>}
           {casesPaged.rows.length ? <div className="table-wrap"><table><thead><tr>{canManage && <th className="case-select-col"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={allCasesOnPageSelected} onChange={toggleSelectAllCasesOnPage} /></th>}<th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th className="actions-col">จัดการ</th></tr></thead><tbody>{casesPaged.rows.map((c) => <tr key={c.automationCaseId} className={selectedCaseIds.has(c.automationCaseId) ? "is-selected" : ""}>{canManage && <td className="case-select-col" data-label="เลือก"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selectedCaseIds.has(c.automationCaseId)} onChange={() => toggleCaseSelected(c.automationCaseId)} /></td>}<td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td className="actions-col"><button className="table-action icon-only" title="รายละเอียด" aria-label={`รายละเอียด ${c.automationCode}`} onClick={() => openCase(c)}><span className="material-symbols-outlined" aria-hidden="true">info</span></button></td></tr>)}</tbody></table></div>
             : <div className="empty"><p>ไม่พบ Automation Case ที่ตรงเงื่อนไข</p><small>ลองเปลี่ยนคำค้นหาหรือตัวกรองด้านบน</small></div>}
           {casesPaged.total > casePageSize && <Pager page={casePage} count={casePageCount} total={casesPaged.total} pageSize={casePageSize} onPrev={() => setCasePage((p) => Math.max(1, p - 1))} onNext={() => setCasePage((p) => Math.min(casePageCount, p + 1))} />}
@@ -1397,13 +1432,13 @@ export function AutomationPage({
         <div className="automation-section-head"><h3>Failure Analysis (G9)</h3><div className="automation-failure-actions">
           <button className="btn" disabled={classifyBusy !== ""} onClick={runClassify}>{classifyBusy === "classify" ? "กำลังจำแนก..." : "จำแนก Fail"}</button>
           {canGenerateAi && <button className="btn" disabled={classifyBusy !== ""} onClick={runAnalyze}>{classifyBusy === "analyze" ? "AI กำลังวิเคราะห์..." : "วิเคราะห์ด้วย AI"}</button>}
-          {canEdit && !execDetail.defectId && <button className="btn danger" disabled={classifyBusy !== ""} onClick={runCreateDefect}>{classifyBusy === "defect" ? "กำลังสร้าง..." : "สร้าง Defect"}</button>}
+          {canCreateDefect && !execDetail.defectId && !defectResult && <button className="btn danger" disabled={classifyBusy !== ""} onClick={runCreateDefect}>{classifyBusy === "defect" ? "กำลังสร้าง..." : "สร้าง Defect"}</button>}
         </div></div>
         {execDetail.classifiedFailureType && !classification && <div className="automation-failure-row"><Badge tone={failureTone[execDetail.classifiedFailureType] ?? "blue"}>{execDetail.classifiedFailureType}</Badge><span>จำแนกอัตโนมัติตอน Complete</span><span>แนะนำ: {execDetail.classifiedRecommendation}</span></div>}
         {classification && <div className="automation-failure-row"><Badge tone={failureTone[classification.failureType] ?? "blue"}>{classification.failureType}</Badge><span>Product Defect Candidate: {classification.isProductDefectCandidate ? "ใช่" : "ไม่ใช่"}</span><span>แนะนำ: {classification.recommendation}</span>{classification.detail && <small>{classification.detail}</small>}</div>}
         {aiAnalysis && <div className="automation-failure-row"><Badge tone={failureTone[aiAnalysis.classification] ?? "blue"}>{aiAnalysis.classification}</Badge><span>AI Confidence {(aiAnalysis.confidence * 100).toFixed(0)}%</span><span>แนะนำ: {aiAnalysis.recommendation}</span><small>{aiAnalysis.summary}</small></div>}
         {defectResult && <div className="inline-alert success"><span>สร้าง Defect แล้ว: <b>{defectResult}</b> — เปิดหน้า Defect เพื่อดูรายละเอียด</span></div>}
-        {execDetail.defectId && <p className="muted-text">สร้าง Defect แล้ว (Execution เชื่อมกับ Defect แล้ว)</p>}
+        {execDetail.defectId && !defectResult && <p className="muted-text">สร้าง Defect แล้ว (Execution เชื่อมกับ Defect แล้ว)</p>}
       </section>}
       <div className="automation-result-list">{execDetail.stepResults.length ? execDetail.stepResults.map((s) => <article key={s.automationStepResultId} className="automation-result-card">
         <div><b>Step {s.stepNo} · {s.actionCode}</b><Badge tone={s.status === "Pass" ? "green" : s.status === "Fail" ? "red" : "yellow"}>{s.status}</Badge></div>
@@ -1921,6 +1956,8 @@ function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, hea
   const kpiFailed = executions.filter((e) => e.status === "Failed").length;
   useEffect(() => setExecPage(1), [execSearch, execFilter, execFrom, execTo, execBuildFilter, execEnvironmentFilter, execAgentFilter, execTargetFilter, execFailureTypeFilter]);
   useEffect(() => setJobPage(1), [buildId]);
+  const [listError, setListError] = useState("");
+  const debouncedExecSearch = useDebounced(execSearch.trim());
 
   useEffect(() => {
     let mounted = true;
@@ -1937,16 +1974,18 @@ function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, hea
 
   useEffect(() => {
     if (!projectId) { setJobsPaged({ total: 0, rows: [] }); return; }
+    const ctrl = new AbortController();
     const qs = new URLSearchParams({ projectId, page: String(jobPage), size: String(pageSize) });
     if (buildId) qs.set("buildId", buildId);
-    fetch(`${apiUrl}/automation/jobs?${qs}`, { headers })
-      .then((r) => (r.ok ? r.json() : { total: 0, rows: [] }))
+    fetchJson(`${apiUrl}/automation/jobs?${qs}`, headers, ctrl.signal)
       .then((d) => setJobsPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }))
-      .catch(() => setJobsPaged({ total: 0, rows: [] }));
+      .catch((e) => { if (!isAbort(e)) setListError("โหลด Execution Queue ไม่สำเร็จ"); });
+    return () => ctrl.abort();
   }, [projectId, buildId, jobPage, headers, reload]);
 
   useEffect(() => {
     if (!projectId) { setExecPaged({ total: 0, rows: [] }); return; }
+    const ctrl = new AbortController();
     const qs = new URLSearchParams({ projectId, page: String(execPage), size: String(pageSize) });
     if (execBuildFilter || buildId) qs.set("buildId", execBuildFilter || buildId!);
     if (execEnvironmentFilter) qs.set("environmentId", execEnvironmentFilter);
@@ -1956,14 +1995,16 @@ function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptions, hea
     if (execFailureTypeFilter) qs.set("failureType", execFailureTypeFilter);
     if (execFrom) qs.set("from", new Date(execFrom).toISOString());
     if (execTo) qs.set("to", new Date(execTo).toISOString());
-    if (execSearch.trim()) qs.set("search", execSearch.trim());
-    fetch(`${apiUrl}/automation/executions?${qs}`, { headers })
-      .then((r) => (r.ok ? r.json() : { total: 0, rows: [] }))
+    if (debouncedExecSearch) qs.set("search", debouncedExecSearch);
+    setListError("");
+    fetchJson(`${apiUrl}/automation/executions?${qs}`, headers, ctrl.signal)
       .then((d) => setExecPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }))
-      .catch(() => setExecPaged({ total: 0, rows: [] }));
-  }, [projectId, buildId, execPage, execFilter, execSearch, execFrom, execTo, execBuildFilter, execEnvironmentFilter, execAgentFilter, execTargetFilter, execFailureTypeFilter, headers, reload]);
+      .catch((e) => { if (!isAbort(e)) setListError("โหลดผลการรัน (Run History) ไม่สำเร็จ"); });
+    return () => ctrl.abort();
+  }, [projectId, buildId, execPage, execFilter, debouncedExecSearch, execFrom, execTo, execBuildFilter, execEnvironmentFilter, execAgentFilter, execTargetFilter, execFailureTypeFilter, headers, reload]);
 
   return <section className="automation-execution" aria-label="Automation Execution">
+    {listError && <div className="inline-alert error" role="alert"><span>{listError}</span></div>}
     <header className="automation-section-head"><div><h2>Execution Queue & Run History</h2><p>ติดตามงานที่ Agent รับไปรัน และผลลัพธ์ทั้งหมด — รองรับข้อมูลจำนวนมากด้วยค้นหา/กรอง/แบ่งหน้าฝั่ง Server</p></div></header>
     <div className="automation-kpis">
       <div><small>Queued</small><strong>{queuedJobs.length}</strong><span>รอ Agent รับ</span></div>
@@ -2024,6 +2065,7 @@ function ExecutionTrendChart({ projectId, releaseId, headers, onDrillDown }: {
   const [drillReleaseId, setDrillReleaseId] = useState("");
   const [trend, setTrend] = useState<{ groupBy: string; buckets: ExecutionTrendBucket[] }>({ groupBy: "day", buckets: [] });
   const [busy, setBusy] = useState(false);
+  const [trendError, setTrendError] = useState("");
 
   useEffect(() => {
     if (!projectId) { setTrend({ groupBy, buckets: [] }); return; }
@@ -2031,11 +2073,13 @@ function ExecutionTrendChart({ projectId, releaseId, headers, onDrillDown }: {
     const qs = new URLSearchParams({ projectId, groupBy });
     const effectiveRelease = drillReleaseId || releaseId;
     if (effectiveRelease && groupBy !== "release") qs.set("releaseId", effectiveRelease);
-    fetch(`${apiUrl}/automation/executions/trend?${qs}`, { headers })
-      .then((r) => (r.ok ? r.json() : { groupBy, buckets: [] }))
+    const ctrl = new AbortController();
+    setTrendError("");
+    fetchJson(`${apiUrl}/automation/executions/trend?${qs}`, headers, ctrl.signal)
       .then((d) => setTrend(d && typeof d === "object" && Array.isArray(d.buckets) ? d : { groupBy, buckets: [] }))
-      .catch(() => setTrend({ groupBy, buckets: [] }))
-      .finally(() => setBusy(false));
+      .catch((e) => { if (!isAbort(e)) { setTrend({ groupBy, buckets: [] }); setTrendError("โหลดกราฟแนวโน้มไม่สำเร็จ"); } })
+      .finally(() => { if (!ctrl.signal.aborted) setBusy(false); });
+    return () => ctrl.abort();
   }, [projectId, releaseId, groupBy, drillReleaseId, headers]);
 
   const changeGroupBy = (g: "day" | "build" | "release") => { setGroupBy(g); setDrillReleaseId(""); };
@@ -2061,6 +2105,7 @@ function ExecutionTrendChart({ projectId, releaseId, headers, onDrillDown }: {
         </select>
       </div>
     </div>
+    {trendError && <div className="inline-alert error" role="alert"><span>{trendError}</span></div>}
     {busy ? <div className="empty"><div className="spinner" /><p>กำลังโหลด...</p></div> : trend.buckets.length ? <>
       <div className="automation-trend-chart-wrap">
         <svg className="automation-trend-chart" width={trend.buckets.length * (barWidth * 2 + gap) + gap} height={chartHeight + 34} role="img" aria-label="กราฟแนวโน้ม Pass / Fail / Flaky">
@@ -2102,6 +2147,7 @@ function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDet
   const [breakdown, setBreakdown] = useState<FailureBreakdownItem | null>(null);
   const [rows, setRows] = useState<AutomationExecutionItem[]>([]);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     if (!releaseId) return;
@@ -2117,10 +2163,15 @@ function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDet
     if (buildId) qs.set("buildId", buildId);
     if (agentId) qs.set("agentId", agentId);
     if (failureType) qs.set("failureType", failureType);
+    const ctrl = new AbortController();
+    setLoadError("");
     Promise.all([
-      fetch(`${apiUrl}/automation/failures/dashboard?${qs}`, { headers }).then((r) => (r.ok ? r.json() : null)),
-      fetch(`${apiUrl}/automation/failures/executions?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])),
-    ]).then(([b, e]) => { setBreakdown(b); setRows(Array.isArray(e) ? e : []); }).finally(() => setBusy(false));
+      fetchJson(`${apiUrl}/automation/failures/dashboard?${qs}`, headers, ctrl.signal),
+      fetchJson(`${apiUrl}/automation/failures/executions?${qs}`, headers, ctrl.signal),
+    ]).then(([b, e]) => { setBreakdown(b); setRows(Array.isArray(e) ? e : []); })
+      .catch((err) => { if (!isAbort(err)) setLoadError("โหลด Failure Dashboard ไม่สำเร็จ"); })
+      .finally(() => { if (!ctrl.signal.aborted) setBusy(false); });
+    return () => ctrl.abort();
   }, [projectId, from, to, buildId, agentId, failureType, headers]);
 
   const clearFilters = () => { setFrom(""); setTo(""); setBuildId(""); setAgentId(""); setFailureType(""); };
@@ -2128,6 +2179,7 @@ function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDet
 
   return <section className="automation-execution" aria-label="Failure Dashboard">
     <header className="automation-section-head"><div><h2>Failure Dashboard</h2><p>วิเคราะห์ Execution ที่ Fail ตาม Failure Type / Build / Agent / วันที่ พร้อม drill down</p></div></header>
+    {loadError && <div className="inline-alert error" role="alert"><span>{loadError}</span></div>}
     <div className="automation-run-toolbar automation-advanced-filters">
       <label>จาก<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="วันที่เริ่ม" /></label>
       <label>ถึง<input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="วันที่สิ้นสุด" /></label>
@@ -2190,7 +2242,9 @@ function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, ca
     const qs = new URLSearchParams({ projectId });
     if (search.trim()) qs.set("search", search.trim());
     if (activeFilter !== "all") qs.set("isActive", activeFilter === "active" ? "true" : "false");
-    fetch(`${apiUrl}/automation/suites?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setSuites(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Automation Suite ไม่สำเร็จ"));
+    const ctrl = new AbortController();
+    fetchJson(`${apiUrl}/automation/suites?${qs}`, headers, ctrl.signal).then((s) => setSuites(Array.isArray(s) ? s : [])).catch((e) => !isAbort(e) && setError("โหลด Automation Suite ไม่สำเร็จ"));
+    return () => ctrl.abort();
   }, [projectId, search, activeFilter, headers, reload]);
 
   const refreshDetail = async (id: string) => {
@@ -2404,7 +2458,9 @@ function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, agents,
     if (!projectId) return;
     const qs = new URLSearchParams({ projectId });
     if (activeFilter !== "all") qs.set("isActive", activeFilter === "active" ? "true" : "false");
-    fetch(`${apiUrl}/automation/schedules?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setSchedules(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Schedule ไม่สำเร็จ"));
+    const ctrl = new AbortController();
+    fetchJson(`${apiUrl}/automation/schedules?${qs}`, headers, ctrl.signal).then((s) => setSchedules(Array.isArray(s) ? s : [])).catch((e) => !isAbort(e) && setError("โหลด Schedule ไม่สำเร็จ"));
+    return () => ctrl.abort();
   }, [projectId, activeFilter, headers, reload]);
 
   useEffect(() => {
@@ -2633,7 +2689,9 @@ function AutomationBuildTriggerTab({ projectId, headers, canEdit, agents }: {
 
   useEffect(() => {
     if (!projectId) return;
-    fetch(`${apiUrl}/automation/build-triggers?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((p) => setPolicies(Array.isArray(p) ? p : [])).catch(() => setError("โหลด Build Trigger ไม่สำเร็จ"));
+    const ctrl = new AbortController();
+    fetchJson(`${apiUrl}/automation/build-triggers?projectId=${projectId}`, headers, ctrl.signal).then((p) => setPolicies(Array.isArray(p) ? p : [])).catch((e) => !isAbort(e) && setError("โหลด Build Trigger ไม่สำเร็จ"));
+    return () => ctrl.abort();
   }, [projectId, headers, reload]);
 
   const createPolicy = async (body: Record<string, unknown>) => {
@@ -2753,8 +2811,11 @@ function AutomationWebhookTab({ projectId, headers, canEdit }: { projectId: stri
 
   useEffect(() => {
     if (!projectId) return;
-    fetch(`${apiUrl}/automation/webhook-tokens?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((t) => setTokens(Array.isArray(t) ? t : [])).catch(() => setError("โหลด Webhook Token ไม่สำเร็จ"));
-    fetch(`${apiUrl}/automation/webhook-tokens/deliveries?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((d) => setDeliveries(Array.isArray(d) ? d : [])).catch(() => setError("โหลดประวัติ Webhook ไม่สำเร็จ"));
+    const ctrl = new AbortController();
+    setError("");
+    fetchJson(`${apiUrl}/automation/webhook-tokens?projectId=${projectId}`, headers, ctrl.signal).then((t) => setTokens(Array.isArray(t) ? t : [])).catch((e) => !isAbort(e) && setError("โหลด Webhook Token ไม่สำเร็จ"));
+    fetchJson(`${apiUrl}/automation/webhook-tokens/deliveries?projectId=${projectId}`, headers, ctrl.signal).then((d) => setDeliveries(Array.isArray(d) ? d : [])).catch((e) => !isAbort(e) && setError("โหลดประวัติ Webhook ไม่สำเร็จ"));
+    return () => ctrl.abort();
   }, [projectId, headers, reload]);
 
   const createToken = async (name: string) => {
@@ -2801,14 +2862,43 @@ function AutomationWebhookTab({ projectId, headers, canEdit }: { projectId: stri
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่เคยมี webhook เรียกเข้ามา</p></div>}
 
     {createModal && <WebhookTokenFormModal busy={busy} onClose={() => setCreateModal(false)} onSave={createToken} />}
-    {newToken && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-webhook-new-token-title" onMouseDown={() => setNewToken(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2 id="automation-webhook-new-token-title">สร้าง Token "{newToken.name}" สำเร็จ</h2></div><button aria-label="ปิด" onClick={() => setNewToken(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
-      <div className="inline-alert">⚠ คัดลอก Token นี้เก็บไว้ตอนนี้ — ระบบจะไม่แสดง Token เต็มให้ดูอีกครั้ง</div>
-      <p><code>{newToken.plainTextToken}</code></p>
-      <p>ใส่ header <code>X-Webhook-Token</code> เวลายิงมาที่ <code>POST /api/v1/webhooks/automation/builds</code> พร้อม <code>releaseId</code>/<code>buildNumber</code>/<code>requestId</code> (idempotency key ป้องกัน trigger ซ้ำ)</p>
-      <div className="modal-actions"><button className="btn primary" onClick={() => setNewToken(null)}><span className="material-symbols-outlined" aria-hidden="true">check</span> คัดลอกแล้ว ปิดหน้าต่าง</button></div>
-    </div></div>}
+    {newToken && <WebhookNewTokenModal name={newToken.name} plainTextToken={newToken.plainTextToken} onClose={() => setNewToken(null)} />}
   </section>;
+}
+
+/** AUT-UI-001: Token แสดงครั้งเดียว — ห้ามปิดด้วยคลิกพื้นหลัง, มีปุ่มคัดลอก และยืนยันก่อนปิดถ้ายังไม่ได้คัดลอก */
+function WebhookNewTokenModal({ name, plainTextToken, onClose }: { name: string; plainTextToken: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const tokenRef = useRef<HTMLInputElement>(null);
+  const close = () => { if (copied || window.confirm("ยังไม่ได้คัดลอก Token — ปิดแล้วจะดู Token เต็มไม่ได้อีก ต้องการปิดหรือไม่?")) onClose(); };
+  const copy = async () => {
+    setCopyError("");
+    try {
+      await navigator.clipboard.writeText(plainTextToken);
+      setCopied(true);
+    } catch {
+      // clipboard API ใช้ไม่ได้ (เช่น http ที่ไม่ใช่ localhost) — เลือกข้อความให้ผู้ใช้กด Ctrl+C เอง
+      tokenRef.current?.select();
+      setCopyError("คัดลอกอัตโนมัติไม่ได้ — ข้อความถูกเลือกไว้แล้ว กด Ctrl+C เพื่อคัดลอก");
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-webhook-new-token-title"><div className="modal-box">
+    <div className="modal-head"><div><h2 id="automation-webhook-new-token-title">สร้าง Token "{name}" สำเร็จ</h2></div><button aria-label="ปิด" onClick={close}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+    <div className="inline-alert" role="note">⚠ คัดลอก Token นี้เก็บไว้ตอนนี้ — ระบบจะไม่แสดง Token เต็มให้ดูอีกครั้ง</div>
+    <div className="automation-token-copy">
+      <input ref={tokenRef} readOnly value={plainTextToken} aria-label="Webhook Token" onFocus={(e) => e.currentTarget.select()} />
+      <button type="button" className="btn" onClick={copy}><span className="material-symbols-outlined" aria-hidden="true">{copied ? "check" : "content_copy"}</span> {copied ? "คัดลอกแล้ว" : "คัดลอก"}</button>
+    </div>
+    {copyError && <p className="field-error" role="alert">{copyError}</p>}
+    <p>ใส่ header <code>X-Webhook-Token</code> เวลายิงมาที่ <code>POST /api/v1/webhooks/automation/builds</code> พร้อม <code>releaseId</code>/<code>buildNumber</code>/<code>requestId</code> (idempotency key ป้องกัน trigger ซ้ำ)</p>
+    <div className="modal-actions"><button className="btn primary" onClick={close}><span className="material-symbols-outlined" aria-hidden="true">check</span> ปิดหน้าต่าง</button></div>
+  </div></div>;
 }
 
 function WebhookTokenFormModal({ busy, onClose, onSave }: { busy: boolean; onClose: () => void; onSave: (name: string) => void }) {
@@ -2847,7 +2937,10 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
 
   useEffect(() => {
     if (!projectId) return;
-    fetch(`${apiUrl}/automation/data/snapshots?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setSnapshots(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Snapshot ไม่สำเร็จ"));
+    const ctrl = new AbortController();
+    setError("");
+    fetchJson(`${apiUrl}/automation/data/snapshots?projectId=${projectId}`, headers, ctrl.signal).then((s) => setSnapshots(Array.isArray(s) ? s : [])).catch((e) => !isAbort(e) && setError("โหลด Snapshot ไม่สำเร็จ"));
+    return () => ctrl.abort();
   }, [projectId, headers, reload]);
 
   const requestSnapshot = async (environmentId: string, buildId: string) => {
@@ -2860,11 +2953,11 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
   };
 
   const openDetail = async (s: AutomationDbSnapshotItem) => {
-    setDetail(s); setError("");
+    setDetail(s); setError(""); setRestoreHistory([]);
     try {
-      const r = await fetch(`${apiUrl}/automation/data/restores?projectId=${projectId}&automationDbSnapshotId=${s.automationDbSnapshotId}`, { headers });
-      setRestoreHistory(r.ok ? await r.json() : []);
-    } catch { setRestoreHistory([]); }
+      const rows = await fetchJson(`${apiUrl}/automation/data/restores?projectId=${projectId}&automationDbSnapshotId=${s.automationDbSnapshotId}`, headers);
+      setRestoreHistory(Array.isArray(rows) ? rows : []);
+    } catch { setError("โหลดประวัติการ Restore ไม่สำเร็จ"); }
   };
 
   const requestRestore = async (s: AutomationDbSnapshotItem) => {
@@ -2920,34 +3013,44 @@ function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRun }: {
   </section>;
 }
 
-function SnapshotRequestModal({ projectId, releaseId, headers, busy, onClose, onSave }: {
+function SnapshotRequestModal({ projectId, releaseId, headers, busy, onClose, onSave, title = "ขอ Database Snapshot", subtitle = "Windows Agent จะ backup ฐานข้อมูลจริงและรายงานผลกลับมาที่นี่", submitLabel = "ขอ Snapshot", warning, confirmMessage }: {
   projectId: string; releaseId?: string; headers: Record<string, string>; busy: boolean; onClose: () => void; onSave: (environmentId: string, buildId: string) => void;
+  title?: string; subtitle?: string; submitLabel?: string; warning?: string; confirmMessage?: (environmentName: string, buildNumber: string) => string;
 }) {
   const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [environmentId, setEnvironmentId] = useState("");
   const [buildId, setBuildId] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let mounted = true;
     Promise.all([
-      releaseId ? fetch(`${apiUrl}/releases/${releaseId}/builds`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])) : Promise.resolve([]),
-      fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
+      releaseId ? fetchJson(`${apiUrl}/releases/${releaseId}/builds`, { Authorization: `Bearer ${token()}` }) : Promise.resolve([]),
+      fetchJson(`${apiUrl}/master-settings/environments`, { Authorization: `Bearer ${token()}` }),
     ]).then(([b, e]) => {
       if (!mounted) return;
       setBuilds(Array.isArray(b) ? b : []);
       setEnvironments(Array.isArray(e) ? (e as EnvironmentOption[]).filter((x) => x.isActive) : []);
-    }).catch(() => { /* selects just render empty — the inline error banner elsewhere already covers fetch failures for this tab */ });
+    }).catch(() => { if (mounted) setLoadError("โหลดรายการ Environment/Build ไม่สำเร็จ — ปิดหน้าต่างแล้วลองใหม่"); });
     return () => { mounted = false; };
   }, [projectId, releaseId, headers]);
 
   return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-snapshot-request-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="modal-head"><div><h2 id="automation-snapshot-request-title">ขอ Database Snapshot</h2><small>Windows Agent จะ backup ฐานข้อมูลจริงและรายงานผลกลับมาที่นี่</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+    <div className="modal-head"><div><h2 id="automation-snapshot-request-title">{title}</h2><small>{subtitle}</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+    {warning && <div className="inline-alert" role="note">⚠ {warning}</div>}
+    {loadError && <div className="inline-alert error" role="alert"><span>{loadError}</span></div>}
+    {!releaseId && <p className="muted-text">เลือก Release ที่ Topbar ก่อนเพื่อแสดงรายการ Build</p>}
     <div className="form-grid">
       <label>Environment<select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
       <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={busy || !environmentId || !buildId} onClick={() => onSave(environmentId, buildId)}>{busy ? "กำลังส่งคำขอ..." : "ขอ Snapshot"}</button></div>
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={busy || !environmentId || !buildId} onClick={() => {
+      const envName = environments.find((x) => x.testEnvironmentId === environmentId)?.environmentName ?? "";
+      const buildNo = builds.find((x) => x.buildId === buildId)?.buildNumber ?? "";
+      if (confirmMessage && !window.confirm(confirmMessage(envName, buildNo))) return;
+      onSave(environmentId, buildId);
+    }}>{busy ? "กำลังส่งคำขอ..." : submitLabel}</button></div>
   </div></div>;
 }
 
@@ -2966,12 +3069,16 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
   const [editScript, setEditScript] = useState<AutomationDataSeedScriptDetailItem | null>(null);
   const [runModal, setRunModal] = useState<AutomationDataSeedScriptListItem | null>(null);
   const [runHistory, setRunHistory] = useState<{ name: string; runs: AutomationDataSeedRunItem[] } | null>(null);
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     if (!projectId) return;
     const qs = new URLSearchParams({ projectId });
     if (typeFilter !== "all") qs.set("scriptType", typeFilter);
-    fetch(`${apiUrl}/automation/data/seed-scripts?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setScripts(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Script ไม่สำเร็จ"));
+    const ctrl = new AbortController();
+    setError("");
+    fetchJson(`${apiUrl}/automation/data/seed-scripts?${qs}`, headers, ctrl.signal).then((s) => setScripts(Array.isArray(s) ? s : [])).catch((e) => !isAbort(e) && setError("โหลด Script ไม่สำเร็จ"));
+    return () => ctrl.abort();
   }, [projectId, typeFilter, headers, reload]);
 
   const openEdit = async (id: string) => {
@@ -3013,11 +3120,13 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
 
   const requestRun = async (environmentId: string, buildId: string) => {
     if (!runModal) return;
-    setBusy(true); setError("");
+    const script = runModal;
+    setBusy(true); setError(""); setNotice("");
     try {
       const r = await fetch(`${apiUrl}/automation/data/seed-runs?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ automationDataSeedScriptId: runModal.automationDataSeedScriptId, environmentId, buildId }) });
       if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สั่งรัน Seed Script ไม่สำเร็จ"); }
       setRunModal(null);
+      setNotice(`ส่ง "${script.name}" เข้าคิวแล้ว — Agent จะรับไปรันและรายงานผลใน "ประวัติการรัน"`);
     } catch (e) { setError(e instanceof Error ? e.message : "สั่งรัน Seed Script ไม่สำเร็จ"); } finally { setBusy(false); }
   };
 
@@ -3054,6 +3163,7 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
   return <section className="automation-cases" aria-label="Automation Seed Cleanup Data">
     <header className="automation-section-head"><div><h2>Seed, Cleanup &amp; Master Data (AUT-DATA-003/004/005)</h2><p>เก็บ SQL script สำหรับ seed ข้อมูลพื้นฐาน (เช่นสินค้า/ราคา/โปรโมชั่น) ก่อนรัน, cleanup ข้อมูลที่ทิ้งไว้หลังรัน, และเตรียม Master Data (สินค้า/ราคา/โปรโมชั่น) ก่อน POS scenario แบบ repeatable/idempotent — Windows Agent เป็นผู้รัน SQL จริงผ่านคำสั่ง <code>runner seed</code> โดยไม่มี credential ของ DB เก็บอยู่ในนี้เลย; ถ้า Agent ที่รับงานหายไประหว่างรัน ระบบจะดึงงานกลับมาให้ Agent อื่นรับต่อได้อัตโนมัติหลัง 30 นาที (AUT-DATA-004) — Script ประเภท "Master Data" ต้องผ่านการอนุมัติก่อนจึงจะสั่งรันได้ (AUT-DATA-005)</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Script</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
+    {notice && <div className="inline-alert success" role="status"><span>{notice}</span><button type="button" aria-label="ปิดข้อความ" onClick={() => setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
     <div className="automation-case-toolbar">
       <select aria-label="กรองประเภท Script" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as "all" | "Seed" | "Cleanup" | "MasterData")}>
         <option value="all">ทุกประเภท</option>
@@ -3085,7 +3195,12 @@ function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, canRun 
 
     {createModal && <SeedScriptFormModal busy={busy} onClose={() => setCreateModal(false)} onSave={createScript} />}
     {editScript && <SeedScriptFormModal script={editScript} busy={busy} onClose={() => setEditScript(null)} onSave={(body) => updateScript(editScript.automationDataSeedScriptId, body)} />}
-    {runModal && <SnapshotRequestModal projectId={projectId} releaseId={releaseId} headers={headers} busy={busy} onClose={() => setRunModal(null)} onSave={requestRun} />}
+    {runModal && <SnapshotRequestModal projectId={projectId} releaseId={releaseId} headers={headers} busy={busy} onClose={() => setRunModal(null)} onSave={requestRun}
+      title={`สั่งรัน ${runModal.scriptType} Script — ${runModal.name}`}
+      subtitle={`Windows Agent จะรัน SQL นี้บนฐานข้อมูลจริง (${runModal.dbKind}) ของ Environment ที่เลือก`}
+      submitLabel="สั่งรัน Script"
+      warning={runModal.scriptType === "Cleanup" ? "Cleanup Script จะลบ/แก้ข้อมูลใน DB จริงของ Environment ที่เลือก — ตรวจ Environment ให้ถูกก่อนสั่งรัน" : "Script จะเขียนข้อมูลลง DB จริงของ Environment ที่เลือก"}
+      confirmMessage={(env, build) => `ยืนยันรัน ${runModal.scriptType} Script "${runModal.name}" บน DB จริงของ "${env}" (Build ${build})?\n\n⚠ SQL จะถูกรันทันทีที่ Agent รับงาน — ย้อนกลับไม่ได้ถ้าไม่มี Snapshot`} />}
 
     {runHistory && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-seed-run-history-title" onMouseDown={() => setRunHistory(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head"><div><h2 id="automation-seed-run-history-title">ประวัติการรัน — {runHistory.name}</h2><small>{runHistory.runs.length} รายการ — ล่าสุดก่อน</small></div><button aria-label="ปิด" onClick={() => setRunHistory(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
@@ -3140,7 +3255,9 @@ function AutomationEnvironmentDataProfileTab({ projectId, headers, canEdit }: {
 
   useEffect(() => {
     if (!projectId) return;
-    fetch(`${apiUrl}/automation/data/environment-data-profiles?projectId=${projectId}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((p) => setProfiles(Array.isArray(p) ? p : [])).catch(() => setError("โหลด Environment Data Profile ไม่สำเร็จ"));
+    const ctrl = new AbortController();
+    fetchJson(`${apiUrl}/automation/data/environment-data-profiles?projectId=${projectId}`, headers, ctrl.signal).then((p) => setProfiles(Array.isArray(p) ? p : [])).catch((e) => !isAbort(e) && setError("โหลด Environment Data Profile ไม่สำเร็จ"));
+    return () => ctrl.abort();
   }, [projectId, headers, reload]);
 
   const createProfile = async (body: Record<string, unknown>) => {

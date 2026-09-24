@@ -1677,3 +1677,19 @@
   .automation-version-create-actions { flex-direction: column; align-items: stretch; }
   .automation-coverage-row { grid-template-columns: 1fr; }
 }
+
+/* AUT-UI-001: one-time webhook token with copy button */
+.automation-token-copy {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+}
+.automation-token-copy input {
+  flex: 1;
+  min-width: 0;
+  font-family: Consolas, "Courier New", monospace;
+}
+@media (max-width: 760px) {
+  .automation-token-copy { flex-direction: column; align-items: stretch; }
+}

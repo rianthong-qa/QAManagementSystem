@@ -10072,7 +10072,7 @@ function App() {
           ) : page === "regression" ? (
             <RegressionPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("REGRESSION.MANAGE")} canRunAutomation={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} onOpenCycle={openRegressionCycle} />
           ) : page === "automation" ? (
-            <Suspense fallback={pageLoading}><AutomationPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canView={can("AUTOMATION.VIEW")} canEdit={can("AUTOMATION.EDIT")} canValidate={can("AUTOMATION.VALIDATE")} canApprove={can("AUTOMATION.APPROVE")} canRun={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} canManage={can("AUTOMATION.MANAGE")} canViewEvidence={can("AUTOMATION.VIEWEVIDENCE")} canGenerateAi={can("AUTOMATION.GENERATEAI")} /></Suspense>
+            <Suspense fallback={pageLoading}><AutomationPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canView={can("AUTOMATION.VIEW")} canEdit={can("AUTOMATION.EDIT")} canValidate={can("AUTOMATION.VALIDATE")} canApprove={can("AUTOMATION.APPROVE")} canRun={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} canManage={can("AUTOMATION.MANAGE")} canViewEvidence={can("AUTOMATION.VIEWEVIDENCE")} canGenerateAi={can("AUTOMATION.GENERATEAI")} canCreateDefect={can("DEFECT.EDIT")} /></Suspense>
           ) : page === "users" ? (
             <AdministrationPage refresh={refresh} allProjects={contextProjects} />
           ) : page === "settings" ? (

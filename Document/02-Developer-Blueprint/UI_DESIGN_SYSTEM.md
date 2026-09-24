@@ -17,7 +17,7 @@
 > RTM rule (13 สิงหาคม 2026): หน้า RTM ต้องอ้างอิง Project/Release ที่ผู้ใช้เลือก, แสดง KPI Covered/Partial/Not Covered, กรอง Module/Requirement Status/Coverage ได้, เปิดดู Requirement และ Test Case แบบ read-only modal, จัดการ Direct/Indirect Link ตามสิทธิ์, Export CSV และเปลี่ยนตารางเป็น card บน Mobile
 
 > สถานะ: **UI Single Source of Truth**
-> อัปเดตล่าสุด: 23 กันยายน 2026
+> อัปเดตล่าสุด: 24 กันยายน 2026
 > ขอบเขต: Web frontend ทั้งหมดใน `src/ProMaxx2.QA.Web`
 
 เอกสารนี้เป็นหลักสำหรับการออกแบบ สร้าง และแก้ไข UI ทุกหน้า หากโค้ดเดิมไม่สอดคล้องกับเอกสารนี้ ให้ปรับโค้ดเข้าหาเอกสาร เว้นแต่ requirement ใหม่ระบุเป็นอย่างอื่นอย่างชัดเจน ทุกครั้งที่มีการเปลี่ยนแปลง UI ต้องอัปเดตหัวข้อที่เกี่ยวข้องและ Change Log ในไฟล์นี้ในงานเดียวกัน
@@ -259,6 +259,13 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-09-24 — Automation: modal ข้อมูลสำคัญ และ error state
+
+- Secret ที่แสดงครั้งเดียว (เช่น Webhook Token) ต้องอยู่ใน modal ที่ **ไม่ปิดด้วยคลิกพื้นหลัง**, มีช่อง read-only + ปุ่ม "คัดลอก" (ถ้า clipboard ใช้ไม่ได้ให้เลือกข้อความและบอกให้กด Ctrl+C), และถามยืนยันก่อนปิดถ้ายังไม่ได้คัดลอก (ทั้งปุ่มปิดและ Escape); Mobile ช่องและปุ่มเรียงแนวตั้ง (`.automation-token-copy`)
+- คำสั่งที่รัน SQL บน DB จริง (Seed/Cleanup/MasterData, Restore) ต้องมี modal ที่ระบุชื่อ Script/ประเภท/DB, คำเตือนสีเหลือง และ `window.confirm` ที่ระบุ Environment/Build ก่อนส่ง แล้วแจ้งผลเมื่อเข้าคิวสำเร็จ
+- modal Execution Detail: ผลจำแนก/AI/Defect เป็นของ execution ที่เปิดอยู่เท่านั้น; ปุ่มสร้าง Defect แสดงตามสิทธิ์ `DEFECT.EDIT`, ถามยืนยัน และหายทันทีหลังสร้าง
+- รายการที่โหลดจาก API ต้องแยก "โหลดไม่สำเร็จ" (inline error `role="alert"` + ลองใหม่เมื่อทำได้) ออกจาก "ไม่มีข้อมูล" (`.empty`) — ห้ามแปลง 4xx/5xx เป็นรายการว่าง; ช่องค้นหาที่ยิง API ต้อง debounce ~300ms และยกเลิกคำขอเก่าด้วย `AbortController`
 
 ### 2026-09-23 — System review: workspace stability, defect modal a11y, tokens
 
