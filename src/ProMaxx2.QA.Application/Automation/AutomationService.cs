@@ -476,6 +476,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
     public async Task FireDueSchedulesAsync(DateTime nowUtc, CancellationToken ct)
     {
         var due = await scheduleRepository.ClaimDueSchedulesAsync(nowUtc, ct);
+        var failures = new List<string>();
         foreach (var schedule in due)
         {
             AutomationScheduleRun run;
@@ -489,11 +490,24 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             {
                 // Suite closed/deleted or had zero cases entirely — the schedule itself is already claimed and
                 // advanced (or deactivated, for Once) so it won't spin retrying every tick; just make the failure visible.
+                // AUT-REL-003: ทิ้งการเปลี่ยนแปลงที่ค้างจาก run ที่ล้ม — ไม่งั้น SaveChanges ของ schedule ถัดไปจะพยายามเขียนซ้ำแล้วล้มตาม
+                repository.DiscardChanges();
                 run = new AutomationScheduleRun(schedule.AutomationScheduleId, nowUtc, "Failed", 0, 0, ex.Message);
             }
-            await scheduleRepository.AddScheduleRunAsync(run, ct);
-            await scheduleRepository.SaveChangesAsync(ct);
+            try
+            {
+                await scheduleRepository.AddScheduleRunAsync(run, ct);
+                await scheduleRepository.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // บันทึกประวัติไม่สำเร็จไม่ควรหยุด schedule ที่เหลือในรอบนี้ (claim เลื่อนรอบไปแล้ว — ถ้าหยุดตรงนี้ fire ของตัวที่เหลือจะหาย)
+                repository.DiscardChanges();
+                failures.Add($"{schedule.Name}: {ex.Message}");
+            }
         }
+        if (failures.Count > 0)
+            throw new InvalidOperationException($"บันทึกผล Schedule ไม่สำเร็จ {failures.Count} รายการ: {string.Join("; ", failures)}");
     }
 
     /// <summary>AUT-P1-009: "Started" notification for every execution the fire actually created, plus a "NoAgent"

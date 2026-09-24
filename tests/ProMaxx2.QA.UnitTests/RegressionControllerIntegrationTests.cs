@@ -16,12 +16,14 @@ namespace ProMaxx2.QA.UnitTests;
 
 public sealed class RegressionControllerIntegrationTests
 {
+    private static ProMaxx2.QA.Application.Common.ProjectAccessContext AllProjects(QaDbContext db) => new() { AllowedProjectIds = db.Projects.Select(p => p.ProjectId).ToArray() };
+
     [Fact]
     public async Task Impact_returns_direct_case_from_changed_module()
     {
         await using var db = CreateDatabase();
         var data = await SeedAsync(db);
-        var controller = new RegressionController(db);
+        var controller = new RegressionController(db, AllProjects(db));
 
         var result = await controller.Impact(data.Release.ReleaseId,
             new RegressionImpactRequest(data.Build.BuildId, [data.Module.ModuleId], false), CancellationToken.None);
@@ -50,7 +52,7 @@ public sealed class RegressionControllerIntegrationTests
     {
         await using var db = CreateDatabase();
         var data = await SeedAsync(db);
-        var controller = new RegressionController(db);
+        var controller = new RegressionController(db, AllProjects(db));
 
         // data.TestCase (from SeedAsync) is still Draft -> ineligible ("not Ready"), no linked AutomationCase.
         var readyCandidate = new TestCase(data.Project.ProjectId, data.Module.ModuleId, "TC-002", "Ready candidate", null, null,
@@ -108,7 +110,7 @@ public sealed class RegressionControllerIntegrationTests
         var data = await SeedAsync(db);
         var baselineBuild = new Build(data.Release.ReleaseId, "0", "0.9", null, null, DateTime.UtcNow, null, null, null);
         db.Builds.Add(baselineBuild); await db.SaveChangesAsync();
-        var controller = new RegressionController(db);
+        var controller = new RegressionController(db, AllProjects(db));
         var result = await controller.Baseline(data.Release.ReleaseId, baselineBuild.BuildId, data.Build.BuildId, CancellationToken.None);
         var comparison = Assert.IsType<RegressionBaselineDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
         Assert.Equal("0", comparison.Baseline.BuildNumber);
@@ -121,7 +123,7 @@ public sealed class RegressionControllerIntegrationTests
     {
         await using var db = CreateDatabase();
         var data = await SeedAsync(db);
-        var controller = new RegressionController(db);
+        var controller = new RegressionController(db, AllProjects(db));
 
         var impactResult = await controller.Impact(data.Release.ReleaseId,
             new RegressionImpactRequest(data.Build.BuildId, [data.Module.ModuleId], false), CancellationToken.None);
@@ -158,7 +160,7 @@ public sealed class RegressionControllerIntegrationTests
     {
         await using var db = CreateDatabase();
         var data = await SeedAsync(db);
-        var controller = new RegressionController(db);
+        var controller = new RegressionController(db, AllProjects(db));
         var profileResult = await controller.SaveProfile(new SaveRegressionProfileRequest(data.Project.ProjectId, "Team Critical", "Shared", "{\"minimumPriority\":\"P1\"}"), CancellationToken.None);
         var profile = Assert.IsType<RegressionProfileDto>(Assert.IsType<OkObjectResult>(profileResult.Result).Value);
         Assert.Equal("Shared", profile.Visibility);
@@ -185,7 +187,7 @@ public sealed class RegressionControllerIntegrationTests
     {
         await using var db = CreateDatabase();
         var data = await SeedAsync(db);
-        var controller = new RegressionController(db);
+        var controller = new RegressionController(db, AllProjects(db));
         var ownerId = Guid.NewGuid();
         SetUser(controller, ownerId);
 

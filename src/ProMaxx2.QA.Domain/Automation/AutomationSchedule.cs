@@ -139,7 +139,18 @@ public sealed class AutomationSchedule
         };
         if (candidateLocal is null || candidateLocal <= fromLocal)
             throw new ArgumentException(Frequency == "Once" ? "วันเวลาที่กำหนด (Once) ต้องเป็นเวลาในอนาคต" : "ไม่สามารถคำนวณรอบถัดไปได้ — ตรวจสอบวันในสัปดาห์ที่เลือก");
-        return TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(candidateLocal.Value, DateTimeKind.Unspecified), tz);
+        return ToUtcSkippingDstGap(candidateLocal.Value, tz);
+    }
+
+    /// <summary>AUT-REL-003: เวลาท้องถิ่นที่ "ไม่มีจริง" ในวันที่เลื่อนนาฬิกาไปข้างหน้า (DST เช่น 02:30 ในวันที่ 02:00→03:00)
+    /// ทำให้ <see cref="TimeZoneInfo.ConvertTimeToUtc(DateTime, TimeZoneInfo)"/> โยน exception — เดิมเกิดใน claim ของ worker
+    /// ทำให้ทุก schedule ในรอบนั้นล้ม และเพราะ NextRunAtUtc ไม่ถูกเลื่อน จึงล้มซ้ำทุก tick. เลื่อนไปนาทีแรกหลังช่วงที่หายไปแทน
+    /// (เวลาที่ซ้ำสองครั้งตอนถอยนาฬิกา ConvertTimeToUtc เลือก standard time ให้เอง และ fire ครั้งเดียว)</summary>
+    public static DateTime ToUtcSkippingDstGap(DateTime local, TimeZoneInfo tz)
+    {
+        var candidate = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+        for (var i = 0; i < 24 * 60 && tz.IsInvalidTime(candidate); i++) candidate = candidate.AddMinutes(1);
+        return TimeZoneInfo.ConvertTimeToUtc(candidate, tz);
     }
 
     private DateTime NextDaily(DateTime fromLocal)

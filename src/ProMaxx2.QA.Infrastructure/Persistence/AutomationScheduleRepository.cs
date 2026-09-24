@@ -48,8 +48,23 @@ public sealed partial class AutomationRepository
         await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct) : null;
         var due = await db.AutomationSchedules.Where(x => x.IsActive && x.NextRunAtUtc <= nowUtc).ToListAsync(ct);
         if (due.Count == 0) { if (transaction is not null) await transaction.CommitAsync(ct); return []; }
-        var claimed = due.Select(x => new DueScheduleDto(x.AutomationScheduleId, x.ProjectId, x.AutomationSuiteId, x.Name, x.BuildId, x.EnvironmentId, x.AgentId, x.Priority)).ToList();
-        foreach (var schedule in due) schedule.RecordFired(nowUtc);
+        var claimed = new List<DueScheduleDto>();
+        foreach (var schedule in due)
+        {
+            try
+            {
+                schedule.RecordFired(nowUtc);
+                claimed.Add(new DueScheduleDto(schedule.AutomationScheduleId, schedule.ProjectId, schedule.AutomationSuiteId, schedule.Name, schedule.BuildId, schedule.EnvironmentId, schedule.AgentId, schedule.Priority));
+            }
+            catch (Exception ex) when (ex is ArgumentException or TimeZoneNotFoundException or InvalidTimeZoneException or InvalidOperationException)
+            {
+                // AUT-REL-003: คำนวณรอบถัดไปไม่ได้ (เช่น timezone ถูกลบจากเครื่อง) — ปิด schedule นี้พร้อมบันทึกสาเหตุให้เห็น
+                // แทนการโยน exception ที่ทำให้ schedule อื่นในรอบเดียวกันไม่ถูก fire และล้มซ้ำทุก tick
+                if (schedule.IsActive) schedule.Deactivate(null);
+                db.AutomationScheduleRuns.Add(new AutomationScheduleRun(schedule.AutomationScheduleId, nowUtc, "Failed", 0, 0,
+                    $"คำนวณรอบถัดไปไม่ได้ ({ex.Message}) — ปิด Schedule อัตโนมัติ แก้การตั้งค่าแล้วเปิดใหม่ (AUT-REL-003)"));
+            }
+        }
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
         return claimed;

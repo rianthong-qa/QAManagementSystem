@@ -12,7 +12,7 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController, Route("api/v1"), Authorize(Policy = "RegressionView"), RequireProjectAccess]
-public sealed class RegressionController(QaDbContext db) : ControllerBase
+public sealed class RegressionController(QaDbContext db, ProjectAccessContext projectCtx) : ControllerBase
 {
     [HttpPost("releases/{releaseId:guid}/regression-impact"),Authorize(Policy="RegressionManage")]
     public async Task<ActionResult<RegressionImpactDto>> Impact(Guid releaseId, RegressionImpactRequest request, CancellationToken ct)
@@ -25,7 +25,7 @@ public sealed class RegressionController(QaDbContext db) : ControllerBase
 
     [HttpPost("regression/automation-run-preview")]
     public async Task<ActionResult<RegressionAutomationPreviewDto>> AutomationRunPreview(RegressionAutomationPreviewRequest request, CancellationToken ct)
-        => Ok(await RegressionAutomationRunPlanner.ResolveEligibleAsync(db, request.TestCaseIds, ct));
+        => Ok(await RegressionAutomationRunPlanner.ResolveEligibleAsync(db, request.TestCaseIds, ct, projectCtx.AllowedProjectIds)); // AUT-SEC-002
 
     [HttpGet("releases/{releaseId:guid}/regression-history")]
     public async Task<ActionResult<IReadOnlyList<RegressionHistoryDto>>> History(Guid releaseId,[FromQuery]int size=20,CancellationToken ct=default)

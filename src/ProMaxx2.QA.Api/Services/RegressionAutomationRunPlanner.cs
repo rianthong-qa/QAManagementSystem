@@ -9,11 +9,20 @@ namespace ProMaxx2.QA.Api.Services;
 /// the automatic <see cref="RegressionScheduleTriggerService"/> share one implementation.</summary>
 public static class RegressionAutomationRunPlanner
 {
-    public static async Task<RegressionAutomationPreviewDto> ResolveEligibleAsync(QaDbContext db, IReadOnlyList<Guid> testCaseIds, CancellationToken ct)
+    /// <param name="allowedProjectIds">AUT-SEC-002: Project ที่ผู้เรียกเข้าถึงได้ — Test Case ของ Project อื่นถูกตัดออกเงียบ ๆ
+    /// (เหมือนไม่มีอยู่) แทนการคืนสถานะ eligibility ให้เห็น; <c>null</c> = งานภายในของระบบ (schedule trigger) ที่ไม่มีผู้ใช้</param>
+    public static async Task<RegressionAutomationPreviewDto> ResolveEligibleAsync(QaDbContext db, IReadOnlyList<Guid> testCaseIds, CancellationToken ct, IReadOnlyCollection<Guid>? allowedProjectIds = null)
     {
         var ids = testCaseIds.Distinct().ToArray();
-        var testCases = await db.TestCases.AsNoTracking().Where(x => ids.Contains(x.TestCaseId))
+        var testCaseQuery = db.TestCases.AsNoTracking().Where(x => ids.Contains(x.TestCaseId));
+        if (allowedProjectIds is not null)
+        {
+            var allowed = allowedProjectIds.ToArray();
+            testCaseQuery = testCaseQuery.Where(x => allowed.Contains(x.ProjectId));
+        }
+        var testCases = await testCaseQuery
             .Select(x => new { x.TestCaseId, x.TestCaseCode, x.Title, x.Status, x.AutomationCandidate, x.AutomationTarget }).ToListAsync(ct);
+        ids = testCases.Select(x => x.TestCaseId).ToArray();
         var automationCases = await db.AutomationCases.AsNoTracking().Where(x => ids.Contains(x.TestCaseId))
             .Select(x => new { x.AutomationCaseId, x.TestCaseId, x.Status, x.IsQuarantined }).ToListAsync(ct);
         var automationByTestCase = automationCases.ToDictionary(x => x.TestCaseId, x => new AutomationCaseSnapshot(x.AutomationCaseId, x.Status, x.IsQuarantined));
