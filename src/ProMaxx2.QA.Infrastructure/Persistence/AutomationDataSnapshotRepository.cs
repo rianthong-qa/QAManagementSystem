@@ -50,7 +50,7 @@ public sealed partial class AutomationRepository
     public Task<AutomationDbSnapshot?> FindSnapshotAsync(Guid id, CancellationToken ct)
         => db.AutomationDbSnapshots.SingleOrDefaultAsync(x => x.AutomationDbSnapshotId == id, ct);
 
-    public async Task<ClaimSnapshotPackageDto?> ClaimNextSnapshotRequestAsync(string agentCode, CancellationToken ct)
+    private async Task<ClaimSnapshotPackageDto?> ClaimNextSnapshotRequestCoreAsync(string agentCode, CancellationToken ct)
     {
         var agent = await db.AutomationAgents.SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
         if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;

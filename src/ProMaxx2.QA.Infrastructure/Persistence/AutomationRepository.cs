@@ -213,7 +213,7 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
     public Task<AutomationJob?> FindJobAsync(Guid jobId, CancellationToken ct)
         => db.AutomationJobs.SingleOrDefaultAsync(x => x.JobId == jobId, ct);
 
-    public async Task<AutomationJobPackageDto?> ClaimNextJobAsync(string agentCode, string agentVersion, IReadOnlyList<string> capabilities, string targetApp, CancellationToken ct)
+    private async Task<AutomationJobPackageDto?> ClaimNextJobCoreAsync(string agentCode, string agentVersion, IReadOnlyList<string> capabilities, string targetApp, CancellationToken ct)
     {
         var agent = await db.AutomationAgents.Include(x => x.Capabilities).SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
         if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;
@@ -439,7 +439,7 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
     public Task<AutomationObjectVerification?> FindVerificationAsync(Guid id, CancellationToken ct)
         => db.AutomationObjectVerifications.SingleOrDefaultAsync(x => x.AutomationObjectVerificationId == id, ct);
 
-    public async Task<VerificationBatchPackageDto?> ClaimVerificationBatchAsync(string agentCode, CancellationToken ct)
+    private async Task<VerificationBatchPackageDto?> ClaimVerificationBatchCoreAsync(string agentCode, CancellationToken ct)
     {
         var agent = await db.AutomationAgents.SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
         if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;
@@ -502,7 +502,6 @@ public sealed partial class AutomationRepository(QaDbContext db) : IAutomationRe
         return results.OrderByDescending(x => x.Transitions).ToList();
     }
 
-    public Task SaveChangesAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
 }
 
 public sealed class AutomationCaseConfiguration : Microsoft.EntityFrameworkCore.IEntityTypeConfiguration<AutomationCase>
@@ -535,7 +534,7 @@ public sealed class AutomationVersionConfiguration : Microsoft.EntityFrameworkCo
         b.Property(x => x.ValidationErrors).HasColumnType("nvarchar(max)");
         b.Property(x => x.AiProvider).HasMaxLength(50);
         b.Property(x => x.AiModel).HasMaxLength(100);
-        b.HasIndex(x => new { x.AutomationCaseId, x.VersionNo });
+        b.HasIndex(x => new { x.AutomationCaseId, x.VersionNo }).IsUnique(); // AUT-REL-001: เลข version ซ้ำไม่ได้
     }
 }
 
@@ -639,6 +638,8 @@ public sealed class AutomationExecutionConfiguration : Microsoft.EntityFramework
         b.HasIndex(x => new { x.AutomationCaseId, x.CreatedAt });
         b.HasIndex(x => x.ClassifiedFailureType);
         b.HasIndex(x => x.RetryOfExecutionId);
+        // AUT-REL-001: complete ซ้อน/complete ชน cancel/reaper ชน complete — ให้เฉพาะคำขอแรกบันทึกได้ (shadow property ไม่แตะ domain)
+        b.Property<byte[]>("RowVersion").IsRowVersion();
     }
 }
 
@@ -654,7 +655,8 @@ public sealed class AutomationStepResultConfiguration : Microsoft.EntityFramewor
         b.Property(x => x.ErrorCode).HasMaxLength(40);
         b.Property(x => x.ErrorMessage).HasMaxLength(2000);
         b.Property(x => x.EvidencePath).HasMaxLength(1000);
-        b.HasIndex(x => new { x.AutomationExecutionId, x.StepNo });
+        // AUT-REL-001: Agent ส่ง step ซ้ำได้ (retry ของ HubResilienceHandler) — step เดียวต้องมีแถวเดียว ไม่งั้นแนบ evidence พัง
+        b.HasIndex(x => new { x.AutomationExecutionId, x.StepNo }).IsUnique();
     }
 }
 
@@ -669,6 +671,7 @@ public sealed class AutomationJobConfiguration : Microsoft.EntityFrameworkCore.I
         b.HasOne(x => x.AutomationExecution).WithOne().HasForeignKey<AutomationJob>(x => x.AutomationExecutionId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
         b.HasOne(x => x.AssignedAgent).WithMany().HasForeignKey(x => x.AssignedAgentId).OnDelete(Microsoft.EntityFrameworkCore.DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.Status, x.Priority, x.QueuedAt });
+        b.Property<byte[]>("RowVersion").IsRowVersion(); // AUT-REL-001
     }
 }
 

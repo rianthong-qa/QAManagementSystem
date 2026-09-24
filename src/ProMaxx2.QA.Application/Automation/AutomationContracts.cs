@@ -80,6 +80,11 @@ public sealed record ClaimJobRequest(string AgentCode, string AgentVersion, IRea
 public sealed record AutomationJobDto(Guid JobId, Guid AutomationExecutionId, int Priority, Guid? RequestedAgentId, Guid? AssignedAgentId, string? AssignedAgentCode, string Status, DateTime QueuedAt, DateTime? AssignedAt, DateTime? StartedAt, DateTime? CompletedAt, int RetryCount, string? LastError);
 public sealed record AutomationJobPackageDto(Guid JobId, Guid AutomationExecutionId, Guid AutomationCaseId, string AutomationCode, Guid AutomationVersionId, int VersionNo, string DslVersion, string DslJson, Guid BuildId, string BuildNumber, Guid EnvironmentId, string EnvironmentName, IReadOnlyList<string> Actions, IReadOnlyList<AutomationObjectDto> Objects);
 
+/// <summary>AUT-REL-002: <paramref name="HardTimeout"/> = Agent ยังส่ง heartbeat อยู่แต่ execution รันนานเกิน hard cap (ค้างใน AUT)</summary>
+public sealed record StaleExecutionDto(Guid AutomationExecutionId, bool HardTimeout);
+public sealed record StaleDataWorkResultDto(int Snapshots, int Restores, int Verifications, int SeedRunsReclaimed);
+public sealed record ReapResultDto(int ExecutionsLost, int ExecutionsTimedOut, StaleDataWorkResultDto DataWork);
+
 public interface IAutomationRepository : IAutomationScopeChecks
 {
     Task<IReadOnlyList<AutomationCaseDto>> ListCasesAsync(Guid projectId, string? search, int take, CancellationToken ct);
@@ -102,6 +107,8 @@ public interface IAutomationRepository : IAutomationScopeChecks
     Task HardDeleteCasesAsync(IReadOnlyList<Guid> automationCaseIds, CancellationToken ct);
     Task<IReadOnlyList<AutomationVersionDto>> ListVersionsAsync(Guid caseId, CancellationToken ct);
     Task<AutomationVersion?> FindVersionAsync(Guid versionId, CancellationToken ct);
+    /// <summary>AUT-REL-001: เลข version ถัดไปต้องมาจาก version สูงสุดที่มีอยู่ ไม่ใช่ CurrentVersionNo (ซึ่งถอยกลับได้เมื่ออนุมัติ version เก่า)</summary>
+    Task<int> GetMaxVersionNoAsync(Guid caseId, CancellationToken ct);
     Task AddVersionAsync(AutomationVersion entity, CancellationToken ct);
 
     Task<IReadOnlyList<AutomationActionDto>> ListActionsAsync(CancellationToken ct);
@@ -172,6 +179,14 @@ public interface IAutomationRepository : IAutomationScopeChecks
     Task<RetryPolicyDto> GetRetryPolicyAsync(CancellationToken ct);
     Task UpdateRetryPolicyAsync(int maxAttempts, int backoffSeconds, bool enabled, Guid? userId, CancellationToken ct);
     Task<IReadOnlyList<string>> GetUnsafeActionCodesAsync(IEnumerable<string> actionCodes, CancellationToken ct);
+
+    /// <summary>AUT-REL-002: execution ที่ Running แต่ Agent เงียบไป (heartbeat เก่ากว่า <paramref name="heartbeatBefore"/>,
+    /// หรือ Agent ถูกลบ) หรือรันนานเกิน hard cap (เริ่มก่อน <paramref name="startedBefore"/>)</summary>
+    Task<IReadOnlyList<StaleExecutionDto>> ListStaleRunningExecutionsAsync(DateTime heartbeatBefore, DateTime startedBefore, CancellationToken ct);
+    /// <summary>AUT-REL-002: ปิด snapshot/restore/verification ที่ Agent รับไปแล้วไม่รายงานผล และคืน seed run ที่ค้างให้ Agent อื่นรับต่อ</summary>
+    Task<StaleDataWorkResultDto> FailStaleDataWorkAsync(DateTime nowUtc, CancellationToken ct);
+    /// <summary>AUT-REL-001: ทิ้งการเปลี่ยนแปลงที่ค้างใน unit of work หลังบันทึกไม่สำเร็จเพราะชนกับคำขออื่น — ไม่ให้ SaveChanges ครั้งต่อไปพยายามเขียนซ้ำ</summary>
+    void DiscardChanges();
 
     Task<IReadOnlyList<FlakyCandidateDto>> GetFlakyCandidatesAsync(Guid projectId, int lookback, CancellationToken ct);
 

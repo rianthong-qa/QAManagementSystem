@@ -88,8 +88,13 @@ public sealed class AutomationWebhookService(IAutomationWebhookRepository reposi
             await repository.SaveChangesAsync(ct);
             return new ReceiveBuildWebhookResult(build.BuildId, build.BuildNumber, build.ReleaseId, "Created");
         }
-        catch (Exception ex) when (ex is EntityNotFoundException or DuplicateCodeException or ArgumentException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // AUT-REL-001: คำขอ RequestId เดียวกันสองคำขอมาพร้อมกัน — อีกคำขอสร้าง Build ไปแล้ว (คำขอนี้ชน unique index ของ
+            // Build/Delivery) จึงตอบเป็น Duplicate เหมือน replay ปกติ แทน 409/500
+            var replayed = await repository.FindSuccessfulDeliveryAsync(token.ProjectId, r.RequestId, ct);
+            if (replayed is not null) return new ReceiveBuildWebhookResult(replayed.BuildId ?? Guid.Empty, r.BuildNumber, r.ReleaseId, "Duplicate");
+            if (ex is not (EntityNotFoundException or DuplicateCodeException or ArgumentException)) throw;
             await repository.AddDeliveryAsync(new AutomationWebhookDelivery(token.ProjectId, token.AutomationWebhookTokenId, r.RequestId, DateTime.UtcNow, null, "Failed", ex.Message), ct);
             await repository.SaveChangesAsync(ct);
             throw;

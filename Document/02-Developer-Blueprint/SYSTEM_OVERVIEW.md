@@ -61,6 +61,7 @@ tools/ProMaxx2.ServiceManager ← WinForms: Start/Stop/Restart API + Web, log, C
 |---|---|
 | `AutomationScheduleWorker` | poll ทุก 30 วินาที ยิง Automation Schedule ที่ถึงเวลา (เปิด/ปิดได้จาก Service Manager) |
 | `CrmSyncWorker` | poll Defect ที่ Linked กับ CRM ทุก 2 นาที |
+| `AutomationReaperWorker` | ทุก 1 นาที ปิด Automation Execution ที่ Agent เงียบเกิน 10 นาที (AgentLost) หรือรันเกิน 6 ชม. (Timeout) และปิด snapshot/restore/verification ที่ Agent ไม่รายงานผล (AUT-REL-002) |
 
 ## 3. Modules / Pages (20 หน้า)
 

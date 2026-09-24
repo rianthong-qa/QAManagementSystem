@@ -51,7 +51,7 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
         var caseEntity = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
         var testCase = await testCases.GetAsync(caseEntity.TestCaseId, ct) ?? throw new EntityNotFoundException("Test case not found.");
         var dsl = DeserializeDsl(r.DslJson);
-        var nextNo = caseEntity.CurrentVersionNo + 1;
+        var nextNo = await repository.GetMaxVersionNoAsync(caseId, ct) + 1; // AUT-REL-001
         var version = new AutomationVersion(caseId, nextNo, testCase.RevisionNo, JsonSerializer.Serialize(dsl), false, null, null, null, userId);
         version.RecordChangeReason(r.ChangeReason);
         await repository.AddVersionAsync(version, ct);
@@ -73,7 +73,7 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     {
         var caseEntity = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
         var testCase = await testCases.GetAsync(caseEntity.TestCaseId, ct) ?? throw new EntityNotFoundException("Test case not found.");
-        var nextNo = caseEntity.CurrentVersionNo + 1;
+        var nextNo = await repository.GetMaxVersionNoAsync(caseId, ct) + 1; // AUT-REL-001
         var version = new AutomationVersion(caseId, nextNo, testCase.RevisionNo, JsonSerializer.Serialize(DeserializeDsl(dslJson)), true, aiProvider, aiModel, confidence, userId);
         version.RecordChangeReason($"AI Generated ({aiProvider} / {aiModel}) — รอตรวจสอบ");
         await repository.AddVersionAsync(version, ct);
@@ -413,7 +413,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         var execution = new AutomationExecution(r.CaseId, versionId, null, r.BuildId, r.EnvironmentId, userId?.ToString(), caseEntity.AutomationType);
         if (r.AgentId.HasValue) execution.AssignAgent(r.AgentId.Value);
         await repository.AddExecutionAsync(execution, ct);
-        await repository.SaveChangesAsync(ct);
+        // AUT-REL-001: execution กับ job บันทึกใน SaveChanges เดียว — เดิมบันทึกสองครั้ง ถ้าครั้งที่สองล้มจะได้ execution Queued ที่ไม่มี job ค้างถาวร
         var job = new AutomationJob(execution.AutomationExecutionId, r.AgentId, r.Priority, DateTime.UtcNow);
         await repository.AddJobAsync(job, ct);
         execution.LinkJob(job.JobId);
@@ -445,8 +445,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             var execution = new AutomationExecution(caseId, approved.AutomationVersionId, null, r.BuildId, r.EnvironmentId, userId?.ToString(), caseEntity.AutomationType);
             if (r.AgentId.HasValue) execution.AssignAgent(r.AgentId.Value);
             await repository.AddExecutionAsync(execution, ct);
-            await repository.SaveChangesAsync(ct);
-            var job = new AutomationJob(execution.AutomationExecutionId, r.AgentId, r.Priority, DateTime.UtcNow);
+            var job = new AutomationJob(execution.AutomationExecutionId, r.AgentId, r.Priority, DateTime.UtcNow); // AUT-REL-001: บันทึกพร้อม execution
             await repository.AddJobAsync(job, ct);
             execution.LinkJob(job.JobId);
             await repository.SaveChangesAsync(ct);
@@ -545,8 +544,17 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         // AUT-SEC-005: รับผลเฉพาะจาก agent ที่รับงานนี้ และไม่รับ step ของ execution ที่จบไปแล้ว (รายงานช้า/ซ้ำ → ข้ามแบบ idempotent)
         await repository.EnsureReportingAgentAsync(execution.AgentId, r.AgentCode, ct);
         if (execution.Status is not ("Queued" or "Running")) return;
+        // AUT-REL-001: Agent ส่ง step เดิมซ้ำได้ (retry หลัง timeout ของ HubResilienceHandler) — step แรกที่บันทึกได้เป็นผลจริง ส่วนที่ซ้ำข้ามแบบ idempotent
+        if (execution.StepResults.Any(x => x.StepNo == r.StepNo)) return;
         await repository.AddStepResultAsync(new AutomationStepResult(executionId, r.StepNo, r.ActionCode, r.Status, r.ActualResult, r.ErrorCode, r.ErrorMessage, r.EvidencePath, r.StartedAt, r.CompletedAt), ct);
-        await repository.SaveChangesAsync(ct);
+        try
+        {
+            await repository.SaveChangesAsync(ct);
+        }
+        catch (DuplicateCodeException)
+        {
+            repository.DiscardChanges(); // คำขอซ้ำที่มาพร้อมกันชน unique index (ExecutionId, StepNo) — อีกคำขอบันทึกไปแล้ว
+        }
     }
 
     public async Task<AutomationExecutionDto> CompleteExecutionAsync(Guid executionId, CompleteExecutionRequest r, CancellationToken ct)
@@ -561,24 +569,32 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             return await repository.GetExecutionAsync(executionId, executionProjectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
         }
         await repository.EnsureReportingAgentAsync(execution.AgentId, r.AgentCode, ct); // AUT-SEC-005
-        execution.Complete(r.Status, r.FailureType, r.ErrorCode, r.ErrorMessage, DateTime.UtcNow);
+        return await CompleteCoreAsync(execution, r.Status, r.FailureType, r.ErrorCode, r.ErrorMessage, ct);
+    }
+
+    /// <summary>ปิด execution + job แล้วจัดการ classification/auto-retry/สถานะ case — ใช้ร่วมกันระหว่างผลจาก Agent และ reaper (AUT-REL-002)</summary>
+    private async Task<AutomationExecutionDto> CompleteCoreAsync(AutomationExecution execution, string status, string? failureType, string? errorCode, string? errorMessage, CancellationToken ct)
+    {
+        var executionId = execution.AutomationExecutionId;
+        var executionProjectId = execution.AutomationCase.TestCase.ProjectId;
+        execution.Complete(status, failureType, errorCode, errorMessage, DateTime.UtcNow);
 
         // AUT-P1-009: only executions the schedule worker itself created carry a "Started" notification — an
         // auto-retry child created below does not, so it deliberately gets no Completed/Failed notification of its own.
         var started = await scheduleRepository.FindStartedNotificationByExecutionAsync(executionId, ct);
         if (started is not null)
         {
-            var eventType = r.Status == "Passed" ? "Completed" : "Failed";
+            var eventType = status == "Passed" ? "Completed" : "Failed";
             var message = eventType == "Completed"
                 ? $"Execution {execution.AutomationCase.AutomationCode} completed successfully."
-                : $"Execution {execution.AutomationCase.AutomationCode} failed ({r.Status}: {r.ErrorMessage ?? r.ErrorCode ?? "unknown error"}).";
+                : $"Execution {execution.AutomationCase.AutomationCode} failed ({status}: {errorMessage ?? errorCode ?? "unknown error"}).";
             await scheduleRepository.AddNotificationAsync(new AutomationScheduleNotification(started.ProjectId, started.AutomationScheduleId, executionId, eventType, message), ct);
         }
 
         var job = await repository.FindJobByExecutionAsync(executionId, ct);
         try
         {
-            if (job is not null) job.Complete(r.Status, r.ErrorMessage);
+            if (job is not null) job.Complete(status, errorMessage);
         }
         catch (InvalidOperationException)
         {
@@ -589,11 +605,21 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         }
         var projectId = executionProjectId;
         var caseEntity = await repository.FindCaseByIdAsync(execution.AutomationCaseId, ct);
-        await repository.SaveChangesAsync(ct); // flush Status/ErrorCode before re-reading for classification
+        try
+        {
+            await repository.SaveChangesAsync(ct); // flush Status/ErrorCode before re-reading for classification
+        }
+        catch (ConcurrencyConflictException)
+        {
+            // AUT-REL-001: อีกคำขอ (ผลซ้ำ/cancel/reaper) ปิด execution นี้ไปก่อนแล้ว — rowversion กันไม่ให้เขียนทับ
+            // และกันไม่ให้สร้าง auto-retry ซ้ำ; คืนสถานะที่ชนะแบบ idempotent
+            repository.DiscardChanges();
+            return await repository.GetExecutionAsync(executionId, executionProjectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+        }
 
         var retried = false;
         AutomationFailureClassificationDto? classification = null;
-        if (r.Status is "Failed" or "Timeout" or "AgentLost")
+        if (status is "Failed" or "Timeout" or "AgentLost")
         {
             var dtoForClassification = await repository.GetExecutionAsync(executionId, projectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
             classification = AutomationFailureClassifier.Classify(dtoForClassification);
@@ -609,7 +635,6 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
                 var retryExecution = new AutomationExecution(execution.AutomationCaseId, execution.AutomationVersionId, null, execution.BuildId, execution.EnvironmentId, "system:auto-retry", execution.TargetApp);
                 retryExecution.MarkAsRetry(executionId, execution.RetryCount + 1);
                 await repository.AddExecutionAsync(retryExecution, ct);
-                await repository.SaveChangesAsync(ct);
                 var retryJob = new AutomationJob(retryExecution.AutomationExecutionId, null, 5, DateTime.UtcNow.AddSeconds(policy.BackoffSeconds));
                 await repository.AddJobAsync(retryJob, ct);
                 retryExecution.LinkJob(retryJob.JobId);
@@ -670,8 +695,43 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         if (job is not null) job.Complete("Cancelled", "Execution cancelled by user.");
         var caseEntity = await repository.FindCaseAsync(execution.AutomationCaseId, projectId, ct);
         caseEntity?.ChangeStatus("Ready");
-        await repository.SaveChangesAsync(ct);
+        try
+        {
+            await repository.SaveChangesAsync(ct);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            // AUT-REL-001: Agent รายงานผลหรือ reaper ปิด execution นี้ไปพร้อมกัน — ไม่เขียน Cancelled ทับผลจริง
+            repository.DiscardChanges();
+            throw new InvalidOperationException("Execution นี้เพิ่งจบหรือถูกยกเลิกโดยคำขออื่น — โหลดข้อมูลล่าสุดแล้วตรวจสถานะอีกครั้ง");
+        }
         return await repository.GetExecutionAsync(executionId, projectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+    }
+
+    /// <summary>AUT-REL-002: Agent ส่ง heartbeat ทุกไม่กี่วินาที (รวมระหว่างรันงานตั้งแต่ AUT-AGT-001) — เงียบเกิน 10 นาทีถือว่าหาย</summary>
+    public static readonly TimeSpan AgentLostAfter = TimeSpan.FromMinutes(10);
+    /// <summary>AUT-REL-002: hard cap แม้ Agent ยังส่ง heartbeat — execution ที่รันนานขนาดนี้คือค้างอยู่ใน AUT</summary>
+    public static readonly TimeSpan MaxExecutionDuration = TimeSpan.FromHours(6);
+
+    /// <summary>AUT-REL-002: เรียกจาก <c>AutomationReaperWorker</c> — ปิด execution ที่ Agent หาย (AgentLost / AUT-AGENT-001)
+    /// หรือรันนานเกิน hard cap (Timeout / AUT-JOB-001) ผ่าน <see cref="CompleteCoreAsync"/> ตัวเดียวกับผลจาก Agent
+    /// จึงได้ classification, auto-retry และสถานะ case เหมือนกัน; แล้วเก็บกวาด snapshot/restore/verification/seed ที่ค้าง</summary>
+    public async Task<ReapResultDto> ReapStaleWorkAsync(DateTime nowUtc, CancellationToken ct)
+    {
+        var stale = await repository.ListStaleRunningExecutionsAsync(nowUtc - AgentLostAfter, nowUtc - MaxExecutionDuration, ct);
+        int lost = 0, timedOut = 0;
+        foreach (var item in stale)
+        {
+            var execution = await repository.FindExecutionAsync(item.AutomationExecutionId, ct);
+            if (execution is null || execution.Status != "Running") continue;
+            var result = item.HardTimeout
+                ? await CompleteCoreAsync(execution, "Timeout", "AgentFailure", "AUT-JOB-001", $"Execution รันนานเกิน {MaxExecutionDuration.TotalHours:0} ชั่วโมง — ปิดโดยระบบ (AUT-REL-002)", ct)
+                : await CompleteCoreAsync(execution, "AgentLost", "AgentFailure", "AUT-AGENT-001", $"Agent ไม่ส่ง heartbeat เกิน {AgentLostAfter.TotalMinutes:0} นาทีระหว่างรันงาน — ปิดโดยระบบ (AUT-REL-002)", ct);
+            if (result.Status == "Timeout") timedOut++;
+            else if (result.Status == "AgentLost") lost++;
+        }
+        var data = await repository.FailStaleDataWorkAsync(nowUtc, ct);
+        return new ReapResultDto(lost, timedOut, data);
     }
 
     /// <summary>AUT-SEC-005: ตรวจก่อนเขียนไฟล์หลักฐานว่า execution มีอยู่และ agent ที่อัปโหลดคือผู้รับงานนี้</summary>

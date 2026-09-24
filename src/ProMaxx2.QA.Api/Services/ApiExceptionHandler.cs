@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Projects;
 
 namespace ProMaxx2.QA.Api.Services;
@@ -17,6 +19,8 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetails, I
         {
             EntityNotFoundException ex => (StatusCodes.Status404NotFound, "ไม่พบข้อมูล", ex.Message),
             DuplicateCodeException ex => (StatusCodes.Status409Conflict, "ข้อมูลซ้ำ", ex.Message),
+            ConcurrencyConflictException ex => (StatusCodes.Status409Conflict, "ข้อมูลถูกแก้ไขพร้อมกัน", ex.Message),
+            DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "ข้อมูลถูกแก้ไขพร้อมกัน", "ข้อมูลถูกแก้ไขโดยคำขออื่นพร้อมกัน — โหลดข้อมูลล่าสุดแล้วลองใหม่"),
             ArgumentException ex => (StatusCodes.Status400BadRequest, "ข้อมูลไม่ถูกต้อง", ex.Message),
             _ => (StatusCodes.Status500InternalServerError, "เกิดข้อผิดพลาดภายในระบบ", $"กรุณาลองใหม่ หรือแจ้งผู้ดูแลพร้อมรหัส {http.TraceIdentifier}"),
         };

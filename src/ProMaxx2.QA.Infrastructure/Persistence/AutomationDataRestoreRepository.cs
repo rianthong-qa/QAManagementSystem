@@ -36,7 +36,7 @@ public sealed partial class AutomationRepository
     public Task<AutomationDbRestore?> FindRestoreAsync(Guid id, CancellationToken ct)
         => db.AutomationDbRestores.SingleOrDefaultAsync(x => x.AutomationDbRestoreId == id, ct);
 
-    public async Task<ClaimRestorePackageDto?> ClaimNextRestoreRequestAsync(string agentCode, CancellationToken ct)
+    private async Task<ClaimRestorePackageDto?> ClaimNextRestoreRequestCoreAsync(string agentCode, CancellationToken ct)
     {
         var agent = await db.AutomationAgents.SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
         if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;

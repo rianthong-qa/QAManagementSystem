@@ -64,6 +64,8 @@ public sealed class AutomationWebhookDeliveryConfiguration : IEntityTypeConfigur
         // same RequestId once the underlying problem (e.g. release not found yet) is fixed — see
         // IAutomationWebhookRepository.FindSuccessfulDeliveryAsync for how idempotency is actually enforced.
         b.HasIndex(x => new { x.ProjectId, x.RequestId });
+        // AUT-REL-001: ...แต่ delivery ที่ "Created" ต้องมีได้แค่หนึ่งแถวต่อ RequestId — กัน replay สองคำขอพร้อมกัน
+        b.HasIndex(x => new { x.ProjectId, x.RequestId }, "UX_AutomationWebhookDeliveries_Project_Request_Created").IsUnique().HasFilter("[Status] = 'Created'");
         b.HasOne(x => x.Token).WithMany().HasForeignKey(x => x.AutomationWebhookTokenId).OnDelete(DeleteBehavior.Restrict);
     }
 }

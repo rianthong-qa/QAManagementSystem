@@ -61,7 +61,7 @@ public sealed partial class AutomationRepository
     public Task<AutomationDataSeedRun?> FindRunAsync(Guid id, CancellationToken ct)
         => db.AutomationDataSeedRuns.SingleOrDefaultAsync(x => x.AutomationDataSeedRunId == id, ct);
 
-    public async Task<ClaimSeedRunPackageDto?> ClaimNextSeedRunRequestAsync(string agentCode, CancellationToken ct)
+    private async Task<ClaimSeedRunPackageDto?> ClaimNextSeedRunRequestCoreAsync(string agentCode, CancellationToken ct)
     {
         var agent = await db.AutomationAgents.SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
         if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;

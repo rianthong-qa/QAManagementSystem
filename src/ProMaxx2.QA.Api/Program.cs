@@ -66,6 +66,7 @@ builder.Services.AddScoped<AutomationCaseService>();
 builder.Services.AddScoped<AutomationSuiteService>();
 builder.Services.AddScoped<AutomationScheduleService>();
 builder.Services.AddHostedService<AutomationScheduleWorker>(); // AUT-P1-006: polls and fires due Automation Schedules
+builder.Services.AddHostedService<AutomationReaperWorker>(); // AUT-REL-002: closes executions/data jobs whose agent disappeared
 builder.Services.AddScoped<AutomationBuildTriggerService>();
 builder.Services.AddScoped<RegressionScheduleTriggerService>(); // AUT-REG-002
 builder.Services.AddScoped<AutomationWebhookService>();
