@@ -74,7 +74,16 @@ public sealed partial class AutomationRepository
         var stale = await db.AutomationDataSeedRuns.Where(x => x.Status == "Running").ToListAsync(ct);
         foreach (var run in stale) run.ReclaimIfStale(now, SeedRunStaleAfter);
 
-        var next = await db.AutomationDataSeedRuns.Include(x => x.Script).Where(x => x.Status == "Requested").OrderBy(x => x.RequestedAt).FirstOrDefaultAsync(ct);
+        // AUT-SEC-005: ตรวจ script ซ้ำตอน claim — run ที่ขอไว้ก่อน script ถูกปิดหรือถูกแก้ (MasterData กลับเป็น Pending)
+        // ต้องไม่ส่ง SQL ใหม่ที่ยังไม่อนุมัติไปให้ Agent; ปฏิเสธ run นั้นแล้วหา run ถัดไป
+        AutomationDataSeedRun? next;
+        while (true)
+        {
+            next = await db.AutomationDataSeedRuns.Include(x => x.Script).Where(x => x.Status == "Requested").OrderBy(x => x.RequestedAt).FirstOrDefaultAsync(ct);
+            if (next is null || (next.Script.IsActive && (next.Script.ScriptType != "MasterData" || next.Script.ApprovalStatus == "Approved"))) break;
+            next.RejectBeforeClaim(next.Script.IsActive ? "Script ถูกแก้ไขหลังขอรันและยังไม่ได้รับการอนุมัติใหม่" : "Script ถูกปิดใช้งานหลังขอรัน");
+            await db.SaveChangesAsync(ct);
+        }
         if (next is null) { await db.SaveChangesAsync(ct); if (transaction is not null) await transaction.CommitAsync(ct); return null; }
         next.Claim(agent.AgentId);
         await db.SaveChangesAsync(ct);

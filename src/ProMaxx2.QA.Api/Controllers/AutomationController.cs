@@ -25,7 +25,9 @@ public sealed class AutomationController(
     [HttpGet("executions/{id:guid}/assignment-context")]
     public async Task<ActionResult> AssignmentContext(Guid id, CancellationToken ct)
     {
-        var linked = await db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationExecutionId == id && x.TestExecutionId.HasValue).Select(x => new { x.TestExecutionId, x.Status, x.ClassifiedRecommendation, x.ErrorCode }).SingleOrDefaultAsync(ct);
+        // AUT-SEC-003: จำกัดเฉพาะ execution ใน Project ที่ผู้ใช้เป็นสมาชิก — เดิมเปิดเผย cycle/tester ของ execution ใดก็ได้
+        var allowed = HttpContext.RequestServices.GetRequiredService<ProMaxx2.QA.Application.Common.ProjectAccessContext>().AllowedProjectIds;
+        var linked = await db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationExecutionId == id && x.TestExecutionId.HasValue && allowed.Contains(x.AutomationCase.TestCase.ProjectId)).Select(x => new { x.TestExecutionId, x.Status, x.ClassifiedRecommendation, x.ErrorCode }).SingleOrDefaultAsync(ct);
         if (linked is null || !linked.TestExecutionId.HasValue) return NotFound(new { code = "AUTOASSIGN_NO_LINKED_TEST_EXECUTION" });
         var execution = await db.TestExecutions.AsNoTracking().Where(x => x.TestExecutionId == linked.TestExecutionId.Value).Select(x => new { x.TestCycleCaseId, x.TesterUserId, x.CycleCase.TestCycleId }).SingleOrDefaultAsync(ct);
         return execution is null ? NotFound(new { code = "AUTOASSIGN_NO_LINKED_TEST_EXECUTION" }) : Ok(new { execution.TestCycleId, execution.TestCycleCaseId, originalTesterUserId = execution.TesterUserId, linked.Status, linked.ClassifiedRecommendation, linked.ErrorCode });
@@ -262,7 +264,7 @@ public sealed class AutomationController(
 
     /// <summary>AUT-P2-001: see remark on <c>ListCases</c> — same "default page 1/size 200 keeps flat callers
     /// working via .Rows" rationale.</summary>
-    [HttpGet("jobs")] public Task<PagedResult<AutomationJobDto>> ListJobs([FromQuery] Guid? projectId, [FromQuery] Guid? buildId, [FromQuery] string? status, [FromQuery] string? sortBy,
+    [HttpGet("jobs")] public Task<PagedResult<AutomationJobDto>> ListJobs([FromQuery] Guid projectId, [FromQuery] Guid? buildId, [FromQuery] string? status, [FromQuery] string? sortBy,
         [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
         => agentService.ListJobsPagedAsync(projectId, buildId, status, sortBy, page, size, ct);
 

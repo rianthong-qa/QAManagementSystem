@@ -15,14 +15,12 @@ public sealed record RequestSnapshotRequest(Guid EnvironmentId, Guid BuildId);
 public sealed record ClaimSnapshotPackageDto(Guid AutomationDbSnapshotId, Guid EnvironmentId, string EnvironmentName, Guid BuildId, string BuildNumber);
 
 public sealed record ClaimSnapshotRequest(string AgentCode, string AgentVersion);
-public sealed record CompleteSnapshotRequest(string Status, string? DbKind, string? SnapshotPath, string? Checksum, long? SizeBytes, string? ErrorMessage);
+public sealed record CompleteSnapshotRequest(string Status, string? DbKind, string? SnapshotPath, string? Checksum, long? SizeBytes, string? ErrorMessage, string? AgentCode = null);
 
-public interface IAutomationDataSnapshotRepository
+public interface IAutomationDataSnapshotRepository : IAutomationScopeChecks
 {
     Task<IReadOnlyList<AutomationDbSnapshotDto>> ListSnapshotsAsync(Guid projectId, Guid? environmentId, Guid? buildId, int take, CancellationToken ct);
     Task<AutomationDbSnapshotDto?> GetSnapshotAsync(Guid id, Guid projectId, CancellationToken ct);
-    Task<bool> EnvironmentExistsAsync(Guid environmentId, Guid projectId, CancellationToken ct);
-    Task<bool> BuildExistsAsync(Guid buildId, CancellationToken ct);
     Task AddSnapshotAsync(AutomationDbSnapshot entity, CancellationToken ct);
 
     /// <summary>Atomically (Serializable transaction, same pattern as ClaimNextJobAsync) claims the oldest still-
@@ -50,7 +48,7 @@ public sealed class AutomationDataSnapshotService(IAutomationDataSnapshotReposit
     public async Task<AutomationDbSnapshotDto> RequestAsync(Guid projectId, RequestSnapshotRequest r, Guid? userId, CancellationToken ct)
     {
         if (!await repository.EnvironmentExistsAsync(r.EnvironmentId, projectId, ct)) throw new EntityNotFoundException("Environment not found.");
-        if (!await repository.BuildExistsAsync(r.BuildId, ct)) throw new EntityNotFoundException("Build not found.");
+        if (!await repository.BuildBelongsToProjectAsync(r.BuildId, projectId, ct)) throw new EntityNotFoundException("Build not found.");
         var entity = new AutomationDbSnapshot(projectId, r.EnvironmentId, r.BuildId, userId);
         await repository.AddSnapshotAsync(entity, ct);
         await repository.SaveChangesAsync(ct);
@@ -68,6 +66,7 @@ public sealed class AutomationDataSnapshotService(IAutomationDataSnapshotReposit
         var entity = await repository.FindSnapshotAsync(id, ct) ?? throw new EntityNotFoundException("Snapshot not found.");
         if (entity.Status != "Running")
             return await repository.GetSnapshotByIdAsync(id, ct) ?? throw new EntityNotFoundException("Snapshot not found.");
+        await repository.EnsureReportingAgentAsync(entity.AgentId, r.AgentCode, ct); // AUT-SEC-005
         if (r.Status == "Succeeded")
         {
             if (string.IsNullOrWhiteSpace(r.DbKind) || string.IsNullOrWhiteSpace(r.SnapshotPath) || string.IsNullOrWhiteSpace(r.Checksum) || r.SizeBytes is null)

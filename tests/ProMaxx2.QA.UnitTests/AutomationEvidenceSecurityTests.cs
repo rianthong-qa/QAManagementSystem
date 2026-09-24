@@ -76,7 +76,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
         var controller = MakeController(db);
         var executionId = Guid.NewGuid(); // no execution/step seeded -> AttachStepEvidenceAsync will fail
 
-        var result = await controller.UploadEvidence(executionId, 1, MakeFile("shot.png"), CancellationToken.None);
+        var result = await controller.UploadEvidence(executionId, 1, MakeFile("shot.png"), CancellationToken.None, "AGENT-A");
 
         Assert.IsType<NotFoundResult>(result);
         var expectedPath = Path.Combine(EvidenceRoot(_tempRoot), executionId.ToString("N"), "step1.png");
@@ -118,7 +118,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
         var controller = MakeController(db);
         var executionId = Guid.NewGuid();
 
-        var result = await controller.UploadExecutionEvidence(executionId, null, "AutomationLog", MakeFile("log.txt"), CancellationToken.None);
+        var result = await controller.UploadExecutionEvidence(executionId, null, "AutomationLog", MakeFile("log.txt"), CancellationToken.None, "AGENT-A");
 
         Assert.IsType<NotFoundResult>(result);
         Assert.False(Directory.Exists(EvidenceRoot(_tempRoot)) && Directory.EnumerateFiles(Path.Combine(EvidenceRoot(_tempRoot), executionId.ToString("N"))).Any());
@@ -135,7 +135,7 @@ public sealed class AutomationEvidenceSecurityTests : IDisposable
         var claim = await agents.ClaimNextJobAsync(new ClaimJobRequest("AGENT-A", "1.0.0", [], "WindowsUI"), CancellationToken.None) ?? throw new InvalidOperationException();
         var controller = MakeController(db);
 
-        var result = await controller.UploadExecutionEvidence(claim.AutomationExecutionId, null, "Screenshot", MakeFile("shot.png"), CancellationToken.None);
+        var result = await controller.UploadExecutionEvidence(claim.AutomationExecutionId, null, "Screenshot", MakeFile("shot.png"), CancellationToken.None, "AGENT-A");
 
         Assert.IsType<OkObjectResult>(result);
         var executionFolder = Path.Combine(EvidenceRoot(_tempRoot), claim.AutomationExecutionId.ToString("N"));

@@ -50,6 +50,9 @@ public static class AutomationValidator
                     if (knownObjects.Count > 0 && !knownObjects.Contains(obj, StringComparer.OrdinalIgnoreCase))
                         errors.Add($"Step {step.StepNo}: Object '{obj}' is not in the Object Repository.");
                 }
+                // AUT-SEC-004: query ที่ Agent จะรันบนฐานข้อมูลจริงต้องเป็น SELECT อ่านอย่างเดียวคำสั่งเดียว
+                if (step.Parameters?.TryGetValue("query", out var query) == true && !DbAssertionSqlGuard.IsReadOnlySelect(query, out var sqlReason))
+                    errors.Add($"Step {step.StepNo}: {sqlReason}");
                 if (knownTestData is { Count: > 0 } && step.Parameters is not null)
                 {
                     foreach (var (key, value) in step.Parameters)

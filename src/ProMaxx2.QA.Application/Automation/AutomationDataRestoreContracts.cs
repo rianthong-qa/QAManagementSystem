@@ -16,9 +16,9 @@ public sealed record RequestRestoreRequest(Guid AutomationDbSnapshotId);
 public sealed record ClaimRestorePackageDto(Guid AutomationDbRestoreId, Guid AutomationDbSnapshotId, string SnapshotPath, string ExpectedChecksum);
 
 public sealed record ClaimRestoreRequest(string AgentCode, string AgentVersion);
-public sealed record CompleteRestoreRequest(string Status, bool ChecksumVerified, bool AvailabilityVerified, string? ErrorMessage);
+public sealed record CompleteRestoreRequest(string Status, bool ChecksumVerified, bool AvailabilityVerified, string? ErrorMessage, string? AgentCode = null);
 
-public interface IAutomationDataRestoreRepository
+public interface IAutomationDataRestoreRepository : IAutomationScopeChecks
 {
     Task<IReadOnlyList<AutomationDbRestoreDto>> ListRestoresAsync(Guid projectId, Guid? automationDbSnapshotId, CancellationToken ct);
     Task<AutomationDbRestoreDto?> GetRestoreAsync(Guid id, Guid projectId, CancellationToken ct);
@@ -67,6 +67,7 @@ public sealed class AutomationDataRestoreService(IAutomationDataRestoreRepositor
         var entity = await repository.FindRestoreAsync(id, ct) ?? throw new EntityNotFoundException("Restore not found.");
         if (entity.Status != "Running")
             return await repository.GetRestoreByIdAsync(id, ct) ?? throw new EntityNotFoundException("Restore not found.");
+        await repository.EnsureReportingAgentAsync(entity.AgentId, r.AgentCode, ct); // AUT-SEC-005
         if (r.Status == "Succeeded") entity.Complete(r.ChecksumVerified, r.AvailabilityVerified);
         else entity.Fail(r.ChecksumVerified, r.AvailabilityVerified, r.ErrorMessage ?? "Restore failed.");
         await repository.SaveChangesAsync(ct);

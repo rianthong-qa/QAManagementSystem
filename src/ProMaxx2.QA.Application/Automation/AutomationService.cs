@@ -113,6 +113,9 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
     public async Task<AutomationCaseDto> ChangeStatusAsync(Guid caseId, Guid projectId, string status, CancellationToken ct)
     {
         var caseEntity = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+        // AUT-SEC-003: "Ready" = พร้อมรันจริง จึงต้องมี version ที่ Validate ผ่านและอนุมัติแล้ว — ห้ามข้ามขั้นอนุมัติด้วยการเปลี่ยนสถานะตรง
+        if (status == "Ready" && !(await repository.ListVersionsAsync(caseId, ct)).Any(x => x.ApprovedAt.HasValue && x.ValidationStatus == "Valid"))
+            throw new ArgumentException("ตั้งเป็น Ready ได้เมื่อมี version ที่ Validate ผ่านและอนุมัติแล้วเท่านั้น");
         caseEntity.ChangeStatus(status);
         await repository.SaveChangesAsync(ct);
         return await repository.GetCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
@@ -126,8 +129,12 @@ public sealed class AutomationCaseService(IAutomationRepository repository, ITes
         return await repository.GetCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
     }
 
-    public Task<IReadOnlyList<AutomationVersionDto>> ListVersionsAsync(Guid caseId, Guid projectId, CancellationToken ct)
-        => repository.ListVersionsAsync(caseId, ct);
+    public async Task<IReadOnlyList<AutomationVersionDto>> ListVersionsAsync(Guid caseId, Guid projectId, CancellationToken ct)
+    {
+        // AUT-SEC-003: เดิมไม่ใช้ projectId เลย ทำให้อ่าน DSL ของ case ใน Project อื่นได้
+        _ = await repository.FindCaseAsync(caseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
+        return await repository.ListVersionsAsync(caseId, ct);
+    }
 
     public Task<IReadOnlyList<AutomationActionDto>> ListActionsAsync(CancellationToken ct) => repository.ListActionsAsync(ct);
     public async Task<AutomationActionDto> CreateActionAsync(CreateAutomationActionRequest r, CancellationToken ct)
@@ -387,6 +394,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         var caseEntity = await repository.GetCaseAsync(r.CaseId, projectId, ct) ?? throw new EntityNotFoundException("Automation case not found.");
         if (caseEntity.Status != "Ready") throw new ArgumentException("Only Ready automation cases can be executed.");
         if (caseEntity.IsQuarantined) throw new ArgumentException("This case is quarantined and cannot be executed until it is unquarantined.");
+        await repository.EnsureBuildAndEnvironmentAsync(projectId, r.BuildId, r.EnvironmentId, ct);
         var versionId = r.VersionId;
         if (versionId == Guid.Empty)
         {
@@ -396,6 +404,10 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             versionId = approved.AutomationVersionId;
         }
         var version = await repository.FindVersionAsync(versionId, ct) ?? throw new ArgumentException("Automation version not found.");
+        // AUT-SEC-003: version ที่ระบุมาเองต้องเป็นของ case นี้ และผ่าน Validate + อนุมัติแล้ว — เดิมรัน DSL ที่ยังไม่อนุมัติ
+        // หรือ DSL ของ case/Project อื่นภายใต้ case นี้ได้
+        if (version.AutomationCaseId != r.CaseId) throw new ArgumentException("Automation version นี้ไม่ใช่ของ Automation Case ที่เลือก");
+        if (!version.ApprovedAt.HasValue || version.ValidationStatus != "Valid") throw new ArgumentException("รันได้เฉพาะ version ที่ Validate ผ่านและอนุมัติแล้ว");
         var validation = AutomationValidator.Validate(version.ToDsl() ?? new DslDocument(), await repository.ListActionCodesAsync(ct), await repository.ListObjectKeysAsync(projectId, ct), null);
         if (!validation.IsValid) throw new ArgumentException($"Automation Case ต้อง Validate ใหม่ก่อนรัน: {string.Join("; ", validation.Errors)}");
         var execution = new AutomationExecution(r.CaseId, versionId, null, r.BuildId, r.EnvironmentId, userId?.ToString(), caseEntity.AutomationType);
@@ -412,6 +424,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
     public async Task<BatchRunResultDto> BatchRunAsync(Guid projectId, BatchRunRequest r, Guid? userId, CancellationToken ct)
     {
         if (r.CaseIds is null || r.CaseIds.Count == 0) throw new ArgumentException("กรุณาเลือก Automation Case อย่างน้อย 1 รายการ");
+        await repository.EnsureBuildAndEnvironmentAsync(projectId, r.BuildId, r.EnvironmentId, ct);
         var created = new List<AutomationExecutionDto>();
         var skipped = new List<string>();
         foreach (var caseId in r.CaseIds.Distinct())
@@ -529,6 +542,9 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
     public async Task ReportStepResultAsync(Guid executionId, ReportStepResultRequest r, CancellationToken ct)
     {
         var execution = await repository.FindExecutionAsync(executionId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+        // AUT-SEC-005: รับผลเฉพาะจาก agent ที่รับงานนี้ และไม่รับ step ของ execution ที่จบไปแล้ว (รายงานช้า/ซ้ำ → ข้ามแบบ idempotent)
+        await repository.EnsureReportingAgentAsync(execution.AgentId, r.AgentCode, ct);
+        if (execution.Status is not ("Queued" or "Running")) return;
         await repository.AddStepResultAsync(new AutomationStepResult(executionId, r.StepNo, r.ActionCode, r.Status, r.ActualResult, r.ErrorCode, r.ErrorMessage, r.EvidencePath, r.StartedAt, r.CompletedAt), ct);
         await repository.SaveChangesAsync(ct);
     }
@@ -544,6 +560,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
             // Ignore idempotently instead of corrupting a state that has already moved on.
             return await repository.GetExecutionAsync(executionId, executionProjectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
         }
+        await repository.EnsureReportingAgentAsync(execution.AgentId, r.AgentCode, ct); // AUT-SEC-005
         execution.Complete(r.Status, r.FailureType, r.ErrorCode, r.ErrorMessage, DateTime.UtcNow);
 
         // AUT-P1-009: only executions the schedule worker itself created carry a "Started" notification — an
@@ -620,6 +637,7 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
     {
         var verification = await repository.FindVerificationAsync(r.VerificationId, ct) ?? throw new EntityNotFoundException("Verification not found.");
         if (verification.Status is not ("Pending" or "Assigned")) return; // late/duplicate report — already completed, ignore idempotently
+        await repository.EnsureReportingAgentAsync(verification.AssignedAgentId, r.AgentCode, ct); // AUT-SEC-005
         verification.Complete(r.Status, r.ActualControlType, r.ActualAutomationId, r.Message);
         await repository.SaveChangesAsync(ct);
     }
@@ -643,6 +661,8 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
 
     public async Task<AutomationExecutionDto> CancelExecutionAsync(Guid executionId, Guid projectId, CancellationToken ct)
     {
+        // AUT-SEC-003: ตรวจ Project ก่อนแก้ข้อมูล — เดิม cancel execution ของ Project อื่นสำเร็จแล้วค่อยตอบ 404
+        _ = await repository.GetExecutionAsync(executionId, projectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
         var execution = await repository.FindExecutionAsync(executionId, ct) ?? throw new EntityNotFoundException("Execution not found.");
         if (execution.Status is not ("Queued" or "Running")) throw new InvalidOperationException("Only queued or running executions can be cancelled.");
         execution.Complete("Cancelled", "AutomationFailure", "AUT-JOB-003", "Execution cancelled by user.", DateTime.UtcNow);
@@ -652,6 +672,13 @@ public sealed class AutomationAgentService(IAutomationRepository repository, IAu
         caseEntity?.ChangeStatus("Ready");
         await repository.SaveChangesAsync(ct);
         return await repository.GetExecutionAsync(executionId, projectId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+    }
+
+    /// <summary>AUT-SEC-005: ตรวจก่อนเขียนไฟล์หลักฐานว่า execution มีอยู่และ agent ที่อัปโหลดคือผู้รับงานนี้</summary>
+    public async Task EnsureAgentOwnsExecutionAsync(Guid executionId, string? agentCode, CancellationToken ct)
+    {
+        var execution = await repository.FindExecutionAsync(executionId, ct) ?? throw new EntityNotFoundException("Execution not found.");
+        await repository.EnsureReportingAgentAsync(execution.AgentId, agentCode, ct);
     }
 
     public async Task UploadStepEvidenceAsync(Guid executionId, int stepNo, string relativePath, CancellationToken ct)

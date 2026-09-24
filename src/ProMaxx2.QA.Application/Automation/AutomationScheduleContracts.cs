@@ -24,7 +24,7 @@ public sealed record AutomationScheduleRunDto(Guid AutomationScheduleRunId, Guid
 public sealed record AutomationScheduleNotificationDto(Guid AutomationScheduleNotificationId, Guid ProjectId, Guid AutomationScheduleId, string ScheduleName,
     Guid AutomationExecutionId, string AutomationCode, string EventType, string Message, DateTime CreatedAtUtc, bool IsRead, DateTime? ReadAtUtc);
 
-public interface IAutomationScheduleRepository
+public interface IAutomationScheduleRepository : IAutomationScopeChecks
 {
     Task<IReadOnlyList<AutomationScheduleListDto>> ListSchedulesAsync(Guid projectId, bool? isActive, CancellationToken ct);
     Task<AutomationScheduleDto?> GetScheduleAsync(Guid id, Guid projectId, CancellationToken ct);
@@ -75,6 +75,7 @@ public sealed class AutomationScheduleService(IAutomationScheduleRepository repo
     public async Task<AutomationScheduleDto> CreateAsync(Guid projectId, CreateAutomationScheduleRequest r, Guid? userId, CancellationToken ct)
     {
         var suite = await suites.FindSuiteAsync(r.AutomationSuiteId, projectId, ct) ?? throw new EntityNotFoundException("Automation suite not found.");
+        await repository.EnsureBuildAndEnvironmentAsync(projectId, r.BuildId, r.EnvironmentId, ct);
         var entity = new AutomationSchedule(projectId, suite.AutomationSuiteId, r.Name, r.Description, r.Frequency, r.DaysOfWeekMask, r.RunAtTime, r.OnceOnDate, r.TimeZoneId,
             r.BuildId, r.EnvironmentId, r.AgentId, r.Priority, userId);
         await repository.AddScheduleAsync(entity, ct);
@@ -85,6 +86,7 @@ public sealed class AutomationScheduleService(IAutomationScheduleRepository repo
     public async Task<AutomationScheduleDto> UpdateAsync(Guid id, Guid projectId, UpdateAutomationScheduleRequest r, Guid? userId, CancellationToken ct)
     {
         var entity = await repository.FindScheduleAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Automation schedule not found.");
+        await repository.EnsureBuildAndEnvironmentAsync(projectId, r.BuildId, r.EnvironmentId, ct);
         entity.Update(r.Name, r.Description, r.Frequency, r.DaysOfWeekMask, r.RunAtTime, r.OnceOnDate, r.TimeZoneId, r.BuildId, r.EnvironmentId, r.AgentId, r.Priority, userId);
         await repository.SaveChangesAsync(ct);
         return await repository.GetScheduleAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Automation schedule not found.");

@@ -11,7 +11,7 @@ public sealed record UpdateAutomationBuildTriggerPolicyRequest(Guid AutomationSu
 
 public sealed record AutomationBuildTriggerRunDto(Guid AutomationBuildTriggerRunId, Guid AutomationBuildTriggerPolicyId, Guid BuildId, string BuildNumber, DateTime FiredAtUtc, string Status, int ExecutionsCreated, int SkippedCount, string? ErrorMessage);
 
-public interface IAutomationBuildTriggerRepository
+public interface IAutomationBuildTriggerRepository : IAutomationScopeChecks
 {
     Task<IReadOnlyList<AutomationBuildTriggerPolicyDto>> ListPoliciesAsync(Guid projectId, CancellationToken ct);
     Task<AutomationBuildTriggerPolicyDto?> GetPolicyAsync(Guid id, Guid projectId, CancellationToken ct);
@@ -49,6 +49,7 @@ public sealed class AutomationBuildTriggerService(IAutomationBuildTriggerReposit
     public async Task<AutomationBuildTriggerPolicyDto> CreateAsync(Guid projectId, CreateAutomationBuildTriggerPolicyRequest r, Guid? userId, CancellationToken ct)
     {
         var suite = await suites.FindSuiteAsync(r.AutomationSuiteId, projectId, ct) ?? throw new EntityNotFoundException("Automation suite not found.");
+        await repository.EnsureBuildAndEnvironmentAsync(projectId, null, r.EnvironmentId, ct);
         var entity = new AutomationBuildTriggerPolicy(projectId, suite.AutomationSuiteId, r.Pack, r.EnvironmentId, r.AgentId, r.Priority, userId);
         await repository.AddPolicyAsync(entity, ct);
         await repository.SaveChangesAsync(ct);
@@ -60,6 +61,7 @@ public sealed class AutomationBuildTriggerService(IAutomationBuildTriggerReposit
         var entity = await repository.FindPolicyAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Build trigger policy not found.");
         if (entity.AutomationSuiteId != r.AutomationSuiteId)
             _ = await suites.FindSuiteAsync(r.AutomationSuiteId, projectId, ct) ?? throw new EntityNotFoundException("Automation suite not found.");
+        await repository.EnsureBuildAndEnvironmentAsync(projectId, null, r.EnvironmentId, ct);
         entity.Update(r.AutomationSuiteId, r.Pack, r.EnvironmentId, r.AgentId, r.Priority, userId);
         await repository.SaveChangesAsync(ct);
         return await repository.GetPolicyAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Build trigger policy not found.");

@@ -270,7 +270,8 @@ public sealed class ActionExecutor
         var query = step.Parameters.GetValueOrDefault("query");
         var expected = step.Parameters.GetValueOrDefault("expected");
         if (string.IsNullOrWhiteSpace(query) || expected is null) return false;
-        return await RunDbAssertionAsync(step, ctx, $"SELECT COUNT(*) FROM ({query})", expected, null, null);
+        // derived table ต้องมี alias (SQL Server บังคับ) และตัด ; ท้ายคำสั่งออกก่อนครอบ
+        return await RunDbAssertionAsync(step, ctx, $"SELECT COUNT(*) FROM ({DbAssertionSqlGuard.TrimTerminator(query)}) q", expected, null, null);
     }
 
     private async Task<bool> ExpectStockAsync(DslStep step, IActionContext ctx)

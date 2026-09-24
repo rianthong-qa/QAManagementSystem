@@ -25,9 +25,9 @@ public sealed record RequestSeedRunRequest(Guid AutomationDataSeedScriptId, Guid
 public sealed record ClaimSeedRunPackageDto(Guid AutomationDataSeedRunId, string ScriptName, string DbKind, string SqlScript);
 
 public sealed record ClaimSeedRunRequest(string AgentCode, string AgentVersion);
-public sealed record CompleteSeedRunRequest(string Status, int? RowsAffected, string? ErrorMessage);
+public sealed record CompleteSeedRunRequest(string Status, int? RowsAffected, string? ErrorMessage, string? AgentCode = null);
 
-public interface IAutomationDataSeedRepository
+public interface IAutomationDataSeedRepository : IAutomationScopeChecks
 {
     Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, string? scriptType, bool? isActive, CancellationToken ct);
     Task<AutomationDataSeedScriptDto?> GetScriptAsync(Guid id, Guid projectId, CancellationToken ct);
@@ -89,6 +89,9 @@ public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repo
     public async Task<AutomationDataSeedScriptDto> ApproveScriptAsync(Guid id, Guid projectId, Guid? userId, CancellationToken ct)
     {
         var entity = await repository.FindScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
+        // AUT-SEC-005: การอนุมัติคือการตรวจทานโดยคนที่สอง — ผู้สร้างหรือผู้แก้ไขล่าสุดอนุมัติ script ของตัวเองไม่ได้
+        if (userId.HasValue && (entity.CreatedBy == userId || entity.UpdatedBy == userId))
+            throw new ArgumentException("ผู้สร้างหรือผู้แก้ไข script ล่าสุดอนุมัติเองไม่ได้ ต้องให้ผู้อื่นตรวจทาน");
         entity.Approve(userId);
         await repository.SaveChangesAsync(ct);
         return await repository.GetScriptAsync(id, projectId, ct) ?? throw new EntityNotFoundException("Seed script not found.");
@@ -122,6 +125,7 @@ public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repo
         var profiledDbKind = await profiles.GetDataProfileDbKindForEnvironmentAsync(r.EnvironmentId, ct);
         if (profiledDbKind is not null && profiledDbKind != script.DbKind)
             throw new ArgumentException($"Script is written for {script.DbKind} but this Environment's data profile is {profiledDbKind}.");
+        await repository.EnsureBuildAndEnvironmentAsync(projectId, r.BuildId, r.EnvironmentId, ct);
         var entity = new AutomationDataSeedRun(projectId, script.AutomationDataSeedScriptId, r.EnvironmentId, r.BuildId, userId);
         await repository.AddRunAsync(entity, ct);
         await repository.SaveChangesAsync(ct);
@@ -136,6 +140,7 @@ public sealed class AutomationDataSeedService(IAutomationDataSeedRepository repo
         var entity = await repository.FindRunAsync(id, ct) ?? throw new EntityNotFoundException("Seed run not found.");
         if (entity.Status != "Running")
             return await repository.GetRunByIdAsync(id, ct) ?? throw new EntityNotFoundException("Seed run not found.");
+        await repository.EnsureReportingAgentAsync(entity.AgentId, r.AgentCode, ct); // AUT-SEC-005
         if (r.Status == "Succeeded") entity.Complete(r.RowsAffected ?? 0);
         else entity.Fail(r.ErrorMessage ?? "Seed run failed.");
         await repository.SaveChangesAsync(ct);

@@ -95,6 +95,7 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/executions/{executionId}/steps/{stepNo}/result", new
         {
+            agentCode = _config.AgentCode,
             stepNo,
             actionCode,
             status,
@@ -115,6 +116,7 @@ public sealed class QaHubClient : IDisposable
         var file = new StreamContent(stream);
         file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         content.Add(file, "file", $"step{stepNo}.png");
+        content.Add(new StringContent(_config.AgentCode), "agentCode");
         var response = await _http.PostAsync($"{_config.HubBaseUrl}/automation/executions/{executionId}/steps/{stepNo}/evidence", content, ct);
         response.EnsureSuccessStatusCode();
     }
@@ -130,6 +132,7 @@ public sealed class QaHubClient : IDisposable
         content.Add(file, "file", fileName);
         if (stepNo.HasValue) content.Add(new StringContent(stepNo.Value.ToString()), "stepNo");
         content.Add(new StringContent(evidenceType), "evidenceType");
+        content.Add(new StringContent(_config.AgentCode), "agentCode");
         var response = await _http.PostAsync($"{_config.HubBaseUrl}/automation/executions/{executionId}/evidence/upload", content, ct);
         response.EnsureSuccessStatusCode();
     }
@@ -138,6 +141,7 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/executions/{executionId}/complete", new
         {
+            agentCode = _config.AgentCode,
             status,
             failureType,
             errorCode,
@@ -158,6 +162,7 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/verifications/result", new
         {
+            agentCode = _config.AgentCode,
             verificationId,
             status,
             actualAutomationId,
@@ -180,6 +185,7 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/snapshots/{snapshotId}/complete", new
         {
+            agentCode = _config.AgentCode,
             status,
             dbKind,
             snapshotPath,
@@ -203,6 +209,7 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/restores/{restoreId}/complete", new
         {
+            agentCode = _config.AgentCode,
             status,
             checksumVerified,
             availabilityVerified,
@@ -224,6 +231,7 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/seed-runs/{seedRunId}/complete", new
         {
+            agentCode = _config.AgentCode,
             status,
             rowsAffected,
             errorMessage

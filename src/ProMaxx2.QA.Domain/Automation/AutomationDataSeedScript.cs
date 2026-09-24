@@ -178,6 +178,16 @@ public sealed class AutomationDataSeedRun
         CompletedAt = DateTime.UtcNow;
     }
 
+    /// <summary>AUT-SEC-005: ปฏิเสธ run ที่ยังไม่ถูก claim เมื่อ script ไม่พร้อมรันแล้ว (ถูกปิด หรือ MasterData ถูกแก้จนต้องอนุมัติใหม่)
+    /// — กัน SQL ที่ยังไม่ผ่านการอนุมัติหลุดไปถึง Agent ผ่าน run ที่ขอไว้ก่อนแก้ script</summary>
+    public void RejectBeforeClaim(string reason)
+    {
+        if (Status != "Requested") throw new InvalidOperationException("Seed run is not pending.");
+        Status = "Failed";
+        ErrorMessage = reason;
+        CompletedAt = DateTime.UtcNow;
+    }
+
     public void Fail(string errorMessage)
     {
         if (Status != "Running") throw new InvalidOperationException("Seed run is not running.");

@@ -28,7 +28,7 @@ public sealed record AutomationObjectVerificationDto(Guid AutomationObjectVerifi
 public sealed record VerificationObjectItemDto(Guid VerificationId, string ObjectCode, string ApplicationCode, string ScreenCode, string? ExpectedAutomationId, string ExpectedControlType);
 public sealed record VerificationBatchPackageDto(IReadOnlyList<VerificationObjectItemDto> Items);
 public sealed record ClaimVerificationBatchRequest(string AgentCode);
-public sealed record ReportVerificationResultRequest(Guid VerificationId, string Status, string? ActualAutomationId, string? ActualControlType, string? Message);
+public sealed record ReportVerificationResultRequest(Guid VerificationId, string Status, string? ActualAutomationId, string? ActualControlType, string? Message, string? AgentCode = null);
 
 public sealed record AssignMaintenanceOwnerRequest(Guid OwnerUserId);
 public sealed record ResolveMaintenanceRequest(string? ResolutionNote);
@@ -68,8 +68,8 @@ public sealed record AutomationFailureClassificationDto(string FailureType, bool
 public sealed record CreateAutomationDefectRequest(string? Classification, string? Severity, string? Title, string? Description);
 public sealed record AutomationStepResultDto(Guid AutomationStepResultId, int StepNo, string ActionCode, string Status, DateTime StartedAt, DateTime CompletedAt, long DurationMs, string? ActualResult, string? ErrorCode, string? ErrorMessage);
 public sealed record AutomationEvidenceDto(Guid AutomationEvidenceId, int? StepNo, string EvidenceType, string FilePath, string? CapturedBy, DateTime CapturedAt);
-public sealed record ReportStepResultRequest(int StepNo, string ActionCode, string Status, string? ActualResult, string? ErrorCode, string? ErrorMessage, string? EvidencePath, DateTime StartedAt, DateTime CompletedAt);
-public sealed record CompleteExecutionRequest(string Status, string? FailureType, string? ErrorCode, string? ErrorMessage);
+public sealed record ReportStepResultRequest(int StepNo, string ActionCode, string Status, string? ActualResult, string? ErrorCode, string? ErrorMessage, string? EvidencePath, DateTime StartedAt, DateTime CompletedAt, string? AgentCode = null);
+public sealed record CompleteExecutionRequest(string Status, string? FailureType, string? ErrorCode, string? ErrorMessage, string? AgentCode = null);
 public sealed record RequestExecutionRequest(Guid CaseId, Guid VersionId, Guid BuildId, Guid EnvironmentId, Guid? AgentId, int Priority);
 public sealed record BatchRunRequest(IReadOnlyList<Guid> CaseIds, Guid BuildId, Guid EnvironmentId, Guid? AgentId, int Priority);
 public sealed record RunSuiteRequest(Guid AutomationSuiteId, Guid BuildId, Guid EnvironmentId, Guid? AgentId, int Priority);
@@ -80,7 +80,7 @@ public sealed record ClaimJobRequest(string AgentCode, string AgentVersion, IRea
 public sealed record AutomationJobDto(Guid JobId, Guid AutomationExecutionId, int Priority, Guid? RequestedAgentId, Guid? AssignedAgentId, string? AssignedAgentCode, string Status, DateTime QueuedAt, DateTime? AssignedAt, DateTime? StartedAt, DateTime? CompletedAt, int RetryCount, string? LastError);
 public sealed record AutomationJobPackageDto(Guid JobId, Guid AutomationExecutionId, Guid AutomationCaseId, string AutomationCode, Guid AutomationVersionId, int VersionNo, string DslVersion, string DslJson, Guid BuildId, string BuildNumber, Guid EnvironmentId, string EnvironmentName, IReadOnlyList<string> Actions, IReadOnlyList<AutomationObjectDto> Objects);
 
-public interface IAutomationRepository
+public interface IAutomationRepository : IAutomationScopeChecks
 {
     Task<IReadOnlyList<AutomationCaseDto>> ListCasesAsync(Guid projectId, string? search, int take, CancellationToken ct);
     /// <summary>AUT-P2-001: real server-side page/size/filter/sort for the Automation Cases table — a sibling of

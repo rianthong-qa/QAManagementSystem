@@ -35,8 +35,15 @@ public sealed partial class AutomationRepository
     public Task<bool> EnvironmentExistsAsync(Guid environmentId, Guid projectId, CancellationToken ct)
         => db.TestEnvironments.AsNoTracking().AnyAsync(x => x.TestEnvironmentId == environmentId && x.ProjectId == projectId, ct);
 
-    public Task<bool> BuildExistsAsync(Guid buildId, CancellationToken ct)
-        => db.Builds.AsNoTracking().AnyAsync(x => x.BuildId == buildId, ct);
+    public Task<Guid?> FindActiveAgentIdByCodeAsync(string agentCode, CancellationToken ct)
+    {
+        var code = (agentCode ?? string.Empty).Trim().ToUpperInvariant();
+        return db.AutomationAgents.AsNoTracking().Where(x => x.AgentCode == code && !x.IsDeleted).Select(x => (Guid?)x.AgentId).FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>AUT-SEC-003: Build ต้องอยู่ใต้ Release ของ Project นี้ (ใช้ร่วมกับ run/schedule/trigger/seed/snapshot)</summary>
+    public Task<bool> BuildBelongsToProjectAsync(Guid buildId, Guid projectId, CancellationToken ct)
+        => db.Builds.AsNoTracking().AnyAsync(x => x.BuildId == buildId && db.Releases.Any(r => r.ReleaseId == x.ReleaseId && r.ProjectId == projectId), ct);
 
     public Task AddSnapshotAsync(AutomationDbSnapshot entity, CancellationToken ct) => db.AutomationDbSnapshots.AddAsync(entity, ct).AsTask();
 

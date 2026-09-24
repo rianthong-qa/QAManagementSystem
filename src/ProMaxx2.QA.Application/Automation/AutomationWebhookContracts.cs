@@ -78,6 +78,10 @@ public sealed class AutomationWebhookService(IAutomationWebhookRepository reposi
         token.RecordUse(DateTime.UtcNow);
         try
         {
+            // AUT-SEC-003: token ผูกกับ Project เดียว — Release ต้องเป็นของ Project นั้นด้วย เดิม token ของ Project A
+            // สร้าง Build ใน Release ของ Project B (และยิง Smoke trigger ของ B) ได้; ตอบ "ไม่พบ" เพื่อไม่เปิดเผย Release ข้าม Project
+            var release = await releases.GetAsync(r.ReleaseId, ct);
+            if (release.ProjectId != token.ProjectId) throw new EntityNotFoundException("Release not found.");
             var build = await releases.CreateBuildAsync(r.ReleaseId,
                 new CreateBuildRequest(r.BuildNumber, r.ApplicationVersion, r.PackageVersion, r.CommitReference, r.BuildDate, r.ChangeNotes, r.KnownIssues), null, ct);
             await repository.AddDeliveryAsync(new AutomationWebhookDelivery(token.ProjectId, token.AutomationWebhookTokenId, r.RequestId, DateTime.UtcNow, build.BuildId, "Created", null), ct);
