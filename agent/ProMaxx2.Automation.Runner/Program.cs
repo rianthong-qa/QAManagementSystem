@@ -8,11 +8,6 @@ if (args is { Length: > 0 } && args[0].Equals("inspect", StringComparison.Ordina
     return await RunInspectAsync(args);
 }
 
-if (args is { Length: > 0 } && args[0].Equals("trylogin", StringComparison.OrdinalIgnoreCase))
-{
-    return await RunTryLoginAsync(args);
-}
-
 if (args is { Length: > 0 } && args[0].Equals("verify", StringComparison.OrdinalIgnoreCase))
 {
     return await RunVerifyAsync(args);
@@ -33,11 +28,18 @@ if (args is { Length: > 0 } && args[0].Equals("seed", StringComparison.OrdinalIg
     return await RunSeedAsync();
 }
 
-var config = AgentConfig.FromEnvironment();
+AgentConfig config;
+try { config = AgentConfig.FromEnvironment(); }
+catch (InvalidOperationException ex) { Console.Error.WriteLine(ex.Message); return 2; }
 
 if (string.IsNullOrWhiteSpace(config.Username) || string.IsNullOrWhiteSpace(config.Password))
 {
     Console.Error.WriteLine("Missing QAHUB_USERNAME / QAHUB_PASSWORD. ตั้งค่าก่อนรัน (ดู set-agent-env.ps1)");
+    return 2;
+}
+if (HubUrlPolicy.Validate(config.HubBaseUrl, config.AllowInsecureHttp) is { } urlError)
+{
+    Console.Error.WriteLine(urlError);
     return 2;
 }
 
@@ -71,14 +73,29 @@ while (true)
 Console.WriteLine($"[agent] Logged in to {config.HubBaseUrl} as {config.Username}");
 Console.WriteLine($"[agent] Registered agent '{config.AgentCode}' v{config.AgentVersion}");
 
+var waitingForDesktop = false;
 while (!cts.IsCancellationRequested)
 {
+    UiSessionLock? desktop = null;
     try
     {
         await client.HeartbeatAsync("Idle", null, cts.Token);
+        // AUT-AGT-003: Runner ตัวอื่นบนเครื่องนี้ (เช่น POS กับ App ที่ GUI เปิดคู่กัน) กำลังใช้หน้าจอ — ยังไม่ claim งาน
+        // เพื่อไม่ให้งานที่รับมาแล้วต้องนั่งรอ และไม่ให้สองตัวกด mouse/keyboard แย่งกัน
+        desktop = UiSessionLock.TryAcquire();
+        if (desktop is null)
+        {
+            if (!waitingForDesktop) Console.WriteLine("[agent] Runner อีกตัวบนเครื่องนี้กำลังใช้หน้าจอ — รอจนเสร็จก่อนรับงาน");
+            waitingForDesktop = true;
+            await Task.Delay(TimeSpan.FromSeconds(config.HeartbeatSeconds), cts.Token);
+            continue;
+        }
+        waitingForDesktop = false;
         var package = await client.ClaimJobAsync(cts.Token);
         if (package is null)
         {
+            desktop.Dispose();
+            desktop = null;
             await Task.Delay(TimeSpan.FromSeconds(config.HeartbeatSeconds), cts.Token);
             continue;
         }
@@ -96,53 +113,20 @@ while (!cts.IsCancellationRequested)
         try { await Task.Delay(TimeSpan.FromSeconds(config.HeartbeatSeconds), cts.Token); }
         catch (OperationCanceledException) { break; }
     }
+    finally
+    {
+        desktop?.Dispose();
+    }
 }
 
 Console.WriteLine("[agent] stopped.");
 return 0;
 
-static async Task<int> RunTryLoginAsync(string[] args)
-{
-    string? exe = null;
-    var timeout = 30;
-    var waitAfter = 8;
-    for (var i = 1; i < args.Length; i++)
-    {
-        switch (args[i])
-        {
-            case "--exe": exe = args[++i]; break;
-            case "--timeout": timeout = int.TryParse(args[++i], out var t) ? t : 30; break;
-            case "--after": waitAfter = int.TryParse(args[++i], out var a) ? a : 8; break;
-        }
-    }
-    if (string.IsNullOrWhiteSpace(exe)) { Console.Error.WriteLine("Usage: Runner trylogin --exe <path>"); return 2; }
-    var candidates = new (string Emp, string Pwd)[]
-    {
-        ("admin", ""), ("admin", "admin"), ("admin", "1234"), ("1", ""), ("1", "1"),
-        ("sa", ""), ("sa", "sa"), ("1000", ""), ("001", ""), ("a001", ""), ("admin", "123456"),
-        ("admin", "password"), ("supervisor", ""), ("manager", ""), ("test", ""), ("qa", ""),
-    };
-    foreach (var (emp, pwd) in candidates)
-    {
-        Console.WriteLine($"\n== trying {emp} / '{pwd}' ==");
-        var login = new LoginCredentials(emp, pwd, waitAfter);
-        var result = await UiInspector.InspectAsync(exe!, null, timeout, 8, login, CancellationToken.None);
-        if (result is null) { Console.WriteLine("no window; abort."); return 2; }
-        var hasLogin = result.Nodes.Any(n => n.AutomationId == "TxtEmpId");
-        Console.WriteLine($"   after login: TxtEmpId still present = {hasLogin}");
-        if (!hasLogin)
-        {
-            Console.WriteLine($"SUCCESS: {emp} / '{pwd}'");
-            await File.WriteAllTextAsync("tools/last-valid-login.txt", $"{emp}|{pwd}");
-            return 0;
-        }
-    }
-    Console.WriteLine("No candidate worked.");
-    return 1;
-}
-
 static async Task<int> RunInspectAsync(string[] args)
 {
+    // AUT-AGT-003: ใช้หน้าจอเหมือน job — ห้ามชนกับ Runner ที่กำลังรันงานอยู่บนเครื่องเดียวกัน
+    using var desktop = UiSessionLock.TryAcquire();
+    if (desktop is null) { Console.Error.WriteLine("Runner อีกตัวบนเครื่องนี้กำลังใช้หน้าจออยู่ — รอให้เสร็จหรือหยุด Agent ก่อน"); return 2; }
     string? exe = null, outPath = null, processName = null;
     var timeout = 10;
     var settle = 8;
@@ -177,9 +161,12 @@ static async Task<int> RunInspectAsync(string[] args)
     }
     if (string.IsNullOrWhiteSpace(exe) && string.IsNullOrWhiteSpace(processName))
     {
-        Console.Error.WriteLine("Usage: Runner inspect --exe <path> [--process <name>] [--out <path>] [--timeout <sec>] [--wait <sec>] [--emp <id> --pwd <pwd>] [--nav <id>]");
+        Console.Error.WriteLine("Usage: Runner inspect --exe <path> [--process <name>] [--out <path>] [--timeout <sec>] [--wait <sec>] [--emp <id>] [--nav <id>]  (รหัสผ่านอ่านจาก AUT_PASSWORD)");
         return 2;
     }
+    // AUT-AGT-004: รหัสผ่านบน command line (--pwd) อ่านได้จาก Task Manager/ประวัติ shell — ใช้ AUT_PASSWORD(_DPAPI) แทนเมื่อไม่ระบุ
+    if (pwd is not null) Console.Error.WriteLine("[inspect] คำเตือน: --pwd ทำให้รหัสผ่านอยู่บน command line — แนะนำตั้ง AUT_PASSWORD ด้วย set-agent-env.ps1 แล้วไม่ต้องใส่ --pwd");
+    else if (!string.IsNullOrWhiteSpace(emp)) pwd = AgentSecrets.Read("AUT_PASSWORD", Environment.GetEnvironmentVariable);
     Console.WriteLine($"[inspect] dumping UIA tree of {(exe ?? processName)} (timeout {timeout}s, settle {settle}s)...");
     var login = string.IsNullOrWhiteSpace(emp) ? null : new LoginCredentials(emp, pwd ?? "", afterLogin, nav, navWait, scan, scanWait, qtyValue, pressKey, postPress);
     var result = await UiInspector.InspectAsync(exe ?? "", processName, timeout, settle, login, CancellationToken.None);
@@ -201,6 +188,9 @@ static async Task<int> RunInspectAsync(string[] args)
 
 static async Task<int> RunVerifyAsync(string[] args)
 {
+    // AUT-AGT-003: ใช้หน้าจอเหมือน job — ห้ามชนกับ Runner ที่กำลังรันงานอยู่บนเครื่องเดียวกัน
+    using var desktop = UiSessionLock.TryAcquire();
+    if (desktop is null) { Console.Error.WriteLine("Runner อีกตัวบนเครื่องนี้กำลังใช้หน้าจออยู่ — รอให้เสร็จหรือหยุด Agent ก่อน"); return 2; }
     string? exe = null, processName = null;
     var timeout = 30;
     var settle = 8;
@@ -461,14 +451,39 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
         }
     });
 
+    // AUT-AGT-003: เปิด AUT ไม่ได้/ไม่มีหน้าต่างหลัก ต้องรายงานเป็น EnvironmentFailure (AUT-APP-*) ทันที — เดิมกลืน error
+    // แล้วรัน step ต่อจนได้ ObjectNotFound (AUT-UI-001) ซึ่งทำให้ Case ถูกส่งเข้า MaintenanceRequired ผิดสาเหตุ
+    async Task FailEnvironmentAsync(string code, string message)
+    {
+        Log($"{code}: {message}");
+        Console.Error.WriteLine($"[job] {package.AutomationCode} => {code}: {message}");
+        completionSent = true;
+        await client.CompleteAsync(package.AutomationExecutionId, "Failed", "EnvironmentFailure", code, message, ct);
+        await UploadLogAsync(client, package, log, ct);
+    }
+
     try
     {
         var started = DateTime.UtcNow;
         if (!string.IsNullOrWhiteSpace(config.AutExe))
         {
+            if (!File.Exists(config.AutExe)) { await FailEnvironmentAsync("AUT-APP-001", $"ไม่พบไฟล์ AUT: {config.AutExe}"); return; }
+            var leftovers = AutProcess.FindInstances(config.AutExe);
+            var leftoverCount = leftovers.Count;
+            foreach (var p in leftovers) p.Dispose();
+            if (leftoverCount > 0)
+            {
+                if (!config.CloseExistingAut) { await FailEnvironmentAsync("AUT-APP-001", $"มี {Path.GetFileName(config.AutExe)} เปิดอยู่แล้ว {leftoverCount} หน้าต่าง และตั้ง AUT_CLOSE_EXISTING=false ไว้ — ปิดโปรแกรมก่อนแล้วรันใหม่"); return; }
+                var closed = AutProcess.CloseInstances(config.AutExe, TimeSpan.FromSeconds(10));
+                Log($"ปิด {Path.GetFileName(config.AutExe)} ที่ค้างอยู่ {closed}/{leftoverCount} instance ก่อนเริ่มงาน");
+            }
             try { await driver.LaunchAsync(config.AutExe, null, TimeSpan.FromSeconds(30)); }
-            catch { /* already running or launch failed */ }
-            await driver.WaitForMainWindowAsync(processName, TimeSpan.FromSeconds(30));
+            catch (Exception ex) { await FailEnvironmentAsync("AUT-APP-001", $"เปิด AUT ไม่สำเร็จ: {ex.Message}"); return; }
+            if (!await driver.WaitForMainWindowAsync(processName, TimeSpan.FromSeconds(30)))
+            {
+                await FailEnvironmentAsync("AUT-APP-002", "เปิด AUT แล้วแต่ไม่พบหน้าต่างหลักภายใน 30 วินาที");
+                return;
+            }
         }
 
         var dsl = JsonSerializer.Deserialize<DslDocument>(package.DslJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -506,7 +521,7 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
             }
         }
 
-        await driver.CloseAsync();
+        await driver.CloseAsync(); // ปิดก่อนรายงานผล — finally จะปิดซ้ำแบบ no-op
         var status = overall ? "Passed" : "Failed";
         // Forward the failed step's actual ErrorCode/ErrorMessage instead of a hardcoded "AUT-UI-003" — the server's
         // AutomationFailureClassifier branches on ErrorCode (AUT-DB-*/AUT-APP-*/AUT-AGENT-* etc. drive Retry vs
@@ -534,6 +549,8 @@ static async Task ExecutePackageAsync(QaHubClient client, JobPackage package, Ag
     }
     finally
     {
+        // AUT-AGT-003: ปิด AUT ทุกเส้นทาง (Fail/exception/ยกเลิก) — เดิมปิดเฉพาะเส้นทางปกติ ทำให้หน้าจอค้างไปถึงงานถัดไป
+        try { await driver.CloseAsync(); } catch (Exception ex) { Console.Error.WriteLine($"[job] close AUT failed: {ex.Message}"); }
         heartbeatCts.Cancel();
         try { await heartbeatTask; } catch { }
     }

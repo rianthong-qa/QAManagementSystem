@@ -90,9 +90,11 @@ public sealed class DatabaseSnapshotService(string gbakPath = "gbak") : IDbSnaps
             : new DbRestoreResult(false, true, false, "Restore command completed but the database did not respond to a basic availability check afterward.", sw.ElapsedMilliseconds);
     }
 
-    private async Task RunGbakRestoreAsync(DbProfile profile, string snapshotPath, CancellationToken ct)
+    /// <summary>AUT-AGT-004: ส่ง user/password ให้ gbak ผ่าน environment ของ process ลูก (<c>ISC_USER</c>/<c>ISC_PASSWORD</c>
+    /// ซึ่ง gbak รองรับ) แทน <c>-user</c>/<c>-password</c> บน command line — command line ของทุก process อ่านได้จาก
+    /// Task Manager/WMI ส่วน environment อ่านได้เฉพาะเจ้าของ process/admin. ใช้ ArgumentList (ไม่ต่อ string) เพื่อไม่ต้อง quote path เอง</summary>
+    public static ProcessStartInfo CreateGbakStartInfo(string gbakPath, DbProfile profile, params string[] arguments)
     {
-        var target = $"{profile.Host}/{profile.Port}:{profile.Database}";
         var psi = new ProcessStartInfo
         {
             FileName = gbakPath,
@@ -101,9 +103,18 @@ public sealed class DatabaseSnapshotService(string gbakPath = "gbak") : IDbSnaps
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        foreach (var arg in arguments) psi.ArgumentList.Add(arg);
+        psi.Environment["ISC_USER"] = profile.User;
+        psi.Environment["ISC_PASSWORD"] = profile.Password;
+        return psi;
+    }
+
+    private async Task RunGbakRestoreAsync(DbProfile profile, string snapshotPath, CancellationToken ct)
+    {
+        var target = $"{profile.Host}/{profile.Port}:{profile.Database}";
         // "-rep" (replace_database): create-and-overwrite in one step, since the target database already exists —
         // a plain "-c" (create) would fail on a database name that is already in use.
-        foreach (var arg in new[] { "-rep", "-user", profile.User, "-password", profile.Password, snapshotPath, target }) psi.ArgumentList.Add(arg);
+        var psi = CreateGbakStartInfo(gbakPath, profile, "-rep", snapshotPath, target);
 
         Process process;
         try { process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start the gbak process."); }
@@ -199,16 +210,7 @@ public sealed class DatabaseSnapshotService(string gbakPath = "gbak") : IDbSnaps
     private async Task RunGbakBackupAsync(DbProfile profile, string outputPath, CancellationToken ct)
     {
         var source = $"{profile.Host}/{profile.Port}:{profile.Database}";
-        var psi = new ProcessStartInfo
-        {
-            FileName = gbakPath,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        // ArgumentList (not a concatenated string) so the password/paths never need manual shell-quoting/escaping.
-        foreach (var arg in new[] { "-backup", "-user", profile.User, "-password", profile.Password, source, outputPath }) psi.ArgumentList.Add(arg);
+        var psi = CreateGbakStartInfo(gbakPath, profile, "-backup", source, outputPath);
 
         Process process;
         try { process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start the gbak process."); }

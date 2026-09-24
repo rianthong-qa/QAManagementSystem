@@ -307,11 +307,28 @@ public sealed class FlaUiDriver : IUiAutomationDriver
         }
     }
 
-    public Task CloseAsync()
+    /// <summary>AUT-AGT-003: ขอปิดแบบปกติก่อน ถ้า AUT ไม่ปิดภายใน 10 วินาที (เช่นมี dialog ยืนยันการออก หรือค้าง) จึง kill
+    /// — เดิมเรียก Close() ครั้งเดียวแล้วกลืน error ทำให้ ProMaxx2 ค้างอยู่และงานถัดไปเจอหน้าจอเดิม</summary>
+    public async Task CloseAsync()
     {
-        try { _application?.Close(); } catch { }
+        var app = _application;
+        _application = null;
         _mainWindow = null;
-        return Task.CompletedTask;
+        if (app is null) return;
+        try
+        {
+            try { if (!app.HasExited) app.Close(); } catch { /* window already gone */ }
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!app.HasExited && DateTime.UtcNow < deadline) await Task.Delay(250);
+            if (!app.HasExited)
+            {
+                try { app.Kill(); } catch { /* exited meanwhile */ }
+            }
+        }
+        finally
+        {
+            app.Dispose();
+        }
     }
 
     public void Dispose() => _automation.Dispose();

@@ -30,6 +30,9 @@ public sealed class AgentConfigStore
     private readonly string _path;
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("ProMaxx2.Automation.AgentGui.v1");
 
+    /// <summary>AUT-AGT-004: ข้อความเตือนจากการ Load ครั้งล่าสุด (เช่นถอดรหัสรหัสผ่านไม่ได้) — null ถ้าไม่มีปัญหา</summary>
+    public string? LastLoadWarning { get; private set; }
+
     public AgentConfigStore()
     {
         var dir = AppContext.BaseDirectory;
@@ -38,20 +41,25 @@ public sealed class AgentConfigStore
 
     public AgentConfig Load()
     {
+        LastLoadWarning = null;
+        if (!File.Exists(_path)) return new AgentConfig();
+        AgentConfig config;
         try
         {
-            if (!File.Exists(_path)) return new AgentConfig();
-            var json = File.ReadAllText(_path);
-            var config = JsonSerializer.Deserialize<AgentConfig>(json) ?? new AgentConfig();
-            config.Password = Unprotect(config.Password);
-            config.AutPassword = Unprotect(config.AutPassword);
-            config.DbPassword = Unprotect(config.DbPassword);
-            return config;
+            config = JsonSerializer.Deserialize<AgentConfig>(File.ReadAllText(_path)) ?? new AgentConfig();
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
+            LastLoadWarning = $"อ่าน agent-config.json ไม่ได้ ({ex.Message}) — ใช้ค่าเริ่มต้นแทน กรอกตั้งค่าแล้วกดบันทึกใหม่";
             return new AgentConfig();
         }
+        var unreadable = new List<string>();
+        config.Password = Unprotect(config.Password, "Password (QA Hub)", unreadable);
+        config.AutPassword = Unprotect(config.AutPassword, "AUT Password", unreadable);
+        config.DbPassword = Unprotect(config.DbPassword, "DB Password", unreadable);
+        if (unreadable.Count > 0)
+            LastLoadWarning = $"ถอดรหัส {string.Join(", ", unreadable)} ไม่ได้ (ไฟล์ตั้งค่าถูกบันทึกโดย Windows user อื่น หรือบันทึกแบบไม่เข้ารหัสจากเวอร์ชันเก่า) — กรอกรหัสผ่านใหม่แล้วกดบันทึก";
+        return config;
     }
 
     public void Save(AgentConfig config)
@@ -97,6 +105,7 @@ public sealed class AgentConfigStore
         return null;
     }
 
+    /// <summary>AUT-AGT-004: เข้ารหัสไม่สำเร็จต้องไม่บันทึกเป็น plaintext แบบเงียบ ๆ (เดิม catch แล้วคืนค่าเดิม) — โยน error ให้ผู้ใช้เห็น</summary>
     private static string Protect(string plain)
     {
         if (string.IsNullOrEmpty(plain)) return "";
@@ -105,13 +114,14 @@ public sealed class AgentConfigStore
             var bytes = ProtectedData.Protect(Encoding.UTF8.GetBytes(plain), Entropy, DataProtectionScope.CurrentUser);
             return Convert.ToBase64String(bytes);
         }
-        catch
+        catch (CryptographicException ex)
         {
-            return plain;
+            throw new InvalidOperationException("เข้ารหัสรหัสผ่านด้วย Windows DPAPI ไม่สำเร็จ — ไม่บันทึกรหัสผ่านเป็นข้อความธรรมดา", ex);
         }
     }
 
-    private static string Unprotect(string encrypted)
+    /// <summary>AUT-AGT-004: ถอดรหัสไม่ได้ → คืนค่าว่างและบันทึกชื่อช่องไว้เตือน (เดิมคืนข้อความที่เข้ารหัสแล้วมาใช้เป็นรหัสผ่านตรง ๆ)</summary>
+    private static string Unprotect(string encrypted, string field, List<string> unreadable)
     {
         if (string.IsNullOrEmpty(encrypted)) return "";
         try
@@ -119,9 +129,10 @@ public sealed class AgentConfigStore
             var bytes = ProtectedData.Unprotect(Convert.FromBase64String(encrypted), Entropy, DataProtectionScope.CurrentUser);
             return Encoding.UTF8.GetString(bytes);
         }
-        catch
+        catch (Exception ex) when (ex is FormatException or CryptographicException)
         {
-            return encrypted;
+            unreadable.Add(field);
+            return "";
         }
     }
 }

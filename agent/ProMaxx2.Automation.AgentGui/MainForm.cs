@@ -181,9 +181,41 @@ public sealed class MainForm : Form
         catch (Exception ex) { MessageBox.Show($"เปิด {name} ไม่สำเร็จ: {ex.Message}", "เปิด ProMaxx2", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
+    /// <summary>AUT-AGT-004: ไม่ยอมใช้ http ไปยังเครื่องอื่น (ดู HubUrlPolicy) — ตั้ง env QAHUB_ALLOW_INSECURE_HTTP=true ถ้าจำเป็นจริง ๆ</summary>
+    private bool EnsureSecureHubUrl(string url)
+    {
+        var error = ProMaxx2.Automation.Core.HubUrlPolicy.Validate(url, ProMaxx2.Automation.Core.HubUrlPolicy.IsInsecureAllowed(Environment.GetEnvironmentVariable));
+        if (error is null) return true;
+        AppendLog($"[config] {error}");
+        MessageBox.Show(error, "QA Hub URL", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        return false;
+    }
+
+    private bool TrySaveConfig(AgentConfig config)
+    {
+        try
+        {
+            _store.Save(config);
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            AppendLog($"[config] บันทึกไม่สำเร็จ: {ex.Message}");
+            MessageBox.Show($"บันทึกตั้งค่าไม่สำเร็จ: {ex.Message}", "ProMaxx2 Agent", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+    }
+
     private void LoadConfig()
     {
         var c = _store.Load();
+        if (_store.LastLoadWarning is { } warning)
+        {
+            AppendLog($"[config] {warning}");
+            // LoadConfig ถูกเรียกจาก constructor ก่อนมี window handle — แสดงกล่องข้อความหลังฟอร์มขึ้นจอแล้ว
+            void ShowWarning(object? sender, EventArgs e) { Shown -= ShowWarning; MessageBox.Show(this, warning, "ตั้งค่า Agent", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            Shown += ShowWarning;
+        }
         _hubUrl.Text = c.HubBaseUrl;
         _username.Text = c.Username;
         _password.Text = c.Password;
@@ -229,7 +261,8 @@ public sealed class MainForm : Form
 
     private void SaveConfig()
     {
-        _store.Save(CollectConfig());
+        var config = CollectConfig();
+        if (!EnsureSecureHubUrl(config.HubBaseUrl) || !TrySaveConfig(config)) return;
         AppendLog($"[config] บันทึกตั้งค่าแล้ว → agent-config.json");
         MessageBox.Show("บันทึกตั้งค่าแล้ว", "ProMaxx2 Agent", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
@@ -240,6 +273,7 @@ public sealed class MainForm : Form
         try
         {
             var c = CollectConfig();
+            if (!EnsureSecureHubUrl(c.HubBaseUrl)) return;
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             var response = await http.PostAsJsonAsync($"{c.HubBaseUrl}/auth/login", new { username = c.Username, password = c.Password });
             AppendLog(response.IsSuccessStatusCode
@@ -260,6 +294,7 @@ public sealed class MainForm : Form
     {
         var config = CollectConfig();
         var started = 0;
+        if (!EnsureSecureHubUrl(config.HubBaseUrl)) return;
 
         if (string.IsNullOrWhiteSpace(config.AutExe) && string.IsNullOrWhiteSpace(config.AutExe2))
         {
@@ -322,7 +357,7 @@ public sealed class MainForm : Form
             MessageBox.Show("ไม่พบ ProMaxx2.Automation.Runner.exe — ตรวจ path หรือ build ก่อน", "ProMaxx2 Agent", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return null;
         }
-        _store.Save(config);
+        if (!TrySaveConfig(config)) return null;
 
         var psi = new ProcessStartInfo
         {

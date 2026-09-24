@@ -26,6 +26,11 @@ public sealed class AgentConfig
     /// <summary>AUT-DATA-001: local directory backup files are written to before the agent reports the result back
     /// to the Hub. Relative paths are resolved against the runner's working directory.</summary>
     public string SnapshotDirectory { get; init; } = "snapshots";
+    /// <summary>AUT-AGT-004: ยอมส่ง credential ผ่าน http ไปยังเครื่องอื่น (ค่าเริ่มต้นไม่ยอม — ดู <see cref="HubUrlPolicy"/>)</summary>
+    public bool AllowInsecureHttp { get; init; }
+    /// <summary>AUT-AGT-003: ก่อนเริ่มงาน ปิด instance ของ AUT ที่ค้างอยู่ (เช่นจากงานก่อนที่ Runner crash) เพื่อให้ทุกงานเริ่มจาก
+    /// สถานะเดียวกัน — ตั้ง <c>AUT_CLOSE_EXISTING=false</c> ถ้าเครื่องนี้มีคนใช้ ProMaxx2 เอง แล้วงานจะ Fail (AUT-APP-001) แทนการปิดให้</summary>
+    public bool CloseExistingAut { get; init; } = true;
     public int HeartbeatSeconds { get; init; } = 15;
     public int ActionTimeoutSeconds { get; init; } = 20;
     public TimeSpan ActionTimeout => TimeSpan.FromSeconds(ActionTimeoutSeconds);
@@ -33,26 +38,29 @@ public sealed class AgentConfig
     public static AgentConfig FromEnvironment()
     {
         static string Get(string key) => Environment.GetEnvironmentVariable(key) ?? "";
+        static string Secret(string key) => AgentSecrets.Read(key, Environment.GetEnvironmentVariable);
         static int GetInt(string key, int fallback) => int.TryParse(Environment.GetEnvironmentVariable(key), out var value) ? value : fallback;
         return new AgentConfig
         {
             HubBaseUrl = (Get("QAHUB_BASE_URL") is { Length: > 0 } url ? url : "http://localhost:5038/api/v1").TrimEnd('/'),
             Username = Get("QAHUB_USERNAME"),
-            Password = Get("QAHUB_PASSWORD"),
+            Password = Secret("QAHUB_PASSWORD"),
             AgentCode = (Get("AGENT_CODE") is { Length: > 0 } code ? code : Environment.MachineName),
             AutExe = Get("AUT_EXE"),
             AutUser = Get("AUT_USER"),
-            AutPassword = Get("AUT_PASSWORD"),
+            AutPassword = Secret("AUT_PASSWORD"),
             FdbPath = Get("AUT_FDB_PATH") is { Length: > 0 } fdb ? fdb : null,
             TargetApp = ResolveTargetApp(Get("AUT_TARGET"), Get("AUT_EXE")),
             DbType = Get("AUT_DB_TYPE") is { Length: > 0 } dt ? dt : "Firebird",
             DbHost = Get("AUT_DB_HOST") is { Length: > 0 } dh ? dh : "127.0.0.1",
             DbPort = GetInt("AUT_DB_PORT", 3050),
             DbUser = Get("AUT_DB_USER") is { Length: > 0 } du ? du : "SYSDBA",
-            DbPassword = Get("AUT_DB_PASSWORD"),
+            DbPassword = Secret("AUT_DB_PASSWORD"),
             DbDatabase = Get("AUT_DB_DATABASE") is { Length: > 0 } dd ? dd : "",
             GbakPath = Get("AUT_GBAK_PATH") is { Length: > 0 } gp ? gp : "gbak",
             SnapshotDirectory = Get("AUT_SNAPSHOT_DIR") is { Length: > 0 } sd ? sd : "snapshots",
+            AllowInsecureHttp = HubUrlPolicy.IsInsecureAllowed(Environment.GetEnvironmentVariable),
+            CloseExistingAut = !Get("AUT_CLOSE_EXISTING").Equals("false", StringComparison.OrdinalIgnoreCase) && Get("AUT_CLOSE_EXISTING") != "0",
             HeartbeatSeconds = GetInt("HEARTBEAT_SECONDS", 15),
             ActionTimeoutSeconds = GetInt("ACTION_TIMEOUT_SECONDS", 20),
         };
