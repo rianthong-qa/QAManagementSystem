@@ -205,6 +205,11 @@
 
 ## 11. Progress Log
 
+### 2026-09-24 — Checklist ทดสอบภาคสนามรวมรอบที่ 1–7
+
+- เพิ่ม `AUTOMATION_FIELD_TEST_CHECKLIST.md`: ทดสอบครั้งเดียวเพื่อปิด AUT-SEC-004, AUT-REL-001/002, AUT-AGT-001–004, AUT-UI-001/002 และ AUT-CAP-001–005 (ส่วน A–H) พร้อมตรวจซ้ำ DONE ที่ยังไม่เคยทดสอบกับของจริง (ส่วน I: AUT-P0-006, AUT-DATA-001–005)
+- ระบุรายการที่ปิดด้วยการทดสอบภาคสนามไม่ได้: AUT-REL-003 (unit test กรณี DB write ล้ม), AUT-CAP-006/integration test ของ Capture และ AA1–AA6 (ยังขาด UI)
+
 ### 2026-09-24 — รอบที่ 7: AUT-REL-003, AUT-SEC-002, AUT-TEST-011
 
 - ปิด AUT-SEC-002 และ AUT-TEST-011; AUT-REL-003 โค้ดครบแต่ยังขาด test กรณี DB write ล้มระหว่าง fire (รายละเอียดในตาราง P0)
