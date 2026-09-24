@@ -260,6 +260,13 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-09-24 — Automation: `ModalShell` มาตรฐานและการโหลด dropdown
+
+- ทุก modal ของหน้า Automation ใช้ `ModalShell` (`src/automation/ui.tsx`) แทนการเขียน `.modal`/`.modal-box` เอง: เปิดแล้ว focus ช่องกรอกแรก (หรือปุ่มแรก), Tab วนอยู่ใน modal, ปิดแล้วคืน focus ให้ปุ่มที่เปิด, Escape ปิดเฉพาะ modal บนสุด, มี `aria-labelledby` (หรือ `aria-label` เมื่อหัวข้อไม่มี id)
+- modal ที่เป็นฟอร์ม (`form`) คลิกพื้นหลังไม่ปิด และ Escape ต้องถามยืนยันก่อนทิ้งข้อมูล; modal อ่านอย่างเดียวปิดด้วยคลิกพื้นหลังได้; modal แสดง secret ใช้ `backdropDismiss={false}`; ระหว่าง busy ห้ามปิด (ตรวจใน `onDismiss`)
+- dropdown Build/Environment โหลดผ่าน `useBuildsAndEnvironments` ตัวเดียว และแสดง error **ภายใน modal นั้น** (เดิมบาง modal ส่ง error ไปที่หน้าหลักซึ่งถูก modal บังอยู่ หรือกลืน error แล้วแสดงเป็นรายการว่าง)
+- modal ใหม่ของหน้า Automation ต้องใช้ `ModalShell` เสมอ
+
 ### 2026-09-24 — Automation: modal ข้อมูลสำคัญ และ error state
 
 - Secret ที่แสดงครั้งเดียว (เช่น Webhook Token) ต้องอยู่ใน modal ที่ **ไม่ปิดด้วยคลิกพื้นหลัง**, มีช่อง read-only + ปุ่ม "คัดลอก" (ถ้า clipboard ใช้ไม่ได้ให้เลือกข้อความและบอกให้กด Ctrl+C), และถามยืนยันก่อนปิดถ้ายังไม่ได้คัดลอก (ทั้งปุ่มปิดและ Escape); Mobile ช่องและปุ่มเรียงแนวตั้ง (`.automation-token-copy`)

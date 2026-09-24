@@ -49,7 +49,7 @@ tools/ProMaxx2.ServiceManager ← WinForms: Start/Stop/Restart API + Web, log, C
 | ไฟล์ | เนื้อหา |
 |---|---|
 | `App.tsx` | App shell + หน้าส่วนใหญ่ (Dashboard, Test Case/Suite/Cycle, Execution Workspace, Defect, Test Summary ฯลฯ) |
-| `AutomationPage.tsx` + `Automation.css` | หน้า Automation ทั้งหมด (~3,000 บรรทัด) |
+| `AutomationPage.tsx` + `automation/*` + `Automation.css` | หน้า Automation: `AutomationPage.tsx` (หน้าหลัก/แท็บ Cases, ~1,300 บรรทัด) + `automation/` แยกตามแท็บ — `types.ts`, `shared.ts` (`fetchJson`, `useDebounced`, `useBuildsAndEnvironments`), `ui.tsx` (`ModalShell`, `Badge`, `Pager`), `caseModals`, `manageTabs`, `executionTabs`, `suiteTab`, `scheduleTabs` (Schedule/Build Trigger/Webhook), `dataTabs` (Snapshot/Seed/Data Profile) |
 | `AuditLogPage.tsx` | หน้า Audit Log |
 | `ExecutionDefectEditor.tsx` | Modal สร้าง/แก้ Defect + แนบรูปจาก Execution Workspace |
 | `DefectModulePdf.ts` | Export PDF A4 อันดับ Defect รายโมดูล (jspdf + html2canvas โหลดแบบ dynamic import) |
