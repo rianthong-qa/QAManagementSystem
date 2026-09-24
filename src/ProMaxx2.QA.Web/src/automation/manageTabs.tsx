@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { confirmDialog } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
 import { apiUrl } from "../api";
 import {
@@ -84,7 +85,7 @@ export function ActionLibraryTab({ actions, canManage, headers, onReload, onErro
   };
 
   const toggle = async (item: AutomationActionItem) => {
-    if (!window.confirm(`${item.isActive ? "ปิด" : "เปิด"} Action ${item.actionCode}?`)) return;
+    if (!await confirmDialog(`${item.isActive ? "ปิด" : "เปิด"} Action ${item.actionCode}?`)) return;
     setBusy(true);
     try {
       const r = await fetch(`${apiUrl}/automation/actions/${item.automationActionId}`, { method: "PUT", headers, body: JSON.stringify({ actionName: item.actionName, category: item.category, description: item.description, parameterSchemaJson: item.parameterSchemaJson, handlerKey: item.handlerKey, minimumAgentVersion: item.minimumAgentVersion, isActive: !item.isActive, retrySafety: item.retrySafety }) });
@@ -196,7 +197,7 @@ export function ObjectRepositoryTab({ projectId, objects, canManage, headers, on
   };
 
   const toggle = async (item: AutomationObjectItem) => {
-    if (!window.confirm(`${item.isActive ? "ปิด" : "เปิด"} Object ${buildObjectKey(item.screenCode, item.objectCode)}?`)) return;
+    if (!await confirmDialog(`${item.isActive ? "ปิด" : "เปิด"} Object ${buildObjectKey(item.screenCode, item.objectCode)}?`)) return;
     setBusy(true);
     try {
       const action = item.isActive ? "deactivate" : "activate";

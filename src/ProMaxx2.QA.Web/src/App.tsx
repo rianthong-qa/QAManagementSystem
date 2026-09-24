@@ -1,4 +1,6 @@
 import { Fragment as _F, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { confirmDialog, promptDialog, notify } from "./components/dialogStore";
+import { ModalShell } from "./components/ModalShell";
 import "./App.css";
 import "./styles.css";
 import "./ExecutionWorkspace.css";
@@ -984,13 +986,15 @@ function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel,
     } catch (e) { setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ"); } finally { setSaving(false); }
   };
   const removeDefect = async (item: DefectItem) => {
-    if (!window.confirm(`ลบ ${item.defectCode} ใช่หรือไม่?`)) return;
+    if (!await confirmDialog(`ลบ ${item.defectCode} ใช่หรือไม่?`)) return;
     const response = await fetch(`${apiUrl}/defects/${item.defectId}`, { method: "DELETE", headers });
     if (response.ok) { setNotice(`ลบ ${item.defectCode} แล้ว`); setReload(x => x + 1); }
   };
   const quickStatus = async (item: DefectItem, status: string) => {
+    if (status === "Closed" && !await confirmDialog({ title: "ปิด Defect", message: `ปิด ${item.defectCode} ใช่หรือไม่?\nDefect ที่ปิดแล้วจะไม่อยู่ในรายการที่ต้องติดตาม`, confirmLabel: "ปิด Defect" })) return;
     const response = await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status }) });
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1); }
+    else notify(`เปลี่ยนสถานะ ${item.defectCode} ไม่สำเร็จ`, "error");
   };
   const openCrmDialog = async (mode: "send" | "reassign", item: DefectItem) => {
     setCrmMode(mode); setCrmTargetItem(item);
@@ -1020,7 +1024,7 @@ function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel,
       // modal ของ Defect ตัวเดียวกันอยู่แล้ว — ถ้าส่งจากคอลัมน์ CRM ในตาราง list โดยตรง (ไม่ได้เปิด detail
       // ไว้) ก็ไม่ต้องเด้ง detail มาให้ ปล่อยให้ตาราง reload แล้วเห็น badge เปลี่ยนในแถวเดิมพอ
       if (detail && detail.defectId === item.defectId) openDetail(item);
-    } catch (e) { window.alert(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ"); }
+    } catch (e) { notify(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ", "error"); }
     finally { setCrmSending(false); }
   };
   const openDetail = async (item: DefectItem) => {
@@ -1047,7 +1051,9 @@ function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel,
   };
   const bulkStatus = async (status: string) => {
     if (canEdit === false || !selectedIds.length) return;
+    if (!await confirmDialog({ title: "เปลี่ยนสถานะหลายรายการ", message: `เปลี่ยนสถานะ Defect ${selectedIds.length} รายการเป็น ${status} ใช่หรือไม่?`, confirmLabel: `เปลี่ยนเป็น ${status}` })) return;
     const response = await fetch(`${apiUrl}/defects/bulk`, { method: "POST", headers, body: JSON.stringify({ ids: selectedIds, status }) });
+    if (!response.ok) notify(`เปลี่ยนสถานะ ${selectedIds.length} รายการไม่สำเร็จ`, "error");
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${selectedIds.length} รายการ`); setSelectedIds([]); setReload(x => x + 1); }
   };
   const exportCsv = () => {
@@ -1239,8 +1245,7 @@ function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel,
         eyebrow เหนือหัวข้อ, ส่วนต่างๆ ใช้ .cycle-detail-section (ไอคอน+h3) แทน label เดี่ยวๆ, และ
         Description/Steps to Reproduce กับ Expected/Actual Result จัดเป็น 2 คอลัมน์ (.defect-detail-split)
         เหมือนที่หน้ารายละเอียดจัดไว้เป๊ะๆ ให้ตอนแก้ไขรู้สึกเหมือนกำลังดู/แก้ข้อมูลชุดเดียวกันต่อเนื่องกัน */}
-    {formOpen && <div className="modal" onMouseDown={() => setFormOpen(false)}>
-      <div className="modal-box defect-form-modal" onMouseDown={e => e.stopPropagation()}>
+    {formOpen && <ModalShell label={editing ? "แก้ไข Defect" : "สร้าง Defect"} className="defect-form-modal" onDismiss={() => setFormOpen(false)}>
         <div className="modal-head">
           <div className="modal-head-title-group">
             <div>
@@ -1284,18 +1289,17 @@ function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel,
             <input className="defect-form-field" value={formActualResult} onChange={e => setFormActualResult(e.target.value)} aria-label="Actual Result" />
           </section>
         </div>
+        {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
         <div className="modal-actions">
           <button className="btn" onClick={() => setFormOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button>
           <button className="btn primary" disabled={saving || !formTitle.trim()} onClick={saveForm}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}</button>
         </div>
-      </div>
-    </div>}
+      </ModalShell>}
     {detail && (() => {
       const steps = detail.stepsToReproduce ? parseReproSteps(detail.stepsToReproduce) : null;
       const moduleName = modules.find(m => m.moduleId === detail.moduleId)?.moduleName ?? "-";
       return (
-        <div className="modal" role="presentation" onMouseDown={() => setDetail(null)}>
-          <div className="modal-box cycle-modal cycle-detail-modal defect-detail" role="dialog" aria-modal="true" aria-labelledby="defect-detail-title" onMouseDown={e => e.stopPropagation()}>
+        <ModalShell labelledBy="defect-detail-title" className="cycle-modal cycle-detail-modal defect-detail" onDismiss={() => setDetail(null)}>
             <div className="modal-head">
               <div className="modal-head-title-group">
                 <button className="modal-back-btn" aria-label="ปิดรายละเอียด Defect" onClick={() => setDetail(null)}>←</button>
@@ -1430,16 +1434,14 @@ function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel,
               )}
             </section>
             <div className="modal-actions"><button className="btn primary" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div>
-          </div>
-        </div>
+          </ModalShell>
       );
     })()}
     {/* Dialog เลือกผู้รับผิดชอบฝั่ง Dev แล้วส่ง/เปลี่ยนผู้รับผิดชอบใน CRM — อยู่นอก {detail && ...} ตั้งใจ
         เพราะตอนนี้เปิดได้ทั้งจาก detail modal (ปุ่ม Quick Action) และจากคอลัมน์ CRM ในตาราง list โดยตรง
         (ไม่เปิด detail modal เลย) ใช้ crmTargetItem แทน detail เป็นตัวอ้างอิงว่ากำลังทำงานกับ Defect ตัวไหน */}
     {crmDialogOpen && (
-      <div className="modal" role="presentation" onMouseDown={() => !crmSending && setCrmDialogOpen(false)}>
-        <div className="modal-box" role="dialog" aria-modal="true" aria-labelledby="crm-send-title" onMouseDown={e => e.stopPropagation()}>
+      <ModalShell labelledBy="crm-send-title" onDismiss={() => { if (!crmSending) setCrmDialogOpen(false); }}>
           <div className="modal-head">
             <h2 id="crm-send-title">{crmMode === "reassign" ? "เปลี่ยนผู้รับผิดชอบ CRM" : "ส่งไป CRM"}</h2>
             <button aria-label="ปิด" disabled={crmSending} onClick={() => setCrmDialogOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
@@ -1461,8 +1463,7 @@ function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel,
               {crmSending ? <><span className="spinner inline" aria-hidden="true" /> กำลังส่ง...</> : crmMode === "reassign" ? "ยืนยันเปลี่ยนผู้รับผิดชอบ" : "ยืนยันส่งไป CRM"}
             </button>
           </div>
-        </div>
-      </div>
+        </ModalShell>
     )}
   </div>;
 }
@@ -1878,7 +1879,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
       setModal(null);
       setReload((x) => x + 1);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "บันทึกข้อมูลไม่สำเร็จ");
+      notify(e instanceof Error ? e.message : "บันทึกข้อมูลไม่สำเร็จ", "error");
     } finally {
       setSaving(false);
     }
@@ -1888,13 +1889,13 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
     id: string,
     label: string,
   ) => {
-    if (!window.confirm(`ยืนยันปิดใช้งาน ${label}?`)) return;
+    if (!await confirmDialog(`ยืนยันปิดใช้งาน ${label}?`)) return;
     const response = await fetch(
       `${apiUrl}/${kind === "project" ? "projects" : "modules"}/${id}`,
       { method: "DELETE", headers },
     );
     if (!response.ok) {
-      window.alert("ไม่สามารถปิดใช้งานข้อมูลได้");
+      notify("ไม่สามารถปิดใช้งานข้อมูลได้", "error");
       return;
     }
     setReload((x) => x + 1);
@@ -1935,7 +1936,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
     setDropHint("");
     if (!response.ok) {
       const problem = await response.json();
-      window.alert(problem.detail ?? "ไม่สามารถย้าย Module ได้");
+      notify(problem.detail ?? "ไม่สามารถย้าย Module ได้", "error");
       return;
     }
     if (parentModuleId)
@@ -2158,8 +2159,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
         )}
       </article>
       {modal && (
-        <div className="modal" onMouseDown={() => setModal(null)}>
-          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell onDismiss={() => setModal(null)}>
             <div className="modal-head">
               <h2>
                 {editProject || editModule ? "แก้ไข" : "เพิ่ม"}{" "}
@@ -2227,8 +2227,7 @@ function ProjectsPage({ search }: { search: string; refresh?: number }) {
                 {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
     </div>
   );
@@ -2275,6 +2274,8 @@ const buildStatusInfo = [
   { value: "Failed", label: "ไม่ผ่าน", meaning: "ทดสอบไม่ผ่าน (เช่น P0 Fail ตอน Smoke)", impact: "ตาม Workflow ต้อง Hold Build นี้ไว้และรอ Build ใหม่จาก Developer" },
   { value: "Blocked", label: "ติดปัญหา", meaning: "ทดสอบต่อไม่ได้เพราะติดปัญหาที่ควบคุมไม่ได้ (Environment ไม่พร้อม, Data ไม่ครบ ฯลฯ) ไม่ใช่บั๊กของ Build โดยตรง", impact: "ต้องแก้ปัญหาที่บล็อกอยู่ก่อน ถึงจะประเมินผลทดสอบของ Build นี้ต่อได้" },
 ] as const;
+/** สีป้ายสถานะ Build ตาม UI_DESIGN_SYSTEM §6 — เดิมหน้ารายการเป็นสีเขียวเสมอ (Failed/Blocked ก็เขียว) และหน้า detail ใช้ Ready = เขียว นอกนั้นเหลือง */
+const buildStatusTone = (status?: string) => status === "Ready" || status === "Passed" ? "green" : status === "Failed" ? "red" : status === "Blocked" ? "yellow" : status === "Testing" ? "blue" : "gray";
 function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: number; contextProjectId?: string }) {
   const masterOptions = useMasterOptions(), releaseTypes = masterOptions("ReleaseType");
   let canEdit = false;
@@ -2528,7 +2529,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
     label: string,
   ) => {
     if (
-      !window.confirm(
+      !await confirmDialog(
         `ยืนยันลบ ${label}? ข้อมูลจะถูกปิดใช้งานและไม่แสดงในรายการ`,
       )
     )
@@ -2538,16 +2539,19 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
       { method: "DELETE", headers },
     );
     if (!response.ok) {
-      window.alert("ไม่สามารถลบข้อมูลได้");
+      notify("ไม่สามารถลบข้อมูลได้", "error");
       return;
     }
     setReload((x) => x + 1);
   };
   const markRc = async (item: BuildItem) => {
-    await fetch(`${apiUrl}/builds/${item.buildId}/mark-release-candidate`, {
+    if (!await confirmDialog({ title: "Mark Release Candidate", message: `ตั้ง Build ${item.buildNumber} เป็น Release Candidate ใช่หรือไม่?\nระบบจะเริ่ม Scheduled Regression / Automation ที่ผูกกับ RC ทันที`, confirmLabel: "Mark RC" })) return;
+    const response = await fetch(`${apiUrl}/builds/${item.buildId}/mark-release-candidate`, {
       method: "POST",
       headers,
     });
+    if (!response.ok) { const p = await response.json().catch(() => null); notify(p?.detail ?? `Mark RC ของ Build ${item.buildNumber} ไม่สำเร็จ`, "error"); return; }
+    notify(`ตั้ง Build ${item.buildNumber} เป็น Release Candidate แล้ว`, "success");
     setReload((x) => x + 1);
   };
   if (loading)
@@ -2641,7 +2645,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                         : "-"}
                     </td>
                     <td>
-                      <Badge tone="green">{x.status}</Badge>
+                      <Badge tone={buildStatusTone(x.status)}>{x.status}</Badge>
                     </td>
                     {canEdit && (
                       <td className="actions-col">
@@ -2705,32 +2709,27 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
         )}
       </article>
       {releaseDetail && (
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="release-detail-title" onMouseDown={() => setReleaseDetail(null)}>
-          <div className="modal-box release-build-detail" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell labelledBy="release-detail-title" className="release-build-detail" onDismiss={() => setReleaseDetail(null)}>
             <div className="modal-head"><div><h2 id="release-detail-title">รายละเอียด Release</h2><small>{releaseDetail.releaseCode}</small></div><button aria-label="ปิดรายละเอียด Release" onClick={() => setReleaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
             <div className="release-detail-hero"><div><span className="release-detail-eyebrow">Release</span><b>{releaseDetail.releaseCode}</b><h3>Version {releaseDetail.version}</h3><div className="release-detail-badges"><Badge tone={releaseDetail.status === "Ready" || releaseDetail.status === "Released" ? "green" : "yellow"}>{releaseDetail.status}</Badge>{releaseDetail.releaseType && <Badge tone="blue">{releaseDetail.releaseType}</Badge>}</div></div><div className="release-date-card"><span aria-hidden="true">◫</span><small>Planned Release</small><b>{releaseDetail.plannedReleaseDate ? formatThaiDateTime(releaseDetail.plannedReleaseDate, { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุวัน"}</b></div></div>
             <div className="release-detail-meta"><div><span aria-hidden="true">P</span><small>Project<b>{projects.find((x) => x.projectId === releaseDetail.projectId)?.projectName || "-"}</b></small></div><div><span aria-hidden="true">#</span><small>Builds<b>{releaseDetail.releaseId === selectedId ? builds.length : "เลือก Release เพื่อดู"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{releaseDetail.status}</b></small></div></div>
             <section className="release-detail-section"><div className="release-detail-heading"><span aria-hidden="true">≡</span><div><h3>Release Scope</h3><small>ขอบเขตและเป้าหมายของ Release</small></div></div><p>{releaseDetail.scope || "ยังไม่ได้ระบุขอบเขตของ Release"}</p></section>
-            <section className="release-detail-section"><div className="release-detail-heading"><span className="material-symbols-outlined" aria-hidden="true">description</span><div><h3>Builds ใน Release</h3><small>รายการ Build ที่พร้อมใช้งาน</small></div></div>{releaseDetail.releaseId === selectedId && builds.length ? <div className="release-detail-builds">{builds.map((build) => <button key={build.buildId} onClick={() => { setReleaseDetail(null); setBuildDetail(build); }}><span><b>{build.buildNumber}</b><small>{build.applicationVersion || "ไม่ระบุ Application Version"}</small></span><span><Badge tone={build.status === "Ready" ? "green" : "yellow"}>{build.status}</Badge>{build.isReleaseCandidate && <Badge tone="blue">RC</Badge>}<i aria-hidden="true">›</i></span></button>)}</div> : <div className="release-detail-empty">ยังไม่มี Build ที่ใช้งานใน Release นี้</div>}</section>
+            <section className="release-detail-section"><div className="release-detail-heading"><span className="material-symbols-outlined" aria-hidden="true">description</span><div><h3>Builds ใน Release</h3><small>รายการ Build ที่พร้อมใช้งาน</small></div></div>{releaseDetail.releaseId === selectedId && builds.length ? <div className="release-detail-builds">{builds.map((build) => <button key={build.buildId} onClick={() => { setReleaseDetail(null); setBuildDetail(build); }}><span><b>{build.buildNumber}</b><small>{build.applicationVersion || "ไม่ระบุ Application Version"}</small></span><span><Badge tone={buildStatusTone(build.status)}>{build.status}</Badge>{build.isReleaseCandidate && <Badge tone="blue">RC</Badge>}<i aria-hidden="true">›</i></span></button>)}</div> : <div className="release-detail-empty">ยังไม่มี Build ที่ใช้งานใน Release นี้</div>}</section>
             <div className="modal-actions"><button className="btn" onClick={() => setReleaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = releaseDetail; setReleaseDetail(null); openRelease(item); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข Release</button>}</div>
-          </div>
-        </div>
+          </ModalShell>
       )}
       {buildDetail && (
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="build-detail-title" onMouseDown={() => setBuildDetail(null)}>
-          <div className="modal-box release-build-detail build-read-detail" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell labelledBy="build-detail-title" className="release-build-detail build-read-detail" onDismiss={() => setBuildDetail(null)}>
             <div className="modal-head"><div><h2 id="build-detail-title">รายละเอียด Build</h2><small>{selected?.releaseCode || "Release"}</small></div><button aria-label="ปิดรายละเอียด Build" onClick={() => setBuildDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
-            <div className="build-detail-hero"><div><span className="release-detail-eyebrow">Build Number</span><h3>{buildDetail.buildNumber}</h3><div className="release-detail-badges"><Badge tone={buildDetail.status === "Ready" ? "green" : "yellow"}>{buildDetail.status}</Badge>{buildDetail.isReleaseCandidate && <Badge tone="blue">Release Candidate</Badge>}</div></div><div className="build-version-card"><small>Application Version</small><b>{buildDetail.applicationVersion || "-"}</b><span>Package {buildDetail.packageVersion || "-"}</span></div></div>
+            <div className="build-detail-hero"><div><span className="release-detail-eyebrow">Build Number</span><h3>{buildDetail.buildNumber}</h3><div className="release-detail-badges"><Badge tone={buildStatusTone(buildDetail.status)}>{buildDetail.status}</Badge>{buildDetail.isReleaseCandidate && <Badge tone="blue">Release Candidate</Badge>}</div></div><div className="build-version-card"><small>Application Version</small><b>{buildDetail.applicationVersion || "-"}</b><span>Package {buildDetail.packageVersion || "-"}</span></div></div>
             <div className="release-detail-meta build-detail-meta"><div><span aria-hidden="true">◫</span><small>Build Date<b>{buildDetail.buildDate ? formatThaiDateTime(buildDetail.buildDate, { day: "numeric", month: "numeric", year: "numeric" }) : "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">C</span><small>Commit Reference<b>{buildDetail.commitReference || "ไม่ระบุ"}</b></small></div><div><span aria-hidden="true">S</span><small>Status<b>{buildDetail.status}</b></small></div></div>
             <section className="release-detail-section"><div className="release-detail-heading"><span className="material-symbols-outlined" aria-hidden="true">add</span><div><h3>Change Notes</h3><small>รายการเปลี่ยนแปลงใน Build นี้</small></div></div><p>{buildDetail.changeNotes || "ไม่มี Change Notes"}</p></section>
             <section className="release-detail-section known-issues"><div className="release-detail-heading"><span aria-hidden="true">!</span><div><h3>Known Issues</h3><small>ปัญหาที่ทราบและควรระวัง</small></div></div><p>{buildDetail.knownIssues || "ไม่พบ Known Issues"}</p></section>
             <div className="modal-actions"><button className="btn" onClick={() => setBuildDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = buildDetail; setBuildDetail(null); openBuild(item); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข Build</button>}</div>
-          </div>
-        </div>
+          </ModalShell>
       )}
       {modal && (
-        <div className="modal" onMouseDown={() => setModal(null)}>
-          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell onDismiss={() => setModal(null)}>
             <div className="modal-head">
               <h2>
                 {editRelease || editBuild ? "แก้ไข" : "เพิ่ม"}{" "}
@@ -2942,8 +2941,7 @@ function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: 
                 {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
     </div>
   );
@@ -3123,7 +3121,7 @@ function RequirementsPage({
       setEditing(null);
       setReload((x) => x + 1);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "แก้ไข Requirement ไม่สำเร็จ");
+      notify(e instanceof Error ? e.message : "แก้ไข Requirement ไม่สำเร็จ", "error");
     } finally { setSaving(false); }
   };
   const openHistory = async (item: RequirementItem) => {
@@ -3145,9 +3143,9 @@ function RequirementsPage({
     }
   };
   const remove = async (item: RequirementItem) => {
-    if (!window.confirm(`ยืนยันลบ ${item.requirementCode}?\nข้อมูลจะถูกซ่อนและยังเก็บประวัติไว้`)) return;
+    if (!await confirmDialog(`ยืนยันลบ ${item.requirementCode}?\nข้อมูลจะถูกซ่อนและยังเก็บประวัติไว้`)) return;
     const response = await fetch(`${apiUrl}/requirements/${item.requirementId}`, { method: "DELETE", headers });
-    if (!response.ok) { window.alert("ลบ Requirement ไม่สำเร็จ"); return; }
+    if (!response.ok) { notify("ลบ Requirement ไม่สำเร็จ", "error"); return; }
     setReload((x) => x + 1);
   };
   const moduleOrderMap = useMemo(() => {
@@ -3340,8 +3338,7 @@ function RequirementsPage({
           </tbody>
         </table>
       </div>
-      {viewing && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="requirement-detail-title" onMouseDown={() => setViewing(null)}>
-        <div className="modal-box requirement-detail-modal" onMouseDown={(e) => e.stopPropagation()}>
+      {viewing && <ModalShell labelledBy="requirement-detail-title" className="requirement-detail-modal" onDismiss={() => setViewing(null)}>
           <div className="modal-head"><div><h2 id="requirement-detail-title">รายละเอียด Requirement</h2><small>{viewing.requirementCode}</small></div><button aria-label="ปิดหน้าต่างรายละเอียด" onClick={() => setViewing(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
           <div className="requirement-detail-title"><div className="requirement-detail-hero-copy"><span>Requirement</span><b>{viewing.requirementCode}</b><h3>{viewing.title}</h3><div className="requirement-detail-badges"><Badge tone={viewing.priority === "P0" || viewing.priority === "P1" ? "red" : "blue"}>{viewing.priority}</Badge><Badge tone={viewing.status === "Approved" || viewing.status === "Implemented" ? "green" : "yellow"}>{viewing.status}</Badge></div></div><div className={`requirement-scope-card ${viewing.isInScope ? "in-scope" : "out-scope"}`}><span aria-hidden="true">{viewing.isInScope ? "✓" : "–"}</span><div><small>Release Scope</small><b>{viewing.isInScope ? "In Scope" : "Out of Scope"}</b></div></div></div>
           <dl className="requirement-detail-grid requirement-detail-meta">
@@ -3362,11 +3359,9 @@ function RequirementsPage({
             <small>{requirementStatusInformation.find((x) => x.value === viewing.status)?.impact}</small>
           </section>
           <div className="modal-actions"><button className="btn" onClick={() => setViewing(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => { const item = viewing; setViewing(null); openEdit(item); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข Requirement</button>}</div>
-        </div>
-      </div>}
+        </ModalShell>}
       {editing && (
-        <div className="modal" onMouseDown={() => setEditing(null)}>
-          <div className="modal-box requirement-editor" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell className="requirement-editor" onDismiss={() => setEditing(null)}>
             <div className="modal-head"><h2>แก้ไข Requirement</h2><button onClick={() => setEditing(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
             <div className="form-grid">
               <label>Requirement Code<input value={editing.requirementCode} disabled /></label>
@@ -3398,10 +3393,9 @@ function RequirementsPage({
               <label className="full">Acceptance Criteria<textarea rows={3} value={criteria} onChange={(e) => setCriteria(e.target.value)} /></label>
             </div>
             <div className="modal-actions"><button className="btn" onClick={() => setEditing(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving || !title.trim() || !moduleId} onClick={saveEdit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}</button></div>
-          </div>
-        </div>
+          </ModalShell>
       )}
-      {historyItem && <div className="modal" onMouseDown={() => setHistoryItem(null)}><div className="modal-box requirement-history" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2>Revision History</h2><small>{historyItem.requirementCode} · {historyItem.title}</small></div><button onClick={() => setHistoryItem(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>{historyLoading ? <div className="empty"><p>กำลังโหลดประวัติ...</p></div> : <div className="revision-list">{revisions.length === 0 ? <div className="empty"><p>ยังไม่มีประวัติ Revision</p></div> : revisions.map((x) => <article key={x.revisionNo}><div><b>Rev. {x.revisionNo}</b><time>{formatThaiDateTime(x.changedAt)}</time></div><h3>{x.title}</h3><p>{x.changeReason || "ไม่ระบุเหตุผลการเปลี่ยนแปลง"}</p>{x.acceptanceCriteria && <small>Acceptance Criteria: {x.acceptanceCriteria}</small>}</article>)}</div>}<div className="modal-actions"><button className="btn primary" onClick={() => setHistoryItem(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div></div></div>}
+      {historyItem && <ModalShell className="requirement-history" onDismiss={() => setHistoryItem(null)}><div className="modal-head"><div><h2>Revision History</h2><small>{historyItem.requirementCode} · {historyItem.title}</small></div><button onClick={() => setHistoryItem(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>{historyLoading ? <div className="empty"><p>กำลังโหลดประวัติ...</p></div> : <div className="revision-list">{revisions.length === 0 ? <div className="empty"><p>ยังไม่มีประวัติ Revision</p></div> : revisions.map((x) => <article key={x.revisionNo}><div><b>Rev. {x.revisionNo}</b><time>{formatThaiDateTime(x.changedAt)}</time></div><h3>{x.title}</h3><p>{x.changeReason || "ไม่ระบุเหตุผลการเปลี่ยนแปลง"}</p>{x.acceptanceCriteria && <small>Acceptance Criteria: {x.acceptanceCriteria}</small>}</article>)}</div>}<div className="modal-actions"><button className="btn primary" onClick={() => setHistoryItem(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div></ModalShell>}
     </article>
     </div>
   );
@@ -3595,10 +3589,16 @@ function TestCasesPage({
   const openForm = async (item?: TestCaseItem) => {
     let source = item;
     if (item) {
+      // ต้องได้รายละเอียดเต็ม (รวม steps) ก่อนเปิดฟอร์มแก้ไข — เดิมถ้าดึงไม่สำเร็จจะเปิดฟอร์มด้วยข้อมูลจากรายการ
+      // ซึ่งไม่มี steps ทำให้ฟอร์มมี step ว่าง 1 แถว และถ้ากดบันทึกจะทับ steps จริงทั้งหมด
       try {
-        const full = await fetch(`${apiUrl}/test-cases/${item.testCaseId}`, { headers }).then((r) => (r.ok ? r.json() : null));
-        if (full) source = { ...item, ...full };
-      } catch { /* ใช้ข้อมูลจากรายการเดิมหากดึงรายละเอียดไม่สำเร็จ */ }
+        const r = await fetch(`${apiUrl}/test-cases/${item.testCaseId}`, { headers });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        source = { ...item, ...(await r.json()) };
+      } catch (e) {
+        setError(`เปิด ${item.testCaseCode} เพื่อแก้ไขไม่สำเร็จ (${e instanceof Error ? e.message : "ไม่ทราบสาเหตุ"}) — ลองใหม่อีกครั้ง`);
+        return;
+      }
     }
     const target = source;
     setEditing(target ?? null);
@@ -3902,7 +3902,7 @@ function TestCasesPage({
         </div>
         <div className="pagination suite-pagination"><label>แสดง<select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1)}}><option value="30">30</option><option value="50">50</option><option value="100">100</option><option value="150">150</option></select> รายการ</label><span>หน้า {Math.min(page,pageCount)} / {pageCount} · ทั้งหมด {totalCount.toLocaleString()} รายการ</span><button className="btn" disabled={page<=1} onClick={()=>setPage(x=>x-1)}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span> ก่อนหน้า</button><button className="btn" disabled={page>=pageCount} onClick={()=>setPage(x=>x+1)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button></div>
       </article>
-      {testCaseAiModal&&<div className="modal" onMouseDown={()=>{if(!testCaseAiGenerating)setTestCaseAiModal(false)}}><div className="modal-box requirement-ai-modal" role="dialog" aria-modal="true" aria-labelledby="testcase-ai-title" onMouseDown={e=>e.stopPropagation()} style={{position:"relative"}}>{testCaseAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{caseAiDrafts.length?<p>กำลังบันทึก Test Cases...</p>:<p>AI กำลังออกแบบ Test Case...</p>}<small>{caseAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังสร้าง Test Steps และ Expected Results"}</small></div>}
+      {testCaseAiModal&&<ModalShell labelledBy="testcase-ai-title" dirty={caseAiDrafts.length > 0} className="requirement-ai-modal" boxStyle={{position:"relative"}} onDismiss={() => {if(!testCaseAiGenerating)setTestCaseAiModal(false)}}>{testCaseAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{caseAiDrafts.length?<p>กำลังบันทึก Test Cases...</p>:<p>AI กำลังออกแบบ Test Case...</p>}<small>{caseAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังสร้าง Test Steps และ Expected Results"}</small></div>}
         <div className="modal-head"><div><h2 id="testcase-ai-title">AI Generate Test Case</h2><small>{caseAiDrafts.length?`พบ ${caseAiDrafts.length} Test Cases ที่ AI สร้าง — ตรวจสอบและบันทึก`:"สร้าง Draft พร้อม Test Steps จากคำอธิบายและไฟล์อ้างอิง"}</small></div><button aria-label="ปิดหน้าต่าง AI Generate" disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
         {caseAiDrafts.length===0?(
         <section className="requirement-ai-panel">
@@ -3925,16 +3925,13 @@ function TestCasesPage({
           <div className="requirement-ai-actions"><small>{caseAiDrafts.length} Test Cases พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={testCaseAiGenerating} onClick={()=>setCaseAiDrafts([])}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> สร้างใหม่</button><button className="btn primary" disabled={testCaseAiGenerating||!caseAiDrafts.length} onClick={saveAllCaseDrafts}>{testCaseAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${caseAiDrafts.length} Cases)`}</button></div></div>
         </section>
         )}
-      </div></div>}
+      </ModalShell>}
       {form && (
-        <div className="modal" onMouseDown={() => setForm(false)}>
-          <div
-            className="modal-box testcase-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+        // ไม่ปิดเมื่อคลิกพื้นหลัง — ฟอร์มนี้มี step editor ข้อมูลที่กรอกจะหายทั้งหมด
+        <ModalShell labelledBy="testcase-form-title" className="testcase-modal" onDismiss={() => setForm(false)}>
             <div className="modal-head">
-              <h2>{editing ? "แก้ไข" : "เพิ่ม"} Test Case</h2>
-              <button onClick={() => setForm(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+              <h2 id="testcase-form-title">{editing ? "แก้ไข" : "เพิ่ม"} Test Case</h2>
+              <button aria-label="ปิดฟอร์ม Test Case" onClick={() => setForm(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
             </div>
             <div className="form-grid">
               <label className="tc-span-2">
@@ -4122,6 +4119,7 @@ function TestCasesPage({
                 </div>
               ))}
             </div>
+            {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
             <div className="modal-actions">
               <button className="btn" onClick={() => setForm(false)}>
                 ยกเลิก
@@ -4144,15 +4142,13 @@ function TestCasesPage({
                 {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
  {detail && (() => {
         const ownerName = users.find(x=>x.userId===detail.ownerUserId)?.displayName || "ไม่ระบุ";
         const moduleCode = modules.find(x=>x.moduleId===detail.moduleId)?.moduleCode || "-";
         return (
-        <div className="modal" role="presentation" onMouseDown={()=>setDetail(null)}>
-          <div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}>
+        <ModalShell className="testcase-detail" onDismiss={() => setDetail(null)}>
             <div className="modal-head">
               <div><h2>{detail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===detail.moduleId)?.moduleName||"-"} · {projects.find(x=>x.projectId===detail.projectId)?.projectName||""}</small></div>
               <button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
@@ -4232,10 +4228,9 @@ function TestCasesPage({
               <button className="btn" onClick={()=>setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>
               {canEdit && <button className="btn primary" onClick={()=>{const item=detail;setDetail(null);openForm(item);}}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
             </div>
-          </div>
-        </div>
+          </ModalShell>
         );
-      })()}       {confirmDelete&&<div className="modal" onMouseDown={()=>setConfirmDelete(null)}><div className="modal-box confirm-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>ยืนยันการลบ Test Case</h2><button onClick={()=>setConfirmDelete(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><p>ต้องการลบ <b>{confirmDelete.testCaseCode}</b> ใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" onClick={()=>setConfirmDelete(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn danger" onClick={()=>remove(confirmDelete)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยืนยันลบ</button></div></div></div>}      {confirmBulkDelete&&<div className="modal" onMouseDown={()=>{if(tcSaving!=="bulk-delete")setConfirmBulkDelete(false)}}><div className="modal-box confirm-box" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><h2>ยืนยันการลบ Test Case ที่เลือก</h2><button disabled={tcSaving==="bulk-delete"} onClick={()=>setConfirmBulkDelete(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><p>ต้องการลบ <b>{tcSelected.size}</b> Test Case ที่เลือกใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" disabled={tcSaving==="bulk-delete"} onClick={()=>setConfirmBulkDelete(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn danger" disabled={tcSaving==="bulk-delete"} onClick={removeBulkSelected}>{tcSaving==="bulk-delete"?<><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>:<><span className="material-symbols-outlined" aria-hidden="true">close</span> ยืนยันลบ</>}</button></div></div></div>}
+      })()}       {confirmDelete&&<ModalShell className="confirm-box" onDismiss={() => setConfirmDelete(null)}><div className="modal-head"><h2>ยืนยันการลบ Test Case</h2><button onClick={()=>setConfirmDelete(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><p>ต้องการลบ <b>{confirmDelete.testCaseCode}</b> ใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" onClick={()=>setConfirmDelete(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn danger" onClick={()=>remove(confirmDelete)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยืนยันลบ</button></div></ModalShell>}      {confirmBulkDelete&&<ModalShell className="confirm-box" onDismiss={() => {if(tcSaving!=="bulk-delete")setConfirmBulkDelete(false)}}><div className="modal-head"><h2>ยืนยันการลบ Test Case ที่เลือก</h2><button disabled={tcSaving==="bulk-delete"} onClick={()=>setConfirmBulkDelete(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><p>ต้องการลบ <b>{tcSelected.size}</b> Test Case ที่เลือกใช่หรือไม่? ข้อมูลประวัติจะยังคงอยู่ในระบบ</p><div className="modal-actions"><button className="btn" disabled={tcSaving==="bulk-delete"} onClick={()=>setConfirmBulkDelete(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn danger" disabled={tcSaving==="bulk-delete"} onClick={removeBulkSelected}>{tcSaving==="bulk-delete"?<><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>:<><span className="material-symbols-outlined" aria-hidden="true">close</span> ยืนยันลบ</>}</button></div></ModalShell>}
     </>
   );
 }
@@ -4275,8 +4270,7 @@ function RegressionAutomationRunModal({testCaseIds,projectId,builds,environments
       onDone(`สั่งรัน Automation แล้ว ${result.created.length} รายการ${result.skippedCodes.length?` (ข้าม ${result.skippedCodes.length} รายการที่ไม่ผ่านเงื่อนไข)`:""}`);
     }catch(e){setError(e instanceof Error?e.message:"สั่งรัน Automation ไม่สำเร็จ")}finally{setRunning(false)}
   };
-  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-automation-run-title" onMouseDown={()=>!running&&onClose()}>
-    <div className="modal-box" onMouseDown={e=>e.stopPropagation()}>
+  return <ModalShell labelledBy="regression-automation-run-title" onDismiss={() => { if (!running) onClose(); }}>
       <div className="modal-head"><div><h2 id="regression-automation-run-title">ส่ง Automation Run</h2><small>ตรวจสอบ Test Case ที่พร้อมรันอัตโนมัติจากรายการที่เลือก</small></div><button aria-label="ปิด" disabled={running} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
       {error&&<div className="inline-alert error"><span>{error}</span></div>}
       {loadingPreview?<div className="empty"><div className="spinner" /><p>กำลังตรวจสอบ...</p></div>:preview&&<>
@@ -4294,8 +4288,7 @@ function RegressionAutomationRunModal({testCaseIds,projectId,builds,environments
         <button className="btn" disabled={running} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button>
         <button className="btn primary" disabled={running||!preview?.eligibleCount||!buildId||!environmentId} onClick={run}>{running?<><span className="spinner inline" aria-hidden="true" /> กำลังสั่งรัน...</>:<><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> สั่งรัน {preview?.eligibleCount??0} รายการ</>}</button>
       </div>
-    </div>
-  </div>;
+    </ModalShell>;
 }
 
 function RegressionPage({projectId,releaseId,buildId,search,canEdit,canRunAutomation,onOpenCycle}:{projectId?:string;releaseId?:string;buildId?:string;search:string;canEdit:boolean;canRunAutomation:boolean;onOpenCycle:(page:"test-cycles"|"execution",cycleId:string)=>void}){
@@ -4324,9 +4317,9 @@ function RegressionPage({projectId,releaseId,buildId,search,canEdit,canRunAutoma
   const saveProfile=async()=>{const name=profileName.trim();if(!name||!projectId)return;const settings=currentSettings();setSaving(true);try{const r=await fetch(`${apiUrl}/regression-profiles`,{method:"POST",headers,body:JSON.stringify({projectId,name,visibility:profileVisibility,settingsJson:JSON.stringify(settings)})});if(!r.ok)throw new Error("บันทึก Regression Profile ไม่สำเร็จ");const row=await r.json();setProfiles(current=>[{id:row.regressionProfileId,name,visibility:profileVisibility,isOwner:true,...settings},...current]);setSelectedProfileId(row.regressionProfileId);setProfileName("");setSuccess(`บันทึก Profile “${name}” ลงฐานข้อมูลแล้ว`)}catch(e){setError(e instanceof Error?e.message:"บันทึก Profile ไม่สำเร็จ")}finally{setSaving(false)}};
   const updateProfile=async()=>{const name=profileName.trim();const profile=profiles.find(x=>x.id===selectedProfileId);if(!profile?.isOwner||!name)return;setSaving(true);try{const settings=currentSettings();const r=await fetch(`${apiUrl}/regression-profiles/${profile.id}`,{method:"PUT",headers,body:JSON.stringify({name,visibility:profileVisibility,settingsJson:JSON.stringify(settings)})});if(!r.ok)throw new Error("อัปเดต Regression Profile ไม่สำเร็จ");setProfiles(current=>current.map(x=>x.id===profile.id?{...x,name,visibility:profileVisibility,...settings}:x));setSuccess(`อัปเดต Profile “${name}” แล้ว`)}catch(e){setError(e instanceof Error?e.message:"อัปเดต Profile ไม่สำเร็จ")}finally{setSaving(false)}};
   const applyProfile=(id:string)=>{const p=profiles.find(x=>x.id===id);if(!p)return;setMinimumPriority(p.minimumPriority);setShared(p.includeSharedDependencies);setDatabaseChange(p.databaseChange);setApiChange(p.apiChange);setCalculationChange(p.calculationChange);setPermissionChange(p.permissionChange);setInstallerChange(p.installerChange);setDefectFix(p.defectFix);setDirectImpactWeight(p.directImpactWeight);setHistoricalDefectWeight(p.historicalDefectWeight);setCriticalPriorityWeight(p.criticalPriorityWeight);setSharedDependencyWeight(p.sharedDependencyWeight);if(p.isOwner){setProfileName(p.name);setProfileVisibility(p.visibility??"Private")}setImpact(null);setSuccess(`ใช้ Profile “${p.name}” แล้ว`)};
-  const deleteProfile=async()=>{if(!selectedProfileId||!window.confirm("ยืนยันลบ Regression Profile นี้?"))return;const r=await fetch(`${apiUrl}/regression-profiles/${selectedProfileId}`,{method:"DELETE",headers});if(!r.ok){setError("ลบ Profile ไม่สำเร็จหรือคุณไม่ใช่เจ้าของ");return}setProfiles(current=>current.filter(x=>x.id!==selectedProfileId));setSelectedProfileId("");setSuccess("ลบ Regression Profile แล้ว")};
+  const deleteProfile=async()=>{if(!selectedProfileId||!await confirmDialog("ยืนยันลบ Regression Profile นี้?"))return;const r=await fetch(`${apiUrl}/regression-profiles/${selectedProfileId}`,{method:"DELETE",headers});if(!r.ok){setError("ลบ Profile ไม่สำเร็จหรือคุณไม่ใช่เจ้าของ");return}setProfiles(current=>current.filter(x=>x.id!==selectedProfileId));setSelectedProfileId("");setSuccess("ลบ Regression Profile แล้ว")};
   const acknowledgeNotification=async(item:RegressionNotification)=>{if(!canEdit)return;setSaving(true);try{const r=await fetch(`${apiUrl}/regression-schedules/${item.regressionScheduleId}/acknowledge/${item.buildId}`,{method:"POST",headers});if(!r.ok)throw new Error();setNotifications(current=>current.filter(x=>!(x.regressionScheduleId===item.regressionScheduleId&&x.buildId===item.buildId)));setSuccess("รับทราบการแจ้งเตือนแล้ว")}catch{setError("รับทราบการแจ้งเตือนไม่สำเร็จ")}finally{setSaving(false)}};
-  const removeSchedule=async(id:string)=>{if(!window.confirm("ยืนยันปิด Scheduled Regression นี้?"))return;setSaving(true);try{const r=await fetch(`${apiUrl}/regression-schedules/${id}`,{method:"DELETE",headers});if(!r.ok)throw new Error();setSchedules(current=>current.filter(x=>x.regressionScheduleId!==id));setNotifications(current=>current.filter(x=>x.regressionScheduleId!==id));setSuccess("ปิด Scheduled Regression แล้ว")}catch{setError("ปิด Schedule ไม่สำเร็จหรือคุณไม่ใช่เจ้าของ")}finally{setSaving(false)}};
+  const removeSchedule=async(id:string)=>{if(!await confirmDialog("ยืนยันปิด Scheduled Regression นี้?"))return;setSaving(true);try{const r=await fetch(`${apiUrl}/regression-schedules/${id}`,{method:"DELETE",headers});if(!r.ok)throw new Error();setSchedules(current=>current.filter(x=>x.regressionScheduleId!==id));setNotifications(current=>current.filter(x=>x.regressionScheduleId!==id));setSuccess("ปิด Scheduled Regression แล้ว")}catch{setError("ปิด Schedule ไม่สำเร็จหรือคุณไม่ใช่เจ้าของ")}finally{setSaving(false)}};
   const selectAllPages=async()=>{if(!selectedRelease||!selectedBuild)return;setLoading(true);try{const r=await fetch(`${apiUrl}/releases/${selectedRelease}/regression-impact`,{method:"POST",headers,body:JSON.stringify({buildId:selectedBuild,changedModuleIds:changedModules,includeSharedDependencies:shared,minimumPriority,databaseChange,apiChange,calculationChange,permissionChange,installerChange,defectFix,sharedComponents,changeNotes,page:1,pageSize,directImpactWeight,historicalDefectWeight,criticalPriorityWeight,sharedDependencyWeight,recordAnalysis:false,includeAllCaseIds:true})});if(!r.ok)throw new Error();const data=await r.json() as RegressionImpact;setSelectedCases(data.allCaseIds??[]);setSuccess(`เลือก Test Case ทั้งหมด ${data.totalItems} รายการจากทุกหน้าแล้ว`)}catch{setError("เลือก Test Case ทั้งหมดไม่สำเร็จ")}finally{setLoading(false)}};
   const exportAllPages=async()=>{if(!impact)return;setLoading(true);try{const all:RegressionCase[]=[];for(let page=1;page<=impact.totalPages;page++){const r=await fetch(`${apiUrl}/releases/${selectedRelease}/regression-impact`,{method:"POST",headers,body:JSON.stringify({buildId:selectedBuild,changedModuleIds:changedModules,includeSharedDependencies:shared,minimumPriority,databaseChange,apiChange,calculationChange,permissionChange,installerChange,defectFix,sharedComponents,changeNotes,page,pageSize:200,directImpactWeight,historicalDefectWeight,criticalPriorityWeight,sharedDependencyWeight,recordAnalysis:false})});if(!r.ok)throw new Error();const data=await r.json() as RegressionImpact;all.push(...data.cases);if(page===1&&data.totalPages!==impact.totalPages){page=0;(impact as RegressionImpact).totalPages=data.totalPages;all.length=0}}const headings=["Test Case Code","Title","Module","Priority","Impact Type","Risk Score","Last Result","Reason"];const escape=(v:string)=>`"${v.replaceAll('"','""')}"`;const body="\ufeff"+[headings,...all.map(x=>[x.testCaseCode,x.title,x.moduleName,x.priority,x.impactType,String(x.riskScore),x.lastResult||"Not Run",x.reason])].map(row=>row.map(escape).join(",")).join("\r\n");const url=URL.createObjectURL(new Blob([body],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="Regression_All_Pages.csv";a.click();URL.revokeObjectURL(url)}catch{setError("Export รายงานทุกหน้าไม่สำเร็จ")}finally{setLoading(false)}};
   const saveSchedule=async()=>{if(!selectedRelease||!projectId)return;setSaving(true);try{const r=await fetch(`${apiUrl}/regression-schedules`,{method:"POST",headers,body:JSON.stringify({releaseId:selectedRelease,regressionProfileId:selectedProfileId||null,name:scheduleName,environmentId:scheduleEnvironmentId||null,priority:schedulePriority})});if(!r.ok)throw new Error();const row=await r.json();setSchedules(current=>[...current,row]);setScheduleEnvironmentId("");setSuccess(scheduleEnvironmentId?"เปิด Scheduled Regression พร้อมรัน Automation อัตโนมัติแล้ว":"เปิด Scheduled Regression สำหรับ Build ใหม่แล้ว")}catch{setError("สร้าง Scheduled Regression ไม่สำเร็จ")}finally{setSaving(false)}};
@@ -4371,8 +4364,8 @@ function RegressionPage({projectId,releaseId,buildId,search,canEdit,canRunAutoma
     <section className="regression-phase-grid"><article className="card regression-baseline"><div className="regression-section-head"><div><span className="regression-title-icon">Δ</span><div><h2>Baseline Comparison</h2><p>เปรียบเทียบผล Regression ของ Target Build กับ Build ก่อนหน้า</p></div></div></div><label>Baseline Build<select value={baselineBuild} onChange={e=>setBaselineBuild(e.target.value)}><option value="">เลือก Build สำหรับเปรียบเทียบ</option>{builds.filter(x=>x.buildId!==selectedBuild).map(x=><option key={x.buildId} value={x.buildId}>{x.buildNumber} · {x.applicationVersion||"-"}</option>)}</select></label>{baseline?<div className="regression-compare"><div><small>Executed</small><b>{baseline.target.executedCases}</b><span className={baseline.executedDelta>=0?"positive":"negative"}>{baseline.executedDelta>=0?"+":""}{baseline.executedDelta}</span></div><div><small>Passed</small><b>{baseline.target.passedCases}</b><span className={baseline.passedDelta>=0?"positive":"negative"}>{baseline.passedDelta>=0?"+":""}{baseline.passedDelta}</span></div><div><small>Failed</small><b>{baseline.target.failedCases+baseline.target.blockedCases}</b><span className={baseline.failedDelta<=0?"positive":"negative"}>{baseline.failedDelta>=0?"+":""}{baseline.failedDelta}</span></div><div><small>Pass Rate</small><b>{baseline.target.passRate}%</b><span className={baseline.passRateDelta>=0?"positive":"negative"}>{baseline.passRateDelta>=0?"+":""}{baseline.passRateDelta}%</span></div></div>:<p className="regression-helper">{builds.length<2?"Release นี้ยังไม่มี Build อื่นสำหรับเปรียบเทียบ":"เลือก Baseline Build เพื่อดูแนวโน้ม"}</p>}</article><article className="card regression-history"><div className="regression-section-head"><div><span className="regression-title-icon">↺</span><div><h2>Regression History</h2><p>ประวัติการวิเคราะห์ Impact ล่าสุด</p></div></div><Badge tone="blue">{history.length}</Badge></div>{history.length?<div className="regression-history-list">{history.slice(0,6).map(x=><div key={x.regressionAnalysisId}><span><b>Build {x.buildNumber}</b><small>{formatThaiDateTime(x.analyzedAt)} · {x.analyzedByName||"System"}</small></span><span><b>{x.recommendedCases}</b><small>Cases · {x.impactedModules} Modules · {x.minimumPriority}</small></span>{x.changeNotes&&<p>{x.changeNotes}</p>}</div>)}</div>:<p className="regression-helper">ยังไม่มีประวัติการวิเคราะห์สำหรับ Release นี้</p>}</article></section>
     {impact&&selectedCases.length>0&&<div className="regression-selection-bar"><div><b>{selectedCases.length}</b><span>Test Cases ที่เลือก</span></div><div className="regression-existing-cycle"><select aria-label="Regression Cycle ที่มีอยู่" value={existingCycle} onChange={e=>setExistingCycle(e.target.value)}><option value="">เพิ่มเข้า Regression Cycle ที่มีอยู่</option>{cycles.filter(x=>x.releaseId===selectedRelease&&x.buildId===selectedBuild).map(x=><option key={x.testCycleId} value={x.testCycleId}>{x.cycleCode} · {x.cycleName}</option>)}</select><button className="btn" disabled={!existingCycle||saving||!canEdit} onClick={addToCycle}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่มเข้า Cycle</button>{existingCycle&&<><button className="btn" onClick={()=>onOpenCycle("test-cycles",existingCycle)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Cycle</button><button className="btn" onClick={()=>onOpenCycle("execution",existingCycle)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Execution</button></>}</div><button className="btn" disabled={!canRunAutomation} onClick={()=>setAutomationRunModal(true)}><span className="material-symbols-outlined" aria-hidden="true">smart_toy</span> ส่ง Automation Run</button><button className="btn primary" disabled={!canEdit} onClick={openSuite}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Regression Suite / Cycle</button></div>}
     {automationRunModal&&<RegressionAutomationRunModal testCaseIds={selectedCases} projectId={projectId} builds={builds} environments={environments} headers={headers} onClose={()=>setAutomationRunModal(false)} onDone={(message)=>{setAutomationRunModal(false);setSuccess(message);setSelectedCases([]);}} />}
-    {suiteModal&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-suite-title" onMouseDown={()=>!saving&&setSuiteModal(false)}><div className="modal-box regression-suite-modal" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-suite-title">สร้าง Regression Suite</h2><small>{selectedCases.length} Test Cases ที่เลือก</small></div><button disabled={saving} onClick={()=>setSuiteModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label className="full">Suite Name<input value={suiteName} onChange={e=>setSuiteName(e.target.value)}/></label><label>Risk Tier<select value={riskTier} onChange={e=>setRiskTier(e.target.value)}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></label><label className="full">Description<textarea rows={3} value={suiteDescription} onChange={e=>setSuiteDescription(e.target.value)}/></label></div><label className="regression-create-cycle"><input type="checkbox" checked={createCycle} onChange={e=>setCreateCycle(e.target.checked)}/><span><b>สร้าง Regression Cycle ต่อทันที</b><small>ระบบจะนำ Test Case ทั้งหมดใน Suite เข้า Cycle</small></span></label>{createCycle&&<div className="form-grid regression-cycle-fields"><label className="full">Cycle Name<input value={cycleName} onChange={e=>setCycleName(e.target.value)}/></label><label>Environment<select value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map(x=><option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label><label>Start Date<input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></label><label>End Date<input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/></label></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={()=>setSuiteModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving||!suiteName.trim()||(createCycle&&!environmentId)} onClick={generateSuite}>{saving?<><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง...</>:createCycle?<><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Suite และ Cycle</>:<><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Suite</>}</button></div></div></div>}
-    {caseDetail&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="regression-case-detail-title" onMouseDown={()=>setCaseDetail(null)}><div className="modal-box testcase-detail" onMouseDown={e=>e.stopPropagation()}><div className="modal-head"><div><h2 id="regression-case-detail-title">{caseDetail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleName||"-"}</small></div><button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setCaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="tc-detail-hero"><h3>{caseDetail.title}</h3><div className="tc-detail-badges"><Badge tone={caseDetail.priority==="P0"||caseDetail.priority==="P1"?"red":"blue"}>{caseDetail.priority}</Badge><Badge tone={caseDetail.status==="Ready"?"green":caseDetail.status==="Deprecated"?"yellow":"blue"}>{caseDetail.status}</Badge>{caseDetail.testType&&<Badge tone="yellow">{caseDetail.testType}</Badge>}</div></div><div className="tc-detail-meta"><div className="tc-detail-meta-item"><span>Revision</span><b>Rev. {caseDetail.revisionNo}</b></div><div className="tc-detail-meta-item"><span>Module</span><b>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleCode||"-"}</b></div><div className="tc-detail-meta-item"><span>Execution Type</span><b>{caseDetail.automationCandidate?"Automation Candidate":"Manual"}</b></div></div><section className="tc-detail-section"><h3>Objective</h3><p className="tc-detail-body">{caseDetail.objective||"ไม่ระบุวัตถุประสงค์"}</p></section>{caseDetail.preconditions&&<section className="tc-detail-section"><h3>Preconditions</h3><p className="tc-detail-body">{caseDetail.preconditions}</p></section>}<section className="tc-detail-section"><h3>Test Steps ({caseDetail.steps?.length??0})</h3><div className="tc-detail-steps">{(caseDetail.steps??[]).map(x=><div key={x.stepNo} className="tc-detail-step"><div className="tc-detail-step-no">{x.stepNo}</div><div className="tc-detail-step-body"><div className="tc-detail-step-action"><strong>Action</strong><p>{x.action}</p></div>{x.testData&&<div className="tc-detail-step-data"><strong>Test Data</strong><p>{x.testData}</p></div>}<div className="tc-detail-step-expect"><strong>Expected Result</strong><p>{x.expectedResult}</p></div></div></div>)}</div></section><div className="modal-actions"><button className="btn primary" onClick={()=>setCaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div></div></div>}
+    {suiteModal&&<ModalShell labelledBy="regression-suite-title" className="regression-suite-modal" onDismiss={() => { if (!saving) setSuiteModal(false); }}><div className="modal-head"><div><h2 id="regression-suite-title">สร้าง Regression Suite</h2><small>{selectedCases.length} Test Cases ที่เลือก</small></div><button disabled={saving} onClick={()=>setSuiteModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label className="full">Suite Name<input value={suiteName} onChange={e=>setSuiteName(e.target.value)}/></label><label>Risk Tier<select value={riskTier} onChange={e=>setRiskTier(e.target.value)}><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></label><label className="full">Description<textarea rows={3} value={suiteDescription} onChange={e=>setSuiteDescription(e.target.value)}/></label></div><label className="regression-create-cycle"><input type="checkbox" checked={createCycle} onChange={e=>setCreateCycle(e.target.checked)}/><span><b>สร้าง Regression Cycle ต่อทันที</b><small>ระบบจะนำ Test Case ทั้งหมดใน Suite เข้า Cycle</small></span></label>{createCycle&&<div className="form-grid regression-cycle-fields"><label className="full">Cycle Name<input value={cycleName} onChange={e=>setCycleName(e.target.value)}/></label><label>Environment<select value={environmentId} onChange={e=>setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map(x=><option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label><label>Start Date<input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}/></label><label>End Date<input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}/></label></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={()=>setSuiteModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving||!suiteName.trim()||(createCycle&&!environmentId)} onClick={generateSuite}>{saving?<><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง...</>:createCycle?<><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Suite และ Cycle</>:<><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Suite</>}</button></div></ModalShell>}
+    {caseDetail&&<ModalShell labelledBy="regression-case-detail-title" className="testcase-detail" onDismiss={() => setCaseDetail(null)}><div className="modal-head"><div><h2 id="regression-case-detail-title">{caseDetail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleName||"-"}</small></div><button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setCaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="tc-detail-hero"><h3>{caseDetail.title}</h3><div className="tc-detail-badges"><Badge tone={caseDetail.priority==="P0"||caseDetail.priority==="P1"?"red":"blue"}>{caseDetail.priority}</Badge><Badge tone={caseDetail.status==="Ready"?"green":caseDetail.status==="Deprecated"?"yellow":"blue"}>{caseDetail.status}</Badge>{caseDetail.testType&&<Badge tone="yellow">{caseDetail.testType}</Badge>}</div></div><div className="tc-detail-meta"><div className="tc-detail-meta-item"><span>Revision</span><b>Rev. {caseDetail.revisionNo}</b></div><div className="tc-detail-meta-item"><span>Module</span><b>{modules.find(x=>x.moduleId===caseDetail.moduleId)?.moduleCode||"-"}</b></div><div className="tc-detail-meta-item"><span>Execution Type</span><b>{caseDetail.automationCandidate?"Automation Candidate":"Manual"}</b></div></div><section className="tc-detail-section"><h3>Objective</h3><p className="tc-detail-body">{caseDetail.objective||"ไม่ระบุวัตถุประสงค์"}</p></section>{caseDetail.preconditions&&<section className="tc-detail-section"><h3>Preconditions</h3><p className="tc-detail-body">{caseDetail.preconditions}</p></section>}<section className="tc-detail-section"><h3>Test Steps ({caseDetail.steps?.length??0})</h3><div className="tc-detail-steps">{(caseDetail.steps??[]).map(x=><div key={x.stepNo} className="tc-detail-step"><div className="tc-detail-step-no">{x.stepNo}</div><div className="tc-detail-step-body"><div className="tc-detail-step-action"><strong>Action</strong><p>{x.action}</p></div>{x.testData&&<div className="tc-detail-step-data"><strong>Test Data</strong><p>{x.testData}</p></div>}<div className="tc-detail-step-expect"><strong>Expected Result</strong><p>{x.expectedResult}</p></div></div></div>)}</div></section><div className="modal-actions"><button className="btn primary" onClick={()=>setCaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div></ModalShell>}
   </div>
 }
 
@@ -4381,7 +4374,7 @@ type RtmItem = { requirementId: string; moduleId: string; moduleName: string; re
 function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: number; projectId?: string; releaseId?: string; search: string; canEdit: boolean }) {
   const [items, setItems] = useState<RtmItem[]>([]), [releases, setReleases] = useState<ReleaseItem[]>([]), [modules, setModules] = useState<ModuleItem[]>([]), [cases, setCases] = useState<TestCaseItem[]>([]);
   const [selectedRelease, setSelectedRelease] = useState(releaseId ?? ""), [moduleFilter, setModuleFilter] = useState(""), [coverageFilter, setCoverageFilter] = useState(""), [statusFilter, setStatusFilter] = useState("");  const [busy, setBusy] = useState(false), [reload, setReload] = useState(0), [error, setError] = useState(""), [loading, setLoading] = useState(true);
-  const [detail, setDetail] = useState<RtmItem | null>(null), [caseDetail, setCaseDetail] = useState<RtmLinkedCase | null>(null), [linking, setLinking] = useState<RtmItem | null>(null), [linkModuleFilter, setLinkModuleFilter] = useState(""), [selectedCase, setSelectedCase] = useState(""), [coverageType, setCoverageType] = useState("Direct");
+  const [detail, setDetail] = useState<RtmItem | null>(null), [caseDetail, setCaseDetail] = useState<RtmLinkedCase | null>(null), [linking, setLinking] = useState<RtmItem | null>(null), [linkError, setLinkError] = useState(""), [confirmUnlink, setConfirmUnlink] = useState(""), [linkModuleFilter, setLinkModuleFilter] = useState(""), [selectedCase, setSelectedCase] = useState(""), [coverageType, setCoverageType] = useState("Direct");
   const [releasesLoaded, setReleasesLoaded] = useState(false);
   const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
   useEffect(() => setSelectedRelease(releaseId ?? ""), [releaseId]);
@@ -4408,17 +4401,19 @@ function RtmPage({ refresh, projectId, releaseId, search, canEdit }: { refresh: 
   const filtered = items.filter(x => (!moduleFilter || x.moduleId === moduleFilter) && (!coverageFilter || x.coverageStatus === coverageFilter) && (!statusFilter || x.status === statusFilter) && (!search || `${x.requirementCode} ${x.title} ${x.moduleName} ${x.testCases.map(t => t.testCaseCode).join(" ")}`.toLowerCase().includes(search.toLowerCase())));
   const linkableCases=cases.filter(testCase=>(!linkModuleFilter||testCase.moduleId===linkModuleFilter)&&(!linking||!linking.testCases.some(linked=>linked.testCaseId===testCase.testCaseId)));
   const counts = { covered: items.filter(x => x.coverageStatus === "Covered").length, partial: items.filter(x => x.coverageStatus === "Partial").length, none: items.filter(x => x.coverageStatus === "Not Covered").length };
-  const saveLink = async (remove?: RtmLinkedCase) => { if (!linking || (!remove && !selectedCase)) return; setBusy(true); const id = remove?.testCaseId ?? selectedCase; const r = await fetch(`${apiUrl}/requirements/${linking.requirementId}/test-cases/${id}${remove ? "" : `?coverageType=${coverageType}`}`, { method: remove ? "DELETE" : "POST", headers }); setBusy(false); if (!r.ok) { setError("บันทึกการเชื่อมโยง Test Case ไม่สำเร็จ"); return; } if (!remove) { setLinking(null); setSelectedCase(""); } setReload(x => x + 1); };
+  // error แสดงใน modal (เดิมอยู่ที่หน้าหลักซึ่งถูก modal บัง), try/finally กัน busy ค้างเมื่อเครือข่ายล้ม,
+  // และยกเลิก Link ต้องกดยืนยันอีกครั้ง (เดิมลบทันที)
+  const saveLink = async (remove?: RtmLinkedCase) => { if (!linking || (!remove && !selectedCase)) return; setBusy(true); setLinkError(""); const id = remove?.testCaseId ?? selectedCase; try { const r = await fetch(`${apiUrl}/requirements/${linking.requirementId}/test-cases/${id}${remove ? "" : `?coverageType=${coverageType}`}`, { method: remove ? "DELETE" : "POST", headers }); if (!r.ok) throw new Error(`HTTP ${r.status}`); if (remove) { setConfirmUnlink(""); setLinking((l) => l ? { ...l, testCases: l.testCases.filter((t) => t.testCaseId !== remove.testCaseId) } : l); } else { setLinking(null); setSelectedCase(""); } setReload(x => x + 1); } catch (e) { setLinkError(`${remove ? "ยกเลิก" : "บันทึก"}การเชื่อมโยง Test Case ไม่สำเร็จ (${e instanceof Error ? e.message : "ไม่ทราบสาเหตุ"})`); } finally { setBusy(false); } };
   const exportCsv = () => { const rows = [["Requirement ID","Title","Module","Priority","Status","Coverage","Test Case ID","Test Case Title","Test Case Status","Link Type"], ...filtered.flatMap(x => (x.testCases.length ? x.testCases : [null]).map(t => [x.requirementCode,x.title,x.moduleName,x.priority,x.status,x.coverageStatus,t?.testCaseCode ?? "",t?.title ?? "",t?.status ?? "",t?.coverageType ?? ""]))]; const csv = "\ufeff" + rows.map(row => row.map(v => `"${String(v).replaceAll('"','""')}"`).join(",")).join("\r\n"); const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href=url; a.download="rtm.csv"; a.click(); URL.revokeObjectURL(url); };
   if (loading) return <article className="card empty"><p>กำลังคำนวณ RTM...</p></article>;
   return <>
     <div className="kpi-grid"><article className="card kpi"><span>Requirements</span><strong>{items.length}</strong><small>In Scope</small></article><article className="card kpi"><span>Covered</span><strong>{counts.covered}</strong><small className="green">มี Test Case Ready</small></article><article className="card kpi"><span>Partial</span><strong>{counts.partial}</strong><small className="blue">เชื่อมแล้ว แต่ยังไม่ Ready</small></article><article className="card kpi"><span>Not Covered</span><strong>{counts.none}</strong><small className="red">ยังไม่มี Test Case</small></article></div>
     <article className="card"><div className="table-tools rtm-tools"><div className="filter-toolbar-row"><select value={moduleFilter} onChange={e => setModuleFilter(e.target.value)} aria-label="กรองตาม Module"><option value="">ทุก Module</option>{renderModuleSelectOptions(modules.filter(x => x.isActive && (!projectId || x.projectId === projectId)))}</select><select value={selectedRelease} onChange={e => setSelectedRelease(e.target.value)}><option value="">เลือก Release</option>{releases.filter(x => !projectId || x.projectId === projectId).map(x => <option key={x.releaseId} value={x.releaseId}>{x.releaseCode} · {x.version}</option>)}</select><select value={coverageFilter} onChange={e => setCoverageFilter(e.target.value)}><option value="">ทุก Coverage</option><option>Covered</option><option>Partial</option><option>Not Covered</option></select><select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">ทุก Status</option>{[...new Set(items.map(x => x.status))].map(x => <option key={x}>{x}</option>)}</select></div><button className="btn" onClick={exportCsv}><span className="material-symbols-outlined" aria-hidden="true">download</span> Export CSV</button></div>{error && <div className="inline-error">{error}</div>}
-      <div className="table-wrap"><table className="rtm-table"><thead><tr><th>Requirement</th><th>Title</th><th>Priority</th><th>Test Cases</th><th>Coverage</th><th>Status</th><th>จัดการ</th></tr></thead><tbody>{filtered.map(x => <tr key={x.requirementId}><td data-label="Requirement"><button className="link-button" onClick={() => setDetail(x)}>{x.requirementCode}</button><small className="rtm-module">{x.moduleName}</small></td><td data-label="Title">{x.title}</td><td data-label="Priority">{x.priority}</td><td data-label="Test Cases">{x.testCaseCount}</td><td data-label="Coverage"><Badge tone={x.coverageStatus === "Covered" ? "green" : x.coverageStatus === "Partial" ? "yellow" : "red"}>{x.coverageStatus}</Badge></td><td data-label="Status">{x.status}</td><td data-label="จัดการ"><div className="row-actions"><button className="btn" onClick={() => setDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">info</span> รายละเอียด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(x);setLinkModuleFilter(x.moduleId);setSelectedCase("");setCoverageType("Direct")}}><span aria-hidden="true">⇄</span> จัดการ Link</button>}</div></td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table className="rtm-table"><thead><tr><th>Requirement</th><th>Title</th><th>Priority</th><th>Test Cases</th><th>Coverage</th><th>Status</th><th>จัดการ</th></tr></thead><tbody>{filtered.map(x => <tr key={x.requirementId}><td data-label="Requirement"><button className="link-button" onClick={() => setDetail(x)}>{x.requirementCode}</button><small className="rtm-module">{x.moduleName}</small></td><td data-label="Title">{x.title}</td><td data-label="Priority">{x.priority}</td><td data-label="Test Cases">{x.testCaseCount}</td><td data-label="Coverage"><Badge tone={x.coverageStatus === "Covered" ? "green" : x.coverageStatus === "Partial" ? "yellow" : "red"}>{x.coverageStatus}</Badge></td><td data-label="Status">{x.status}</td><td data-label="จัดการ"><div className="row-actions"><button className="btn" onClick={() => setDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">info</span> รายละเอียด</button>{canEdit && <button className="btn primary" onClick={() => {setLinkError("");setConfirmUnlink("");setLinking(x);setLinkModuleFilter(x.moduleId);setSelectedCase("");setCoverageType("Direct")}}><span aria-hidden="true">⇄</span> จัดการ Link</button>}</div></td></tr>)}</tbody></table></div>
     </article>
-    {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="rtm-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box rtm-detail" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2 id="rtm-detail-title">รายละเอียด RTM</h2><small>{detail.requirementCode} · {detail.moduleName}</small></div><button aria-label="ปิดหน้าต่างรายละเอียด RTM" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="rtm-detail-hero"><div className="rtm-detail-hero-copy"><span className="rtm-detail-eyebrow">Requirement</span><b className="rtm-detail-code">{detail.requirementCode}</b><h3>{detail.title}</h3><div className="rtm-detail-badges"><Badge tone={detail.priority === "P0" || detail.priority === "P1" ? "red" : "blue"}>{detail.priority}</Badge><Badge tone={detail.status === "Approved" || detail.status === "Implemented" ? "green" : "yellow"}>{detail.status}</Badge></div></div><div className={`rtm-coverage-summary ${detail.coverageStatus.toLowerCase().replaceAll(" ", "-")}`}><span>Coverage</span><b>{detail.coverageStatus}</b><small>{detail.testCaseCount} Test Case{detail.testCaseCount === 1 ? "" : "s"}</small></div></div><div className="rtm-detail-meta"><div><span className="rtm-meta-icon" aria-hidden="true">M</span><span>Module<b>{detail.moduleName || "ไม่ระบุ"}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">#</span><span>Linked Test Cases<b>{detail.testCaseCount}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">✓</span><span>Traceability<b>{detail.coverageStatus}</b></span></div></div><section className="rtm-detail-section"><div className="rtm-section-heading"><div><span className="rtm-section-icon" aria-hidden="true">⇄</span><span><h3>Test Cases ที่เชื่อมโยง</h3><small>ตรวจสอบความครอบคลุมและชนิดการเชื่อมโยง</small></span></div><span className="rtm-linked-count">{detail.testCases.length} รายการ</span></div><div className="rtm-linked-list rtm-detail-linked-list">{detail.testCases.length ? detail.testCases.map((t, index) => <button key={t.testCaseId} onClick={() => setCaseDetail(t)}><span className="rtm-case-index">{String(index + 1).padStart(2, "0")}</span><span className="rtm-case-copy"><b>{t.testCaseCode}</b><span>{t.title}</span><small>{t.testType || "ไม่ระบุประเภท"} · Rev. {t.revisionNo}</small></span><span className="rtm-case-status"><Badge tone={t.status === "Ready" ? "green" : t.status === "Deprecated" ? "red" : "yellow"}>{t.status}</Badge>{t.coverageType && <small>{t.coverageType}</small>}<i aria-hidden="true">›</i></span></button>) : <div className="rtm-detail-empty"><span aria-hidden="true">⇄</span><b>ยังไม่มี Test Case ที่เชื่อมโยง</b><p>Requirement นี้ยังไม่ถูกครอบคลุม กรุณาเพิ่ม Test Case Link เพื่อให้ตรวจสอบ Traceability ได้</p></div>}</div></section><div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => {setLinking(detail);setLinkModuleFilter(detail.moduleId);setSelectedCase("");setCoverageType("Direct");setDetail(null)}}><span aria-hidden="true">⇄</span> จัดการ Link</button>}</div></div></div>}
+    {detail && <ModalShell labelledBy="rtm-detail-title" className="rtm-detail" onDismiss={() => setDetail(null)}><div className="modal-head"><div><h2 id="rtm-detail-title">รายละเอียด RTM</h2><small>{detail.requirementCode} · {detail.moduleName}</small></div><button aria-label="ปิดหน้าต่างรายละเอียด RTM" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="rtm-detail-hero"><div className="rtm-detail-hero-copy"><span className="rtm-detail-eyebrow">Requirement</span><b className="rtm-detail-code">{detail.requirementCode}</b><h3>{detail.title}</h3><div className="rtm-detail-badges"><Badge tone={detail.priority === "P0" || detail.priority === "P1" ? "red" : "blue"}>{detail.priority}</Badge><Badge tone={detail.status === "Approved" || detail.status === "Implemented" ? "green" : "yellow"}>{detail.status}</Badge></div></div><div className={`rtm-coverage-summary ${detail.coverageStatus.toLowerCase().replaceAll(" ", "-")}`}><span>Coverage</span><b>{detail.coverageStatus}</b><small>{detail.testCaseCount} Test Case{detail.testCaseCount === 1 ? "" : "s"}</small></div></div><div className="rtm-detail-meta"><div><span className="rtm-meta-icon" aria-hidden="true">M</span><span>Module<b>{detail.moduleName || "ไม่ระบุ"}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">#</span><span>Linked Test Cases<b>{detail.testCaseCount}</b></span></div><div><span className="rtm-meta-icon" aria-hidden="true">✓</span><span>Traceability<b>{detail.coverageStatus}</b></span></div></div><section className="rtm-detail-section"><div className="rtm-section-heading"><div><span className="rtm-section-icon" aria-hidden="true">⇄</span><span><h3>Test Cases ที่เชื่อมโยง</h3><small>ตรวจสอบความครอบคลุมและชนิดการเชื่อมโยง</small></span></div><span className="rtm-linked-count">{detail.testCases.length} รายการ</span></div><div className="rtm-linked-list rtm-detail-linked-list">{detail.testCases.length ? detail.testCases.map((t, index) => <button key={t.testCaseId} onClick={() => setCaseDetail(t)}><span className="rtm-case-index">{String(index + 1).padStart(2, "0")}</span><span className="rtm-case-copy"><b>{t.testCaseCode}</b><span>{t.title}</span><small>{t.testType || "ไม่ระบุประเภท"} · Rev. {t.revisionNo}</small></span><span className="rtm-case-status"><Badge tone={t.status === "Ready" ? "green" : t.status === "Deprecated" ? "red" : "yellow"}>{t.status}</Badge>{t.coverageType && <small>{t.coverageType}</small>}<i aria-hidden="true">›</i></span></button>) : <div className="rtm-detail-empty"><span aria-hidden="true">⇄</span><b>ยังไม่มี Test Case ที่เชื่อมโยง</b><p>Requirement นี้ยังไม่ถูกครอบคลุม กรุณาเพิ่ม Test Case Link เพื่อให้ตรวจสอบ Traceability ได้</p></div>}</div></section><div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>{canEdit && <button className="btn primary" onClick={() => {setLinkError("");setConfirmUnlink("");setLinking(detail);setLinkModuleFilter(detail.moduleId);setSelectedCase("");setCoverageType("Direct");setDetail(null)}}><span aria-hidden="true">⇄</span> จัดการ Link</button>}</div></ModalShell>}
     {caseDetail && <div className="modal nested-modal" onMouseDown={() => setCaseDetail(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><h2>{caseDetail.testCaseCode}</h2><button onClick={() => setCaseDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><h3>{caseDetail.title}</h3><div className="detail-grid"><span>Priority<b>{caseDetail.priority}</b></span><span>Type<b>{caseDetail.testType || "-"}</b></span><span>Status<b>{caseDetail.status}</b></span><span>Revision<b>Rev. {caseDetail.revisionNo}</b></span><span>Link Type<b>{caseDetail.coverageType || "Direct"}</b></span></div></div></div>}
-    {linking && <div className="modal" onMouseDown={() => setLinking(null)}><div className="modal-box" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><h2>จัดการ Test Case Link</h2><small>{linking.requirementCode}</small></div><button onClick={() => setLinking(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="rtm-linked-list editable">{linking.testCases.map(t => <div key={t.testCaseId}><button onClick={() => setCaseDetail(t)}><b>{t.testCaseCode}</b><span>{t.title}</span></button><button className="btn danger" disabled={busy} onClick={() => saveLink(t)}>ยกเลิก Link</button></div>)}</div><div className="form-grid rtm-link-form"><label className="full">Module<select className="rtm-link-module-filter" value={linkModuleFilter} onChange={e=>{setLinkModuleFilter(e.target.value);setSelectedCase("")}}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules.filter(x=>x.isActive&&(!projectId||x.projectId===projectId)))}</select></label><label>Test Case <small>{linkableCases.length} รายการ</small><select value={selectedCase} onChange={e => setSelectedCase(e.target.value)}><option value="">{linkableCases.length?"เลือก Test Case":"ไม่พบ Test Case ใน Module นี้"}</option>{linkableCases.map(t => <option key={t.testCaseId} value={t.testCaseId}>{t.testCaseCode} · {t.title}</option>)}</select></label><label>Coverage Type<select value={coverageType} onChange={e => setCoverageType(e.target.value)}><option>Direct</option><option>Indirect</option></select></label></div><div className="modal-actions"><button className="btn" onClick={() => setLinking(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button><button className="btn primary" disabled={busy || !selectedCase} onClick={() => saveLink()}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม Link</>}</button></div></div></div>}
+    {linking && <ModalShell labelledBy="rtm-link-title" onDismiss={() => { if (!busy) setLinking(null); }}><div className="modal-head"><div><h2 id="rtm-link-title">จัดการ Test Case Link</h2><small>{linking.requirementCode}</small></div><button aria-label="ปิด" onClick={() => setLinking(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="rtm-linked-list editable">{linking.testCases.map(t => <div key={t.testCaseId}><button onClick={() => setCaseDetail(t)}><b>{t.testCaseCode}</b><span>{t.title}</span></button>{confirmUnlink === t.testCaseId ? <span className="row-actions"><button className="btn danger" disabled={busy} onClick={() => saveLink(t)}>ยืนยันยกเลิก Link</button><button className="btn" disabled={busy} onClick={() => setConfirmUnlink("")}>ไม่ยกเลิก</button></span> : <button className="btn danger" disabled={busy} onClick={() => setConfirmUnlink(t.testCaseId)}>ยกเลิก Link</button>}</div>)}</div><div className="form-grid rtm-link-form"><label className="full">Module<select className="rtm-link-module-filter" value={linkModuleFilter} onChange={e=>{setLinkModuleFilter(e.target.value);setSelectedCase("")}}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules.filter(x=>x.isActive&&(!projectId||x.projectId===projectId)))}</select></label><label>Test Case <small>{linkableCases.length} รายการ</small><select value={selectedCase} onChange={e => setSelectedCase(e.target.value)}><option value="">{linkableCases.length?"เลือก Test Case":"ไม่พบ Test Case ใน Module นี้"}</option>{linkableCases.map(t => <option key={t.testCaseId} value={t.testCaseId}>{t.testCaseCode} · {t.title}</option>)}</select></label><label>Coverage Type<select value={coverageType} onChange={e => setCoverageType(e.target.value)}><option>Direct</option><option>Indirect</option></select></label></div>{linkError && <div className="inline-alert error" role="alert"><span>{linkError}</span></div>}<div className="modal-actions"><button className="btn" onClick={() => setLinking(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button><button className="btn primary" disabled={busy || !selectedCase} onClick={() => saveLink()}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม Link</>}</button></div></ModalShell>}
   </>;
 }
 type CycleEnvironment = {
@@ -4928,8 +4923,8 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
         },
       );
       if (!response.ok) {
-        const p = await response.json();
-        throw new Error(p.detail ?? "บันทึกไม่สำเร็จ");
+        const p = await response.json().catch(() => null);
+        throw new Error(p?.detail ?? "บันทึกไม่สำเร็จ");
       }
       setForm(false);
       setNotice(editing ? "แก้ไข Test Cycle แล้ว" : "สร้าง Test Cycle แล้ว");
@@ -5059,6 +5054,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     }
   };
   const changeStatus = async (cycle: TestCycleItem, status: string) => {
+    if (["Closed", "Cancelled", "Completed"].includes(status) && !await confirmDialog({ title: "เปลี่ยนสถานะ Test Cycle", message: `เปลี่ยน ${cycle.cycleCode} เป็น ${status} ใช่หรือไม่?\nCycle ที่ปิด/ยกเลิกแล้วจะบันทึกผลเพิ่มไม่ได้`, confirmLabel: `เปลี่ยนเป็น ${status}` })) return;
     const response = await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}/status`, {
       method: "POST",
       headers,
@@ -5072,6 +5068,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
   const toggleCycleSelectPage = () => setCycleSelected((prev) => { const next = new Set(prev); const all = rows.length > 0 && rows.every((x) => prev.has(x.testCycleId)); if (all) rows.forEach((x) => next.delete(x.testCycleId)); else rows.forEach((x) => next.add(x.testCycleId)); return next; });
   const applyCycleBulkStatus = async () => {
     if (!cycleBulkStatus || !cycleSelected.size) return;
+    if (!await confirmDialog({ title: "เปลี่ยนสถานะหลายรายการ", message: `เปลี่ยนสถานะ Test Cycle ${cycleSelected.size} รายการเป็น ${cycleBulkStatus} ใช่หรือไม่?`, confirmLabel: `เปลี่ยนเป็น ${cycleBulkStatus}` })) return;
     setCycleBulkSaving(true);
     setError("");
     const targets = rows.filter((x) => cycleSelected.has(x.testCycleId));
@@ -5091,7 +5088,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
     }
   };
   const remove = async (cycle: TestCycleItem) => {
-    if (!window.confirm(`ยืนยันลบ ${cycle.cycleCode}?`)) return;
+    if (!await confirmDialog(`ยืนยันลบ ${cycle.cycleCode}?`)) return;
     const response = await fetch(`${apiUrl}/test-cycles/${cycle.testCycleId}`, {
       method: "DELETE",
       headers,
@@ -5324,8 +5321,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
         </div>
       </article>
       {detail && (
-        <div className="modal" role="presentation" onMouseDown={() => setDetail(null)}>
-          <div className="modal-box cycle-modal cycle-detail-modal" role="dialog" aria-modal="true" aria-labelledby="cycle-detail-title" onMouseDown={event => event.stopPropagation()}>
+        <ModalShell labelledBy="cycle-detail-title" className="cycle-modal cycle-detail-modal" onDismiss={() => setDetail(null)}>
             <div className="modal-head cycle-detail-crumb-head">
               <div className="cycle-detail-crumb"><span>Test Cycle</span><i className="material-symbols-outlined" aria-hidden="true">chevron_right</i><span>รายละเอียด</span></div>
               <button aria-label="ปิดรายละเอียด Test Cycle" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
@@ -5431,12 +5427,10 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
               {canEdit && <button className="btn" onClick={() => openClone(detail)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone เป็น Cycle ใหม่</button>}
               {canEdit && <button className="btn primary" onClick={() => { const cycle = detail; setDetail(null); openForm(cycle); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
       {cycleAiModal && (
-        <div className="modal" onMouseDown={() => !cycleAiGenerating && setCycleAiModal(false)}>
-          <div className="modal-box requirement-ai-modal suite-ai-modal cycle-ai-modal" role="dialog" aria-modal="true" aria-labelledby="cycle-ai-title" onMouseDown={(event) => event.stopPropagation()} style={{ position: "relative" }}>
+        <ModalShell labelledBy="cycle-ai-title" dirty={cycleAiDrafts.length > 0} className="requirement-ai-modal suite-ai-modal cycle-ai-modal" boxStyle={{ position: "relative" }} onDismiss={() => { if (!cycleAiGenerating) setCycleAiModal(false); }}>
             {cycleAiGenerating && (
               <div className="ai-loading-overlay">
                 <div className="ai-spinner" />
@@ -5558,15 +5552,10 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                 </div>
               </section>
             )}
-          </div>
-        </div>
+          </ModalShell>
       )}
       {form && (
-        <div className="modal" onMouseDown={() => setForm(false)}>
-          <div
-            className="modal-box cycle-modal"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+        <ModalShell label={editing ? "แก้ไข Test Cycle" : "สร้าง Test Cycle"} className="cycle-modal" onDismiss={() => setForm(false)}>
             <div className="modal-head">
               <div>
                 <h2>{editing ? "แก้ไข" : "สร้าง"} Test Cycle</h2>
@@ -5758,6 +5747,7 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
             </div>
             </div>
             </div>
+            {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
             <div className="modal-actions">
               <button className="btn" onClick={() => setForm(false)}>
                 ยกเลิก
@@ -5779,16 +5769,15 @@ function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextR
                 {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก Test Cycle</>}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
-      {cloneSource && <div className="modal" onMouseDown={() => !cloneSaving && setCloneSource(null)}><div className="modal-box cycle-modal cycle-clone-modal" role="dialog" aria-modal="true" aria-labelledby="cycle-clone-title" onMouseDown={(event) => event.stopPropagation()}>
+      {cloneSource && <ModalShell labelledBy="cycle-clone-title" className="cycle-modal cycle-clone-modal" onDismiss={() => { if (!cloneSaving) setCloneSource(null); }}>
         <div className="modal-head"><div><h2 id="cycle-clone-title">Clone เป็น Test Cycle ใหม่</h2><small>เลือก Release, Build และ Environment เป้าหมาย โดย Cycle เดิมจะไม่ถูกแก้ไข</small></div><button disabled={cloneSaving} aria-label="ปิดหน้าต่าง Clone Test Cycle" onClick={() => setCloneSource(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
         {cloneError && <div className="inline-alert error" role="alert"><span>{cloneError}</span></div>}
         <div className="clone-source-summary"><div><span>Source Snapshot</span><strong>{cloneSource.cycleCode}</strong><small>{cloneSource.cycleName}</small></div><div><span>เดิม</span><b>{cloneSource.releaseCode} · Build {cloneSource.buildNumber}</b><small>{cloneSource.environmentName} · {cloneSource.caseCount} Test Cases · {cloneSource.status}</small></div></div>
         <div className="cycle-form-columns"><section className="modal-section"><h3 className="modal-section-title">Target Release Scope</h3><div className="form-grid"><label>Release <span className="required">*</span><select value={cloneReleaseId} disabled={cloneSaving} onChange={(event) => { setCloneReleaseId(event.target.value); setCloneBuildId(""); }}><option value="">เลือก Release</option>{cloneReleases.map((item) => <option key={item.releaseId} value={item.releaseId}>{item.releaseCode}{item.version ? ` · ${item.version}` : ""}</option>)}</select></label><label>Build <span className="required">*</span><select value={cloneBuildId} disabled={cloneSaving || !cloneReleaseId} onChange={(event) => setCloneBuildId(event.target.value)}><option value="">เลือก Build</option>{cloneBuilds.map((item) => <option key={item.buildId} value={item.buildId}>{item.buildNumber}{item.applicationVersion ? ` · App ${item.applicationVersion}` : ""}</option>)}</select></label><label>Environment <span className="required">*</span><select value={cloneEnvironmentId} disabled={cloneSaving} onChange={(event) => setCloneEnvironmentId(event.target.value)}><option value="">เลือก Environment</option>{cloneEnvironments.map((item) => <option key={item.testEnvironmentId} value={item.testEnvironmentId}>{item.environmentName}</option>)}</select></label><div className="clone-mode-field"><span>วิธีคัดลอก Test Cases</span><label className="clone-mode-option"><input type="radio" name="clone-mode" value="SourceSnapshot" checked={cloneMode === "SourceSnapshot"} disabled={cloneSaving} onChange={(event) => setCloneMode(event.target.value)} /><span><b>Source Snapshot</b><small>คัดลอกชุด Case และ Revision เดิม ({cloneSource.caseCount} รายการ)</small></span></label><label className="clone-mode-option"><input type="radio" name="clone-mode" value="SuiteLatest" checked={cloneMode === "SuiteLatest"} disabled={cloneSaving || !cloneSource.testSuiteId} onChange={(event) => setCloneMode(event.target.value)} /><span><b>Suite Latest</b><small>{cloneSource.testSuiteId ? "ใช้สมาชิกและ Revision ล่าสุดจาก Suite เดิม" : "ใช้ได้เมื่อ Source มี Test Suite"}</small></span></label></div></div></section><section className="modal-section"><h3 className="modal-section-title">รายละเอียด Cycle ใหม่</h3><div className="form-grid"><label>Cycle Code<small>เว้นว่างเพื่อให้ระบบสร้างรหัสอัตโนมัติ</small><input value={cloneCode} disabled={cloneSaving} onChange={(event) => setCloneCode(event.target.value)} placeholder="เช่น PRJ-CYC-003" /></label><label>Cycle Name <span className="required">*</span><input value={cloneName} disabled={cloneSaving} onChange={(event) => setCloneName(event.target.value)} /></label><div className="form-row"><label>Cycle Type<select value={cloneCycleType} disabled={cloneSaving} onChange={(event) => setCloneCycleType(event.target.value)}>{masterOptionElements(cycleTypes, cloneCycleType)}</select></label><label>Owner<select value={cloneOwnerUserId} disabled={cloneSaving} onChange={(event) => setCloneOwnerUserId(event.target.value)}><option value="">ไม่ระบุ</option>{users.map((user) => <option key={user.userId} value={user.userId}>{user.displayName}</option>)}</select></label></div><div className="form-row"><label>Start Date<input type="date" value={cloneStartDate} disabled={cloneSaving} onChange={(event) => setCloneStartDate(event.target.value)} /></label><label>End Date<input type="date" value={cloneEndDate} disabled={cloneSaving} onChange={(event) => setCloneEndDate(event.target.value)} /></label></div><label className="full">Notes<textarea rows={3} value={cloneNotes} disabled={cloneSaving} onChange={(event) => setCloneNotes(event.target.value)} /></label></div></section></div>
         <div className="clone-target-note"><span className="material-symbols-outlined" aria-hidden="true">info</span><span>ผลลัพธ์จะเป็น Cycle Draft, Case NotRun และไม่คัดลอก Execution, Evidence หรือ Assignment</span></div><div className="modal-actions"><button className="btn" disabled={cloneSaving} onClick={() => setCloneSource(null)}>ยกเลิก</button><button className="btn primary" disabled={cloneSaving || !cloneReleaseId || !cloneBuildId || !cloneEnvironmentId || !cloneName.trim()} onClick={clone}>{cloneSaving ? "กำลัง Clone..." : "สร้าง Cycle ใหม่"}</button></div>
-      </div></div>}
+      </ModalShell>}
     </>
   );
 }
@@ -6046,6 +6035,16 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       setSkipComment("");
     }
   }, [selected]);
+  // UI รอบ 2: เปลี่ยนเคสแล้ว effect ด้านบนคืนค่าที่บันทึกล่าสุด — ผลที่กรอกแต่ยังไม่บันทึกจะหายเงียบ ๆ จึงถามก่อน
+  const hasUnsavedResults = !!selected && (
+    selected.steps.some((step) => (stepStatuses[step.stepNo] ?? "NotRun") !== (step.lastStatus ?? "NotRun") || (stepActuals[step.stepNo] ?? "") !== (step.lastActualResult ?? ""))
+    || actual !== (selected.history[0]?.actualResult ?? "") || comment !== (selected.history[0]?.comment ?? ""));
+  const UNSAVED_SWITCH_CONFIRM = "ผลการทดสอบของเคสนี้ยังไม่ได้บันทึก — ถ้าเปลี่ยนไปเคสอื่น ผลที่กรอกไว้จะหาย ต้องการเปลี่ยนหรือไม่?";
+  const selectCase = async (id: string) => {
+    if (id === selectedId) return;
+    if (hasUnsavedResults && !await confirmDialog(UNSAVED_SWITCH_CONFIRM)) return;
+    setSelectedId(id);
+  };
   // ล้าง Defect code รายสเต็ปเฉพาะตอนเปลี่ยน Test Case — ถ้าล้างทุกครั้งที่ selected เปลี่ยน (รวม reload
   // หลังบันทึก) ปุ่ม "+ Defect" จะกลับมาบนสเต็ปที่เพิ่งสร้าง Defect ไปแล้ว ชวนให้สร้างซ้ำ
   useEffect(() => { setStepDefectCodes({}); }, [selectedId]);
@@ -6068,10 +6067,10 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
   const submitExecution = async (status: string, opts?: { confirmMessage?: string; commentOverride?: string }) => {
     if (!selected) return;
     if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
-      window.alert(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถบันทึกผล Execution เพิ่มได้`);
+      notify(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถบันทึกผล Execution เพิ่มได้`, "error");
       return;
     }
-    if (opts?.confirmMessage && !window.confirm(opts.confirmMessage)) return;
+    if (opts?.confirmMessage && !await confirmDialog(opts.confirmMessage)) return;
     setSaving(true);
     try {
       const response = await fetch(
@@ -6102,13 +6101,13 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       // ชัดว่า auto-create สำเร็จ / ข้ามเพราะมี Defect เปิดอยู่แล้ว / ล้มเหลวจริง ไม่ให้ผู้ใช้เข้าใจว่า
       // ระบบไม่ทำงานทั้งที่ตั้งใจข้ามให้ (เช่น สร้าง Defect รายสเต็ปไว้ก่อนหน้าแล้ว)
       const result: { createdDefectCode?: string; existingDefectCode?: string; defectAutoCreateError?: string } = await response.json();
-      if (result.createdDefectCode) window.alert(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ เนื่องจากผลเป็น Fail`);
-      else if (result.existingDefectCode) window.alert(`ไม่ได้สร้าง Defect ใหม่ให้อัตโนมัติ เนื่องจากมี Defect ${result.existingDefectCode} ที่ยังเปิดอยู่ผูกกับ Test Case นี้อยู่แล้ว`);
-      else if (result.defectAutoCreateError) window.alert(`คำเตือน: ${result.defectAutoCreateError}`);
+      if (result.createdDefectCode) notify(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ เนื่องจากผลเป็น Fail`, "success");
+      else if (result.existingDefectCode) notify(`ไม่ได้สร้าง Defect ใหม่ให้อัตโนมัติ เนื่องจากมี Defect ${result.existingDefectCode} ที่ยังเปิดอยู่ผูกกับ Test Case นี้อยู่แล้ว`, "error");
+      else if (result.defectAutoCreateError) notify(`คำเตือน: ${result.defectAutoCreateError}`, "error");
       setReload((x) => x + 1);
       if (status === "Skipped") { setSkipModalOpen(false); setSkipReason(""); setSkipComment(""); }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "บันทึกผลไม่สำเร็จ");
+      notify(e instanceof Error ? e.message : "บันทึกผลไม่สำเร็จ", "error");
     } finally {
       setSaving(false);
     }
@@ -6124,7 +6123,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       return (st === "Fail" || st === "Blocked") && !stepActuals[x.stepNo]?.trim();
     });
     if (missingActual.length) {
-      window.alert(`กรุณาระบุผลที่เกิดขึ้นจริงสำหรับ Step ที่ยังไม่ได้กรอก: #${missingActual.map((x) => x.stepNo).join(", #")}`);
+      notify(`กรุณาระบุผลที่เกิดขึ้นจริงสำหรับ Step ที่ยังไม่ได้กรอก: #${missingActual.map((x) => x.stepNo).join(", #")}`, "error");
       return;
     }
     const confirmMessage = stepCounts.notRun > 0
@@ -6139,21 +6138,22 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
       const key = event.key.toLowerCase();
       if (["p", "f", "b"].includes(key)) {
         const status = key === "p" ? "Pass" : key === "f" ? "Fail" : "Blocked";
-        setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
         event.preventDefault();
+        // เหมือนปุ่ม "ตั้งทุก Step" — ถามก่อนเปลี่ยนผลทุก Step (เดิมปุ่มลัดเปลี่ยนทันทีโดยไม่ถาม)
+        void (async () => { if (!await confirmDialog(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${status} หรือไม่?`)) return; setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status]))); })();
       } else if (key === "n") {
         const index = filteredCases.findIndex((item) => item.testCycleCaseId === selectedId);
         const next = index >= 0 ? filteredCases[index + 1] : undefined;
-        if (next) { setSelectedId(next.testCycleCaseId); event.preventDefault(); }
+        if (next) { event.preventDefault(); void (async () => { if (hasUnsavedResults && !await confirmDialog(UNSAVED_SWITCH_CONFIRM)) return; setSelectedId(next.testCycleCaseId); })(); }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected, selectedId, filteredCases, skipModalOpen, defectEditor]);
+  }, [selected, selectedId, filteredCases, skipModalOpen, defectEditor, hasUnsavedResults]);
   // §18 Skip Test Case — เปิด modal เลือก Reason + Comment ก่อนเสมอ ไม่มีปุ่มลัด
   const openSkipModal = () => { setSkipReason(""); setSkipComment(""); setSkipModalOpen(true); };
   const confirmSkip = () => {
-    if (!skipReason) { window.alert("กรุณาเลือก Reason ก่อนยืนยัน Skip"); return; }
+    if (!skipReason) { notify("กรุณาเลือก Reason ก่อนยืนยัน Skip", "error"); return; }
     const label = skipReasonOptions.find((r) => r.value === skipReason)?.label ?? skipReason;
     submitExecution("Skipped", { commentOverride: `[${label}] ${skipComment}`.trim() });
   };
@@ -6181,7 +6181,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
   };
   const openDefectEditorForStep = (step: { stepNo: number; action: string; expectedResult: string }) => {
     const context = buildDefectContext(step);
-    if (!context) { window.alert("ไม่พบ Project ของ Test Cycle นี้ ไม่สามารถสร้าง Defect ได้"); return; }
+    if (!context) { notify("ไม่พบ Project ของ Test Cycle นี้ ไม่สามารถสร้าง Defect ได้", "error"); return; }
     setDefectEditor({ context });
   };
   const editLinkedDefect = (defect: WorkspaceDefect) => {
@@ -6206,10 +6206,10 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
   };
   const removeExecution = async (execution: ExecutionCase["history"][number]) => {
     if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
-      window.alert(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถลบผล Execution ได้`);
+      notify(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถลบผล Execution ได้`, "error");
       return;
     }
-    if (!window.confirm(`ยืนยันลบผลการทดสอบ Run #${execution.executionNo}?\nข้อมูลจะถูกซ่อน แต่ยังเก็บไว้สำหรับ Audit`)) return;
+    if (!await confirmDialog(`ยืนยันลบผลการทดสอบ Run #${execution.executionNo}?\nข้อมูลจะถูกซ่อน แต่ยังเก็บไว้สำหรับ Audit`)) return;
     setDeletingHistoryId(execution.testExecutionId);
     try {
       const response = await fetch(`${apiUrl}/executions/${execution.testExecutionId}`, {
@@ -6217,7 +6217,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
         headers,
       });
       if (!response.ok) {
-        window.alert("ลบผลการทดสอบไม่สำเร็จ");
+        notify("ลบผลการทดสอบไม่สำเร็จ", "error");
         return;
       }
       setReload((x) => x + 1);
@@ -6341,7 +6341,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                 className={selectedId === x.testCycleCaseId ? "active" : ""}
                 aria-current={selectedId === x.testCycleCaseId ? "true" : undefined}
                 key={x.testCycleCaseId}
-                onClick={() => setSelectedId(x.testCycleCaseId)}
+                onClick={() => selectCase(x.testCycleCaseId)}
               >
                 <span className="case-row-top">
                   <b>{x.testCaseCode}</b>
@@ -6404,8 +6404,8 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                       <button
                         type="button"
                         key={status}
-                        onClick={() => {
-                          if (!window.confirm(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${label} หรือไม่?`)) return;
+                        onClick={async () => {
+                          if (!await confirmDialog(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${label} หรือไม่?`)) return;
                           setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
                         }}
                       >
@@ -6538,8 +6538,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                 <small className="execution-shortcut-hint">Shortcuts: P = Pass · F = Fail · B = Blocked · N = Next Case</small>
               </div>
               {skipModalOpen && (
-                <div className="modal" role="dialog" aria-modal="true" aria-labelledby="skip-test-case-title" onMouseDown={() => setSkipModalOpen(false)}>
-                  <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+                <ModalShell labelledBy="skip-test-case-title" onDismiss={() => setSkipModalOpen(false)}>
                     <div className="modal-head">
                       <h2 id="skip-test-case-title">Skip Test Case</h2>
                       <button aria-label="ปิดหน้าต่าง" onClick={() => setSkipModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
@@ -6561,8 +6560,7 @@ function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBui
                       <button className="btn" onClick={() => setSkipModalOpen(false)}>Cancel</button>
                       <button className="btn primary" disabled={saving || !skipReason} onClick={confirmSkip}>Confirm Skip</button>
                     </div>
-                  </div>
-                </div>
+                  </ModalShell>
               )}
               {defectEditor && (
                 <ExecutionDefectEditor
@@ -6880,7 +6878,7 @@ function TestSuitesPage({
       setChecked([]);
       setReload((x) => x + 1);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      notify(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ", "error");
     } finally {
       setSaving(false);
     }
@@ -6907,6 +6905,7 @@ function TestSuitesPage({
     }
   };
   const removeCase = async (suiteId: string, caseId: string) => {
+    if (!await confirmDialog({ title: "นำ Test Case ออกจาก Suite", message: "นำ Test Case นี้ออกจาก Suite ใช่หรือไม่? (Test Case ไม่ถูกลบ)", confirmLabel: "นำออก", tone: "danger" })) return;
     const response = await fetch(`${apiUrl}/test-suites/${suiteId}/cases/${caseId}`, {
       method: "DELETE",
       headers,
@@ -6928,14 +6927,14 @@ function TestSuitesPage({
     const confirmMessage = isSysAdmin
       ? `ยืนยันลบ ${suite.suiteCode} ถาวร? การลบนี้ไม่สามารถกู้คืนได้ Test Case ที่ผูกไว้จะถูกนำออก และถ้ามี Test Cycle ผูกอยู่ ${suite.cycleCount > 0 ? `(${suite.cycleCount} รายการ) ` : ""}จะถูกลบถาวรพร้อมผล Execution/ประวัติการทดสอบทั้งหมดของ Cycle นั้นไปด้วย`
       : `ยืนยันปิดใช้งาน ${suite.suiteCode}? Suite นี้จะไม่แสดงในรายการที่ใช้งานอยู่ (เปิดกลับมาใช้งานได้ภายหลังผ่านหน้าแก้ไข)`;
-    if (!window.confirm(confirmMessage)) return;
+    if (!await confirmDialog(confirmMessage)) return;
     const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}${isSysAdmin ? "/hard" : ""}`, {
       method: "DELETE",
       headers,
     });
     if (!response.ok) {
       const problem = await response.json().catch(() => null);
-      window.alert(problem?.detail || problem?.title || `${isSysAdmin ? "ลบ" : "ปิดใช้งาน"} Test Suite ไม่สำเร็จ (${response.status})`);
+      notify(problem?.detail || problem?.title || `${isSysAdmin ? "ลบ" : "ปิดใช้งาน"} Test Suite ไม่สำเร็จ (${response.status})`, "error");
       return;
     }
     setReload((x) => x + 1);
@@ -7151,10 +7150,9 @@ function TestSuitesPage({
           <button className="btn" disabled={suitePage >= suitePageCount} onClick={() => setSuitePage(page => page + 1)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
         </div>
       </article>
-      {suiteAiModal&&<div className="modal" onMouseDown={()=>!suiteAiGenerating&&setSuiteAiModal(false)}><div className="modal-box requirement-ai-modal suite-ai-modal" role="dialog" aria-modal="true" aria-labelledby="suite-ai-title" onMouseDown={event=>event.stopPropagation()} style={{position:"relative"}}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(suiteAiModules)}</select></label></div><div className="ai-draft-note"><span className="material-symbols-outlined" aria-hidden="true">info</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<><div className="suite-case-toolbar"><div className="suite-case-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input value={suiteAiCaseSearch} onChange={e=>setSuiteAiCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." /></div><select value={suiteAiPriorityFilter} onChange={e=>setSuiteAiPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(suiteAiModuleCases.map(x=>x.priority))].map(x=><option key={x}>{x}</option>)}</select><select value={suiteAiTypeFilter} onChange={e=>setSuiteAiTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(suiteAiModuleCases.map(x=>x.testType).filter(Boolean))].map(x=><option key={x} value={x}>{x}</option>)}</select></div><section className="suite-panel suite-ai-candidate-panel"><div className="suite-panel-head"><h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Test Case ที่ AI จะวิเคราะห์</h3><span className="suite-panel-count">{suiteAiCandidates.length}</span></div><div className="suite-panel-body">{suiteAiCandidates.length?suiteAiCandidates.map(x=><div className="suite-case" key={x.testCaseId}><span className="suite-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small></span><Badge tone={x.priority==="P0"||x.priority==="P1"?"red":"blue"}>{x.priority}</Badge></div>):<div className="suite-panel-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><p>ไม่พบ Test Case ที่ตรงกับตัวกรอง</p></div>}</div></section><div className="requirement-ai-actions"><small>{suiteAiModuleCases.length} Test Cases พร้อมวิเคราะห์{suiteAiCandidates.length!==suiteAiModuleCases.length?` (แสดง ${suiteAiCandidates.length} รายการตามตัวกรอง)`:""}</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div></>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</div></div>}
+      {suiteAiModal&&<ModalShell labelledBy="suite-ai-title" dirty={suiteAiDrafts.length > 0} className="requirement-ai-modal suite-ai-modal" boxStyle={{position:"relative"}} onDismiss={() => { if (!suiteAiGenerating) setSuiteAiModal(false); }}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(suiteAiModules)}</select></label></div><div className="ai-draft-note"><span className="material-symbols-outlined" aria-hidden="true">info</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<><div className="suite-case-toolbar"><div className="suite-case-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input value={suiteAiCaseSearch} onChange={e=>setSuiteAiCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." /></div><select value={suiteAiPriorityFilter} onChange={e=>setSuiteAiPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(suiteAiModuleCases.map(x=>x.priority))].map(x=><option key={x}>{x}</option>)}</select><select value={suiteAiTypeFilter} onChange={e=>setSuiteAiTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(suiteAiModuleCases.map(x=>x.testType).filter(Boolean))].map(x=><option key={x} value={x}>{x}</option>)}</select></div><section className="suite-panel suite-ai-candidate-panel"><div className="suite-panel-head"><h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Test Case ที่ AI จะวิเคราะห์</h3><span className="suite-panel-count">{suiteAiCandidates.length}</span></div><div className="suite-panel-body">{suiteAiCandidates.length?suiteAiCandidates.map(x=><div className="suite-case" key={x.testCaseId}><span className="suite-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small></span><Badge tone={x.priority==="P0"||x.priority==="P1"?"red":"blue"}>{x.priority}</Badge></div>):<div className="suite-panel-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><p>ไม่พบ Test Case ที่ตรงกับตัวกรอง</p></div>}</div></section><div className="requirement-ai-actions"><small>{suiteAiModuleCases.length} Test Cases พร้อมวิเคราะห์{suiteAiCandidates.length!==suiteAiModuleCases.length?` (แสดง ${suiteAiCandidates.length} รายการตามตัวกรอง)`:""}</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div></>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</ModalShell>}
       {form && (
-        <div className="modal" onMouseDown={() => setForm(false)}>
-          <div className="modal-box suite-editor" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell className="suite-editor" onDismiss={() => setForm(false)}>
             <div className="modal-head suite-editor-head">
               <div>
                 <span className="suite-editor-eyebrow">{editing ? "แก้ไข Test Suite" : "สร้าง Test Suite"}</span>
@@ -7399,8 +7397,7 @@ function TestSuitesPage({
                 {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : editing ? <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</> : checked.length ? <><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Suite + {checked.length} Test Case</> : <><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Suite</>}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
       {detail && (() => {
         const activeLinkedCycles = (detail.linkedCycles ?? []).filter(c => !c.isDeleted);
@@ -7410,8 +7407,7 @@ function TestSuitesPage({
         const linkedReleaseBuilds = Array.from(new Map(activeLinkedCycles.map(c => [`${c.releaseCode ?? ""}|${c.buildNumber ?? ""}`, c])).values());
         const visibleCases = caseListExpanded ? detail.cases : detail.cases.slice(0, 5);
         return (
-          <div className="modal" role="presentation" onMouseDown={() => setDetail(null)}>
-            <div className="modal-box cycle-modal cycle-detail-modal suite-detail" role="dialog" aria-modal="true" aria-labelledby="suite-detail-title" onMouseDown={e => e.stopPropagation()}>
+          <ModalShell labelledBy="suite-detail-title" className="cycle-modal cycle-detail-modal suite-detail" onDismiss={() => setDetail(null)}>
               <div className="modal-head">
                 <div className="modal-head-title-group">
                   <button className="modal-back-btn" aria-label="ปิดรายละเอียด Test Suite" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
@@ -7509,8 +7505,7 @@ function TestSuitesPage({
                 {onCreateCycle && detail.isActive && <button className="btn" onClick={() => onCreateCycle(detail.projectId, detail.testSuiteId)}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Cycle</button>}
                 {canEdit && <button className="btn primary" onClick={() => { const suite = detail; setDetail(null); openForm(suite); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
               </div>
-            </div>
-          </div>
+            </ModalShell>
         );
       })()}
     </>
@@ -7757,33 +7752,33 @@ function MasterSettingsPage() {
     const load = async () => {
       const read = async (url: string) => { const response = await fetch(url, { headers }); if (!response.ok) throw new Error(`โหลดข้อมูลไม่สำเร็จ (${response.status})`); return response.json(); };
       try { const [masterData, environmentData, projectData, aiData, crmSyncData, crmMappingData, emailData] = await Promise.all([read(`${apiUrl}/master-settings?includeInactive=true`), read(`${apiUrl}/master-settings/environments`), read(`${apiUrl}/projects`), read(`${apiUrl}/master-settings/ai`), read(`${apiUrl}/master-settings/crm-sync`), read(`${apiUrl}/master-settings/crm-mappings`), read(`${apiUrl}/master-settings/email`)]); setItems(masterData); setEnvironments(environmentData); setProjects(projectData); setAiConfiguration(aiData); setCrmSyncSettings(crmSyncData); setCrmMappings(crmMappingData); setEmailConfig(emailData); setEnvironmentProjectId((x) => x || projectData[0]?.projectId || ""); }
-      catch (error) { window.alert(error instanceof Error ? `${error.message} กรุณาตรวจสอบว่า API ใช้งานเวอร์ชันล่าสุด` : "โหลดการตั้งค่ากลางไม่สำเร็จ"); }
+      catch (error) { notify(error instanceof Error ? `${error.message} กรุณาตรวจสอบว่า API ใช้งานเวอร์ชันล่าสุด` : "โหลดการตั้งค่ากลางไม่สำเร็จ", "error"); }
     };
     load();
   }, [reload, headers]);
   const resetOption = () => { setEditing(null); setFormCategory(null); setValue(""); setDisplayName(""); setSortOrder(10); };
   const saveOption = async () => {
     const response = await fetch(`${apiUrl}/master-settings${editing ? `/${editing.masterOptionId}` : ""}`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify({ category: editing?.category ?? category, value, displayName, sortOrder, isActive: editing?.isActive ?? true }) });
-    if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "บันทึกข้อมูลไม่สำเร็จ"); return; } resetOption(); setReload((x) => x + 1);
+    if (!response.ok) { const p = await response.json(); notify(p.detail ?? "บันทึกข้อมูลไม่สำเร็จ", "error"); return; } resetOption(); setReload((x) => x + 1);
   };
   const toggleOption = async (item: MasterOption) => { await fetch(`${apiUrl}/master-settings/${item.masterOptionId}`, { method: "PUT", headers, body: JSON.stringify({ ...item, isActive: !item.isActive }) }); setReload((x) => x + 1); };
-  const deleteOption = async (item: MasterOption) => { if (!window.confirm(`ยืนยันลบ ${item.displayName}?`)) return; const response = await fetch(`${apiUrl}/master-settings/${item.masterOptionId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "ลบข้อมูลไม่สำเร็จ"); return; } if (editing?.masterOptionId === item.masterOptionId) resetOption(); setReload((x) => x + 1); };
+  const deleteOption = async (item: MasterOption) => { if (!await confirmDialog(`ยืนยันลบ ${item.displayName}?`)) return; const response = await fetch(`${apiUrl}/master-settings/${item.masterOptionId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); notify(p.detail ?? "ลบข้อมูลไม่สำเร็จ", "error"); return; } if (editing?.masterOptionId === item.masterOptionId) resetOption(); setReload((x) => x + 1); };
   const editEnvironment = (item?: EnvironmentSetting) => { setEnvironment(item ?? null); setEnvironmentFormOpen(true); setEnvironmentProjectId(item?.projectId ?? projects[0]?.projectId ?? ""); setEnvironmentName(item?.environmentName ?? ""); setBaseUrl(item?.baseUrl ?? ""); };
   const resetEnvironment = () => { setEnvironment(null); setEnvironmentFormOpen(false); setEnvironmentName(""); setBaseUrl(""); };
-  const saveEnvironment = async () => { const response = await fetch(`${apiUrl}/master-settings/environments${environment ? `/${environment.testEnvironmentId}` : ""}`, { method: environment ? "PUT" : "POST", headers, body: JSON.stringify({ projectId: environmentProjectId, environmentName, baseUrl: baseUrl || null, isActive: environment?.isActive ?? true }) }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "บันทึก Environment ไม่สำเร็จ"); return; } resetEnvironment(); setReload((x) => x + 1); };
+  const saveEnvironment = async () => { const response = await fetch(`${apiUrl}/master-settings/environments${environment ? `/${environment.testEnvironmentId}` : ""}`, { method: environment ? "PUT" : "POST", headers, body: JSON.stringify({ projectId: environmentProjectId, environmentName, baseUrl: baseUrl || null, isActive: environment?.isActive ?? true }) }); if (!response.ok) { const p = await response.json(); notify(p.detail ?? "บันทึก Environment ไม่สำเร็จ", "error"); return; } resetEnvironment(); setReload((x) => x + 1); };
   const toggleEnvironment = async (item: EnvironmentSetting) => { await fetch(`${apiUrl}/master-settings/environments/${item.testEnvironmentId}`, { method: "PUT", headers, body: JSON.stringify({ ...item, isActive: !item.isActive }) }); setReload((x) => x + 1); };
-  const deleteEnvironment = async (item: EnvironmentSetting) => { if (!window.confirm(`ยืนยันลบ Environment ${item.environmentName}?`)) return; const response = await fetch(`${apiUrl}/master-settings/environments/${item.testEnvironmentId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "ลบ Environment ไม่สำเร็จ"); return; } if (environment?.testEnvironmentId === item.testEnvironmentId) resetEnvironment(); setReload((x) => x + 1); };
+  const deleteEnvironment = async (item: EnvironmentSetting) => { if (!await confirmDialog(`ยืนยันลบ Environment ${item.environmentName}?`)) return; const response = await fetch(`${apiUrl}/master-settings/environments/${item.testEnvironmentId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); notify(p.detail ?? "ลบ Environment ไม่สำเร็จ", "error"); return; } if (environment?.testEnvironmentId === item.testEnvironmentId) resetEnvironment(); setReload((x) => x + 1); };
   const openOptionForm = (targetCategory: string, item?: MasterOption) => { setCategory(targetCategory); setFormCategory(targetCategory); setEditing(item ?? null); setValue(item?.value ?? ""); setDisplayName(item?.displayName ?? ""); setSortOrder(item?.sortOrder ?? 10); };
-  const saveAiConfiguration = async () => { setSavingAi(true); try { const response = await fetch(`${apiUrl}/master-settings/ai`, { method: "PUT", headers, body: JSON.stringify({ provider: aiConfiguration.provider, model: aiConfiguration.model, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null, isEnabled: aiConfiguration.isEnabled, clearApiKey: false }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } setAiConfiguration(await response.json()); setAiApiKey(""); window.alert("บันทึกการตั้งค่า AI เรียบร้อยแล้ว"); } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } finally { setSavingAi(false); } };
+  const saveAiConfiguration = async () => { setSavingAi(true); try { const response = await fetch(`${apiUrl}/master-settings/ai`, { method: "PUT", headers, body: JSON.stringify({ provider: aiConfiguration.provider, model: aiConfiguration.model, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null, isEnabled: aiConfiguration.isEnabled, clearApiKey: false }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกการตั้งค่า AI ไม่สำเร็จ"); } setAiConfiguration(await response.json()); setAiApiKey(""); notify("บันทึกการตั้งค่า AI เรียบร้อยแล้ว", "success"); } catch (error) { notify(error instanceof Error ? error.message : "บันทึกการตั้งค่า AI ไม่สำเร็จ", "error"); } finally { setSavingAi(false); } };
   const loadAiModels = async () => { setLoadingAiModels(true); setAiModelsError(""); try { const response = await fetch(`${apiUrl}/master-settings/ai/models`, { method: "POST", headers, body: JSON.stringify({ provider: aiConfiguration.provider, baseUrl: aiConfiguration.baseUrl || null, apiKey: aiApiKey || null }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "โหลดรายการ Model ไม่สำเร็จ"); } const models = await response.json() as AiModelOption[]; setAiModels(models); if (!models.length) setAiModelsError("Provider ไม่ส่งรายการ Model กลับมา"); } catch (error) { setAiModelsError(error instanceof Error ? error.message : "โหลดรายการ Model ไม่สำเร็จ"); } finally { setLoadingAiModels(false); } };
-  const saveCrmSyncSettings = async () => { setSavingCrmSync(true); try { const response = await fetch(`${apiUrl}/master-settings/crm-sync`, { method: "PUT", headers, body: JSON.stringify({ pollIntervalMinutes: crmSyncSettings.pollIntervalMinutes }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกรอบ Poll ไม่สำเร็จ"); } setCrmSyncSettings(await response.json()); window.alert("บันทึกรอบ Poll เรียบร้อยแล้ว"); } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกรอบ Poll ไม่สำเร็จ"); } finally { setSavingCrmSync(false); } };
+  const saveCrmSyncSettings = async () => { setSavingCrmSync(true); try { const response = await fetch(`${apiUrl}/master-settings/crm-sync`, { method: "PUT", headers, body: JSON.stringify({ pollIntervalMinutes: crmSyncSettings.pollIntervalMinutes }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกรอบ Poll ไม่สำเร็จ"); } setCrmSyncSettings(await response.json()); notify("บันทึกรอบ Poll เรียบร้อยแล้ว", "success"); } catch (error) { notify(error instanceof Error ? error.message : "บันทึกรอบ Poll ไม่สำเร็จ", "error"); } finally { setSavingCrmSync(false); } };
   // ค่าเริ่มต้น CRM Product Id = "34" — ตอนนี้ทุก Project ที่เจอใน CRM จริงใช้ Product เดียวกันนี้ (ยืนยันจากผู้ใช้)
   // ยังแก้ไขเป็นค่าอื่นได้ตามปกติ นี่แค่ prefill ให้ไม่ต้องพิมพ์ซ้ำทุกครั้งตอนเพิ่ม Mapping ใหม่
   const editCrmMapping = (item?: CrmProjectMapping) => { setCrmMappingEditing(item ?? null); setCrmMappingFormOpen(true); setCrmMappingProjectId(item?.projectId ?? projects.find((p) => !crmMappings.some((m) => m.projectId === p.projectId))?.projectId ?? projects[0]?.projectId ?? ""); setCrmMappingProductId(item?.crmProductId ?? "34"); setCrmMappingVersionId(item?.crmVersionId ?? ""); };
   const resetCrmMapping = () => { setCrmMappingEditing(null); setCrmMappingFormOpen(false); setCrmMappingProductId(""); setCrmMappingVersionId(""); };
-  const saveCrmMapping = async () => { const response = await fetch(`${apiUrl}/master-settings/crm-mappings${crmMappingEditing ? `/${crmMappingEditing.crmProjectMappingId}` : ""}`, { method: crmMappingEditing ? "PUT" : "POST", headers, body: JSON.stringify({ projectId: crmMappingProjectId, crmProductId: crmMappingProductId, crmVersionId: crmMappingVersionId || null }) }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "บันทึก CRM Mapping ไม่สำเร็จ"); return; } resetCrmMapping(); setReload((x) => x + 1); };
-  const deleteCrmMapping = async (item: CrmProjectMapping) => { if (!window.confirm("ยืนยันลบ CRM Mapping นี้?")) return; const response = await fetch(`${apiUrl}/master-settings/crm-mappings/${item.crmProjectMappingId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); window.alert(p.detail ?? "ลบ CRM Mapping ไม่สำเร็จ"); return; } if (crmMappingEditing?.crmProjectMappingId === item.crmProjectMappingId) resetCrmMapping(); setReload((x) => x + 1); };
-  const saveEmailConfig = async () => { setSavingEmail(true); try { const response = await fetch(`${apiUrl}/master-settings/email`, { method: "PUT", headers, body: JSON.stringify({ smtpHost: emailConfig.smtpHost, smtpPort: emailConfig.smtpPort, senderEmail: emailConfig.senderEmail, senderDisplayName: emailConfig.senderDisplayName || null, password: emailPassword || null, isEnabled: emailConfig.isEnabled, clearPassword: false }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกการตั้งค่า Email ไม่สำเร็จ"); } setEmailConfig(await response.json()); setEmailPassword(""); window.alert("บันทึกการตั้งค่า Email เรียบร้อยแล้ว"); } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกการตั้งค่า Email ไม่สำเร็จ"); } finally { setSavingEmail(false); } };
+  const saveCrmMapping = async () => { const response = await fetch(`${apiUrl}/master-settings/crm-mappings${crmMappingEditing ? `/${crmMappingEditing.crmProjectMappingId}` : ""}`, { method: crmMappingEditing ? "PUT" : "POST", headers, body: JSON.stringify({ projectId: crmMappingProjectId, crmProductId: crmMappingProductId, crmVersionId: crmMappingVersionId || null }) }); if (!response.ok) { const p = await response.json(); notify(p.detail ?? "บันทึก CRM Mapping ไม่สำเร็จ", "error"); return; } resetCrmMapping(); setReload((x) => x + 1); };
+  const deleteCrmMapping = async (item: CrmProjectMapping) => { if (!await confirmDialog("ยืนยันลบ CRM Mapping นี้?")) return; const response = await fetch(`${apiUrl}/master-settings/crm-mappings/${item.crmProjectMappingId}`, { method: "DELETE", headers }); if (!response.ok) { const p = await response.json(); notify(p.detail ?? "ลบ CRM Mapping ไม่สำเร็จ", "error"); return; } if (crmMappingEditing?.crmProjectMappingId === item.crmProjectMappingId) resetCrmMapping(); setReload((x) => x + 1); };
+  const saveEmailConfig = async () => { setSavingEmail(true); try { const response = await fetch(`${apiUrl}/master-settings/email`, { method: "PUT", headers, body: JSON.stringify({ smtpHost: emailConfig.smtpHost, smtpPort: emailConfig.smtpPort, senderEmail: emailConfig.senderEmail, senderDisplayName: emailConfig.senderDisplayName || null, password: emailPassword || null, isEnabled: emailConfig.isEnabled, clearPassword: false }) }); if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกการตั้งค่า Email ไม่สำเร็จ"); } setEmailConfig(await response.json()); setEmailPassword(""); notify("บันทึกการตั้งค่า Email เรียบร้อยแล้ว", "success"); } catch (error) { notify(error instanceof Error ? error.message : "บันทึกการตั้งค่า Email ไม่สำเร็จ", "error"); } finally { setSavingEmail(false); } };
   // ทดสอบด้วยค่าที่บันทึกไว้แล้วในฐานข้อมูล (ไม่ใช่ค่าที่กำลังพิมพ์ในฟอร์ม) — ต้องกด "บันทึกการตั้งค่า" ก่อนถึงจะทดสอบค่าล่าสุดได้
   const sendTestEmail = async () => { if (!emailTestTo.trim()) return; setSendingTestEmail(true); setTestEmailResult(null); try { const response = await fetch(`${apiUrl}/master-settings/email/test`, { method: "POST", headers, body: JSON.stringify({ toEmail: emailTestTo.trim() }) }); if (!response.ok) { const p = await response.json(); throw new Error(p.detail ?? "ส่งอีเมลทดสอบไม่สำเร็จ"); } setTestEmailResult({ ok: true, message: `ส่งอีเมลทดสอบไปที่ ${emailTestTo.trim()} สำเร็จ` }); } catch (error) { setTestEmailResult({ ok: false, message: error instanceof Error ? error.message : "ส่งอีเมลทดสอบไม่สำเร็จ" }); } finally { setSendingTestEmail(false); } };
   const optionForm = (targetCategory: string) => formCategory === targetCategory && <div className="master-inline-editor"><label>รหัสค่า<input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="เช่น Major" /></label><label>ชื่อที่แสดง<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></label><label className="master-order-field">ลำดับ<input type="number" value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} /></label><div className="master-setting-actions"><button className="btn" onClick={resetOption}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={!value.trim() || !displayName.trim()} onClick={saveOption}>{editing ? "บันทึกการแก้ไข" : "เพิ่มข้อมูล"}</button></div></div>;
@@ -7914,13 +7909,13 @@ function SystemMonitorPage() {
   useEffect(() => { load(); const timer = window.setInterval(() => load(true), 15000); return () => window.clearInterval(timer); }, [load]);
   const control = async (service: SystemMonitorData["services"][number], action: "start" | "restart") => {
     const verb = action === "restart" ? "Restart" : "Start";
-    if (!window.confirm(`ยืนยัน ${verb} ${service.displayName}?\nการเชื่อมต่ออาจหยุดชั่วคราว`)) return;
+    if (!await confirmDialog(`ยืนยัน ${verb} ${service.displayName}?\nการเชื่อมต่ออาจหยุดชั่วคราว`)) return;
     setBusy(service.key);
     try {
       const response = await fetch(`${apiUrl}/system-monitor/services/${encodeURIComponent(service.key)}/${action}`, { method: "POST", headers });
       if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? `${verb} Service ไม่สำเร็จ`); }
       await load(true);
-    } catch (e) { window.alert(e instanceof Error ? e.message : `${verb} Service ไม่สำเร็จ`); }
+    } catch (e) { notify(e instanceof Error ? e.message : `${verb} Service ไม่สำเร็จ`, "error"); }
     finally { setBusy(""); }
   };
   if (loading) return <article className="card empty"><p>กำลังตรวจสอบสถานะระบบ...</p></article>;
@@ -7959,6 +7954,8 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
     [newUsername, setNewUsername] = useState(""),
     [newPasswordCreate, setNewPasswordCreate] = useState("");
   const [roleModal, setRoleModal] = useState<"create" | "edit" | null>(null);
+  const [adminLoading, setAdminLoading] = useState(true);
+  const [adminLoadError, setAdminLoadError] = useState("");
   const [roleCode, setRoleCode] = useState("");
   const [roleName, setRoleName] = useState("");
   const [roleDescription, setRoleDescription] = useState("");
@@ -7972,17 +7969,16 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
     const requestHeaders = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
+    // เดิมไม่ตรวจ r.ok — ถ้าได้ 403/500 roles จะเป็น object error แล้ว r.length/roles.map ทำหน้าพัง
+    const getJson = (url: string) => fetch(url, { headers: requestHeaders }).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+    setAdminLoading(true);
+    setAdminLoadError("");
     Promise.all([
-      fetch(`${apiUrl}/admin/users`, { headers: requestHeaders }).then((r) =>
-        r.json(),
-      ),
-      fetch(`${apiUrl}/admin/roles`, { headers: requestHeaders }).then((r) =>
-        r.json(),
-      ),
-      fetch(`${apiUrl}/admin/permissions`, { headers: requestHeaders }).then(
-        (r) => r.json(),
-      ),
+      getJson(`${apiUrl}/admin/users`),
+      getJson(`${apiUrl}/admin/roles`),
+      getJson(`${apiUrl}/admin/permissions`),
     ]).then(([u, r, p]) => {
+      if (!Array.isArray(r) || !Array.isArray(p)) throw new Error("รูปแบบข้อมูลไม่ถูกต้อง");
       setUsers(Array.isArray(u) ? u : u?.items?.rows ?? []);
       setRoles(r);
       setPermissions(p);
@@ -7999,7 +7995,8 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
             .map((x: AdminPermission) => x.permissionId),
         );
       }
-    });
+    }).catch((e) => setAdminLoadError(`โหลดข้อมูลผู้ใช้/สิทธิ์ไม่สำเร็จ (${e instanceof Error ? e.message : "ไม่ทราบสาเหตุ"}) — ตรวจสิทธิ์ ADMIN แล้วลองใหม่`))
+      .finally(() => setAdminLoading(false));
   }, [refresh, version]);
   const filteredUsers = users.filter(
     (u) =>
@@ -8037,9 +8034,9 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
         throw new Error(payload?.detail ?? payload?.title ?? `HTTP ${response.status}`);
       }
       setVersion((current) => current + 1);
-      window.alert("บันทึกสิทธิ์เรียบร้อยแล้ว");
+      notify("บันทึกสิทธิ์เรียบร้อยแล้ว", "success");
     } catch {
-      window.alert("ไม่สามารถบันทึกสิทธิ์ได้ กรุณาลองใหม่");
+      notify("ไม่สามารถบันทึกสิทธิ์ได้ กรุณาลองใหม่", "error");
     } finally {
       setSaving(false);
     }
@@ -8059,14 +8056,14 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
       body: JSON.stringify(roleModal === "create" ? { roleCode, roleName, description: roleDescription } : { roleName, description: roleDescription }),
     });
     if (response.ok) window.location.reload();
-    else window.alert("บันทึกกลุ่มสิทธิ์ไม่สำเร็จ");
+    else notify("บันทึกกลุ่มสิทธิ์ไม่สำเร็จ", "error");
   };
   const deleteRole = async () => {
     const role = roles.find((x) => x.roleId === roleId);
-    if (!role || !window.confirm(`ลบกลุ่มสิทธิ์ ${role.roleName} หรือไม่?`)) return;
+    if (!role || !await confirmDialog(`ลบกลุ่มสิทธิ์ ${role.roleName} หรือไม่?`)) return;
     const response = await fetch(`${apiUrl}/admin/roles/${roleId}`, { method: "DELETE", headers });
     if (response.ok) window.location.reload();
-    else window.alert("ลบกลุ่มสิทธิ์ไม่สำเร็จ หรือกลุ่มนี้ยังมีผู้ใช้งานอยู่");
+    else notify("ลบกลุ่มสิทธิ์ไม่สำเร็จ หรือกลุ่มนี้ยังมีผู้ใช้งานอยู่", "error");
   };
   const openEdit = (user: AdminUser) => {
     setEditing(user);
@@ -8088,7 +8085,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
   };
   const saveUser = async () => {
     if (creating) {
-      if (!newUsername.trim() || !displayName.trim() || newPasswordCreate.length < 8) { window.alert("กรุณากรอก Username, ชื่อที่แสดง และรหัสผ่านอย่างน้อย 8 ตัวอักษร"); return; }
+      if (!newUsername.trim() || !displayName.trim() || newPasswordCreate.length < 8) { notify("กรุณากรอก Username, ชื่อที่แสดง และรหัสผ่านอย่างน้อย 8 ตัวอักษร", "error"); return; }
       setSaving(true);
       try {
         const create = await fetch(`${apiUrl}/admin/users`, { method: "POST", headers, body: JSON.stringify({ username: newUsername, displayName, email: email || null, password: newPasswordCreate, roleIds: userRoleIds }) });
@@ -8099,7 +8096,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
           if (!proj.ok) throw new Error("กำหนด Project ไม่สำเร็จ");
         }
         setCreating(false); setVersion((x) => x + 1);
-      } catch (e) { window.alert(e instanceof Error ? e.message : "ไม่สามารถสร้างผู้ใช้ได้"); } finally { setSaving(false); }
+      } catch (e) { notify(e instanceof Error ? e.message : "ไม่สามารถสร้างผู้ใช้ได้", "error"); } finally { setSaving(false); }
       return;
     }
     if (!editing) return;
@@ -8136,12 +8133,13 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
       setEditing(null);
       setVersion((x) => x + 1);
     } catch {
-      window.alert("ไม่สามารถบันทึกข้อมูลผู้ใช้ได้");
+      notify("ไม่สามารถบันทึกข้อมูลผู้ใช้ได้", "error");
     } finally {
       setSaving(false);
     }
   };
   const toggleActive = async (user: AdminUser) => {
+    if (user.isActive && !await confirmDialog({ title: "ปิดใช้งานผู้ใช้", message: `ปิดใช้งาน ${user.displayName} (${user.username}) ใช่หรือไม่?\nผู้ใช้นี้จะเข้าสู่ระบบไม่ได้จนกว่าจะเปิดใช้งานอีกครั้ง`, confirmLabel: "ปิดใช้งาน", tone: "danger" })) return;
     setSaving(true);
     try {
       const response = await fetch(`${apiUrl}/admin/users/${user.userId}`, {
@@ -8156,7 +8154,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
       if (!response.ok) throw new Error();
       setVersion((x) => x + 1);
     } catch {
-      window.alert("ไม่สามารถเปลี่ยนสถานะผู้ใช้ได้");
+      notify("ไม่สามารถเปลี่ยนสถานะผู้ใช้ได้", "error");
     } finally {
       setSaving(false);
     }
@@ -8172,9 +8170,9 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
       if (!response.ok) throw new Error();
       setPasswordUser(null);
       setNewPassword("");
-      window.alert("รีเซ็ตรหัสผ่านเรียบร้อยแล้ว");
+      notify("รีเซ็ตรหัสผ่านเรียบร้อยแล้ว", "success");
     } catch {
-      window.alert("ไม่สามารถรีเซ็ตรหัสผ่านได้");
+      notify("ไม่สามารถรีเซ็ตรหัสผ่านได้", "error");
     } finally {
       setSaving(false);
     }
@@ -8223,8 +8221,19 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
   };
   const matrixGroups = menuTree.map(([group, areas]) => ({ group, areas: areas.map(([label, area]) => ({ label, area, items: visiblePermissions.filter((p) => permissionArea(p) === area) })) }));
   const matrixPermission = (items: AdminPermission[], action: string) => items.find((x) => x.permissionCode.split(".").at(-1)?.toUpperCase() === action || x.permissionCode.toUpperCase().endsWith(`.${action}`));
+  // สิทธิ์ที่ตาราง Create/Delete/Edit/View แสดงได้ — ที่เหลือ (เช่น RISK.APPROVE, RELEASE.SIGNOFF, REPORT.EXPORT, AUTOMATION.EXECUTE)
+  // เดิมอยู่ในรายการที่ถูกซ่อนด้วย display:none จึงให้สิทธิ์จากหน้าจอไม่ได้เลย — ตอนนี้แสดงเป็น "สิทธิ์เพิ่มเติม"
+  const matrixActions = ["CREATE", "DELETE", "EDIT", "VIEW"];
+  const matrixCoveredIds = new Set(menuTree.flatMap(([, areas]) => areas.flatMap(([, area]) => {
+    const items = permissions.filter((p) => permissionArea(p) === area);
+    return matrixActions.map((action) => matrixPermission(items, action)?.permissionId).filter((id): id is AdminPermission["permissionId"] => id !== undefined);
+  })));
+  const extraGroups = grouped.map((g) => ({ ...g, items: g.items.filter((p) => !matrixCoveredIds.has(p.permissionId)) })).filter((g) => g.items.length > 0);
+  const filtering = permFilter.trim().length > 0;
   return (
     <div className="admin-page">
+      {adminLoadError && <div className="inline-alert error" role="alert"><span>{adminLoadError}</span><button type="button" className="btn" onClick={() => setVersion((v) => v + 1)}>ลองใหม่</button></div>}
+      {adminLoading && !adminLoadError && users.length === 0 && <div className="empty" role="status"><div className="spinner" /><p>กำลังโหลดผู้ใช้และสิทธิ์...</p></div>}
       <header className="admin-page-header">
         <div>
           <h2>จัดการผู้ใช้และสิทธิ์</h2>
@@ -8376,8 +8385,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
       </article>
 
       {(editing || creating) && (
-        <div className="modal" onMouseDown={() => !saving && (creating ? setCreating(false) : setEditing(null))}>
-          <div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell onDismiss={() => { if (saving) return; if (creating) setCreating(false); else setEditing(null); }}>
             <div className="modal-head">
               <h2>{creating ? "เพิ่มผู้ใช้" : `แก้ไขผู้ใช้ — ${editing?.username}`}</h2>
               <button onClick={() => !saving && (creating ? setCreating(false) : setEditing(null))}>&times;</button>
@@ -8475,13 +8483,11 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
                 {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : creating ? <><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้างผู้ใช้</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึกข้อมูลผู้ใช้</>}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
 
       {passwordUser && (
-        <div className="modal" onMouseDown={() => setPasswordUser(null)}>
-          <div className="modal-box" style={{ maxWidth: 480 }} onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell boxStyle={{ maxWidth: 480 }} onDismiss={() => setPasswordUser(null)}>
             <div className="modal-head">
               <h2>รีเซ็ตรหัสผ่าน — {passwordUser.username}</h2>
               <button onClick={() => setPasswordUser(null)}>&times;</button>
@@ -8510,8 +8516,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
                 {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span aria-hidden="true">⚿</span> ยืนยันรีเซ็ตรหัสผ่าน</>}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
 
       <article className="card permission-card">
@@ -8542,14 +8547,15 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
         <div className="permission-toolbar">
           <div className="permission-filter"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input aria-label="ค้นหาสิทธิ์" placeholder="ค้นหาสิทธิ์..." value={permFilter} onChange={(e) => setPermFilter(e.target.value)} /></div>
           <div>
+            {/* ตอนมีคำค้นหา ให้เลือก/ล้างเฉพาะสิทธิ์ที่แสดงอยู่ — เดิม "เลือกทั้งหมด" แทนที่ทั้งชุดด้วยรายการที่กรอง ทำให้สิทธิ์อื่นหายตอนบันทึก */}
             <button
               type="button"
-              onClick={() => setSelected(visiblePermissions.map((x) => x.permissionId))}
+              onClick={() => setSelected((prev) => [...new Set([...prev, ...visiblePermissions.map((x) => x.permissionId)])])}
             >
-              เลือกทั้งหมด
+              {filtering ? "เลือกที่แสดงอยู่" : "เลือกทั้งหมด"}
             </button>
-            <button type="button" onClick={() => setSelected([])}>
-              ล้างทั้งหมด
+            <button type="button" onClick={() => { const visible = new Set(visiblePermissions.map((x) => x.permissionId)); setSelected((prev) => filtering ? prev.filter((id) => !visible.has(id)) : []); }}>
+              {filtering ? "ล้างที่แสดงอยู่" : "ล้างทั้งหมด"}
             </button>
           </div>
         </div>
@@ -8559,8 +8565,9 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
             <tbody>{matrixGroups.map((g) => <_F key={g.group}><tr className="permission-menu-group"><th colSpan={5}>{g.group}</th></tr>{g.areas.map((row) => <tr key={row.area}><td className="permission-submenu">{row.label}</td>{["CREATE", "DELETE", "EDIT", "VIEW"].map((action) => { const permission = matrixPermission(row.items, action); return <td key={action}><input type="checkbox" aria-label={`${row.label} ${action}`} checked={permission ? selected.includes(permission.permissionId) : false} onChange={(e) => permission && togglePermission(permission.permissionId, e.target.checked)} /></td>; })}</tr>)}</_F>)}</tbody>
           </table>
         </div>
+        {extraGroups.length > 0 && <h3 className="permission-extra-title">สิทธิ์เพิ่มเติม <small>อนุมัติ, Sign-off, Export, Execute และสิทธิ์เฉพาะอื่นที่ตารางด้านบนไม่ครอบคลุม</small></h3>}
         <div className="permission-groups">
-          {grouped.map((g) => (
+          {extraGroups.map((g) => (
             <section key={g.group}>
               <h4><span className="perm-group-icon" aria-hidden="true">{g.icon}</span>{g.group}<span className="count-pill">{g.items.length}</span></h4>
               <div className="permission-grid">
@@ -8592,8 +8599,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
         </div>
       </article>
       {roleModal && (
-        <div className="modal" role="presentation" onMouseDown={() => setRoleModal(null)}>
-          <div className="modal-box role-modal" onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell className="role-modal" onDismiss={() => setRoleModal(null)}>
             <div className="modal-head">
               <h2>{roleModal === "create" ? "เพิ่มกลุ่มสิทธิ์" : "แก้ไขกลุ่มสิทธิ์"}</h2>
               <button type="button" onClick={() => setRoleModal(null)} aria-label="ปิด"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
@@ -8607,8 +8613,7 @@ function AdministrationPage({ refresh, allProjects }: { refresh: number; allProj
               <button type="button" className="btn" onClick={() => setRoleModal(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button>
               <button type="button" className="btn primary" onClick={saveRole}><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
     </div>
   );
@@ -9119,7 +9124,7 @@ function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: con
           {canExport && <button className="btn" disabled={!summary} onClick={exportExcel}><span className="material-symbols-outlined" aria-hidden="true">download</span> Export Excel</button>}
           {canExport && <button className="btn" disabled={!summary || exportingPdf} onClick={exportPdf}>{exportingPdf ? <><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง PDF...</> : <><span className="material-symbols-outlined" aria-hidden="true">picture_as_pdf</span> Export PDF</>}</button>}
           <button className="btn" disabled={!summary} onClick={() => setPresenterMode(true)}><span className="material-symbols-outlined" aria-hidden="true">present_to_all</span> Presenter Mode</button>
-          <button className="btn primary" disabled={!releaseId || loading} onClick={() => load(true)}>{loading ? <><span className="spinner inline" aria-hidden="true" /> กำลังโหลด...</> : "✦ Generate / Regenerate"}</button>
+          <button className="btn primary" disabled={!releaseId || loading} onClick={async () => { if ((narrative.knownIssues || narrative.remainingRisks || narrative.qaRecommendation).trim() && !await confirmDialog({ title: "สร้างข้อความสรุปใหม่", message: "ข้อความ Known Issues / Remaining Risks / QA Recommendation ที่แก้ไว้จะถูกแทนที่ด้วยข้อความที่สร้างใหม่ ต้องการดำเนินการต่อหรือไม่?", confirmLabel: "สร้างใหม่", tone: "danger" })) return; load(true); }}>{loading ? <><span className="spinner inline" aria-hidden="true" /> กำลังโหลด...</> : "✦ Generate / Regenerate"}</button>
           {onOpenSignoff && <button className="btn" disabled={!summary} onClick={onOpenSignoff}>ไปหน้า Sign-off <span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>}
         </div>
       </header>
@@ -9322,8 +9327,10 @@ function RiskAcceptancePage({ projectId, releaseId: contextReleaseId, canEdit, c
   const openCreate = () => { setEditing(null); setForm({ releaseId: releaseFilter || "", defectId: "", title: "", issue: "", impact: "Medium", probability: "Medium", workaround: "", targetFix: "", qaRecommendation: "", ownerUserId: "" }); setFormOpen(true); };
   const openEdit = (item: RiskItem) => { setEditing(item); setForm({ releaseId: item.releaseId, defectId: item.defectId ?? "", title: item.title, issue: item.issue, impact: item.impact, probability: item.probability, workaround: item.workaround ?? "", targetFix: item.targetFix ?? "", qaRecommendation: item.qaRecommendation ?? "", ownerUserId: item.ownerUserId ?? "" }); setFormOpen(true); };
   const save = async () => { if (!form.title.trim() || !form.releaseId) { setError("กรุณากรอก Title และเลือก Release"); return; } setSaving(true); setError(""); try { const body = JSON.stringify({ projectId, releaseId: form.releaseId, defectId: form.defectId || null, title: form.title, issue: form.issue, impact: form.impact, probability: form.probability, workaround: form.workaround || null, targetFix: form.targetFix || null, qaRecommendation: form.qaRecommendation || null, ownerUserId: form.ownerUserId || null }); const r = editing ? await fetch(`${apiUrl}/risk-acceptances/${editing.riskAcceptanceId}`, { method: "PUT", headers, body: JSON.stringify({ title: form.title, issue: form.issue, impact: form.impact, probability: form.probability, workaround: form.workaround || null, targetFix: form.targetFix || null, qaRecommendation: form.qaRecommendation || null, ownerUserId: form.ownerUserId || null }) }) : await fetch(`${apiUrl}/risk-acceptances`, { method: "POST", headers, body }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "บันทึก Risk ไม่สำเร็จ"); } setFormOpen(false); reload(); } catch (e) { setError(e instanceof Error ? e.message : "บันทึก Risk ไม่สำเร็จ"); } finally { setSaving(false); } };
+  // ล้าง comment ทุกครั้งที่เปิด — เดิมค้างจากการอนุมัติ/ปฏิเสธรายการก่อน
+  const openDecision = (kind: "approve" | "reject", item: RiskItem) => { setDecisionComment(""); setError(""); setDecision({ kind, item }); };
   const act = async (id: string, action: string, comment?: string) => { setSaving(true); setError(""); try { const r = await fetch(`${apiUrl}/risk-acceptances/${id}/${action}`, { method: "POST", headers, body: JSON.stringify({ comment: comment ?? null }) }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ดำเนินการไม่สำเร็จ"); } setDecision(null); setDetail(null); reload(); } catch (e) { setError(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ"); } finally { setSaving(false); } };
-  const remove = async (item: RiskItem) => { if (!window.confirm(`ยืนยันการลบ ${item.riskCode} ใช่หรือไม่?`)) return; setSaving(true); try { const r = await fetch(`${apiUrl}/risk-acceptances/${item.riskAcceptanceId}`, { method: "DELETE", headers }); if (!r.ok) throw new Error("ลบ Risk ไม่สำเร็จ"); setDetail(null); reload(); } catch (e) { setError(e instanceof Error ? e.message : "ลบ Risk ไม่สำเร็จ"); } finally { setSaving(false); } };
+  const remove = async (item: RiskItem) => { if (!await confirmDialog(`ยืนยันการลบ ${item.riskCode} ใช่หรือไม่?`)) return; setSaving(true); try { const r = await fetch(`${apiUrl}/risk-acceptances/${item.riskAcceptanceId}`, { method: "DELETE", headers }); if (!r.ok) throw new Error("ลบ Risk ไม่สำเร็จ"); setDetail(null); reload(); } catch (e) { setError(e instanceof Error ? e.message : "ลบ Risk ไม่สำเร็จ"); } finally { setSaving(false); } };
   const filtered = items.filter((x) => (!releaseFilter || x.releaseId === releaseFilter) && (!statusFilter || x.status === statusFilter));
   const levelClass = (l: string) => (l === "High" ? "high" : l === "Low" ? "low" : "medium");
   const statusTone = (s: string) => ({ Approved: "green", Rejected: "red", Submitted: "blue", Closed: "yellow", Draft: "yellow" } as Record<string, string>)[s] ?? "blue";
@@ -9345,9 +9352,9 @@ function RiskAcceptancePage({ projectId, releaseId: contextReleaseId, canEdit, c
           <div className="table-wrap"><table><thead><tr><th>Risk ID</th><th>Title</th><th>Release</th><th>Impact</th><th>Probability</th><th>Risk Level</th><th>Owner</th><th>Status</th><th>Review Date</th></tr></thead><tbody>{filtered.map((x) => <tr key={x.riskAcceptanceId}><td><button className="link-button" onClick={() => setDetail(x)}>{x.riskCode}</button></td><td>{x.title}</td><td>{x.releaseCode ? `${x.releaseCode} · ${x.releaseVersion}` : "-"}</td><td>{x.impact}</td><td>{x.probability}</td><td><span className={`risk-level ${levelClass(x.riskLevel)}`}>{x.riskLevel}</span></td><td>{x.ownerName || "-"}</td><td><Badge tone={statusTone(x.status)}>{x.status}</Badge></td><td>{x.reviewDate ? formatThaiDateTime(x.reviewDate) : "-"}</td></tr>)}</tbody></table></div>
         )}
       </div>
-      {formOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-form-title" onMouseDown={() => !saving && setFormOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-form-title">{editing ? "แก้ไข Risk Acceptance" : "เพิ่ม Risk Acceptance"}</h2><small>{editing ? editing.riskCode : "ประเมินและบันทึกความเสี่ยงของ Release"}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setFormOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label>Release<select value={form.releaseId} onChange={(e) => setForm((f) => ({ ...f, releaseId: e.target.value, defectId: "" }))}>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select></label><label>Defect ที่อ้างอิง<select value={form.defectId} onChange={(e) => setForm((f) => ({ ...f, defectId: e.target.value }))}><option value="">ไม่ระบุ</option>{defects.map((d) => <option key={d.defectId} value={d.defectId}>{d.label}</option>)}</select></label><label className="full">Title<input value={form.title} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="สรุปความเสี่ยง" /></label><label className="full">Issue<input value={form.issue} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, issue: e.target.value }))} placeholder="รายละเอียดปัญหา" /></label><label>Impact<select value={form.impact} onChange={(e) => setForm((f) => ({ ...f, impact: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label>Probability<select value={form.probability} onChange={(e) => setForm((f) => ({ ...f, probability: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label className="full">Workaround<textarea value={form.workaround} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, workaround: e.target.value }))} /></label><label className="full">Target Fix<textarea value={form.targetFix} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, targetFix: e.target.value }))} /></label><label className="full">QA Recommendation<textarea value={form.qaRecommendation} maxLength={4000} onChange={(e) => setForm((f) => ({ ...f, qaRecommendation: e.target.value }))} /></label><label className="full">Owner<select value={form.ownerUserId} onChange={(e) => setForm((f) => ({ ...f, ownerUserId: e.target.value }))}><option value="">ไม่ระบุ</option>{users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setFormOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving || !form.title.trim() || !form.releaseId} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}</button></div></div></div>}
-      {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-detail-title" onMouseDown={() => !saving && setDetail(null)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-detail-title">{detail.riskCode}</h2><small>{detail.releaseCode ? `${detail.releaseCode} · ${detail.releaseVersion}` : ""}</small></div><button aria-label="ปิดรายละเอียด" disabled={saving} onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="risk-detail"><div className="risk-detail-hero"><div><h3>{detail.title}</h3><small>{detail.defectCode ? `Linked Defect: ${detail.defectCode}` : "ไม่ผูก Defect"}</small></div><span className={`risk-level ${levelClass(detail.riskLevel)}`}>{detail.riskLevel}</span></div><div className="risk-grid"><div className="risk-field"><span>Impact</span><b>{detail.impact}</b></div><div className="risk-field"><span>Probability</span><b>{detail.probability}</b></div><div className="risk-field"><span>Owner</span><b>{detail.ownerName || "-"}</b></div><div className="risk-field"><span>Status</span><Badge tone={statusTone(detail.status)}>{detail.status}</Badge></div></div><div className="risk-field"><span>Issue</span><b>{detail.issue || "-"}</b></div>{detail.workaround && <div className="risk-field"><span>Workaround</span><b>{detail.workaround}</b></div>}{detail.targetFix && <div className="risk-field"><span>Target Fix</span><b>{detail.targetFix}</b></div>}{detail.qaRecommendation && <div className="risk-field"><span>QA Recommendation</span><b>{detail.qaRecommendation}</b></div>}{detail.reviewComment && <div className="risk-field"><span>Review Comment ({detail.reviewedByName || "ผู้ประเมิน"})</span><b>{detail.reviewComment}</b></div>}</div><div className="modal-actions"><div className="risk-actions">{detail.status === "Draft" && canEdit && <button className="btn" disabled={saving} onClick={() => { setDetail(null); openEdit(detail); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}{detail.status === "Draft" && canEdit && <button className="btn danger" disabled={saving} onClick={() => remove(detail)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบ</button>}{detail.status === "Draft" && <button className="btn primary" disabled={saving} onClick={() => act(detail.riskAcceptanceId, "submit")}>{saving ? "กำลัง..." : "Submit"}</button>}{detail.status === "Submitted" && canApprove && <button className="btn primary" disabled={saving} onClick={() => setDecision({ kind: "approve", item: detail })}><span className="material-symbols-outlined" aria-hidden="true">check</span> อนุมัติ</button>}{detail.status === "Submitted" && canApprove && <button className="btn danger" disabled={saving} onClick={() => setDecision({ kind: "reject", item: detail })}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปฏิเสธ</button>}</div><button className="btn" disabled={saving} onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div></div></div>}
-      {decision && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="risk-decision-title" onMouseDown={() => !saving && setDecision(null)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="risk-decision-title">{decision.kind === "approve" ? "อนุมัติ Risk" : "ปฏิเสธ Risk"}</h2><small>{decision.item.riskCode}</small></div><button aria-label="ปิด" disabled={saving} onClick={() => setDecision(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><label className="full" style={{ display: "grid", gap: 6 }}>Comment<textarea rows={3} autoFocus value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)} placeholder="เหตุผล/เงื่อนไข" /></label><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDecision(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className={"btn " + (decision.kind === "approve" ? "primary" : "danger")} disabled={saving} onClick={() => act(decision.item.riskAcceptanceId, decision.kind, decisionComment)}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลัง...</> : decision.kind === "approve" ? <><span className="material-symbols-outlined" aria-hidden="true">check</span> ยืนยันอนุมัติ</> : <><span className="material-symbols-outlined" aria-hidden="true">close</span> ยืนยันปฏิเสธ</>}</button></div></div></div>}
+      {formOpen && <ModalShell labelledBy="risk-form-title" className="risk-modal" onDismiss={() => { if (!saving) setFormOpen(false); }}><div className="modal-head"><div><h2 id="risk-form-title">{editing ? "แก้ไข Risk Acceptance" : "เพิ่ม Risk Acceptance"}</h2><small>{editing ? editing.riskCode : "ประเมินและบันทึกความเสี่ยงของ Release"}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setFormOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label>Release<span className="required-mark"> *</span><select value={form.releaseId} onChange={(e) => setForm((f) => ({ ...f, releaseId: e.target.value, defectId: "" }))}><option value="">เลือก Release</option>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select></label><label>Defect ที่อ้างอิง<select value={form.defectId} onChange={(e) => setForm((f) => ({ ...f, defectId: e.target.value }))}><option value="">ไม่ระบุ</option>{defects.map((d) => <option key={d.defectId} value={d.defectId}>{d.label}</option>)}</select></label><label className="full">Title<input value={form.title} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="สรุปความเสี่ยง" /></label><label className="full">Issue<input value={form.issue} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, issue: e.target.value }))} placeholder="รายละเอียดปัญหา" /></label><label>Impact<select value={form.impact} onChange={(e) => setForm((f) => ({ ...f, impact: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label>Probability<select value={form.probability} onChange={(e) => setForm((f) => ({ ...f, probability: e.target.value }))}>{["High", "Medium", "Low"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label><label className="full">Workaround<textarea value={form.workaround} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, workaround: e.target.value }))} /></label><label className="full">Target Fix<textarea value={form.targetFix} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, targetFix: e.target.value }))} /></label><label className="full">QA Recommendation<textarea value={form.qaRecommendation} maxLength={4000} onChange={(e) => setForm((f) => ({ ...f, qaRecommendation: e.target.value }))} /></label><label className="full">Owner<select value={form.ownerUserId} onChange={(e) => setForm((f) => ({ ...f, ownerUserId: e.target.value }))}><option value="">ไม่ระบุ</option>{users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label></div>{error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setFormOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving || !form.title.trim() || !form.releaseId} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}</button></div></ModalShell>}
+      {detail && <ModalShell labelledBy="risk-detail-title" className="risk-modal" onDismiss={() => { if (!saving) setDetail(null); }}><div className="modal-head"><div><h2 id="risk-detail-title">{detail.riskCode}</h2><small>{detail.releaseCode ? `${detail.releaseCode} · ${detail.releaseVersion}` : ""}</small></div><button aria-label="ปิดรายละเอียด" disabled={saving} onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="risk-detail"><div className="risk-detail-hero"><div><h3>{detail.title}</h3><small>{detail.defectCode ? `Linked Defect: ${detail.defectCode}` : "ไม่ผูก Defect"}</small></div><span className={`risk-level ${levelClass(detail.riskLevel)}`}>{detail.riskLevel}</span></div><div className="risk-grid"><div className="risk-field"><span>Impact</span><b>{detail.impact}</b></div><div className="risk-field"><span>Probability</span><b>{detail.probability}</b></div><div className="risk-field"><span>Owner</span><b>{detail.ownerName || "-"}</b></div><div className="risk-field"><span>Status</span><Badge tone={statusTone(detail.status)}>{detail.status}</Badge></div></div><div className="risk-field"><span>Issue</span><b>{detail.issue || "-"}</b></div>{detail.workaround && <div className="risk-field"><span>Workaround</span><b>{detail.workaround}</b></div>}{detail.targetFix && <div className="risk-field"><span>Target Fix</span><b>{detail.targetFix}</b></div>}{detail.qaRecommendation && <div className="risk-field"><span>QA Recommendation</span><b>{detail.qaRecommendation}</b></div>}{detail.reviewComment && <div className="risk-field"><span>Review Comment ({detail.reviewedByName || "ผู้ประเมิน"})</span><b>{detail.reviewComment}</b></div>}</div><div className="modal-actions"><div className="risk-actions">{detail.status === "Draft" && canEdit && <button className="btn" disabled={saving} onClick={() => { setDetail(null); openEdit(detail); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}{detail.status === "Draft" && canEdit && <button className="btn danger" disabled={saving} onClick={() => remove(detail)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบ</button>}{detail.status === "Draft" && <button className="btn primary" disabled={saving} onClick={() => act(detail.riskAcceptanceId, "submit")}>{saving ? "กำลัง..." : "Submit"}</button>}{detail.status === "Submitted" && canApprove && <button className="btn primary" disabled={saving} onClick={() => openDecision("approve", detail)}><span className="material-symbols-outlined" aria-hidden="true">check</span> อนุมัติ</button>}{detail.status === "Submitted" && canApprove && <button className="btn danger" disabled={saving} onClick={() => openDecision("reject", detail)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปฏิเสธ</button>}</div><button className="btn" disabled={saving} onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div></ModalShell>}
+      {decision && <ModalShell labelledBy="risk-decision-title" className="risk-modal" onDismiss={() => { if (!saving) setDecision(null); }}><div className="modal-head"><div><h2 id="risk-decision-title">{decision.kind === "approve" ? "อนุมัติ Risk" : "ปฏิเสธ Risk"}</h2><small>{decision.item.riskCode}</small></div><button aria-label="ปิด" disabled={saving} onClick={() => setDecision(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><label className="full" style={{ display: "grid", gap: 6 }}>Comment<textarea rows={3} autoFocus value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)} placeholder="เหตุผล/เงื่อนไข" /></label>{error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDecision(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className={"btn " + (decision.kind === "approve" ? "primary" : "danger")} disabled={saving} onClick={() => act(decision.item.riskAcceptanceId, decision.kind, decisionComment)}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลัง...</> : decision.kind === "approve" ? <><span className="material-symbols-outlined" aria-hidden="true">check</span> ยืนยันอนุมัติ</> : <><span className="material-symbols-outlined" aria-hidden="true">close</span> ยืนยันปฏิเสธ</>}</button></div></ModalShell>}
     </article>
   );
 }
@@ -9372,17 +9379,23 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
   const [releasesLoaded, setReleasesLoaded] = useState(false);
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }), []);
-  const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => (r.ok ? r.json() : Promise.resolve(null))), [headers]);
-  useEffect(() => { if (!projectId) return; setReleasesLoaded(false); getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])).finally(() => setReleasesLoaded(true)); }, [projectId, getJson]);
+  // โหลดไม่สำเร็จต้องแจ้ง error — เดิมคืน null แล้วแสดงเป็น "ยังไม่มีรายการ" / Gate ว่าง
+  const getJson = useCallback((url: string) => fetch(url, { headers }).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }), [headers]);
+  const loadFailed = useCallback((what: string) => () => setError(`โหลด${what}ไม่สำเร็จ — ลองเลือก Release ใหม่หรือรีเฟรชหน้า`), []);
+  useEffect(() => { if (!projectId) return; setReleasesLoaded(false); getJson(`${apiUrl}/releases?projectId=${projectId}`).then((rs) => setReleases(Array.isArray(rs) ? (rs as ReleaseItem[]).filter((x) => x.status !== "Cancelled") : [])).catch(loadFailed("รายการ Release")).finally(() => setReleasesLoaded(true)); }, [projectId, getJson, loadFailed]);
   useEffect(() => { if (contextReleaseId && !releaseId) setReleaseId(contextReleaseId); }, [contextReleaseId, releaseId]);
   useEffect(() => { if (releasesLoaded && releaseId && !releases.some((x) => x.releaseId === releaseId)) { setReleaseId(""); setBuildId(""); } }, [releasesLoaded, releaseId, releases]);
-  useEffect(() => { if (!releaseId) { setBuilds([]); setBuildId(""); return; } getJson(`${apiUrl}/releases/${releaseId}/builds`).then((b) => { const list = Array.isArray(b) ? b : []; setBuilds(list); if (list.length && !buildId) setBuildId(list[0].buildId); }); }, [releaseId, buildId, getJson]);
-  useEffect(() => { if (!releaseId) { setGate(null); setSignoffs([]); setLoading(false); return; } setLoading(true); getJson(`${apiUrl}/releases/${releaseId}/release-gate${buildId ? `?buildId=${buildId}` : ""}`).then((g) => setGate((g as ReleaseGateData) ?? null)).finally(() => setLoading(false)); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])); }, [releaseId, buildId, getJson]);
-  const submit = async () => { if (!buildId) { setError("กรุณาเลือก Build"); return; } setSaving(true); setError(""); try { const r = await fetch(`${apiUrl}/releases/${releaseId}/signoffs`, { method: "POST", headers, body: JSON.stringify({ buildId, signoffType, decision, comment: comment || null }) }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Sign-off ไม่สำเร็จ"); } setModalOpen(false); setComment(""); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])); } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Sign-off ไม่สำเร็จ"); } finally { setSaving(false); } };
+  useEffect(() => { if (!releaseId) { setBuilds([]); setBuildId(""); return; } getJson(`${apiUrl}/releases/${releaseId}/builds`).then((b) => { const list = Array.isArray(b) ? b : []; setBuilds(list); if (list.length && !buildId) setBuildId(list[0].buildId); }).catch(loadFailed("รายการ Build")); }, [releaseId, buildId, getJson, loadFailed]);
+  useEffect(() => { if (!releaseId) { setGate(null); setSignoffs([]); setLoading(false); return; } setLoading(true); setError(""); getJson(`${apiUrl}/releases/${releaseId}/release-gate${buildId ? `?buildId=${buildId}` : ""}`).then((g) => setGate((g as ReleaseGateData) ?? null)).catch(loadFailed("Release Gate")).finally(() => setLoading(false)); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])).catch(loadFailed("ประวัติ Sign-off")); }, [releaseId, buildId, getJson, loadFailed]);
+  const commentRequired = decision !== "GO";
+  const submit = async () => { if (!buildId) { setFormError("กรุณาเลือก Build"); return; } if (commentRequired && !comment.trim()) { setFormError("กรุณาระบุเหตุผล/เงื่อนไขสำหรับการตัดสินใจ " + decision.replaceAll("_", " ")); return; } setSaving(true); setFormError(""); try { const r = await fetch(`${apiUrl}/releases/${releaseId}/signoffs`, { method: "POST", headers, body: JSON.stringify({ buildId, signoffType, decision, comment: comment || null }) }); if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Sign-off ไม่สำเร็จ"); } setModalOpen(false); setComment(""); getJson(`${apiUrl}/releases/${releaseId}/signoffs`).then((s) => setSignoffs(Array.isArray(s) ? s : [])).catch(loadFailed("ประวัติ Sign-off")); } catch (e) { setFormError(e instanceof Error ? e.message : "สร้าง Sign-off ไม่สำเร็จ"); } finally { setSaving(false); } };
   useEffect(() => { const activeBuilds = builds.filter((b) => b.isActive && b.status.toLowerCase() !== "cancelled"); if (activeBuilds.length !== builds.length) { setBuilds(activeBuilds); if (buildId && !activeBuilds.some((b) => b.buildId === buildId)) setBuildId(activeBuilds[0]?.buildId ?? ""); } }, [builds, buildId]);
   const decisionClass = (d: string) => d === "GO" ? "go" : d === "CONDITIONAL_GO" ? "conditional" : "nogo";
+  // เดิมทุกค่าที่ไม่ใช่ Succeeded/NOT_RUN (รวม null ตอนยังไม่มีข้อมูล และ Running) แสดงเป็น "Fail"
+  const smokeLabel = (status?: string | null) => !status || status === "NOT_RUN" ? "Not Run" : status === "Succeeded" || status === "Passed" ? "Pass" : status === "Failed" ? "Fail" : status;
   const gateLabels: { key: keyof ReleaseGateData; label: string; hint: (d: ReleaseGateData) => string }[] = [
     { key: "requirementCoverage", label: "Requirement Coverage", hint: (d) => `${d.requirementCoverage}% Covered` },
     { key: "regressionPassRate", label: "Regression / Pass Rate", hint: (d) => `${d.regressionPassRate}% Pass` },
@@ -9392,12 +9405,12 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
     <article className="signoff-page">
       <div className="signoff-toolbar">
         <div className="signoff-selects">
-          <b className="signoff-toolbar-label">Build / Version</b><select aria-label="Release" value={releaseId} onChange={(e) => { setReleaseId(e.target.value); setBuildId(""); }}><option value="">เลือก Release</option>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select>
-          <b className="signoff-toolbar-label">Release Type</b><select aria-label="Build" value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber} · {b.applicationVersion || "-"}</option>)}</select>
+          <b className="signoff-toolbar-label">Release</b><select aria-label="Release" value={releaseId} onChange={(e) => { setReleaseId(e.target.value); setBuildId(""); }}><option value="">เลือก Release</option>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode} · Version {r.version}</option>)}</select>
+          <b className="signoff-toolbar-label">Build</b><select aria-label="Build" value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber} · {b.applicationVersion || "-"}</option>)}</select>
         </div>
-        {canSignoff && <button className="btn primary" disabled={!releaseId || !buildId} onClick={() => { setDecision("GO"); setComment(""); setModalOpen(true); }}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Sign-off</button>}
+        {canSignoff && <button className="btn primary" disabled={!releaseId || !buildId} onClick={() => { setDecision("GO"); setComment(""); setFormError(""); setModalOpen(true); }}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Sign-off</button>}
       </div>
-      {error && <div className="inline-alert error"><span>{error}</span></div>}
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
       {loading && !gate ? <div className="empty"><div className="spinner" /><p>กำลังโหลด Release Gate...</p></div> : !releaseId ? <div className="empty"><p>เลือก Release เพื่อดู Release Gate</p></div> : (
         <>
           <section className="card">
@@ -9405,7 +9418,7 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
               <div><h3 style={{ margin: 0 }}>Release Gate Panel</h3><small style={{ color: "var(--muted)" }}>ตรวจสอบเกณฑ์ก่อน Sign-off ตามขั้นตอน Release Governance</small></div>
               {gate && <span className={`signoff-decision ${decisionClass(gate.recommendedDecision)}`}>{gate.recommendedDecision.replaceAll("_", " ")}</span>}
             </div>
-            <div className="gate-grid"><div className="gate-cell"><small>Smoke</small><b>{gate?.smokeStatus === "Succeeded" ? "Pass" : gate?.smokeStatus === "NOT_RUN" ? "Not Run" : "Fail"}</b><span>{gate?.smokeStatus ?? "NOT_RUN"}</span></div>
+            <div className="gate-grid"><div className="gate-cell"><small>Smoke</small><b>{smokeLabel(gate?.smokeStatus)}</b><span>{gate?.smokeStatus ?? "NOT_RUN"}</span></div>
               {gateLabels.map((g) => <div className="gate-cell" key={g.key}><small>{g.label}</small><b>{typeof gate?.[g.key] === "boolean" ? (gate?.[g.key] ? "Pass" : "Fail") : String(gate?.[g.key] ?? "–")}</b><span>{gate ? g.hint(gate) : "…"}</span></div>)}
             </div>
             {gate && <div className="ts-progress" style={{ marginTop: 12 }}><div className="ts-progress-row"><span>P0 ยังไม่ผ่าน/ถูกบล็อก</span><b>{gate.openP0}</b></div><div className="ts-progress-row"><span>P1 Blocker</span><b>{gate.p1Blockers}</b></div><div className="ts-progress-row"><span>Update Test Passed</span><b>{gate.updateTestPassed ? "Passed" : "Not passed"}</b></div></div>}
@@ -9418,8 +9431,7 @@ function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, canSignoff
           </section>
         </>
       )}
-     {modalOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="signoff-form-title" onMouseDown={() => !saving && setModalOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder="เหตุผล/เงื่อนไขประกอบการตัดสินใจ" /></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> ยืนยัน Sign-off</>}</button></div></div></div>}
-      {modalOpen && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="signoff-form-title" onMouseDown={() => !saving && setModalOpen(false)}><div className="modal-box risk-modal" onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label className="full">Sign-off Role<select value={signoffType} onChange={(e) => setSignoffType(e.target.value)}><option value="QA">QA</option><option value="DEVELOPMENT">Development</option><option value="PRODUCT_OWNER">Product</option><option value="RELEASE_OWNER">Release Owner</option></select></label><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder="เหตุผล/เงื่อนไขประกอบการตัดสินใจ" /></label></div><div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> ยืนยัน Sign-off</>}</button></div></div></div>}
+      {modalOpen && <ModalShell labelledBy="signoff-form-title" className="risk-modal" onDismiss={() => { if (!saving) setModalOpen(false); }}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label className="full">Sign-off Role<select value={signoffType} onChange={(e) => setSignoffType(e.target.value)}><option value="QA">QA</option><option value="DEVELOPMENT">Development</option><option value="PRODUCT_OWNER">Product</option><option value="RELEASE_OWNER">Release Owner</option></select></label><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment{commentRequired && <span className="required-mark"> *</span>}<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder={commentRequired ? "จำเป็นสำหรับ NO GO / CONDITIONAL GO — ระบุเหตุผลหรือเงื่อนไข" : "เหตุผล/เงื่อนไขประกอบการตัดสินใจ"} /></label></div>{formError && <div className="inline-alert error" role="alert"><span>{formError}</span></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> ยืนยัน Sign-off</>}</button></div></ModalShell>}
     </article>
   );
 }
@@ -9743,29 +9755,29 @@ function App() {
       if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกบัญชี CRM ไม่สำเร็จ"); }
       setMyCrmConfig(await response.json());
       setMyCrmPassword("");
-      window.alert("บันทึกบัญชี CRM ของคุณเรียบร้อยแล้ว");
-    } catch (error) { window.alert(error instanceof Error ? error.message : "บันทึกบัญชี CRM ไม่สำเร็จ"); }
+      notify("บันทึกบัญชี CRM ของคุณเรียบร้อยแล้ว", "success");
+    } catch (error) { notify(error instanceof Error ? error.message : "บันทึกบัญชี CRM ไม่สำเร็จ", "error"); }
     finally { setSavingMyCrm(false); }
   };
   const shareDashboard = async () => {
     try {
       // ลิงก์แชร์เปิดให้คนนอกอ่านได้ จึงต้องผูกกับ Project เดียวเสมอ (server ปฏิเสธลิงก์แบบทุก Project)
-      if (!contextProjectId) { window.alert("กรุณาเลือก Project ที่ Topbar ก่อนสร้างลิงก์แชร์ Dashboard"); return; }
+      if (!contextProjectId) { notify("กรุณาเลือก Project ที่ Topbar ก่อนสร้างลิงก์แชร์ Dashboard", "error"); return; }
       const selectedProject = contextProjects.find(x => x.projectId === contextProjectId);
       const shareReleaseId = contextReleaseId || contextReleases[0]?.releaseId || "";
       const selectedRelease = contextReleases.find(x => x.releaseId === shareReleaseId);
       const shareBuildId = contextBuildId || contextBuilds[0]?.buildId || "";
       const selectedBuild = contextBuilds.find(x => x.buildId === shareBuildId);
       const scopeMessage = [`Project: ${selectedProject?.projectName ?? "ทุก Project"}`, `Release: ${selectedRelease ? `${selectedRelease.releaseCode} · ${selectedRelease.version}` : "ทุก Release"}`, `Build: ${selectedBuild?.buildNumber ?? "ทุก Build"}`].join("\n");
-      if (!window.confirm(`กำลังจะสร้างลิงก์แชร์ Dashboard ด้วยข้อมูลนี้:\n\n${scopeMessage}\n\nลิงก์มีอายุ 90 วัน ต้องการดำเนินการต่อหรือไม่?`)) return;
+      if (!await confirmDialog(`กำลังจะสร้างลิงก์แชร์ Dashboard ด้วยข้อมูลนี้:\n\n${scopeMessage}\n\nลิงก์มีอายุ 90 วัน ต้องการดำเนินการต่อหรือไม่?`)) return;
       const response = await fetch(`${apiUrl}/dashboard/share`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ projectId: contextProjectId || null, releaseId: shareReleaseId || null, buildId: shareBuildId || null, validHours: 24 * 90 }) });
       if (!response.ok) { const problem = await response.json().catch(() => null); throw new Error(problem?.detail ?? "ไม่สามารถสร้างลิงก์แชร์ได้"); }
       const result: { code: string; expiresAt: string } = await response.json();
       const url = `${window.location.origin}${window.location.pathname}?s=${encodeURIComponent(result.code)}`;
       const copied = await copyText(url);
-      if (copied) window.alert(`คัดลอกลิงก์ Dashboard แบบอ่านอย่างเดียวแล้ว\nลิงก์หมดอายุ ${formatThaiDateTime(result.expiresAt)}`);
-      else window.prompt("เบราว์เซอร์ไม่อนุญาตให้คัดลอกอัตโนมัติ กรุณาคัดลอกลิงก์นี้", url);
-    } catch (e) { window.alert(e instanceof Error ? e.message : "ไม่สามารถสร้างลิงก์แชร์ได้"); }
+      if (copied) notify(`คัดลอกลิงก์ Dashboard แบบอ่านอย่างเดียวแล้ว\nลิงก์หมดอายุ ${formatThaiDateTime(result.expiresAt)}`, "success");
+      else await promptDialog({ title: "คัดลอกลิงก์ Dashboard", message: "เบราว์เซอร์ไม่อนุญาตให้คัดลอกอัตโนมัติ — เลือกข้อความแล้วกด Ctrl+C", initialValue: url, confirmLabel: "ปิด" });
+    } catch (e) { notify(e instanceof Error ? e.message : "ไม่สามารถสร้างลิงก์แชร์ได้", "error"); }
   };
   const save = async () => {
     if (
@@ -9890,7 +9902,7 @@ function App() {
       }
       setRefresh((x) => x + 1);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      notify(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ", "error");
     } finally {
       setSaving(false);
     }
@@ -10000,8 +10012,7 @@ function App() {
           </div>
         </header>
         {myCrmOpen && (
-          <div className="modal" role="presentation" onMouseDown={() => !savingMyCrm && setMyCrmOpen(false)}>
-            <div className="modal-box" role="dialog" aria-modal="true" aria-labelledby="my-crm-title" onMouseDown={e => e.stopPropagation()}>
+          <ModalShell labelledBy="my-crm-title" onDismiss={() => { if (!savingMyCrm) setMyCrmOpen(false); }}>
               <div className="modal-head">
                 <h2 id="my-crm-title">บัญชี CRM ของฉัน</h2>
                 <button aria-label="ปิด" disabled={savingMyCrm} onClick={() => setMyCrmOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
@@ -10019,8 +10030,7 @@ function App() {
                   {savingMyCrm ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึกการตั้งค่า</>}
                 </button>
               </div>
-            </div>
-          </div>
+            </ModalShell>
         )}
         <div className="content">
           <div className="page-head">
@@ -10037,7 +10047,7 @@ function App() {
                   placeholder="ค้นหา..."
                 />
               </label>}
-              {can("REPORT.EXPORT") && page !== "test-cycles" && page !== "audit" && <button className="btn"><span className="material-symbols-outlined" aria-hidden="true">download</span> Export</button>}
+              {/* ปุ่ม Export กลางถูกนำออก (ไม่เคยมี onClick) — แต่ละหน้ามีปุ่ม Export ของตัวเอง เช่น Defect, Test Cycle, RTM, Automation */}
               {page === "dashboard" && <button className="btn share-btn" onClick={shareDashboard}>↗ แชร์ Dashboard</button>}
               {page === "requirements"&&can("REQUIREMENT.EDIT")&&<button className="btn ai-button" onClick={()=>{setCreateProjectId(contextProjectId);setCreateModuleId("");setCreateReleaseId(contextReleaseId);setRequirementAiPrompt("");setRequirementAiFiles([]);setRequirementAiError("");setRequirementAiModal(true)}}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span> AI Generate</button>}
               {canCreate && (
@@ -10106,8 +10116,7 @@ function App() {
           </button>
         )}
       </main>
-      {requirementAiModal&&<div className="modal" role="dialog" aria-modal="true" aria-labelledby="requirement-ai-title" onMouseDown={()=>!requirementAiGenerating&&setRequirementAiModal(false)}>
-        <div className="modal-box requirement-ai-modal" onMouseDown={e=>e.stopPropagation()} style={{position:"relative"}}>{requirementAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/><p>AI กำลังวิเคราะห์ Requirement...</p><small>รอสักครู่ ระบบกำลังประมวลผลข้อมูลและไฟล์แนบ</small></div>}
+      {requirementAiModal&&<ModalShell labelledBy="requirement-ai-title" className="requirement-ai-modal" boxStyle={{position:"relative"}} onDismiss={() => { if (!requirementAiGenerating) setRequirementAiModal(false); }}>{requirementAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/><p>AI กำลังวิเคราะห์ Requirement...</p><small>รอสักครู่ ระบบกำลังประมวลผลข้อมูลและไฟล์แนบ</small></div>}
           <div className="modal-head"><div><h2 id="requirement-ai-title">AI Generate Requirement</h2><small>สร้าง Draft จากคำอธิบายและไฟล์อ้างอิง</small></div><button aria-label="ปิดหน้าต่าง AI Generate" disabled={requirementAiGenerating} onClick={()=>setRequirementAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
           <div className="requirement-ai-panel">
             <div className="requirement-ai-head"><div><span className="ai-spark" aria-hidden="true">AI</span><div><h3>ข้อมูลอ้างอิง</h3><p>เลือกบริบทให้ AI สร้าง Requirement ได้ตรงกับระบบ</p></div></div><span className="ai-review-badge">ต้องตรวจสอบก่อนใช้</span></div>
@@ -10126,11 +10135,9 @@ function App() {
             <div className="ai-draft-note"><span className="material-symbols-outlined" aria-hidden="true">info</span><p><b>AI จะไม่บันทึกข้อมูลหรือไฟล์แนบอัตโนมัติ</b><small>ไฟล์ใช้วิเคราะห์ในคำขอนี้เท่านั้น จากนั้นระบบจะเปิดฟอร์มพร้อม Draft ให้ตรวจสอบ</small></p></div>
           </div>
           <div className="modal-actions"><button className="btn" disabled={requirementAiGenerating} onClick={()=>setRequirementAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn ai-button" disabled={requirementAiGenerating||!requirementAiPrompt.trim()||!createProjectId||!createModuleId} onClick={generateRequirementWithAi}>{requirementAiGenerating?"กำลังวิเคราะห์...":"✦ สร้าง Draft ด้วย AI"}</button></div>
-        </div>
-      </div>}
+        </ModalShell>}
       {modal && (
-        <div className="modal" onMouseDown={() => setModal(false)}>
-          <div className={`modal-box ${page === "requirements" ? "requirement-editor" : ""}`} onMouseDown={(e) => e.stopPropagation()}>
+        <ModalShell boxClassName={`modal-box ${page === "requirements" ? "requirement-editor" : ""}`} onDismiss={() => setModal(false)}>
             <div className="modal-head">
               <h2>สร้าง {pageNames[page]}</h2>
               <button onClick={() => setModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
@@ -10227,8 +10234,7 @@ function App() {
                 {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}
               </button>
             </div>
-          </div>
-        </div>
+          </ModalShell>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { confirmDialog } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
 import { apiUrl } from "../api";
 import {
@@ -71,7 +72,7 @@ export function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, can
   };
 
   const toggleSuite = async (row: AutomationSuiteListItem) => {
-    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"} Suite "${row.suiteCode}"?`)) return;
+    if (!await confirmDialog(`${row.isActive ? "ปิด" : "เปิด"} Suite "${row.suiteCode}"?`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/suites/${row.automationSuiteId}/${row.isActive ? "close" : "reopen"}?projectId=${projectId}`, { method: "POST", headers });
@@ -92,7 +93,7 @@ export function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, can
   };
 
   const removeCase = async (caseId: string) => {
-    if (!detail || !window.confirm("ลบ Case นี้ออกจาก Suite?")) return;
+    if (!detail || !await confirmDialog("ลบ Case นี้ออกจาก Suite?")) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${caseId}?projectId=${projectId}`, { method: "DELETE", headers });

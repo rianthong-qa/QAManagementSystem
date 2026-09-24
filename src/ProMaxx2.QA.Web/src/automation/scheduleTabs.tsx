@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { confirmDialog } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
 import { apiUrl } from "../api";
 import type { AutomationAgentItem, AutomationScheduleListItem, AutomationScheduleDetailItem, AutomationScheduleRunItem, AutomationScheduleNotificationItem, AutomationBuildTriggerPolicyItem, AutomationBuildTriggerRunItem, AutomationWebhookTokenItem, AutomationWebhookDeliveryItem, AutomationExecutionItem } from "./types";
@@ -118,7 +119,7 @@ export function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, 
 
   const toggleActive = async (row: AutomationScheduleListItem) => {
     if (busy) return;
-    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Schedule "${row.name}"?`)) return;
+    if (!await confirmDialog(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Schedule "${row.name}"?`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/schedules/${row.automationScheduleId}/${row.isActive ? "deactivate" : "activate"}?projectId=${projectId}`, { method: "POST", headers });
@@ -292,7 +293,7 @@ export function AutomationBuildTriggerTab({ projectId, headers, canEdit, agents 
   };
 
   const toggleActive = async (row: AutomationBuildTriggerPolicyItem) => {
-    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Build Trigger "${row.pack} · ${row.suiteCode}"?`)) return;
+    if (!await confirmDialog(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Build Trigger "${row.pack} · ${row.suiteCode}"?`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/build-triggers/${row.automationBuildTriggerPolicyId}/${row.isActive ? "deactivate" : "activate"}?projectId=${projectId}`, { method: "POST", headers });
@@ -406,7 +407,7 @@ export function AutomationWebhookTab({ projectId, headers, canEdit }: { projectI
   };
 
   const revokeToken = async (row: AutomationWebhookTokenItem) => {
-    if (!window.confirm(`เพิกถอน Token "${row.name}"? ระบบ CI/CD ที่ใช้ Token นี้จะเรียก webhook ไม่ได้อีก`)) return;
+    if (!await confirmDialog(`เพิกถอน Token "${row.name}"? ระบบ CI/CD ที่ใช้ Token นี้จะเรียก webhook ไม่ได้อีก`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/webhook-tokens/${row.automationWebhookTokenId}/revoke?projectId=${projectId}`, { method: "POST", headers });
@@ -447,7 +448,7 @@ function WebhookNewTokenModal({ name, plainTextToken, onClose }: { name: string;
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
   const tokenRef = useRef<HTMLInputElement>(null);
-  const close = () => { if (copied || window.confirm("ยังไม่ได้คัดลอก Token — ปิดแล้วจะดู Token เต็มไม่ได้อีก ต้องการปิดหรือไม่?")) onClose(); };
+  const close = async () => { if (copied || await confirmDialog("ยังไม่ได้คัดลอก Token — ปิดแล้วจะดู Token เต็มไม่ได้อีก ต้องการปิดหรือไม่?")) onClose(); };
   const copy = async () => {
     setCopyError("");
     try {

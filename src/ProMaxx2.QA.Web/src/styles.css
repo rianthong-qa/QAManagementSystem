@@ -3789,3 +3789,23 @@ input, select, textarea { max-width: 100%; }
   .cycle-detail-cases-state { align-items: flex-start; flex-wrap: wrap; }
   .cycle-detail-cases-state .btn { margin-left: 0; }
 }
+
+/* ป้ายสถานะที่ไม่รู้จัก/ไม่มีข้อมูล (เช่น Build status ใหม่) — สีเทาจาก token --muted */
+.badge.gray { background: color-mix(in srgb, var(--muted) 12%, var(--card, #fff)); color: var(--muted); }
+
+/* UI รอบ 3: กล่องยืนยัน/กรอกข้อความ (DialogHost) และ toast แจ้งผล แทน window.confirm/prompt/alert */
+.modal-box.app-dialog { width: min(460px, 100%); }
+.app-dialog .modal-head h2 { font-size: 18px; }
+.app-dialog-message { margin: 14px 0; white-space: pre-line; overflow-wrap: anywhere; line-height: 1.6; color: var(--text); }
+.app-dialog input, .app-dialog textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: inherit; font-weight: 400; }
+.app-dialog input:focus-visible, .app-dialog textarea:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); border-color: var(--primary); }
+.app-toasts { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: grid; gap: 8px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
+.app-toast { pointer-events: auto; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 12px 12px 12px 14px; border-radius: 12px; background: var(--card, #fff); border: 1px solid var(--line); border-left: 4px solid var(--info, var(--primary)); box-shadow: 0 8px 24px rgba(16, 24, 40, .14); font-size: 14px; }
+.app-toast.success { border-left-color: var(--green); }
+.app-toast.success > .material-symbols-outlined { color: var(--green); }
+.app-toast.error { border-left-color: var(--red); }
+.app-toast.error > .material-symbols-outlined { color: var(--red); }
+.app-toast.info > .material-symbols-outlined { color: var(--info, var(--primary)); }
+.app-toast-text { white-space: pre-line; overflow-wrap: anywhere; }
+.app-toast button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0; line-height: 1; }
+@media (max-width: 760px) { .app-toasts { left: 16px; right: 16px; width: auto; } }

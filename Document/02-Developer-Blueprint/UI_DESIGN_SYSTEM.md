@@ -178,6 +178,8 @@ git diff --check
 - ความสูงสูงสุด 92vh และเลื่อนเฉพาะแนวตั้ง
 - ห้ามมี horizontal scrollbar
 - Pattern: `<div className="modal">` (backdrop, blur 6px, dark overlay) → `<div className="modal-box">` (white box, centered, 16px radius, strong shadow)
+- **ทุก modal ต้องใช้ `ModalShell` (`src/components/ModalShell.tsx`)** แทนการเขียน `.modal`/`.modal-box` เอง — ให้ `role="dialog"`, `aria-modal`, `aria-labelledby`/`aria-label`, focus ช่องแรกตอนเปิดและคืน focus ตอนปิด, Tab วนใน modal และ Escape ปิดเฉพาะ modal บนสุด
+- ข้อมูลที่ยังไม่บันทึก: `ModalShell` ถือว่า dirty เมื่อผู้ใช้พิมพ์/เลือกค่าใน modal (event `input`/`change`) หรือผู้เรียกส่ง `dirty` (เช่น AI draft ที่สร้างขึ้นเอง) — Escape ถามยืนยันก่อนปิด และคลิกพื้นหลังจะปิดได้เฉพาะตอนยังไม่ dirty; modal แสดง secret ครั้งเดียวใช้ `backdropDismiss={false}`
 - Header ใช้ `.modal-head` (border-bottom 2px, h2 20px/800, ปุ่ม close มี border)
 - Action footer ใช้ `.modal-actions` (border-top 2px, ปุ่ม primary มี shadow)
 - Form ใช้ grid 2 คอลัมน์เป็นค่าเริ่มต้น
@@ -242,6 +244,7 @@ git diff --check
 - Keyboard focus ต้องมองเห็นได้
 - ห้ามใช้สีเพียงอย่างเดียวในการบอกสถานะ
 - Confirm ก่อน operation ที่สร้าง historical record หรือลบข้อมูล
+- ห้ามใช้ `window.alert` / `window.confirm` / `window.prompt` — ใช้ `confirmDialog` / `promptDialog` / `notify` จาก `src/components/dialogStore.ts` (แสดงผลโดย `<DialogHost />` ที่ mount ใน `main.tsx`): กล่องยืนยันระบุผลที่จะเกิดขึ้นและใช้ `tone: "danger"` กับการลบ/ทิ้งข้อมูล; แจ้งผลสำเร็จ/ล้มเหลวที่ไม่ผูกกับฟอร์มใช้ toast (`notify(message, "success" | "error" | "info")`) ส่วน error ของฟอร์มยังแสดงใกล้ field/ใน modal
 - Loading และ disabled state ต้องป้องกันการ submit ซ้ำ
 - หน้าที่มี Workflow หลายขั้นตอนต้องจัดลำดับ section ตามขั้นตอนการทำงานจริง (งานหลักก่อนข้อมูลประกอบ) และใช้ Step Guide Strip แสดงสถานะ done/active พร้อม scroll-to-section — reference implementation `.regression-steps` ใน Regression.css
 - ข้อความไทยต้องบันทึกเป็น UTF-8 และห้ามมี mojibake
@@ -259,6 +262,31 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-09-24 — UI รอบ 3: กล่องยืนยันและแจ้งผลแบบกลาง
+
+- เพิ่ม `confirmDialog` / `promptDialog` / `notify` (`src/components/dialogStore.ts`) + `DialogHost` (ใช้ `ModalShell` จึงได้ Escape/focus/Tab ครบ) และแทน `window.confirm` 39 จุด, `window.alert` 49 จุด (เป็น toast แยกสี success/error), `window.prompt` 2 จุดทั้งแอป — toast อยู่มุมขวาล่าง (Mobile เต็มความกว้าง), error ค้าง 9 วินาที, success 5 วินาที, มีปุ่มปิดและ `role="alert"`/`status`
+- กล่องยืนยันปิด modal ที่มีข้อมูลค้าง (ModalShell) เปลี่ยนจาก `window.confirm` เป็นกล่องของระบบ ("ปิดหน้าต่าง" / "กลับไปแก้ไข")
+- เพิ่มการยืนยันที่ขาด: ปิด Defect (Quick Close) และเปลี่ยนสถานะ Defect หลายรายการ, Mark RC, เปลี่ยน Test Cycle เป็น Closed/Cancelled/Completed และเปลี่ยนสถานะหลาย Cycle, นำ Test Case ออกจาก Suite, ปิดใช้งานผู้ใช้, Regenerate ข้อความสรุปที่แก้ไว้ใน Test Summary, ปุ่มลัด P/F/B ใน Execution Workspace (ให้ตรงกับปุ่ม "ตั้งทุก Step"), อนุมัติ Automation Version และยกเลิก Quarantine
+- Quick status / เปลี่ยนสถานะหลายรายการของ Defect และ Mark RC แจ้ง error เมื่อไม่สำเร็จ (เดิมเงียบ)
+
+### 2026-09-24 — UI รอบ 2: Modal มาตรฐานทั้งแอป
+
+- ย้าย `ModalShell` จากหน้า Automation ไปเป็น component กลาง `src/components/ModalShell.tsx` และเปลี่ยน modal ใน `App.tsx` ทั้ง 38 จุด + Audit Log เป็น `ModalShell` — ได้ Escape (เฉพาะบนสุด), focus เข้า/คืน, Tab trap, role/aria ครบทุก modal
+- เลิกใช้ flag `form` (เดิมหน้า Automation ถามยืนยันทุกครั้งที่กด Escape แม้ยังไม่ได้กรอก): ตรวจ dirty จากการกรอกจริง — Escape ถามเฉพาะเมื่อมีข้อมูลที่กรอก, คลิกพื้นหลังปิดได้เฉพาะตอนยังไม่กรอก (เดิมฟอร์มส่วนใหญ่ใน App.tsx ปิดทันทีและข้อมูลหาย)
+- AI draft modal ของ Test Case/Test Suite/Test Cycle ส่ง `dirty` เมื่อมี draft — คลิกพื้นหลังไม่ทิ้ง draft ที่ AI สร้างแล้ว
+- Execution Workspace: เปลี่ยนเคส (คลิกรายการหรือปุ่ม N) ขณะมีผล step/Actual/Comment ที่ยังไม่บันทึก ต้องยืนยันก่อน (เดิมผลที่กรอกถูกล้างเงียบ ๆ)
+
+### 2026-09-24 — UI รอบ 1: บั๊กที่ข้อมูลผิด/ใช้งานไม่ได้ (จากการตรวจ UI ทุกหน้า)
+
+- **Release Sign-off:** เหลือ modal เดียว (เดิม render ซ้อน 2 ชั้น), ป้ายตัวกรองเป็น Release/Build ตามจริง, Smoke ที่ยังไม่มีข้อมูลแสดง "Not Run" (ไม่ใช่ "Fail"), NO GO/CONDITIONAL GO ต้องกรอก Comment, error แสดงใน modal และโหลด Gate/ประวัติไม่สำเร็จแสดง error แทนหน้าว่าง; ฟอร์มไม่ปิดเมื่อคลิกพื้นหลัง
+- **Release/Build:** ป้ายสถานะ Build ใช้ `buildStatusTone` — Ready/Passed เขียว, Testing น้ำเงิน, Blocked เหลือง, Failed แดง, ไม่รู้จัก = เทา (เพิ่ม `.badge.gray`); เดิมหน้ารายการเขียวทุกสถานะ
+- **Topbar:** นำปุ่ม Export กลางที่ไม่มีการทำงานออก — Export อยู่ในหน้าที่รองรับ (Defect, Test Cycle, RTM, Automation, Test Summary)
+- **User / Role:** แสดง "สิทธิ์เพิ่มเติม" (สิทธิ์ที่ตาราง Create/Delete/Edit/View ไม่ครอบคลุม เช่น RISK.APPROVE, RELEASE.SIGNOFF, REPORT.EXPORT, AUTOMATION.EXECUTE) ซึ่งเดิมถูกซ่อนด้วย `display:none` จึงให้สิทธิ์จากหน้าจอไม่ได้; ตอนค้นหา ปุ่มเป็น "เลือก/ล้างที่แสดงอยู่" และไม่แตะสิทธิ์อื่น; โหลดผู้ใช้/สิทธิ์ไม่สำเร็จแสดง error + ลองใหม่ (เดิมหน้าพัง)
+- **Test Case:** ถ้าโหลดรายละเอียดไม่สำเร็จจะไม่เปิดฟอร์มแก้ไข (เดิมเปิดด้วยข้อมูลจากรายการที่ไม่มี steps แล้วบันทึกทับ steps จริง); ฟอร์มไม่ปิดเมื่อคลิกพื้นหลัง, มี role/aria-label และ error แสดงใน modal
+- **Test Cycle / Defect / Risk:** error ตอนบันทึกแสดงใน modal (เดิมแสดงที่หน้าหลักใต้ modal จึงมองไม่เห็น) และฟอร์มไม่ปิดเมื่อคลิกพื้นหลัง; Risk: Release ใน form มีตัวเลือก "เลือก Release" (เดิมแสดง Release แรกแต่ค่าจริงว่าง ทำให้ Save กดไม่ได้โดยไม่มีเหตุผล) และ Comment อนุมัติ/ปฏิเสธถูกล้างทุกครั้งที่เปิด
+- **RTM:** ยกเลิก Link ต้องกดยืนยันในแถว (เดิมลบทันที), error แสดงใน modal และ busy ไม่ค้างเมื่อเครือข่ายล้ม
+- กฎ (ใช้ต่อทุกหน้า): error ของการบันทึกใน modal ต้องแสดง **ภายใน modal**; ฟอร์มกรอกข้อมูลห้ามปิดด้วยคลิกพื้นหลัง; โหลดข้อมูลไม่สำเร็จต้องแสดง error ไม่ใช่รายการว่าง
 
 ### 2026-09-24 — Automation: `ModalShell` มาตรฐานและการโหลด dropdown
 

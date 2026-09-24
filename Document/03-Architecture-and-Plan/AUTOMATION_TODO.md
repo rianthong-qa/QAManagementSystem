@@ -205,6 +205,16 @@
 
 ## 11. Progress Log
 
+### 2026-09-24 — UI รอบ 3 (ทั้งแอป) กระทบหน้า Automation
+
+- หน้า Automation เลิกใช้ `window.confirm` (17 จุด) และ `window.prompt` (เหตุผลไม่อนุมัติ Seed Script) — ใช้ `confirmDialog`/`promptDialog` กลาง; เพิ่มการยืนยันก่อนอนุมัติ Automation Version และก่อนยกเลิก Quarantine (พบในการตรวจ UI ว่ายังขาด)
+- หลักฐาน: build/lint/tsc ผ่าน, frontend test 23/23 (เพิ่ม `dialogStore.test.ts`)
+
+### 2026-09-24 — UI รอบ 2 (ทั้งแอป) กระทบหน้า Automation
+
+- `ModalShell` ย้ายไป `src/components/ModalShell.tsx` (หน้า Automation import ผ่าน re-export ใน `automation/ui.tsx` เหมือนเดิม) และเปลี่ยนจาก flag `form` เป็นการตรวจ dirty จากการกรอกจริง — แก้ปัญหาที่พบในการตรวจ UI: modal ของ Automation ถามยืนยันทุกครั้งที่กด Escape แม้ยังไม่ได้พิมพ์ และคลิกพื้นหลังปิดฟอร์มไม่ได้แม้ยังว่าง; modal Token webhook ยังใช้ `backdropDismiss={false}` ตามเดิม
+- หลักฐาน: `npm.cmd run build`/`lint`/`tsc -p tsconfig.app.json` ผ่าน, `npm run test` 18/18; ยังต้องตรวจด้วยมือพร้อม AUT-UI-002 (checklist ภาคสนาม G8–G10)
+
 ### 2026-09-24 — Checklist ทดสอบภาคสนามรวมรอบที่ 1–7
 
 - เพิ่ม `AUTOMATION_FIELD_TEST_CHECKLIST.md`: ทดสอบครั้งเดียวเพื่อปิด AUT-SEC-004, AUT-REL-001/002, AUT-AGT-001–004, AUT-UI-001/002 และ AUT-CAP-001–005 (ส่วน A–H) พร้อมตรวจซ้ำ DONE ที่ยังไม่เคยทดสอบกับของจริง (ส่วน I: AUT-P0-006, AUT-DATA-001–005)

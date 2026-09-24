@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { confirmDialog } from "./components/dialogStore";
 import { formatThaiDateTime } from "./dateTime";
 import { apiUrl } from "./api";
 import {
@@ -373,6 +374,7 @@ export function AutomationPage({
   };
 
   const approveVersion = async (v: AutomationVersionItem) => {
+    if (!await confirmDialog({ title: "อนุมัติ Automation Version", message: `อนุมัติ Rev ${v.versionNo} ใช่หรือไม่?\nCase จะเป็น Ready และ Agent รับไปรันได้ทันที`, confirmLabel: "อนุมัติ" })) return;
     setVersionError("");
     try {
       const r = await fetch(`${apiUrl}/automation/versions/${v.automationVersionId}/approve?projectId=${pid}`, { method: "POST", headers });
@@ -482,7 +484,7 @@ export function AutomationPage({
   };
 
   const cancelExecution = async (x: AutomationExecutionItem) => {
-    if (!window.confirm(`ยืนยันยกเลิก Execution "${x.automationCode}" ?`)) return;
+    if (!await confirmDialog(`ยืนยันยกเลิก Execution "${x.automationCode}" ?`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/executions/${x.automationExecutionId}/cancel?projectId=${pid}`, { method: "POST", headers });
@@ -501,7 +503,7 @@ export function AutomationPage({
       setError("ยังไม่มี Automation Agent ที่พร้อมทำงาน จึงยัง Retry ไม่ได้");
       return;
     }
-    if (!window.confirm(`สั่งรัน "${x.automationCode}" ซ้ำ?\nRev ${x.versionNo} · Build ${x.buildNumber} · ${x.environmentName}`)) return;
+    if (!await confirmDialog(`สั่งรัน "${x.automationCode}" ซ้ำ?\nRev ${x.versionNo} · Build ${x.buildNumber} · ${x.environmentName}`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/cases/${x.automationCaseId}/run?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ versionId: x.automationVersionId, buildId: x.buildId, environmentId: x.environmentId, agentId: null, priority: 5 }) });
@@ -525,7 +527,7 @@ export function AutomationPage({
   };
 
   const deleteAgent = async (a: AutomationAgentItem) => {
-    if (!window.confirm(`ต้องการลบ Agent "${a.agentCode}" ออกหรือไม่?\n(ถ้า Agent ยังรันอยู่จะลงทะเบียนใหม่เองอัตโนมัติ)`)) return;
+    if (!await confirmDialog(`ต้องการลบ Agent "${a.agentCode}" ออกหรือไม่?\n(ถ้า Agent ยังรันอยู่จะลงทะเบียนใหม่เองอัตโนมัติ)`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/agents/${a.agentId}`, { method: "DELETE", headers });
@@ -592,7 +594,7 @@ export function AutomationPage({
 
   const runCreateDefect = async () => {
     if (!execDetail || execDetail.defectId || defectResult) return;
-    if (!window.confirm(`สร้าง Defect จาก Execution "${execDetail.automationCode}" (Build ${execDetail.buildNumber}) ?`)) return;
+    if (!await confirmDialog(`สร้าง Defect จาก Execution "${execDetail.automationCode}" (Build ${execDetail.buildNumber}) ?`)) return;
     const executionId = execDetail.automationExecutionId;
     setClassifyBusy("defect");
     try {
@@ -649,6 +651,7 @@ export function AutomationPage({
   };
 
   const unquarantineCase = async (caseId: string) => {
+    if (!await confirmDialog({ title: "ยกเลิก Quarantine", message: "นำ Case นี้กลับเข้าการรันปกติใช่หรือไม่? Schedule / Batch จะรัน Case นี้อีกครั้ง", confirmLabel: "ยกเลิก Quarantine" })) return;
     setMaintenanceBusy(true);
     try {
       const r = await fetch(`${apiUrl}/automation/cases/${caseId}/unquarantine?projectId=${pid}`, { method: "POST", headers });
@@ -731,7 +734,7 @@ export function AutomationPage({
     if (!selectedCaseIds.size || !pid) return;
     const targets = casesPaged.rows.filter((c) => selectedCaseIds.has(c.automationCaseId));
     const preview = targets.slice(0, 5).map((c) => c.automationCode).join(", ") + (targets.length > 5 ? ` และอีก ${targets.length - 5} รายการ` : "");
-    if (!window.confirm(`ยืนยันลบ Automation Case ถาวร ${selectedCaseIds.size} รายการ (${preview})?\n\nการลบนี้ไม่สามารถกู้คืนได้ รวม Version/DSL และประวัติการรัน (Execution) ทั้งหมดของ Case ที่เลือกไปด้วย`)) return;
+    if (!await confirmDialog(`ยืนยันลบ Automation Case ถาวร ${selectedCaseIds.size} รายการ (${preview})?\n\nการลบนี้ไม่สามารถกู้คืนได้ รวม Version/DSL และประวัติการรัน (Execution) ทั้งหมดของ Case ที่เลือกไปด้วย`)) return;
     setBulkDeleteBusy(true); setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/cases/hard-delete?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ automationCaseIds: [...selectedCaseIds] }) });

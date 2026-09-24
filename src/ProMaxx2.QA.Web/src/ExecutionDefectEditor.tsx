@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { confirmDialog } from "./components/dialogStore";
 import { authHeaders } from "./api";
 
 export type WorkspaceDefect = {
@@ -96,9 +97,9 @@ export function ExecutionDefectEditor({ apiUrl, context, existing, onClose, onSa
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, record?.defectId]);
 
-  const requestClose = () => {
+  const requestClose = async () => {
     if (saving) return;
-    if ((dirty || files.length > 0) && !window.confirm("ยังไม่ได้บันทึกข้อมูลที่แก้ไข ต้องการปิดแบบฟอร์มหรือไม่?")) return;
+    if ((dirty || files.length > 0) && !await confirmDialog("ยังไม่ได้บันทึกข้อมูลที่แก้ไข ต้องการปิดแบบฟอร์มหรือไม่?")) return;
     onClose();
   };
   useEffect(() => {
@@ -122,7 +123,7 @@ export function ExecutionDefectEditor({ apiUrl, context, existing, onClose, onSa
     return current.filter((item) => item.id !== id);
   });
   const deleteAttachment = async (item: Attachment) => {
-    if (!record || !window.confirm(`ลบรูป ${item.fileName} ใช่หรือไม่?`)) return;
+    if (!record || !await confirmDialog(`ลบรูป ${item.fileName} ใช่หรือไม่?`)) return;
     try {
       const response = await fetch(`${apiUrl}/defects/${record.defectId}/attachments/${item.attachmentId}`, { method: "DELETE", headers: auth });
       if (!response.ok) { setError("ลบรูปภาพไม่สำเร็จ"); return; }

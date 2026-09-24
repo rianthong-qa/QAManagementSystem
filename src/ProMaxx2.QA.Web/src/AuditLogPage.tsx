@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ModalShell } from "./components/ModalShell";
 import { formatThaiDateTime } from "./dateTime";
 import { apiUrl } from "./api";
 import "./AuditLog.css";
@@ -72,12 +73,7 @@ export function AuditLogPage() {
     return () => controller.abort();
   }, [page, search, entity, refresh]);
 
-  useEffect(() => {
-    if (!selected) return;
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setSelected(null); };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected]);
+  // Escape/focus ของ modal รายละเอียดจัดการโดย ModalShell แล้ว
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const hasFilters = Boolean(searchInput || entity);
@@ -99,6 +95,6 @@ export function AuditLogPage() {
             : <><div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>วันและเวลา</th><th>ผู้ดำเนินการ</th><th>Action</th><th>ข้อมูลที่เกี่ยวข้อง</th><th>รายละเอียด</th><th><span className="sr-only">ดูรายละเอียด</span></th></tr></thead><tbody>{items.map((item, index) => <tr key={`${item.timestamp}-${item.entity}-${item.entityId}-${index}`}><td data-label="วันและเวลา"><time dateTime={item.timestamp}><strong>{formatThaiDateTime(item.timestamp, dateOptions)}</strong><small>{formatThaiDateTime(item.timestamp, timeOptions)} น.</small></time></td><td data-label="ผู้ดำเนินการ"><span className="audit-actor"><span className="audit-avatar" aria-hidden="true">{(item.actorName?.trim() || "S").slice(0, 1).toUpperCase()}</span><span>{item.actorName?.trim() || "System"}</span></span></td><td data-label="Action"><span className={`audit-action audit-action-${actionTone(item.action)}`}>{item.action}</span></td><td data-label="ข้อมูลที่เกี่ยวข้อง"><span className="audit-entity-name">{item.entity || "-"}</span><small className="audit-entity-id" title={item.entityId}>{item.entityId || "-"}</small></td><td data-label="รายละเอียด" className="audit-summary">{item.summary || "ไม่มีรายละเอียดเพิ่มเติม"}</td><td className="audit-row-action"><button className="audit-detail-button" type="button" onClick={() => setSelected(item)} aria-label={`ดูรายละเอียด ${item.action} ${item.entity} ${item.entityId}`} title="ดูรายละเอียด"><span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button></td></tr>)}</tbody></table></div><div className="audit-pagination"><span>หน้า {page.toLocaleString("th-TH")} จาก {pageCount.toLocaleString("th-TH")}</span><div><button className="btn" type="button" onClick={() => setPage((value) => value - 1)} disabled={page <= 1} aria-label="หน้าก่อนหน้า"><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span></button><button className="btn" type="button" onClick={() => setPage((value) => value + 1)} disabled={page >= pageCount} aria-label="หน้าถัดไป"><span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button></div></div></>}
     </section>
 
-    {selected && <div className="modal" onMouseDown={() => setSelected(null)}><div className="modal-box audit-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="audit-detail-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="audit-eyebrow">AUDIT DETAIL</span><h2 id="audit-detail-title">รายละเอียดกิจกรรม</h2></div><button type="button" onClick={() => setSelected(null)} aria-label="ปิดรายละเอียด"><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="audit-detail-body"><div className="audit-detail-lead"><span className={`audit-action audit-action-${actionTone(selected.action)}`}>{selected.action}</span><p>{selected.summary || "ไม่มีรายละเอียดเพิ่มเติม"}</p></div><dl><div><dt>วันและเวลา</dt><dd>{formatThaiDateTime(selected.timestamp, { ...dateOptions, ...timeOptions })} น.</dd></div><div><dt>ผู้ดำเนินการ</dt><dd>{selected.actorName?.trim() || "System"}</dd></div><div><dt>ประเภทข้อมูล</dt><dd>{selected.entity || "-"}</dd></div><div><dt>รหัสข้อมูล</dt><dd>{selected.entityId || "-"}</dd></div></dl></div><div className="modal-actions"><button className="btn primary" type="button" onClick={() => setSelected(null)}>ปิด</button></div></div></div>}
+    {selected && <ModalShell labelledBy="audit-detail-title" className="audit-detail-dialog" onDismiss={() => setSelected(null)}><div className="modal-head"><div><span className="audit-eyebrow">AUDIT DETAIL</span><h2 id="audit-detail-title">รายละเอียดกิจกรรม</h2></div><button type="button" onClick={() => setSelected(null)} aria-label="ปิดรายละเอียด"><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="audit-detail-body"><div className="audit-detail-lead"><span className={`audit-action audit-action-${actionTone(selected.action)}`}>{selected.action}</span><p>{selected.summary || "ไม่มีรายละเอียดเพิ่มเติม"}</p></div><dl><div><dt>วันและเวลา</dt><dd>{formatThaiDateTime(selected.timestamp, { ...dateOptions, ...timeOptions })} น.</dd></div><div><dt>ผู้ดำเนินการ</dt><dd>{selected.actorName?.trim() || "System"}</dd></div><div><dt>ประเภทข้อมูล</dt><dd>{selected.entity || "-"}</dd></div><div><dt>รหัสข้อมูล</dt><dd>{selected.entityId || "-"}</dd></div></dl></div><div className="modal-actions"><button className="btn primary" type="button" onClick={() => setSelected(null)}>ปิด</button></div></ModalShell>}
   </>;
 }

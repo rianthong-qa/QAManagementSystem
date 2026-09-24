@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { confirmDialog, promptDialog } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
 import { apiUrl } from "../api";
 import type { AutomationDbSnapshotItem, AutomationDbRestoreItem, AutomationDataSeedScriptListItem, AutomationDataSeedScriptDetailItem, AutomationDataSeedRunItem, AutomationEnvironmentDataProfileItem } from "./types";
@@ -54,7 +55,7 @@ export function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRu
   };
 
   const requestRestore = async (s: AutomationDbSnapshotItem) => {
-    if (!window.confirm(`ยืนยัน restore ฐานข้อมูลจริงของ "${s.environmentName}" กลับไปที่ snapshot นี้ (build ${s.buildNumber})?\n\n⚠ ข้อมูลปัจจุบันใน DB ของ Environment นี้จะถูกทับทั้งหมด — ย้อนกลับไม่ได้`)) return;
+    if (!await confirmDialog(`ยืนยัน restore ฐานข้อมูลจริงของ "${s.environmentName}" กลับไปที่ snapshot นี้ (build ${s.buildNumber})?\n\n⚠ ข้อมูลปัจจุบันใน DB ของ Environment นี้จะถูกทับทั้งหมด — ย้อนกลับไม่ได้`)) return;
     setBusy(true); setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/data/restores?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ automationDbSnapshotId: s.automationDbSnapshotId }) });
@@ -123,10 +124,10 @@ function SnapshotRequestModal({ releaseId, busy, onClose, onSave, title = "ข�
       <label>Environment<select value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
       <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select></label>
     </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={busy || !environmentId || !buildId} onClick={() => {
+    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={busy || !environmentId || !buildId} onClick={async () => {
       const envName = environments.find((x) => x.testEnvironmentId === environmentId)?.environmentName ?? "";
       const buildNo = builds.find((x) => x.buildId === buildId)?.buildNumber ?? "";
-      if (confirmMessage && !window.confirm(confirmMessage(envName, buildNo))) return;
+      if (confirmMessage && !await confirmDialog(confirmMessage(envName, buildNo))) return;
       onSave(environmentId, buildId);
     }}>{busy ? "กำลังส่งคำขอ..." : submitLabel}</button></div>
   </ModalShell>;
@@ -188,7 +189,7 @@ export function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, 
   };
 
   const toggleActive = async (row: AutomationDataSeedScriptListItem) => {
-    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Seed Script "${row.name}"?`)) return;
+    if (!await confirmDialog(`${row.isActive ? "ปิด" : "เปิด"}ใช้งาน Seed Script "${row.name}"?`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/data/seed-scripts/${row.automationDataSeedScriptId}/${row.isActive ? "deactivate" : "activate"}?projectId=${projectId}`, { method: "POST", headers });
@@ -219,7 +220,7 @@ export function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, 
   };
 
   const approveScript = async (row: AutomationDataSeedScriptListItem) => {
-    if (!window.confirm(`อนุมัติ Master Data Script "${row.name}"? หลังอนุมัติจึงจะสั่งรันได้`)) return;
+    if (!await confirmDialog(`อนุมัติ Master Data Script "${row.name}"? หลังอนุมัติจึงจะสั่งรันได้`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/data/seed-scripts/${row.automationDataSeedScriptId}/approve?projectId=${projectId}`, { method: "POST", headers });
@@ -229,7 +230,7 @@ export function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, 
   };
 
   const rejectScript = async (row: AutomationDataSeedScriptListItem) => {
-    const reason = window.prompt(`เหตุผลที่ไม่อนุมัติ "${row.name}" (ไม่บังคับ):`);
+    const reason = await promptDialog(`เหตุผลที่ไม่อนุมัติ "${row.name}" (ไม่บังคับ):`);
     if (reason === null) return;
     setError("");
     try {
