@@ -150,7 +150,7 @@ export function AutomationScheduleTab({ projectId, releaseId, headers, canEdit, 
       </select>
     </div>
     </div>
-    {schedules.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>Suite</th><th>ตารางเวลา</th><th>Timezone</th><th>รันครั้งถัดไป</th><th>รันล่าสุด</th><th>สถานะ</th><th></th></tr></thead><tbody>{schedules.map((s) => <tr key={s.automationScheduleId}>
+    {schedules.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>ชื่อ</th><th>Suite</th><th>ตารางเวลา</th><th>Timezone</th><th>รันครั้งถัดไป</th><th>รันล่าสุด</th><th>สถานะ</th><th></th></tr></thead><tbody>{schedules.map((s) => <tr key={s.automationScheduleId}>
       <td><b>{s.name}</b>{s.description && <small>{s.description}</small>}</td>
       <td>{s.suiteCode}</td>
       <td>{describeSchedule(s)}</td>
@@ -314,7 +314,7 @@ export function AutomationBuildTriggerTab({ projectId, headers, canEdit, agents 
   return <section className="automation-cases" aria-label="Automation Build Trigger">
     <header className="automation-section-head"><div><h2>Build Trigger (AUT-P1-007)</h2><p>Build ใหม่รัน Suite อัตโนมัติตาม policy — Smoke รันทุก Build ใหม่, Regression รันเมื่อ Build ถูกตั้งเป็น Release Candidate</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Policy</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
-    {policies.length ? <div className="table-wrap"><table><thead><tr><th>Pack</th><th>Suite</th><th>Environment</th><th>Agent</th><th>Priority</th><th>สถานะ</th><th></th></tr></thead><tbody>{policies.map((p) => <tr key={p.automationBuildTriggerPolicyId}>
+    {policies.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>Pack</th><th>Suite</th><th>Environment</th><th>Agent</th><th>Priority</th><th>สถานะ</th><th></th></tr></thead><tbody>{policies.map((p) => <tr key={p.automationBuildTriggerPolicyId}>
       <td><Badge tone={packTone(p.pack)}>{p.pack}</Badge></td>
       <td>{p.suiteCode}</td>
       <td>{p.environmentName}</td>
@@ -420,7 +420,7 @@ export function AutomationWebhookTab({ projectId, headers, canEdit }: { projectI
     <header className="automation-section-head"><div><h2>CI/CD Webhook (AUT-P1-008)</h2><p>ให้ CI/CD ยิง Build เข้ามาสร้างอัตโนมัติผ่าน webhook ที่ authenticate ด้วย Token — trigger Smoke/Regression ต่อเนื่องจาก Build Trigger ได้ทันที</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Token</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
     <h3>Webhook Token</h3>
-    {tokens.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>Token</th><th>สร้างเมื่อ</th><th>ใช้ล่าสุด</th><th>สถานะ</th><th></th></tr></thead><tbody>{tokens.map((t) => <tr key={t.automationWebhookTokenId}>
+    {tokens.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>ชื่อ</th><th>Token</th><th>สร้างเมื่อ</th><th>ใช้ล่าสุด</th><th>สถานะ</th><th></th></tr></thead><tbody>{tokens.map((t) => <tr key={t.automationWebhookTokenId}>
       <td><b>{t.name}</b></td>
       <td><code>{t.tokenPrefix}…</code></td>
       <td>{formatThaiDateTime(t.createdAt)}</td>
@@ -430,7 +430,7 @@ export function AutomationWebhookTab({ projectId, headers, canEdit }: { projectI
     </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Webhook Token</p><small>สร้าง Token ให้ระบบ CI/CD ใช้ authenticate ตอนยิง webhook เข้ามาสร้าง Build</small></div>}
 
     <h3>ประวัติการเรียก Webhook</h3>
-    {deliveries.length ? <div className="table-wrap"><table><thead><tr><th>Token</th><th>Request ID</th><th>Build</th><th>สถานะ</th><th>เวลา</th></tr></thead><tbody>{deliveries.map((d) => <tr key={d.automationWebhookDeliveryId}>
+    {deliveries.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>Token</th><th>Request ID</th><th>Build</th><th>สถานะ</th><th>เวลา</th></tr></thead><tbody>{deliveries.map((d) => <tr key={d.automationWebhookDeliveryId}>
       <td>{d.tokenName}</td>
       <td><code>{d.requestId}</code></td>
       <td>{d.buildNumber ?? "-"}</td>

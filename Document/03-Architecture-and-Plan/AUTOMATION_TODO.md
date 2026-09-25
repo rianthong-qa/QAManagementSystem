@@ -205,6 +205,16 @@
 
 ## 11. Progress Log
 
+### 2026-09-25 — UI รอบ 6 (ทั้งแอป) กระทบหน้า Automation
+
+- `Automation.css`: hex ที่ซ้ำค่า token แทนด้วย `var(--…)` 234 จุด และข้อความเล็กกว่า 11px ปรับเป็น 11px 8 จุด — หน้าตาเหมือนเดิมยกเว้นตัวอักษรเล็กที่ใหญ่ขึ้นเล็กน้อย; ไม่มีการเปลี่ยน logic ของหน้า Automation
+- หลักฐาน: build/lint/tsc ผ่าน, frontend test 29/29, `git diff --check` ผ่าน
+
+### 2026-09-25 — UI รอบ 5 (ทั้งแอป) กระทบหน้า Automation
+
+- ตารางทั้ง 19 ตารางในหน้า Automation ใช้ `table-cards` — บน Mobile (≤760px) เป็น card แทนการเลื่อนแนวนอนใน `.table-wrap` (พบในการตรวจ UI ว่าไม่มีตารางไหนมี mobile card layout); ครอบคลุม checklist ภาคสนาม G12 เพิ่มเติม
+- หลักฐาน: build/lint/tsc ผ่าน, frontend test 29/29 (เพิ่ม `tableCardLabels.test.ts`), ตรวจ layout 390px ด้วย headless Edge ไม่มี horizontal scroll
+
 ### 2026-09-24 — UI รอบ 3 (ทั้งแอป) กระทบหน้า Automation
 
 - หน้า Automation เลิกใช้ `window.confirm` (17 จุด) และ `window.prompt` (เหตุผลไม่อนุมัติ Seed Script) — ใช้ `confirmDialog`/`promptDialog` กลาง; เพิ่มการยืนยันก่อนอนุมัติ Automation Version และก่อนยกเลิก Quarantine (พบในการตรวจ UI ว่ายังขาด)

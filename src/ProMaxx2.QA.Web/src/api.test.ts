@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch, apiUrl, escapeHtml, isApiRequest } from "./api";
+import { ApiError, apiFetch, apiUrl, escapeHtml, getJson, isAbortError, isApiRequest } from "./api";
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -31,5 +31,30 @@ describe("apiFetch", () => {
     expect(await apiFetch("/x", { method: "DELETE" })).toBeUndefined();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: 1 }), { status: 200 })));
     expect(await apiFetch<{ ok: number }>("/x")).toEqual({ ok: 1 });
+  });
+});
+
+describe("getJson", () => {
+  it("returns parsed JSON for an OK response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([{ id: 1 }]), { status: 200 })));
+    await expect(getJson(`${apiUrl}/projects`)).resolves.toEqual([{ id: 1 }]);
+  });
+
+  it("throws instead of returning an empty list when the API fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ title: "Forbidden" }), { status: 403 })));
+    await expect(getJson(`${apiUrl}/projects`)).rejects.toEqual(new ApiError(403, "Forbidden"));
+  });
+
+  it("passes the abort signal through so stale requests can be cancelled", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.signal?.aborted) throw new DOMException("aborted", "AbortError");
+      return new Response("[]", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const error = await getJson(`${apiUrl}/projects`, ctrl.signal).catch((e) => e);
+    expect(isAbortError(error)).toBe(true);
+    expect(isAbortError(new Error("network"))).toBe(false);
   });
 });

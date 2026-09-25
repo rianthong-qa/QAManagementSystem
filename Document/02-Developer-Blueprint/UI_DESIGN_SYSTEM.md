@@ -17,7 +17,7 @@
 > RTM rule (13 สิงหาคม 2026): หน้า RTM ต้องอ้างอิง Project/Release ที่ผู้ใช้เลือก, แสดง KPI Covered/Partial/Not Covered, กรอง Module/Requirement Status/Coverage ได้, เปิดดู Requirement และ Test Case แบบ read-only modal, จัดการ Direct/Indirect Link ตามสิทธิ์, Export CSV และเปลี่ยนตารางเป็น card บน Mobile
 
 > สถานะ: **UI Single Source of Truth**
-> อัปเดตล่าสุด: 24 กันยายน 2026
+> อัปเดตล่าสุด: 25 กันยายน 2026
 > ขอบเขต: Web frontend ทั้งหมดใน `src/ProMaxx2.QA.Web`
 
 เอกสารนี้เป็นหลักสำหรับการออกแบบ สร้าง และแก้ไข UI ทุกหน้า หากโค้ดเดิมไม่สอดคล้องกับเอกสารนี้ ให้ปรับโค้ดเข้าหาเอกสาร เว้นแต่ requirement ใหม่ระบุเป็นอย่างอื่นอย่างชัดเจน ทุกครั้งที่มีการเปลี่ยนแปลง UI ต้องอัปเดตหัวข้อที่เกี่ยวข้องและ Change Log ในไฟล์นี้ในงานเดียวกัน
@@ -33,11 +33,10 @@
 ## 2. Technology และไฟล์หลัก
 
 - Framework: React + TypeScript + Vite
-- Component หลัก: `src/ProMaxx2.QA.Web/src/App.tsx`
+- Component หลัก: `src/ProMaxx2.QA.Web/src/App.tsx`; หน้าที่แยกแล้วอยู่ใน `src/pages/` (Test Summary, Risk Acceptance, Release Sign-off) และ component กลางใน `src/components/` (`ModalShell`, `Badge`, `DialogHost`)
 - Global design system: `src/ProMaxx2.QA.Web/src/styles.css`
 - Test Case และ Test Step UI: `src/ProMaxx2.QA.Web/src/TestManagement.css`
-- Stylesheet เฉพาะหน้า: `App.css`, `Dashboard.css`, `DashboardExecutive.css`, `DragDrop.css`, `ReleaseBuild.css`
-- ห้ามเพิ่ม style ใหม่ใน `Login.css`; ไฟล์นี้เป็น legacy และไม่ได้เป็น stylesheet หลักของแอป
+- Stylesheet เฉพาะหน้า: `App.css`, `Dashboard.css`, `DashboardExecutive.css`, `DragDrop.css`, `ReleaseBuild.css`, `Automation.css`, `Regression.css`, `Rtm.css`, `MyWork.css` ฯลฯ — stylesheet ของหน้าที่อยู่ใน `src/pages/` ให้ import ในไฟล์หน้านั้น (โหลดพร้อม chunk ของหน้า) และ selector ต้อง scope ด้วย class ของหน้าเพื่อไม่ให้ขึ้นกับลำดับการโหลด
 
 ลำดับตรวจสอบหลังแก้ UI:
 
@@ -70,7 +69,9 @@ git diff --check
 - Border radius ของ card/modal: 14–16px
 - Focus ring: primary โปร่งใส 10–20% ขนาด 3px
 - Card shadow ต้องเบา ไม่บดบังเส้นแบ่งข้อมูล
-- Font หลัก: `Tahoma, "Noto Sans Thai", Arial, sans-serif`
+- Font หลัก: `"Kanit", Tahoma, "Noto Sans Thai", Arial, sans-serif` (Kanit โหลดจาก Google Fonts ใน `index.html`); PDF ที่สร้างฝั่ง client ใช้ `Tahoma, "Noto Sans Thai", Arial`
+- **ขนาดตัวอักษรขั้นต่ำ 11px** สำหรับข้อความทุกชนิด (รวม label/metadata/หัวข้อ card บน Mobile) — ยกเว้นเฉพาะ glyph ตกแต่งใน `::before`/`::after` ที่ไม่ใช่ข้อความ
+- **ห้ามเขียน hex ที่ซ้ำกับค่า token** — ใช้ `var(--primary)`, `var(--muted)` ฯลฯ แทน (สีที่ยังไม่มี token ใช้ hex ได้ แต่ถ้าใช้ซ้ำหลายหน้าให้เพิ่ม token ในตารางนี้ก่อน); สีใน `url(data:...)`, canvas และ PDF ใช้ hex ได้เพราะ `var()` ใช้ไม่ได้ในบริบทนั้น
 
 ## 4. Application Shell
 
@@ -118,6 +119,7 @@ git diff --check
 - Cell ต้องไม่หนาแน่นเกินไป; padding ประมาณ 10–12px
 - Action ของ row อยู่คอลัมน์ขวาสุด
 - ข้อมูลที่ยาวใช้ ellipsis หรือ wrap ตามความเหมาะสม
+- **Mobile (≤760px):** ตารางหลายคอลัมน์ต้องเปลี่ยนเป็น card — ใส่ class `table-cards` ที่ `<table>` แล้วแต่ละแถวจะเป็น card ที่มีหัวข้อคอลัมน์ทางซ้าย (34%) และค่าทางขวา; `data-label` ของทุก cell ถูกเติมอัตโนมัติจาก `<th>` (`src/components/tableCardLabels.ts`) — ใส่ `data-label` เองได้ถ้าต้องการข้อความต่างจากหัวตาราง, cell ที่กินทั้งแถวไม่มีหัวข้อ; โหมด card ยกเลิกความกว้าง/nowrap รายคอลัมน์ทั้งหมดเพื่อไม่ให้เกิด horizontal scroll
 
 ### Badge และสถานะ
 
@@ -262,6 +264,30 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-09-25 — UI รอบ 6: token, ขนาดตัวอักษร, ลบโค้ดที่ไม่ใช้ และเริ่มแยก App.tsx
+
+- **Design token:** แทน hex ที่มีค่าตรงกับ token ด้วย `var(--…)` ใน CSS 410 จุด (14 ไฟล์; ไม่แตะ `:root`, `url(...)`, canvas/PDF) — หน้าตาเหมือนเดิม แต่เปลี่ยน token แล้วมีผลทั้งแอป
+- **ขนาดตัวอักษร:** ข้อความที่เล็กกว่า 11px (8/9/10px ราว 160 จุด รวมหัวข้อคอลัมน์ของ card บน Mobile) ปรับเป็น 11px ตามกฎใหม่ §3; เว้น glyph ตกแต่งใน pseudo-element และจุดแจ้งเตือน `.bell`
+- **ลบโค้ดที่ไม่ใช้:** `WeightedAssignmentPreview.tsx`, `MyWorkDetailModal.tsx`, `Workload*.css` 5 ไฟล์ (ไม่มีใคร import), `LegacyMyWorkPage`, ตาราง mock ของ `DataPage` + `EmptyPage` + ข้อมูลตัวอย่าง (ทุกหน้ามีหน้าจริงแล้ว — Execution/Test Cycle/Test Suite route ตรงจาก App), CSS `.defect-table` บน Mobile และ CSS ของ My Work overview เดิม
+- **เริ่มแยก App.tsx** (10,281 → ~9,150 บรรทัด): ย้าย Test Summary, Risk Acceptance และ Release Sign-off ไป `src/pages/` แบบ `React.lazy` พร้อม stylesheet ของหน้า; ย้าย `Badge`, `defectAgeDays` และ type ที่ใช้ร่วม (`ProjectItem`, `ReleaseItem`, `BuildItem`, `DefectItem`, `UserLookup`) ไป `components/`/`shared/` — chunk หลักเล็กลงราว 100 kB แต่ยังเกิน 500 kB (ต้องแยกหน้าที่เหลือต่อ)
+
+### 2026-09-25 — UI รอบ 5: ตารางแบบ card บน Mobile
+
+- เพิ่ม pattern กลาง `table-cards` (styles.css) + `installTableCardLabels()` ใน `main.tsx` ที่เติม `data-label` จาก `<th>` ให้อัตโนมัติ (รวมแถวที่ render ภายหลัง) — ตารางไม่ต้องเขียน data-label ทีละ cell
+- ใช้กับ 25 ตารางที่เดิมบน Mobile ต้องเลื่อนแนวนอน: Defect (เดิม min-width 1180px และ CSS mobile ชี้ class ผิด `.defect-table`), Test Cycle, Build ใน Release, Regression automation preview, Risk Acceptance, ประวัติ Sign-off และทุกตารางในหน้า Automation (Cases, ผลรันล่าสุด, Wizard, Execution/Failure, Action/Object/Verification/Import, Agent heartbeat, Schedule, Build Trigger, Webhook token/delivery, Snapshot, Seed, Data Profile, Suite และ Suite cases)
+- ตรวจด้วย headless Edge ที่กรอบกว้าง 390px: `scrollWidth` = `clientWidth` (ไม่มี horizontal scroll), ข้อความยาวตัดบรรทัดใน card, ปุ่มหลายปุ่มอยู่แถวเดียวกัน
+
+### 2026-09-25 — UI รอบ 4: แยก error ออกจาก "ไม่มีข้อมูล" และยกเลิกคำขอเก่า
+
+- เพิ่ม `getJson(url, signal)` / `isAbortError` ใน `api.ts` (ไม่ OK = throw `ApiError`) และ `useDebounced` กลาง (`src/components/useDebounced.ts`, หน้า Automation re-export)
+- **Requirement:** โหลด RTM ไม่สำเร็จแจ้งว่า Coverage อาจต่ำกว่าความจริง (เดิมทุกแถว "ยังไม่มี Test Case"), ประวัติ Revision ที่โหลดไม่สำเร็จแสดง error (เดิม "ยังไม่มีประวัติ"), เปิดแก้ไขไม่สำเร็จแจ้ง toast (เดิมกดแล้วเงียบ), ตัวกรอง Project/Module/Release แจ้งเมื่อโหลดไม่สำเร็จ
+- **Test Cycle:** ช่องค้นหา debounce 300ms (เดิมยิง 6 คำขอต่อตัวอักษร), รายการและจำนวนตามสถานะยกเลิกคำขอเก่าด้วย AbortController, สถานะที่นับไม่สำเร็จไม่แสดง 0 ปลอม, โหลดข้อมูลตั้งต้นของฟอร์มไม่สำเร็จแสดง error
+- **Test Suite:** โหลดรายการไม่สำเร็จแสดง error; โหลดรายละเอียดไม่สำเร็จจะไม่เปิด detail/editor (เดิมแสดง 0 case และ editor อาจทำ case หายตอนบันทึก)
+- **Defect:** ประวัติกิจกรรม/Test Case ที่เชื่อมที่โหลดไม่สำเร็จแสดง error ใน detail; ตัวกรอง Module/ผู้ใช้แจ้งเมื่อโหลดไม่สำเร็จ
+- **Project / Release:** Module และ Build ตรวจผลก่อนใช้ (เดิม `data.filter` พังเมื่อ API error) และยกเลิกคำขอของรายการที่เลือกก่อนหน้า
+- **Test Summary / Risk / Dashboard / Execution Workspace / Regression:** โหลดข้อมูลหลักไม่สำเร็จแสดง error แทนหน้าว่าง; Dashboard/Workspace ยกเลิกคำขอเก่าเมื่อเปลี่ยนบริบท; Regression ไม่ให้ผลของ Release ก่อนหน้ามาทับ
+- dropdown ตั้งต้น (Master Settings, Project/Release/Build บน Topbar, Module ในฟอร์ม Test Cycle) ยังคงว่างเมื่อโหลดไม่สำเร็จแต่แจ้ง toast (`okJsonOrEmpty`)
 
 ### 2026-09-24 — UI รอบ 3: กล่องยืนยันและแจ้งผลแบบกลาง
 

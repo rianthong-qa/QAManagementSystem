@@ -61,3 +61,19 @@ export async function apiFetch<T = unknown>(path: string, options: ApiOptions = 
 export function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 }
+
+/** UI รอบ 4: GET แบบ URL เต็ม (โค้ดเดิมส่วนใหญ่ประกอบ `${apiUrl}/...` เอง) — ไม่ OK = throw ApiError แทนการคืน []/null
+ * ที่ทำให้หน้าแสดง "ยังไม่มีข้อมูล" ทั้งที่จริงโหลดไม่สำเร็จ; ส่ง signal จาก AbortController เพื่อทิ้งคำขอเก่าเมื่อเปลี่ยนตัวกรอง */
+export async function getJson<T = unknown>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, { headers: authHeaders(), signal });
+  if (!response.ok) {
+    const problem = await response.json().catch(() => null) as { detail?: string; title?: string } | null;
+    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? `โหลดข้อมูลไม่สำเร็จ (${response.status})`);
+  }
+  return response.json() as Promise<T>;
+}
+
+/** คำขอถูกยกเลิกเพราะเปลี่ยนตัวกรอง/ออกจากหน้า — ไม่ใช่ error ที่ต้องแสดง */
+export function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "AbortError";
+}

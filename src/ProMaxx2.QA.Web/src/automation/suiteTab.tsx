@@ -153,7 +153,7 @@ export function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, can
         </select>
       </div>
     </div>
-    {suites.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>ชื่อ</th><th>Case</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{suites.map((s) => <tr key={s.automationSuiteId}>
+    {suites.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>Code</th><th>ชื่อ</th><th>Case</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{suites.map((s) => <tr key={s.automationSuiteId}>
       <td><b>{s.suiteCode}</b></td>
       <td><span>{s.suiteName}</span>{s.description && <small>{s.description}</small>}</td>
       <td>{s.readyCaseCount}/{s.caseCount} Ready</td>
@@ -170,7 +170,7 @@ export function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, can
         {canEdit && <button type="button" className="btn" onClick={() => setAddCasesModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม Case</button>}
         <button type="button" className="btn" onClick={() => openHistory(detail.automationSuiteId)}>🕐 ประวัติ</button>
       </div>}
-      {detail.cases.length ? <div className="table-wrap"><table><thead><tr><th>ลำดับ</th><th>Code</th><th>Test Case</th><th>Target</th><th>สถานะ</th><th>Required</th><th></th></tr></thead><tbody>{[...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder).map((c, i, arr) => <tr key={c.automationCaseId}>
+      {detail.cases.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>ลำดับ</th><th>Code</th><th>Test Case</th><th>Target</th><th>สถานะ</th><th>Required</th><th></th></tr></thead><tbody>{[...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder).map((c, i, arr) => <tr key={c.automationCaseId}>
         <td>{canEdit && detail.isActive ? <span className="automation-sort-controls"><button type="button" className="table-action icon-btn" aria-label="เลื่อนขึ้น" disabled={i === 0} onClick={() => moveCase(c, -1)}>↑</button><button type="button" className="table-action icon-btn" aria-label="เลื่อนลง" disabled={i === arr.length - 1} onClick={() => moveCase(c, 1)}>↓</button></span> : c.sortOrder}</td>
         <td><b>{c.automationCode}</b></td>
         <td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td>

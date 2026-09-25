@@ -17,7 +17,7 @@
 .gate-cell b{color:#10224a}
 .signoff-decision{display:inline-flex;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
 .signoff-decision.go{background:#eaf8f1;color:#168b58}
-.signoff-decision.conditional{background:#fff5d9;color:#9a6d00}
+.signoff-decision.conditional{background:#fff5d9;color:var(--warning-text)}
 .signoff-decision.nogo{background:#fdecec;color:#c83a3a}
 .signoff-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .signoff-role-card{display:grid;gap:10px;align-content:start;min-width:0;position:relative;overflow:hidden}

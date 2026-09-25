@@ -4,7 +4,7 @@
 .risk-toolbar select{border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:#fff;color:var(--text);font:inherit;font-size:13px}
 .risk-level{display:inline-flex;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
 .risk-level.high{background:#fdecec;color:#c83a3a}
-.risk-level.medium{background:#fff5d9;color:#9a6d00}
+.risk-level.medium{background:#fff5d9;color:var(--warning-text)}
 .risk-level.low{background:#eaf8f1;color:#168b58}
 .risk-detail{display:grid;gap:14px}
 .risk-detail-hero{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fafcff}

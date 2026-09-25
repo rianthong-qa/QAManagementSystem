@@ -27,7 +27,7 @@
 .audit-actor { display: inline-flex; align-items: center; gap: 9px; min-width: 0; font-weight: 600; }
 .audit-avatar { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%; background: #e9efff; color: var(--primary); font-size: 13px; }
 .audit-action { display: inline-block; max-width: 100%; padding: 5px 9px; border-radius: 7px; font-size: 11px; font-weight: 700; overflow-wrap: anywhere; }
-.audit-action-info { color: #2457d6; background: #eaf0ff; }.audit-action-success { color: #137c50; background: #e7f7ee; }.audit-action-danger { color: #b83232; background: #ffeded; }
+.audit-action-info { color: var(--primary); background: #eaf0ff; }.audit-action-success { color: #137c50; background: #e7f7ee; }.audit-action-danger { color: #b83232; background: #ffeded; }
 .audit-entity-name, .audit-entity-id { display: block; }.audit-entity-name { font-weight: 700; }.audit-entity-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-summary { color: #475467 !important; line-height: 1.5; }
 .audit-row-action { text-align: right; }

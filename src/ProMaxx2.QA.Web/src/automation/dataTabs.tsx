@@ -67,7 +67,7 @@ export function AutomationDataSnapshotTab({ projectId, releaseId, headers, canRu
   return <section className="automation-cases" aria-label="Automation DB Snapshot">
     <header className="automation-section-head"><div><h2>Database Snapshot &amp; Restore (AUT-DATA-001/002)</h2><p>ขอ backup ฐานข้อมูลจริงของ Environment ก่อนรัน และ restore กลับได้ภายหลัง — Windows Agent เป็นผู้ backup/restore จริง (gbak สำหรับ Firebird / BACKUP-RESTORE DATABASE สำหรับ SQL Server) ผ่านคำสั่ง <code>runner snapshot</code>/<code>runner restore</code> บนเครื่อง Agent</p></div>{canRun && <button className="btn primary" type="button" onClick={() => setRequestModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span> ขอ Snapshot</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
-    {snapshots.length ? <div className="table-wrap"><table><thead><tr><th>Environment</th><th>Build</th><th>สถานะ</th><th>DB</th><th>Agent</th><th>ขนาด</th><th>ขอเมื่อ</th><th></th></tr></thead><tbody>{snapshots.map((s) => <tr key={s.automationDbSnapshotId}>
+    {snapshots.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>Environment</th><th>Build</th><th>สถานะ</th><th>DB</th><th>Agent</th><th>ขนาด</th><th>ขอเมื่อ</th><th></th></tr></thead><tbody>{snapshots.map((s) => <tr key={s.automationDbSnapshotId}>
       <td>{s.environmentName}</td>
       <td>{s.buildNumber}</td>
       <td><Badge tone={snapshotStatusTone[s.status] ?? "blue"}>{s.status}</Badge></td>
@@ -252,7 +252,7 @@ export function AutomationDataSeedTab({ projectId, releaseId, headers, canEdit, 
         <option value="MasterData">Master Data</option>
       </select>
     </div>
-    {scripts.length ? <div className="table-wrap"><table><thead><tr><th>ชื่อ</th><th>ประเภท</th><th>DB</th><th>สถานะ</th><th>การอนุมัติ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{scripts.map((s) => {
+    {scripts.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>ชื่อ</th><th>ประเภท</th><th>DB</th><th>สถานะ</th><th>การอนุมัติ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{scripts.map((s) => {
       const isMasterData = s.scriptType === "MasterData";
       const canRunNow = s.isActive && (!isMasterData || s.approvalStatus === "Approved");
       return <tr key={s.automationDataSeedScriptId}>
@@ -359,7 +359,7 @@ export function AutomationEnvironmentDataProfileTab({ projectId, headers, canEdi
   return <section className="automation-cases" aria-label="Automation Environment Data Profile">
     <header className="automation-section-head"><div><h2>Environment Data Profile (AUT-DATA-006)</h2><p>เก็บ metadata ที่ไม่ใช่ secret ต่อ Environment (ตอนนี้มีแค่ประเภทฐานข้อมูล) เพื่อให้ Hub เช็คความไม่ตรงกันของ DbKind ระหว่าง Environment กับ Seed script/DB Snapshot ได้ตั้งแต่ตอนสั่งงาน แทนที่จะรอให้ Agent claim งานไปแล้วค่อย fail — <b>ไม่มี field เก็บ connection string/credential ในนี้เลย</b> credential ของ DB จริงยังอยู่ที่เครื่อง Windows Agent เท่านั้นเหมือนเดิมทุกประการ (Environment ที่ยังไม่สร้าง Profile จะไม่ถูกเช็คอะไรเลย เป็น opt-in)</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Profile</button>}</header>
     {error && <div className="inline-alert error"><span>{error}</span></div>}
-    {profiles.length ? <div className="table-wrap"><table><thead><tr><th>Environment</th><th>DbKind</th><th>หมายเหตุ</th><th>แก้ไขล่าสุด</th><th></th></tr></thead><tbody>{profiles.map((p) => <tr key={p.automationEnvironmentDataProfileId}>
+    {profiles.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>Environment</th><th>DbKind</th><th>หมายเหตุ</th><th>แก้ไขล่าสุด</th><th></th></tr></thead><tbody>{profiles.map((p) => <tr key={p.automationEnvironmentDataProfileId}>
       <td><b>{p.environmentName}</b></td>
       <td><Badge tone={p.dbKind === "Firebird" ? "blue" : "purple"}>{p.dbKind}</Badge></td>
       <td>{p.notes ?? <span className="muted-text">-</span>}</td>
