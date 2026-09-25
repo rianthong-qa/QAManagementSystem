@@ -4,7 +4,7 @@
 
 วันที่จัดทำ: 2026-09-03  
 หน้า: Execution Workspace  
-Frontend: `src/ProMaxx2.QA.Web/src/App.tsx`, `src/ProMaxx2.QA.Web/src/styles.css`
+Frontend: `src/ProMaxx2.QA.Web/src/pages/ExecutionWorkspacePage.tsx` (เดิมอยู่ใน `App.tsx` — ย้ายออกเมื่อ 2026-09-25), `src/ProMaxx2.QA.Web/src/ExecutionWorkspace.css`, `src/ProMaxx2.QA.Web/src/styles.css`
 
 ## 1. เป้าหมาย
 

@@ -166,14 +166,19 @@ git diff --check                     # ห้ามมี trailing whitespace
 | `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
 | `05-Module/` | เอกสารรายโมดูล |
 
-## 8. สถานะงานล่าสุด (2026-09-23)
+## 8. สถานะงานล่าสุด (2026-09-25)
 
-1. **System hardening (ตรวจทั้งระบบ)**
+1. **UI ทั้งแอป 6 รอบ + แยก App.tsx (2026-09-24/25)** — รายละเอียดใน Change Log ของ `UI_DESIGN_SYSTEM.md`
+   - Modal ทุกหน้าใช้ `ModalShell`; confirm/prompt/toast กลาง (`dialogStore`) แทน `window.*`
+   - แยก error ออกจาก "ไม่มีข้อมูล", ยกเลิกคำขอเก่าด้วย AbortController, ค้นหาแบบ debounce
+   - ตารางหลายคอลัมน์เป็น card บน Mobile (`table-cards`), สีใช้ design token, ตัวอักษรขั้นต่ำ 11px
+   - App.tsx เหลือเฉพาะ shell; ทุกหน้าอยู่ใน `src/pages/` แบบ lazy load (chunk หลัก 741 → 246 kB)
+2. **System hardening (ตรวจทั้งระบบ, 2026-09-23)**
    - ปิด IDOR: filter ตรวจ `ProjectId` ใน body และ route id ข้าม Project; Projects/Modules/Test Suite/Defect unlink ตรวจ Project ของ record
    - Dashboard share ต้องผูก Project ที่ผู้สร้างมีสิทธิ์ (ลิงก์แบบทุก Project ถูกปฏิเสธ)
    - `worker-status` ไม่เปิด anonymous จาก internet แล้ว; fallback policy บังคับ login; rate limit login/webhook; header `nosniff`
    - ลบคอมเมนต์ Defect ได้เฉพาะเจ้าของ/SYS_ADMIN และบันทึก activity
    - API สาธารณะเปลี่ยนเป็น Production + JWT key ใหม่จาก User environment
    - Execution Workspace: บันทึกผลแล้วไม่เด้งกลับเคสแรก; แก้ Defect แล้ว assignee ไม่หาย
-2. **ก่อนหน้า (ก.ย. 2026)**: Execution Workspace inline Defect + แนบรูป, Defect module ranking + PDF, Audit Log, Test Cycle clone lineage, Regression AUT-REG-001/002, Automation Suite versioning, CRM integration
-3. **ค้าง/ต่อไป**: ดู `AUTOMATION_TODO.md` (AUT-REG-003+, AUT-CAP-006, AUT-P2-005+) และ Phase 4 ของการตรวจระบบ: แยก App.tsx เป็นไฟล์รายหน้า, token แบบ httpOnly cookie + refresh, credential เฉพาะ Agent, CI
+3. **ก่อนหน้า (ก.ย. 2026)**: Execution Workspace inline Defect + แนบรูป, Defect module ranking + PDF, Audit Log, Test Cycle clone lineage, Regression AUT-REG-001/002, Automation Suite versioning, CRM integration
+4. **ค้าง/ต่อไป**: ดู `AUTOMATION_TODO.md` (AUT-REG-003+, AUT-CAP-006, AUT-P2-005+) และ Phase 4 ของการตรวจระบบ: token แบบ httpOnly cookie + refresh, credential เฉพาะ Agent, CI
