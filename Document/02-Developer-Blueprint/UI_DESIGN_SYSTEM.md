@@ -33,7 +33,7 @@
 ## 2. Technology และไฟล์หลัก
 
 - Framework: React + TypeScript + Vite
-- Component หลัก: `src/ProMaxx2.QA.Web/src/App.tsx`; หน้าที่แยกแล้วอยู่ใน `src/pages/` (Test Summary, Risk Acceptance, Release Sign-off) และ component กลางใน `src/components/` (`ModalShell`, `Badge`, `DialogHost`)
+- App shell: `src/ProMaxx2.QA.Web/src/App.tsx`; แต่ละหน้าอยู่ใน `src/pages/<ชื่อหน้า>.tsx` (โหลดแบบ `React.lazy` — ระหว่างโหลดแสดง `pageLoading`), ของที่ใช้ร่วมอยู่ใน `src/shared/` และ component กลางใน `src/components/` (`ModalShell`, `Badge`, `DialogHost`)
 - Global design system: `src/ProMaxx2.QA.Web/src/styles.css`
 - Test Case และ Test Step UI: `src/ProMaxx2.QA.Web/src/TestManagement.css`
 - Stylesheet เฉพาะหน้า: `App.css`, `Dashboard.css`, `DashboardExecutive.css`, `DragDrop.css`, `ReleaseBuild.css`, `Automation.css`, `Regression.css`, `Rtm.css`, `MyWork.css` ฯลฯ — stylesheet ของหน้าที่อยู่ใน `src/pages/` ให้ import ในไฟล์หน้านั้น (โหลดพร้อม chunk ของหน้า) และ selector ต้อง scope ด้วย class ของหน้าเพื่อไม่ให้ขึ้นกับลำดับการโหลด
@@ -264,6 +264,13 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-09-25 — แยก App.tsx เป็นหน้าละไฟล์
+
+- ย้ายทุกหน้าที่เหลือ 15 หน้า (Dashboard, Defect, Project, Release, Requirement, RTM, Test Case, Test Suite, Test Cycle, Execution Workspace, Regression, My Work, User/Role, การตั้งค่ากลาง, System Monitor) ไป `src/pages/` แบบ `React.lazy`; App.tsx เหลือ ~1,070 บรรทัด (shell, context selector, routing, Login)
+- ของที่หลายหน้าใช้ร่วมย้ายไป `src/shared/appShared.tsx` โดยใช้ TypeScript AST หาการอ้างอิงจริง — โค้ดของแต่ละหน้าไม่ได้แก้ logic มีแค่ย้ายไฟล์และเพิ่ม import/export
+- ระหว่างโหลด chunk ของหน้าแสดง "กำลังโหลดหน้า..." (`Suspense` ครอบทั้งส่วน routing และลิงก์ Dashboard ที่แชร์)
+- ไฟล์ JS หลักจาก 741 kB เหลือ 246 kB (gzip 172 → 75 kB) และ warning ขนาด chunk ของ Vite หายไป; ตรวจด้วย headless Edge ว่า import ได้ครบทั้ง 18 หน้าและหน้า Login render ได้
 
 ### 2026-09-25 — UI รอบ 6: token, ขนาดตัวอักษร, ลบโค้ดที่ไม่ใช้ และเริ่มแยก App.tsx
 

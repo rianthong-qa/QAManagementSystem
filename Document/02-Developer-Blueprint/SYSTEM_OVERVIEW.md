@@ -19,7 +19,7 @@
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Frontend | React 19 + TypeScript + Vite | SPA หลัก `src/ProMaxx2.QA.Web/src/App.tsx` (~9,150 บรรทัด) + ไฟล์แยกบางหน้า (ดู §2.2) |
+| Frontend | React 19 + TypeScript + Vite | App shell `src/ProMaxx2.QA.Web/src/App.tsx` (~1,070 บรรทัด) + หน้าละไฟล์ใน `src/pages/` (ดู §2.2) |
 | Backend | ASP.NET Core (.NET 10) Web API | Clean Architecture 4 projects |
 | Database | SQL Server `localhost\MSSQLSERVER2022`, DB `ProMaxx2QA` (Windows auth) | EF Core + Migrations; `Database:ApplyMigrations=false` — apply migration ด้วยมือ |
 | Auth | JWT Bearer (Issuer `ProMaxx2.QA`, อายุ 24 ชม., Remember Me 30 วัน) | token ใน localStorage `qa.accessToken`; permission claims เช่น `PROJECT.VIEW`, `DEFECT.EDIT`, `AUTOMATION.EXECUTE` |
@@ -48,9 +48,9 @@ tools/ProMaxx2.ServiceManager ← WinForms: Start/Stop/Restart API + Web, log, C
 
 | ไฟล์ | เนื้อหา |
 |---|---|
-| `App.tsx` | App shell + หน้าส่วนใหญ่ (Dashboard, Test Case/Suite/Cycle, Execution Workspace, Defect ฯลฯ) |
-| `pages/*.tsx` | หน้าที่แยกออกจาก App.tsx แล้ว (โหลดแบบ `React.lazy`): `TestSummaryPage`, `RiskAcceptancePage`, `ReleaseSignoffPage` — หน้าใหม่/หน้าที่ย้ายออกให้วางที่นี่ |
-| `shared/types.ts`, `shared/defects.ts`, `components/Badge.tsx` | type และ helper ที่หลายหน้าใช้ร่วม (ย้ายออกจาก App.tsx เพื่อให้แยกหน้าได้) |
+| `App.tsx` | App shell เท่านั้น: sidebar/topbar, context selector (Project/Release/Build), routing ด้วย `React.lazy` + `Suspense`, Login และลิงก์ Dashboard ที่แชร์ |
+| `pages/*.tsx` | หน้าละไฟล์ (โหลดเป็น chunk แยกเมื่อเปิดหน้า): `Dashboard`, `DefectsPage`, `ProjectsPage`, `ReleasesPage`, `RequirementsPage`, `RtmPage`, `TestCasesPage`, `TestSuitesPage`, `TestCyclesPage`, `ExecutionWorkspacePage`, `RegressionPage`, `MyWorkPage`, `TestSummaryPage`, `RiskAcceptancePage`, `ReleaseSignoffPage`, `AdministrationPage`, `MasterSettingsPage`, `SystemMonitorPage` — type/ค่าคงที่ที่ใช้หน้าเดียวอยู่ในไฟล์หน้านั้น; หน้าใหม่ให้สร้างที่นี่แล้วเพิ่ม lazy import ใน App.tsx |
+| `shared/appShared.tsx`, `shared/types.ts`, `shared/defects.ts`, `components/Badge.tsx` | ของที่หลายหน้าใช้ร่วม: type `Page`/`SessionUser`/`ModuleItem`/`TestCaseItem`/`TestCycleItem`/`TestSuiteItem`/`AdminUser`/`RtmItem` ฯลฯ, `nav`, module tree (`buildModuleTree`, `renderModuleSelectOptions`), `useMasterOptions`, `nextBusinessCode`, `okJsonOrEmpty`, `copyText`, `Badge` — ไฟล์ใน `shared/` ห้าม import จาก `pages/` หรือ `App.tsx` |
 | `components/*` | `ModalShell`, `dialogStore` + `DialogHost` (confirm/prompt/toast), `useDebounced`, `tableCardLabels` |
 | `AutomationPage.tsx` + `automation/*` + `Automation.css` | หน้า Automation: `AutomationPage.tsx` (หน้าหลัก/แท็บ Cases, ~1,300 บรรทัด) + `automation/` แยกตามแท็บ — `types.ts`, `shared.ts` (`fetchJson`, `useDebounced`, `useBuildsAndEnvironments`), `ui.tsx` (`ModalShell`, `Badge`, `Pager`), `caseModals`, `manageTabs`, `executionTabs`, `suiteTab`, `scheduleTabs` (Schedule/Build Trigger/Webhook), `dataTabs` (Snapshot/Seed/Data Profile) |
 | `AuditLogPage.tsx` | หน้า Audit Log |
