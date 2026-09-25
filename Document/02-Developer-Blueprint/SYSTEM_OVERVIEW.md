@@ -164,6 +164,7 @@ git diff --check                     # ห้ามมี trailing whitespace
 | `03-Architecture-and-Plan/AUTOMATION_PLAN.md`, `SELECTOR_CONTRACT.md`, `AUTOMATIONID_IMPLEMENTATION_GUIDE.md` | แผน Automation Phase 0–5, Selector Contract, คู่มือใส่ AutomationId |
 | `03-Architecture-and-Plan/CRM_INTEGRATION_PLAN.md`, `CRM_DEFECT_KANBAN_PLAN.md` | การเชื่อม CRM และแผน Defect Kanban (ยังเป็นแผน) |
 | `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
+| `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน) |
 | `05-Module/` | เอกสารรายโมดูล |
 
 ## 8. สถานะงานล่าสุด (2026-09-25)
