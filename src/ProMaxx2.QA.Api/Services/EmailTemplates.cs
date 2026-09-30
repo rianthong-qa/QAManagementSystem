@@ -19,7 +19,7 @@ public static class EmailTemplates
     public static string DefectAssignedViaCrm(
         string defectCode, string title, string severity, string status, string projectName, string? moduleName,
         string? description, string? stepsToReproduce, string? expectedResult, string? actualResult,
-        string devName, string devStaffCode, string jobNo, string ticketLink)
+        string devName, string devStaffCode, string jobNo, string ticketLink, string? shareLink = null)
     {
         var (severityBg, severityFg) = SeverityColors(severity);
 
@@ -56,6 +56,7 @@ public static class EmailTemplates
               <div style="text-align:center;margin-top:26px;">
                 <a href="{{ticketLink}}" style="display:inline-block;background:{{Primary}};color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:8px;">เปิด Ticket ใน CRM →</a>
               </div>
+              {{ShareButton(shareLink)}}
             </td></tr>
             <tr><td style="padding:16px 28px;background:{{BgSoft}};border-top:1px solid {{Line}};">
               <span style="color:{{Muted}};font-size:11px;">อีเมลนี้ส่งอัตโนมัติจาก QA Hub เมื่อมีการส่ง Defect เข้า CRM — ไม่ต้องตอบกลับอีเมลนี้</span>
@@ -71,7 +72,7 @@ public static class EmailTemplates
     // (ไม่ใช่น้ำเงินเหมือน trigger #1) เพื่อให้แยกออกจากอีเมล "มอบหมายงานใหม่" ได้ทันทีจากสีตอนเปิดกล่องจดหมาย
     public static string CrmReturnedToOwner(
         string defectCode, string title, string severity, string status, string projectName, string? moduleName,
-        string? crmStatus, string jobNo, string ticketLink)
+        string? crmStatus, string jobNo, string ticketLink, string? shareLink = null)
     {
         const string AmberBg = "#d97706";
         var (severityBg, severityFg) = SeverityColors(severity);
@@ -105,6 +106,7 @@ public static class EmailTemplates
               <div style="text-align:center;margin-top:26px;">
                 <a href="{{ticketLink}}" style="display:inline-block;background:{{Primary}};color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:8px;">เปิด Ticket ใน CRM →</a>
               </div>
+              {{ShareButton(shareLink)}}
             </td></tr>
             <tr><td style="padding:16px 28px;background:{{BgSoft}};border-top:1px solid {{Line}};">
               <span style="color:{{Muted}};font-size:11px;">อีเมลนี้ส่งอัตโนมัติจาก QA Hub เมื่อ CRM ส่งเคสกลับมาหาเจ้าของเรื่อง — ไม่ต้องตอบกลับอีเมลนี้</span>
@@ -217,6 +219,20 @@ public static class EmailTemplates
     {
         var (bg, fg) = status == "Pass" ? ("#eaf8f1", "#168b58") : ("#fdecec", "#c83a3a");
         return $"""<span style="display:inline-block;background:{bg};color:{fg};font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;">{Html(status)}</span>""";
+    }
+
+    // ปุ่มรองใต้ปุ่ม CRM — ลิงก์อ่านอย่างเดียว (`?d=<code>`, ดู DefectShareLinkService) เปิดได้โดยไม่ต้อง login
+    // จึงใช้ได้ทั้ง Dev ที่ไม่มีบัญชี QA Hub และดูรูปแนบที่ CRM ไม่มี; ไม่มีลิงก์ (สร้างไม่สำเร็จ) = ไม่แสดงปุ่ม
+    public static string ShareButton(string? shareLink)
+    {
+        if (string.IsNullOrWhiteSpace(shareLink)) return "";
+        var href = Html(shareLink);
+        return $$"""
+              <div style="text-align:center;margin-top:12px;">
+                <a href="{{href}}" style="display:inline-block;background:#ffffff;color:{{Primary}};border:1px solid {{Primary}};font-size:14px;font-weight:700;text-decoration:none;padding:11px 26px;border-radius:8px;">ดูรายละเอียด Defect และรูปภาพ →</a>
+                <div style="color:{{Muted}};font-size:11px;margin-top:6px;">เปิดได้โดยไม่ต้อง login QA Hub</div>
+              </div>
+        """;
     }
 
     private static string Row(string label, string valueHtml) => $"""

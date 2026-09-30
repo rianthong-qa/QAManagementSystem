@@ -51,6 +51,7 @@ public sealed class DefectAttachmentConfiguration : IEntityTypeConfiguration<Def
         b.Property(x => x.UploadedAt).HasPrecision(0);
         b.HasOne<Defect>().WithMany().HasForeignKey(x => x.DefectId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.DefectId);
+        b.HasIndex(x => x.CommentId);
     }
 }
 

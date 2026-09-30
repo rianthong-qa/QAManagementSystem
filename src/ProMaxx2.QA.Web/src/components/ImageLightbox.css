@@ -1,0 +1,34 @@
+/* ImageLightbox — ดูรูปขนาดใหญ่ + เลื่อนดูรูปอื่น (ใช้ใน Defect detail, หน้าแชร์ Defect และคอมเมนต์) */
+.modal-box.image-lightbox, .image-lightbox {
+  width: min(1100px, 100%); max-width: 1100px; max-height: 94vh; max-height: 94dvh; padding: 0; overflow: hidden;
+  display: flex; flex-direction: column; background: #0f172a; color: #fff; border-radius: 16px;
+}
+.image-lightbox-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; min-width: 0; }
+.image-lightbox-count { flex: none; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, .14); }
+.image-lightbox-name { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cbd5e1; }
+.image-lightbox-icon { flex: none; display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .22); background: transparent; color: #fff; cursor: pointer; text-decoration: none; }
+.image-lightbox-icon:hover { background: rgba(255, 255, 255, .12); }
+.image-lightbox-stage { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; padding: 0 56px; touch-action: pan-y; }
+.image-lightbox-stage img { max-width: 100%; max-height: calc(94dvh - 170px); object-fit: contain; border-radius: 8px; user-select: none; }
+.image-lightbox-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center; border: 0; background: rgba(255, 255, 255, .16); color: #fff; cursor: pointer;
+}
+.image-lightbox-nav:hover { background: rgba(255, 255, 255, .28); }
+.image-lightbox-nav.prev { left: 8px; }
+.image-lightbox-nav.next { right: 8px; }
+.image-lightbox-nav .material-symbols-outlined { font-size: 30px; }
+.image-lightbox-strip { display: flex; gap: 8px; padding: 12px 16px 14px; overflow-x: auto; justify-content: safe center; }
+.image-lightbox-strip button { flex: none; width: 64px; height: 48px; padding: 0; border-radius: 8px; overflow: hidden; border: 2px solid transparent; background: rgba(255, 255, 255, .08); color: #cbd5e1; cursor: pointer; opacity: .6; }
+.image-lightbox-strip button.is-active { border-color: #fff; opacity: 1; }
+.image-lightbox-strip button:hover { opacity: 1; }
+.image-lightbox-strip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.image-lightbox :focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 60%, #fff); outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .modal-box.image-lightbox, .image-lightbox { width: 100%; max-width: none; height: 100dvh; max-height: none; border-radius: 0; }
+  .image-lightbox-stage { padding: 0 8px; }
+  .image-lightbox-stage img { max-height: calc(100dvh - 150px); }
+  .image-lightbox-nav { width: 40px; height: 40px; background: rgba(15, 23, 42, .55); }
+  .image-lightbox-strip { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+}

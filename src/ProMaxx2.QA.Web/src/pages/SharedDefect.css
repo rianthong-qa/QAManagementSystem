@@ -1,0 +1,43 @@
+/* หน้าอ่านอย่างเดียวของ Defect จากลิงก์ ?defectShare= (ใช้ shell .shared-dashboard ร่วมกับ Dashboard ที่แชร์) */
+.shared-dashboard.shared-defect-shell > main { max-width: 960px; }
+
+.shared-defect { display: grid; gap: 16px; min-width: 0; }
+.shared-defect .card { padding: 18px 20px; min-width: 0; }
+.shared-defect-hero h1 { margin: 10px 0 14px; font-size: 20px; font-weight: 700; line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+.shared-defect-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.shared-defect-meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 18px; margin: 0; }
+.shared-defect-meta div { min-width: 0; }
+.shared-defect-meta dt { font-size: 11px; font-weight: 600; color: var(--muted); }
+.shared-defect-meta dd { margin: 2px 0 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+
+.shared-defect-section h2 { margin: 0 0 8px; font-size: 15px; font-weight: 700; color: var(--text); }
+.shared-defect-section p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.shared-defect-link { display: inline-flex; align-items: center; gap: 3px; color: var(--primary); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.shared-defect-link:hover { text-decoration: underline; }
+.shared-defect-link:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: 2px; border-radius: 4px; }
+.shared-defect-link .material-symbols-outlined { font-size: 15px; }
+.shared-defect-lines { display: grid; gap: 2px; }
+.shared-defect-lines p { white-space: normal; }
+.shared-defect-lines b { font-weight: 700; }
+.shared-defect-cases { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; overflow-wrap: anywhere; }
+
+.shared-defect-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.shared-defect-images button { display: grid; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; text-align: left; border-radius: 10px; cursor: zoom-in; }
+.shared-defect-images button:hover img { border-color: var(--primary); }
+.shared-defect-images button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: 2px; }
+.shared-defect-images img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.shared-defect-images span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.shared-defect-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 20px; text-align: center; color: var(--muted); }
+.shared-defect-state .material-symbols-outlined { font-size: 36px; color: var(--red); }
+.shared-defect-state p { margin: 0; }
+
+@media (max-width: 760px) {
+  .shared-defect .card { padding: 14px 16px; }
+  .shared-defect-hero h1 { font-size: 17px; }
+  .shared-defect-meta { grid-template-columns: 1fr 1fr; }
+  .shared-defect-images { grid-template-columns: 1fr 1fr; gap: 8px; }
+}
+@media (max-width: 420px) {
+  .shared-defect-meta { grid-template-columns: 1fr; }
+}

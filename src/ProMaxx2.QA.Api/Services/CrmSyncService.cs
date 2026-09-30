@@ -11,7 +11,7 @@ namespace ProMaxx2.QA.Api.Services;
 // Polls each linked ticket using the Defect's own Assignee's CRM login (not whoever originally sent it to CRM) —
 // per-user credentials mean there's no single shared identity to poll with anymore, and the Assignee is the
 // person who owns following up on this Defect right now.
-public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectActivityService activityService, EmailSenderService emailSender, ILogger<CrmSyncService> logger)
+public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectActivityService activityService, EmailSenderService emailSender, DefectShareLinkService shareLinks, ILogger<CrmSyncService> logger)
 {
     public async Task PollLinkedDefectsAsync(CancellationToken ct)
     {
@@ -110,7 +110,7 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
                 : null;
             var link = $"https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo={defect.CrmTicketId}&JobType=HD";
             var html = EmailTemplates.CrmReturnedToOwner(defect.DefectCode, defect.Title, defect.Severity, defect.Status, projectName, moduleName,
-                defect.CrmLastKnownStatus, defect.CrmTicketId!, link);
+                defect.CrmLastKnownStatus, defect.CrmTicketId!, link, await shareLinks.GetOrCreateUrlAsync(defect.DefectId, ct));
             await emailSender.SendAsync(user.Email, $"[QA Hub] CRM Ticket #{defect.CrmTicketId} ถูกส่งกลับมาหาเจ้าของเรื่อง", html, ct, isHtml: true);
         }
         catch (Exception ex) { logger.LogError(ex, "Failed to send CRM-returned-to-owner email for defect {DefectId}", defect.DefectId); }

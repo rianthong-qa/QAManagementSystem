@@ -200,7 +200,7 @@ public sealed class SecurityHardeningTests : IDisposable
     }
 
     private DefectsController MakeDefects(QaDbContext db, params Guid[] allowed) =>
-        new(db, new ProjectAccessContext { AllowedProjectIds = allowed }, new DefectActivityService(db), null!, new FakeWebHostEnvironment(_tempRoot), NullLogger<DefectsController>.Instance)
+        new(db, new ProjectAccessContext { AllowedProjectIds = allowed }, new DefectActivityService(db), null!, new DefectImageStorage(new FakeWebHostEnvironment(_tempRoot)), NullLogger<DefectsController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", Guid.NewGuid().ToString())], "test")) } },
         };

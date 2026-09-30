@@ -265,6 +265,30 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-09-30 — ขั้นตอนการทำซ้ำแบบการ์ด (Defect detail + หน้าแชร์)
+
+- Component กลาง `ReproSteps` (`src/components/ReproSteps.tsx`) + parser `parseReproSteps` (`src/shared/defects.ts`) สำหรับรูปแบบ `1. การกระทำ (Pass/Fail) | ข้อมูล: … | คาดหวัง: … | [หมายเหตุ]`: การ์ดต่อขั้น มีเลขวงกลม, ชื่อการกระทำตัวหนา, Badge Pass/Fail ชิดขวา, แถบซ้ายสีตามผล (Fail แดง + พื้นแดงอ่อน, Pass เขียว)
+- ส่วน `ป้าย: ค่า` แยกบรรทัดเป็นตาราง 2 คอลัมน์ (ป้าย 76px สี muted 11px / ค่า 13px); ≤760px ป้ายซ้อนเหนือค่า; หมายเหตุใน `[ ]` เป็นป้ายเล็ก และไม่แสดง "[ขั้นนี้ล้มเหลว]" ซ้ำกับ Badge Fail; ข้อความที่ไม่ตรงรูปแบบยังแสดงเป็นข้อความธรรมดา
+- หน้าแชร์: "รายละเอียด" แสดงบรรทัด `ป้าย: ค่า` โดยป้ายเป็นตัวหนาเหมือนหน้า Defect detail
+- หน้าแชร์: ค่า "CRM Ticket" เป็นลิงก์ (`.shared-defect-link` สี primary + ไอคอน `open_in_new`) เปิดหน้า Ticket ใน BlueSea แท็บใหม่ URL เดียวกับหน้า Defect detail
+- ตรวจที่ 1160px และ iframe 390px (`scrollWidth` = `clientWidth`)
+
+### 2026-09-30 — คอมเมนต์ Defect พร้อมรูป และ ImageLightbox
+
+- Component กลางใหม่: `ImageLightbox` (`src/components/ImageLightbox.tsx`) — ดูรูปขนาดใหญ่บนพื้นเข้ม, ปุ่ม ‹ › + ลูกศรคีย์บอร์ด + ปัดซ้าย/ขวาบนมือถือ, ตัวนับ `n / N`, เปิดรูปต้นฉบับในแท็บใหม่ และแถบรูปย่อด้านล่าง (`aria-current`); ใช้ `ModalShell` จึงปิดด้วย Escape/✕/คลิกพื้นหลัง; Mobile ≤760px เต็มจอ `100dvh` + safe-area — **ที่ใดแสดงชุดรูปให้คลิกดูขนาดใหญ่ต้องใช้ component นี้**
+- `DefectCommentList` / `DefectCommentComposer` (`src/components/DefectComments.tsx`) ใช้ทั้งหน้า Defect detail และหน้าแชร์ `?d=`: คอมเมนต์เรียงเก่า → ใหม่ มี avatar ตัวย่อ ชื่อ เวลา (พ.ศ.) ข้อความ `pre-wrap` และรูปย่อ 72px (Mobile 64px) ด้านล่าง คลิกแล้วเปิด lightbox ของรูปชุดในคอมเมนต์นั้น; ข้อความที่ sync จาก CRM ใช้พื้นเหลืองอ่อน + ป้าย "จาก CRM"
+- ช่องเขียนคอมเมนต์: textarea + ปุ่ม "แนบรูป (n/5)" (PNG/JPG/WebP, รูปละ ≤ 5 MB, รวม ≤ 20 MB, วางรูปจากคลิปบอร์ดได้), รูปที่จะแนบแสดงเป็นรูปย่อพร้อมปุ่ม × , ส่งได้เมื่อมีข้อความหรือรูป, Ctrl/⌘ + Enter ส่ง, error แสดงใต้ช่อง; หน้าแชร์อ่านอย่างเดียว (ไม่มีช่องเขียน)
+- หน้า Defect detail: section "Comments" แยกจาก "Activities" (Activities ไม่แสดงคอมเมนต์ซ้ำ); รูปโหลดผ่าน `useAuthedAttachmentUrls` (blob URL พร้อม token) ส่วนหน้าแชร์ใช้ URL anonymous ตรง; รูปประกอบ Defect บนหน้าแชร์เปิดด้วย lightbox เช่นกัน
+- ตรวจหน้าแชร์ที่ 1440px และ iframe 390px จริง (`scrollWidth` = `clientWidth`) รวมสถานะ lightbox เปิดและกดเลื่อนรูป
+
+### 2026-09-30 — ลิงก์แชร์ Defect แบบอ่านอย่างเดียว (จาก CRM ticket)
+
+- เพิ่มหน้า `/?d=<code>` (short code สุ่ม 8 ตัวพิมพ์เล็ก เก็บในตาราง `DefectShareLinks`; `?defectShare=<token>` แบบยาวรุ่นแรกยังเปิดได้) (`src/pages/SharedDefectPage.tsx` + `SharedDefect.css`) เปิดได้โดยไม่ต้อง login ใช้ shell `.shared-dashboard` เดียวกับ Dashboard ที่แชร์ (modifier `.shared-defect-shell` จำกัดเนื้อหา 960px) และ render ก่อนหน้า Login
+- แสดง Code/Severity/Status (Badge มีข้อความ), Title, metadata (Project/Module/Release/Build/ผู้แจ้ง/ผู้รับผิดชอบ/CRM Ticket/วันที่ พ.ศ. ผ่าน `fmtDateTimeBE`), รายละเอียด/ขั้นตอน/ผลที่คาดหวัง/ผลจริง (`white-space: pre-wrap`), Test Case ที่เกี่ยวข้อง และรูปแนบ (คลิกเปิดขนาดเต็ม, มี `aria-label`) — ไม่แสดงคอมเมนต์/ประวัติภายใน
+- สถานะ loading (`role="status"`) และ error แยก "ลิงก์ไม่ถูกต้อง/ถูกลบ" (404) กับ "โหลดไม่สำเร็จ" (`role="alert"`)
+- Responsive: metadata auto-fill ≥200px → 2 คอลัมน์ ≤760px → 1 คอลัมน์ ≤420px, รูป 2 คอลัมน์บน Mobile; ตรวจที่ 1440px และ 390px (iframe กว้าง 390px จริง: `scrollWidth` = `clientWidth`)
+- 401 จาก `/shared/defects` ไม่ล้าง session (เหมือน `/dashboard/shared`) และหน้าแชร์ไม่เขียน `qa.activePage`/hash
+
 ### 2026-09-25 — แยก App.tsx เป็นหน้าละไฟล์
 
 - ย้ายทุกหน้าที่เหลือ 15 หน้า (Dashboard, Defect, Project, Release, Requirement, RTM, Test Case, Test Suite, Test Cycle, Execution Workspace, Regression, My Work, User/Role, การตั้งค่ากลาง, System Monitor) ไป `src/pages/` แบบ `React.lazy`; App.tsx เหลือ ~1,070 บรรทัด (shell, context selector, routing, Login)

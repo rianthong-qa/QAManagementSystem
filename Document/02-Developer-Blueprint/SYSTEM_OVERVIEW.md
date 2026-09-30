@@ -25,7 +25,7 @@
 | Auth | JWT Bearer (Issuer `ProMaxx2.QA`, อายุ 24 ชม., Remember Me 30 วัน) | token ใน localStorage `qa.accessToken`; permission claims เช่น `PROJECT.VIEW`, `DEFECT.EDIT`, `AUTOMATION.EXECUTE` |
 | Project access | `ProjectAccessFilter` + `ProjectScopeGuard` | ผู้ใช้เห็นเฉพาะ Project ที่เป็นสมาชิก (`ProjectUsers`) — ตรวจ projectId ใน route/query, `ProjectId` ใน request body และ route id (`releaseId`, `cycleId`, `cycleCaseId`, `defectId`, `testCaseId`, `requirementId`, `buildId`) |
 | AI | OpenAI-compatible (ตั้งค่าใน Setting Center) | generate requirement / test case / test suite / automation DSL |
-| Integration | CRM (BlueSea/BlueID), Email | `CrmSyncWorker` sync สถานะทุก 2 นาที |
+| Integration | CRM (BlueSea/BlueID), Email | `CrmSyncWorker` sync สถานะทุก 2 นาที; Description ที่ส่งไป CRM (จำกัด 1000 ตัวอักษร) ต่อท้ายลิงก์อ่านอย่างเดียว `/?d=<code 8 ตัว>` (ตาราง `DefectShareLinks` Defect ละ 1 code, `DefectShareLinkService` + anonymous `GET /api/v1/shared/defects/{code}`, rate limit `share`; URL หน้าเว็บจาก config `PublicWebBaseUrl`) และอีเมลแจ้ง Dev/เจ้าของเรื่องมีปุ่ม "ดูรายละเอียด Defect และรูปภาพ" ใต้ปุ่ม CRM (`EmailTemplates.ShareButton`) |
 | Automation | Windows Agent (`agent/`) + FlaUI | รับงานจาก Hub, รัน DSL, ส่ง Evidence |
 
 ### 2.1 โครงสร้าง Solution

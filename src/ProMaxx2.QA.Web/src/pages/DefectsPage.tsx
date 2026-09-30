@@ -1,11 +1,14 @@
 import { toUtcDate, formatThaiDateTime } from "../dateTime";
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import type { DefectItem, UserLookup } from "../shared/types";
-import { apiUrl, getJson } from "../api";
+import { apiUrl, authHeaders, getJson } from "../api";
+import { DefectCommentComposer, DefectCommentList } from "../components/DefectComments";
+import { type DefectComment, useAuthedAttachmentUrls } from "../components/defectCommentUtils";
 import { confirmDialog, notify } from "../components/dialogStore";
 import { exportDefectModulePdf } from "../DefectModulePdf";
 import { Badge } from "../components/Badge";
-import { defectAgeDays } from "../shared/defects";
+import { defectAgeDays, parseReproSteps } from "../shared/defects";
+import { ReproSteps } from "../components/ReproSteps";
 import { ModalShell } from "../components/ModalShell";
 import { type ModuleItem, copyText, defectStatusTones, renderModuleSelectOptions } from "../shared/appShared";
 
@@ -42,30 +45,6 @@ function fmtAgo(iso?: string | null): string {
   if (mo < 12) return `${mo} เดือนที่แล้ว`;
   return `${Math.floor(mo / 12)} ปีที่แล้ว`;
 }
-type DefectReproStep = { stepNo: number; action: string; status?: "Pass" | "Fail"; detail: string };
-// "Steps to Reproduce" เป็น freeform text — ถ้าเขียนตามรูปแบบ "1. Action (Pass/Fail) | รายละเอียด" จะแปลงเป็น
-// การ์ดลำดับขั้นตอนพร้อม Badge ผลลัพธ์ให้ ถ้าไม่ตรงรูปแบบ (ไม่ได้ขึ้นต้นด้วยเลขข้อทุกบรรทัด) จะคืน null ให้แสดง
-// เป็นข้อความธรรมดาแทน ไม่พังแม้ข้อมูลจะเป็น text อิสระที่ไม่ได้ตามรูปแบบนี้
-function parseReproSteps(text: string): DefectReproStep[] | null {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return null;
-  const steps: DefectReproStep[] = [];
-  for (const line of lines) {
-    const m = line.match(/^(\d+)[.)]\s*(.+)$/);
-    if (!m) return null;
-    const stepNo = Number(m[1]);
-    const rest = m[2];
-    const statusMatch = rest.match(/^(.*?)\s*\((Pass|Fail)\)\s*(?:\|\s*(.*))?$/);
-    if (statusMatch) {
-      const [, action, status, detailPart] = statusMatch;
-      steps.push({ stepNo, action: action.trim(), status: status as "Pass" | "Fail", detail: (detailPart ?? "").trim() });
-    } else {
-      const parts = rest.split("|");
-      steps.push({ stepNo, action: parts[0].trim(), detail: parts.slice(1).join("|").trim() });
-    }
-  }
-  return steps;
-}
 
 export function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel, buildLabel, search, onClearSearch, canEdit, canExport, onOpenTestCase }: { projectId?: string; releaseId?: string; buildId?: string; projectName?: string; releaseLabel?: string; buildLabel?: string; search: string; onClearSearch?: () => void; canEdit?: boolean; canExport?: boolean; onOpenTestCase?: (testCaseId: string) => void }) {
   const [items, setItems] = useState<DefectItem[]>([]);
@@ -86,8 +65,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [linkedCases, setLinkedCases] = useState<DefectTestCaseItem[]>([]);
   const [_detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
-  const [commentText, setCommentText] = useState("");
-  const [commentSending, setCommentSending] = useState(false);
+  const [comments, setComments] = useState<DefectComment[]>([]);
+  const commentImageUrls = useAuthedAttachmentUrls(apiUrl, detail?.defectId, comments.flatMap((c) => c.attachments.map((a) => a.attachmentId)));
   const [codeCopied, setCodeCopied] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<DefectItem | null>(null);
@@ -260,28 +239,32 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     finally { setCrmSending(false); }
   };
   const openDetail = async (item: DefectItem) => {
-    setDetail(item); setActivities([]); setLinkedCases([]); setCommentText(""); setCodeCopied(false); setDetailLoading(true); setDetailError("");
+    setDetail(item); setActivities([]); setLinkedCases([]); setComments([]); setCodeCopied(false); setDetailLoading(true); setDetailError("");
     try {
       // โหลดไม่สำเร็จต้องบอก — เดิมแสดงเป็น "ยังไม่มีกิจกรรม / ยังไม่มี Test Case ที่เชื่อมโยง"
       const failed: string[] = [];
-      const [actRes, tcRes] = await Promise.all([
+      const [actRes, tcRes, commentRes] = await Promise.all([
         getJson<any[]>(`${apiUrl}/defects/${item.defectId}/activities`).catch((): any[] => { failed.push("ประวัติกิจกรรม"); return []; }),
         getJson<DefectTestCaseItem[]>(`${apiUrl}/defects/${item.defectId}/test-cases`).catch((): DefectTestCaseItem[] => { failed.push("Test Case ที่เชื่อมโยง"); return []; }),
+        getJson<DefectComment[]>(`${apiUrl}/defects/${item.defectId}/comments`).catch((): DefectComment[] => { failed.push("คอมเมนต์"); return []; }),
       ]);
+      setComments(Array.isArray(commentRes) ? commentRes : []);
       if (failed.length) setDetailError(`โหลด${failed.join(" และ ")}ไม่สำเร็จ — ปิดแล้วเปิดใหม่เพื่อลองอีกครั้ง`);
       setActivities(Array.isArray(actRes) ? actRes.map((a: any) => ({ activityId: a.activityId ?? a.defectActivityId ?? "", actionType: a.actionType ?? a.activityType ?? "", message: a.message ?? a.description ?? "", actorUserId: a.actorUserId ?? a.performedByUserId ?? null, actorName: a.actorName ?? null, createdAt: a.createdAt ?? a.performedAt ?? "", performedAt: a.performedAt ?? a.createdAt ?? "" })) : []);
       setLinkedCases(Array.isArray(tcRes) ? tcRes : []);
     } catch {} finally { setDetailLoading(false); }
   };
-  const postComment = async () => {
-    // ตอนนี้ endpoint นี้ยังรอ sync ไป CRM ด้วย (best-effort, ดู CrmSendToCrmService.AppendCommentAsync) ถ้า Defect
-    // ผูก CRM แล้ว เลยอาจใช้เวลานานกว่าคอมเมนต์ปกติเล็กน้อย — ต้องกันกดซ้ำ + โชว์สถานะกำลังส่งให้ชัดเจน
-    if (!detail || !commentText.trim() || commentSending) return;
-    setCommentSending(true);
-    try {
-      const response = await fetch(`${apiUrl}/defects/${detail.defectId}/comments`, { method: "POST", headers, body: JSON.stringify({ body: commentText.trim() }) });
-      if (response.ok) { setCommentText(""); await openDetail(detail); }
-    } finally { setCommentSending(false); }
+  // ข้อความ + รูป (สูงสุด 5 รูป) ส่งเป็น multipart — endpoint นี้ยังรอ sync ไป CRM ด้วย (best-effort, ดู
+  // CrmSendToCrmService.AppendCommentAsync) ถ้า Defect ผูก CRM แล้ว จึงอาจใช้เวลานานกว่าปกติเล็กน้อย; composer กันกดซ้ำให้เอง
+  const submitComment = async (body: string, files: File[]): Promise<boolean> => {
+    if (!detail) return false;
+    const form = new FormData();
+    form.append("body", body);
+    files.forEach((file) => form.append("files", file));
+    const response = await fetch(`${apiUrl}/defects/${detail.defectId}/comments`, { method: "POST", headers: authHeaders(), body: form });
+    if (!response.ok) { const problem = await response.json().catch(() => null) as { detail?: string } | null; throw new Error(problem?.detail ?? "ส่งคอมเมนต์ไม่สำเร็จ"); }
+    await openDetail(detail);
+    return true;
   };
   const bulkStatus = async (status: string) => {
     if (canEdit === false || !selectedIds.length) return;
@@ -572,17 +555,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
               </section>
               <section className="cycle-detail-section">
                 <h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Steps to Reproduce</h3>
-                {detail.stepsToReproduce ? (steps ? (
-                  <div className="defect-repro-steps">
-                    {steps.map(s => (
-                      <div key={s.stepNo} className={"defect-repro-step" + (s.status === "Fail" ? " is-fail" : "")}>
-                        <span className="defect-repro-step-no">{s.stepNo}</span>
-                        <div className="defect-repro-step-body"><b>{s.action}</b>{s.detail && <span className="defect-repro-step-detail"> {s.detail}</span>}</div>
-                        {s.status && <Badge tone={s.status === "Pass" ? "green" : "red"}>{s.status}</Badge>}
-                      </div>
-                    ))}
-                  </div>
-                ) : <p className="defect-detail-text">{detail.stepsToReproduce}</p>) : <p className="defect-detail-text muted-text">ไม่มีขั้นตอนการทำซ้ำ</p>}
+                {detail.stepsToReproduce ? (steps ? <ReproSteps steps={steps} /> :<p className="defect-detail-text">{detail.stepsToReproduce}</p>) : <p className="defect-detail-text muted-text">ไม่มีขั้นตอนการทำซ้ำ</p>}
               </section>
             </div>
             {(detail.expectedResult || detail.actualResult) && (
@@ -650,23 +623,22 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
             )}
             <section className="cycle-detail-section">
               {detailError && <div className="inline-alert error" role="alert"><span>{detailError}</span></div>}
-              <h3>Activities ({activities.length})</h3>
+              <h3><span className="material-symbols-outlined" aria-hidden="true">forum</span> Comments ({comments.length})</h3>
+              <DefectCommentList comments={comments} imageSrc={(id) => commentImageUrls[id]} emptyText={detailError.includes("คอมเมนต์") ? "โหลดคอมเมนต์ไม่สำเร็จ" : "ยังไม่มีคอมเมนต์"} />
+              {canEdit !== false && <DefectCommentComposer onSubmit={submitComment} />}
+            </section>
+            <section className="cycle-detail-section">
+              {(() => { const history = activities.filter(a => a.actionType !== "Comment" && a.actionType !== "CrmComment"); return <>
+              <h3>Activities ({history.length})</h3>
               <div className="defect-activity-list">
-                {activities.length ? activities.map(a => (
+                {history.length ? history.map(a => (
                   <div key={a.activityId} className="defect-activity-row">
                     <Badge tone="blue">{defectActionLabels[a.actionType] ?? a.actionType}</Badge>
                     <div><p>{a.message ?? a.actionType}</p><small>{a.actorName ?? "System"} · {fmtAgo(a.performedAt ?? a.createdAt)}</small></div>
                   </div>
                 )) : <p className="muted-text">ยังไม่มี Activity</p>}
               </div>
-              {canEdit !== false && (
-                <div className="defect-comment-box">
-                  <input value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="เพิ่มคอมเมนต์..." disabled={commentSending} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); postComment(); } }} />
-                  <button className="btn primary" onClick={postComment} disabled={!commentText.trim() || commentSending}>
-                    {commentSending ? <><span className="spinner inline" aria-hidden="true" /> กำลังส่ง...</> : <><span aria-hidden="true">➤</span> ส่ง</>}
-                  </button>
-                </div>
-              )}
+              </>; })()}
             </section>
             <div className="modal-actions"><button className="btn primary" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div>
           </ModalShell>

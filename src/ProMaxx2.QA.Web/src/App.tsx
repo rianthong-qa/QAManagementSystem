@@ -23,6 +23,7 @@ import "./Automation.css";
 // ทุกหน้าโหลดแยก chunk เมื่อเปิดหน้าเท่านั้น (React.lazy) — App.tsx เหลือเฉพาะ shell, context selector, routing และ Login
 // หน้าใหม่ให้สร้างใน src/pages/ แล้วเพิ่ม lazy import ที่นี่; ของที่หลายหน้าใช้ร่วมอยู่ใน src/shared/
 const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const SharedDefectPage = lazy(() => import("./pages/SharedDefectPage"));
 const DefectsPage = lazy(() => import("./pages/DefectsPage").then((m) => ({ default: m.DefectsPage })));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
 const ReleasesPage = lazy(() => import("./pages/ReleasesPage").then((m) => ({ default: m.ReleasesPage })));
@@ -67,8 +68,8 @@ if (typeof window !== "undefined") {
         else reqUrl = String(input);
       } catch {}
       // 401 ที่แปลว่า session หมดอายุต้องมาจาก QA Hub API เท่านั้น — ไม่ล้าง token เพราะ 401 จากบริการอื่น,
-      // จากการ login เอง หรือจากลิงก์แชร์ Dashboard ที่หมดอายุ (endpoint anonymous)
-      if (!isApiRequest(reqUrl) || reqUrl.includes("/auth/login") || reqUrl.includes("/dashboard/shared")) return resp;
+      // จากการ login เอง หรือจากลิงก์แชร์ Dashboard/Defect (endpoint anonymous)
+      if (!isApiRequest(reqUrl) || reqUrl.includes("/auth/login") || reqUrl.includes("/dashboard/shared") || reqUrl.includes("/shared/defects")) return resp;
       try { localStorage.removeItem("qa.accessToken"); localStorage.removeItem("qa.user"); } catch {}
       const isLoginPath = window.location.pathname === "/" || window.location.pathname.startsWith("/login");
       if (!isLoginPath) {
@@ -257,6 +258,8 @@ function App() {
   const shareParams = new URLSearchParams(window.location.search);
   const shareCode = shareParams.get("s") ?? "";
   const shareToken = shareParams.get("dashboardShare") ?? "";
+  // ลิงก์แชร์ Defect: short code `?d=` (ปัจจุบัน) หรือ token ยาว `?defectShare=` (รุ่นแรก)
+  const defectShareToken = shareParams.get("d") ?? shareParams.get("defectShare") ?? "";
   const [page, setPage] = useState<Page>(restoredActivePage),
     [menu, setMenu] = useState(false),
     [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("qa.sidebar.collapsed") === "true"),
@@ -288,11 +291,11 @@ function App() {
     } catch {}
   }, []);
   useEffect(() => {
-    if (shareCode || shareToken) return;
+    if (shareCode || shareToken || defectShareToken) return;
     localStorage.setItem("qa.activePage", page);
     const expectedHash = `#/${page}`;
     if (window.location.hash !== expectedHash) window.history.replaceState(null, "", expectedHash);
-  }, [page, shareCode, shareToken]);
+  }, [page, shareCode, shareToken, defectShareToken]);
   useEffect(() => {
     const restoreFromHistory = () => {
       const hashPage = window.location.hash.match(/^#\/([^/?#]+)/)?.[1];
@@ -725,6 +728,7 @@ function App() {
     }
   };
   if (shareCode || shareToken) return <div className="shared-dashboard"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Executive Read-only Report</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><Dashboard shareCode={shareCode} shareToken={shareToken} /></Suspense></main><footer>ข้อมูลสำหรับการบริหารจัดการ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
+  if (defectShareToken) return <div className="shared-dashboard shared-defect-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>รายละเอียด Defect</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><SharedDefectPage token={defectShareToken} /></Suspense></main><footer>เปิดจากลิงก์แชร์ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
   if (!user) return <Login onLogin={(u) => { localStorage.removeItem("qa.activePage"); setPage("dashboard"); setUser(u); }} />;
   const can = (permission: string) =>
     user.roles.includes("SYS_ADMIN") || user.permissions.includes(permission);

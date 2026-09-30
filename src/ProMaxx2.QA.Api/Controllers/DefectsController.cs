@@ -11,7 +11,7 @@ using ProMaxx2.QA.Application.Identity;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController,Route("api/v1/defects"),Authorize(Policy="DefectView"),RequireProjectAccess]
-public sealed class DefectsController(QaDbContext db,ProjectAccessContext projectCtx,DefectActivityService activityService,CrmSendToCrmService crmSendService,IWebHostEnvironment environment,ILogger<DefectsController> logger):ControllerBase
+public sealed class DefectsController(QaDbContext db,ProjectAccessContext projectCtx,DefectActivityService activityService,CrmSendToCrmService crmSendService,DefectImageStorage imageStorage,ILogger<DefectsController> logger):ControllerBase
 {
  [HttpGet,Authorize(Policy="DefectView")]public async Task<ActionResult<DefectListResultDto>>List([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,[FromQuery]Guid?moduleId,[FromQuery]bool unassignedModule,[FromQuery]Guid?assigneeUserId,[FromQuery]string?severity,[FromQuery]string?priority,[FromQuery]string?status,[FromQuery]string?search,[FromQuery]int page=1,[FromQuery]int size=20,CancellationToken ct=default){var q=db.Defects.AsNoTracking().Where(x=>!x.IsDeleted);if(projectId.HasValue)q=q.Where(x=>x.ProjectId==projectId);else if(projectCtx.AllowedProjectIds.Length>0)q=q.Where(x=>projectCtx.AllowedProjectIds.Contains(x.ProjectId));else q=q.Where(_=>false);if(releaseId.HasValue)q=q.Where(x=>x.ReleaseId==releaseId);if(buildId.HasValue)q=q.Where(x=>x.BuildId==buildId);var scope=q;if(unassignedModule)q=q.Where(x=>x.ModuleId==null);else if(moduleId.HasValue)q=q.Where(x=>x.ModuleId==moduleId);if(assigneeUserId.HasValue)q=q.Where(x=>x.AssigneeUserId==assigneeUserId);if(!string.IsNullOrWhiteSpace(severity))q=q.Where(x=>x.Severity==severity);if(!string.IsNullOrWhiteSpace(priority))q=q.Where(x=>db.DefectTestCaseLinks.Any(link=>link.DefectId==x.DefectId&&db.TestCases.Any(testCase=>testCase.TestCaseId==link.TestCaseId&&!testCase.IsDeleted&&testCase.Priority==priority)));if(!string.IsNullOrWhiteSpace(status))q=q.Where(x=>x.Status==status);if(!string.IsNullOrWhiteSpace(search))q=q.Where(x=>x.DefectCode.Contains(search)||x.Title.Contains(search));var total=await q.CountAsync(ct);var rows=await q.OrderByDescending(x=>x.CreatedAt).Skip((page-1)*size).Take(size).Select(x=>new DefectDto(x.DefectId,x.ProjectId,x.ReleaseId,x.BuildId,x.ModuleId,x.DefectCode,x.Title,x.Description,x.StepsToReproduce,x.ExpectedResult,x.ActualResult,x.Severity,x.Status,x.AssigneeUserId,x.CreatedBy,x.CreatedAt,x.UpdatedAt,x.CrmTicketId,x.CrmSyncStatus,x.CrmLastSyncedAt)).ToListAsync(ct);var open=await scope.CountAsync(x=>x.Status=="Open",ct);var inProgress=await scope.CountAsync(x=>x.Status=="In Progress",ct);var closed=await scope.CountAsync(x=>x.Status=="Closed",ct);return Ok(new DefectListResultDto(rows,total,open,inProgress,closed));}
  // สรุปข้อมูล Defect สำหรับการ์ดด้านบนหน้า Defect — ขอบเขตตาม Project/Release/Build ที่เลือกด้านบน (ไม่ผูกกับ
@@ -19,12 +19,28 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
  [HttpGet("stats"),Authorize(Policy="DefectView")]public async Task<ActionResult<DefectStatsDto>>Stats([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,CancellationToken ct){var q=db.Defects.AsNoTracking().Where(x=>!x.IsDeleted);if(projectId.HasValue)q=q.Where(x=>x.ProjectId==projectId);else if(projectCtx.AllowedProjectIds.Length>0)q=q.Where(x=>projectCtx.AllowedProjectIds.Contains(x.ProjectId));else q=q.Where(_=>false);if(releaseId.HasValue)q=q.Where(x=>x.ReleaseId==releaseId);if(buildId.HasValue)q=q.Where(x=>x.BuildId==buildId);var statusCounts=await q.GroupBy(x=>x.Status).Select(g=>new{Status=g.Key,Count=g.Count()}).ToListAsync(ct);var severityCounts=await q.GroupBy(x=>x.Severity).Select(g=>new{Severity=g.Key,Count=g.Count()}).ToListAsync(ct);var moduleCounts=await q.GroupBy(x=>x.ModuleId).Select(g=>new{ModuleId=g.Key,Count=g.Count()}).ToListAsync(ct);var moduleIds=moduleCounts.Where(x=>x.ModuleId.HasValue).Select(x=>x.ModuleId!.Value).ToArray();var moduleNames=await db.Modules.AsNoTracking().Where(x=>moduleIds.Contains(x.ModuleId)).Select(x=>new{x.ModuleId,x.ModuleCode,x.ModuleName}).ToDictionaryAsync(x=>x.ModuleId,ct);var moduleBreakdown=moduleCounts.Select(x=>{var module=x.ModuleId.HasValue?moduleNames.GetValueOrDefault(x.ModuleId.Value):null;return new DefectModuleCountDto(x.ModuleId,module?.ModuleCode,module?.ModuleName??(x.ModuleId.HasValue?"โมดูลที่ถูกลบ":"ไม่ระบุโมดูล"),x.Count);}).OrderByDescending(x=>x.Count).ThenBy(x=>x.ModuleCode??x.ModuleName,StringComparer.OrdinalIgnoreCase).ToArray();int ByStatus(string s)=>statusCounts.FirstOrDefault(x=>x.Status==s)?.Count??0;int BySeverity(string s)=>severityCounts.FirstOrDefault(x=>x.Severity==s)?.Count??0;var total=statusCounts.Sum(x=>x.Count);var resolved=ByStatus("Resolved");var closed=ByStatus("Closed");var oldestOpenCreatedAt=await q.Where(x=>x.Status=="Open"||x.Status=="In Progress").OrderBy(x=>x.CreatedAt).Select(x=>(DateTime?)x.CreatedAt).FirstOrDefaultAsync(ct);var oldestOpenAgeDays=oldestOpenCreatedAt.HasValue?(int)(DateTime.UtcNow-oldestOpenCreatedAt.Value).TotalDays:0;var unassignedActive=await q.Where(x=>(x.Status=="Open"||x.Status=="In Progress")&&x.AssigneeUserId==null).CountAsync(ct);var closureRate=total>0?Math.Round((resolved+closed)*100.0/total,1):0;return Ok(new DefectStatsDto(total,ByStatus("Open"),ByStatus("In Progress"),resolved,closed,ByStatus("Rejected"),BySeverity("Critical"),BySeverity("High"),BySeverity("Medium"),BySeverity("Low"),oldestOpenAgeDays,unassignedActive,closureRate,moduleBreakdown));}
  [HttpGet("{id:guid}"),Authorize(Policy="DefectView")]public async Task<ActionResult<DefectDto>>Get(Guid id,CancellationToken ct){var entity=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(entity is null||!CanAccess(entity.ProjectId))return NotFound();return Ok(await MapAsync(entity,ct));}
  [HttpGet("{id:guid}/activities"),Authorize(Policy="DefectView")]public async Task<ActionResult<IReadOnlyList<DefectActivityDto>>>Activities(Guid id,CancellationToken ct){var entity=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(entity is null||!CanAccess(entity.ProjectId))return NotFound();return Ok(await activityService.GetActivitiesAsync(id,ct));}
- [HttpPost("{id:guid}/comments"),Authorize(Policy="DefectEdit")]
- public async Task<IActionResult>AddComment(Guid id,AddDefectCommentRequest r,CancellationToken ct)
+ [HttpGet("{id:guid}/comments"),Authorize(Policy="DefectView")]
+ public async Task<ActionResult<IReadOnlyList<DefectCommentDto>>>Comments(Guid id,CancellationToken ct)
+ {
+  var entity=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);
+  if(entity is null||!CanAccess(entity.ProjectId))return NotFound();
+  return Ok(await activityService.GetCommentsAsync(id,ct));
+ }
+ // รับทั้ง multipart/form-data (body + files สูงสุด 5 รูป) และ JSON {body} แบบเดิม — ต้องมีข้อความหรือรูปอย่างน้อยหนึ่งอย่าง
+ [HttpPost("{id:guid}/comments"),Authorize(Policy="DefectEdit"),RequestSizeLimit(26_000_000)]
+ public async Task<IActionResult>AddComment(Guid id,CancellationToken ct)
  {
   var entity=await db.Defects.FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);
   if(entity is null||!CanAccess(entity.ProjectId))return NotFound();
-  await activityService.AddCommentAsync(id,r.Body,UserId(),ct);
+  string? body;IReadOnlyList<IFormFile> files=[];
+  if(Request.HasFormContentType){var form=await Request.ReadFormAsync(ct);body=form["body"].FirstOrDefault();files=form.Files.GetFiles("files");}
+  else body=(await Request.ReadFromJsonAsync<AddDefectCommentRequest>(ct))?.Body;
+  if(string.IsNullOrWhiteSpace(body)&&files.Count==0)return BadRequest(new{detail="กรุณาพิมพ์ข้อความหรือแนบรูปอย่างน้อย 1 รูป"});
+  if(body is {Length:>4000})return BadRequest(new{detail="ข้อความคอมเมนต์ต้องไม่เกิน 4,000 ตัวอักษร"});
+  List<DefectImageStorage.PendingImage> images=[];
+  if(files.Count>0){var (read,error)=await imageStorage.ReadAsync(files,[],ct);if(error is not null)return BadRequest(new{detail=error});images=read;}
+  await activityService.AddCommentWithImagesAsync(id,body,images,imageStorage,UserId(),ct);
+  var commentBody=string.IsNullOrWhiteSpace(body)?"":body.Trim();
 
   // Defect ที่ผูกกับ CRM ticket แล้ว ให้คอมเมนต์เดียวกันต่อท้าย Description ของ ticket นั้นด้วย — best-effort
   // เท่านั้น: ความล้มเหลวฝั่ง CRM ต้อง log ไว้เฉยๆ ไม่ทำให้ request นี้ล้มเหลวตาม (คอมเมนต์ใน QA Hub บันทึกไปแล้วข้างบน)
@@ -33,14 +49,18 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
    var me=await db.Users.AsNoTracking().SingleOrDefaultAsync(x=>x.UserId==UserId(),ct);
    if(me is not null)
    {
-    try{await crmSendService.AppendCommentAsync(entity,me.UserId,r.Body,me.DisplayName,ct);}
+    try{await crmSendService.AppendCommentAsync(entity,me.UserId,commentBody,me.DisplayName,ct,images.Count);}
     catch(CrmIntegrationException ex){logger.LogError(ex,"Sync คอมเมนต์ไป CRM ticket {TicketId} ไม่สำเร็จ สำหรับ Defect {DefectId}",entity.CrmTicketId,id);}
     catch(CrmNotConfiguredException ex){logger.LogError(ex,"Sync คอมเมนต์ไป CRM ไม่สำเร็จ (ยังไม่ได้ตั้งค่า) สำหรับ Defect {DefectId}",id);}
    }
   }
   return NoContent();
  }
- [HttpDelete("{defectId:guid}/comments/{commentId:guid}"),Authorize(Policy="DefectEdit")]public async Task<IActionResult>DeleteComment(Guid defectId,Guid commentId,CancellationToken ct){var defect=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==defectId&&!x.IsDeleted,ct);if(defect is null||!CanAccess(defect.ProjectId))return NotFound();return await activityService.DeleteCommentAsync(defectId,commentId,UserId(),User.IsInRole("SYS_ADMIN"),ct)?NoContent():Forbid();}
+ [HttpDelete("{defectId:guid}/comments/{commentId:guid}"),Authorize(Policy="DefectEdit")]public async Task<IActionResult>DeleteComment(Guid defectId,Guid commentId,CancellationToken ct){var defect=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==defectId&&!x.IsDeleted,ct);if(defect is null||!CanAccess(defect.ProjectId))return NotFound();if(!await activityService.DeleteCommentAsync(defectId,commentId,UserId(),User.IsInRole("SYS_ADMIN"),ct))return Forbid();
+  // รูปของคอมเมนต์ไม่มี FK ไป DefectActivities (ดู DefectAttachment.CommentId) — ลบเองหลังลบคอมเมนต์สำเร็จ
+  var images=await db.DefectAttachments.Where(x=>x.DefectId==defectId&&x.CommentId==commentId).ToListAsync(ct);
+  if(images.Count>0){db.DefectAttachments.RemoveRange(images);await db.SaveChangesAsync(ct);imageStorage.DeleteFiles(defectId,images.Select(x=>x.StoredFileName));}
+  return NoContent();}
  [HttpGet("{id:guid}/test-cases"),Authorize(Policy="DefectView")]public async Task<ActionResult<IReadOnlyList<DefectTestCaseDto>>>TestCases(Guid id,CancellationToken ct){var entity=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(entity is null||!CanAccess(entity.ProjectId))return NotFound();return Ok(await db.DefectTestCaseLinks.AsNoTracking().Where(x=>x.DefectId==id).Join(db.TestCases,x=>x.TestCaseId,y=>y.TestCaseId,(x,y)=>new DefectTestCaseDto(y.TestCaseId,y.TestCaseCode,y.Title)).ToListAsync(ct));}
  [HttpGet("by-test-case/{testCaseId:guid}"),Authorize(Policy="DefectView")]
  public async Task<ActionResult<IReadOnlyList<DefectDto>>>ByTestCase(Guid testCaseId,CancellationToken ct)
@@ -77,32 +97,18 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   var defect=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);
   if(defect is null||!CanAccess(defect.ProjectId))return NotFound();
   await ImportLegacyAttachmentsAsync(id,ct);
-  var existing=await db.DefectAttachments.AsNoTracking().Where(x=>x.DefectId==id).Select(x=>x.SizeBytes).ToListAsync(ct);
-  if(files.Count==0||files.Count>5||existing.Count+files.Count>5)return BadRequest(new{detail="แนบรูปได้สูงสุด 5 รูปต่อ Defect"});
-  if(files.Any(x=>x.Length==0||x.Length>5_000_000)||files.Sum(x=>x.Length)>20_000_000)return BadRequest(new{detail="รูปแต่ละไฟล์ต้องไม่เกิน 5 MB และรวมไม่เกิน 20 MB"});
-  var pending=new List<(Guid Id,string DisplayName,string StoredName,string ContentType,byte[] Data)>();
-  foreach(var file in files)
-  {
-   var extension=Path.GetExtension(file.FileName).ToLowerInvariant();
-   if(extension is not(".png" or ".jpg" or ".jpeg" or ".webp"))return BadRequest(new{detail="รองรับเฉพาะ PNG, JPG และ WebP"});
-   await using var memory=new MemoryStream();await file.CopyToAsync(memory,ct);var bytes=memory.ToArray();
-   if(!ValidImage(bytes,extension))return BadRequest(new{detail=$"ไฟล์ {Path.GetFileName(file.FileName)} ไม่ใช่รูปภาพที่ถูกต้อง"});
-   var safeName=new string(Path.GetFileNameWithoutExtension(file.FileName).Where(c=>char.IsLetterOrDigit(c)||c is '-' or '_' or ' ').Take(70).ToArray()).Trim();
-   var display=$"{(safeName.Length>0?safeName:"image")}{extension}";
-   var attachmentId=Guid.NewGuid();
-   pending.Add((attachmentId,display,$"{attachmentId:N}_{display}",ContentTypeFor(extension),bytes));
-  }
-  var directory=AttachmentDirectory(id);Directory.CreateDirectory(directory);
-  var written=new List<string>();
+  // นับเฉพาะรูปประกอบของ Defect — รูปในคอมเมนต์ (CommentId != null) มีโควตา 5 รูปต่อคอมเมนต์แยกต่างหาก
+  var existing=await db.DefectAttachments.AsNoTracking().Where(x=>x.DefectId==id&&x.CommentId==null).Select(x=>x.SizeBytes).ToListAsync(ct);
+  var (pending,error)=await imageStorage.ReadAsync(files,existing,ct);
+  if(error is not null)return BadRequest(new{detail=error});
+  var rows=await imageStorage.WriteAsync(id,pending,UserId(),null,ct);
   try
   {
-   foreach(var item in pending){var path=Path.Combine(directory,item.StoredName);await System.IO.File.WriteAllBytesAsync(path,item.Data,ct);written.Add(path);}
-   var now=DateTime.UtcNow;
-   db.DefectAttachments.AddRange(pending.Select(x=>new DefectAttachment(x.Id,id,x.DisplayName,x.StoredName,x.Data.LongLength,x.ContentType,UserId(),now)));
+   db.DefectAttachments.AddRange(rows);
    db.DefectActivities.Add(new DefectActivity(id,"AttachmentAdded",$"แนบรูปภาพ {pending.Count} ไฟล์",UserId()));
    await db.SaveChangesAsync(ct);
   }
-  catch{foreach(var path in written)TryDeleteFile(path);throw;}
+  catch{imageStorage.DeleteFiles(id,rows.Select(x=>x.StoredFileName));throw;}
   return Ok(await ListAttachmentsAsync(id,ct));
  }
  [HttpDelete("{id:guid}/attachments/{attachmentId:guid}"),Authorize(Policy="DefectEdit")]
@@ -111,20 +117,21 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   var defect=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);
   if(defect is null||!CanAccess(defect.ProjectId))return NotFound();
   await ImportLegacyAttachmentsAsync(id,ct);
-  var row=await db.DefectAttachments.FirstOrDefaultAsync(x=>x.DefectId==id&&x.DefectAttachmentId==attachmentId,ct);
+  // รูปของคอมเมนต์ลบพร้อมคอมเมนต์เท่านั้น (สิทธิ์เจ้าของคอมเมนต์/SYS_ADMIN) ไม่ใช่ผ่าน endpoint นี้
+  var row=await db.DefectAttachments.FirstOrDefaultAsync(x=>x.DefectId==id&&x.DefectAttachmentId==attachmentId&&x.CommentId==null,ct);
   if(row is null)return NotFound();
   db.DefectAttachments.Remove(row);
   db.DefectActivities.Add(new DefectActivity(id,"AttachmentDeleted",$"ลบรูปภาพแนบ {row.FileName}",UserId()));
   await db.SaveChangesAsync(ct);
   // ลบไฟล์หลังบันทึกฐานข้อมูลสำเร็จ — ถ้าลบไฟล์ไม่ได้ (ถูกล็อก) รายการก็หายจากระบบแล้ว ไม่ตอบ 500 ให้ผู้ใช้
-  if(!TryDeleteFile(Path.Combine(AttachmentDirectory(id),row.StoredFileName)))logger.LogWarning("ลบไฟล์แนบ {StoredFileName} ของ Defect {DefectId} ไม่สำเร็จ",row.StoredFileName,id);
+  if(!DefectImageStorage.TryDelete(imageStorage.PathOf(id,row.StoredFileName)))logger.LogWarning("ลบไฟล์แนบ {StoredFileName} ของ Defect {DefectId} ไม่สำเร็จ",row.StoredFileName,id);
   return NoContent();
  }
- private string AttachmentDirectory(Guid defectId)=>Path.Combine(environment.ContentRootPath,"App_Data","DefectAttachments",defectId.ToString("N"));
+ private string AttachmentDirectory(Guid defectId)=>imageStorage.Directory(defectId);
  private async Task<IReadOnlyList<DefectAttachmentDto>>ListAttachmentsAsync(Guid defectId,CancellationToken ct)
  {
   await ImportLegacyAttachmentsAsync(defectId,ct);
-  return await db.DefectAttachments.AsNoTracking().Where(x=>x.DefectId==defectId).OrderBy(x=>x.UploadedAt).ThenBy(x=>x.FileName).Select(x=>new DefectAttachmentDto(x.DefectAttachmentId,x.FileName,x.SizeBytes)).ToListAsync(ct);
+  return await db.DefectAttachments.AsNoTracking().Where(x=>x.DefectId==defectId&&x.CommentId==null).OrderBy(x=>x.UploadedAt).ThenBy(x=>x.FileName).Select(x=>new DefectAttachmentDto(x.DefectAttachmentId,x.FileName,x.SizeBytes)).ToListAsync(ct);
  }
  // รูปที่อัปโหลดก่อนมีตาราง DefectAttachments อยู่บนดิสก์อย่างเดียว — นำเข้าเป็น metadata ครั้งแรกที่เปิด Defect นั้น
  private async Task ImportLegacyAttachmentsAsync(Guid defectId,CancellationToken ct)
@@ -133,18 +140,9 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   if(!Directory.Exists(directory)||await db.DefectAttachments.AnyAsync(x=>x.DefectId==defectId,ct))return;
   var legacy=Directory.EnumerateFiles(directory).Select(path=>new FileInfo(path)).Where(file=>file.Name.Length>33&&Guid.TryParseExact(file.Name[..32],"N",out _)).ToList();
   if(legacy.Count==0)return;
-  db.DefectAttachments.AddRange(legacy.Select(file=>new DefectAttachment(Guid.ParseExact(file.Name[..32],"N"),defectId,file.Name[33..],file.Name,Math.Max(1,file.Length),ContentTypeFor(file.Extension.ToLowerInvariant()),null,file.CreationTimeUtc)));
+  db.DefectAttachments.AddRange(legacy.Select(file=>new DefectAttachment(Guid.ParseExact(file.Name[..32],"N"),defectId,file.Name[33..],file.Name,Math.Max(1,file.Length),DefectImageStorage.ContentTypeFor(file.Extension.ToLowerInvariant()),null,file.CreationTimeUtc)));
   await db.SaveChangesAsync(ct);
  }
- private static string ContentTypeFor(string extension)=>extension switch{".png"=>"image/png",".jpg" or ".jpeg"=>"image/jpeg",".webp"=>"image/webp",_=>"application/octet-stream"};
- private static bool TryDeleteFile(string path){try{if(System.IO.File.Exists(path))System.IO.File.Delete(path);return true;}catch(IOException){return false;}catch(UnauthorizedAccessException){return false;}}
- private static bool ValidImage(byte[] bytes,string extension)=>extension switch
- {
-  ".png"=>bytes.Length>=8&&bytes.AsSpan(0,8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}),
-  ".jpg" or ".jpeg"=>bytes.Length>=3&&bytes[0]==255&&bytes[1]==216&&bytes[2]==255,
-  ".webp"=>bytes.Length>=12&&bytes.AsSpan(0,4).SequenceEqual("RIFF"u8)&&bytes.AsSpan(8,4).SequenceEqual("WEBP"u8),
-  _=>false
- };
  [HttpPost("{id:guid}/test-cases"),Authorize(Policy="DefectEdit")]public async Task<IActionResult>LinkTestCase(Guid id,LinkDefectTestCaseRequest r,CancellationToken ct){var entity=await db.Defects.FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(entity is null||!CanAccess(entity.ProjectId))return NotFound();if(!await db.TestCases.AnyAsync(x=>x.TestCaseId==r.TestCaseId&&!x.IsDeleted,ct))return BadRequest("Test Case not found.");if(await db.DefectTestCaseLinks.AnyAsync(x=>x.DefectId==id&&x.TestCaseId==r.TestCaseId,ct))return Conflict("Already linked.");db.DefectTestCaseLinks.Add(new DefectTestCaseLink(id,r.TestCaseId,UserId()));await db.SaveChangesAsync(ct);await activityService.LogAsync(id,"LinkTestCase",$"Linked test case {r.TestCaseId}",UserId(),ct);return NoContent();}
  [HttpDelete("{id:guid}/test-cases/{testCaseId:guid}"),Authorize(Policy="DefectEdit")]public async Task<IActionResult>UnlinkTestCase(Guid id,Guid testCaseId,CancellationToken ct){var defect=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(defect is null||!CanAccess(defect.ProjectId))return NotFound();var link=await db.DefectTestCaseLinks.FirstOrDefaultAsync(x=>x.DefectId==id&&x.TestCaseId==testCaseId,ct);if(link is null)return NotFound();db.DefectTestCaseLinks.Remove(link);await db.SaveChangesAsync(ct);await activityService.LogAsync(id,"UnlinkTestCase",$"Unlinked test case {testCaseId}",UserId(),ct);return NoContent();}
  [HttpPost("bulk"),Authorize(Policy="DefectEdit")]public async Task<IActionResult>Bulk(BulkDefectRequest r,CancellationToken ct){if(r.Ids is null||r.Ids.Count==0)return BadRequest("No defect IDs provided.");var entities=(await db.Defects.Where(x=>r.Ids.Contains(x.DefectId)&&!x.IsDeleted).ToListAsync(ct)).Where(e=>CanAccess(e.ProjectId)).ToList();var userId=UserId();var isDelete=r.Delete==true;foreach(var e in entities){if(isDelete){e.SoftDelete(userId);}else{if(!string.IsNullOrWhiteSpace(r.Status))e.UpdateStatus(r.Status,userId);if(!string.IsNullOrWhiteSpace(r.Severity))e.UpdateSeverity(r.Severity,userId);if(r.AssigneeUserId.HasValue)e.Assign(r.AssigneeUserId.Value,userId);}}await db.SaveChangesAsync(ct);var action=isDelete?"Deleted":"Updated";var details=isDelete?"Defect deleted by bulk action":$"Defect updated by bulk action{(r.Status is null?string.Empty:$"; Status={r.Status}")}{(r.Severity is null?string.Empty:$"; Severity={r.Severity}")}{(r.AssigneeUserId.HasValue?"; Assignee changed":string.Empty)}";if(entities.Count>0)await activityService.LogManyAsync(entities.Select(e=>e.DefectId),action,details,userId,ct);return Ok(new{updated=entities.Count});}
@@ -245,3 +243,5 @@ public sealed record DefectListResultDto(IReadOnlyList<DefectDto> Rows,int Total
 public sealed record DefectStatsDto(int Total,int Open,int InProgress,int Resolved,int Closed,int Rejected,int Critical,int High,int Medium,int Low,int OldestOpenAgeDays,int UnassignedActive,double ClosureRate,IReadOnlyList<DefectModuleCountDto> Modules);
 public sealed record DefectModuleCountDto(Guid? ModuleId,string? ModuleCode,string ModuleName,int Count);
 public sealed record DefectAttachmentDto(Guid AttachmentId,string FileName,long Size);
+/// <summary>Source: "QaHub" = คอมเมนต์ใน QA Hub (ลบได้โดยเจ้าของ/SYS_ADMIN), "Crm" = ข้อความที่ sync มาจาก CRM ticket</summary>
+public sealed record DefectCommentDto(Guid CommentId,string Source,string Body,Guid? AuthorUserId,string AuthorName,DateTime CreatedAt,IReadOnlyList<DefectAttachmentDto> Attachments);

@@ -51,9 +51,17 @@ public sealed class DefectAutoCreateService(QaDbContext db, ILogger<DefectAutoCr
             if (!string.IsNullOrWhiteSpace(ownerName)) lines.Add($"ผู้รับผิดชอบ Test Case: {ownerName}");
             if (!string.IsNullOrWhiteSpace(r.ActualResult)) lines.Add($"ผลลัพธ์จริง: {r.ActualResult}");
             if (!string.IsNullOrWhiteSpace(r.Comment)) lines.Add($"คอมเมนต์: {r.Comment}");
+            // แต่ละขั้นที่ Fail แสดงชื่อขั้น (Action ของ Test Step) เสมอ + ผลจริงถ้าผู้ทดสอบกรอก — เดิมใช้แค่ผลจริงของ step
+            // ซึ่งส่วนใหญ่ว่าง (ผู้ทดสอบกรอกผลจริงระดับ Test Case แทน) เลยกลายเป็น "- ขั้นที่ 1: -" ทุกบรรทัด
+            var stepActions = tc.Steps.Where(s => s.RevisionNo == cycleCase.TestCaseRevisionNo).GroupBy(s => s.StepNo).ToDictionary(g => g.Key, g => g.First().Action);
             if (failedSteps.Count > 0) lines.Add($"ขั้นตอนที่ Fail ({failedSteps.Count} ขั้น):");
-            foreach (var s in failedSteps) lines.Add($"- ขั้นที่ {s.StepNo}: {s.ActualResult ?? "-"}");
-            lines.Add($"เวลาที่ทดสอบ: {DateTime.UtcNow:dd/MM/yyyy HH:mm} UTC");
+            foreach (var s in failedSteps)
+            {
+                var action = stepActions.GetValueOrDefault(s.StepNo);
+                var detail = string.Join(" — ", new[] { action, string.IsNullOrWhiteSpace(s.ActualResult) ? null : $"ผลจริง: {s.ActualResult.Trim()}" }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                lines.Add($"- ขั้นที่ {s.StepNo}: {(detail.Length > 0 ? detail : "-")}");
+            }
+            lines.Add($"เวลาที่ทดสอบ: {FormatThaiTime(DateTime.UtcNow)}");
             var description = Truncate(string.Join("\n", lines), 2000);
             var stepResultsByNo = r.StepResults.GroupBy(x => x.StepNo).ToDictionary(g => g.Key, g => g.First());
             var stepsText = Truncate(string.Join("\n", tc.Steps.Where(s => s.RevisionNo == cycleCase.TestCaseRevisionNo).OrderBy(s => s.StepNo)
@@ -91,4 +99,12 @@ public sealed class DefectAutoCreateService(QaDbContext db, ILogger<DefectAutoCr
         }
     }
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
+
+    // เวลาไทย (UTC+7) ปี พ.ศ. แบบเดียวกับที่หน้าเว็บแสดง (fmtDateTimeBE) เช่น "28/08/2569 11:02 น." — ใช้ InvariantCulture
+    // แล้วบวก 543 เอง เพราะ culture ของเครื่อง server (th-TH) จะทำให้ "yyyy" เป็น พ.ศ. อยู่แล้วและบวกซ้ำ
+    public static string FormatThaiTime(DateTime utcNow)
+    {
+        var th = utcNow.AddHours(7);
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{th:dd/MM}/{th.Year + 543} {th:HH:mm} น.");
+    }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Infrastructure.Persistence;
@@ -11,7 +12,7 @@ namespace ProMaxx2.QA.Api.Services;
 //
 // Every method takes an `actingUserId` — CRM tracks work by whoever is actually logged in, so every call talks to
 // CRM as the QA Hub user who clicked the button (their own CrmConfiguration row), never a shared Service Account.
-public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, CrmConfigurationService crmConfig, CrmTokenService tokenService, EmailSenderService emailSender, ILogger<CrmSendToCrmService> logger)
+public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, CrmConfigurationService crmConfig, CrmTokenService tokenService, EmailSenderService emailSender, DefectShareLinkService shareLinks, ILogger<CrmSendToCrmService> logger)
 {
     // BlueID's user directory (DWUserAccountSeniorV2) returns the whole company, most of whom are irrelevant to
     // CRM ticket assignment — จำกัดรายชื่อ "ผู้รับผิดชอบ (Dev)" ให้เหลือแค่ทีม Dev/QA ที่เกี่ยวข้องจริง (รหัสพนักงาน)
@@ -24,7 +25,6 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     // CRM's own "New Job" form has maxlength="1000" on this field — truncate our side too instead of letting
     // CRM silently cut it off mid-sentence with no indication anything was lost.
     private const int CrmDescriptionMaxLength = 1000;
-    private const string TruncationNotice = "\n\n[...ตัดข้อความ ดูรายละเอียดเต็มที่ QA Hub]";
 
     public async Task<string> SendAsync(Defect defect, Guid actingUserId, string actingDisplayName, string assignToStaffCode, CancellationToken ct)
     {
@@ -36,13 +36,16 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         // resolver ทั้งสองตัวข้างบนเรียก AuthorizedAsync ไปแล้วอย่างน้อย 1 ครั้ง เลย token ของ actingUserId ถูก
         // cache ไว้แล้ว — เรียกซ้ำตรงนี้แค่เพื่อดึง BranchId ออกมา ไม่ได้ยิง login ใหม่ (cache hit)
         var (_, branchId) = await tokenService.GetTokenAsync(actingUserId, cfg.MerchantId, cfg.Username, password, ct);
-        var description = TruncateForCrm(string.Join("\n\n", new[] { defect.Description, defect.StepsToReproduce, defect.ExpectedResult, defect.ActualResult }.Where(x => !string.IsNullOrWhiteSpace(x))));
+        var shareUrl = await shareLinks.GetOrCreateUrlAsync(defect.DefectId, ct);
+        var description = BuildCrmDescription(string.Join("\n\n", new[] { defect.Description, defect.StepsToReproduce, defect.ExpectedResult, defect.ActualResult }.Where(x => !string.IsNullOrWhiteSpace(x))), shareUrl);
         // CRM ไม่มีค่า default ให้ฟิลด์นี้ (ไม่เคยส่งมาก่อนจะกลาย epoch 0 → โชว์เป็น 01/01/2513) ต้องส่งเวลาปัจจุบัน
         // เสมอ — ใช้เวลาไทย (UTC+7) ตรงกับ format ที่หน้า CRM เองส่ง (yyyy-M-d'T'HH:mm ปีเป็น ค.ศ. ไม่ padding เดือน/วัน)
+        // ต้อง format ด้วย InvariantCulture — เครื่อง server เป็น th-TH ถ้าใช้ culture ปัจจุบัน "yyyy" จะได้ปี พ.ศ.
+        // (2569) แล้ว CRM บวก 543 ซ้ำจนแสดงเป็น 3112
         var nowThai = DateTime.UtcNow.AddHours(7);
-        var contactDate = $"{nowThai:yyyy}-{nowThai.Month}-{nowThai.Day}T{nowThai:HH:mm}";
+        var contactDate = string.Create(CultureInfo.InvariantCulture, $"{nowThai.Year}-{nowThai.Month}-{nowThai.Day}T{nowThai:HH:mm}");
         // Duedate เดียวกับปัญหา ContactDate ข้างบน — ไม่เคยส่งมาก่อนจะกลาย epoch 0 ค่าเริ่มต้นคือวันนี้เวลาเที่ยงคืน
-        var dueDate = $"{nowThai:yyyy}-{nowThai.Month}-{nowThai.Day}T00:00:00";
+        var dueDate = string.Create(CultureInfo.InvariantCulture, $"{nowThai.Year}-{nowThai.Month}-{nowThai.Day}T00:00:00");
 
         // ตอนนี้แต่ละคน login ด้วยบัญชี CRM ของตัวเอง — cfg.Username (รหัสพนักงานจริงของคนที่กดปุ่ม) จึงใช้แทนที่
         // ได้ทั้ง Member/RecipientId/OwnerSubjectId/Posted อย่างสม่ำเสมอ (แต่ก่อนต้องผสมกับ QA Hub Username เพราะ
@@ -94,7 +97,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
                     ? await db.Modules.AsNoTracking().Where(x => x.ModuleId == defect.ModuleId).Select(x => x.ModuleName).SingleOrDefaultAsync(ct)
                     : null;
                 var html = EmailTemplates.DefectAssignedViaCrm(defect.DefectCode, defect.Title, defect.Severity, defect.Status, projectName, moduleName,
-                    defect.Description, defect.StepsToReproduce, defect.ExpectedResult, defect.ActualResult, dev.Name, dev.StaffCode, jobNo, link);
+                    defect.Description, defect.StepsToReproduce, defect.ExpectedResult, defect.ActualResult, dev.Name, dev.StaffCode, jobNo, link, shareUrl);
                 await emailSender.SendAsync(email, $"[QA Hub] มอบหมายงานใหม่ผ่าน CRM Ticket #{jobNo}", html, ct, isHtml: true);
             }
         }
@@ -113,14 +116,16 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     // กลไกเดียวที่มีคือปุ่ม Update ของ CRM เอง ซึ่ง PUT /Support ทั้งใบทับของเดิม จึงต้อง GET job ปัจจุบันมาก่อน
     // แล้ว carry-over ทุก field เดิมกลับไป ยกเว้น Description ที่ต่อท้ายด้วยคอมเมนต์ใหม่ — เรียกจาก
     // DefectsController.AddComment แบบ best-effort เท่านั้น (ล้มเหลวได้โดยไม่ทำให้คอมเมนต์ใน QA Hub หายไปด้วย)
-    public async Task AppendCommentAsync(Defect defect, Guid actingUserId, string commentBody, string commentAuthorDisplayName, CancellationToken ct)
+    public async Task AppendCommentAsync(Defect defect, Guid actingUserId, string commentBody, string commentAuthorDisplayName, CancellationToken ct, int imageCount = 0)
     {
         var ticketId = defect.CrmTicketId;
         if (string.IsNullOrWhiteSpace(ticketId)) return;
         var (cfg, _) = await crmConfig.GetRuntimeAsync(actingUserId, ct);
         var job = await crmApi.GetJobDetailAsync(actingUserId, ticketId, "HD", ct);
         var nowThai = DateTime.UtcNow.AddHours(7);
-        var note = $"[QA Hub] {commentAuthorDisplayName} ({nowThai:dd/MM/yyyy HH:mm}): {commentBody.Trim()}";
+        // CRM ไม่ได้รับรูปของคอมเมนต์ — บอกจำนวนรูปพร้อมลิงก์หน้าแชร์ (ซึ่งแสดงคอมเมนต์และรูปทั้งหมด) แทน
+        var imageNote = imageCount > 0 ? $" [แนบรูป {imageCount} รูป ดูได้ที่ {await shareLinks.GetOrCreateUrlAsync(defect.DefectId, ct)}]" : "";
+        var note = $"[QA Hub] {commentAuthorDisplayName} ({nowThai:dd/MM/yyyy HH:mm}): {commentBody.Trim()}{imageNote}";
         var newDescription = AppendBoundedDescription(CrmApiClient.GetFieldAsString(job, "description"), note);
 
         var payload = new CrmUpdateJobPayload(
@@ -207,11 +212,15 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         await crmApi.UpdateSupportJobAsync(actingUserId, payload, ct);
     }
 
-    private static string TruncateForCrm(string text)
+    // ต่อท้ายลิงก์อ่านอย่างเดียว (ไม่ต้อง login) เสมอ — CRM ไม่ได้รับรูปแนบ และข้อความยาวเกินลิมิตจะถูกตัด; ลิงก์ต้องอยู่ครบ
+    // ภายใน 1000 ตัวอักษรเสมอ จึงตัดเนื้อหาก่อนแล้วค่อยต่อท้าย
+    public static string BuildCrmDescription(string text, string shareUrl)
     {
-        if (text.Length <= CrmDescriptionMaxLength) return text;
-        var keep = CrmDescriptionMaxLength - TruncationNotice.Length;
-        return text[..Math.Max(0, keep)] + TruncationNotice;
+        var footer = $"\n\nดูรายละเอียดเต็มและรูปภาพที่ QA Hub: {shareUrl}";
+        if (text.Length + footer.Length <= CrmDescriptionMaxLength) return text + footer;
+        var truncatedFooter = $"\n\n[...ตัดข้อความ] ดูรายละเอียดเต็มและรูปภาพที่ QA Hub: {shareUrl}";
+        var keep = Math.Max(0, CrmDescriptionMaxLength - truncatedFooter.Length);
+        return text[..Math.Min(keep, text.Length)] + truncatedFooter;
     }
 
     // Description ของ CRM มี maxlength="1000" เหมือนตอนสร้าง — คอมเมนต์สะสมมาเรื่อยๆ เกินได้ง่าย ถ้าเกินให้ตัด

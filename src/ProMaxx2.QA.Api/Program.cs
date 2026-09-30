@@ -91,6 +91,8 @@ builder.Services.AddScoped<CrmConfigurationService>();
 builder.Services.AddScoped<CrmSyncSettingsService>();
 builder.Services.AddScoped<CrmApiClient>();
 builder.Services.AddScoped<CrmSendToCrmService>();
+builder.Services.AddScoped<DefectShareLinkService>();
+builder.Services.AddScoped<DefectImageStorage>();
 builder.Services.AddScoped<EmailConfigurationService>();
 builder.Services.AddScoped<EmailSenderService>();
 builder.Services.AddScoped<CrmSyncService>();
@@ -140,6 +142,9 @@ builder.Services.AddRateLimiter(options =>
         _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("webhook", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
         _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // ลิงก์แชร์ Defect (anonymous) — เปิดหน้าหนึ่งครั้งยิง 1 + จำนวนรูป (รูป Defect ≤5 + รูปคอมเมนต์ ≤5/คอมเมนต์) คำขอ
+    options.AddPolicy("share", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
 if (allowedOrigins == null || allowedOrigins.Length == 0)

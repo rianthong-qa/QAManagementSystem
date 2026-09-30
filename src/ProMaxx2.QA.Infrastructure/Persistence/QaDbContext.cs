@@ -53,6 +53,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<DefectActivity> DefectActivities => Set<DefectActivity>();
     public DbSet<DefectTestCaseLink> DefectTestCaseLinks => Set<DefectTestCaseLink>();
     public DbSet<DefectAttachment> DefectAttachments => Set<DefectAttachment>();
+    public DbSet<DefectShareLink> DefectShareLinks => Set<DefectShareLink>();
     public DbSet<MasterOption> MasterOptions => Set<MasterOption>();
     public DbSet<AiConfiguration> AiConfigurations => Set<AiConfiguration>();
     public DbSet<EmailConfiguration> EmailConfigurations => Set<EmailConfiguration>();

@@ -6,13 +6,13 @@ public sealed class DefectAttachment
 {
     private DefectAttachment() { }
 
-    public DefectAttachment(Guid attachmentId, Guid defectId, string fileName, string storedFileName, long sizeBytes, string contentType, Guid? uploadedBy, DateTime uploadedAt)
+    public DefectAttachment(Guid attachmentId, Guid defectId, string fileName, string storedFileName, long sizeBytes, string contentType, Guid? uploadedBy, DateTime uploadedAt, Guid? commentId = null)
     {
         if (string.IsNullOrWhiteSpace(fileName)) throw new ArgumentException("File name is required.");
         if (string.IsNullOrWhiteSpace(storedFileName)) throw new ArgumentException("Stored file name is required.");
         if (sizeBytes <= 0) throw new ArgumentOutOfRangeException(nameof(sizeBytes));
         DefectAttachmentId = attachmentId; DefectId = defectId; FileName = fileName.Trim(); StoredFileName = storedFileName;
-        SizeBytes = sizeBytes; ContentType = contentType; UploadedBy = uploadedBy; UploadedAt = uploadedAt;
+        SizeBytes = sizeBytes; ContentType = contentType; UploadedBy = uploadedBy; UploadedAt = uploadedAt; CommentId = commentId;
     }
 
     public Guid DefectAttachmentId { get; private set; }
@@ -23,4 +23,8 @@ public sealed class DefectAttachment
     public string ContentType { get; private set; } = string.Empty;
     public Guid? UploadedBy { get; private set; }
     public DateTime UploadedAt { get; private set; }
+    /// <summary>รูปของคอมเมนต์ (DefectActivity ประเภท "Comment") — null = รูปประกอบของตัว Defect เอง (จำกัด 5 รูป/Defect)
+    /// ไม่มี FK ไป DefectActivities เพราะทั้งสองตาราง cascade จาก Defects อยู่แล้ว (SQL Server ไม่ยอมให้มีหลายเส้นทาง);
+    /// ลบคอมเมนต์ต้องลบรูปของมันเอง (ดู DefectsController.DeleteComment)</summary>
+    public Guid? CommentId { get; private set; }
 }

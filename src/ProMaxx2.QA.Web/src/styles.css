@@ -3615,12 +3615,28 @@ textarea.defect-form-field { resize: vertical; line-height: 1.6; }
 .defect-description-text > span { display: block; font-weight: 400; }
 .defect-description-text > span > b { color: var(--text); font-weight: 800; }
 .defect-description-value { font-weight: 300; }
-.defect-repro-steps { display: grid; gap: 8px; }
-.defect-repro-step { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 9px 10px; }
-.defect-repro-step.is-fail { border-color: #f3c6c6; background: #fef6f6; }
-.defect-repro-step-no { display: grid; width: 22px; height: 22px; flex: 0 0 22px; place-items: center; border-radius: 50%; background: #eef3ff; color: var(--primary); font-size: 11px; font-weight: 800; }
-.defect-repro-step-body { flex: 1; min-width: 0; font-size: 14px; line-height: 1.55; color: var(--text); }
-.defect-repro-step-detail { color: var(--muted); }
+/* ขั้นตอนการทำซ้ำแบบการ์ด (components/ReproSteps.tsx) — ใช้ใน Defect detail และหน้าแชร์ Defect */
+.defect-repro-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.defect-repro-step { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; background: #fff; padding: 10px 12px; min-width: 0; }
+.defect-repro-step.is-fail { border-color: #f3c6c6; border-left-color: var(--red); background: #fef6f6; }
+.defect-repro-step.is-pass { border-left-color: var(--green); }
+.defect-repro-step-no { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 50%; background: #eef3ff; color: var(--primary); font-size: 12px; font-weight: 800; }
+.defect-repro-step.is-fail .defect-repro-step-no { background: color-mix(in srgb, var(--red) 12%, #fff); color: var(--red); }
+.defect-repro-step-body { flex: 1; min-width: 0; display: grid; gap: 8px; font-size: 14px; line-height: 1.55; color: var(--text); }
+.defect-repro-step-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.defect-repro-step-head b { min-width: 0; overflow-wrap: anywhere; }
+.defect-repro-step-head .badge { flex: none; }
+.defect-repro-fields { margin: 0; display: grid; gap: 6px; }
+.defect-repro-fields > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.defect-repro-fields > div.is-plain { grid-template-columns: minmax(0, 1fr); }
+.defect-repro-fields dt { font-size: 11px; font-weight: 700; color: var(--muted); }
+.defect-repro-fields dd { margin: 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.defect-repro-notes { display: flex; flex-wrap: wrap; gap: 6px; }
+.defect-repro-notes span { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+@media (max-width: 760px) {
+  .defect-repro-step { padding: 9px 10px; gap: 8px; }
+  .defect-repro-fields > div { grid-template-columns: minmax(0, 1fr); gap: 1px; }
+}
 .defect-linked-cases { display: grid; gap: 7px; }
 .defect-linked-case { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 9px 11px; }
 .defect-linked-case > div:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -3641,8 +3657,6 @@ textarea.defect-form-field { resize: vertical; line-height: 1.6; }
 .defect-activity-row > div { flex: 1; min-width: 0; }
 .defect-activity-row p { margin: 0; font-size: 14px; color: var(--text); }
 .defect-activity-row small { color: var(--muted); font-size: 12px; }
-.defect-comment-box { display: flex; gap: 8px; margin-top: 10px; }
-.defect-comment-box input { flex: 1; min-width: 0; }
 @media (max-width: 760px) { .defect-detail-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .defect-detail-split { grid-template-columns: 1fr; } }
 .defect-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .defect-form > label { min-width: 0; display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--text); }
