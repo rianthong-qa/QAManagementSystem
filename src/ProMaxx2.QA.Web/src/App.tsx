@@ -340,6 +340,10 @@ function App() {
     [requirementAiFiles,setRequirementAiFiles]=useState<File[]>([]),
     [refresh, setRefresh] = useState(0),
     [saving, setSaving] = useState(false);
+  // ข้อมูล Topbar (Release/Build/Blocker) ต้องโหลดเฉพาะตอน login แล้วและไม่ใช่หน้าแชร์ — contextProjectId คืนค่าจาก
+  // localStorage ของเครื่องที่เคยใช้ QA Hub ถ้าไม่กันไว้ หน้าแชร์ Defect/Dashboard (ไม่มี token) จะยิง API แล้วได้ 401
+  // ขึ้น toast "โหลดรายการ Release/Build ไม่สำเร็จ (401)" ทั้งที่หน้านั้นไม่ได้ใช้ข้อมูลนี้
+  const contextEnabled = Boolean(user) && !shareCode && !shareToken && !defectShareToken;
   useEffect(() => {
     if (contextProjectId) localStorage.setItem("qa.context.project", contextProjectId);
   }, [contextProjectId]);
@@ -391,7 +395,7 @@ function App() {
       .finally(() => setContextLoading(false));
   }, [user, refresh]);
   useEffect(() => {
-    if (!contextProjectId) {
+    if (!contextEnabled || !contextProjectId) {
       setContextLoading(false);
       setContextReleases([]);
       setContextReleaseId("");
@@ -426,9 +430,9 @@ function App() {
         setContextReleaseId("");
       })
       .finally(() => setContextLoading(false));
-  }, [contextProjectId, refresh]);
+  }, [contextEnabled, contextProjectId, refresh]);
   useEffect(() => {
-    if (!contextReleaseId) {
+    if (!contextEnabled || !contextReleaseId) {
       setContextLoading(false);
       setContextBuilds([]);
       setContextBuildId("");
@@ -464,9 +468,9 @@ function App() {
         setContextBuildId("");
       })
       .finally(() => setContextLoading(false));
-  }, [contextProjectId, contextReleaseId, refresh]);
+  }, [contextEnabled, contextProjectId, contextReleaseId, refresh]);
   useEffect(() => {
-    if (!contextBuildId) {
+    if (!contextEnabled || !contextBuildId) {
       setBlockerCount(0);
       return;
     }
@@ -481,7 +485,7 @@ function App() {
     fetch(`${apiUrl}/builds/${contextBuildId}/blocked-count`, { headers: h })
       .then((response) => (response.ok ? response.json() : { count: 0 }))
       .then((data: { count: number }) => setBlockerCount(data.count));
-  }, [contextReleaseId, contextBuildId, refresh]);
+  }, [contextEnabled, contextReleaseId, contextBuildId, refresh]);
   useEffect(() => {
     if (!modal || page !== "requirements") return;
     const targetProjectId = createProjectId || contextProjectId || contextProjects[0]?.projectId || "";

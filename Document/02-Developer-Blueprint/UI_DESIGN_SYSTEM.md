@@ -265,6 +265,10 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-01 — หน้าแชร์ไม่โหลดข้อมูล Topbar
+
+- แก้ toast "โหลดรายการ Release/Build ไม่สำเร็จ (401)" บนหน้าแชร์ Defect/Dashboard: App shell โหลด Release/Build/Blocker ของ Topbar จาก `contextProjectId` ที่คืนค่าจาก `localStorage` แม้ไม่ได้ login — ตอนนี้โหลดเฉพาะเมื่อ login แล้วและไม่ใช่หน้าแชร์ (`contextEnabled` ใน App.tsx); กฎ: **หน้าแชร์/หน้าที่ไม่ต้อง login ห้ามยิง API ที่ต้องใช้ token**
+
 ### 2026-09-30 — ขั้นตอนการทำซ้ำแบบการ์ด (Defect detail + หน้าแชร์)
 
 - Component กลาง `ReproSteps` (`src/components/ReproSteps.tsx`) + parser `parseReproSteps` (`src/shared/defects.ts`) สำหรับรูปแบบ `1. การกระทำ (Pass/Fail) | ข้อมูล: … | คาดหวัง: … | [หมายเหตุ]`: การ์ดต่อขั้น มีเลขวงกลม, ชื่อการกระทำตัวหนา, Badge Pass/Fail ชิดขวา, แถบซ้ายสีตามผล (Fail แดง + พื้นแดงอ่อน, Pass เขียว)
