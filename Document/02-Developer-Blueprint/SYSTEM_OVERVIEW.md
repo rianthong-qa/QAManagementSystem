@@ -137,6 +137,9 @@ dotnet test agent/ProMaxx2.Automation.slnx --nologo
 
 # ทุกครั้งหลังแก้
 git diff --check                     # ห้ามมี trailing whitespace
+
+# ก่อนเปิด PR (รวมทุกข้อข้างบน + ข้อมูลลับ/ไฟล์ต้องห้าม/กฎเอกสาร) — ดู PRE_PR_REVIEW.md
+powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1
 ```
 
 ## 6. กฎการทำงาน (จาก AGENTS.md)
@@ -155,6 +158,7 @@ git diff --check                     # ห้ามมี trailing whitespace
 |---|---|
 | `02-Developer-Blueprint/SYSTEM_OVERVIEW.md` | **ไฟล์นี้ — อ่านก่อนเสมอ** |
 | `02-Developer-Blueprint/UI_DESIGN_SYSTEM.md` | กฎ UI + design tokens + Change Log |
+| `02-Developer-Blueprint/PRE_PR_REVIEW.md` | ขั้นตอนตรวจงานก่อนเปิด PR + checklist (ใช้คู่กับ `tools/pre-pr-check.ps1` และ `.github/pull_request_template.md`) |
 | `02-Developer-Blueprint/API_SPECIFICATION.md` | สเปก API |
 | `02-Developer-Blueprint/SCREEN_SPECIFICATION.md` | สเปกหน้าจอ |
 | `02-Developer-Blueprint/SQL_SERVER_SCHEMA.md` | Schema ฐานข้อมูล |

@@ -26,3 +26,12 @@
 3. หากงาน UI ทำให้เกิด pattern หรือกฎใหม่ ต้องอัปเดต `UI_DESIGN_SYSTEM.md` และ Change Log ภายในงานเดียวกัน
 4. หลังแก้ frontend ต้องรัน `npm.cmd run build`, `npm.cmd run lint` และ `git diff --check`
 5. หาก requirement ของผู้ใช้ขัดกับเอกสาร ให้ทำตาม requirement ล่าสุดของผู้ใช้และอัปเดตเอกสารให้ตรงกับผลลัพธ์ใหม่
+
+## ก่อนเปิด Pull Request
+
+ทุกงานที่จะรวมเข้า `main` ต้องทำตาม `Document/02-Developer-Blueprint/PRE_PR_REVIEW.md` ให้ครบก่อนเปิด PR:
+
+1. รัน `powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1` แล้วต้องไม่มี FAIL (WARN ต้องแก้หรืออธิบายใน PR)
+2. อ่าน diff ตัวเองตาม checklist และทดสอบจริงทั้ง Desktop และ Mobile
+3. รัน `/code-review` และจัดการ finding ทุกข้อ
+4. กรอก PR template (`.github/pull_request_template.md`) ให้ครบ รวมผลตรวจและสิ่งที่ยังไม่ได้ทดสอบ
