@@ -3806,6 +3806,7 @@ input, select, textarea { max-width: 100%; }
 
 /* ป้ายสถานะที่ไม่รู้จัก/ไม่มีข้อมูล (เช่น Build status ใหม่) — สีเทาจาก token --muted */
 .badge.gray { background: color-mix(in srgb, var(--muted) 12%, var(--card, #fff)); color: var(--muted); }
+.badge.purple { background: #ede9fe; color: #6d28d9; }
 
 /* UI รอบ 3: กล่องยืนยัน/กรอกข้อความ (DialogHost) และ toast แจ้งผล แทน window.confirm/prompt/alert */
 .modal-box.app-dialog { width: min(460px, 100%); }

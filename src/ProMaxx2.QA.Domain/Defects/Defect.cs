@@ -29,7 +29,7 @@ public sealed class Defect
     // Phase 2 poller (CrmSyncService) — pure snapshot of CRM's own Status/Assignto fields, deliberately never
     // touches Status/AssigneeUserId above: QA Hub's own workflow stays 100% QA-driven, CRM's 9-state ticket
     // status has no clean 1:1 mapping onto QA Hub's 4-state Defect workflow.
-    public void UpdateCrmSnapshot(string? status,string? assignto){CrmLastKnownStatus=status;CrmLastKnownAssignto=assignto;}
+    public void UpdateCrmSnapshot(string? status,string? assignto,DateTime? syncedAt=null){CrmLastKnownStatus=status;CrmLastKnownAssignto=assignto;if(syncedAt.HasValue)CrmLastSyncedAt=syncedAt.Value;}
     // Phase 2 poller — เลื่อน marker ไปข้างหน้าหลังประมวลผลคอมเมนต์ใหม่จาก CRM แล้ว (หรือตั้ง baseline ตอน poll ครั้งแรก)
     public void UpdateCrmLastSeenAnswerNo(string? answerNo){CrmLastSeenAnswerNo=answerNo;}
     private static string NormalizeSeverity(string value)=>new[]{"Critical","High","Medium","Low"}.SingleOrDefault(x=>x.Equals(value,StringComparison.OrdinalIgnoreCase))??throw new ArgumentException("Invalid defect severity.");

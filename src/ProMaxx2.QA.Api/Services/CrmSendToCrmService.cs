@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Infrastructure.Persistence;
@@ -25,6 +26,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     // CRM's own "New Job" form has maxlength="1000" on this field — truncate our side too instead of letting
     // CRM silently cut it off mid-sentence with no indication anything was lost.
     private const int CrmDescriptionMaxLength = 1000;
+    private static readonly CultureInfo ThaiCulture = CultureInfo.GetCultureInfo("th-TH");
 
     public async Task<string> SendAsync(Defect defect, Guid actingUserId, string actingDisplayName, string assignToStaffCode, CancellationToken ct)
     {
@@ -113,9 +115,10 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     }
 
     // CRM ไม่มี endpoint "เพิ่มโน้ต/ตอบกลับ" แยกต่างหาก (HelpDeskAnswerMain เป็น GET อย่างเดียวในหน้า JobDetailsHD) —
-    // กลไกเดียวที่มีคือปุ่ม Update ของ CRM เอง ซึ่ง PUT /Support ทั้งใบทับของเดิม จึงต้อง GET job ปัจจุบันมาก่อน
-    // แล้ว carry-over ทุก field เดิมกลับไป ยกเว้น Description ที่ต่อท้ายด้วยคอมเมนต์ใหม่ — เรียกจาก
-    // DefectsController.AddComment แบบ best-effort เท่านั้น (ล้มเหลวได้โดยไม่ทำให้คอมเมนต์ใน QA Hub หายไปด้วย)
+    // กลไกเดียวที่มีคือปุ่ม Update ของ CRM เอง ซึ่ง PUT /Support ทั้งใบ จึงต้อง GET job ปัจจุบันมาก่อนแล้ว carry-over ทุก
+    // field เดิมกลับไป; Description ของการ Update คือข้อความตอบ ซึ่ง CRM บันทึกเป็น "แถวใหม่ในประวัติการติดต่อ"
+    // (ยืนยันกับผู้ใช้ 2026-10-03) จึงส่งเฉพาะคอมเมนต์ใหม่ — เดิมต่อท้ายข้อความสะสม ทำให้ทุกคอมเมนต์สร้างแถวที่มีข้อความ
+    // เก่าซ้ำมาด้วย. เรียกจาก DefectsController.AddComment แบบ best-effort (ล้มเหลวได้โดยไม่ทำให้คอมเมนต์ใน QA Hub หาย)
     public async Task AppendCommentAsync(Defect defect, Guid actingUserId, string commentBody, string commentAuthorDisplayName, CancellationToken ct, int imageCount = 0)
     {
         var ticketId = defect.CrmTicketId;
@@ -125,8 +128,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         var nowThai = DateTime.UtcNow.AddHours(7);
         // CRM ไม่ได้รับรูปของคอมเมนต์ — บอกจำนวนรูปพร้อมลิงก์หน้าแชร์ (ซึ่งแสดงคอมเมนต์และรูปทั้งหมด) แทน
         var imageNote = imageCount > 0 ? $" [แนบรูป {imageCount} รูป ดูได้ที่ {await shareLinks.GetOrCreateUrlAsync(defect.DefectId, ct)}]" : "";
-        var note = $"[QA Hub] {commentAuthorDisplayName} ({nowThai:dd/MM/yyyy HH:mm}): {commentBody.Trim()}{imageNote}";
-        var newDescription = AppendBoundedDescription(CrmApiClient.GetFieldAsString(job, "description"), note);
+        var newDescription = BuildReplyNote(commentAuthorDisplayName, nowThai, commentBody.Trim(), imageNote);
 
         var payload = new CrmUpdateJobPayload(
             JobNo: ticketId,
@@ -165,10 +167,87 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         await crmApi.UpdateSupportJobAsync(actingUserId, payload, ct);
     }
 
-    // "Resend/Relink" ที่ผู้ใช้ต้องการจริงๆ คือแก้ผู้รับผิดชอบบน ticket เดิม ไม่ใช่สร้าง ticket ใหม่ซ้ำใน CRM —
-    // GET+PUT เหมือน AppendCommentAsync แต่แก้ Assignto/SysDevelop แทน Description (SysDevelop = Assignto เสมอ
-    // ตาม convention เดียวกับตอนสร้าง ticket ใน SendAsync) พร้อมทิ้งโน้ตสั้นๆ ไว้ใน Description เป็นหลักฐานว่า
-    // เปลี่ยนจาก QA Hub เมื่อไหร่/ใครเปลี่ยน
+    // อัปเดต Ticket จากหน้า CRM ของ QA Hub (ไม่ต้องผูก Defect): เพิ่มประวัติการติดต่อ / เปลี่ยนสถานะ / ส่งกลับเจ้าของเรื่อง
+    // ใน PUT เดียว — ฟอร์ม Update ของ CRM บันทึก Description ที่ส่งไปเป็น "แถวใหม่ในประวัติการติดต่อ" (ยืนยันกับผู้ใช้
+    // 2026-10-03) จึงส่งเฉพาะข้อความใหม่ ไม่ต่อท้าย Description เดิม (แบบเดียวกับ AppendCommentAsync)
+    public async Task<CrmTicketMutationResult> UpdateTicketAsync(Guid actingUserId, string jobNo, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, CancellationToken ct)
+    {
+        var (cfg, _) = await crmConfig.GetRuntimeAsync(actingUserId, ct);
+        var job = await crmApi.GetJobDetailAsync(actingUserId, jobNo, "HD", ct);
+        var payload = BuildTicketUpdatePayload(job, jobNo, cfg.Username, message, requestedStatus, assignToStaffCode, assignToOwner, actorDisplayName, DateTime.UtcNow.AddHours(7));
+        await crmApi.UpdateSupportJobAsync(actingUserId, payload, ct);
+        return new(payload.Status, payload.Assignto);
+    }
+
+    /// <summary>
+    /// สร้าง payload ของ <see cref="UpdateTicketAsync"/> — carry-over ทุก field เดิมของ job; ส่งกลับเจ้าของเรื่อง = Assignto ←
+    /// OwnerSubjectId (เหมือน checkbox "to เจ้าของเรื่อง" ของ CRM จึงไม่แตะ SysDevelop); เลือก Dev คนอื่น = Assignto/SysDevelop
+    /// ← รหัสนั้นตาม convention ของ SendAsync; ไม่มีข้อความแต่มีการเปลี่ยนแปลง จะเขียนบันทึกสั้น ๆ แทนเพื่อให้มีร่องรอยในประวัติ
+    /// </summary>
+    public static CrmUpdateJobPayload BuildTicketUpdatePayload(JsonElement job, string jobNo, string username, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, DateTime nowThai)
+    {
+        var currentStatus = CrmApiClient.GetFieldAsString(job, "status");
+        var currentAssignee = CrmApiClient.GetFieldAsString(job, "assignto", "assignTo", "assigneeCode");
+        var status = string.IsNullOrWhiteSpace(requestedStatus) ? currentStatus : requestedStatus.Trim();
+        var assignee = currentAssignee;
+        var sysDevelop = CrmApiClient.GetFieldAsString(job, "sysDevelop");
+        if (assignToOwner)
+        {
+            var owner = CrmApiClient.GetFieldAsString(job, "ownerSubjectId", "OwnerSubjectId");
+            if (string.IsNullOrWhiteSpace(owner)) throw new CrmIntegrationException("Ticket นี้ไม่มีข้อมูลเจ้าของเรื่องใน CRM จึงส่งกลับเจ้าของเรื่องไม่ได้");
+            assignee = owner.Trim();
+        }
+        else if (!string.IsNullOrWhiteSpace(assignToStaffCode))
+        {
+            assignee = assignToStaffCode.Trim();
+            sysDevelop = assignee;
+        }
+        if (string.IsNullOrWhiteSpace(status) || string.IsNullOrWhiteSpace(assignee))
+            throw new CrmIntegrationException("CRM Ticket ไม่มีค่า Status หรือ Assignee ที่ใช้อัปเดตได้");
+
+        var changes = new List<string>();
+        if (!string.Equals(currentStatus, status, StringComparison.OrdinalIgnoreCase)) changes.Add($"สถานะ {currentStatus} → {status}");
+        if (!string.Equals(currentAssignee, assignee, StringComparison.OrdinalIgnoreCase)) changes.Add(assignToOwner ? $"ส่งกลับเจ้าของเรื่อง ({assignee})" : $"ผู้รับผิดชอบ → {assignee}");
+        var text = message?.Trim() ?? "";
+        if (text.Length == 0)
+        {
+            if (changes.Count == 0) throw new CrmIntegrationException("ไม่มีข้อความหรือการเปลี่ยนแปลงที่จะบันทึกไป CRM");
+            text = BuildReplyNote(actorDisplayName, nowThai, string.Join(", ", changes));
+        }
+        if (text.Length > CrmDescriptionMaxLength) text = text[..CrmDescriptionMaxLength];
+        return BuildUpdatePayload(job, jobNo, username, status, assignee, text, sysDevelop);
+    }
+
+    private static CrmUpdateJobPayload BuildUpdatePayload(JsonElement job, string ticketId, string username, string status, string assignee, string description, string sysDevelop) => new(
+        JobNo: ticketId,
+        Subject: CrmApiClient.GetFieldAsString(job, "subject"),
+        Member: CrmApiClient.GetFieldAsString(job, "member"),
+        SysCustomerType: CrmApiClient.GetFieldAsString(job, "sysCustomerType"),
+        FName: CrmApiClient.GetFieldAsString(job, "fname"),
+        LName: CrmApiClient.GetFieldAsString(job, "lname"),
+        NickName: CrmApiClient.GetFieldAsString(job, "nickName"),
+        Fax: CrmApiClient.GetFieldAsString(job, "fax"),
+        Tel: CrmApiClient.GetFieldAsString(job, "tel"),
+        Email: CrmApiClient.GetFieldAsString(job, "email"),
+        Assignto: assignee,
+        RecipientId: CrmApiClient.GetFieldAsString(job, "recipientId"),
+        OwnerSubjectId: CrmApiClient.GetFieldAsString(job, "ownerSubjectId"),
+        Status: status,
+        Source: CrmApiClient.GetFieldAsString(job, "source"),
+        RefJobNo: CrmApiClient.GetFieldAsString(job, "refjobNo"),
+        SysBranchId: "00000",
+        Description: description,
+        SysserViceType: CrmApiClient.GetFieldAsString(job, "sysserviceType"),
+        SysProductId: CrmApiClient.GetFieldAsString(job, "sysProductId"),
+        Duedate: CrmApiClient.GetFieldAsString(job, "duedate"),
+        SysVersionId: CrmApiClient.GetFieldAsString(job, "sysVersionId"),
+        BuildDetail: CrmApiClient.GetFieldAsString(job, "buildDetail"),
+        SysOsId: CrmApiClient.GetFieldAsString(job, "sysosId"),
+        SysFollowupId: CrmApiClient.GetFieldAsString(job, "sysFollowupId"),
+        SysDevelop: sysDevelop,
+        Posted: username,
+        JobType: "HD");
+
     public async Task ChangeAssigneeAsync(Defect defect, Guid actingUserId, string newAssignToStaffCode, string actorDisplayName, CancellationToken ct)
     {
         var ticketId = defect.CrmTicketId;
@@ -176,8 +255,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         var (cfg, _) = await crmConfig.GetRuntimeAsync(actingUserId, ct);
         var job = await crmApi.GetJobDetailAsync(actingUserId, ticketId, "HD", ct);
         var nowThai = DateTime.UtcNow.AddHours(7);
-        var note = $"[QA Hub] {actorDisplayName} ({nowThai:dd/MM/yyyy HH:mm}): เปลี่ยนผู้รับผิดชอบเป็น {newAssignToStaffCode}";
-        var newDescription = AppendBoundedDescription(CrmApiClient.GetFieldAsString(job, "description"), note);
+        var newDescription = BuildReplyNote(actorDisplayName, nowThai, $"เปลี่ยนผู้รับผิดชอบเป็น {newAssignToStaffCode}");
 
         var payload = new CrmUpdateJobPayload(
             JobNo: ticketId,
@@ -223,13 +301,18 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         return text[..Math.Min(keep, text.Length)] + truncatedFooter;
     }
 
-    // Description ของ CRM มี maxlength="1000" เหมือนตอนสร้าง — คอมเมนต์สะสมมาเรื่อยๆ เกินได้ง่าย ถ้าเกินให้ตัด
-    // ข้อความเก่าสุด (ต้นๆ) ทิ้งก่อน ไม่ใช่ตัดคอมเมนต์ใหม่ล่าสุดที่เพิ่งกดส่ง (นั่นคือสิ่งที่ผู้ใช้ต้องการเห็นแน่ๆ)
-    private static string AppendBoundedDescription(string current, string note)
+    /// <summary>
+    /// ข้อความตอบที่ส่งเป็น Description ของการ Update (CRM บันทึกเป็นแถวใหม่ในประวัติการติดต่อ):
+    /// `[QA Hub] {ชื่อ} (dd/MM/yyyy HH:mm พ.ศ.): {ข้อความ}{ท้าย}` — ปี พ.ศ. แบบตายตัว (ไม่ขึ้นกับ culture ของเครื่องที่รัน API)
+    /// และไม่เกิน maxlength 1000 ของ CRM โดยตัดเนื้อหาก่อน เพื่อให้ส่วนท้าย (เช่น ลิงก์รูปภาพ) อยู่ครบ
+    /// </summary>
+    public static string BuildReplyNote(string actorDisplayName, DateTime nowThai, string body, string suffix = "")
     {
-        var combined = string.IsNullOrWhiteSpace(current) ? note : $"{current}\n\n{note}";
-        if (combined.Length <= CrmDescriptionMaxLength) return combined;
-        if (note.Length >= CrmDescriptionMaxLength) return note[..CrmDescriptionMaxLength]; // คอมเมนต์เดียวก็ยาวเกินลิมิตแล้ว
-        return combined[(combined.Length - CrmDescriptionMaxLength)..];
+        var prefix = string.Create(ThaiCulture, $"[QA Hub] {actorDisplayName} ({nowThai:dd/MM/yyyy HH:mm}): ");
+        var room = CrmDescriptionMaxLength - prefix.Length - suffix.Length;
+        if (room <= 0) return (prefix + body + suffix)[..CrmDescriptionMaxLength];
+        return prefix + (body.Length > room ? body[..room] : body) + suffix;
     }
 }
+
+public sealed record CrmTicketMutationResult(string Status, string Assignee);

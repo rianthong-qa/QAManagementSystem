@@ -50,6 +50,7 @@ public sealed class CrmConfigurationService(QaDbContext db, IDataProtectionProvi
         if (s is null) { s = new(userId, merchantId, username, encrypted, hint, isEnabled); db.CrmConfigurations.Add(s); }
         else s.Update(merchantId, username, encrypted, hint, isEnabled);
         await db.SaveChangesAsync(ct);
+        tokenService.ResetLoginFailure(userId); // บัญชีใหม่ — ลอง login ได้ทันทีไม่ต้องรอช่วงพักหลังรหัสผิด
         tokenService.Invalidate(userId); // credentials just changed — force re-auth on the next call instead of waiting up to ~24h for the cached token to expire
         return await GetViewAsync(userId, ct);
     }

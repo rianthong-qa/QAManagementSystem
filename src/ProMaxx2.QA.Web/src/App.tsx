@@ -39,6 +39,7 @@ const MasterSettingsPage = lazy(() => import("./pages/MasterSettingsPage").then(
 const SystemMonitorPage = lazy(() => import("./pages/SystemMonitorPage").then((m) => ({ default: m.SystemMonitorPage })));
 const AdministrationPage = lazy(() => import("./pages/AdministrationPage").then((m) => ({ default: m.AdministrationPage })));
 const AutomationPage = lazy(() => import("./AutomationPage").then((m) => ({ default: m.AutomationPage })));
+const CrmPage = lazy(() => import("./pages/CrmPage").then((m) => ({ default: m.CrmPage })));
 const AuditLogPage = lazy(() => import("./AuditLogPage").then((m) => ({ default: m.AuditLogPage })));
 const TestSummaryPage = lazy(() => import("./pages/TestSummaryPage").then((m) => ({ default: m.TestSummaryPage })));
 const RiskAcceptancePage = lazy(() => import("./pages/RiskAcceptancePage").then((m) => ({ default: m.RiskAcceptancePage })));
@@ -53,6 +54,8 @@ const fetchContextData = (input: RequestInfo | URL, init: RequestInit = {}) => {
   const timeoutId = window.setTimeout(() => controller.abort(), contextRequestTimeoutMs);
   return fetch(input, { ...init, signal: controller.signal }).finally(() => window.clearTimeout(timeoutId));
 };
+
+const sessionExpiredEvent = "qa:session-expired";
 
 // Global fetch wrapper: redirect to login on 401 Unauthorized
 if (typeof window !== "undefined") {
@@ -69,12 +72,17 @@ if (typeof window !== "undefined") {
       } catch {}
       // 401 ที่แปลว่า session หมดอายุต้องมาจาก QA Hub API เท่านั้น — ไม่ล้าง token เพราะ 401 จากบริการอื่น,
       // จากการ login เอง หรือจากลิงก์แชร์ Dashboard/Defect (endpoint anonymous)
-      if (!isApiRequest(reqUrl) || reqUrl.includes("/auth/login") || reqUrl.includes("/dashboard/shared") || reqUrl.includes("/shared/defects")) return resp;
+      // 401 ที่มี code CRM_* (เช่น CRM_NOT_CONFIGURED, CRM_UNAUTHORIZED) คือบัญชี CRM มีปัญหา ไม่ใช่ session QA Hub หมดอายุ — ห้าม logout
+      const problem = await resp.clone().json().catch(() => null) as { code?: string } | null;
+      if (!isApiRequest(reqUrl) || reqUrl.includes("/auth/login") || reqUrl.includes("/dashboard/shared") || reqUrl.includes("/shared/defects") || problem?.code?.startsWith("CRM_")) return resp;
       try { localStorage.removeItem("qa.accessToken"); localStorage.removeItem("qa.user"); } catch {}
       const isLoginPath = window.location.pathname === "/" || window.location.pathname.startsWith("/login");
       if (!isLoginPath) {
         // add a query flag so login page can show a message if desired
         window.location.href = "/?sessionExpired=1";
+      } else {
+        // แอปใช้ hash routing จึงอยู่ที่ "/" เกือบตลอด — แจ้ง App ให้กลับหน้า Login (เช่น server ปฏิเสธ token หลัง rotate key)
+        window.dispatchEvent(new Event(sessionExpiredEvent));
       }
     }
     return resp;
@@ -119,6 +127,7 @@ const viewPermission: Record<Page, string> = {
   defects: "DEFECT.EDIT",
   regression: "REGRESSION.VIEW",
   automation: "AUTOMATION.VIEW",
+  crm: "CRM.VIEW",
   summary: "REPORT.EXPORT",
   risks: "RISK.APPROVE",
   signoff: "RELEASE.SIGNOFF",
@@ -273,12 +282,20 @@ function App() {
   }, []);
   const [user, setUser] = useState<SessionUser | null>(() => {
     try {
+      // token หมดอายุต้องเริ่มเป็น "ยังไม่ login" ตั้งแต่ render แรก — ถ้าคืน user จาก localStorage ก่อนแล้วค่อยล้างใน
+      // useEffect, effect ของ Topbar จะยิง Project/Release/Build ไปก่อนแล้วได้ 401 ขึ้น toast ซ้อนบนหน้า Login
+      if (isTokenExpiredLocal()) return null;
       const value = localStorage.getItem("qa.user");
       return value ? JSON.parse(value) : null;
     } catch {
       return null;
     }
   });
+  useEffect(() => {
+    const expire = () => setUser(null);
+    window.addEventListener(sessionExpiredEvent, expire);
+    return () => window.removeEventListener(sessionExpiredEvent, expire);
+  }, []);
   // on mount, verify token not expired — if expired, clear and redirect to login
   useEffect(() => {
     try {
@@ -533,6 +550,8 @@ function App() {
         ? "สถานะคุณภาพและความพร้อมใช้งาน"
         : page === "automation"
           ? "สร้างและจัดการ Automation Case, DSL, Action Library, Agent และติดตามผลการรัน"
+        : page === "crm"
+          ? "ดู Ticket จาก CRM ตามบัญชีผู้ใช้ที่ Login เข้าระบบ"
         : page === "settings"
           ? "จัดการค่ากลางและบริการ AI ที่ทุกระบบใช้งานร่วมกัน"
         : page === "audit"
@@ -561,6 +580,7 @@ function App() {
   // CRM แยกงานตามคนที่ login จริง — แต่ละ user จัดการบัญชี CRM ของตัวเองที่นี่ (self-service, ไม่ใช่ Service
   // Account กลางที่ Admin ตั้งให้ทุกคนแล้ว) ปุ่มเปิด modal นี้อยู่ข้างๆ ปุ่ม logout ใน topbar
   const [myCrmOpen, setMyCrmOpen] = useState(false);
+  const [myCrmConfigVersion, setMyCrmConfigVersion] = useState(0);
   const [myCrmConfig, setMyCrmConfig] = useState<{ merchantId: string; username: string; hasPassword: boolean; passwordHint?: string | null; isEnabled: boolean }>({ merchantId: "", username: "", hasPassword: false, isEnabled: true });
   const [myCrmPassword, setMyCrmPassword] = useState("");
   const [savingMyCrm, setSavingMyCrm] = useState(false);
@@ -579,6 +599,7 @@ function App() {
       if (!response.ok) { const problem = await response.json(); throw new Error(problem.detail ?? "บันทึกบัญชี CRM ไม่สำเร็จ"); }
       setMyCrmConfig(await response.json());
       setMyCrmPassword("");
+      setMyCrmConfigVersion((value) => value + 1);
       notify("บันทึกบัญชี CRM ของคุณเรียบร้อยแล้ว", "success");
     } catch (error) { notify(error instanceof Error ? error.message : "บันทึกบัญชี CRM ไม่สำเร็จ", "error"); }
     finally { setSavingMyCrm(false); }
@@ -776,7 +797,7 @@ function App() {
           <button className="menu-btn topbar-menu" aria-label={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} title={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} onClick={() => { if (window.matchMedia("(max-width: 900px)").matches) setMenu((v) => !v); else { const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("qa.sidebar.collapsed", String(next)); } }}>
             <span aria-hidden="true">☰</span>
           </button>
-          {!["projects","users","settings","system-monitor"].includes(page) && <div className="context">
+          {!["projects","users","settings","system-monitor","crm"].includes(page) && <div className="context">
             {contextLoading && <span className="context-loading" role="status">กำลังเปลี่ยน Context...</span>}
             <label className="context-field"><span>Project</span><select
               value={contextProjectId}
@@ -909,6 +930,8 @@ function App() {
             <RegressionPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} search={search} canEdit={can("REGRESSION.MANAGE")} canRunAutomation={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} onOpenCycle={openRegressionCycle} />
           ) : page === "automation" ? (
             <Suspense fallback={pageLoading}><AutomationPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canView={can("AUTOMATION.VIEW")} canEdit={can("AUTOMATION.EDIT")} canValidate={can("AUTOMATION.VALIDATE")} canApprove={can("AUTOMATION.APPROVE")} canRun={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} canManage={can("AUTOMATION.MANAGE")} canViewEvidence={can("AUTOMATION.VIEWEVIDENCE")} canGenerateAi={can("AUTOMATION.GENERATEAI")} canCreateDefect={can("DEFECT.EDIT")} /></Suspense>
+          ) : page === "crm" ? (
+              <Suspense fallback={pageLoading}><CrmPage search={search} onConfigure={openMyCrmModal} configVersion={myCrmConfigVersion} contextProjectId={contextProjectId} canLinkDefect={can("DEFECT.EDIT")} canEditCrm={can("CRM.EDIT")} /></Suspense>
           ) : page === "users" ? (
             <AdministrationPage refresh={refresh} allProjects={contextProjects} />
           ) : page === "settings" ? (

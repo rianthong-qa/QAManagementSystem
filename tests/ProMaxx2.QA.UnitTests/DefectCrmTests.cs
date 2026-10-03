@@ -10,4 +10,6 @@ public sealed class DefectCrmTests
  [Fact]public void A_failed_resend_does_not_clear_a_prior_successful_link(){var d=NewDefect();d.SetCrmTicket("BHD690831000034",DateTime.UtcNow);d.SetCrmSyncFailed(DateTime.UtcNow);Assert.Equal("Failed",d.CrmSyncStatus);Assert.Equal("BHD690831000034",d.CrmTicketId);}
  [Fact]public void UpdateCrmSnapshot_records_status_and_assignto_without_touching_workflow_status(){var d=NewDefect();d.SetCrmTicket("BHD690831000034",DateTime.UtcNow);d.UpdateCrmSnapshot("Develop","6101");Assert.Equal("Develop",d.CrmLastKnownStatus);Assert.Equal("6101",d.CrmLastKnownAssignto);Assert.Equal("Open",d.Status);}
  [Fact]public void UpdateCrmSnapshot_accepts_nulls(){var d=NewDefect();d.UpdateCrmSnapshot(null,null);Assert.Null(d.CrmLastKnownStatus);Assert.Null(d.CrmLastKnownAssignto);}
+ [Fact]public void UpdateCrmSnapshot_can_stamp_the_last_remote_sync_time(){var d=NewDefect();var syncedAt=DateTime.UtcNow;d.UpdateCrmSnapshot("Continue","6101",syncedAt);Assert.Equal(syncedAt,d.CrmLastSyncedAt);}
+ [Fact]public void Poller_snapshot_without_timestamp_preserves_the_last_remote_sync_time(){var d=NewDefect();var syncedAt=DateTime.UtcNow.AddMinutes(-5);d.UpdateCrmSnapshot("Continue","6101",syncedAt);d.UpdateCrmSnapshot("Finish","6101");Assert.Equal(syncedAt,d.CrmLastSyncedAt);Assert.Equal("Finish",d.CrmLastKnownStatus);}
 }

@@ -1,0 +1,359 @@
+.crm-page { display: grid; gap: 16px; min-width: 0; }
+.crm-connection-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-left: 4px solid var(--primary); }
+.crm-connection-copy, .crm-connection-meta, .crm-filter-heading > div, .crm-list-heading > div { min-width: 0; }
+.crm-eyebrow { color: var(--primary); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.crm-connection-title { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.crm-connection-title h2, .crm-filter-heading h3, .crm-list-heading h3 { margin: 0; color: var(--text); }
+.crm-connection-title h2 { font-size: 20px; }
+.crm-connection-copy p, .crm-filter-heading p, .crm-list-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.crm-connection-meta { display: grid; gap: 3px; min-width: 180px; text-align: right; }
+.crm-connection-meta span, .crm-connection-meta small { color: var(--muted); font-size: 11px; }
+.crm-connection-meta strong { color: var(--text); overflow-wrap: anywhere; }
+.crm-connection-actions { display: grid; justify-items: end; gap: 4px; margin-top: 5px; }.crm-connection-actions .btn { padding: 6px 9px; font-size: 11px; }.crm-probe-success { color: var(--green) !important; }.crm-probe-error { color: var(--red) !important; }
+.crm-inline-alert { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--yellow) 10%, var(--card)); color: var(--warning-text); font-size: 12px; line-height: 1.5; }.crm-inline-alert > span:nth-child(2) { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }.crm-configure-button { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--line)); border-radius: 8px; background: var(--card); padding: 7px 10px; color: var(--primary); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }.crm-configure-button:hover { background: var(--primary-soft); }.crm-configure-button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: 2px; }
+.crm-inline-alert .material-symbols-outlined { flex: 0 0 auto; font-size: 18px; }
+.crm-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.crm-kpi { display: grid; gap: 4px; border-top: 3px solid var(--primary); }
+.crm-kpi:nth-child(2) { border-top-color: var(--yellow); }.crm-kpi:nth-child(3) { border-top-color: var(--info); }.crm-kpi:nth-child(4) { border-top-color: var(--green); }
+.crm-kpi-label, .crm-kpi small { color: var(--muted); font-size: 11px; }.crm-kpi strong { color: var(--text); font-size: 26px; line-height: 1.1; }
+.crm-filter-card, .crm-list-card { display: grid; gap: 14px; }
+.crm-filter-heading, .crm-list-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
+.crm-filter-heading h3, .crm-list-heading h3 { font-size: 16px; }.crm-list-heading > small { color: var(--muted); font-size: 11px; text-align: right; }
+.crm-filter-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.crm-filter-row label { display: grid; gap: 5px; min-width: 0; color: var(--text); font-size: 12px; font-weight: 700; }
+.crm-filter-row input, .crm-filter-row select { width: 100%; min-width: 0; height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.crm-filter-row input:focus, .crm-filter-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.crm-stale-alert { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--yellow) 38%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--yellow) 9%, var(--card)); color: var(--text); font-size: 12px; }.crm-stale-alert > .material-symbols-outlined { color: var(--yellow); font-size: 18px; }.crm-stale-alert > span:nth-child(2) { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }.crm-stale-alert strong { color: var(--warning-text); }.crm-stale-alert .btn { flex: 0 0 auto; }
+.crm-table-wrap { margin-inline: -4px; }.crm-table { width: 100%; table-layout: fixed; }
+.crm-table th:nth-child(1) { width: 15%; }.crm-table th:nth-child(2) { width: 24%; }.crm-table th:nth-child(3) { width: 12%; }.crm-table th:nth-child(4) { width: 17%; }.crm-table th:nth-child(5) { width: 11%; }.crm-table th:nth-child(6), .crm-table th:nth-child(7) { width: 10.5%; }
+button.crm-job-link { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; border: 0; background: transparent; padding: 0; color: var(--primary); font: inherit; text-align: left; cursor: pointer; }.crm-job-link:hover { text-decoration: underline; text-underline-offset: 3px; }.crm-job-link:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: 3px; border-radius: 4px; }.crm-job-link .material-symbols-outlined { flex: 0 0 auto; font-size: 15px; }.crm-job-no { color: inherit; overflow-wrap: anywhere; }.crm-subject, .crm-service { display: grid; gap: 3px; min-width: 0; }.crm-subject strong { overflow-wrap: anywhere; }.crm-subject small, .crm-service small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.crm-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 2px; }.crm-pagination small { color: var(--muted); font-size: 12px; }.crm-pagination > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.crm-state { display: grid; justify-items: center; gap: 8px; padding: 42px 16px; color: var(--muted); text-align: center; }.crm-state .material-symbols-outlined { color: var(--primary); font-size: 30px; }.crm-state p, .crm-state small { margin: 0; font-size: 13px; }
+.crm-state-error { grid-template-columns: auto minmax(0, 1fr); justify-items: start; align-items: start; padding: 28px 16px; border: 1px solid color-mix(in srgb, var(--red) 25%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--red) 5%, var(--card)); text-align: left; }.crm-state-error .material-symbols-outlined { color: var(--red); }.crm-state-error strong { color: var(--text); }.crm-state-error p { margin: 4px 0 10px; color: var(--muted); overflow-wrap: anywhere; }.crm-detail-note { display: flex; align-items: flex-start; gap: 9px; padding: 12px; border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--yellow) 9%, var(--card)); }.crm-detail-note > .material-symbols-outlined { flex: 0 0 auto; color: var(--yellow); font-size: 19px; }.crm-detail-note strong { color: var(--text); font-size: 13px; }.crm-detail-note p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.crm-detail-loading { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 90px; color: var(--muted); font-size: 12px; }.crm-detail-note-error { border-color: color-mix(in srgb, var(--red) 30%, var(--line)); background: color-mix(in srgb, var(--red) 6%, var(--card)); }.crm-detail-note-error > .material-symbols-outlined { color: var(--red); }.crm-detail-section { display: grid; gap: 8px; margin-top: 16px; }.crm-detail-section h3 { margin: 0; color: var(--text); font-size: 14px; }.crm-detail-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }.crm-detail-section-heading small { color: var(--muted); font-size: 11px; }.crm-detail-description { min-height: 60px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }.crm-detail-empty { padding: 18px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 12px; text-align: center; }.crm-answer-list { display: grid; gap: 8px; max-height: 270px; overflow-y: auto; }.crm-answer { display: grid; gap: 5px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }.crm-answer-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }.crm-answer-meta strong { color: var(--text); font-size: 12px; overflow-wrap: anywhere; }.crm-answer-meta small, .crm-answer-attachment { color: var(--muted); font-size: 11px; }.crm-answer p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.crm-source-link { display: inline-flex; align-items: center; gap: 5px; color: inherit; text-decoration: none; }.crm-source-link .material-symbols-outlined { font-size: 16px; }
+.crm-list-heading-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }.crm-view-switcher { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }.crm-view-switcher .btn { min-width: 60px; padding: 6px 9px; border: 0; background: transparent; color: var(--muted); font-size: 11px; }.crm-view-switcher .btn.active { background: var(--card); color: var(--primary); box-shadow: 0 1px 3px rgb(15 23 42 / 10%); }.crm-board-hidden { display: none !important; }.crm-defect-option:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: 2px; }.crm-link-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--primary) 5%, var(--card)); }.crm-link-panel > div { display: grid; gap: 4px; min-width: 0; }.crm-link-panel small { color: var(--muted); font-size: 11px; }.crm-link-panel strong { overflow-wrap: anywhere; }.crm-link-panel a { color: var(--primary); }.crm-link-error { color: var(--red); font-size: 11px; overflow-wrap: anywhere; }.crm-link-modal { width: min(620px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 32px)); overflow-y: auto; }.crm-link-search { display: grid; gap: 5px; color: var(--text); font-size: 12px; font-weight: 700; }.crm-link-search input { width: 100%; height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }.crm-link-search input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }.crm-defect-options { display: grid; gap: 7px; max-height: 390px; overflow-y: auto; margin-top: 13px; }button.crm-defect-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 10px 12px; color: var(--text); text-align: left; cursor: pointer; }.crm-defect-option:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); background: var(--primary-soft); }.crm-defect-option > span { display: grid; gap: 3px; min-width: 0; }.crm-defect-option > span:last-child { justify-items: end; flex: 0 0 auto; }.crm-defect-option strong, .crm-defect-option small { overflow-wrap: anywhere; }.crm-defect-option strong { color: var(--primary); font-size: 12px; }.crm-defect-option small { color: var(--muted); font-size: 11px; }
+@media (max-width: 1000px) { .crm-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.crm-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .crm-connection-card, .crm-filter-heading, .crm-list-heading { align-items: stretch; flex-direction: column; }.crm-connection-meta { min-width: 0; text-align: left; }.crm-connection-actions { justify-items: start; }.crm-filter-heading > .btn { align-self: flex-start; }.crm-list-heading > small { text-align: left; }.crm-list-heading-actions { justify-content: space-between; }.crm-filter-row { grid-template-columns: 1fr; }.crm-pagination { align-items: stretch; flex-direction: column; }.crm-pagination > div .btn { flex: 1 1 140px; }.crm-board { grid-template-columns: 1fr; }.crm-link-panel { align-items: stretch; flex-direction: column; }.crm-link-panel .btn { justify-self: start; } }
+@media (max-width: 420px) { .crm-kpi-grid { grid-template-columns: 1fr; }.crm-connection-title h2 { font-size: 18px; } }
+.crm-link-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.crm-create-defect-modal { width: min(620px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 32px)); overflow-y: auto; }
+.crm-create-defect-note { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); border-radius: 10px; background: var(--primary-soft); color: var(--muted); font-size: 12px; line-height: 1.5; }
+.crm-create-defect-note .material-symbols-outlined { flex: 0 0 auto; color: var(--primary); font-size: 18px; }
+.crm-create-defect-form { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; }
+.crm-create-defect-form label { display: grid; gap: 5px; color: var(--text); font-size: 12px; font-weight: 700; }
+.crm-create-defect-form .full { grid-column: 1 / -1; }
+.crm-create-defect-form input, .crm-create-defect-form select, .crm-create-defect-form textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); padding: 9px 10px; font: inherit; font-size: 13px; font-weight: 400; resize: vertical; }
+.crm-create-defect-form input, .crm-create-defect-form select { height: 40px; resize: none; }
+.crm-create-defect-form input:focus, .crm-create-defect-form select:focus, .crm-create-defect-form textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+@media (max-width: 760px) { .crm-link-actions { justify-content: flex-start; } .crm-create-defect-form { grid-template-columns: 1fr; } .crm-create-defect-form .full { grid-column: auto; } }
+
+/* CRM visual refresh: stronger hierarchy, calmer surfaces, and clearer scan paths. */
+.crm-page { gap: 20px; }
+.crm-list-card { gap: 16px; padding: 18px 20px; }
+.crm-list-heading { align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.crm-list-heading p { line-height: 1.5; }
+.crm-list-heading-actions { position: relative; z-index: 1; }
+.crm-view-switcher { border-radius: 10px; background: var(--surface); }
+.crm-view-switcher .btn { min-height: 32px; border-radius: 7px; font-weight: 700; }
+.crm-view-switcher .btn.active { background: var(--card); box-shadow: 0 2px 6px rgb(15 23 42 / 10%); }
+.crm-table-wrap { margin-inline: -8px; }
+.crm-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); color: var(--muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.crm-table tbody tr { transition: background .16s ease, box-shadow .16s ease; }
+.crm-table tbody tr:hover { background: color-mix(in srgb, var(--primary-soft) 48%, var(--card)); box-shadow: inset 3px 0 0 var(--primary); }
+.crm-table td { padding-block: 13px; vertical-align: middle; }
+.crm-job-link { font-weight: 700; }
+.crm-subject strong { font-size: 13px; line-height: 1.45; }
+.crm-service span { font-weight: 700; }
+.crm-pagination { margin-top: 2px; padding-top: 14px; border-top: 1px solid var(--line); }
+.crm-detail-section { gap: 10px; margin-top: 20px; }
+.crm-detail-section h3 { font-size: 15px; }
+.crm-detail-description, .crm-answer { border-radius: 12px; }
+.crm-link-panel { border-radius: 12px; }
+.crm-state { min-height: 190px; align-content: center; }
+.crm-state-error { margin-inline: 2px; }
+@media (max-width: 760px) {
+  .crm-filter-card, .crm-list-card { padding: 16px 14px; }
+  .crm-filter-heading, .crm-list-heading { align-items: stretch; }
+  .crm-table-wrap { margin-inline: -4px; }
+  .crm-table td { padding-block: 10px; }
+  .crm-list-heading-actions { justify-content: space-between; }
+}
+
+/* CRM ticket list. หัวตารางชิดซ้ายตรงกับข้อมูล, คอลัมน์สัดส่วนคงที่บน Desktop, แถบซ้ายสีตามกลุ่มสถานะ */
+.crm-list-date { display: grid; gap: 2px; min-width: 0; }
+.crm-list-date strong, .crm-list-date small { display: block; white-space: nowrap; }
+.crm-list-date strong { color: var(--text); font-size: 12px; font-weight: 700; line-height: 1.25; }
+.crm-list-date small { color: var(--muted); font-size: 11px; line-height: 1.25; }
+.crm-table thead th { padding-block: 11px; text-align: left; }
+.crm-table tbody tr { --crm-row: var(--info); }
+.crm-table tbody tr.crm-row-open { --crm-row: var(--yellow); }.crm-table tbody tr.crm-row-closed { --crm-row: var(--green); }
+.crm-table tbody td:first-child { box-shadow: inset 3px 0 0 var(--crm-row); }
+.crm-table tbody tr:hover { box-shadow: none; }
+.crm-table tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--crm-row); }
+.crm-subject small { display: inline-flex; align-items: center; gap: 4px; }
+.crm-subject small .material-symbols-outlined { font-size: 14px; }
+.crm-service > span { color: var(--text); font-size: 13px; }
+.crm-product-chip { justify-self: start; max-width: 100%; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 10%, var(--card)); }
+.crm-reporter { display: grid; gap: 4px; min-width: 0; }
+.crm-reporter strong, .crm-reporter small { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.crm-reporter strong { color: var(--text); font-size: 13px; font-weight: 600; }
+.crm-reporter small { color: var(--muted); font-size: 11px; }
+.crm-reporter .material-symbols-outlined { flex: 0 0 auto; color: var(--muted); font-size: 15px; }
+.crm-reporter span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-age { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+.crm-age small { color: var(--muted); font-size: 11px; line-height: 1.3; white-space: normal; }
+.crm-age-pill { display: inline-flex; align-items: baseline; gap: 3px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.crm-age-pill strong { font-size: 15px; font-weight: 800; }
+.crm-age-fresh { background: color-mix(in srgb, var(--green) 12%, var(--card)); color: var(--green); }
+.crm-age-warn { background: color-mix(in srgb, var(--yellow) 16%, var(--card)); color: var(--warning-text); }
+.crm-age-late { background: color-mix(in srgb, var(--red) 12%, var(--card)); color: var(--red); }
+.crm-age-none { background: color-mix(in srgb, var(--muted) 10%, var(--card)); color: var(--muted); }
+@media (max-width: 760px) { .crm-table tbody td:first-child, .crm-table tbody tr:hover td:first-child { box-shadow: none; } .crm-table tbody tr { border-left: 3px solid var(--crm-row); } }
+
+@media (min-width: 761px) {
+  .crm-table-wrap { overflow-x: hidden; }
+  .crm-table th, .crm-table td { min-width: 0; }
+  .crm-table th:first-child, .crm-table td:first-child { padding-left: 16px; }
+  .crm-table th:nth-child(1), .crm-table td:nth-child(1) { width: 16%; }
+  .crm-table th:nth-child(2), .crm-table td:nth-child(2) { width: 23%; }
+  .crm-table th:nth-child(3), .crm-table td:nth-child(3) { width: 9%; }
+  .crm-table th:nth-child(4), .crm-table td:nth-child(4) { width: 16%; }
+  .crm-table th:nth-child(5), .crm-table td:nth-child(5) { width: 13%; }
+  .crm-table th:nth-child(6), .crm-table td:nth-child(6) { width: 10%; }
+  .crm-table th:nth-child(7), .crm-table td:nth-child(7) { width: 13%; }
+  .crm-table td { overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
+  .crm-table td:nth-child(1), .crm-table td:nth-child(3), .crm-table td:nth-child(6) { white-space: nowrap; }
+  .crm-table td:nth-child(2) strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.4; }
+  .crm-table td:nth-child(4) span, .crm-table td:nth-child(4) small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crm-table td:nth-child(4) .crm-product-chip { display: inline-block; }
+}
+
+/* CRM Board (Kanban). การ์ดเป็น <button> — global `button:not(.icon-button)` (styles.css) บังคับ inline-flex + nowrap
+   ด้วย specificity 0,1,1 ซึ่งชนะ `.crm-board-ticket` เฉย ๆ จึงต้องเขียน selector เป็น `button.crm-board-ticket` */
+.crm-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.crm-board-column { --crm-col: var(--primary); display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.crm-board-column[data-bucket="Open"] { --crm-col: var(--yellow); }.crm-board-column[data-bucket="In Progress"] { --crm-col: var(--info); }.crm-board-column[data-bucket="Closed"] { --crm-col: var(--green); }
+.crm-board-column-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-top: 3px solid var(--crm-col); border-bottom: 1px solid var(--line); background: var(--card); color: var(--text); }
+.crm-board-column-head::before { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--crm-col); content: ""; }
+.crm-board-column-head strong { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+.crm-board-column-head > span { display: inline-grid; min-width: 26px; height: 22px; padding: 0 7px; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--crm-col) 14%, var(--card)); color: var(--text); font-size: 11px; font-weight: 800; }
+.crm-board-column-body { display: grid; align-content: start; gap: 10px; min-width: 0; min-height: 120px; max-height: 68vh; padding: 10px; overflow-y: auto; overscroll-behavior: contain; }
+.crm-board-empty { display: grid; place-items: center; min-height: 96px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 12px; }
+button.crm-board-ticket { display: grid; gap: 8px; width: 100%; min-width: 0; padding: 12px 12px 11px 14px; border: 1px solid var(--line); border-left: 3px solid var(--crm-col); border-radius: 10px; background: var(--card); color: var(--text); font-size: 12px; font-weight: 400; text-align: left; white-space: normal; box-shadow: 0 1px 2px rgb(15 23 42 / 5%); }
+button.crm-board-ticket:hover { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); border-left-color: var(--crm-col); box-shadow: 0 6px 16px rgb(15 23 42 / 9%); transform: translateY(-1px); }
+button.crm-board-ticket:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: 2px; }
+.crm-board-ticket-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.crm-board-ticket-top > strong { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .01em; text-overflow: ellipsis; white-space: nowrap; }
+.crm-board-ticket-top > .badge { flex: 0 0 auto; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-board-ticket-subject { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.crm-board-ticket-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.crm-board-ticket-meta > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.crm-board-ticket-meta > span > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-board-ticket-meta .material-symbols-outlined { flex: 0 0 auto; font-size: 14px; }
+.crm-board-ticket-meta > .crm-board-ticket-age { margin-left: auto; }
+@media (max-width: 1100px) and (min-width: 761px) { .crm-board-ticket-meta > .crm-board-ticket-age { margin-left: 0; } }
+@media (max-width: 760px) { .crm-board { grid-template-columns: 1fr; } .crm-board-column-body { max-height: none; overflow-y: visible; } }
+
+/* CRM header (Hero + KPI + Filter). ไม่ใช้ pseudo-element ตกแต่งที่ทับข้อความ; สีของ KPI มาจาก --crm-accent */
+.crm-page { gap: 18px; }
+.crm-connection-card { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 24px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--primary) 16%, var(--line)); border-left: 1px solid color-mix(in srgb, var(--primary) 16%, var(--line)); border-radius: 16px; background: linear-gradient(120deg, var(--primary-soft), var(--card) 58%); box-shadow: 0 6px 20px rgb(30 64 175 / 6%); }
+.crm-hero-main { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.crm-hero-icon { display: grid; flex: 0 0 auto; width: 56px; height: 56px; place-items: center; border-radius: 16px; background: var(--primary); color: var(--card); font-size: 30px; box-shadow: 0 8px 18px color-mix(in srgb, var(--primary) 30%, transparent); }
+.crm-connection-copy { min-width: 0; }
+.crm-connection-title { margin-top: 2px; }
+.crm-connection-title h2 { font-size: 22px; letter-spacing: -.01em; }
+.crm-connection-copy p { max-width: 640px; margin-top: 6px; font-size: 13px; line-height: 1.55; }
+.crm-connection-meta { display: grid; flex: 0 0 auto; gap: 12px; min-width: 240px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); text-align: left; box-shadow: 0 2px 8px rgb(15 23 42 / 5%); }
+.crm-account { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.crm-account > div { display: grid; gap: 1px; min-width: 0; }
+.crm-account-avatar { display: grid; flex: 0 0 auto; width: 40px; height: 40px; place-items: center; border-radius: 50%; background: var(--primary-soft); color: var(--primary); font-size: 13px; font-weight: 800; }
+.crm-connection-meta strong { color: var(--text); font-size: 16px; line-height: 1.3; }
+.crm-connection-actions { display: grid; justify-items: stretch; gap: 6px; margin-top: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.crm-connection-actions .btn { justify-content: center; padding: 8px 12px; border-color: color-mix(in srgb, var(--primary) 26%, var(--line)); background: var(--card); color: var(--primary); font-size: 12px; }
+.crm-connection-actions small { text-align: center; }
+.crm-kpi-grid { gap: 14px; }
+.crm-kpi { --crm-accent: var(--primary); display: grid; align-content: start; gap: 6px; padding: 16px 18px; border: 1px solid var(--line); border-top: 0; border-radius: 14px; background: var(--card); box-shadow: 0 3px 12px rgb(15 23 42 / 4%); }
+.crm-kpi-open { --crm-accent: var(--yellow); }.crm-kpi-progress { --crm-accent: var(--info); }.crm-kpi-closed { --crm-accent: var(--green); }
+.crm-kpi-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.crm-kpi-label { color: var(--muted); font-size: 12px; font-weight: 700; }
+.crm-kpi-icon { display: grid; flex: 0 0 auto; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: color-mix(in srgb, var(--crm-accent) 13%, var(--card)); color: var(--crm-accent); font-size: 20px; }
+.crm-kpi strong { margin-top: 2px; color: var(--text); font-size: 30px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.crm-kpi small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.crm-kpi-bar { display: block; height: 5px; margin-top: 4px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--crm-accent) 12%, var(--card)); }
+.crm-kpi-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--crm-accent); }
+.crm-filter-card, .crm-list-card { border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: 0 3px 12px rgb(15 23 42 / 4%); }
+.crm-filter-card { gap: 14px; padding: 16px 20px 18px; }
+.crm-filter-heading { align-items: center; padding-bottom: 0; border-bottom: 0; }
+.crm-filter-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.crm-section-icon { display: grid; flex: 0 0 auto; width: 36px; height: 36px; place-items: center; border-radius: 11px; background: var(--primary-soft); color: var(--primary); font-size: 20px; }
+.crm-filter-heading h3 { font-size: 16px; }
+.crm-filter-heading > .btn { padding: 8px 14px; }
+.crm-filter-row { gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.crm-filter-row label { gap: 6px; color: var(--muted); font-size: 11px; }
+.crm-filter-row input, .crm-filter-row select { height: 40px; border-radius: 9px; background: var(--card); }
+@media (max-width: 900px) { .crm-connection-card { align-items: stretch; flex-direction: column; } .crm-connection-meta { min-width: 0; } }
+@media (max-width: 760px) {
+  .crm-connection-card { padding: 18px 16px; }
+  .crm-hero-main { align-items: flex-start; gap: 12px; }
+  .crm-hero-icon { width: 44px; height: 44px; border-radius: 13px; font-size: 24px; }
+  .crm-connection-title h2 { font-size: 19px; }
+  .crm-filter-card { padding: 14px; }
+  .crm-filter-heading { align-items: stretch; }
+  .crm-filter-row { padding: 12px; }
+}
+@media (max-width: 420px) { .crm-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .crm-kpi { padding: 13px 14px; } .crm-kpi-icon { width: 30px; height: 30px; font-size: 17px; } .crm-kpi strong { font-size: 26px; } }
+
+/* CRM date range: preset 7/15/30 วัน + "กำหนดเอง" เปิดส่วนเลือกวันที่แยก; วันที่แสดง วัน/เดือน/ปี พ.ศ. ทับบน native date input
+   ที่โปร่งใส (รูปแบบของ input ขึ้นกับ locale ของเบราว์เซอร์จึงแสดงเองไม่ได้). ปุ่มใช้ selector 0,2,1 เพื่อชนะ global button */
+.crm-range-group { display: grid; grid-column: span 2; align-content: start; gap: 6px; min-width: 0; }
+.crm-range-group > span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.crm-range-group > small { color: var(--muted); font-size: 11px; }
+.crm-range-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr); gap: 4px; height: 40px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.crm-filter-row .crm-range-presets button { justify-content: center; min-width: 0; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 700; }
+.crm-filter-row .crm-range-presets button:hover { background: var(--surface); color: var(--text); }
+.crm-filter-row .crm-range-presets button.active { background: var(--primary); color: var(--card); box-shadow: 0 2px 6px color-mix(in srgb, var(--primary) 30%, transparent); }
+.crm-filter-row .crm-range-presets button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: 1px; }
+.crm-range-presets .material-symbols-outlined { font-size: 16px; }
+.crm-custom-range { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 18px; padding: 14px; border: 1px dashed color-mix(in srgb, var(--primary) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary-soft) 55%, var(--card)); }
+.crm-custom-range-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.crm-custom-range-head > .material-symbols-outlined { color: var(--primary); font-size: 22px; }
+.crm-custom-range-head > div { display: grid; gap: 1px; }
+.crm-custom-range-head strong { color: var(--text); font-size: 13px; }
+.crm-custom-range-head small { color: var(--muted); font-size: 11px; }
+.crm-custom-range-fields { display: flex; align-items: flex-end; gap: 10px; flex: 0 1 460px; min-width: 0; }
+.crm-custom-range-sep { padding-bottom: 10px; color: var(--muted); }
+.crm-date-field { display: grid; flex: 1 1 0; gap: 6px; min-width: 0; color: var(--muted); font-size: 11px; font-weight: 700; }
+.crm-date-control { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 40px; padding: 0 10px 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font-size: 13px; font-weight: 400; }
+.crm-date-control:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.crm-date-control > .material-symbols-outlined { color: var(--muted); font-size: 18px; }
+.crm-date-control > input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+@media (max-width: 1000px) { .crm-range-group { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .crm-range-group { grid-column: auto; } .crm-custom-range { align-items: stretch; flex-direction: column; } .crm-custom-range-fields { flex-basis: auto; } }
+@media (max-width: 420px) { .crm-custom-range-fields { flex-direction: column; align-items: stretch; } .crm-custom-range-sep { display: none; } }
+
+/* CRM Ticket detail modal: หัว (Job No. + สถานะ + อายุงาน + เรื่อง) → เนื้อหา 2 คอลัมน์ที่เลื่อนในคอลัมน์เอง → footer
+   กล่องสูงไม่เกินจอ เพื่อให้เห็นข้อมูลสำคัญทั้งหมดโดยไม่ต้องเลื่อนทั้ง modal; selector 0,3,0 ชนะ `.modal-box > .modal-head` กลาง */
+.modal-box.crm-ticket-modal { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(1080px, calc(100vw - 32px)); max-width: none; height: min(780px, calc(100dvh - 32px)); max-height: none; padding: 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); box-shadow: 0 24px 70px rgb(15 23 42 / 22%); }
+.modal-box.crm-ticket-modal > .modal-head { position: static; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 0; padding: 18px 22px 16px; border-bottom: 1px solid var(--line); background: linear-gradient(120deg, var(--primary-soft), var(--card) 65%); backdrop-filter: none; }
+.crm-ticket-head-main { display: grid; gap: 4px; min-width: 0; }
+.crm-ticket-head-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+.modal-box.crm-ticket-modal .crm-ticket-head-title h2 { margin: 0; color: var(--primary); font-size: 22px; font-weight: 800; letter-spacing: .01em; overflow-wrap: anywhere; }
+.crm-ticket-head-title .crm-age-pill { align-items: center; }
+.crm-ticket-head-title .crm-age-pill .material-symbols-outlined { font-size: 15px; }
+.crm-ticket-head-title .crm-age-pill strong { font-size: 13px; }
+.crm-ticket-head-main > p { display: -webkit-box; margin: 2px 0 0; overflow: hidden; color: var(--text); font-size: 15px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.crm-ticket-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; min-height: 0; }
+.crm-ticket-main { display: grid; align-content: start; gap: 16px; min-width: 0; min-height: 0; padding: 18px 22px; overflow-y: auto; overscroll-behavior: contain; }
+.crm-ticket-aside { display: grid; align-content: start; gap: 12px; min-width: 0; min-height: 0; padding: 18px; overflow-y: auto; overscroll-behavior: contain; border-left: 1px solid var(--line); background: var(--surface); }
+.crm-ticket-main .crm-detail-section { gap: 8px; margin: 0; }
+.crm-ticket-main .crm-detail-section h3 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; }
+.crm-ticket-main .crm-detail-section h3 .material-symbols-outlined { color: var(--primary); font-size: 18px; }
+.crm-ticket-main .crm-detail-description { min-height: 0; max-height: 220px; overflow-y: auto; border-radius: 12px; background: var(--card); }
+.crm-ticket-main .crm-answer-list { max-height: none; overflow: visible; gap: 10px; }
+.crm-ticket-main .crm-answer { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; border-radius: 12px; }
+.crm-answer-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: var(--primary-soft); color: var(--primary); font-size: 11px; font-weight: 800; }
+.crm-ticket-main .crm-answer > div { display: grid; gap: 4px; min-width: 0; }
+.crm-answer-attachment { display: inline-flex; align-items: center; gap: 4px; }
+.crm-answer-attachment .material-symbols-outlined { font-size: 14px; }
+.crm-ticket-facts { display: grid; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.crm-ticket-facts > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: baseline; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.crm-ticket-facts > div:last-child { border-bottom: 0; }
+.crm-ticket-facts dt { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.crm-ticket-facts dt .material-symbols-outlined { font-size: 15px; }
+.crm-ticket-facts dd { margin: 0; min-width: 0; overflow: hidden; color: var(--text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.crm-ticket-aside .crm-link-panel { align-items: stretch; flex-direction: column; margin: 0; }
+.crm-ticket-aside .crm-link-actions { display: grid; justify-content: stretch; }
+.crm-ticket-aside .crm-link-actions .btn { justify-content: center; width: 100%; }
+.modal-box.crm-ticket-modal > .modal-actions { position: static; margin: 0; padding: 12px 22px; border-top: 1px solid var(--line); background: var(--card); }
+@media (max-width: 900px) { .crm-ticket-body { grid-template-columns: minmax(0, 1fr) 280px; } .crm-ticket-facts > div { grid-template-columns: 96px minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .modal-box.crm-ticket-modal { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .modal-box.crm-ticket-modal > .modal-head { padding: 14px 16px; }
+  .modal-box.crm-ticket-modal .crm-ticket-head-title h2 { font-size: 19px; }
+  .crm-ticket-body { display: flex; flex-direction: column; overflow-y: auto; }
+  .crm-ticket-aside, .crm-ticket-main { flex: 0 0 auto; }
+  .crm-ticket-aside { order: -1; padding: 14px 16px; overflow: visible; border-left: 0; border-bottom: 1px solid var(--line); }
+  .crm-ticket-main { padding: 14px 16px; overflow: visible; }
+  .modal-box.crm-ticket-modal > .modal-actions { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+  .modal-box.crm-ticket-modal > .modal-actions > * { flex: 1 1 0; justify-content: center; }
+}
+
+/* งานที่ปิดแล้ว (Finish/Close) แยกจากงานที่ต้องดำเนินการ: Board เหลือ Open/In Progress และ Ticket ที่ปิดแล้วอยู่ใน
+   <details> พับไว้ใต้รายการหลัก (ใช้ทั้ง List/Board) — ตารางโทนจางลงเพื่อไม่แย่งความสนใจ */
+.crm-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.crm-active-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 120px; color: var(--muted); font-size: 13px; }
+.crm-active-empty .material-symbols-outlined { color: var(--green); font-size: 22px; }
+.crm-closed-section { overflow: hidden; border: 1px solid color-mix(in srgb, var(--green) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--green) 4%, var(--card)); }
+.crm-closed-section > summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.crm-closed-section > summary::-webkit-details-marker { display: none; }
+.crm-closed-section > summary:hover { background: color-mix(in srgb, var(--green) 7%, var(--card)); }
+.crm-closed-section > summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: -3px; }
+.crm-closed-icon { display: grid; flex: 0 0 auto; width: 34px; height: 34px; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--green) 14%, var(--card)); color: var(--green); font-size: 20px; }
+.crm-closed-title { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
+.crm-closed-title strong { color: var(--text); font-size: 14px; }
+.crm-closed-title small { color: var(--muted); font-size: 11px; }
+.crm-closed-count { flex: 0 0 auto; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--green) 14%, var(--card)); color: var(--green); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.crm-closed-chevron { flex: 0 0 auto; color: var(--muted); font-size: 22px; transition: transform .2s ease; }
+.crm-closed-section[open] .crm-closed-chevron { transform: rotate(180deg); }
+.crm-closed-section[open] > summary { border-bottom: 1px solid var(--line); }
+.crm-closed-table { margin: 0; border: 0; border-radius: 0; background: var(--card); }
+.crm-closed-table .crm-table tbody tr { opacity: .82; }
+.crm-closed-table .crm-table tbody tr:hover { opacity: 1; }
+@media (max-width: 760px) { .crm-closed-section > summary { flex-wrap: wrap; } .crm-closed-table { padding: 10px; } }
+
+/* Board card ใช้สีตามสถานะของ Ticket (ตรงกับ Badge จาก statusTone) แทนสีคอลัมน์: แถบซ้าย + พื้นอ่อน + เส้นขอบโทนเดียวกัน */
+button.crm-board-ticket { --crm-card: var(--info); border-color: color-mix(in srgb, var(--crm-card) 22%, var(--line)); border-left-color: var(--crm-card); background: color-mix(in srgb, var(--crm-card) 5%, var(--card)); }
+button.crm-board-ticket[data-tone="yellow"] { --crm-card: var(--yellow); }
+button.crm-board-ticket[data-tone="green"] { --crm-card: var(--green); }
+button.crm-board-ticket[data-tone="purple"] { --crm-card: #7c3aed; }
+button.crm-board-ticket[data-tone="gray"] { --crm-card: var(--muted); }
+button.crm-board-ticket:hover { border-color: color-mix(in srgb, var(--crm-card) 45%, var(--line)); border-left-color: var(--crm-card); background: color-mix(in srgb, var(--crm-card) 8%, var(--card)); }
+button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in srgb, var(--crm-card) 18%, var(--line)); }
+
+/* Hero แบบกะทัดรัด (แถวเดียว ~72px): ไอคอน 40px + ชื่อ/Badge/คำอธิบาย ทางซ้าย, บัญชี + ปุ่มทดสอบเป็นแถวเดียวทางขวา
+   (ไม่มีการ์ดซ้อน) — ลดพื้นที่จากเดิม ~190px โดยข้อมูลครบเท่าเดิม */
+.crm-connection-card { min-height: 0; gap: 16px; padding: 14px 18px; border-radius: 14px; box-shadow: 0 3px 12px rgb(30 64 175 / 5%); }
+.crm-hero-main { gap: 12px; }
+.crm-hero-icon { width: 40px; height: 40px; border-radius: 12px; font-size: 22px; box-shadow: 0 4px 10px color-mix(in srgb, var(--primary) 25%, transparent); }
+.crm-connection-title { margin-top: 0; gap: 8px; }
+.crm-connection-title h2 { font-size: 18px; }
+.crm-connection-copy p { margin-top: 2px; font-size: 12px; line-height: 1.4; }
+.crm-connection-meta { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.crm-account { gap: 9px; }
+.crm-account-avatar { width: 32px; height: 32px; font-size: 11px; }
+.crm-account > div { gap: 0; }
+.crm-account span, .crm-account small { font-size: 11px; line-height: 1.35; }
+.crm-connection-meta strong { font-size: 14px; line-height: 1.25; }
+.crm-connection-actions { display: flex; align-items: center; gap: 8px; padding: 0 0 0 14px; border-top: 0; border-left: 1px solid var(--line); }
+.crm-connection-actions .btn { padding: 7px 12px; white-space: nowrap; }
+.crm-connection-actions small { max-width: 220px; text-align: left; }
+@media (max-width: 900px) { .crm-connection-card { align-items: stretch; flex-direction: column; gap: 12px; } .crm-connection-meta { justify-content: space-between; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line); } }
+@media (max-width: 760px) { .crm-connection-card { padding: 14px; } .crm-hero-main { align-items: center; } .crm-hero-icon { width: 36px; height: 36px; font-size: 20px; } .crm-connection-title h2 { font-size: 17px; } }
+@media (max-width: 420px) { .crm-connection-actions { width: 100%; padding: 10px 0 0; border-left: 0; border-top: 1px solid var(--line); } .crm-connection-actions .btn { flex: 1 1 auto; justify-content: center; } }
+
+/* ฟอร์มอัปเดต Ticket (บนสุดของคอลัมน์ซ้ายใน Detail Modal): เพิ่มประวัติการติดต่อ + เปลี่ยนสถานะ + ส่งกลับเจ้าของเรื่อง → PATCH เดียว */
+.crm-reply { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary-soft) 45%, var(--card)); }
+.crm-reply-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; }
+.crm-reply-head h3 { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; }
+.crm-reply-head h3 .material-symbols-outlined { color: var(--primary); font-size: 19px; }
+.crm-reply-head small { color: var(--muted); font-size: 11px; }
+.crm-reply-text textarea { display: block; width: 100%; min-height: 70px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; resize: vertical; }
+.crm-reply-text textarea:focus, .crm-reply-status select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.crm-reply-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+.crm-reply-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.crm-reply-status select { height: 36px; min-width: 150px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.crm-reply-owner { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.crm-reply-owner input { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
+.crm-reply-owner > span { display: grid; gap: 0; line-height: 1.3; }
+.crm-reply-owner small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.crm-reply-owner:has(input:disabled) { cursor: not-allowed; opacity: .6; }
+.crm-reply-submit { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.crm-reply-submit small { color: var(--muted); font-size: 11px; }
+.crm-reply-submit .btn { white-space: nowrap; }
+.crm-reply .crm-inline-alert { background: color-mix(in srgb, var(--red) 6%, var(--card)); border-color: color-mix(in srgb, var(--red) 30%, var(--line)); color: var(--red); }
+@media (max-width: 760px) { .crm-reply-controls { align-items: stretch; flex-direction: column; } .crm-reply-status select { flex: 1 1 auto; } .crm-reply-submit { justify-content: space-between; margin-left: 0; } }
+
+/* สถานะในหัว Detail Modal ต้องเด่นกว่า Badge ทั่วไป: ใหญ่ขึ้น + เส้นขอบ + จุดสี บนพื้นสีของสถานะ (ไม่กลืนกับพื้นไล่สีของหัว) */
+.crm-ticket-head-title > .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px 5px 10px; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); background: color-mix(in srgb, currentColor 13%, var(--card)); font-size: 13px; font-weight: 800; box-shadow: 0 1px 2px rgb(15 23 42 / 8%); }
+.crm-ticket-head-title > .badge::before { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: currentColor; content: ""; }

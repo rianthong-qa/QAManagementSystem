@@ -148,8 +148,9 @@ JobDetailsHD กลไกเดียวที่มีคือปุ่ม "Up
 ทับ job ทั้งใบ ไม่ใช่ partial update ดังนั้น flow คือ:
 
 1. `GET /Support/HelpDesksJob?JobNo=X&JobType=HD` ดึง snapshot ปัจจุบันของ job ทั้งใบ
-2. ต่อท้าย `Description` เดิมด้วย `[QA Hub] {ชื่อผู้คอมเมนต์} (วันเวลา): {ข้อความ}` — ถ้ารวมกันเกิน 1000 ตัวอักษร
-   (limit เดิมของ CRM) จะตัดข้อความเก่าสุดออกจากหน้า ไม่ตัดคอมเมนต์ใหม่ที่เพิ่งกดส่ง
+2. ตั้ง `Description` เป็น **เฉพาะคอมเมนต์ใหม่** `[QA Hub] {ชื่อผู้คอมเมนต์} (dd/MM/yyyy HH:mm พ.ศ.): {ข้อความ}` — Description ของ
+   การ Update คือข้อความตอบ ซึ่ง CRM บันทึกเป็นแถวใหม่ใน "ประวัติการติดต่อ" (ยืนยันกับผู้ใช้ 2026-10-03; เดิมต่อท้าย
+   ข้อความสะสม ทำให้แต่ละแถวมีคอมเมนต์เก่าซ้ำ) ไม่เกิน 1000 ตัวอักษรโดยตัดเนื้อหาก่อนและคงลิงก์รูปภาพท้ายข้อความไว้
 3. `PUT /Support` ส่งกลับไปทั้งใบ carry-over ทุก field เดิมที่ได้จาก step 1 ไม่แตะ Status/Assignto/Product ฯลฯ —
    ยกเว้น `SysBranchId` ที่ CRM เองก็ hardcode เป็น `"00000"` เสมอ (ไม่ได้อ่านจาก job)
 4. **ไม่ส่งอีเมลแจ้งเตือนซ้ำ** (CRM's own UI form แนบ CC/ToAdd/Body/SubjectEmail มาในคำขอ Update เดียวกันเพื่อยิงอีเมล
@@ -258,3 +259,41 @@ sync กลับมาเป็น DefectActivity ใน QA Hub ด้วย (�
 - **Phase 1**: Schema (`CrmTicketId` ฯลฯ) + ปุ่ม "ส่งไป CRM" + `CrmApiClient` (create) + `DefectActivity` log — ต้องมี Service Account (ข้อ 7.1) และ Product/Version mapping (ข้อ 7.2) พร้อมก่อน
 - **Phase 2**: `CrmSyncWorker` poll กลับมาอัปเดต Defect (status/assignto/link) + `DefectActivity` log
 - **Phase 3**: `IEmailSender` + Gmail SMTP + trigger ทั้ง 2 จุด — ต้องมีบัญชี Gmail ส่ง (ข้อ 7.4)
+
+## 10. CRM read-only work queue module (2026-10-02)
+
+Phase 1 backend implementation is now in progress in QA Hub. It adds a per-user read-only CRM list
+adapter and `GET /api/v1/crm/tickets`; the adapter uses the current user's CRM credential and
+`Assignto` scope, with bounded date-range fallback and local pagination. This does not change the
+existing Defect-to-CRM create/update or background sync flows. The raw HelpDeskExport response,
+upstream pagination behavior, and a second-user isolation test remain integration-test gates before
+the phase is considered complete.
+
+### CRM read-only work queue detail (2026-10-03)
+
+The QA Hub read-only detail endpoint `GET /api/v1/crm/tickets/{jobNo}` now uses the established CRM
+adapter calls `GET /Support/HelpDesksJob?JobNo=...&JobType=HD` and
+`GET /Support/HelpDeskAnswerMain?DetailJobNo=...`. The backend re-checks the returned `Assignto` against
+the current user's CRM username before returning Description or answer history; out-of-scope tickets return
+`CRM_TICKET_NOT_FOUND`. This remains read-only and still requires an integration run with a real CRM account.
+
+All CRM GET adapter calls now share the per-user 401 handling rule: invalidate the cached token and retry
+once with a fresh token, then surface the stable QA Hub error if the second attempt is unauthorized.
+### CRM controlled update extension (2026-10-03)
+
+Phase 4 adds a deliberately narrow QA Hub to CRM write-back path:
+
+- `CRM.EDIT` is separate from read-only `CRM.VIEW`.
+- A Ticket must be linked to an accessible QA Hub Defect before it can be changed from the CRM page.
+- The server re-reads the CRM Ticket, checks the expected Status/Assignee values, and returns a conflict instead of overwriting a newer remote change.
+- Only the controlled Status set `Open`, `Continue`, `Close`, and `Finish` is exposed in this increment; the CRM full-form update carries forward all other fields.
+- On success, the Defect CRM snapshot and `CrmTicketUpdated` activity are updated. Production write-back verification remains pending and no production Ticket was changed during implementation.
+
+### CRM create-defect extension (2026-10-03)
+
+Phase 5 adds a QA Hub-only creation path from an in-scope CRM Ticket:
+
+- `POST /api/v1/crm/tickets/{jobNo}/create-defect` requires `DEFECT.EDIT` and Project Access while inheriting `CRM.VIEW` from the controller.
+- The server re-checks CRM ownership before creating the Defect, validates an active Project, rejects duplicate Ticket links, and generates the normal Project Defect code.
+- The created Defect stores the CRM Ticket ID and current CRM Status/Assignee snapshot and records `CreatedFromCrm` activity.
+- This phase deliberately does not call CRM write-back; it creates and links only QA Hub data.

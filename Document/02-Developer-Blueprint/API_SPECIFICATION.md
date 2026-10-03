@@ -903,3 +903,76 @@ Filter:
 - Target Cycle เริ่ม `Draft`; Target Cases เริ่ม `NotRun` และไม่มี Assignment/Execution/Step Result/Evidence
 - บันทึก `CopiedFromTestCycleId` และ Audit log ที่มี Source/Target กับจำนวน Case
 - ผู้เรียกต้องมี JWT, `EXECUTION.RUN` และ Project access; ตรวจ permission ที่ Backend เสมอ
+
+## Addendum: CRM Read-only API (Phase 1)
+
+All CRM endpoints require JWT authentication and either the `CRM.VIEW` permission or the `SYS_ADMIN` role. The backend resolves the
+current QA Hub user from the JWT, loads that user's CRM configuration, and enforces
+`Assignto == configured CRM Username`. `userId`, `crmUsername`, and assignee scope are never accepted
+from the frontend request.
+Authorization is also checked against the current database profile for the JWT subject, so a newly granted or revoked CRM permission takes effect without relying on a stale permission claim.
+
+- `GET /api/v1/crm/connection` returns per-user CRM configuration state without exposing a password or token.
+- `GET /api/v1/crm/tickets?page=1&pageSize=25&search=&status=&from=&to=` returns normalized ticket rows,
+  total count, page metadata, and summary counts. Default date range is the latest 30 days; maximum
+  `pageSize` is 100.
+- `GET /api/v1/crm/tickets/{jobNo}` returns a normalized read-only ticket detail plus CRM answer history.
+  The backend re-checks the returned `Assignto` against the current user's CRM username and returns
+  `CRM_TICKET_NOT_FOUND` when the ticket is outside the user's scope.
+- CRM date fields (`contactDate`, `dueDate`, `lastReplyAt`, answer `answerDate`) are returned as ISO 8601 UTC
+  (`yyyy-MM-ddTHH:mm:ss.fffffffZ`). CRM values without an offset — `dd/MM/yyyy[ HH:mm[:ss]]` (B.E. or A.D.),
+  `yyyy-MM-dd[THH:mm:ss]`, or digits `yyyyMMdd[HHmm[ss]]` — are treated as Bangkok time (+07:00), including
+  date-only values (midnight Bangkok). `from`/`to` are Bangkok calendar dates and are compared against the
+  ticket's Bangkok-local contact date.
+- CRM resource limits (server stability): every CRM/BlueID HTTP call times out after 30 s (`CRM_TIMEOUT`, 408) and reads
+  at most 20 MB (`CRM_RESULT_TOO_LARGE`); connection failures map to `CRM_UNAVAILABLE` (503). At most 2 headless-browser
+  BlueID logins run at once across all users (others wait up to 90 s, then `CRM_UNAVAILABLE`). A non-network login failure
+  (wrong credentials / changed login page) pauses that user's logins for 5 minutes (`CRM_UNAUTHORIZED` with the retry time)
+  until the cooldown ends or the user saves their CRM account again.
+- `GET /crm/tickets`: `from`–`to` may span at most 366 days (`CRM_INVALID_QUERY`). The raw HelpDeskExport result is cached per
+  user + status + date range for 60 s so paging/search do not re-download it; `refresh=true` bypasses the cache (the UI sends it
+  for the Refresh button and after an update). `lastFetchedAt` is the time the cached data was fetched from CRM.
+- When the BlueID login server (or BlueSea) cannot be reached from the API host (browser `net::ERR_*`, e.g.
+  `ERR_CONNECTION_TIMED_OUT`), CRM endpoints return `503` with code `CRM_UNAVAILABLE` and a `detail` that names the
+  network error or the time (Bangkok) of the next login attempt. New BlueID logins are paused for 1 minute for all
+  users after such a failure (`CrmTokenService.UnavailableCooldown`); cached CRM tokens keep working. `CrmSyncWorker`
+  logs one warning and stops the current poll tick instead of retrying every linked Defect.
+- Detail Answer history follows the CRM DataTables `start`/`length` contract up to 1,000 records and de-duplicates by `answerNo`; if CRM ignores pagination, the adapter stops when a page contains no new answers.
+- The CRM adapter currently uses `POST /Support/HelpDeskExport`, filters grouping rows without `JobNo`,
+  applies user scope and local pagination, and caps the returned ticket set at 5,000 rows.
+- Ticket mapping accepts the casing/field aliases observed across CRM List and Detail responses for
+  Service Type, Product, Owner, Member, and Last Reply without changing the normalized QA Hub DTO.
+- Error responses expose a stable `code` extension: `CRM_NOT_CONFIGURED`, `CRM_UNAUTHORIZED`,
+  `CRM_TIMEOUT`, `CRM_RESULT_TOO_LARGE`, `CRM_RATE_LIMITED`, `CRM_BAD_RESPONSE`, `CRM_UNAVAILABLE`,
+  `CRM_TICKET_NOT_FOUND`, and `CRM_INVALID_QUERY`.
+- `POST /api/v1/crm/connection/test` performs a user-initiated, read-only CRM probe using the current user's encrypted configuration; it returns `{ isReachable, checkedAt }` and never returns a CRM password or token.
+- Connection Probe maps configuration, credential, timeout, rate-limit, upstream availability, and malformed-response failures to the same stable CRM error codes used by the ticket endpoints.
+
+### Addendum: CRM Board and QA Hub Defect linking (Phase 3)
+
+- `GET /api/v1/crm/tickets/{jobNo}/defect` returns the QA Hub Defect linked to the CRM Ticket, if one exists. The backend re-checks the CRM Ticket scope for the current user before returning the link.
+- `POST /api/v1/crm/tickets/{jobNo}/link-defect` links an in-scope CRM Ticket to an existing accessible Defect. It requires `CRM.VIEW` plus `DEFECT.EDIT`, validates Project Access, rejects duplicate Ticket links and conflicting existing links, captures the latest CRM status/assignee snapshot, and writes a `CrmTicketLinked` activity entry.
+- Link requests accept only `{ "defectId": "..." }`; the frontend cannot provide or override the CRM ownership scope.
+### CRM Phase 4 — Controlled CRM Update
+
+- `GET /api/v1/crm/staff` requires `CRM.VIEW`; returns `[{ staffCode, name }]` from the BlueID staff directory (no email) for
+  showing "6101 เหรียญทอง" instead of bare staff codes. Cached server-side for 1 hour and shared by all users
+  (`CrmStaffDirectoryCache`); the first request after expiry reloads it with the caller's CRM token.
+- `GET /api/v1/crm/assignees` requires `CRM.VIEW` and `CRM.EDIT`; returns the allow-listed CRM assignee directory without credentials.
+- `PATCH /api/v1/crm/tickets/{jobNo}` requires `CRM.VIEW` and `CRM.EDIT`. Works on any Ticket in the current user's CRM scope
+  (backend re-checks `Assignto` via the detail call); a linked Defect is **not** required. Body:
+  `{ message?, status?, assignToOwner?, assignToStaffCode?, expectedStatus?, expectedAssignee? }` — at least one of
+  message/status/assignToOwner/assignToStaffCode. `message` (≤ 1000 chars) is sent as the CRM update `Description`, which
+  CRM records as a **new row in the answer history**; without a message a short `[QA Hub] {actor} (dd/MM/yyyy HH:mm B.E.)`
+  note describing the change is sent instead. `status` must be one of Open, Continue, Approve, Develop, Planning, Test,
+  EditErr, Finish, Close. `assignToOwner=true` sets `Assignto = OwnerSubjectId` (CRM's "to เจ้าของเรื่อง"; `SysDevelop`
+  unchanged) and cannot be combined with `assignToStaffCode` (which must be in the allowed directory). Expected values
+  mismatch → `409 CRM_CONFLICT`; nothing to change or missing owner → `400 CRM_INVALID_UPDATE`. If the Ticket is linked to
+  an accessible Defect, its CRM snapshot is updated and a `CrmTicketUpdated` activity is written.
+- When `assignToStaffCode` is supplied, the backend validates it against the allow-listed CRM/BlueID directory; UI selection is not treated as a security boundary.
+
+### CRM Phase 5 — Create QA Hub Defect from CRM Ticket
+
+- `POST /api/v1/crm/tickets/{jobNo}/create-defect` requires `CRM.VIEW`, `DEFECT.EDIT`, and Project Access. It creates a QA Hub Defect only; it never creates or updates a CRM Ticket.
+- Request: `{ "projectId": "...", "title": "...", "severity": "Critical|High|Medium|Low", "description": "..." }`. Title and Description may be prefilled from CRM detail, but final values are confirmed by the user.
+- The backend re-checks CRM ownership, validates the active Project, rejects an already-linked Ticket with `409 CRM_TICKET_ALREADY_LINKED`, generates a QA Hub Defect code, stores `CrmTicketId`, captures CRM Status/Assignee, and records `CreatedFromCrm` activity.

@@ -28,7 +28,9 @@ public sealed class CrmSyncWorker(IServiceScopeFactory scopeFactory, ILogger<Crm
                 var syncService = scope.ServiceProvider.GetRequiredService<CrmSyncService>();
                 await syncService.PollLinkedDefectsAsync(stoppingToken);
             }
-            catch (OperationCanceledException) { break; } // normal shutdown
+            // หยุดเฉพาะตอนปิดระบบจริง — timeout ของ HttpClient ก็โยน TaskCanceledException (เป็น OperationCanceledException)
+            // ถ้าจับรวมแล้ว break worker จะหยุด sync ถาวรเงียบ ๆ จนกว่าจะ restart API
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; } // normal shutdown
             catch (Exception ex)
             {
                 // A tick failing (e.g. a transient CRM/DB error) must not stop the worker permanently — log and
@@ -38,7 +40,7 @@ public sealed class CrmSyncWorker(IServiceScopeFactory scopeFactory, ILogger<Crm
             }
 
             try { await Task.Delay(interval, stoppingToken); }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }
 }

@@ -18,6 +18,7 @@ export type Page =
   | "defects"
   | "regression"
   | "automation"
+  | "crm"
   | "summary"
   | "risks"
   | "signoff"
@@ -71,7 +72,8 @@ export function currentUserId(): string {
 /** UI รอบ 4: dropdown ที่โหลดไม่สำเร็จยังคงเป็นรายการว่างเหมือนเดิม แต่ต้องแจ้งผู้ใช้ (เดิมเงียบ ดูเหมือนไม่มีข้อมูลจริง) */
 export async function okJsonOrEmpty<T = unknown[]>(response: Response, what: string, empty: T = [] as unknown as T): Promise<T> {
   if (response.ok) return response.json() as Promise<T>;
-  notify(`โหลด${what}ไม่สำเร็จ (${response.status}) — ตัวเลือกอาจไม่ครบ`, "error");
+  // 401 = session หมดอายุ — global fetch wrapper ใน App.tsx พากลับหน้า Login อยู่แล้ว ไม่ต้องขึ้น toast ซ้อน
+  if (response.status !== 401) notify(`โหลด${what}ไม่สำเร็จ (${response.status}) — ตัวเลือกอาจไม่ครบ`, "error");
   return empty;
 }
 export type MasterOption = { masterOptionId: string; category: string; value: string; displayName: string; sortOrder: number; isActive: boolean };
@@ -152,6 +154,7 @@ export const nav: {
       { id: "defects", icon: "bug_report", label: "Defect" },
       { id: "regression", icon: "replay", label: "Regression" },
       { id: "automation", icon: "smart_toy", label: "Automation" },
+      { id: "crm", icon: "support_agent", label: "CRM" },
     ],
   },
   {

@@ -20,6 +20,13 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
         {
             if (defect.AssigneeUserId is not { } assigneeUserId) continue; // ไม่มี Assignee ใน QA Hub — ไม่รู้จะ poll ด้วย identity ไหน ข้ามไปก่อน
             try { await PollOneAsync(defect, assigneeUserId, ct); }
+            // CRM/BlueID ล่ม (เครือข่าย/503) กระทบทุก Defect เหมือนกัน — log ครั้งเดียวแล้วหยุด tick นี้ แทนการลองทุก Ticket
+            // แล้ว log warning พร้อม stack trace ซ้ำทุก ~20 วินาที; tick ถัดไป (2 นาที) จะลองใหม่ตามช่วงพักของ CrmTokenService
+            catch (CrmIntegrationException ex) when (ex.IsTransient)
+            {
+                logger.LogWarning("CRM poll skipped: CRM/BlueID unavailable — {Reason}", ex.Message);
+                break;
+            }
             catch (CrmIntegrationException ex) { logger.LogWarning(ex, "CRM poll failed for defect {DefectId} ticket {TicketId}", defect.DefectId, defect.CrmTicketId); }
             // Assignee คนนี้ยังไม่ได้ตั้งค่า/ปิดใช้งานบัญชี CRM ของตัวเอง — ข้าม Defect นี้ไปเฉยๆ ไม่ใช่หยุดทั้ง
             // tick เหมือนตอนใช้ Service Account กลาง เพราะ Defect อื่นอาจมี Assignee คนละคนที่ตั้งค่าไว้แล้วก็ได้

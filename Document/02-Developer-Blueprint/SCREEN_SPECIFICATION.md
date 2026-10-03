@@ -1228,3 +1228,46 @@ Component ที่ควรมี reusable:
 - ห้ามเปลี่ยน Source Cycle เดิมหรือเขียนทับผล Execution เดิม
 - ถ้าเลือก Suite Latest แต่ Source ไม่มี Suite ให้แจ้งข้อผิดพลาดและไม่สร้างข้อมูลบางส่วน
 - ถ้า API ล้มเหลวต้องแสดง inline error และคงค่าที่ผู้ใช้กรอกไว้
+
+## Addendum: CRM — My CRM Work Queue (2026-10-03)
+
+### Entry points
+
+- เมนู `CRM` อยู่ในกลุ่ม Test Execution และแสดงเฉพาะผู้มี `CRM.VIEW` หรือ role `SYS_ADMIN`
+- ข้อมูลในหน้าเป็น Read-only และ Backend เป็นผู้กำหนด Scope จาก CRM Username ของผู้ Login
+
+### Main work queue
+
+- Connection card แสดงสถานะบัญชี CRM และ CRM Username ปัจจุบัน
+- KPI แสดง Total, Open, In Progress และ Closed ตามผลลัพธ์รวมของตัวกรอง
+- Filter รองรับ Search จาก App shell, Date Range, Status และ Page Size; Search/Filter ต้อง debounce และยกเลิก Request เก่า
+- Desktop ใช้ตาราง; Mobile ≤760px ใช้ `table-cards` และห้ามเกิด page-level horizontal scroll
+- Loading, Empty, Error, Not Configured และ Unauthorized ต้องแยกสถานะให้ชัดเจน
+
+### Ticket detail
+
+- คลิก Job No. หรือใช้ Keyboard เปิด `ModalShell` แบบ Read-only
+- Detail โหลดผ่าน `GET /api/v1/crm/tickets/{jobNo}` และแสดง Subject, Status, Member, Assignee, Service, Product, Description และ Comment history
+- แยก Loading/Error/Empty ของ Description และ Comment history; ห้ามแสดงข้อมูลนอก User Scope
+- มีลิงก์ `เปิดใน CRM` ไปยัง JobDetailsHD ในแท็บใหม่ด้วย `target="_blank"` และ `rel="noreferrer"`
+- Modal ต้องรองรับ Escape, Tab trap, `aria-labelledby` และคืน Focus ไปยังปุ่ม Job No. เดิม
+
+### CRM Phase 3 — Board และ QA Hub Defect linking
+
+- เพิ่มตัวสลับมุมมอง `List`/`Board` ในส่วนรายการ Ticket; Board แบ่งเป็น Open, In Progress และ Closed ตามผลลัพธ์ชุดเดียวกับตัวกรองปัจจุบัน
+- Board card ต้องกดด้วย Mouse/Keyboard เพื่อเปิด Detail Modal เดิม และบน Mobile ต้องเรียงเป็นคอลัมน์เดียว
+- Detail Modal แสดงสถานะ QA Hub Defect ที่เชื่อมอยู่ หรือปุ่ม `เชื่อมกับ Defect` เฉพาะผู้มี `DEFECT.EDIT`
+- Dialog เลือก Defect ใช้ `ModalShell`, ค้นหาด้วย Defect Code/Title, แสดงเฉพาะ Defect ที่ Backend คืนตาม Project Access และต้องมี Loading/Error/Empty/ป้องกันกดซ้ำ
+- การเชื่อมเป็นการ Link กับ Defect เดิมแบบมี Audit เท่านั้น; Phase นี้ยังไม่สร้าง Defect ใหม่จาก CRM และยังไม่แก้ Status/Assignee กลับไป CRM
+### CRM Phase 4 — Controlled CRM Update
+
+- In the CRM Ticket detail modal, show the controlled update strip only for users with `CRM.EDIT` and a loaded Ticket detail.
+- The update modal contains Status and Assignee selects, current-value fallback options, save/cancel actions, loading state, and conflict/error messaging.
+- The update is available only for a Ticket already linked to an accessible QA Hub Defect. A successful update refreshes the detail and CRM snapshot; a conflict asks the user to reload before retrying.
+
+### CRM Phase 5 — Create Defect from Ticket
+
+- ใน Detail Modal ของ CRM Ticket ที่ยังไม่มี Defect ผู้ใช้ที่มี `DEFECT.EDIT` เห็น action `สร้าง Defect จาก Ticket` เมื่อเลือก Project context แล้ว
+- Modal ใช้ `ModalShell` และ prefill Title/Description จาก CRM; ผู้ใช้ต้องตรวจสอบ Title, Severity และ Description ก่อนกดสร้าง
+- แสดง Loading/Validation/Error state, ป้องกันการกดซ้ำ และหลังสำเร็จแสดง Defect ที่สร้างและสถานะ Linked
+- การทำงานสร้างข้อมูลใน QA Hub เท่านั้น ไม่มี CRM write-back และบน Mobile ต้องจัดฟอร์มเป็นคอลัมน์เดียวโดยไม่ทำให้เกิด page-level horizontal scroll

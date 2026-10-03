@@ -1,5 +1,6 @@
 using ProMaxx2.QA.Application.Dashboard;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using ProMaxx2.QA.Application.Identity;
@@ -86,16 +87,20 @@ builder.Services.AddScoped<TestCycleAiService>();
 builder.Services.AddScoped<DefectAutoCreateService>();
 builder.Services.AddScoped<DefectActivityService>();
 builder.Services.AddScoped<SharedAiConfigurationService>();
+builder.Services.AddMemoryCache(); // CRM ticket list cache (CrmApiClient) — 60 วินาทีต่อผู้ใช้+ตัวกรอง
+builder.Services.AddSingleton<CrmStaffDirectoryCache>(); // directory พนักงาน BlueID ใช้ร่วมทุกผู้ใช้ — cache 1 ชม.
 builder.Services.AddSingleton<CrmTokenService>(); // must outlive request scope to actually cache the ~24h BlueID token
 builder.Services.AddScoped<CrmConfigurationService>();
 builder.Services.AddScoped<CrmSyncSettingsService>();
 builder.Services.AddScoped<CrmApiClient>();
+builder.Services.AddScoped<CrmTicketDetailService>();
 builder.Services.AddScoped<CrmSendToCrmService>();
 builder.Services.AddScoped<DefectShareLinkService>();
 builder.Services.AddScoped<DefectImageStorage>();
 builder.Services.AddScoped<EmailConfigurationService>();
 builder.Services.AddScoped<EmailSenderService>();
 builder.Services.AddScoped<CrmSyncService>();
+builder.Services.AddScoped<IAuthorizationHandler, CrmViewAuthorizationHandler>();
 builder.Services.AddHostedService<CrmSyncWorker>(); // Phase 2: polls Linked Defects every 2min for CRM status/assignto changes
 builder.Services.AddScoped<ProjectAccessContext>();
 builder.Services.AddScoped<ProjectScopeGuard>();
@@ -120,6 +125,8 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RegressionManage",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","REGRESSION.MANAGE")))
     .AddPolicy("DefectView",p=>p.RequireClaim("permission","DEFECT.VIEW"))
     .AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"))
+    .AddPolicy("CrmView",p=>p.AddRequirements(new CrmViewRequirement()))
+    .AddPolicy("CrmEdit",p=>p.RequireClaim("permission","CRM.EDIT"))
     .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"))
     .AddPolicy("QaWorkloadView",p=>p.RequireClaim("permission","QA.WORKLOAD.VIEW"))
     .AddPolicy("QaMyWorkView",p=>p.RequireClaim("permission","QA.MYWORK.VIEW"))

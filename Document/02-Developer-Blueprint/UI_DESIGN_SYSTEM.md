@@ -97,6 +97,7 @@ git diff --check
 | Execution | Defect | Table และ create/edit defect form |
 | Execution | Regression | Regression overview |
 | Execution | Automation | Dashboard, Automation Cases (DSL/Version/Validate/Approve/Run), Action Library, Object Repository, Agents, Execution Queue/History/Evidence |
+| Execution | CRM | Per-user read-only work queue, connection state, KPI, filter and responsive ticket list |
 | Governance | Test Summary | Reporting summary |
 | Governance | Risk Acceptance | Risk review/approval |
 | Governance | Release Sign-off | Gate และ sign-off |
@@ -127,6 +128,7 @@ git diff --check
 - Fail/Critical/Danger: แดง
 - Pending/Blocked/Draft: เหลือง
 - Informational/Code/Count: น้ำเงิน
+- Testing/รอทดสอบ: ม่วง (`.badge.purple` ใน styles.css ใช้ได้ทุกหน้า: พื้น `#ede9fe` ตัวอักษร `#6d28d9`) — ใช้เมื่อต้องแยกจากสถานะกำลังดำเนินการสีน้ำเงิน เช่น CRM `Test` vs `Continue`
 - Badge ต้องไม่ wrap และต้องมีข้อความ ไม่สื่อด้วยสีอย่างเดียว
 
 ## 7. Form Controls
@@ -264,6 +266,11 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-10-02 — หน้า Login ไม่ขึ้น toast 401 เมื่อ session หมดอายุ
+
+- แก้ toast "โหลดรายการ Project/Release/Build ไม่สำเร็จ (401) — ตัวเลือกอาจไม่ครบ" ซ้อนบนหน้า Login: เดิม `user` คืนค่าจาก `localStorage` ตอน render แรกแม้ token หมดอายุ แล้วค่อยล้างใน `useEffect` ทำให้ effect ของ Topbar ยิง API ไปก่อน — ตอนนี้ตรวจ `isTokenExpiredLocal()` ใน initializer ของ `user`
+- 401 จาก QA Hub API ขณะอยู่ที่ `/` (hash routing) ส่ง event `qa:session-expired` ให้ App กลับหน้า Login (เดิมล้าง token แต่ค้างอยู่ในแอป) และ `okJsonOrEmpty` ไม่ขึ้น toast เมื่อได้ 401; กฎ: **session หมดอายุให้พากลับหน้า Login เงียบ ๆ ห้ามแสดง toast error ต่อ request**
 
 ### 2026-10-01 — หน้าแชร์ไม่โหลดข้อมูล Topbar
 
@@ -828,3 +835,145 @@ git diff --check
 - Release และ Build ไม่กรองรายการ Test Suite เพราะ Suite เป็นชุดทดสอบที่นำกลับมาใช้ซ้ำได้; สองบริบทนี้จะถูกใช้เมื่อเลือก Suite ไปสร้าง Test Cycle
 - เพิ่มข้อความอธิบายขอบเขตบนหน้า Test Suite เพื่อไม่ให้ผู้ใช้เข้าใจว่า Release/Build กำลังกรอง Suite อยู่
 - ในรายละเอียด Test Suite ให้แสดง Release/Build ที่ถูกใช้งานผ่าน Test Cycle พร้อมสรุปแบบไม่ซ้ำ และแสดงข้อมูลเดียวกันในรายงานส่งออก
+
+### 2026-10-02 — CRM read-only work queue
+
+- หน้า CRM แสดงเฉพาะ Ticket ที่ Backend คัดตาม `Assignto` ของ CRM Username ผู้ใช้ปัจจุบัน; Frontend ไม่รับหรือส่ง User Scope เอง
+- Page header ใช้ Connection State และ CRM Username ตามด้วย KPI 4 ใบ: Total, Open, In Progress และ Closed; KPI ใช้ข้อมูลรวมทั้งผลลัพธ์ ไม่ใช่เฉพาะหน้าปัจจุบัน
+- Filter ใช้ Search จาก App shell ร่วมกับ Date Range, Status และ Page Size; เปลี่ยนตัวกรองจะ debounce 300ms และยกเลิก request เก่า
+- Ticket list ใช้ `table-cards` เพื่อเปลี่ยนเป็น card บน Mobile ≤760px; ตารางเลื่อนได้เฉพาะ container และห้ามเกิด page-level horizontal scroll
+- สถานะ CRM แสดงทั้ง Badge และข้อความ; สถานะที่ไม่รู้จักใช้โทนข้อมูล ไม่ทำให้รายการหาย และ Empty/Error/Loading แสดงแยกกัน
+- Job No. ในรายการเป็นปุ่มแบบ Read-only ที่เปิด `ModalShell` รายละเอียดได้ด้วย Mouse/Keyboard; Modal ต้องมี `aria-labelledby`, focus trap, Escape และคืน focus ไปยังปุ่มเดิม
+- Detail Modal โหลดข้อมูลเพิ่มเติมผ่าน QA Hub Detail API แบบ Read-only; แสดง Description และ Comment history เมื่อ CRM ตอบกลับได้ และต้องแยกสถานะ Loading/Error/Empty ให้ชัดเจน
+- ใน Detail Modal ให้ใช้ลิงก์ `target="_blank"` + `rel="noreferrer"` สำหรับเปิด Ticket ต้นทางใน CRM และต้องระบุด้วยไอคอน/ข้อความว่าเปิดแท็บใหม่
+- เมื่อ CRM ยังไม่พร้อมใช้งาน ให้แสดง CTA `ตั้งค่าบัญชี CRM ของฉัน` บนหน้า CRM และเชื่อมไปยัง Modal ใน App shell; ไม่สื่อว่าเป็นงานของ Admin เท่านั้น
+- หน้า CRM ต้องโหลด Connection State ก่อน List และเมื่อสถานะเป็น Not Configured/Error ให้หยุด List Request พร้อมแสดงสถานะเฉพาะของหน้านั้น
+- หลังบันทึกบัญชี CRM จาก Modal ของ App shell หน้า CRM ต้อง re-check Connection และโหลด List ใหม่อัตโนมัติ ไม่บังคับให้ผู้ใช้กด Refresh เอง
+- Ticket list ต้องแสดงอายุงานจาก Contact Date และเวลาตอบล่าสุดเมื่อ CRM ส่งค่าได้; ถ้าไม่มีค่าให้ใช้ `-` และไม่ทำให้แถวหาย
+- เมื่อ `lastFetchedAt` เกิน 15 นาที ให้แสดง Stale Alert พร้อมเวลาที่โหลดล่าสุดและปุ่ม Refresh; Stale เป็น Warning ที่ไม่ปิดกั้นการอ่านข้อมูลเดิม
+- หากตรวจสอบ Connection ไม่สำเร็จ ให้แสดงปุ่มลองตรวจสอบอีกครั้ง; แสดง CTA ตั้งค่าบัญชีเฉพาะกรณี Not Configured เพื่อไม่ปะปนระหว่างปัญหา Credential กับปัญหา Network/API
+- Error จาก CRM ต้อง map จาก stable error code เป็นข้อความและหัวข้อที่ผู้ใช้ดำเนินการต่อได้ เช่น Not Configured, Unauthorized, Rate Limited, Timeout และ Unavailable; ห้ามแสดงทุกกรณีเป็นข้อความโหลดข้อมูลทั่วไปเดียวกัน
+- Detail Modal ที่โหลดข้อมูลไม่สำเร็จต้องมี Retry action ภายใน Modal เพื่อให้ผู้ใช้ลองซ้ำได้โดยไม่ต้องปิดแล้วเปิด Ticket ใหม่
+- Connection Badge ต้องสื่อความหมายตามข้อมูลที่ API ตรวจจริง: `ตั้งค่าแล้ว` หมายถึงมี Configuration ที่เปิดใช้งาน, `ต้องตั้งค่า` หมายถึงยังไม่มี Configuration และ `ตรวจสอบไม่ได้` หมายถึง Connection API ล้มเหลว; ห้ามใช้คำว่าเชื่อมต่อสำเร็จหากยังไม่ได้ probe CRM จริง
+- เมื่อสถานะเป็น `ตั้งค่าแล้ว` ให้มีปุ่ม Probe แบบ user-initiated เพื่อทดสอบการเชื่อมต่อจริงผ่าน read-only endpoint; แสดงผลสำเร็จ/ล้มเหลว inline และห้ามแสดง Credential หรือ Token
+
+### 2026-10-03 — CRM Phase 3: Board และ QA Hub Defect linking
+
+- หน้า CRM เพิ่มตัวสลับ `List`/`Board`; Board แบ่ง Ticket เป็น Open, In Progress และ Closed และใช้ข้อมูลชุดเดียวกับตัวกรองปัจจุบัน
+- Board card เป็นปุ่มที่เปิด Detail Modal เดิมได้ด้วย Mouse/Keyboard; ไม่สร้าง page-level horizontal scroll และเปลี่ยนเป็น 1 คอลัมน์บน Mobile
+- Detail Modal แสดงสถานะการเชื่อมกับ QA Hub Defect และใช้ `ModalShell` แยกสำหรับค้นหา/เลือก Defect ที่ผู้ใช้เข้าถึงได้
+- การ Link เป็น action ที่ต้องมี `DEFECT.EDIT`; UI แสดง Loading/Error/Empty และป้องกันการกดซ้ำระหว่างบันทึก
+### 2026-10-03 — CRM Phase 4: Controlled CRM update
+
+- CRM Ticket detail exposes the update action only when the current user has `CRM.EDIT`.
+- Status/Assignee editing uses a dedicated `ModalShell`, explicit loading/error states, disabled submit during save, and mobile-safe stacked controls.
+- The UI communicates that only Tickets linked to QA Hub Defects can be changed; the backend remains the source of truth for Project Access, CRM ownership, allowed status values, and conflict detection.
+
+### 2026-10-03 — CRM visual refresh
+
+- ปรับ CRM work queue ให้มี visual hierarchy ชัดขึ้นด้วย Hero connection card, KPI card แบบ accent ตามความหมาย, Filter/List surface แยกชั้น และ Board column accent
+- เพิ่ม hover/focus/readability treatment ให้ Ticket table, Board card และ Detail Modal โดยยังใช้ design tokens เดิมและไม่เปลี่ยน interaction contract
+- Responsive rule: Hero/Filter/List stack บน Mobile, KPI ลดเป็น 2/1 คอลัมน์ตาม viewport, Modal/Board ไม่สร้าง page-level horizontal scroll
+### 2026-10-03 — CRM ticket table readability patch
+
+- Desktop CRM ticket lists now keep each field inside its assigned column with explicit column proportions, wrapping rules, and bounded subject/service text.
+- Contact and due dates are rendered as separate date/time lines so timestamps do not collide or create page-level horizontal overflow.
+- Mobile continues to use the existing `table-cards` card conversion; no new page-level horizontal scroll is introduced.
+
+### 2026-10-03 — CRM Board card wrapping patch
+
+- Board cards now enforce `min-width: 0`, bounded content width, and wrapping/clamping for Job No., Subject, Service/Product, and Assignee text.
+- Board content cannot overflow its column; the responsive one-column mobile Board layout remains unchanged.
+
+### 2026-10-03 — CRM Board card hierarchy refinement
+
+- Board cards use a stable three-level hierarchy: Job No. and Status on the top row, Subject below, and Service/Assignee as supporting metadata.
+- Status badges remain intact and Job No. receives the available width before falling back to ellipsis.
+
+### 2026-10-03 — CRM Board ออกแบบการ์ดใหม่
+
+- แก้ต้นเหตุการ์ดเรียงแนวนอน/ข้อความแตกทีละตัว: การ์ดเป็น `<button>` และ global `button:not(.icon-button)` (specificity 0,1,1: `inline-flex` + `nowrap` + padding 10/16) ชนะ `.crm-board-ticket` — CSS ของบอร์ดรวมเป็นชุดเดียวท้าย `Crm.css` และใช้ selector `button.crm-board-ticket`; กฎ: **component ที่เป็น `<button>` แต่จัด layout เอง (การ์ด/รายการ) ต้องเขียน selector เป็น `button.<class>` หรือสูงกว่า**
+- คอลัมน์: สีตามกลุ่มจาก `data-bucket` (Open เหลือง, In Progress `--info`, Closed เขียว) — เส้นบนหัวคอลัมน์ + จุดสี + ตัวนับ, เนื้อหาเลื่อนในคอลัมน์ (`max-height: 68vh`) แทนการยืดหน้า; คอลัมน์ว่างแสดงกรอบเส้นประ "ไม่มี Ticket"
+- การ์ด: แถบซ้ายสีตามคอลัมน์, แถวบน Job No. (primary, ellipsis) + Badge สถานะ, เรื่อง 13px/600 ตัด 2 บรรทัด (`title` แสดงเต็ม), แถวล่างคั่นเส้นมีไอคอน Service · Assignee · อายุงาน (ชิดขวา); hover ยกการ์ดเล็กน้อย, มี `aria-label`
+- Mobile ≤760px: 1 คอลัมน์และไม่จำกัดความสูงคอลัมน์ (ไม่มี scroll ซ้อน)
+- สถานะ CRM: `Test`/`Testing` ใช้ Badge สีม่วง แยกจาก `Continue` และสถานะกำลังดำเนินการอื่นที่เป็นสีน้ำเงิน (Open เหลือง, Close/Finish เขียว คงเดิม)
+- ลำดับการ์ดในแต่ละคอลัมน์เรียงตามอายุงาน (Contact Date) **มากไปน้อย** — Ticket ที่อยู่มานานสุดอยู่บนสุด, ไม่มีวันที่ติดต่อไว้ท้ายคอลัมน์; เรียงเฉพาะข้อมูลในหน้าปัจจุบัน — List ใช้ลำดับเดียวกัน (`sortedRows`)
+
+### 2026-10-03 — CRM Ticket list ออกแบบใหม่
+
+- คอลัมน์ "กำหนดส่ง" เปลี่ยนเป็น **อายุงาน**: ป้ายจำนวนวันนับจาก Contact Date (`ageDays`) สีตามระดับ — < 3 วันเขียว, 3–6 วันเหลือง (`--warning-text`), ≥ 7 วันแดง, ไม่มีวันที่เทา — และ "ตอบล่าสุด" ใต้ป้าย (ย้ายมาจากคอลัมน์ Service); กำหนดส่งยังแสดงใน Detail Modal
+- แถวเรียงตามอายุงานมากไปน้อยเหมือน Board; แถบซ้ายสีตามกลุ่มสถานะ (Open เหลือง / In Progress `--info` / Closed เขียว) — Desktop อยู่ที่ cell แรก, Mobile (`table-cards`) เป็นขอบซ้ายของการ์ด
+- หัวตารางชิดซ้ายตรงกับข้อมูล, Product เป็นชิปเทา, Assignee มี avatar ตัวย่อ, รหัสสมาชิกใต้เรื่องมีไอคอน, สัดส่วนคอลัมน์ Desktop 16/25/9/17/10/10/13%
+- แก้ `.crm-job-link`/`.crm-defect-option` ที่โดน padding/nowrap ของ global `button:not(.icon-button)` ทับ (Job No. ดูเหมือนจัดกลาง) — เปลี่ยนเป็น `button.<class>` ตามกฎในหัวข้อ Board
+- ตรวจด้วย harness ที่ใช้ CSS ที่ build จริง: 1280px และ iframe 390px (`scrollWidth` = `clientWidth`)
+
+### 2026-10-03 — CRM ส่วนหัว (Hero / KPI / ตัวกรอง) ออกแบบใหม่
+
+- ยกเลิก pseudo-element ตกแต่ง (`::before` ไอคอน + วงกลมมุมการ์ด) ที่ทับข้อความ "MY CRM WORK QUEUE" และถูกตัดขอบ — กฎ: **ห้ามใช้ shape ตกแต่งที่ซ้อนทับหรือถูกตัดครึ่งบน card ข้อมูล**
+- Hero: ไอคอน `support_agent` ในกล่อง primary 56px ทางซ้าย + eyebrow/ชื่อ/Badge/คำอธิบาย; ขวาเป็นการ์ดบัญชี (avatar ตัวย่อ + CRM Username + เวลาอัปเดต) และปุ่มทดสอบการเชื่อมต่อเต็มความกว้างคั่นเส้น; ≤900px การ์ดบัญชีลงแถวใหม่
+- KPI: render จาก array เดียว, หัวการ์ดมีชื่อ + ไอคอนในกล่องสีตาม `--crm-accent` (ทั้งหมด primary / Open เหลือง / กำลังดำเนินการ `--info` / ปิดแล้ว เขียว), ตัวเลข 30px/800, Open/กำลังดำเนินการ/ปิดแล้ว แสดง % ของทั้งหมดและแถบสัดส่วน; ≤420px ยังเป็น 2 คอลัมน์ (เดิม 1 คอลัมน์ทำให้หน้ายาว)
+- ตัวกรอง: หัวข้อมีไอคอน `tune`, ช่องกรองอยู่ในกล่องพื้น `--surface` แยกจากหัวข้อ, label สี muted 11px
+- ตรวจด้วย harness ที่ใช้ CSS ที่ build จริง: 1280px และ iframe 390px (`scrollWidth` = `clientWidth`)
+
+### 2026-10-03 — CRM: คอลัมน์ Assignee เปลี่ยนเป็น ผู้แจ้ง / สาขา
+
+- หน้า CRM แสดงเฉพาะ Ticket ที่มอบหมายให้ผู้ใช้เอง คอลัมน์ Assignee จึงซ้ำทุกแถว — List เปลี่ยนเป็น **ผู้แจ้ง / สาขา** (`member` ไอคอน `person` + `branch` ไอคอน `storefront`, ellipsis + `title`; ไม่มีสาขาแสดง "ไม่ระบุสาขา") และเอารหัสผู้แจ้งใต้ชื่อเรื่องออก (ไม่ซ้ำ); Board card meta เปลี่ยนจาก Assignee เป็นผู้แจ้ง
+- Detail Modal เพิ่มช่อง "สาขา"; ยังแสดง Assignee ใน Modal เพราะเป็นค่าที่แก้ได้ผ่าน Controlled CRM update
+- สัดส่วนคอลัมน์ Desktop 16/23/9/16/13/10/13%; ใช้ `branch` ที่ API list ส่งมาอยู่แล้ว (ไม่แก้ backend)
+
+### 2026-10-03 — CRM: ช่วงวันที่แบบ preset + กำหนดเอง
+
+- ตัวกรองวันที่เปลี่ยนจาก 2 ช่อง date เป็นกลุ่ม **ช่วงวันที่ติดต่อ** (segmented, `role="group"` + `aria-pressed`): `7 วัน` / `15 วัน` / `30 วัน` / `กำหนดเอง` — **ค่าเริ่มต้น 30 วัน**; preset ตั้ง From = วันนี้ − N, To = วันนี้ และแสดงช่วงที่ใช้จริงใต้ปุ่ม
+- `กำหนดเอง` (`aria-expanded`/`aria-controls`) เปิดส่วนแยก `.crm-custom-range` (กรอบเส้นประพื้น primary อ่อน) ที่มีช่องวันที่เริ่มต้น–สิ้นสุด โดยตั้งต้นจากช่วงที่เลือกอยู่
+- ช่องวันที่ `CrmDateField` แสดง **วัน/เดือน/ปี พ.ศ.** ตรงกับวันที่ในรายการ: ข้อความที่จัดรูปแบบเองอยู่ใต้ native `<input type="date">` โปร่งใสเต็มช่อง (คลิกเรียก `showPicker()`, focus ring ด้วย `:focus-within`) เพราะรูปแบบที่ input แสดงเองขึ้นกับ locale ของเบราว์เซอร์ (เดิมเห็นเป็น ด/ว/ค.ศ.) — กฎ: **ช่องวันที่ที่ต้องแสดงวัน/เดือน/ปี ให้ใช้ pattern นี้ ห้ามพึ่งรูปแบบของ native input**
+- Responsive: กลุ่มช่วงวันที่ span 2 คอลัมน์บน Desktop, เต็มแถว ≤1000px; ส่วนกำหนดเอง stack ≤760px และช่องวันที่เรียงแนวตั้ง ≤420px; ตรวจ 1280px และ iframe 390px (`scrollWidth` = `clientWidth`)
+
+### 2026-10-03 — CRM Ticket detail modal แบบหน้าเดียว
+
+- เปลี่ยนจาก modal 720px ที่ต้องเลื่อนยาว (hero + การ์ดข้อมูล 9 ใบ + Description + Comment) เป็น `.crm-ticket-modal` (`boxClassName`) กว้าง ≤1080px สูง ≤780px/`100dvh − 32px` แบบ grid 3 แถว: หัว / เนื้อหา / footer — **ทั้งกล่องไม่เลื่อน** แต่ละคอลัมน์เลื่อนในตัวเอง
+- หัว: eyebrow "รายละเอียด Ticket · Read-only จาก CRM", Job No. (h2 = `aria-labelledby`) + Badge สถานะ + ป้ายอายุงาน (สีเดียวกับ List) และชื่อเรื่อง ตัด 2 บรรทัด
+- ซ้าย: รายละเอียด (สูงสุด 220px เลื่อนในกล่อง) และประวัติการติดต่อแบบ avatar ตัวย่อ + ชื่อ/เวลา + ข้อความ (ไม่มี scroll ซ้อนในรายการ); ขวา 330px พื้น `--surface`: ตารางข้อมูล `dl` แถวละ ไอคอน+ป้าย/ค่า (ellipsis + `title`) 8 แถว, QA Hub Defect (ปุ่มเต็มความกว้าง, เชื่อมกับ Defect เป็น primary) และ Controlled CRM update
+- Footer: ปิดหน้าต่าง (ซ้าย) + เปิดใน CRM (แท็บใหม่) เป็น primary; ลบ CSS `.crm-detail-modal`/`.crm-detail-hero`/`.crm-detail-grid` ที่ไม่ใช้แล้ว
+- Mobile ≤760px: เต็มจอ `100dvh` ไม่มี radius, ข้อมูลสรุปขึ้นก่อน แล้วตามด้วยรายละเอียด/ประวัติ เลื่อนทั้งเนื้อหา (`flex: 0 0 auto` กันส่วนข้อมูลถูกบีบ), footer ปุ่มแบ่งเท่ากัน + safe-area; ตรวจ 1280×760 และ iframe 390px (`scrollWidth` = `clientWidth`)
+- ประวัติการติดต่อเรียง **ล่าสุดอยู่บนสุดเสมอ** (`sortedAnswers` อ่านวันที่ด้วย `toUtcDate` ตัวเดียวกับที่แสดงผล; ไม่มี/อ่านวันที่ไม่ได้ไว้ท้ายสุด) และหัวข้อแสดง "n รายการ · ล่าสุดอยู่บน"
+
+### 2026-10-03 — CRM: วันที่และเวลาเป็นเวลาไทยทั้งหมด
+
+- Backend `CrmTicketListParser.NormalizeDate` ใช้กับวันที่ทุกตัวรวม `answerDate` ของประวัติการติดต่อ (เดิมส่งดิบ ทำให้เวลาไทยถูกตีเป็น UTC แล้วแสดงเพิ่ม 7 ชม. และรูปแบบเลขล้วน `yyyyMMddHHmmss` แสดงเป็น "-"); ค่าไม่มี offset รวมวันที่ไม่มีเวลาถือเป็นเวลากรุงเทพ (เดิมวันที่ล้วนกลายเป็น 07:00 น.); ตัวกรองช่วงวันที่เทียบด้วยวันตามปฏิทินไทย (เดิม Ticket 00:00–06:59 น. ตกเป็นวันก่อนหน้า) — รายละเอียดใน `API_SPECIFICATION.md`
+- Frontend: วันที่ของปุ่ม 7/15/30 วันและค่า "วันนี้" ใช้ปฏิทินกรุงเทพ (`Intl` + `Asia/Bangkok`) ไม่ขึ้นกับ timezone ของเครื่อง; อายุงานนับเป็น **วันตามปฏิทินไทย** ผ่าน `bangkokMidnightMs` (ติดต่อเมื่อวาน 23:00 น. = 1 วัน) แทนการนับรอบ 24 ชม.; การเรียงใช้ `toUtcDate` ชุดเดียวกับการแสดงผล; วันที่ทั้งหมดยังแสดงเป็น วัน/เดือน/ปี พ.ศ. เวลา 24 ชม. (`fmtDateTimeBE`)
+
+### 2026-10-03 — CRM: แยก Ticket ที่ปิดงานแล้ว (Finish / Close)
+
+- List และ Board แสดงเฉพาะ **งานที่ต้องดำเนินการ** (`activeRows`): Board เหลือ 2 คอลัมน์ Open / In Progress (Mobile 1 คอลัมน์); ถ้าหน้านี้ไม่มีงานค้างแสดง "ไม่มีงานที่ต้องดำเนินการในหน้านี้"
+- Ticket สถานะ Finish/Close (`closedRows`) อยู่ในส่วน **ปิดงานแล้ว** ใต้รายการหลัก ใช้ได้ทั้ง List/Board: `<details>` **พับไว้เป็นค่าเริ่มต้น**, summary มีไอคอน `task_alt` + คำอธิบาย + จำนวนรายการ + chevron หมุนเมื่อเปิด, พื้นเขียวอ่อน; ข้างในเป็นตารางคอลัมน์เดียวกับ List (`ticketTableHead`/`renderTicketRow` ชุดเดียวกัน) โทนจาง (opacity .82, hover = 1) และเปิด Detail Modal ได้เหมือนเดิม; ซ่อนทั้งส่วนเมื่อไม่มี Ticket ที่ปิดแล้ว
+- แยกเฉพาะข้อมูลในหน้าปัจจุบัน (pagination ยังมาจาก API); KPI "ปิดงานแล้ว" ยังนับจาก summary ทั้งผลลัพธ์
+
+### 2026-10-03 — CRM: แจ้ง "CRM / BlueID ไม่พร้อมใช้งาน" แทนการให้ตรวจรหัสผ่าน
+
+- เมื่อเซิร์ฟเวอร์ login ของ BlueID ต่อไม่ได้ (network error ของเบราว์เซอร์ `net::ERR_*`) หน้า CRM แสดงข้อความจาก API (`CRM_UNAVAILABLE`) เช่น "CRM / BlueID ไม่พร้อมใช้งาน — เชื่อมต่อเซิร์ฟเวอร์ login ของ BlueID ไม่ได้ (ERR_CONNECTION_TIMED_OUT)" หรือ "...ระบบจะลองเชื่อมต่อใหม่หลัง HH:mm น." — เดิมแสดง "ตรวจสอบ MerchantID/Username/Password" ทำให้เข้าใจผิดว่ารหัสผิด; error code อื่นยังใช้ข้อความเดิม
+
+### 2026-10-03 — CRM Board: สีการ์ดตามสถานะ
+
+- การ์ดใน Board ใช้สีตาม **สถานะของ Ticket** (`data-tone` จาก `statusTone` ชุดเดียวกับ Badge) แทนสีคอลัมน์: Open เหลือง, Test/Testing ม่วง, Continue และสถานะกำลังดำเนินการอื่นน้ำเงิน (`--info`), Finish/Close เขียว, ไม่รู้จักเทา — แถบซ้าย 3px สีเต็ม, พื้นการ์ด 5% (hover 8%), เส้นขอบ/เส้นคั่น meta โทนเดียวกัน; หัวคอลัมน์ยังใช้สีของกลุ่มตามเดิม
+
+### 2026-10-03 — CRM Hero แบบกะทัดรัด
+
+- Hero ลดความสูงบน Desktop จากประมาณ 190px เหลือประมาณ 76px: ตัด eyebrow "MY CRM WORK QUEUE", ไอคอน 40px, ชื่อ 18px + Badge + คำอธิบาย 12px ในแถวเดียว; ด้านขวาเป็นแถวเดียว (ไม่มีการ์ดซ้อน) avatar 32px + CRM Username + เวลาอัปเดต | เส้นคั่น | ปุ่มทดสอบการเชื่อมต่อ (ผล probe แสดงข้างปุ่ม)
+- ≤900px บัญชีลงแถวใหม่คั่นเส้นบน; ≤420px ปุ่มทดสอบเต็มความกว้าง; ตรวจ 1280px และ iframe 390px (`scrollWidth` = `clientWidth`)
+
+### 2026-10-03 — CRM Ticket detail: อัปเดต Ticket (เพิ่มประวัติ / สถานะ / ส่งกลับเจ้าของเรื่อง)
+
+- ฟอร์ม **อัปเดต Ticket** `.crm-reply` อยู่บนสุดของคอลัมน์ซ้ายใน Detail Modal (เฉพาะผู้มี `CRM.EDIT`, ทุก Ticket ในงานของผู้ใช้ ไม่ต้องเชื่อม Defect): textarea เพิ่มประวัติการติดต่อ (≤1000 ตัวอักษร มีตัวนับ, Ctrl/⌘+Enter ส่ง) + select สถานะ ("คงเดิม (สถานะปัจจุบัน)" + 9 สถานะของ CRM) + checkbox **ส่งกลับเจ้าของเรื่อง** (แสดง "Assign เป็น {เจ้าของเรื่อง}", disabled เมื่อ Ticket ไม่มีเจ้าของเรื่อง) + ปุ่ม primary "บันทึกไป CRM" — บันทึกทั้งหมดใน PATCH เดียว; ปุ่ม disabled จนกว่าจะมีข้อความหรือการเปลี่ยนแปลง และระหว่างบันทึกแสดง spinner
+- ส่งกลับเจ้าของเรื่องต้องยืนยันผ่าน `confirmDialog` (Ticket จะออกจากรายการงานของผู้ใช้) แล้วปิด Modal + โหลดรายการใหม่; กรณีอื่นแจ้ง toast สำเร็จ, โหลดรายละเอียด/ประวัติและรายการใหม่; error แสดงใต้ฟอร์ม (`role="alert"`), `CRM_CONFLICT` โหลด Ticket ใหม่อัตโนมัติ; เปลี่ยน Ticket ที่เปิดจะล้างฟอร์ม
+- ข้อมูลด้านขวาเพิ่ม **เจ้าของเรื่อง**; ลบแถบ/Modal "Controlled CRM update" เดิม (แก้ได้เฉพาะ Ticket ที่เชื่อม Defect + เลือก Assignee จาก dropdown) และ CSS `.crm-edit-*`; หัว Modal เปลี่ยนจาก "Read-only จาก CRM" เป็น "รายละเอียด Ticket จาก CRM"; ตัวกรองสถานะใช้รายการ `CRM_STATUSES` ชุดเดียวกัน
+- Mobile ≤760px: ฟอร์มเรียงแนวตั้ง select เต็มความกว้าง; ตรวจ 1280×760 และ iframe 390px (`scrollWidth` = `clientWidth`)
+
+### 2026-10-03 — CRM: แสดงรหัสพนักงานพร้อมชื่อ
+
+- ทุกจุดในหน้า CRM ที่เป็นรหัสพนักงานแสดงเป็น **"รหัส ชื่อต้น"** เช่น `6101 เหรียญทอง` ผ่าน `staffLabel`: ผู้แจ้ง (List/Board/Modal), เจ้าของเรื่อง, Assignee, ผู้ตอบในประวัติการติดต่อ (avatar ใช้ตัวอักษรจากชื่อ), CRM Username บน Hero, ข้อความ "Assign เป็น" และกล่องยืนยันส่งกลับเจ้าของเรื่อง
+- ชื่อมาจาก `GET /crm/staff` (BlueID directory, cache ฝั่ง server 1 ชม.) โหลดครั้งเดียวเมื่อบัญชี CRM พร้อมใช้งาน; รองรับค่า `ชื่อ นามสกุล (รหัส)` จาก export ของ CRM ด้วย; โหลดไม่สำเร็จหรือค่าไม่ใช่รหัสพนักงาน (เช่น รหัสสมาชิกลูกค้า) แสดงค่าเดิมโดยไม่ขึ้น error
+
+### 2026-10-03 — CRM Detail Modal: สถานะเด่นขึ้น
+
+- ป้ายสถานะในหัว Detail Modal (`.crm-ticket-head-title > .badge`) ใหญ่ขึ้น (13px/800, padding 5×12) มีจุดสีนำหน้า เส้นขอบ และพื้นสีของสถานะ 13% (`currentColor`) — เดิมกลืนกับพื้นไล่สีของหัว โดยเฉพาะสถานะ Test สีม่วง
+- `.badge.purple` ทั้งแอปเข้มขึ้น: พื้น `#f5f3ff` → `#ede9fe`, ตัวอักษร `#7c3aed` → `#6d28d9` (เดิมพื้นแทบมองไม่เห็นบนพื้นขาว/ฟ้าอ่อน)

@@ -30,10 +30,12 @@ export function isApiRequest(url: string): boolean {
 
 export class ApiError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  readonly code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -49,8 +51,8 @@ export async function apiFetch<T = unknown>(path: string, options: ApiOptions = 
     body: form ?? (json !== undefined ? JSON.stringify(json) : undefined),
   });
   if (!response.ok) {
-    const problem = await response.json().catch(() => null) as { detail?: string; title?: string } | null;
-    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? `${fallbackMessage} (${response.status})`);
+    const problem = await response.json().catch(() => null) as { detail?: string; title?: string; code?: string } | null;
+    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? `${fallbackMessage} (${response.status})`, problem?.code);
   }
   if (response.status === 204) return undefined as T;
   const text = await response.text();
@@ -67,8 +69,8 @@ export function escapeHtml(value: unknown): string {
 export async function getJson<T = unknown>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { headers: authHeaders(), signal });
   if (!response.ok) {
-    const problem = await response.json().catch(() => null) as { detail?: string; title?: string } | null;
-    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? `โหลดข้อมูลไม่สำเร็จ (${response.status})`);
+    const problem = await response.json().catch(() => null) as { detail?: string; title?: string; code?: string } | null;
+    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? `โหลดข้อมูลไม่สำเร็จ (${response.status})`, problem?.code);
   }
   return response.json() as Promise<T>;
 }

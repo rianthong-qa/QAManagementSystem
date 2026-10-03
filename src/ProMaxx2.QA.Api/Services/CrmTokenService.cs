@@ -1,11 +1,24 @@
 using System.Collections.Concurrent;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Playwright;
 
 namespace ProMaxx2.QA.Api.Services;
 
-public sealed class CrmIntegrationException(string message) : Exception(message);
+public sealed class CrmIntegrationException : Exception
+{
+    public HttpStatusCode? RemoteStatusCode { get; }
+
+    public CrmIntegrationException(string message) : base(message) { }
+    public CrmIntegrationException(string message, HttpStatusCode remoteStatusCode) : base(message) => RemoteStatusCode = remoteStatusCode;
+
+    /// <summary>CRM/BlueID ใช้งานไม่ได้ชั่วคราว (เครือข่าย/เซิร์ฟเวอร์ล่ม) — ไม่ใช่ปัญหาบัญชีของผู้ใช้; controller map เป็น CRM_UNAVAILABLE</summary>
+    public bool IsServiceUnavailable => RemoteStatusCode == HttpStatusCode.ServiceUnavailable;
+
+    /// <summary>ปัญหาชั่วคราวฝั่ง CRM/เครือข่าย (ล่ม หรือตอบช้าเกินกำหนด) — ใช้ตัดสินใจหยุดรอบ sync แทนการลองทุก Ticket</summary>
+    public bool IsTransient => RemoteStatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
+}
 public sealed record CrmToken(string AccessToken, string? BranchId);
 
 // Caches the Bearer token used for the CRM (BlueSea Helpdesk) integration — PER QA HUB USER now (each user logs
@@ -24,6 +37,27 @@ public sealed record CrmToken(string AccessToken, string? BranchId);
 // (see CrmApiClient). This mirrors exporter.py's auto_login_if_needed()/capture_bearer_token() functions.
 public sealed class CrmTokenService
 {
+    // ถ้า login ล้มเหลวเพราะต่อเซิร์ฟเวอร์ BlueID/BlueSea ไม่ได้ (net::ERR_*) จะพักการเปิดเบราว์เซอร์ login ใหม่ไว้ช่วงหนึ่ง
+    // สำหรับทุกผู้ใช้ (เซิร์ฟเวอร์ login ใช้ร่วมกัน) — กันไม่ให้ CrmSyncWorker/หน้า CRM เปิด headless Chromium ซ้ำ ๆ แล้วรอ
+    // timeout ~30 วินาทีต่อครั้งตลอดช่วงที่ BlueID ล่ม; token ที่ cache ไว้แล้วยังใช้ได้ตามปกติ
+    public static readonly TimeSpan UnavailableCooldown = TimeSpan.FromMinutes(1);
+
+    // headless Chromium 1 ตัวใช้ RAM ราว 200–400 MB และ login หนึ่งครั้งอาจค้างได้หลายสิบวินาที — จำกัดจำนวนที่เปิดพร้อมกัน
+    // ทั้งระบบ (ไม่ใช่แค่ต่อผู้ใช้) กันกรณีหลาย user เปิดหน้า CRM พร้อมกันหลัง restart แล้ว server หน่วยความจำหมด
+    public const int MaxConcurrentBrowserLogins = 2;
+    private const int MaxDiagnosticScreenshots = 20;
+    public static readonly TimeSpan BrowserSlotWait = TimeSpan.FromSeconds(90);
+    // login ไม่สำเร็จด้วยเหตุที่ไม่ใช่เครือข่าย (รหัสผิด/หน้า login เปลี่ยน) — พักการเปิดเบราว์เซอร์ของผู้ใช้คนนั้น ไม่ให้ทุก request
+    // และทุกรอบ sync เปิด Chromium ใหม่ซ้ำ ๆ; ล้างเมื่อผู้ใช้บันทึกบัญชี CRM ใหม่ (ResetLoginFailure)
+    public static readonly TimeSpan LoginFailureCooldown = TimeSpan.FromMinutes(5);
+    private readonly SemaphoreSlim browserSlots = new(MaxConcurrentBrowserLogins, MaxConcurrentBrowserLogins);
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> loginFailedUntil = new();
+    private readonly TimeProvider clock;
+    private long unavailableUntilUtcTicks;
+
+    public CrmTokenService() : this(TimeProvider.System) { }
+    public CrmTokenService(TimeProvider clock) => this.clock = clock;
+
     // Any page under bluesea.seniorsoft.com/bluesea/ redirects to BlueID login when unauthenticated — the
     // Support list page is a convenient one since it also immediately fires an authenticated API request on
     // load (GET .../booklicenceapi/Support), which is how the Bearer token gets captured.
@@ -51,13 +85,31 @@ public sealed class CrmTokenService
     {
         if (cache.TryGetValue(userId, out var hit) && DateTimeOffset.UtcNow < hit.ExpiresAt.AddMinutes(-5))
             return new(hit.AccessToken, hit.BranchId);
+        ThrowIfInCooldown();
+        ThrowIfLoginCoolingDown(userId);
         var gate = locks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct);
         try
         {
             if (cache.TryGetValue(userId, out hit) && DateTimeOffset.UtcNow < hit.ExpiresAt.AddMinutes(-5))
                 return new(hit.AccessToken, hit.BranchId); // re-check: another caller may have refreshed while we waited for the lock
-            var token = await LoginViaBrowserAsync(merchantId, username, password, ct);
+            ThrowIfInCooldown(); // อีก request อาจเพิ่งเจอว่า BlueID ล่มระหว่างที่เรารอ lock
+            ThrowIfLoginCoolingDown(userId);
+            if (!await browserSlots.WaitAsync(BrowserSlotWait, ct))
+                throw new CrmIntegrationException("ระบบกำลังเชื่อมต่อ CRM ให้ผู้ใช้คนอื่นอยู่ กรุณาลองใหม่อีกครั้งในอีกสักครู่", HttpStatusCode.ServiceUnavailable);
+            string token;
+            try { token = await LoginViaBrowserAsync(merchantId, username, password, ct); }
+            catch (CrmIntegrationException ex) when (ex.IsServiceUnavailable)
+            {
+                MarkUnavailable();
+                throw;
+            }
+            catch (CrmIntegrationException ex)
+            {
+                MarkLoginFailed(userId);
+                throw new CrmIntegrationException(ex.Message, HttpStatusCode.Unauthorized);
+            }
+            finally { browserSlots.Release(); }
             var claims = DecodeJwtClaims(token);
             var expiresAt = claims.Expiry ?? DateTimeOffset.UtcNow.AddHours(24); // fall back to the ~24h lifetime confirmed earlier if the exp claim can't be read
             cache[userId] = new CachedToken(token, expiresAt, claims.BranchId);
@@ -69,6 +121,46 @@ public sealed class CrmTokenService
     // Called after a credential change (CrmConfigurationService.SaveAsync) or a downstream 401 for that specific
     // user, so their next call re-authenticates immediately instead of retrying with a stale token.
     public void Invalidate(Guid userId) => cache.TryRemove(userId, out _);
+
+    /// <summary>เวลาที่จะลอง login BlueID ใหม่ได้ (null = ไม่ได้อยู่ในช่วงพัก)</summary>
+    public DateTimeOffset? UnavailableUntil
+    {
+        get
+        {
+            var ticks = Interlocked.Read(ref unavailableUntilUtcTicks);
+            return ticks > clock.GetUtcNow().UtcTicks ? new DateTimeOffset(ticks, TimeSpan.Zero) : null;
+        }
+    }
+
+    public void MarkLoginFailed(Guid userId) => loginFailedUntil[userId] = clock.GetUtcNow() + LoginFailureCooldown;
+
+    /// <summary>ล้างช่วงพักหลัง login ล้มเหลว — เรียกเมื่อผู้ใช้บันทึกบัญชี CRM ใหม่</summary>
+    public void ResetLoginFailure(Guid userId) => loginFailedUntil.TryRemove(userId, out _);
+
+    public void ThrowIfLoginCoolingDown(Guid userId)
+    {
+        if (!loginFailedUntil.TryGetValue(userId, out var until)) return;
+        if (clock.GetUtcNow() >= until) { loginFailedUntil.TryRemove(userId, out _); return; }
+        var retryAt = until.ToOffset(TimeSpan.FromHours(7)).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        throw new CrmIntegrationException($"Login BlueID ไม่สำเร็จ — ตรวจสอบ MerchantID/Username/Password ของบัญชี CRM ของคุณ (ระบบจะลองใหม่หลัง {retryAt} น. หรือทันทีที่บันทึกบัญชีใหม่)", HttpStatusCode.Unauthorized);
+    }
+
+    public void MarkUnavailable() => Interlocked.Exchange(ref unavailableUntilUtcTicks, (clock.GetUtcNow() + UnavailableCooldown).UtcTicks);
+
+    public void ThrowIfInCooldown()
+    {
+        if (UnavailableUntil is not { } until) return;
+        var retryAt = until.ToOffset(TimeSpan.FromHours(7)).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        throw new CrmIntegrationException($"CRM / BlueID ไม่พร้อมใช้งานชั่วคราว (เชื่อมต่อเซิร์ฟเวอร์ login ไม่ได้) — ระบบจะลองเชื่อมต่อใหม่หลัง {retryAt} น.", HttpStatusCode.ServiceUnavailable);
+    }
+
+    /// <summary>Playwright error ที่เกิดจากเครือข่าย/เซิร์ฟเวอร์ปลายทาง (เช่น net::ERR_CONNECTION_TIMED_OUT) ไม่ใช่ credential ผิด</summary>
+    public static string? NetworkErrorCode(string? message)
+    {
+        if (string.IsNullOrEmpty(message)) return null;
+        var match = System.Text.RegularExpressions.Regex.Match(message, @"net::(ERR_[A-Z_]+)");
+        return match.Success ? match.Groups[1].Value : null;
+    }
 
     private static async Task<string> LoginViaBrowserAsync(string merchantId, string username, string password, CancellationToken ct)
     {
@@ -135,6 +227,10 @@ public sealed class CrmTokenService
             }
             return capturedToken;
         }
+        catch (PlaywrightException ex) when (NetworkErrorCode(ex.Message) is { } networkError)
+        {
+            throw new CrmIntegrationException($"CRM / BlueID ไม่พร้อมใช้งาน — เชื่อมต่อเซิร์ฟเวอร์ login ของ BlueID ไม่ได้ ({networkError}) กรุณาลองใหม่ภายหลัง", HttpStatusCode.ServiceUnavailable);
+        }
         catch (PlaywrightException ex)
         {
             throw new CrmIntegrationException($"Login เข้า BlueID ไม่สำเร็จ (browser automation ล้มเหลว) — ตรวจสอบ MerchantID/Username/Password ของบัญชี CRM ของคุณ: {ex.Message}");
@@ -153,7 +249,12 @@ public sealed class CrmTokenService
         {
             var dir = Path.Combine(AppContext.BaseDirectory, "App_Data", "CrmDiagnostics");
             Directory.CreateDirectory(dir);
-            var path = Path.Combine(dir, $"login-failed-{tag}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.png");
+            var path = Path.Combine(dir, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"login-failed-{tag}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.png"));
+            // เก็บไว้แค่ไฟล์ล่าสุด กันไฟล์สะสมไม่จำกัดเมื่อ login ล้มเหลวซ้ำนาน ๆ
+            foreach (var old in new DirectoryInfo(dir).GetFiles("login-failed-*.png").OrderByDescending(f => f.LastWriteTimeUtc).Skip(MaxDiagnosticScreenshots - 1))
+            {
+                try { old.Delete(); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
             await page.ScreenshotAsync(new PageScreenshotOptions { Path = path });
             return path;
         }
