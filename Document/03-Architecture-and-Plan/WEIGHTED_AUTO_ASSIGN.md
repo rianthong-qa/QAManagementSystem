@@ -1,13 +1,13 @@
 # ProMaxx2 QA Hub — Weighted Auto Assignment Development Specification
 
-**Document Type:** Development Specification  
-**Module:** QA Workload / My Work / Auto Assignment  
-**Product:** ProMaxx2 QA Hub  
-**Official Name:** ProMaxx2 Quality Assurance Management System  
-**Version:** 1.0  
-**Status:** Proposed  
-**Target Team:** QA 4 คน  
-**Related Module:** Test Cycle, Test Case, My Work, QA Workload, Automation, Defect, Retest, Regression  
+**Document Type:** Development Specification\
+**Module:** QA Workload / My Work / Auto Assignment\
+**Product:** ProMaxx2 QA Hub\
+**Official Name:** ProMaxx2 Quality Assurance Management System\
+**Version:** 1.0\
+**Status:** Proposed\
+**Target Team:** QA 4 คน\
+**Related Module:** Test Cycle, Test Case, My Work, QA Workload, Automation, Defect, Retest, Regression
 
 ---
 

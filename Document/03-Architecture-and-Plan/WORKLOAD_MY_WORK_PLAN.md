@@ -1,11 +1,11 @@
 # ProMaxx2 QA Hub — QA Workload & My Work Development Plan
 
-**Document Type:** Development Plan  
-**Module:** QA Workload / My Work / Test Assignment  
-**Product:** ProMaxx2 QA Hub  
-**Official Name:** ProMaxx2 Quality Assurance Management System  
-**Version:** 1.0  
-**Status:** Proposed  
+**Document Type:** Development Plan\
+**Module:** QA Workload / My Work / Test Assignment\
+**Product:** ProMaxx2 QA Hub\
+**Official Name:** ProMaxx2 Quality Assurance Management System\
+**Version:** 1.0\
+**Status:** Proposed\
 **Target Team Size:** QA 4 คน
 
 ---

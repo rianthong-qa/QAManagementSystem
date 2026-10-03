@@ -164,7 +164,7 @@ Overall Result = In Progress
 
 หมายเหตุ:
 
-Not Run ของ Step ไม่ควรหมายถึง Test Case Not Run โดยทันที  
+Not Run ของ Step ไม่ควรหมายถึง Test Case Not Run โดยทันที\
 หากบาง Step ถูกทดสอบแล้วให้ถือว่า Test Case กำลังดำเนินการ
 
 ### Rule 4: Pass
@@ -720,7 +720,7 @@ Not Run
 รองรับ Pass / Fail / Blocked / Not Run
 
 ### AC03
-เมื่อมี Step Fail อย่างน้อย 1 Step  
+เมื่อมี Step Fail อย่างน้อย 1 Step\
 Overall Result ต้องเป็น Fail
 
 ### AC04
@@ -809,7 +809,7 @@ TestCaseExecutionPage
 
 ## 27. คำสั่งเพิ่มเติมสำหรับ AI Coding Agent
 
-ให้ปรับเฉพาะหน้า Test Case Execution ก่อน  
+ให้ปรับเฉพาะหน้า Test Case Execution ก่อน\
 ห้ามเปลี่ยน Business Logic ของ Module อื่นโดยไม่จำเป็น
 
 ควรแยกฟังก์ชันคำนวณ Result กลางออกมา เช่น:

@@ -1,7 +1,7 @@
 # ProMaxx2 QA Hub — CRM Module Development Plan
 
-สถานะ: **Phase 5 — Create QA Hub Defect from CRM Ticket implementation in progress; Production CRM write-back และ second-user verification intentionally deferred**  
-วันที่จัดทำ: 2026-10-02  
+สถานะ: **Phase 5 — Create QA Hub Defect from CRM Ticket implementation in progress; Production CRM write-back และ second-user verification intentionally deferred**\
+วันที่จัดทำ: 2026-10-02\
 ขอบเขต: เพิ่มเมนู `CRM` สำหรับแสดงข้อมูล Ticket จาก CRM/BlueSea โดยแยกข้อมูลตามผู้ใช้ที่ Login เข้า QA Hub
 
 เอกสารนี้เป็นแผนพัฒนาต่อยอดจาก:

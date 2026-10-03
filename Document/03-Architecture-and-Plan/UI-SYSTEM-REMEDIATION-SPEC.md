@@ -2,7 +2,7 @@
 
 เอกสารนี้เป็นแผนพัฒนาปรับปรุง UI/UX และความสอดคล้องของระบบ QA Hub ทุกหน้า โดยเรียงลำดับจากเร่งด่วนมากไปน้อย แบ่งเป็น Phase เพื่อให้ทีมพัฒนานำไปแตกงานและตรวจรับได้
 
-วันที่จัดทำ: 2026-09-03  
+วันที่จัดทำ: 2026-09-03\
 ขอบเขต: React Frontend, API data contract ที่เกี่ยวข้องกับการแสดงผล, responsive, accessibility, permission-aware UI และเอกสารกำกับการพัฒนา
 
 ## หลักการสำคัญ
@@ -28,7 +28,7 @@
 
 # Phase 1 — Critical Governance & Data Integrity
 
-ระดับ: เร่งด่วนมาก  
+ระดับ: เร่งด่วนมาก\
 เป้าหมาย: ป้องกันข้อมูลผู้บริหารคลาดเคลื่อน และป้องกันการตัดสินใจ Release จากข้อมูลไม่ตรงกัน
 
 ## P1.1 แก้ Test Summary generated timestamp
@@ -123,7 +123,7 @@ Acceptance Criteria:
 
 # Phase 2 — Executive Reporting Completeness
 
-ระดับ: เร่งด่วนสูง  
+ระดับ: เร่งด่วนสูง\
 เป้าหมาย: ทำให้ Test Summary พร้อมใช้เป็นเอกสารสำหรับผู้บริหารและ Sign-off
 
 ## P2.1 เติม Test Summary ให้ตรง Screen Specification
@@ -205,7 +205,7 @@ Acceptance Criteria:
 
 # Phase 3 — Core Test Management Consistency
 
-ระดับ: สูง  
+ระดับ: สูง\
 เป้าหมาย: ทำให้ข้อมูลตั้งแต่ Requirement ถึง Execution มี traceability และ interaction ที่สม่ำเสมอ
 
 ## P3.1 Project/Module
@@ -278,7 +278,7 @@ Acceptance Criteria: Defect และ Regression evidence เชื่อมก�
 
 # Phase 4 — Operational Automation Quality
 
-ระดับ: สูง แต่แยกเป็น workstream  
+ระดับ: สูง แต่แยกเป็น workstream\
 เป้าหมาย: ทำให้ Automation ใช้งานปฏิบัติการได้ปลอดภัย ตรวจสอบย้อนกลับได้ และไม่สร้าง false confidence ให้ผู้บริหาร
 
 ## P4.1 Runner/Queue/Execution
@@ -322,7 +322,7 @@ Acceptance Criteria:
 
 # Phase 5 — Cross-cutting UX, Accessibility & Maintainability
 
-ระดับ: ปานกลางถึงสูง  
+ระดับ: ปานกลางถึงสูง\
 เป้าหมาย: ทำให้ทุกหน้ามีประสบการณ์และมาตรฐานเดียวกัน
 
 ## P5.1 Shared UI patterns
@@ -391,7 +391,7 @@ Acceptance Criteria:
 
 # Phase 6 — Validation, QA และ Release Readiness
 
-ระดับ: หลังการพัฒนาทุก Phase  
+ระดับ: หลังการพัฒนาทุก Phase\
 เป้าหมาย: ยืนยันว่า UI ที่ปรับไม่กระทบการใช้งานเดิม
 
 ## Required checks

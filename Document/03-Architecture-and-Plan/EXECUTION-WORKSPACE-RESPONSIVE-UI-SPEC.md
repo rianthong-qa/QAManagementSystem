@@ -2,8 +2,8 @@
 
 เอกสารนี้กำหนดแนวทางพัฒนาปรับปรุงหน้า Execution Workspace สำหรับหน้าจอขนาดเล็ก โดยเน้นแก้ปัญหา layout เพี้ยน, ข้อความถูกบีบ, ปุ่มล้น และการใช้งาน Test Step ที่ไม่สะดวก โดยต้องไม่กระทบ logic การบันทึกผล Execution เดิม
 
-วันที่จัดทำ: 2026-09-03  
-หน้า: Execution Workspace  
+วันที่จัดทำ: 2026-09-03\
+หน้า: Execution Workspace\
 Frontend: `src/ProMaxx2.QA.Web/src/pages/ExecutionWorkspacePage.tsx` (เดิมอยู่ใน `App.tsx` — ย้ายออกเมื่อ 2026-09-25), `src/ProMaxx2.QA.Web/src/ExecutionWorkspace.css`, `src/ProMaxx2.QA.Web/src/styles.css`
 
 ## 1. เป้าหมาย
@@ -65,7 +65,7 @@ Frontend: `src/ProMaxx2.QA.Web/src/pages/ExecutionWorkspacePage.tsx` (เดิ�
 
 # Phase 1 — Prevent Layout Breakage
 
-ระดับ: เร่งด่วนมาก  
+ระดับ: เร่งด่วนมาก\
 เป้าหมาย: หยุดอาการล้นจอและการบีบเนื้อหาหลักก่อน
 
 ## 1.1 ปรับ Execution layout ให้ยืดหยุ่น
@@ -134,7 +134,7 @@ min-width: 0;
 
 # Phase 2 — Mobile Step Interaction
 
-ระดับ: เร่งด่วนสูง  
+ระดับ: เร่งด่วนสูง\
 เป้าหมาย: ทำให้การอ่านและกรอกผล Test Step บนมือถือใช้งานได้จริง
 
 ## 2.1 Desktop/tablet Step layout
@@ -212,7 +212,7 @@ Acceptance Criteria:
 
 # Phase 3 — Queue, History และ Toolbar
 
-ระดับ: สูง  
+ระดับ: สูง\
 เป้าหมาย: ทำให้การเลือก Case และดูประวัติยังใช้งานได้เมื่อพื้นที่จำกัด
 
 ## 3.1 Execution Toolbar
@@ -278,7 +278,7 @@ Mobile:
 
 # Phase 4 — Preserve Execution Behavior and Accessibility
 
-ระดับ: สูง  
+ระดับ: สูง\
 เป้าหมาย: ปรับ UI โดยไม่ทำให้ข้อมูล execution หรือ workflow สูญหาย
 
 ## 4.1 Functional regression rules
@@ -347,7 +347,7 @@ Mobile:
 
 # Phase 5 — Code Structure and Shared Styling
 
-ระดับ: ปานกลาง  
+ระดับ: ปานกลาง\
 เป้าหมาย: ลดความเสี่ยงที่การแก้ responsive ครั้งต่อไปจะกระทบหน้าอื่น
 
 ## 5.1 แยก style เฉพาะหน้า
@@ -384,7 +384,7 @@ Mobile:
 
 # Phase 6 — Validation and Release Acceptance
 
-ระดับ: หลังพัฒนาทุก Phase  
+ระดับ: หลังพัฒนาทุก Phase\
 เป้าหมาย: ยืนยันว่า UI ใช้งานได้และไม่กระทบ execution data
 
 ## 6.1 Required commands
