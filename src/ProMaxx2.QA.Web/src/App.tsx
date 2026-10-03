@@ -364,11 +364,14 @@ function App() {
   useEffect(() => {
     if (contextProjectId) localStorage.setItem("qa.context.project", contextProjectId);
   }, [contextProjectId]);
+  // จำ Release ต่อ Project เฉพาะเมื่อ Release นั้นเป็นของ Project ปัจจุบันจริง — ตอนเพิ่งเปลี่ยน Project ค่า contextReleaseId
+  // ยังเป็นของ Project เดิมอยู่ 1 render ถ้าบันทึกเลยจะทับ Release ที่จำไว้ของ Project ใหม่ก่อนที่ effect โหลด Release จะอ่าน
   useEffect(() => {
     if (!contextProjectId || !contextReleaseId) return;
+    if (!contextReleases.some((x) => x.releaseId === contextReleaseId && x.projectId === contextProjectId)) return;
     localStorage.setItem("qa.context.release", contextReleaseId);
     localStorage.setItem(contextReleaseStorageKey(contextProjectId), contextReleaseId);
-  }, [contextProjectId, contextReleaseId]);
+  }, [contextProjectId, contextReleaseId, contextReleases]);
   useEffect(() => {
     if (!contextReleaseId || !contextBuildId) return;
     localStorage.setItem("qa.context.build", contextBuildId);
@@ -458,10 +461,6 @@ function App() {
     setContextLoading(true);
     setContextBuilds([]);
     setContextBuildId("");
-    localStorage.setItem("qa.context.release", contextReleaseId);
-    if (contextProjectId) {
-      localStorage.setItem(contextReleaseStorageKey(contextProjectId), contextReleaseId);
-    }
     const savedBuildId =
       localStorage.getItem(contextBuildStorageKey(contextReleaseId)) ??
       localStorage.getItem("qa.context.build");
@@ -485,7 +484,7 @@ function App() {
         setContextBuildId("");
       })
       .finally(() => setContextLoading(false));
-  }, [contextEnabled, contextProjectId, contextReleaseId, refresh]);
+  }, [contextEnabled, contextReleaseId, refresh]);
   useEffect(() => {
     if (!contextEnabled || !contextBuildId) {
       setBlockerCount(0);

@@ -137,8 +137,13 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
  private async Task ImportLegacyAttachmentsAsync(Guid defectId,CancellationToken ct)
  {
   var directory=AttachmentDirectory(defectId);
-  if(!Directory.Exists(directory)||await db.DefectAttachments.AnyAsync(x=>x.DefectId==defectId,ct))return;
+  if(!Directory.Exists(directory))return;
   var legacy=Directory.EnumerateFiles(directory).Select(path=>new FileInfo(path)).Where(file=>file.Name.Length>33&&Guid.TryParseExact(file.Name[..32],"N",out _)).ToList();
+  if(legacy.Count==0)return;
+  // เทียบรายไฟล์ด้วย DefectAttachmentId (32 ตัวแรกของชื่อไฟล์) — เดิมข้ามทั้งหมดถ้ามีแถวใดแถวหนึ่งแล้ว ทำให้ไฟล์เก่าที่ยังไม่ถูกนำเข้า
+  // หายจากหน้าจอทันทีที่มีรูปในคอมเมนต์ (ใช้ตาราง DefectAttachments เดียวกัน) ทั้งที่ไฟล์ยังอยู่บนดิสก์
+  var knownIds=(await db.DefectAttachments.Where(x=>x.DefectId==defectId).Select(x=>x.DefectAttachmentId).ToListAsync(ct)).ToHashSet();
+  legacy=legacy.Where(file=>!knownIds.Contains(Guid.ParseExact(file.Name[..32],"N"))).ToList();
   if(legacy.Count==0)return;
   db.DefectAttachments.AddRange(legacy.Select(file=>new DefectAttachment(Guid.ParseExact(file.Name[..32],"N"),defectId,file.Name[33..],file.Name,Math.Max(1,file.Length),DefectImageStorage.ContentTypeFor(file.Extension.ToLowerInvariant()),null,file.CreationTimeUtc)));
   await db.SaveChangesAsync(ct);

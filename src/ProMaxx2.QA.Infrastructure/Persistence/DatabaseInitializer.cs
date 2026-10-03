@@ -42,7 +42,10 @@ public static class DatabaseInitializer
         {
             var role = await db.Roles.SingleAsync(x => x.RoleCode == roleCode, cancellationToken);
             var permissionId = await db.Permissions.Where(x => x.PermissionCode == "CRM.EDIT").Select(x => x.PermissionId).SingleAsync(cancellationToken);
-            if (!await db.RolePermissions.AnyAsync(x => x.RoleId == role.RoleId && x.PermissionId == permissionId, cancellationToken))
+            // ต้องเช็กทั้งที่ยังรอ save (Local) — loop DefaultRolePermissions ด้านบนอาจเพิ่ม SYS_ADMIN + CRM.EDIT ไว้แล้ว
+            // ถ้าเช็กแค่ฐานข้อมูลจะ Add ซ้ำแล้ว EF throw "already being tracked" ทำให้ API start ไม่ขึ้นบนฐานข้อมูลใหม่
+            if (!db.RolePermissions.Local.Any(x => x.RoleId == role.RoleId && x.PermissionId == permissionId)
+                && !await db.RolePermissions.AnyAsync(x => x.RoleId == role.RoleId && x.PermissionId == permissionId, cancellationToken))
                 db.RolePermissions.Add(new RolePermission(role.RoleId, permissionId));
         }
         var workloadRolePermissions = new Dictionary<string, string[]> { ["SYS_ADMIN"] = WorkloadPermissionCodes, ["QA_LEAD"] = WorkloadPermissionCodes, ["QA_TESTER"] = ["QA.MYWORK.VIEW", "QA.MYWORK.EXECUTE"] };
