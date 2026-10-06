@@ -859,7 +859,7 @@ git diff --check
 
 ### 2026-10-03 — CRM Phase 3: Board และ QA Hub Defect linking
 
-- หน้า CRM เพิ่มตัวสลับ `List`/`Board`; Board แบ่ง Ticket เป็น Open, In Progress และ Closed และใช้ข้อมูลชุดเดียวกับตัวกรองปัจจุบัน
+- หน้า CRM เพิ่มตัวสลับ `List`/`Board`; Board แบ่ง Ticket เป็น Open, Continue, Test และ Finish / Close และใช้ข้อมูลชุดเดียวกับตัวกรองปัจจุบัน
 - Board card เป็นปุ่มที่เปิด Detail Modal เดิมได้ด้วย Mouse/Keyboard; ไม่สร้าง page-level horizontal scroll และเปลี่ยนเป็น 1 คอลัมน์บน Mobile
 - Detail Modal แสดงสถานะการเชื่อมกับ QA Hub Defect และใช้ `ModalShell` แยกสำหรับค้นหา/เลือก Defect ที่ผู้ใช้เข้าถึงได้
 - การ Link เป็น action ที่ต้องมี `DEFECT.EDIT`; UI แสดง Loading/Error/Empty และป้องกันการกดซ้ำระหว่างบันทึก
@@ -893,7 +893,7 @@ git diff --check
 ### 2026-10-03 — CRM Board ออกแบบการ์ดใหม่
 
 - แก้ต้นเหตุการ์ดเรียงแนวนอน/ข้อความแตกทีละตัว: การ์ดเป็น `<button>` และ global `button:not(.icon-button)` (specificity 0,1,1: `inline-flex` + `nowrap` + padding 10/16) ชนะ `.crm-board-ticket` — CSS ของบอร์ดรวมเป็นชุดเดียวท้าย `Crm.css` และใช้ selector `button.crm-board-ticket`; กฎ: **component ที่เป็น `<button>` แต่จัด layout เอง (การ์ด/รายการ) ต้องเขียน selector เป็น `button.<class>` หรือสูงกว่า**
-- คอลัมน์: สีตามกลุ่มจาก `data-bucket` (Open เหลือง, In Progress `--info`, Closed เขียว) — เส้นบนหัวคอลัมน์ + จุดสี + ตัวนับ, เนื้อหาเลื่อนในคอลัมน์ (`max-height: 68vh`) แทนการยืดหน้า; คอลัมน์ว่างแสดงกรอบเส้นประ "ไม่มี Ticket"
+- คอลัมน์: สีตามกลุ่มจาก `data-bucket` (Open เหลือง, Continue `--info`, Test ม่วง, Finish / Close เขียว) — เส้นบนหัวคอลัมน์ + จุดสี + ตัวนับ, เนื้อหาเลื่อนในคอลัมน์ (`max-height: 68vh`) แทนการยืดหน้า; คอลัมน์ว่างแสดงกรอบเส้นประ "ไม่มี Ticket"
 - การ์ด: แถบซ้ายสีตามคอลัมน์, แถวบน Job No. (primary, ellipsis) + Badge สถานะ, เรื่อง 13px/600 ตัด 2 บรรทัด (`title` แสดงเต็ม), แถวล่างคั่นเส้นมีไอคอน Service · Assignee · อายุงาน (ชิดขวา); hover ยกการ์ดเล็กน้อย, มี `aria-label`
 - Mobile ≤760px: 1 คอลัมน์และไม่จำกัดความสูงคอลัมน์ (ไม่มี scroll ซ้อน)
 - สถานะ CRM: `Test`/`Testing` ใช้ Badge สีม่วง แยกจาก `Continue` และสถานะกำลังดำเนินการอื่นที่เป็นสีน้ำเงิน (Open เหลือง, Close/Finish เขียว คงเดิม)
@@ -923,7 +923,7 @@ git diff --check
 
 ### 2026-10-03 — CRM: ช่วงวันที่แบบ preset + กำหนดเอง
 
-- ตัวกรองวันที่เปลี่ยนจาก 2 ช่อง date เป็นกลุ่ม **ช่วงวันที่ติดต่อ** (segmented, `role="group"` + `aria-pressed`): `7 วัน` / `15 วัน` / `30 วัน` / `กำหนดเอง` — **ค่าเริ่มต้น 30 วัน**; preset ตั้ง From = วันนี้ − N, To = วันนี้ และแสดงช่วงที่ใช้จริงใต้ปุ่ม
+- ตัวกรองวันที่เปลี่ยนจาก 2 ช่อง date เป็นกลุ่ม **ช่วงวันที่ติดต่อ** (segmented, `role="group"` + `aria-pressed`): `วันนี้` / `7 วัน` / `15 วัน` / `30 วัน` / `กำหนดเอง` — **ค่าเริ่มต้น วันนี้** (แก้ 2026-10-04); preset ตั้ง From = วันนี้ − N, To = วันนี้ และแสดงช่วงที่ใช้จริงใต้ปุ่ม
 - `กำหนดเอง` (`aria-expanded`/`aria-controls`) เปิดส่วนแยก `.crm-custom-range` (กรอบเส้นประพื้น primary อ่อน) ที่มีช่องวันที่เริ่มต้น–สิ้นสุด โดยตั้งต้นจากช่วงที่เลือกอยู่
 - ช่องวันที่ `CrmDateField` แสดง **วัน/เดือน/ปี พ.ศ.** ตรงกับวันที่ในรายการ: ข้อความที่จัดรูปแบบเองอยู่ใต้ native `<input type="date">` โปร่งใสเต็มช่อง (คลิกเรียก `showPicker()`, focus ring ด้วย `:focus-within`) เพราะรูปแบบที่ input แสดงเองขึ้นกับ locale ของเบราว์เซอร์ (เดิมเห็นเป็น ด/ว/ค.ศ.) — กฎ: **ช่องวันที่ที่ต้องแสดงวัน/เดือน/ปี ให้ใช้ pattern นี้ ห้ามพึ่งรูปแบบของ native input**
 - Responsive: กลุ่มช่วงวันที่ span 2 คอลัมน์บน Desktop, เต็มแถว ≤1000px; ส่วนกำหนดเอง stack ≤760px และช่องวันที่เรียงแนวตั้ง ≤420px; ตรวจ 1280px และ iframe 390px (`scrollWidth` = `clientWidth`)
@@ -977,3 +977,108 @@ git diff --check
 
 - ป้ายสถานะในหัว Detail Modal (`.crm-ticket-head-title > .badge`) ใหญ่ขึ้น (13px/800, padding 5×12) มีจุดสีนำหน้า เส้นขอบ และพื้นสีของสถานะ 13% (`currentColor`) — เดิมกลืนกับพื้นไล่สีของหัว โดยเฉพาะสถานะ Test สีม่วง
 - `.badge.purple` ทั้งแอปเข้มขึ้น: พื้น `#f5f3ff` → `#ede9fe`, ตัวอักษร `#7c3aed` → `#6d28d9` (เดิมพื้นแทบมองไม่เห็นบนพื้นขาว/ฟ้าอ่อน)
+
+### 2026-10-04 — CRM: ช่วงวันที่ติดต่อเริ่มต้นเป็นวันนี้
+
+- เพิ่ม preset `วันนี้` (From = To = วันนี้ ตามปฏิทินไทย) เป็นปุ่มแรกของกลุ่ม **ช่วงวันที่ติดต่อ** และเป็น **ค่าเริ่มต้น** เมื่อเปิดหน้า CRM (เดิม 30 วัน); preset อื่น `7 วัน` / `15 วัน` / `30 วัน` / `กำหนดเอง` ทำงานเหมือนเดิม
+- `.crm-range-presets` เปลี่ยนเป็น 4 ช่องเท่ากัน + ช่อง `กำหนดเอง` 1.4fr; backend รองรับ From = To อยู่แล้ว (ส่ง `to + 1` วันไป CRM) ไม่ต้องแก้ API
+- ช่อง `สถานะ` / `แสดงต่อหน้า` จัดแนวเดียวกับกลุ่มปุ่มช่วงวันที่: `.crm-filter-row label` ใช้ `align-content: start` (เดิม grid row ถูกยืดตามความสูงกลุ่มช่วงวันที่ที่มีบรรทัดช่วงวันที่ใต้ปุ่ม ทำให้ select ต่ำกว่าปุ่ม) — label และ control ในแถวตัวกรองต้องเริ่มที่ขอบบนเดียวกัน; ตรวจ headless Edge 1280px (top/height ของปุ่มกับ select = 70/40px เท่ากัน) และ ~500px ไม่มี horizontal scroll
+
+### 2026-10-04 — CRM: ค้นหา Job No. โดยตรง
+
+- เพิ่มช่อง **ค้นหา Job No.** (`form.crm-jobno-search`, `role="search"`) ในแถวตัวกรองระหว่างช่วงวันที่กับสถานะ: input + ปุ่มไอคอน `search` สี primary ฝังขวาในช่อง (32px, disabled เมื่อยังไม่กรอก, มี `aria-label`) และคำอธิบาย "ค้นได้ทุกช่วงวันที่ · กด Enter" ใต้ช่อง
+- กด Enter/ปุ่มค้นหาจะ **ตรวจกับ CRM ก่อน** (`GET /crm/tickets/{jobNo}`, ปุ่มเป็นไอคอนหมุน `progress_activity` + disabled ระหว่างค้นหา) — **ไม่ขึ้นกับช่วงวันที่/สถานะ** (ช่วงวันที่เริ่มต้นเป็นวันนี้จึงกรองรายการหา Job เก่าไม่เจอ); พบแล้วจึงเปิด Detail Modal โดยใช้รายละเอียดที่โหลดมาแล้ว (ไม่ยิง CRM ซ้ำ; ปุ่มลองใหม่ใน modal ยังโหลดใหม่), ถ้า Job อยู่ในรายการหน้านี้ใช้ข้อมูลแถวเป็นค่าตั้งต้นแล้วเติมจากรายละเอียด (`ticketView`)
+- **ไม่พบ/โหลดไม่สำเร็จห้ามเปิด modal ที่ไม่มีข้อมูล** — แจ้งใต้ช่องแทนคำอธิบาย (`.crm-jobno-error` สี `--red` + ไอคอน `error`, `role="alert"`, ช่อง `aria-invalid` ขอบแดง) เช่น `ไม่พบ Job No. "12" ในงานของบัญชี CRM นี้ …` (404 `CRM_TICKET_NOT_FOUND`), "เชื่อมต่อระบบไม่สำเร็จ …" (network error) หรือข้อความ CRM error ตาม code; พิมพ์ใหม่แล้วข้อความหายไป
+- ช่องค้นหาด้านบน (Topbar) ยังกรองรายการตาม Job No./Subject/ผู้แจ้ง/Service/Product ในช่วงวันที่ที่เลือกเหมือนเดิม
+- `.crm-filter-row` เป็น 5 คอลัมน์ (ช่วงวันที่ span 2); ≤1000px 2 คอลัมน์โดยช่วงวันที่เต็มแถว; ≤760px 1 คอลัมน์ — ตรวจ headless Edge 1440px (ปุ่มช่วงวันที่/Job No./select top 70px สูง 40px เท่ากัน), 900px และ ~500px ไม่มี horizontal scroll; ไม่แก้ backend
+- แก้ค้น Job No. ที่ไม่มีอยู่จริงแล้วขึ้น "เชื่อมต่อระบบไม่สำเร็จ": CRM ตอบ body ว่าง/ไม่ใช่ JSON ทำให้ `JsonDocument.Parse` โยน exception ที่ไม่มีใครดัก → 500 และเพราะ `UseExceptionHandler` อยู่หลัง `UseCors` คำตอบ 500 จึงไม่มี CORS header (browser เห็นเป็น `Failed to fetch`) — ตอนนี้ `CrmApiClient.FindJobDetailAsync`/`TryParseJobDetail` คืน null เมื่อไม่พบ Job, `CrmTicketDetailService` แปลงเป็น 404 `CRM_TICKET_NOT_FOUND` (รวม CRM ตอบ 404) และ `Program.cs` ย้าย `UseExceptionHandler()` ไปก่อน `UseCors` เพื่อให้ error 500 ทุก endpoint อ่านได้จากหน้าเว็บ; เพิ่ม unit test `TryParseJobDetail_*` — **ต้อง restart API**
+- Service/Product ว่างเมื่อเปิดจากช่อง Job No.: รายละเอียดจาก CRM (`HelpDesksJob`) มีแค่รหัส `sysserviceType`/`sysProductId` ไม่มีชื่อ — ถ้า Job ไม่อยู่ในรายการหน้านี้ หลังพบ Ticket จะดึง `GET /crm/tickets?from=<วันที่ติดต่อ>&to=<วันเดียวกัน>&search=<jobNo>` (วันตามปฏิทินไทย) เพื่อใช้แถวของ Job นั้นเป็นค่าตั้งต้น (มีชื่อ Service/Product/สาขา) แบบ best-effort: ดึงไม่ได้ก็ยังเปิด modal ด้วยข้อมูลจากรายละเอียด; ไม่แก้ backend
+
+### 2026-10-04 — CRM: ชื่อพนักงานไม่แสดงคำนำหน้าแทนชื่อ
+
+- `staffLabel` ตัดคำนำหน้าชื่อจาก BlueID directory (`นาย`/`นาง`/`นางสาว`/`น.ส.`/`คุณ`/`ดร.`/`Mr.`/`Mrs.`/`Ms.`/`Miss`/`Dr.`) ก่อนเอาคำแรกเป็นชื่อ — เดิม "นาย สมชาย ใจดี" แสดงเป็น `6907 นาย`; รองรับทั้งข้อมูลที่มีช่องว่างและข้อมูลจาก CRM ที่ติดคำนำหน้ากับชื่อ เช่น `นายรัช`/`นางสาวชัญญ์ธิดา`; fallback และรายชื่อพนักงานใน dropdown ก็ใช้ชื่อที่ตัดคำนำหน้าแล้ว
+
+### 2026-10-04 — CRM Ticket detail: รายละเอียดจากประวัติการติดต่อรายการแรก
+
+- `HelpDesksJob` ไม่มีช่อง description (หน้า "รายละเอียด" จึงขึ้น "ไม่มี Description" ทุก Ticket) — CRM บันทึก Description ตอนเปิดเรื่องเป็นแถวแรกของประวัติการติดต่อ (ยืนยันกับหน้า BlueSea โดยผู้ใช้): ถ้า Job ไม่มี description ในตัว `ticketDescription` ใช้ข้อความของรายการประวัติ **เก่าสุดที่มีวันที่** (ไม่นับไฟล์แนบ `P`) ทั้งในส่วน "รายละเอียด" และค่าตั้งต้นของ Description ตอน "สร้าง Defect จาก Ticket"; ประวัติการติดต่อยังแสดงครบทุกรายการตามเดิม; ไม่แก้ backend
+
+### 2026-10-04 — CRM: สร้าง Ticket ใหม่
+
+- ปุ่ม primary **สร้าง Ticket ใหม่** (ไอคอน `add`) ในหัว "รายการ Ticket" แสดงเมื่อมีสิทธิ์ `CRM.EDIT` และตั้งค่าบัญชี CRM แล้ว; ≤760px ปุ่มเต็มความกว้าง
+- Modal `CrmCreateTicketModal` (ใช้ `ModalShell` + class ฟอร์มเดียวกับ "สร้าง Defect จาก CRM Ticket", 620px): หัวบอกผู้แจ้ง/เจ้าของเรื่อง = ผู้ใช้เอง และสถานะเริ่มต้น Open, กล่องหมายเหตุว่าบันทึกลง CRM ทันที; ฟิลด์ Subject* (≤200), Service* / Product* (2 คอลัมน์ → 1 คอลัมน์ ≤760px, ดึงสดจาก `GET /crm/lookups`), ผู้รับผิดชอบ (ค่าเริ่มต้น "ตัวเอง" + รายชื่อจาก `/crm/assignees` — โหลดไม่ได้ยังเลือกตัวเองได้), รายละเอียด* (≤1000 พร้อมตัวนับ); เครื่องหมาย `*` สี `--red`
+- โหลดรายการ Service/Product ไม่สำเร็จแสดง inline error + ปุ่ม "ลองใหม่" ภายใน modal และ select เป็น disabled; error ตอนสร้างแสดงใน modal; ปุ่มสร้าง disabled จนกรอกครบและระหว่างบันทึก
+- สร้างสำเร็จ: ปิด modal, toast `สร้าง Ticket <JobNo> ใน CRM แล้ว` (ถ้ามอบหมายให้ผู้อื่นแจ้งว่าไม่แสดงในรายการของคุณ), ตั้งช่วงวันที่เป็น "วันนี้" และดึงรายการสดจาก CRM
+- ตรวจ headless Edge ~500px (ฟอร์ม 1 คอลัมน์ ไม่มี horizontal scroll) และ desktop; ยังไม่ได้ทดสอบสร้าง Ticket จริงกับ CRM (contract ของ `/Support/Products` ยังไม่ยืนยัน — parser แจ้งชื่อ field ที่พบถ้าอ่านไม่ได้)
+- **ปรับฟอร์มตามหน้า New Job ของ CRM (ผู้ใช้ส่งภาพหน้าเดิมมา):** modal 900px ใช้ `fieldset.crm-create-ticket-form` grid 4 คอลัมน์ (≤900px 2, ≤760px 1 + modal เต็มจอ) เรียง `เรื่อง*` (เต็มแถว) → หัวข้อ **ข้อมูลลูกค้า** (`h3` มีเส้นคั่นบน): Member* / ชื่อ* / นามสกุล / ประเภทลูกค้า (read-only None MA) / เบอร์โทรศัพท์* / ชื่อเล่น / LineID / E-Mail (ตรวจรูปแบบ ขอบแดง + ข้อความใต้ช่อง) → หัวข้อ **รายละเอียดงาน**: วันที่ติดต่อ (read-only เวลาปัจจุบัน พ.ศ.) / หัวเรื่องให้บริการ* / สถานะ (Open) / ช่องทางการติดต่อ (Call/Remote) / ผู้รับเรื่อง (read-only ตัวเอง) / เจ้าของเรื่อง / Assign To (ค่าเริ่มต้นตัวเอง) / Development (ไม่ระบุพนักงาน) / Ref JobNo / Duedate (`CrmDateField` พ.ศ. ไม่ก่อนวันนี้) / Product* (span 2) → รายละเอียด* (เต็มแถว, บันทึกเป็นประวัติการติดต่อรายการแรก); Member/ชื่อ/นามสกุล ตั้งต้นจากผู้ใช้ (ตัดคำนำหน้าชื่อ); ช่อง read-only พื้น `--surface` สี `--muted`; ระหว่างบันทึก `fieldset disabled`
+- ยังไม่รองรับ: ปุ่มค้นหา Member (ยังไม่รู้ endpoint), ตัวเลือกประเภทลูกค้าอื่น, เวอร์ชั่น/Build/OS/การติดตาม และ **Attachment** (ยังไม่รู้ชื่อ field ไฟล์ของ `POST /Support`) — ตรวจ headless Edge 1280px และ ~500px ไม่มี horizontal scroll
+- แก้เปิดฟอร์มแล้วขึ้น "เรียกข้อมูลจากระบบไม่สำเร็จ (403)": หน้าเว็บแสดงปุ่มด้วย `can("CRM.EDIT")` (SYS_ADMIN หรือมีสิทธิ์) แต่ policy `CrmEdit` ฝั่ง API เช็กแค่ claim ใน JWT — ตอนนี้ใช้ `CrmEditRequirement`/`CrmEditAuthorizationHandler` อ่านโปรไฟล์ปัจจุบันจากฐานข้อมูลแบบเดียวกับ `CrmView` (SYS_ADMIN หรือ CRM.EDIT) ซึ่งแก้ endpoint ที่ใช้ `CrmEdit` ทั้งหมดด้วย (`/crm/lookups`, `POST`/`PATCH /crm/tickets`, `/crm/assignees`); 403 ที่ไม่มี code แสดงเป็นข้อความไทยว่าไม่มีสิทธิ์ CRM.EDIT
+- **ฟอร์มสร้าง Ticket จบในหน้าจอเดียว (ไม่ต้องเลื่อนบน Desktop):** modal `min(1120px, 100vw − 32px)` สูงรวม ~590px — หัว modal แสดงค่าที่ระบบกำหนดเป็นแถบข้อมูล `.crm-ct-meta` (วันที่ติดต่อ / ผู้รับเรื่อง / ประเภทลูกค้า None MA / บันทึกลง CRM ทันที, ไอคอน primary) แทนช่อง read-only; `เรื่อง*` เต็มแถว → 2 กล่อง `.crm-ct-section` (พื้น surface อ่อน, หัวข้อมีไอคอนในกรอบ primary-soft) ข้างกัน 5fr/7fr: **ข้อมูลลูกค้า** 2 คอลัมน์ (Member* / เบอร์โทร* / ชื่อ* / นามสกุล / ชื่อเล่น / LineID / E-Mail span 2) และ **รายละเอียดงาน** 3 คอลัมน์ (หัวเรื่องให้บริการ* / Product* / สถานะ / เจ้าของเรื่อง / Assign To / Development / ช่องทาง / Duedate / Ref JobNo) ตามด้วย `รายละเอียด*` เต็มความกว้างกล่อง (ตัวนับอยู่ขวาของ label); ช่องสูง 36px label 11px สี muted ระยะห่างแถว 8px; ≤1000px กล่องเรียงต่อกัน, ≤760px 1 คอลัมน์ ช่องสูง 40px modal เต็มจอ
+- ตรวจ headless Edge: 1280×800, 1366×768, 1440×900 ไม่มี scroll ใน modal (scrollHeight = clientHeight 587px); 900px และ ~500px เลื่อนแนวตั้งภายใน modal เท่านั้น ไม่มี horizontal scroll
+
+### 2026-10-04 — CRM Ticket detail: แสดงรูปในประวัติการติดต่อ
+
+- ไฟล์แนบของรายการประวัติ (`image` จาก `HelpDeskAnswerMain`) อยู่ที่ Azure Blob สาธารณะของ BlueSea `https://seniorsoftbluesea.blob.core.windows.net/helpdesk/helpdeskHD/<ไฟล์>` (ยืนยันจากผู้ใช้ + เปิดได้ไม่ต้อง login): `crmAttachmentUrls` รับ URL เต็ม (เฉพาะ host นี้ — host อื่นไม่แสดง), path ใต้ container หรือชื่อไฟล์อย่างเดียว และหลายไฟล์คั่น `,`/`;`/`|`
+- รูป (jpg/png/gif/webp/bmp) จากทุกประวัติถูกรวมแสดงเป็นรูปย่อ 72px (Mobile 64px, `loading="lazy"`, ปุ่มมี `aria-label`) ใต้กล่อง **รายละเอียด** คลิกแล้วเปิด `ImageLightbox` ที่รวมรูปทั้งหมดของ Ticket เลื่อนดูต่อกันได้; ประวัติการติดต่อแสดงเฉพาะข้อความและเวลาเพื่อไม่ให้รูปซ้ำหลายตำแหน่ง; ไฟล์อื่นหรือรูปที่โหลดไม่ได้แสดงเป็นลิงก์ชื่อไฟล์ + `open_in_new` ในชุดไฟล์แนบรวม; ค่า `image` ที่แปลงไม่ได้ยังแสดง "มีไฟล์แนบใน CRM" ตามเดิม
+- การ **เพิ่มรูปตอนสร้าง Ticket** ยังไม่ทำ — ต้องรู้ชื่อ field ไฟล์ของ `POST /Support` ก่อน
+
+### 2026-10-05 — CRM: แนบไฟล์ตอนสร้าง Ticket + ชื่อ field ตามฟอร์ม CRM จริง
+
+- ผู้ใช้ส่ง HTML หน้า JobDetailsHD ของ BlueSea มา (ใช้ endpoint `/Support` เดียวกับ New Job) — ยืนยันชื่อ field: ไฟล์แนบ `Images1..N` (≤10 ไฟล์, ≤5 MB/ไฟล์, .jpg/.jpeg/.png/.xlsx/.xls/.doc/.docx/.pdf), **LineID = `Fax`** (เดิมส่ง `LineId` ซึ่งถูกทิ้ง), Development "ไม่ระบุพนักงาน" = `0` (เดิมส่งค่าว่าง), ประเภทลูกค้า 1 None MA / 2 MA / 3 Demo / 4 Dealer, ช่องทาง Call/Email/Facebook/Walk In/Remote/Line, ค่า `image` ในประวัติเป็น URL เต็มของ Azure Blob
+- ฟอร์มสร้าง Ticket: **ประเภทลูกค้า** เป็น select ในกล่องข้อมูลลูกค้า (ย้ายออกจากแถบข้อมูลหัว modal), ช่องทางการติดต่อครบ 6 ตัวเลือก; ใต้ "รายละเอียด" มีแถว **แนบไฟล์**: ปุ่ม `แนบไฟล์ (n/10)` (ไอคอน `attach_file`, มี title บอกกติกา) ตามด้วยรายการไฟล์แบบ chip 32px (รูปมีพรีวิว 26px จาก object URL — คืนหน่วยความจำเมื่อลบ/ปิด modal, เอกสารใช้ไอคอน `description`, ชื่อยาว ellipsis, ปุ่ม × มี `aria-label`) หรือคำแนะนำเมื่อยังไม่มีไฟล์; วางรูปจากคลิปบอร์ดในช่องรายละเอียดได้; ตรวจนามสกุล/ขนาด/จำนวน/ขนาดรวม 25 MB ฝั่งหน้าเว็บ (ข้อความสีแดง `role="alert"`) และตรวจซ้ำที่ API (`CrmAttachmentRules`); ส่งเป็น `FormData` (`files`)
+- ≤760px chip และปุ่มสูง 40px, ปุ่ม × 32px; ตรวจ headless Edge 1280×800/1440×900 ไม่ต้องเลื่อน (1366×768 เลื่อน ~30px เมื่อไฟล์แนบขึ้นบรรทัดที่ 2), ~500px ไม่มี horizontal scroll
+
+### 2026-10-05 — CRM Ticket detail: รวมรูปไว้ในรายละเอียด
+
+- ย้ายรูปและไฟล์แนบจากแต่ละรายการประวัติการติดต่อมารวมเป็นชุดเดียวใต้กล่อง **รายละเอียด** เพื่อให้เห็นรูปของ Ticket ในตำแหน่งเดียว; ประวัติการติดต่อคงไว้เฉพาะข้อความ ผู้โพสต์ และเวลา
+- รูปยังใช้ thumbnail 72px/64px บน Mobile, `loading="lazy"`, `aria-label` และ `ImageLightbox` ชุดเดียวที่เลื่อนดูรูปทั้งหมดของ Ticket ได้; ไฟล์เอกสารและ attachment ที่แปลง URL ไม่ได้ยังมีลิงก์/ข้อความแจ้งตามเดิม
+
+### 2026-10-05 — CRM Ticket detail: ซ่อนประวัติที่ไม่มีข้อความ
+
+- รายการประวัติการติดต่อที่ไม่มีข้อความจะไม่แสดงเป็นการ์ดและไม่แสดงข้อความ `(ไม่มีข้อความ)`; จำนวนรายการข้างหัวข้อจะนับเฉพาะประวัติที่มีข้อความจริง ส่วนไฟล์แนบยังรวมอยู่ใต้รายละเอียดตามเดิม
+
+### 2026-10-05 — CRM Ticket detail: เปลี่ยน Assignee ได้
+
+- เมื่อผู้ใช้มีสิทธิ์ `CRM.EDIT` แถว **Assignee** ในข้อมูล Ticket จะแสดงช่องค้นหาแบบ Dropdown ในกรอบข้อมูลโดยตรง; พิมพ์ค้นหาได้ทั้งรหัสหรือชื่อและรายการจะแสดงเฉพาะค่าที่ตรงกัน โดยดึงรายชื่อจาก API ที่อนุญาตและแสดงชื่อโดยตัดคำนำหน้าออก
+- การเลือกผู้รับผิดชอบจะเปลี่ยนค่าแสดงผลในหน้า Ticket เดิมเป็นค่ารอส่ง; การเปลี่ยนแปลงจะส่งไป CRM เฉพาะเมื่อกดปุ่ม `บันทึกไป CRM` โดยใช้ `PATCH /crm/tickets/{jobNo}` พร้อม expected status/assignee เพื่อป้องกันข้อมูลถูกแก้ไขทับกัน; เมื่อมอบหมายให้ผู้อื่น Ticket จะออกจากรายการของผู้ใช้ตามขอบเขต CRM
+
+### 2026-10-05 — CRM Ticket detail: แก้ไข Service แบบ Dropdown
+
+- เมื่อผู้ใช้มีสิทธิ์ `CRM.EDIT` แถว **Service** จะแสดงช่องค้นหาแบบ Dropdown ในกรอบข้อมูลโดยตรง ไม่เปิด Modal ใหม่; พิมพ์ค้นหาได้จากรหัสหรือชื่อและแสดงเฉพาะรายการที่ตรงกัน โดยดึงรายการจาก `GET /crm/lookups`
+- การเปลี่ยน Service จะถูกส่งไป CRM เฉพาะเมื่อกด `บันทึกไป CRM` ผ่าน `serviceTypeId`; API ตรวจสอบ ID กับ lookup สดของ CRM ก่อนส่งเป็น `SysserViceType` ใน payload อัปเดต
+
+### 2026-10-05 — CRM Ticket detail: แก้ไข Product แบบค้นหา Dropdown
+
+- เมื่อผู้ใช้มีสิทธิ์ `CRM.EDIT` แถว **Product** จะแสดงช่องค้นหาแบบ Dropdown ในกรอบข้อมูลโดยตรง; พิมพ์ค้นหาได้จากรหัสหรือชื่อและแสดงเฉพาะรายการที่ตรงกัน โดยใช้รายการจาก `GET /crm/lookups`
+- การเปลี่ยน Product จะถูกส่งไป CRM เฉพาะเมื่อกด `บันทึกไป CRM` ผ่าน `productId`; API ตรวจสอบ ID กับ lookup สดของ CRM ก่อนส่งเป็น `SysProductId` ใน payload อัปเดต
+
+### 2026-10-05 — CRM Ticket detail: แยกประวัติการแก้ไขเป็น Tab
+
+- รายการประวัติที่ระบบ QA Hub สร้างเพื่อบันทึกการเปลี่ยนแปลงและขึ้นต้นด้วย `[QA Hub]` จะแสดงใน Tab **ประวัติการแก้ไข** แยกจาก Tab **ประวัติการติดต่อ**
+- ทั้งสอง Tab แสดงจำนวนรายการและใช้ layout เดียวกัน; บน Mobile ปุ่ม Tab เรียงเต็มความกว้างและไม่ทำให้เกิด horizontal scroll
+
+### 2026-10-05 — CRM Ticket detail: Close is read-only
+
+- A Ticket whose status is Close is read-only in the detail modal: hide the update composer and Assignee/Service/Product dropdowns, keep detail/history viewing available, and show an inline locked notice.
+- The API rejects stale or direct PATCH /crm/tickets/{jobNo} attempts for a closed Ticket with CRM_TICKET_CLOSED and HTTP 409.
+
+### 2026-10-05 — CRM Ticket detail: ยกเลิกการเชื่อม Defect
+
+- เมื่อ Ticket มี QA Hub Defect ที่เชื่อมโยง และผู้ใช้มีสิทธิ์ `DEFECT.EDIT` จะแสดงปุ่ม `ยกเลิกการเชื่อมโยง` ในการ์ด QA Hub Defect
+- การยกเลิกต้องยืนยันในหน้าต่างยืนยันก่อน แล้วเรียก `DELETE /crm/tickets/{jobNo}/defect`; ระบบล้างเฉพาะความสัมพันธ์และ snapshot ของ CRM โดยไม่ลบ Defect และแสดงผลสำเร็จด้วย notification
+
+### 2026-10-05 — CRM Board: เรียงคอลัมน์ตามสถานะงาน
+
+- Board แสดง 4 คอลัมน์ตามลำดับ `Open → Continue → Test → Finish / Close`; สถานะ `Finish` และ `Close` อยู่คอลัมน์เดียวกัน และคอลัมน์ปิดงานจะแสดง Ticket โดยตรงบน Board
+- สถานะระหว่างดำเนินการอื่น ๆ (`Approve`, `Develop`, `Planning`, `EditErr`) จัดอยู่ในกลุ่ม Continue เพื่อให้ Ticket ทุกสถานะยังแสดงอยู่ใน Board; ส่วน List ยังคงแสดงสถานะจริงใน Badge และแยกส่วนปิดงานตามเดิม
+
+### 2026-10-05 — CRM Ticket detail: แนบรูปตอนแก้ไขและผูกไฟล์กับ comment
+
+- ฟอร์ม `อัปเดต Ticket` รองรับการแนบรูป/เอกสารแบบเดียวกับฟอร์มสร้าง Ticket: สูงสุด 10 ไฟล์, ไฟล์ละไม่เกิน 5 MB, รวมไม่เกิน 25 MB, รองรับ `.jpg/.jpeg/.png/.xlsx/.xls/.doc/.docx/.pdf`; รองรับการวางรูปจาก clipboard ในช่องข้อความ และส่งผ่าน `PATCH` แบบ `multipart/form-data` เมื่อกด `บันทึกไป CRM` เท่านั้น
+- รูปและไฟล์จาก `HelpDeskAnswerMain` แสดงอยู่ใต้ comment ของรายการเดียวกัน และรูปเปิด `ImageLightbox` ได้; แถว attachment ที่ไม่มีข้อความจะถูกรวมเข้ากับ comment ก่อนหน้าเพื่อไม่แสดงการ์ดว่าง ส่วนกล่องรายละเอียดไม่แสดงชุดไฟล์ซ้ำอีก
+- การเปลี่ยนแปลงนี้ปรับจาก Change Log เดิมที่รวมไฟล์ไว้ใต้รายละเอียด เพื่อให้ผู้ใช้ระบุได้ว่าไฟล์แนบเป็นของ comment ใด
+
+### 2026-10-06 — CRM List: Flow Tracking
+
+- CRM Ticket List adds a visual `Support → QA → Dev` flow column. Each node shows the staff code/name, highlights the current stage, and shows whether the ticket is waiting for Dev to return it or waiting for QA to test it.
+- The detail view adds a Flow Tracking history block. Flow snapshots are persisted through the existing audit log storage and are deduplicated when Support, QA, Dev, or status has not changed.
+- The flow uses responsive grid nodes on desktop and collapses into the existing mobile card layout without adding page-level horizontal scrolling. The visual has an accessible `aria-label` that describes the complete route.

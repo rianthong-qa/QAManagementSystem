@@ -751,6 +751,12 @@ git diff --check
 
 ## 16. Progress Log
 
+### 2026-10-06 — CRM List: QA-to-Development handoff visibility
+
+- Ticket List/Detail scope now includes the current CRM user when they are the current `Assignto`, the original `OwnerSubjectId`, or the `sysDevelop` staff member.
+- `HelpDeskExport` is requested without `SAssignTo` so QA-to-Development handoffs remain available for Job No. search; unrelated tickets are removed by the backend scope check before pagination.
+- Added parser and detail scope tests covering QA `6101` handing a ticket to Dev `4208` and excluding an unrelated ticket.
+
 ### 2026-10-03 - Final CRM response-shape verification
 
 - Production HelpDeskExport returned an array of 20 records shaped as `{ fd, answers }`; ticket fields are nested under `fd`.
@@ -924,6 +930,12 @@ git diff --check
 - The change preserves the existing responsive one-column Board layout on Mobile.
 
 ### 2026-10-03 - CRM Board card hierarchy refinement
+
+### 2026-10-06 - CRM Flow Tracking hardening
+
+- Added unit coverage for Flow Tracking snapshot deduplication, route changes, actor history, developer normalization, and case-insensitive Job No. handling.
+- Canonicalized Flow Tracking Job No. values with trim + uppercase before audit persistence and history lookup, preventing casing differences from hiding an existing ticket history.
+- Verification: backend Unit Tests `526/526`, API build `0 warnings / 0 errors`, frontend build/lint passed, and `git diff --check` passed. The local API was restarted in the Production profile and `/health` returned `200`.
 
 - Board cards now use a stable top row for Job No. and Status, followed by Subject and Service/Assignee metadata.
 - Status badges remain readable and Job No. uses the available width before falling back to ellipsis.

@@ -21,11 +21,18 @@ public sealed class CrmController(
     ProjectAccessContext projectContext,
     DefectActivityService activityService,
     CrmSendToCrmService crmSendService,
-    CrmStaffDirectoryCache staffDirectory) : ControllerBase
+    CrmStaffDirectoryCache staffDirectory,
+    CrmFlowTrackingService flowTracking,
+    ILogger<CrmController> logger) : ControllerBase
 {
     // ชุดเดียวกับตัวกรองสถานะในหน้า CRM (ค่าที่ CRM ใช้จริง)
     public static readonly string[] EditableStatuses = ["Open", "Continue", "Approve", "Develop", "Planning", "Test", "EditErr", "Finish", "Close"];
     private const int CrmReplyMaxLength = 1000;
+    private const int CrmSubjectMaxLength = 200;
+    // ช่องทางการติดต่อตามตัวเลือกในฟอร์ม CRM (JobDetailsHD #UpdateSource)
+    public static readonly string[] CreateSources = ["Call", "Email", "Facebook", "Walk In", "Remote", "Line"];
+    // SysCustomerType: 1 None MA, 2 MA, 3 Demo, 4 Dealer (ตัวเลือกในฟอร์ม CRM)
+    private static readonly string[] CustomerTypes = ["1", "2", "3", "4"];
 
     [HttpGet("connection")]
     public async Task<ActionResult<CrmConnectionStatus>> Connection(CancellationToken ct)
@@ -86,7 +93,10 @@ public sealed class CrmController(
         try
         {
             var query = new CrmTicketListQuery(page, pageSize, search, status, from, to);
-            return Ok(await crm.ListJobsAsync(userId.Value, query, ct, refresh));
+            var result = await crm.ListJobsAsync(userId.Value, query, ct, refresh);
+            try { await flowTracking.RecordSnapshotsAsync(userId.Value, result.Rows, ct); }
+            catch (Exception ex) { logger.LogWarning(ex, "CRM flow snapshot persistence failed for list request"); }
+            return Ok(result);
         }
         catch (CrmNotConfiguredException ex)
         {
@@ -125,7 +135,10 @@ public sealed class CrmController(
 
         try
         {
-            return Ok(await detail.GetAsync(userId.Value, jobNo, ct));
+            var result = await detail.GetAsync(userId.Value, jobNo, ct);
+            try { await flowTracking.RecordSnapshotsAsync(userId.Value, [result.Ticket], ct); }
+            catch (Exception ex) { logger.LogWarning(ex, "CRM flow snapshot persistence failed for ticket {JobNo}", jobNo); }
+            return Ok(result);
         }
         catch (CrmTicketNotFoundException ex)
         {
@@ -153,6 +166,33 @@ public sealed class CrmController(
         }
     }
 
+    [HttpGet("tickets/{jobNo}/flow-history")]
+    public async Task<ActionResult<IReadOnlyList<CrmFlowHistoryItem>>> TicketFlowHistory(string jobNo, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(jobNo))
+            return BadRequest(Failure("CRM_INVALID_QUERY", "ข้อมูลค้นหาไม่ถูกต้อง", "ต้องระบุ Job No.", StatusCodes.Status400BadRequest));
+
+        var userId = UserId();
+        if (!userId.HasValue) return Unauthorized();
+
+        try
+        {
+            // Detail lookup enforces the current CRM assignee scope before audit history is returned.
+            var current = await detail.GetAsync(userId.Value, jobNo, ct);
+            try { await flowTracking.RecordSnapshotsAsync(userId.Value, [current.Ticket], ct); }
+            catch (Exception ex) { logger.LogWarning(ex, "CRM flow snapshot persistence failed for ticket {JobNo}", jobNo); }
+            return Ok(await flowTracking.GetHistoryAsync(current.Ticket.JobNo, ct));
+        }
+        catch (CrmTicketNotFoundException ex)
+        {
+            return NotFound(Failure("CRM_TICKET_NOT_FOUND", "ไม่พบ Ticket", ex.Message, StatusCodes.Status404NotFound));
+        }
+        catch (CrmIntegrationException ex)
+        {
+            return MapIntegrationError(ex);
+        }
+    }
+
     // รหัส → ชื่อพนักงานจาก BlueID directory (cache 1 ชม.) สำหรับแสดง "6101 เหรียญทอง" ในหน้า CRM — ไม่มี email
     [HttpGet("staff")]
     public async Task<ActionResult<IReadOnlyList<CrmStaffDto>>> Staff(CancellationToken ct)
@@ -174,16 +214,124 @@ public sealed class CrmController(
         catch (CrmIntegrationException ex) { return MapIntegrationError(ex); }
     }
 
+    // รายการให้เลือกในฟอร์มสร้าง Ticket ใหม่ — ดึงสดจาก CRM (Service type + Product)
+    [HttpGet("lookups"), Authorize(Policy = "CrmEdit")]
+    public async Task<ActionResult<CrmLookupsDto>> Lookups(CancellationToken ct)
+    {
+        var userId = UserId();
+        if (!userId.HasValue) return Unauthorized();
+        try
+        {
+            var serviceTypes = await crm.GetServiceTypesAsync(userId.Value, ct);
+            var products = await crm.GetProductsAsync(userId.Value, ct);
+            return Ok(new CrmLookupsDto(serviceTypes, products));
+        }
+        catch (CrmNotConfiguredException ex) { return Unauthorized(Failure("CRM_NOT_CONFIGURED", "ยังไม่ได้ตั้งค่าบัญชี CRM", ex.Message, StatusCodes.Status401Unauthorized)); }
+        catch (CrmBadResponseException ex) { return StatusCode(StatusCodes.Status502BadGateway, Failure("CRM_BAD_RESPONSE", "ข้อมูลจาก CRM ไม่ถูกต้อง", ex.Message, StatusCodes.Status502BadGateway)); }
+        catch (CrmIntegrationException ex) { return MapIntegrationError(ex); }
+    }
+
+    // สร้าง Ticket ใหม่ใน CRM (POST /Support) ตามช่องของฟอร์ม New Job — ตรวจค่าที่เลือกกับรายการจริงก่อนส่ง
+    // multipart/form-data: ฟิลด์ของ CreateCrmTicketRequest + ไฟล์แนบชื่อ "files" (ส่งต่อเป็น Images1..N ของ CRM)
+    [HttpPost("tickets"), Authorize(Policy = "CrmEdit"), RequestSizeLimit(27_000_000), RequestFormLimits(MultipartBodyLengthLimit = 27_000_000)]
+    public async Task<ActionResult<CrmCreatedTicketDto>> CreateTicket([FromForm] CreateCrmTicketRequest request, [FromForm] List<IFormFile>? files, CancellationToken ct)
+    {
+        var userId = UserId();
+        if (!userId.HasValue) return Unauthorized();
+        static string Clean(string? value) => value?.Trim() ?? "";
+        static string OrDefault(string value, string fallback) => value.Length == 0 ? fallback : value;
+        ActionResult Invalid(string title, string detail) => BadRequest(Failure("CRM_INVALID_CREATE", title, detail, StatusCodes.Status400BadRequest));
+
+        var subject = Clean(request.Subject);
+        var description = Clean(request.Description);
+        var member = Clean(request.Member);
+        var firstName = Clean(request.FirstName);
+        var tel = Clean(request.Tel);
+        if (subject.Length == 0 || description.Length == 0 || member.Length == 0 || firstName.Length == 0 || tel.Length == 0 ||
+            string.IsNullOrWhiteSpace(request.ServiceTypeId) || string.IsNullOrWhiteSpace(request.ProductId))
+            return Invalid("ข้อมูลไม่ครบ", "กรุณากรอก เรื่อง, Member, ชื่อ, เบอร์โทรศัพท์, รายละเอียด และเลือกหัวเรื่องให้บริการและ Product");
+        foreach (var (label, value, max) in new[]
+        {
+            ("เรื่อง", subject, CrmSubjectMaxLength), ("รายละเอียด", description, CrmReplyMaxLength), ("Member", member, 50),
+            ("ชื่อ", firstName, 100), ("นามสกุล", Clean(request.LastName), 100), ("เบอร์โทรศัพท์", tel, 50), ("ชื่อเล่น", Clean(request.NickName), 50),
+            ("LineID", Clean(request.LineId), 50), ("E-Mail", Clean(request.Email), 100), ("Ref JobNo", Clean(request.RefJobNo), 30),
+        })
+            if (value.Length > max) return Invalid($"{label} ยาวเกินไป", $"{label} ต้องไม่เกิน {max} ตัวอักษร");
+        var email = Clean(request.Email);
+        if (email.Length > 0 && !System.Net.Mail.MailAddress.TryCreate(email, out _))
+            return Invalid("E-Mail ไม่ถูกต้อง", "กรุณาตรวจสอบรูปแบบ E-Mail");
+        var status = EditableStatuses.FirstOrDefault(x => string.Equals(x, OrDefault(Clean(request.Status), "Open"), StringComparison.OrdinalIgnoreCase));
+        if (status is null) return Invalid("สถานะไม่รองรับ", $"เลือกได้เฉพาะ {string.Join(", ", EditableStatuses)}");
+        var source = CreateSources.FirstOrDefault(x => string.Equals(x, OrDefault(Clean(request.Source), "Call"), StringComparison.OrdinalIgnoreCase));
+        if (source is null) return Invalid("ช่องทางการติดต่อไม่รองรับ", $"เลือกได้เฉพาะ {string.Join(", ", CreateSources)}");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(7));
+        var dueDate = today;
+        if (!string.IsNullOrWhiteSpace(request.DueDate) &&
+            !DateOnly.TryParseExact(request.DueDate.Trim(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dueDate))
+            return Invalid("Duedate ไม่ถูกต้อง", "รูปแบบวันที่ต้องเป็น yyyy-MM-dd");
+        if (dueDate < today) return Invalid("Duedate ไม่ถูกต้อง", "กำหนดส่งต้องไม่ก่อนวันนี้");
+        var customerType = OrDefault(Clean(request.CustomerType), "1");
+        if (!CustomerTypes.Contains(customerType)) return Invalid("ประเภทลูกค้าไม่รองรับ", "เลือกได้เฉพาะ None MA, MA, Demo หรือ Dealer");
+        var uploads = files ?? [];
+        var fileError = CrmAttachmentRules.Validate(uploads.Select(x => (x.FileName, x.Length)).ToList());
+        if (fileError is not null) return Invalid("ไฟล์แนบไม่ถูกต้อง", fileError);
+
+        try
+        {
+            var serviceTypes = await crm.GetServiceTypesAsync(userId.Value, ct);
+            var products = await crm.GetProductsAsync(userId.Value, ct);
+            var serviceType = serviceTypes.FirstOrDefault(x => string.Equals(x.Id, request.ServiceTypeId.Trim(), StringComparison.OrdinalIgnoreCase));
+            var product = products.FirstOrDefault(x => string.Equals(x.Id, request.ProductId.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (serviceType is null || product is null)
+                return Invalid("หัวเรื่องให้บริการหรือ Product ไม่ถูกต้อง", "กรุณาเลือกจากรายการของ CRM");
+
+            // Assign To / เจ้าของเรื่อง / Development: ว่าง = ค่าเริ่มต้น, ไม่งั้นต้องเป็นตัวเองหรืออยู่ในรายชื่อที่อนุญาต
+            var people = new[] { Clean(request.AssignToStaffCode), Clean(request.OwnerStaffCode), Clean(request.DevelopmentStaffCode) }.Where(x => x.Length > 0).ToArray();
+            if (people.Length > 0)
+            {
+                var (cfg, _) = await configuration.GetRuntimeAsync(userId.Value, ct);
+                var assignees = await crmSendService.GetAssignableUsersAsync(userId.Value, ct);
+                if (people.Any(code => !string.Equals(code, cfg.Username, StringComparison.OrdinalIgnoreCase) && !assignees.Any(x => string.Equals(x.StaffCode, code, StringComparison.OrdinalIgnoreCase))))
+                    return BadRequest(Failure("CRM_INVALID_ASSIGNEE", "พนักงานไม่ถูกต้อง", "Assign To, เจ้าของเรื่อง หรือ Development ไม่อยู่ในรายชื่อที่อนุญาต", StatusCodes.Status400BadRequest));
+            }
+
+            var input = new CrmNewTicketInput(subject, description, serviceType.Id, product.Id, member, firstName, Clean(request.LastName), tel,
+                Clean(request.NickName), Clean(request.LineId), email, status, source, dueDate, Clean(request.RefJobNo),
+                request.AssignToStaffCode, request.OwnerStaffCode, request.DevelopmentStaffCode, customerType);
+            var attachments = new List<CrmAttachment>(uploads.Count);
+            foreach (var file in uploads)
+            {
+                using var buffer = new MemoryStream((int)file.Length);
+                await file.CopyToAsync(buffer, ct);
+                attachments.Add(new CrmAttachment(Path.GetFileName(file.FileName), CrmAttachmentRules.ContentTypes[Path.GetExtension(file.FileName)], buffer.ToArray()));
+            }
+            var jobNo = await crmSendService.CreateTicketAsync(userId.Value, input, attachments, ct);
+            return Ok(new CrmCreatedTicketDto(jobNo));
+        }
+        catch (CrmNotConfiguredException ex) { return Unauthorized(Failure("CRM_NOT_CONFIGURED", "ยังไม่ได้ตั้งค่าบัญชี CRM", ex.Message, StatusCodes.Status401Unauthorized)); }
+        catch (CrmTimeoutException ex) { return StatusCode(StatusCodes.Status408RequestTimeout, Failure("CRM_TIMEOUT", "CRM ตอบกลับไม่ทันเวลา", ex.Message, StatusCodes.Status408RequestTimeout)); }
+        catch (CrmBadResponseException ex) { return StatusCode(StatusCodes.Status502BadGateway, Failure("CRM_BAD_RESPONSE", "ข้อมูลจาก CRM ไม่ถูกต้อง", ex.Message, StatusCodes.Status502BadGateway)); }
+        catch (CrmIntegrationException ex) when (ex.RemoteStatusCode is null)
+        {
+            return Invalid("สร้าง Ticket ไม่ได้", ex.Message);
+        }
+        catch (CrmIntegrationException ex) { return MapIntegrationError(ex); }
+    }
+
     // แก้ Ticket ในงานของผู้ใช้เอง (Assignto = CRM Username — ตรวจซ้ำผ่าน detail.GetAsync) ไม่ต้องผูก Defect:
-    // เพิ่มประวัติการติดต่อ (Message), เปลี่ยนสถานะ, ส่งกลับเจ้าของเรื่อง หรือเลือกผู้รับผิดชอบจาก directory ที่อนุญาต
-    [HttpPatch("tickets/{jobNo}"), Authorize(Policy = "CrmEdit"), RequireProjectAccess]
-    public async Task<ActionResult<CrmTicketMutationDto>> UpdateTicket(string jobNo, UpdateCrmTicketRequest request, CancellationToken ct)
+    // เพิ่มประวัติการติดต่อ (Message), เปลี่ยนสถานะ, Service, Product, ส่งกลับเจ้าของเรื่อง หรือเลือกผู้รับผิดชอบจาก directory ที่อนุญาต
+    [HttpPatch("tickets/{jobNo}"), Authorize(Policy = "CrmEdit"), RequireProjectAccess, RequestSizeLimit(27_000_000), RequestFormLimits(MultipartBodyLengthLimit = 27_000_000)]
+    public async Task<ActionResult<CrmTicketMutationDto>> UpdateTicket(string jobNo, [FromForm] UpdateCrmTicketRequest request, [FromForm] List<IFormFile>? files, CancellationToken ct)
     {
         var userId = UserId();
         if (!userId.HasValue) return Unauthorized();
         var message = request.Message?.Trim();
-        if (string.IsNullOrWhiteSpace(jobNo) || (string.IsNullOrWhiteSpace(request.Status) && string.IsNullOrWhiteSpace(request.AssignToStaffCode) && !request.AssignToOwner && string.IsNullOrEmpty(message)))
-            return BadRequest(Failure("CRM_INVALID_UPDATE", "ข้อมูลอัปเดตไม่ครบ", "กรุณากรอกข้อความ เลือกสถานะ หรือเลือกส่งกลับเจ้าของเรื่อง", StatusCodes.Status400BadRequest));
+        var uploads = files ?? [];
+        var fileError = CrmAttachmentRules.Validate(uploads.Select(x => (x.FileName, x.Length)).ToList());
+        if (fileError is not null)
+            return BadRequest(Failure("CRM_INVALID_UPDATE", "ไฟล์แนบไม่ถูกต้อง", fileError, StatusCodes.Status400BadRequest));
+        if (string.IsNullOrWhiteSpace(jobNo) || (string.IsNullOrWhiteSpace(request.Status) && string.IsNullOrWhiteSpace(request.AssignToStaffCode) && string.IsNullOrWhiteSpace(request.ServiceTypeId) && string.IsNullOrWhiteSpace(request.ProductId) && !request.AssignToOwner && string.IsNullOrEmpty(message) && uploads.Count == 0))
+            return BadRequest(Failure("CRM_INVALID_UPDATE", "ข้อมูลอัปเดตไม่ครบ", "กรุณากรอกข้อความ เลือกสถานะ เลือก Service/Product หรือเลือกส่งกลับเจ้าของเรื่อง", StatusCodes.Status400BadRequest));
         if (message is { Length: > CrmReplyMaxLength })
             return BadRequest(Failure("CRM_INVALID_UPDATE", "ข้อความยาวเกินไป", $"ข้อความต้องไม่เกิน {CrmReplyMaxLength} ตัวอักษร", StatusCodes.Status400BadRequest));
         if (!string.IsNullOrWhiteSpace(request.Status) && !EditableStatuses.Contains(request.Status.Trim(), StringComparer.OrdinalIgnoreCase))
@@ -203,6 +351,9 @@ public sealed class CrmController(
         catch (CrmIntegrationException ex) { return MapIntegrationError(ex); }
         catch (ArgumentException ex) { return BadRequest(Failure("CRM_INVALID_QUERY", "Invalid CRM query", ex.Message, StatusCodes.Status400BadRequest)); }
 
+        if (string.Equals(CrmTicketListParser.NormalizeStatus(current.Ticket.Status), "Close", StringComparison.OrdinalIgnoreCase))
+            return Conflict(Failure("CRM_TICKET_CLOSED", "Ticket ปิดแล้ว", "Ticket สถานะ Close ไม่สามารถแก้ไขข้อมูลได้", StatusCodes.Status409Conflict));
+
         if (!MatchesExpected(request.ExpectedStatus, current.Ticket.Status) || !MatchesExpected(request.ExpectedAssignee, current.Ticket.Assignee))
             return Conflict(Failure("CRM_CONFLICT", "Ticket ถูกแก้ไขจากที่อื่น", "กรุณาโหลด Ticket ใหม่ก่อนบันทึก", StatusCodes.Status409Conflict));
 
@@ -215,11 +366,41 @@ public sealed class CrmController(
             if (!assignees.Any(x => string.Equals(x.StaffCode, request.AssignToStaffCode.Trim(), StringComparison.OrdinalIgnoreCase)))
                 return BadRequest(Failure("CRM_INVALID_ASSIGNEE", "ผู้รับผิดชอบไม่ถูกต้อง", "ผู้รับผิดชอบที่เลือกไม่อยู่ในรายชื่อที่อนุญาต", StatusCodes.Status400BadRequest));
         }
+        if (!string.IsNullOrWhiteSpace(request.ServiceTypeId))
+        {
+            IReadOnlyList<CrmLookupItem> serviceTypes;
+            try { serviceTypes = await crm.GetServiceTypesAsync(userId.Value, ct); }
+            catch (CrmNotConfiguredException ex) { return Unauthorized(Failure("CRM_NOT_CONFIGURED", "ยังไม่ได้ตั้งค่าบัญชี CRM", ex.Message, StatusCodes.Status401Unauthorized)); }
+            catch (CrmTimeoutException ex) { return StatusCode(StatusCodes.Status408RequestTimeout, Failure("CRM_TIMEOUT", "CRM ตอบกลับไม่ทันเวลา", ex.Message, StatusCodes.Status408RequestTimeout)); }
+            catch (CrmBadResponseException ex) { return StatusCode(StatusCodes.Status502BadGateway, Failure("CRM_BAD_RESPONSE", "ข้อมูล Service จาก CRM ไม่ถูกต้อง", ex.Message, StatusCodes.Status502BadGateway)); }
+            catch (CrmIntegrationException ex) { return MapIntegrationError(ex); }
+            if (!serviceTypes.Any(x => string.Equals(x.Id, request.ServiceTypeId.Trim(), StringComparison.OrdinalIgnoreCase)))
+                return BadRequest(Failure("CRM_INVALID_SERVICE", "Service ไม่ถูกต้อง", "Service ที่เลือกไม่อยู่ในรายการของ CRM", StatusCodes.Status400BadRequest));
+        }
+        if (!string.IsNullOrWhiteSpace(request.ProductId))
+        {
+            IReadOnlyList<CrmLookupItem> products;
+            try { products = await crm.GetProductsAsync(userId.Value, ct); }
+            catch (CrmNotConfiguredException ex) { return Unauthorized(Failure("CRM_NOT_CONFIGURED", "ยังไม่ได้ตั้งค่าบัญชี CRM", ex.Message, StatusCodes.Status401Unauthorized)); }
+            catch (CrmTimeoutException ex) { return StatusCode(StatusCodes.Status408RequestTimeout, Failure("CRM_TIMEOUT", "CRM ตอบกลับไม่ทันเวลา", ex.Message, StatusCodes.Status408RequestTimeout)); }
+            catch (CrmBadResponseException ex) { return StatusCode(StatusCodes.Status502BadGateway, Failure("CRM_BAD_RESPONSE", "ข้อมูล Product จาก CRM ไม่ถูกต้อง", ex.Message, StatusCodes.Status502BadGateway)); }
+            catch (CrmIntegrationException ex) { return MapIntegrationError(ex); }
+            if (!products.Any(x => string.Equals(x.Id, request.ProductId.Trim(), StringComparison.OrdinalIgnoreCase)))
+                return BadRequest(Failure("CRM_INVALID_PRODUCT", "Product ไม่ถูกต้อง", "Product ที่เลือกไม่อยู่ในรายการของ CRM", StatusCodes.Status400BadRequest));
+        }
+
+        var attachments = new List<CrmAttachment>(uploads.Count);
+        foreach (var file in uploads)
+        {
+            using var buffer = new MemoryStream((int)file.Length);
+            await file.CopyToAsync(buffer, ct);
+            attachments.Add(new CrmAttachment(Path.GetFileName(file.FileName), CrmAttachmentRules.ContentTypes[Path.GetExtension(file.FileName)], buffer.ToArray()));
+        }
 
         CrmTicketMutationResult result;
         try
         {
-            result = await crmSendService.UpdateTicketAsync(userId.Value, jobNo.Trim(), message, request.Status, request.AssignToStaffCode, request.AssignToOwner, UserDisplayName(), ct);
+            result = await crmSendService.UpdateTicketAsync(userId.Value, jobNo.Trim(), message, request.Status, request.AssignToStaffCode, request.AssignToOwner, UserDisplayName(), ct, request.ServiceTypeId, request.ProductId, attachments);
         }
         catch (CrmNotConfiguredException ex) { return Unauthorized(Failure("CRM_NOT_CONFIGURED", "ยังไม่ได้ตั้งค่าบัญชี CRM", ex.Message, StatusCodes.Status401Unauthorized)); }
         catch (CrmTimeoutException ex) { return StatusCode(StatusCodes.Status408RequestTimeout, Failure("CRM_TIMEOUT", "CRM ตอบกลับไม่ทันเวลา", ex.Message, StatusCodes.Status408RequestTimeout)); }
@@ -243,7 +424,12 @@ public sealed class CrmController(
             var replyNote = string.IsNullOrEmpty(message) ? "" : "; เพิ่มประวัติการติดต่อ";
             await activityService.LogAsync(defect.DefectId, "CrmTicketUpdated", $"CRM Ticket #{jobNo.Trim()} updated: Status={result.Status}; Assignee={result.Assignee}{replyNote}", userId, ct);
         }
-        return Ok(new CrmTicketMutationDto(jobNo.Trim(), result.Status, result.Assignee, defect?.CrmLastSyncedAt));
+        try
+        {
+            var trackedTicket = current.Ticket with { Status = result.Status, Assignee = result.Assignee };
+            await flowTracking.RecordSnapshotsAsync(userId.Value, [trackedTicket], ct);
+        }
+        catch (Exception ex) { logger.LogWarning(ex, "CRM flow snapshot persistence failed after ticket update {JobNo}", jobNo); }        return Ok(new CrmTicketMutationDto(jobNo.Trim(), result.Status, result.Assignee, defect?.CrmLastSyncedAt));
     }
 
     [HttpGet("tickets/{jobNo}/defect"), RequireProjectAccess]
@@ -335,6 +521,26 @@ public sealed class CrmController(
         return Ok(ToLinkedDefect(defect));
     }
 
+    [HttpDelete("tickets/{jobNo}/defect"), Authorize(Policy = "DefectEdit"), RequireProjectAccess]
+    public async Task<IActionResult> UnlinkDefect(string jobNo, CancellationToken ct)
+    {
+        var userId = UserId();
+        if (!userId.HasValue) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(jobNo))
+            return BadRequest(Failure("CRM_INVALID_QUERY", "ข้อมูลยกเลิกการเชื่อมโยงไม่ถูกต้อง", "ต้องระบุ Job No.", StatusCodes.Status400BadRequest));
+
+        var linkedQuery = db.Defects.Where(x => !x.IsDeleted && x.CrmTicketId == jobNo.Trim());
+        if (projectContext.AllowedProjectIds.Length > 0)
+            linkedQuery = linkedQuery.Where(x => projectContext.AllowedProjectIds.Contains(x.ProjectId));
+        var defect = await linkedQuery.FirstOrDefaultAsync(ct);
+        if (defect is null) return NotFound(Failure("CRM_DEFECT_LINK_NOT_FOUND", "ไม่พบ Defect ที่เชื่อมโยง", "Ticket นี้ยังไม่มี Defect ที่เชื่อมโยงอยู่", StatusCodes.Status404NotFound));
+
+        defect.UnlinkCrmTicket(DateTime.UtcNow, userId);
+        await db.SaveChangesAsync(ct);
+        await activityService.LogAsync(defect.DefectId, "CrmTicketUnlinked", $"ยกเลิกการเชื่อม CRM Ticket {jobNo.Trim()}", userId, ct);
+        return NoContent();
+    }
+
     [HttpPost("tickets/{jobNo}/create-defect"), Authorize(Policy = "DefectEdit"), RequireProjectAccess]
     public async Task<ActionResult<CrmCreatedDefectDto>> CreateDefect(string jobNo, CreateCrmDefectRequest request, CancellationToken ct)
     {
@@ -394,12 +600,14 @@ public sealed class CrmController(
             return StatusCode(StatusCodes.Status503ServiceUnavailable, Failure("CRM_UNAVAILABLE", "CRM ไม่พร้อมใช้งาน", exception.Message, StatusCodes.Status503ServiceUnavailable));
         if (exception.RemoteStatusCode is { } remoteStatus && (int)remoteStatus >= 500)
             return StatusCode(StatusCodes.Status503ServiceUnavailable, Failure("CRM_UNAVAILABLE", "CRM ไม่พร้อมใช้งาน", "กรุณาลองใหม่อีกครั้งภายหลัง", StatusCodes.Status503ServiceUnavailable));
+        if (exception.RemoteStatusCode == HttpStatusCode.Conflict)
+            return Conflict(Failure("CRM_CONFLICT", "CRM ไม่อนุญาตการเปลี่ยนแปลง", exception.Message, StatusCodes.Status409Conflict));
 
         return exception.RemoteStatusCode switch
         {
             HttpStatusCode.Unauthorized => Unauthorized(Failure("CRM_UNAUTHORIZED", "CRM ไม่อนุญาตการเชื่อมต่อ", "กรุณาตรวจสอบบัญชี CRM ของคุณแล้วลองใหม่", StatusCodes.Status401Unauthorized)),
             HttpStatusCode.TooManyRequests => StatusCode(StatusCodes.Status429TooManyRequests, Failure("CRM_RATE_LIMITED", "CRM จำกัดจำนวนคำขอชั่วคราว", "กรุณารอสักครู่แล้วลองใหม่", StatusCodes.Status429TooManyRequests)),
-            _ => StatusCode(StatusCodes.Status502BadGateway, Failure("CRM_BAD_RESPONSE", "เรียก CRM ไม่สำเร็จ", "กรุณาลองใหม่อีกครั้ง หรือแจ้งผู้ดูแลระบบพร้อม Trace ID", StatusCodes.Status502BadGateway))
+            _ => StatusCode(StatusCodes.Status502BadGateway, Failure("CRM_BAD_RESPONSE", "เรียก CRM ไม่สำเร็จ", exception.Message, StatusCodes.Status502BadGateway))
         };
     }
 
@@ -407,7 +615,14 @@ public sealed class CrmController(
 
     private string UserDisplayName() => User.FindFirstValue("display_name") ?? User.FindFirstValue("displayName") ?? User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "QA Hub User";
 
-    private static bool MatchesExpected(string? expected, string? actual) => string.IsNullOrWhiteSpace(expected) || string.Equals(expected.Trim(), actual?.Trim(), StringComparison.OrdinalIgnoreCase);
+    private static bool MatchesExpected(string? expected, string? actual)
+    {
+        if (string.IsNullOrWhiteSpace(expected)) return true;
+        return string.Equals(
+            CrmTicketListParser.NormalizeStatus(expected),
+            CrmTicketListParser.NormalizeStatus(actual),
+            StringComparison.OrdinalIgnoreCase);
+    }
 
     private bool CanAccess(Guid projectId) => projectContext.AllowedProjectIds.Length == 0 || projectContext.AllowedProjectIds.Contains(projectId);
 
@@ -426,5 +641,11 @@ public sealed record LinkCrmDefectRequest(Guid DefectId);
 public sealed record CrmLinkedDefectDto(Guid DefectId, string DefectCode, string Title, string Severity, string Status, Guid ProjectId, string CrmTicketId, string CrmSyncStatus);
 public sealed record CreateCrmDefectRequest(Guid ProjectId, string? Title, string? Severity, string? Description);
 public sealed record CrmCreatedDefectDto(Guid DefectId, string DefectCode, Guid ProjectId, string Title, string Severity, string Status, string CrmTicketId, string CrmSyncStatus);
-public sealed record UpdateCrmTicketRequest(string? Status, string? AssignToStaffCode, string? ExpectedStatus, string? ExpectedAssignee, string? Message = null, bool AssignToOwner = false);
+public sealed record UpdateCrmTicketRequest(string? Status, string? AssignToStaffCode, string? ServiceTypeId, string? ProductId, string? ExpectedStatus, string? ExpectedAssignee, string? Message = null, bool AssignToOwner = false);
 public sealed record CrmTicketMutationDto(string JobNo, string Status, string Assignee, DateTime? LastSyncedAt);
+public sealed record CreateCrmTicketRequest(
+    string? Subject, string? Description, string? ServiceTypeId, string? ProductId, string? AssignToStaffCode = null,
+    string? Member = null, string? FirstName = null, string? LastName = null, string? Tel = null, string? NickName = null, string? LineId = null, string? Email = null,
+    string? Status = null, string? Source = null, string? DueDate = null, string? RefJobNo = null, string? OwnerStaffCode = null, string? DevelopmentStaffCode = null, string? CustomerType = null);
+public sealed record CrmCreatedTicketDto(string JobNo);
+public sealed record CrmLookupsDto(IReadOnlyList<CrmLookupItem> ServiceTypes, IReadOnlyList<CrmLookupItem> Products);

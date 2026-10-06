@@ -80,7 +80,7 @@ public static class CrmTicketListParser
         {
             var item = MapTicket(record);
             if (item is null) continue;
-            if (!IsAssigneeInScope(item.Assignee, currentCrmUsername)) continue;
+            if (!IsTicketInScope(item, currentCrmUsername)) continue;
 
             if (!MatchesQuery(item, query)) continue;
             tickets.Add(item);
@@ -117,7 +117,7 @@ public static class CrmTicketListParser
         return new CrmTicketListItem(
             jobNo.Trim(),
             StringValue(record, "subject", "Subject"),
-            StringValue(record, "status", "Status"),
+            NormalizeStatus(StringValue(record, "status", "Status")),
             StringValue(record, "jobType", "JobType"),
             StringValue(record, "sysserViceTypeName", "sysServiceTypeName", "serviceType", "ServiceType", "service"),
             StringValue(record, "productName", "sysProductName", "product", "Product"),
@@ -128,11 +128,18 @@ public static class CrmTicketListParser
             NormalizeDate(StringValue(record, "duedate", "dueDate", "Duedate", "DueDate")),
             NormalizeDate(StringValue(record, "ansDate", "lastReplyAt", "lastReplyDate", "lastAnswerDate", "lastReply", "LastReplyAt", "LastReplyDate")),
             StringValue(record, "branchName", "branch", "Branch"),
-            StringValue(record, "posted", "developer", "Developer"),
+            NormalizeDeveloper(StringValue(record, "sysDevelop", "sysDevelopName", "develop", "developer", "Developer")),
             StringValue(record, "email", "Email"));
     }
 
     public static string? ReadString(JsonElement record, params string[] names) => StringValue(record, names);
+
+    private static string? NormalizeDeveloper(string? value) =>
+        string.Equals(value?.Trim(), "0", StringComparison.OrdinalIgnoreCase) ? null : value;
+
+    // CRM's update endpoint accepts "Closed", while its list/detail responses and QA Hub UI use "Close".
+    public static string? NormalizeStatus(string? status) =>
+        string.Equals(status?.Trim(), "Closed", StringComparison.OrdinalIgnoreCase) ? "Close" : status;
 
     /// <summary>Returns safe shape/count diagnostics without exposing CRM ticket values.</summary>
     public static CrmTicketListDiagnostics Diagnose(string body)
@@ -187,6 +194,16 @@ public static class CrmTicketListParser
         return tokens.Any(token => string.Equals(token, expected, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// A CRM ticket can move from QA to Development by changing Assignto while keeping
+    /// the original owner and development staff on the ticket. Keep the ticket visible
+    /// to any staff member who is part of that route, without exposing unrelated jobs.
+    /// </summary>
+    public static bool IsTicketInScope(CrmTicketListItem item, string? currentCrmUsername) =>
+        IsAssigneeInScope(item.Assignee, currentCrmUsername) ||
+        IsAssigneeInScope(item.Owner, currentCrmUsername) ||
+        IsAssigneeInScope(item.Developer, currentCrmUsername);
+
     private static bool MatchesQuery(CrmTicketListItem item, CrmTicketListQuery query)
     {
         if (!MatchesDateRange(item.ContactDate, query.From, query.To)) return false;
@@ -216,6 +233,7 @@ public static class CrmTicketListParser
 
     private static bool IsClosed(string? status) =>
         string.Equals(status, "Close", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(status, "Closed", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(status, "Finish", StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<JsonElement> CoerceRecords(JsonElement root)

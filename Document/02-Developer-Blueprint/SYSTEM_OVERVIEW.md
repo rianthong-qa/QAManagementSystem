@@ -92,6 +92,7 @@ Internet ─► api-promaxx2.qahub.store              ─► cloudflared ─► 
   - **JWT signing key อยู่ใน User environment variable `Jwt__Key` เท่านั้น** — ห้าม commit key; Production จะไม่สตาร์ทถ้าไม่มี key
   - Swagger/OpenAPI เปิดเฉพาะ Development
 - **CORS AllowedOrigins**: `localhost:5173`, `192.168.200.219:5173`, `promaxx2.qahub.store`, `qahub.store`
+- **Cloudflare cache ไฟล์ `.css` ของ Vite dev (ยืนยัน 2026-10-04):** Vite ส่ง `Cache-Control: no-cache` แต่ผ่าน `promaxx2.qahub.store` ไฟล์ `/src/*.css` ได้ `Cache-Control: max-age=14400` + `cf-cache-status: MISS/HIT` (ไฟล์ `.tsx` เป็น `DYNAMIC`) — หลังแก้ CSS ผู้ใช้ผ่านโดเมนสาธารณะอาจได้ JS ใหม่กับ CSS เก่าได้นานถึง 4 ชม. (UI เพี้ยน: rule ใหม่ไม่ทำงาน) แก้ชั่วคราว: Purge Cache ใน Cloudflare + Ctrl+Shift+R; แก้ถาวร: Cloudflare Cache Rule ให้ hostname ของ Vite dev เป็น Bypass cache และ Browser TTL = Respect existing headers — ตรวจด้วย `curl -sD - -o NUL https://promaxx2.qahub.store/src/Crm.css`
 - traffic จาก Cloudflare Tunnel มาจาก loopback เสมอแต่มี header `CF-Connecting-IP` — endpoint ที่อนุญาตเฉพาะเครื่อง local (เช่น `automation/schedules/worker-status`) ต้องตรวจ header นี้ด้วย
 
 ### การ Run/Restart API

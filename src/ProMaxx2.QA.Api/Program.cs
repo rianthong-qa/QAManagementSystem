@@ -94,6 +94,7 @@ builder.Services.AddScoped<CrmConfigurationService>();
 builder.Services.AddScoped<CrmSyncSettingsService>();
 builder.Services.AddScoped<CrmApiClient>();
 builder.Services.AddScoped<CrmTicketDetailService>();
+builder.Services.AddScoped<CrmFlowTrackingService>();
 builder.Services.AddScoped<CrmSendToCrmService>();
 builder.Services.AddScoped<DefectShareLinkService>();
 builder.Services.AddScoped<DefectImageStorage>();
@@ -101,6 +102,7 @@ builder.Services.AddScoped<EmailConfigurationService>();
 builder.Services.AddScoped<EmailSenderService>();
 builder.Services.AddScoped<CrmSyncService>();
 builder.Services.AddScoped<IAuthorizationHandler, CrmViewAuthorizationHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, CrmEditAuthorizationHandler>();
 builder.Services.AddHostedService<CrmSyncWorker>(); // Phase 2: polls Linked Defects every 2min for CRM status/assignto changes
 builder.Services.AddScoped<ProjectAccessContext>();
 builder.Services.AddScoped<ProjectScopeGuard>();
@@ -126,7 +128,7 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("DefectView",p=>p.RequireClaim("permission","DEFECT.VIEW"))
     .AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"))
     .AddPolicy("CrmView",p=>p.AddRequirements(new CrmViewRequirement()))
-    .AddPolicy("CrmEdit",p=>p.RequireClaim("permission","CRM.EDIT"))
+    .AddPolicy("CrmEdit",p=>p.AddRequirements(new CrmEditRequirement()))
     .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"))
     .AddPolicy("QaWorkloadView",p=>p.RequireClaim("permission","QA.WORKLOAD.VIEW"))
     .AddPolicy("QaMyWorkView",p=>p.RequireClaim("permission","QA.MYWORK.VIEW"))
@@ -162,6 +164,8 @@ builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
     .WithOrigins(allowedOrigins)
     .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 var app = builder.Build();
+// CORS ต้องครอบ exception handler ด้วย เพื่อให้ response ที่เกิดจาก exception ยังมี
+// Access-Control-Allow-Origin; ไม่เช่นนั้น browser จะแสดง "Failed to fetch" แทน error จริง
 app.UseCors("Web");
 app.UseExceptionHandler();
 app.Use(async (context, next) =>

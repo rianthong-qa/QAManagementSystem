@@ -46,6 +46,28 @@ public sealed class CrmAuthorizationPolicyTests
         Assert.False(result.Succeeded);
     }
 
+    [Theory]
+    [InlineData("SYS_ADMIN", "", true)]
+    [InlineData("QA_LEAD", "CRM.EDIT", true)]
+    [InlineData("QA_LEAD", "CRM.VIEW", false)]
+    public async Task Edit_policy_uses_current_profile_and_allows_sys_admin(string role, string permission, bool expected)
+    {
+        var userId = Guid.NewGuid();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorizationCore(options => options.AddPolicy("CrmEdit", policy => policy.AddRequirements(new CrmEditRequirement())));
+        services.AddScoped<IAuthorizationHandler, CrmEditAuthorizationHandler>();
+        services.AddScoped<IIdentityRepository>(_ => new StubIdentityRepository(new AuthenticatedUser(userId, "qa", "QA", null, [role], string.IsNullOrWhiteSpace(permission) ? [] : [permission], [])));
+        var provider = services.BuildServiceProvider();
+        var auth = provider.GetRequiredService<IAuthorizationService>();
+        // token ไม่มี claim CRM.EDIT (เช่น SYS_ADMIN หรือได้สิทธิ์หลัง login) — ต้องตัดสินจากโปรไฟล์ปัจจุบัน
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", userId.ToString())], "TestAuth"));
+
+        var result = await auth.AuthorizeAsync(principal, null, "CrmEdit");
+
+        Assert.Equal(expected, result.Succeeded);
+    }
+
     private sealed class StubIdentityRepository(AuthenticatedUser profile) : IIdentityRepository
     {
         public Task<ProMaxx2.QA.Domain.Identity.User?> FindByUsernameAsync(string username, CancellationToken cancellationToken) => Task.FromResult<ProMaxx2.QA.Domain.Identity.User?>(null);

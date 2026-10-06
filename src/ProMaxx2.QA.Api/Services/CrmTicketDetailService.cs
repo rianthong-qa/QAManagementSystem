@@ -24,7 +24,7 @@ public static class CrmTicketDetailParser
     {
         var ticket = CrmTicketListParser.MapTicket(raw);
         if (ticket is null || !string.Equals(ticket.JobNo, requestedJobNo.Trim(), StringComparison.OrdinalIgnoreCase) ||
-            !CrmTicketListParser.IsAssigneeInScope(ticket.Assignee, currentCrmUsername))
+            !CrmTicketListParser.IsTicketInScope(ticket, currentCrmUsername))
             throw new CrmTicketNotFoundException($"ไม่พบ Ticket {requestedJobNo} ในขอบเขตงานของผู้ใช้ปัจจุบัน");
         return new(ticket, CrmTicketListParser.ReadString(raw, "description", "Description", "detail", "Detail"), answers, lastFetchedAt);
     }
@@ -42,7 +42,16 @@ public sealed class CrmTicketDetailService(CrmApiClient crm, CrmConfigurationSer
         if (string.IsNullOrWhiteSpace(requestedJobNo)) throw new ArgumentException("ต้องระบุ Job No.");
 
         var (cfg, _) = await configuration.GetRuntimeAsync(userId, ct);
-        var raw = await crm.GetJobDetailAsync(userId, requestedJobNo, "HD", ct);
+        JsonElement raw;
+        try
+        {
+            raw = await crm.FindJobDetailAsync(userId, requestedJobNo, "HD", ct)
+                ?? throw new CrmTicketNotFoundException($"ไม่พบ Ticket {requestedJobNo} ในขอบเขตงานของผู้ใช้ปัจจุบัน");
+        }
+        catch (CrmIntegrationException ex) when (ex.RemoteStatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            throw new CrmTicketNotFoundException($"ไม่พบ Ticket {requestedJobNo} ในขอบเขตงานของผู้ใช้ปัจจุบัน");
+        }
         var detailWithoutAnswers = CrmTicketDetailParser.Parse(raw, requestedJobNo, cfg.Username, [], DateTimeOffset.UtcNow);
 
         var answers = await crm.GetHelpDeskAnswersAsync(userId, requestedJobNo, ct);

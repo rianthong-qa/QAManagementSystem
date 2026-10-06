@@ -108,6 +108,53 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         return jobNo;
     }
 
+    // "สร้าง Ticket ใหม่" จากหน้า CRM ของ QA Hub (ไม่ผูก Defect) — ช่องตามฟอร์ม New Job ของ CRM; ผู้รับเรื่อง (RecipientId) และ
+    // ผู้บันทึก (Posted) เป็นผู้ใช้ที่กดสร้างเสมอ; controller ตรวจ Service/Product/สถานะ/ช่องทาง/รายชื่อพนักงานแล้ว
+    public async Task<string> CreateTicketAsync(Guid actingUserId, CrmNewTicketInput input, IReadOnlyList<CrmAttachment> attachments, CancellationToken ct)
+    {
+        var (cfg, password) = await crmConfig.GetRuntimeAsync(actingUserId, ct);
+        var followupId = await crmApi.ResolveDefaultFollowupIdAsync(actingUserId, ct);
+        var (_, branchId) = await tokenService.GetTokenAsync(actingUserId, cfg.MerchantId, cfg.Username, password, ct);
+        string OrSelf(string? value) => string.IsNullOrWhiteSpace(value) ? cfg.Username : value.Trim();
+        var assignee = OrSelf(input.AssignTo);
+        // เวลาไทยแบบ yyyy-M-d'T'HH:mm ปี ค.ศ. (InvariantCulture) — เหตุผลเดียวกับ SendAsync
+        var nowThai = DateTime.UtcNow.AddHours(7);
+        var contactDate = string.Create(CultureInfo.InvariantCulture, $"{nowThai.Year}-{nowThai.Month}-{nowThai.Day}T{nowThai:HH:mm}");
+        var dueDate = string.Create(CultureInfo.InvariantCulture, $"{input.DueDate.Year}-{input.DueDate.Month}-{input.DueDate.Day}T00:00:00");
+        var text = input.Description.Trim();
+
+        var payload = new CrmCreateJobPayload(
+            Subject: input.Subject.Trim(),
+            Member: input.Member.Trim(),
+            FName: input.FirstName.Trim(),
+            LName: input.LastName.Trim(),
+            Tel: input.Tel.Trim(),
+            Email: input.Email.Trim(),
+            SysCustomerType: input.CustomerType,
+            RecipientId: cfg.Username,
+            OwnerSubjectId: OrSelf(input.OwnerSubject),
+            Assignto: assignee,
+            // "ไม่ระบุพนักงาน" ในฟอร์ม CRM คือค่า 0 (option value="0" ของ UpdatesysDevelop)
+            SysDevelop: string.IsNullOrWhiteSpace(input.Development) ? "0" : input.Development.Trim(),
+            Status: input.Status,
+            Source: input.Source,
+            BranchId: branchId ?? "00000",
+            SysserViceType: input.ServiceTypeId,
+            SysFollowupId: followupId,
+            SysProductId: input.ProductId,
+            SysVersionId: "0",
+            SysOsId: "0",
+            Description: text.Length > CrmDescriptionMaxLength ? text[..CrmDescriptionMaxLength] : text,
+            Posted: cfg.Username,
+            JobType: "HD",
+            ContactDate: contactDate,
+            Duedate: dueDate,
+            NickName: input.NickName.Trim(),
+            LineId: input.LineId.Trim(),
+            RefJobNo: input.RefJobNo.Trim());
+        return await crmApi.CreateSupportJobAsync(actingUserId, payload, attachments, ct);
+    }
+
     public async Task<IReadOnlyList<BlueIdUserDto>> GetAssignableUsersAsync(Guid actingUserId, CancellationToken ct)
     {
         var all = await crmApi.GetSeniorUserDirectoryAsync(actingUserId, ct);
@@ -170,13 +217,34 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     // อัปเดต Ticket จากหน้า CRM ของ QA Hub (ไม่ต้องผูก Defect): เพิ่มประวัติการติดต่อ / เปลี่ยนสถานะ / ส่งกลับเจ้าของเรื่อง
     // ใน PUT เดียว — ฟอร์ม Update ของ CRM บันทึก Description ที่ส่งไปเป็น "แถวใหม่ในประวัติการติดต่อ" (ยืนยันกับผู้ใช้
     // 2026-10-03) จึงส่งเฉพาะข้อความใหม่ ไม่ต่อท้าย Description เดิม (แบบเดียวกับ AppendCommentAsync)
-    public async Task<CrmTicketMutationResult> UpdateTicketAsync(Guid actingUserId, string jobNo, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, CancellationToken ct)
+    public async Task<CrmTicketMutationResult> UpdateTicketAsync(Guid actingUserId, string jobNo, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, CancellationToken ct, string? requestedServiceTypeId = null, string? requestedProductId = null, IReadOnlyList<CrmAttachment>? attachments = null)
     {
         var (cfg, _) = await crmConfig.GetRuntimeAsync(actingUserId, ct);
         var job = await crmApi.GetJobDetailAsync(actingUserId, jobNo, "HD", ct);
-        var payload = BuildTicketUpdatePayload(job, jobNo, cfg.Username, message, requestedStatus, assignToStaffCode, assignToOwner, actorDisplayName, DateTime.UtcNow.AddHours(7));
-        await crmApi.UpdateSupportJobAsync(actingUserId, payload, ct);
-        return new(payload.Status, payload.Assignto);
+        string? closeNotificationEmail = null;
+        if (string.Equals(requestedStatus?.Trim(), "Close", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(CrmApiClient.GetFieldAsString(job, "email")))
+        {
+            var recipientCode = CrmApiClient.GetFieldAsString(job, "member", "ownerSubjectId", "assignto");
+            if (!string.IsNullOrWhiteSpace(recipientCode))
+            {
+                closeNotificationEmail = (await crmApi.GetSeniorUserDirectoryAsync(actingUserId, ct))
+                    .FirstOrDefault(x => string.Equals(x.StaffCode, recipientCode, StringComparison.OrdinalIgnoreCase))?.Email;
+            }
+        }
+        var payload = BuildTicketUpdatePayload(job, jobNo, cfg.Username, message, requestedStatus, assignToStaffCode, assignToOwner, actorDisplayName, DateTime.UtcNow.AddHours(7), requestedServiceTypeId, requestedProductId, closeNotificationEmail, attachments?.Count ?? 0);
+        try
+        {
+            await crmApi.UpdateSupportJobAsync(actingUserId, payload, attachments ?? [], ct);
+        }
+        catch (CrmIntegrationException ex)
+        {
+            logger.LogWarning(ex, "CRM ticket update rejected for {JobNo}: status={Status}, service={ServiceType}, product={Product}, assignee={Assignee}; source fields={Fields}",
+                jobNo, payload.Status, payload.SysserViceType, payload.SysProductId, payload.Assignto,
+                string.Join(",", job.ValueKind == JsonValueKind.Object ? job.EnumerateObject().Select(x => x.Name) : []));
+            throw;
+        }
+        return new(CrmTicketListParser.NormalizeStatus(payload.Status) ?? payload.Status, payload.Assignto);
     }
 
     /// <summary>
@@ -184,11 +252,15 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     /// OwnerSubjectId (เหมือน checkbox "to เจ้าของเรื่อง" ของ CRM จึงไม่แตะ SysDevelop); เลือก Dev คนอื่น = Assignto/SysDevelop
     /// ← รหัสนั้นตาม convention ของ SendAsync; ไม่มีข้อความแต่มีการเปลี่ยนแปลง จะเขียนบันทึกสั้น ๆ แทนเพื่อให้มีร่องรอยในประวัติ
     /// </summary>
-    public static CrmUpdateJobPayload BuildTicketUpdatePayload(JsonElement job, string jobNo, string username, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, DateTime nowThai)
+    public static CrmUpdateJobPayload BuildTicketUpdatePayload(JsonElement job, string jobNo, string username, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, DateTime nowThai, string? requestedServiceTypeId = null, string? requestedProductId = null, string? closeNotificationEmail = null, int attachmentCount = 0)
     {
         var currentStatus = CrmApiClient.GetFieldAsString(job, "status");
         var currentAssignee = CrmApiClient.GetFieldAsString(job, "assignto", "assignTo", "assigneeCode");
+        var currentServiceType = CrmApiClient.GetFieldAsString(job, "sysserviceType", "sysServiceType", "serviceTypeId");
+        var currentProductId = CrmApiClient.GetFieldAsString(job, "sysProductId", "sysproductId", "productId");
         var status = string.IsNullOrWhiteSpace(requestedStatus) ? currentStatus : requestedStatus.Trim();
+        var serviceType = string.IsNullOrWhiteSpace(requestedServiceTypeId) ? currentServiceType : requestedServiceTypeId.Trim();
+        var productId = string.IsNullOrWhiteSpace(requestedProductId) ? currentProductId : requestedProductId.Trim();
         var assignee = currentAssignee;
         var sysDevelop = CrmApiClient.GetFieldAsString(job, "sysDevelop");
         if (assignToOwner)
@@ -202,12 +274,15 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
             assignee = assignToStaffCode.Trim();
             sysDevelop = assignee;
         }
-        if (string.IsNullOrWhiteSpace(status) || string.IsNullOrWhiteSpace(assignee))
-            throw new CrmIntegrationException("CRM Ticket ไม่มีค่า Status หรือ Assignee ที่ใช้อัปเดตได้");
+        if (string.IsNullOrWhiteSpace(status) || string.IsNullOrWhiteSpace(assignee) || (!string.IsNullOrWhiteSpace(requestedServiceTypeId) && string.IsNullOrWhiteSpace(serviceType)) || (!string.IsNullOrWhiteSpace(requestedProductId) && string.IsNullOrWhiteSpace(productId)))
+            throw new CrmIntegrationException("CRM Ticket ไม่มีค่า Status, Service, Product หรือ Assignee ที่ใช้อัปเดตได้");
 
         var changes = new List<string>();
-        if (!string.Equals(currentStatus, status, StringComparison.OrdinalIgnoreCase)) changes.Add($"สถานะ {currentStatus} → {status}");
+        if (!string.Equals(currentStatus, status, StringComparison.OrdinalIgnoreCase)) changes.Add($"สถานะ {CrmTicketListParser.NormalizeStatus(currentStatus)} → {CrmTicketListParser.NormalizeStatus(status)}");
+        if (!string.Equals(currentServiceType, serviceType, StringComparison.OrdinalIgnoreCase)) changes.Add($"Service {currentServiceType} → {serviceType}");
+        if (!string.Equals(currentProductId, productId, StringComparison.OrdinalIgnoreCase)) changes.Add($"Product {currentProductId} → {productId}");
         if (!string.Equals(currentAssignee, assignee, StringComparison.OrdinalIgnoreCase)) changes.Add(assignToOwner ? $"ส่งกลับเจ้าของเรื่อง ({assignee})" : $"ผู้รับผิดชอบ → {assignee}");
+        if (attachmentCount > 0) changes.Add($"แนบไฟล์ {attachmentCount} รายการ");
         var text = message?.Trim() ?? "";
         if (text.Length == 0)
         {
@@ -215,10 +290,11 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
             text = BuildReplyNote(actorDisplayName, nowThai, string.Join(", ", changes));
         }
         if (text.Length > CrmDescriptionMaxLength) text = text[..CrmDescriptionMaxLength];
-        return BuildUpdatePayload(job, jobNo, username, status, assignee, text, sysDevelop);
+        return BuildUpdatePayload(job, jobNo, username, status, serviceType, productId, assignee, text, sysDevelop, closeNotificationEmail);
     }
 
-    private static CrmUpdateJobPayload BuildUpdatePayload(JsonElement job, string ticketId, string username, string status, string assignee, string description, string sysDevelop) => new(
+    // CRM's native Close flow requires the notification metadata below even when the QA Hub message is generated automatically.
+    private static CrmUpdateJobPayload BuildUpdatePayload(JsonElement job, string ticketId, string username, string status, string serviceType, string productId, string assignee, string description, string sysDevelop, string? closeNotificationEmail = null) => new(
         JobNo: ticketId,
         Subject: CrmApiClient.GetFieldAsString(job, "subject"),
         Member: CrmApiClient.GetFieldAsString(job, "member"),
@@ -228,7 +304,9 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         NickName: CrmApiClient.GetFieldAsString(job, "nickName"),
         Fax: CrmApiClient.GetFieldAsString(job, "fax"),
         Tel: CrmApiClient.GetFieldAsString(job, "tel"),
-        Email: CrmApiClient.GetFieldAsString(job, "email"),
+        Email: string.IsNullOrWhiteSpace(CrmApiClient.GetFieldAsString(job, "email")) && string.Equals(status, "Close", StringComparison.OrdinalIgnoreCase)
+            ? closeNotificationEmail ?? ""
+            : CrmApiClient.GetFieldAsString(job, "email"),
         Assignto: assignee,
         RecipientId: CrmApiClient.GetFieldAsString(job, "recipientId"),
         OwnerSubjectId: CrmApiClient.GetFieldAsString(job, "ownerSubjectId"),
@@ -237,8 +315,8 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         RefJobNo: CrmApiClient.GetFieldAsString(job, "refjobNo"),
         SysBranchId: "00000",
         Description: description,
-        SysserViceType: CrmApiClient.GetFieldAsString(job, "sysserviceType"),
-        SysProductId: CrmApiClient.GetFieldAsString(job, "sysProductId"),
+        SysserViceType: serviceType,
+        SysProductId: productId,
         Duedate: CrmApiClient.GetFieldAsString(job, "duedate"),
         SysVersionId: CrmApiClient.GetFieldAsString(job, "sysVersionId"),
         BuildDetail: CrmApiClient.GetFieldAsString(job, "buildDetail"),
@@ -246,7 +324,13 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         SysFollowupId: CrmApiClient.GetFieldAsString(job, "sysFollowupId"),
         SysDevelop: sysDevelop,
         Posted: username,
-        JobType: "HD");
+        JobType: "HD",
+        Body: string.Equals(status, "Close", StringComparison.OrdinalIgnoreCase) ? $"LinkJobNo : https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo={ticketId}&JobType=HD" : "",
+        SubjectEmail: string.Equals(status, "Close", StringComparison.OrdinalIgnoreCase) ? $"QA Hub Ticket {ticketId}" : "",
+        ToAdd: string.Equals(status, "Close", StringComparison.OrdinalIgnoreCase) ? closeNotificationEmail ?? "" : "",
+        CcEmails: string.Equals(status, "Close", StringComparison.OrdinalIgnoreCase)
+            ? ["supportteam@seniorsoft.co.th", "Help_Support@seniorsoft.co.th"]
+            : null);
 
     public async Task ChangeAssigneeAsync(Defect defect, Guid actingUserId, string newAssignToStaffCode, string actorDisplayName, CancellationToken ct)
     {
@@ -316,3 +400,8 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
 }
 
 public sealed record CrmTicketMutationResult(string Status, string Assignee);
+
+public sealed record CrmNewTicketInput(
+    string Subject, string Description, string ServiceTypeId, string ProductId,
+    string Member, string FirstName, string LastName, string Tel, string NickName, string LineId, string Email,
+    string Status, string Source, DateOnly DueDate, string RefJobNo, string? AssignTo, string? OwnerSubject, string? Development, string CustomerType = "1");

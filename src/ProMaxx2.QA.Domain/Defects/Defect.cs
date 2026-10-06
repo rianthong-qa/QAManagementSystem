@@ -24,6 +24,7 @@ public sealed class Defect
     public void SoftDelete(Guid?userId){IsDeleted=true;UpdatedAt=DateTime.UtcNow;UpdatedBy=userId;}
     // ผลสำเร็จของการส่งไป CRM (Phase 1) — ไม่แตะ CrmLastKnownStatus/Assignto เพราะยังไม่มี poller (Phase 2) มาเทียบค่า
     public void SetCrmTicket(string ticketId,DateTime syncedAt){if(string.IsNullOrWhiteSpace(ticketId))throw new ArgumentException("CRM ticket id is required.");CrmTicketId=ticketId.Trim();CrmSyncStatus="Linked";CrmLastSyncedAt=syncedAt;}
+    public void UnlinkCrmTicket(DateTime updatedAt, Guid? updatedBy){CrmTicketId=null;CrmSyncStatus="None";CrmLastSyncedAt=null;CrmLastKnownStatus=null;CrmLastKnownAssignto=null;CrmLastSeenAnswerNo=null;UpdatedAt=updatedAt;UpdatedBy=updatedBy;}
     // ตั้งใจไม่แตะ CrmTicketId ตรงนี้ — การส่งซ้ำที่ล้มเหลวต้องไม่ไปลบ ticket ที่เคยผูกสำเร็จไว้ก่อนหน้า
     public void SetCrmSyncFailed(DateTime attemptedAt){CrmSyncStatus="Failed";CrmLastSyncedAt=attemptedAt;}
     // Phase 2 poller (CrmSyncService) — pure snapshot of CRM's own Status/Assignto fields, deliberately never

@@ -86,6 +86,41 @@ public sealed class CrmTicketListParserTests
     }
 
     [Fact]
+    public void Parse_keeps_tickets_handed_from_qa_to_developer_in_the_original_users_scope()
+    {
+        const string json = """
+        [
+          { "jobNo": "BHD-QA-DEV", "assignto": "4208", "ownerSubjectId": "6101", "sysDevelop": "4208", "status": "Continue", "subject": "Handed to Dev" },
+          { "jobNo": "BHD-OTHER", "assignto": "4208", "ownerSubjectId": "6303", "sysDevelop": "4208", "status": "Continue", "subject": "Other user's job" }
+        ]
+        """;
+
+        var result = CrmTicketListParser.Parse(
+            json,
+            new CrmTicketListQuery(1, 25, "BHD-QA-DEV", null, null, null),
+            "6101",
+            DateTimeOffset.UtcNow);
+
+        Assert.Single(result.Rows);
+        Assert.Equal("BHD-QA-DEV", result.Rows[0].JobNo);
+    }
+
+    [Fact]
+    public void Ticket_scope_matches_owner_or_developer_without_matching_unrelated_staff()
+    {
+        var handedToDeveloper = CrmTicketListParser.MapTicket(JsonDocument.Parse("""
+        { "jobNo": "BHD-QA-DEV", "assignto": "4208", "ownerSubjectId": "6101", "sysDevelop": "4208" }
+        """).RootElement)!;
+        var unrelated = CrmTicketListParser.MapTicket(JsonDocument.Parse("""
+        { "jobNo": "BHD-OTHER", "assignto": "4208", "ownerSubjectId": "6303", "sysDevelop": "4208" }
+        """).RootElement)!;
+
+        Assert.True(CrmTicketListParser.IsTicketInScope(handedToDeveloper, "6101"));
+        Assert.True(CrmTicketListParser.IsTicketInScope(handedToDeveloper, "4208"));
+        Assert.False(CrmTicketListParser.IsTicketInScope(unrelated, "6101"));
+    }
+
+    [Fact]
     public void Parse_accepts_crm_display_assignee_with_code_and_buddhist_contact_date()
     {
         const string json = """
@@ -161,7 +196,7 @@ public sealed class CrmTicketListParserTests
     }
 
     [Fact]
-    public void DetailParser_rejects_ticket_outside_current_assignee_scope()
+    public void DetailParser_rejects_ticket_outside_current_ticket_scope()
     {
         using var document = JsonDocument.Parse("""
         { "jobNo": "BHD-9", "assignto": "6202", "subject": "Other user" }
@@ -172,11 +207,24 @@ public sealed class CrmTicketListParserTests
     }
 
     [Fact]
+    public void DetailParser_accepts_ticket_handed_to_developer_when_current_user_is_owner()
+    {
+        using var document = JsonDocument.Parse("""
+        { "jobNo": "BHD-9", "assignto": "4208", "ownerSubjectId": "6101", "sysDevelop": "4208", "subject": "Handed over" }
+        """);
+
+        var result = CrmTicketDetailParser.Parse(
+            document.RootElement, "BHD-9", "6101", [], DateTimeOffset.UtcNow);
+
+        Assert.Equal("BHD-9", result.Ticket.JobNo);
+    }
+
+    [Fact]
     public void MapTicket_accepts_detail_field_aliases_from_crm()
     {
         using var document = JsonDocument.Parse("""
         {
-          "JobNo": "BHD-10", "Assignto": "6101", "sysServiceTypeName": "Question",
+          "JobNo": "BHD-10", "Assignto": "6101", "sysDevelop": "4208", "sysServiceTypeName": "Question",
           "sysProductName": "SNS ProMaxx", "ownerSubjectName": "6511", "ContactName": "Customer",
           "lastReplyDate": "2026-10-03T10:00:00Z"
         }
@@ -188,8 +236,33 @@ public sealed class CrmTicketListParserTests
         Assert.Equal("Question", result.ServiceType);
         Assert.Equal("SNS ProMaxx", result.Product);
         Assert.Equal("6511", result.Owner);
+        Assert.Equal("4208", result.Developer);
         Assert.Equal("Customer", result.Member);
         Assert.Equal("2026-10-03T10:00:00.0000000Z", result.LastReplyAt);
+    }
+
+    [Fact]
+    public void MapTicket_treats_crm_zero_developer_as_not_assigned()
+    {
+        using var document = JsonDocument.Parse("""
+        { "jobNo": "BHD-12", "assignto": "6101", "sysDevelop": "0" }
+        """);
+
+        var result = CrmTicketListParser.MapTicket(document.RootElement);
+
+        Assert.Null(result?.Developer);
+    }
+
+    [Fact]
+    public void MapTicket_normalizes_crm_closed_status_to_close_for_the_ui()
+    {
+        using var document = JsonDocument.Parse("""
+        { "jobNo": "BHD-11", "status": "Closed", "assignto": "6101" }
+        """);
+
+        var result = CrmTicketListParser.MapTicket(document.RootElement);
+
+        Assert.Equal("Close", result?.Status);
     }
 
     [Fact]
@@ -237,6 +310,53 @@ public sealed class CrmTicketListParserTests
         using var document = JsonDocument.Parse("""{ "message": "not a job" }""");
 
         Assert.Throws<CrmIntegrationException>(() => CrmApiClient.ParseJobDetail(document.RootElement, "BHD-12"));
+    }
+
+    [Fact]
+    public void ParseLookup_reads_numeric_ids_wrapped_arrays_and_ignores_case()
+    {
+        var result = CrmApiClient.ParseLookup("""{ "data": [ { "SysProductID": 12, "ProductName": "iConnect2" }, { "sysProductId": "3", "productName": "ProMaxx" }, { "sysProductId": "3", "productName": "Dup" }, { "productName": "no id" } ] }""",
+            "Products", ["sysProductId", "productId", "id"], ["productName", "name"]);
+
+        Assert.Equal(new[] { "12:iConnect2", "3:ProMaxx" }, result.Select(x => $"{x.Id}:{x.Name}"));
+    }
+
+    [Fact]
+    public void ParseLookup_reports_field_names_when_items_cannot_be_read()
+    {
+        var ex = Assert.Throws<CrmBadResponseException>(() => CrmApiClient.ParseLookup("""[ { "code": "A", "title": "x" } ]""", "Products", ["sysProductId"], ["productName"]));
+
+        Assert.Contains("code", ex.Message);
+        Assert.Contains("title", ex.Message);
+        Assert.DoesNotContain("\"x\"", ex.Message);
+    }
+
+    [Fact]
+    public void ParseLookup_returns_empty_for_empty_array()
+    {
+        Assert.Empty(CrmApiClient.ParseLookup("[]", "Products", ["id"], ["name"]));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("""{ "message": "not a job" }""")]
+    [InlineData("<html><body>Not Found</body></html>")]
+    public void TryParseJobDetail_returns_null_for_unknown_job_responses(string body)
+    {
+        Assert.Null(CrmApiClient.TryParseJobDetail(body));
+    }
+
+    [Fact]
+    public void TryParseJobDetail_returns_job_from_wrapper()
+    {
+        var result = CrmApiClient.TryParseJobDetail("""{ "data": { "jobNo": "BHD-10", "subject": "Found" } }""");
+
+        Assert.NotNull(result);
+        Assert.Equal("Found", result.Value.GetProperty("subject").GetString());
     }
 
     [Fact]

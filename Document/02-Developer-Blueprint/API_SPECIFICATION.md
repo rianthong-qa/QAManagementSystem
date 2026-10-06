@@ -908,7 +908,8 @@ Filter:
 
 All CRM endpoints require JWT authentication and either the `CRM.VIEW` permission or the `SYS_ADMIN` role. The backend resolves the
 current QA Hub user from the JWT, loads that user's CRM configuration, and enforces
-`Assignto == configured CRM Username`. `userId`, `crmUsername`, and assignee scope are never accepted
+the current user's CRM username in the ticket's `Assignto`, `OwnerSubjectId`, or `sysDevelop` field. `userId`,
+`crmUsername`, and scope fields are never accepted
 from the frontend request.
 Authorization is also checked against the current database profile for the JWT subject, so a newly granted or revoked CRM permission takes effect without relying on a stale permission claim.
 
@@ -917,7 +918,7 @@ Authorization is also checked against the current database profile for the JWT s
   total count, page metadata, and summary counts. Default date range is the latest 30 days; maximum
   `pageSize` is 100.
 - `GET /api/v1/crm/tickets/{jobNo}` returns a normalized read-only ticket detail plus CRM answer history.
-  The backend re-checks the returned `Assignto` against the current user's CRM username and returns
+  The backend re-checks the returned `Assignto`, `OwnerSubjectId`, and `sysDevelop` against the current user's CRM username and returns
   `CRM_TICKET_NOT_FOUND` when the ticket is outside the user's scope.
 - CRM date fields (`contactDate`, `dueDate`, `lastReplyAt`, answer `answerDate`) are returned as ISO 8601 UTC
   (`yyyy-MM-ddTHH:mm:ss.fffffffZ`). CRM values without an offset — `dd/MM/yyyy[ HH:mm[:ss]]` (B.E. or A.D.),
@@ -938,8 +939,8 @@ Authorization is also checked against the current database profile for the JWT s
   users after such a failure (`CrmTokenService.UnavailableCooldown`); cached CRM tokens keep working. `CrmSyncWorker`
   logs one warning and stops the current poll tick instead of retrying every linked Defect.
 - Detail Answer history follows the CRM DataTables `start`/`length` contract up to 1,000 records and de-duplicates by `answerNo`; if CRM ignores pagination, the adapter stops when a page contains no new answers.
-- The CRM adapter currently uses `POST /Support/HelpDeskExport`, filters grouping rows without `JobNo`,
-  applies user scope and local pagination, and caps the returned ticket set at 5,000 rows.
+- The CRM adapter currently uses `POST /Support/HelpDeskExport` without an upstream assignee filter so a QA-to-Development handoff remains visible, filters grouping rows without `JobNo`,
+  applies user scope across `Assignto`, `OwnerSubjectId`, and `sysDevelop`, then applies local pagination, and caps the returned ticket set at 5,000 rows.
 - Ticket mapping accepts the casing/field aliases observed across CRM List and Detail responses for
   Service Type, Product, Owner, Member, and Last Reply without changing the normalized QA Hub DTO.
 - Error responses expose a stable `code` extension: `CRM_NOT_CONFIGURED`, `CRM_UNAUTHORIZED`,
@@ -952,6 +953,7 @@ Authorization is also checked against the current database profile for the JWT s
 
 - `GET /api/v1/crm/tickets/{jobNo}/defect` returns the QA Hub Defect linked to the CRM Ticket, if one exists. The backend re-checks the CRM Ticket scope for the current user before returning the link.
 - `POST /api/v1/crm/tickets/{jobNo}/link-defect` links an in-scope CRM Ticket to an existing accessible Defect. It requires `CRM.VIEW` plus `DEFECT.EDIT`, validates Project Access, rejects duplicate Ticket links and conflicting existing links, captures the latest CRM status/assignee snapshot, and writes a `CrmTicketLinked` activity entry.
+- `DELETE /api/v1/crm/tickets/{jobNo}/defect` requires `CRM.VIEW` plus `DEFECT.EDIT` and Project Access. It removes the QA Hub link from the accessible Defect, clears the CRM link/snapshot fields, records a `CrmTicketUnlinked` activity, and leaves the Defect itself intact. If no link exists it returns `404 CRM_DEFECT_LINK_NOT_FOUND`.
 - Link requests accept only `{ "defectId": "..." }`; the frontend cannot provide or override the CRM ownership scope.
 ### CRM Phase 4 — Controlled CRM Update
 
@@ -959,20 +961,34 @@ Authorization is also checked against the current database profile for the JWT s
   showing "6101 เหรียญทอง" instead of bare staff codes. Cached server-side for 1 hour and shared by all users
   (`CrmStaffDirectoryCache`); the first request after expiry reloads it with the caller's CRM token.
 - `GET /api/v1/crm/assignees` requires `CRM.VIEW` and `CRM.EDIT`; returns the allow-listed CRM assignee directory without credentials.
+- `GET /api/v1/crm/lookups` requires `CRM.VIEW` and `CRM.EDIT`; returns `{ serviceTypes: [{ id, name }], products: [{ id, name }] }` read live from CRM `/Support/SysSrviceType` and `/Support/Products` (array or `data`/`result`/`items`/`rows` wrapper, field names matched case-insensitively). An unreadable list returns `502 CRM_BAD_RESPONSE` naming the fields found (names only, no values).
+- `POST /api/v1/crm/tickets` requires `CRM.VIEW` and `CRM.EDIT`. **`multipart/form-data`** (limit 27 MB): fields `subject*, description*, serviceTypeId*, productId*, member*, firstName*, lastName, tel*, nickName, lineId, email, customerType (1 None MA \| 2 MA \| 3 Demo \| 4 Dealer, default 1), status (CRM statuses, default Open), source (Call \| Email \| Facebook \| Walk In \| Remote \| Line, default Call), dueDate (yyyy-MM-dd, default today, not before today), refJobNo, assignToStaffCode, ownerStaffCode, developmentStaffCode` + files `files` (≤ 10, ≤ 5 MB each, ≤ 25 MB total, .jpg/.jpeg/.png/.xlsx/.xls/.doc/.docx/.pdf). Creates a CRM HelpDesk Ticket via `POST /Support` and returns `{ jobNo }`. Field mapping confirmed against BlueSea JobDetailsHD (same `/Support` endpoint): LineID → `Fax`, files → `Images1..N`, development empty → `SysDevelop=0` (ไม่ระบุพนักงาน). RecipientId/Posted are always the caller; assignTo/owner empty = the caller; a non-empty staff code must be the caller or in `/crm/assignees` (`CRM_INVALID_ASSIGNEE`). Version/OS `0`. Validation errors return `400 CRM_INVALID_CREATE` (required fields, lengths, email format, lookups, files). It does not create a QA Hub Defect.
 - `PATCH /api/v1/crm/tickets/{jobNo}` requires `CRM.VIEW` and `CRM.EDIT`. Works on any Ticket in the current user's CRM scope
-  (backend re-checks `Assignto` via the detail call); a linked Defect is **not** required. Body:
-  `{ message?, status?, assignToOwner?, assignToStaffCode?, expectedStatus?, expectedAssignee? }` — at least one of
-  message/status/assignToOwner/assignToStaffCode. `message` (≤ 1000 chars) is sent as the CRM update `Description`, which
+  (backend re-checks `Assignto`, `OwnerSubjectId`, or `sysDevelop` via the detail call); a linked Defect is **not** required. The request is `multipart/form-data` (limit 27 MB):
+  fields `{ message?, status?, serviceTypeId?, productId?, assignToOwner?, assignToStaffCode?, expectedStatus?, expectedAssignee? }` plus repeated `files` fields.
+  At least one of the update fields or one attachment is required. Attachments use the same rules as create (≤ 10 files, ≤ 5 MB each, ≤ 25 MB total,
+  `.jpg/.jpeg/.png/.xlsx/.xls/.doc/.docx/.pdf`) and are forwarded to CRM as `Images1..N`; an attachment-only update creates an automatic history note.
+  `message` (≤ 1000 chars) is sent as the CRM update `Description`, which
   CRM records as a **new row in the answer history**; without a message a short `[QA Hub] {actor} (dd/MM/yyyy HH:mm B.E.)`
   note describing the change is sent instead. `status` must be one of Open, Continue, Approve, Develop, Planning, Test,
-  EditErr, Finish, Close. `assignToOwner=true` sets `Assignto = OwnerSubjectId` (CRM's "to เจ้าของเรื่อง"; `SysDevelop`
+  EditErr, Finish, Close. The QA Hub contract and CRM wire value both use `Close`; the backend also normalizes legacy CRM
+  `Closed` responses back to `Close`. A Ticket already in `Close` is read-only; `PATCH /crm/tickets/{jobNo}` returns HTTP 409
+  with code `CRM_TICKET_CLOSED`. `assignToOwner=true` sets `Assignto = OwnerSubjectId` (CRM's "to เจ้าของเรื่อง"; `SysDevelop`
   unchanged) and cannot be combined with `assignToStaffCode` (which must be in the allowed directory). Expected values
   mismatch → `409 CRM_CONFLICT`; nothing to change or missing owner → `400 CRM_INVALID_UPDATE`. If the Ticket is linked to
   an accessible Defect, its CRM snapshot is updated and a `CrmTicketUpdated` activity is written.
 - When `assignToStaffCode` is supplied, the backend validates it against the allow-listed CRM/BlueID directory; UI selection is not treated as a security boundary.
+- When `serviceTypeId` is supplied, the backend validates it against the live `/Support/SysSrviceType` lookup and sends it as `SysserViceType` in the CRM update payload.
+- When `productId` is supplied, the backend validates it against the live `/Support/Products` lookup and sends it as `SysProductId` in the CRM update payload.
+- When `status=Close`, the backend also sends the CRM form's required close-notification metadata (`Body`, `SubjectEmail`, `CC`, and `ToAdd` when the recipient email is available); other updates omit these notification fields.
 
 ### CRM Phase 5 — Create QA Hub Defect from CRM Ticket
 
 - `POST /api/v1/crm/tickets/{jobNo}/create-defect` requires `CRM.VIEW`, `DEFECT.EDIT`, and Project Access. It creates a QA Hub Defect only; it never creates or updates a CRM Ticket.
 - Request: `{ "projectId": "...", "title": "...", "severity": "Critical|High|Medium|Low", "description": "..." }`. Title and Description may be prefilled from CRM detail, but final values are confirmed by the user.
 - The backend re-checks CRM ownership, validates the active Project, rejects an already-linked Ticket with `409 CRM_TICKET_ALREADY_LINKED`, generates a QA Hub Defect code, stores `CrmTicketId`, captures CRM Status/Assignee, and records `CreatedFromCrm` activity.
+
+### CRM Flow Tracking
+
+- `GET /api/v1/crm/tickets/{jobNo}/flow-history` requires `CRM.VIEW`. The API re-checks the current user's CRM ticket scope, then returns chronological Support/QA/Dev flow snapshots with the status and actor that observed each change.
+- CRM List/Detail reads and successful Ticket updates persist a deduplicated flow snapshot in the existing `AuditLogs` table (`EntityType = CrmTicketFlow`, `EntityId = JobNo`). A new record is written only when Support, QA, Dev, or status changes. `sysDevelop` is normalized into the Dev step and CRM value `0` means no developer assigned yet.

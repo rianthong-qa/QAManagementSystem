@@ -12,7 +12,7 @@ public sealed class CrmTicketUpdatePayloadTests
         JsonDocument.Parse($$"""
         {
           "jobNo": "BHD-1", "subject": "POS ค้าง", "status": "{{status}}", "assignto": "{{assignto}}",
-          "ownerSubjectId": "{{ownerSubjectId}}", "sysDevelop": "6101", "description": "ข้อความเดิมของ Ticket",
+          "ownerSubjectId": "{{ownerSubjectId}}", "sysDevelop": "6101", "sysserviceType": "S1", "description": "ข้อความเดิมของ Ticket",
           "member": "4926", "sysProductId": "P1", "duedate": "2026-09-09T00:00:00"
         }
         """).RootElement.Clone();
@@ -48,6 +48,48 @@ public sealed class CrmTicketUpdatePayloadTests
         var payload = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", null, "Finish", null, true, "สมชาย", NowThai);
 
         Assert.Equal("[QA Hub] สมชาย (03/10/2569 10:30): สถานะ Continue → Finish, ส่งกลับเจ้าของเรื่อง (4926)", payload.Description);
+    }
+
+    [Fact]
+    public void Attachment_only_change_writes_a_short_audit_note()
+    {
+        var payload = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", null, null, null, false, "QA", NowThai, attachmentCount: 2);
+
+        Assert.Contains("แนบไฟล์ 2 รายการ", payload.Description);
+    }
+
+    [Fact]
+    public void Close_uses_the_crm_wire_status_Close()
+    {
+        var payload = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", null, "Close", null, false, "สมชาย", NowThai);
+
+        Assert.Equal("Close", payload.Status);
+        Assert.Contains("Body", payload.ToFormFields().Keys);
+        Assert.Contains("SubjectEmail", payload.ToFormFields().Keys);
+        Assert.Equal(2, payload.CcEmails?.Count);
+
+        var payloadWithNotificationRecipient = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", null, "Close", null, false, "QA", NowThai, closeNotificationEmail: "qa@example.com");
+        Assert.Equal("qa@example.com", payloadWithNotificationRecipient.ToAdd);
+        Assert.Contains("ToAdd", payloadWithNotificationRecipient.ToFormFields().Keys);
+        Assert.Contains("สถานะ Continue → Close", payload.Description);
+    }
+
+    [Fact]
+    public void Change_service_type_carries_the_selected_crm_lookup_id()
+    {
+        var payload = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", null, null, null, false, "สมชาย", NowThai, "S2");
+
+        Assert.Equal("S2", payload.SysserViceType);
+        Assert.Contains("Service S1 → S2", payload.Description);
+    }
+
+    [Fact]
+    public void Change_product_carries_the_selected_crm_lookup_id()
+    {
+        var payload = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", null, null, null, false, "สมชาย", NowThai, null, "P2");
+
+        Assert.Equal("P2", payload.SysProductId);
+        Assert.Contains("Product P1 → P2", payload.Description);
     }
 
     [Fact]

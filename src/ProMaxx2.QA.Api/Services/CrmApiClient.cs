@@ -7,6 +7,36 @@ using Microsoft.Extensions.Logging;
 namespace ProMaxx2.QA.Api.Services;
 
 public sealed record BlueIdUserDto(string StaffCode, string Name, string? Email);
+public sealed record CrmLookupItem(string Id, string Name);
+public sealed record CrmAttachment(string FileName, string ContentType, byte[] Content);
+
+/// <summary>กติกาไฟล์แนบตามฟอร์ม CRM (≤10 ไฟล์, ไฟล์ละ ≤5 MB, .jpg/.jpeg/.png/.xlsx/.xls/.doc/.docx/.pdf) + รวมไม่เกิน 25 MB ฝั่ง QA Hub</summary>
+public static class CrmAttachmentRules
+{
+    public const int MaxFiles = 10;
+    public const long MaxFileBytes = 5 * 1024 * 1024;
+    public const long MaxTotalBytes = 25 * 1024 * 1024;
+    public static readonly IReadOnlyDictionary<string, string> ContentTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [".jpg"] = "image/jpeg", [".jpeg"] = "image/jpeg", [".png"] = "image/png", [".pdf"] = "application/pdf",
+        [".xls"] = "application/vnd.ms-excel", [".xlsx"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        [".doc"] = "application/msword", [".docx"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    };
+
+    /// <summary>คืนข้อความ error ภาษาไทย หรือ null เมื่อผ่าน — ตรวจจำนวน, นามสกุล, ขนาดต่อไฟล์ และขนาดรวม</summary>
+    public static string? Validate(IReadOnlyList<(string FileName, long Length)> files)
+    {
+        if (files.Count > MaxFiles) return $"แนบไฟล์ได้สูงสุด {MaxFiles} ไฟล์";
+        foreach (var (name, length) in files)
+        {
+            if (!ContentTypes.ContainsKey(Path.GetExtension(name ?? ""))) return $"ไฟล์ {name} ไม่รองรับ — แนบได้เฉพาะ .jpg, .jpeg, .png, .xlsx, .xls, .doc, .docx, .pdf";
+            if (length <= 0) return $"ไฟล์ {name} ว่างเปล่า";
+            if (length > MaxFileBytes) return $"ไฟล์ {name} มีขนาดเกิน 5 MB";
+        }
+        if (files.Sum(x => x.Length) > MaxTotalBytes) return "ขนาดไฟล์แนบรวมต้องไม่เกิน 25 MB";
+        return null;
+    }
+}
 
 // แถวหนึ่งจาก /Support/HelpDeskAnswerMain — ข้อความ/ไฟล์แนบในเคส ใช้สำหรับ Phase 2 poller ฝั่ง CRM → QA Hub
 // (ดู CrmSyncService.PollCommentsAsync) fanswerType: "A"/"D" = ข้อความ, "P" = รูป/ไฟล์แนบ (ดู JobDetail.txt เดิม)
@@ -19,9 +49,20 @@ public sealed record CrmCreateJobPayload(
     string SysCustomerType, string RecipientId, string OwnerSubjectId, string Assignto, string SysDevelop,
     string Status, string Source, string BranchId, string SysserViceType, string SysFollowupId,
     string SysProductId, string SysVersionId, string SysOsId, string Description, string Posted, string JobType,
-    string ContactDate, string Duedate)
+    string ContactDate, string Duedate, string NickName = "", string LineId = "", string RefJobNo = "")
 {
-    public IReadOnlyDictionary<string, string> ToFormFields() => new Dictionary<string, string>
+    public IReadOnlyDictionary<string, string> ToFormFields()
+    {
+        var fields = BaseFormFields();
+        // ฟิลด์เสริมจากฟอร์ม New Job (ชื่อเดียวกับฟอร์ม Update — ดู CrmUpdateJobPayload) ส่งเฉพาะเมื่อกรอก เพื่อไม่เปลี่ยน payload ของ flow ส่ง Defect
+        // LineID ของฟอร์ม CRM ใช้ field "Fax" (input #UpdateMemberFax มี label "LineID" ใน JobDetailsHD — ยืนยัน 2026-10-04)
+        if (!string.IsNullOrWhiteSpace(NickName)) fields["NickName"] = NickName;
+        if (!string.IsNullOrWhiteSpace(LineId)) fields["Fax"] = LineId;
+        if (!string.IsNullOrWhiteSpace(RefJobNo)) fields["RefJobNo"] = RefJobNo;
+        return fields;
+    }
+
+    private Dictionary<string, string> BaseFormFields() => new()
     {
         ["Subject"] = Subject, ["Member"] = Member, ["FName"] = FName, ["LName"] = LName, ["Tel"] = Tel, ["Email"] = Email,
         ["SysCustomerType"] = SysCustomerType, ["RecipientId"] = RecipientId, ["OwnerSubjectId"] = OwnerSubjectId,
@@ -45,18 +86,25 @@ public sealed record CrmUpdateJobPayload(
     string Fax, string Tel, string Email, string Assignto, string RecipientId, string OwnerSubjectId, string Status,
     string Source, string RefJobNo, string SysBranchId, string Description, string SysserViceType, string SysProductId,
     string Duedate, string SysVersionId, string BuildDetail, string SysOsId, string SysFollowupId, string SysDevelop,
-    string Posted, string JobType)
+    string Posted, string JobType, string Body = "", string SubjectEmail = "", string ToAdd = "", IReadOnlyList<string>? CcEmails = null)
 {
-    public IReadOnlyDictionary<string, string> ToFormFields() => new Dictionary<string, string>
+    public IReadOnlyDictionary<string, string> ToFormFields()
     {
-        ["JobNo"] = JobNo, ["Subject"] = Subject, ["Member"] = Member, ["SysCustomerType"] = SysCustomerType,
-        ["FName"] = FName, ["LName"] = LName, ["NickName"] = NickName, ["Fax"] = Fax, ["Tel"] = Tel, ["Email"] = Email,
-        ["Assignto"] = Assignto, ["RecipientId"] = RecipientId, ["OwnerSubjectId"] = OwnerSubjectId, ["Status"] = Status,
-        ["Source"] = Source, ["RefJobNo"] = RefJobNo, ["SysBranchId"] = SysBranchId, ["Description"] = Description,
-        ["SysserViceType"] = SysserViceType, ["SysProductId"] = SysProductId, ["Duedate"] = Duedate,
-        ["SysVersionId"] = SysVersionId, ["BuildDetail"] = BuildDetail, ["SysOsId"] = SysOsId,
-        ["SysFollowupId"] = SysFollowupId, ["SysDevelop"] = SysDevelop, ["Posted"] = Posted, ["JobType"] = JobType,
-    };
+        var fields = new Dictionary<string, string>
+        {
+            ["JobNo"] = JobNo, ["Subject"] = Subject, ["Member"] = Member, ["SysCustomerType"] = SysCustomerType,
+            ["FName"] = FName, ["LName"] = LName, ["NickName"] = NickName, ["Fax"] = Fax, ["Tel"] = Tel, ["Email"] = Email,
+            ["Assignto"] = Assignto, ["RecipientId"] = RecipientId, ["OwnerSubjectId"] = OwnerSubjectId, ["Status"] = Status,
+            ["Source"] = Source, ["RefJobNo"] = RefJobNo, ["SysBranchId"] = SysBranchId, ["Description"] = Description,
+            ["SysserViceType"] = SysserViceType, ["SysProductId"] = SysProductId, ["Duedate"] = Duedate,
+            ["SysVersionId"] = SysVersionId, ["BuildDetail"] = BuildDetail, ["SysOsId"] = SysOsId,
+            ["SysFollowupId"] = SysFollowupId, ["SysDevelop"] = SysDevelop, ["Posted"] = Posted, ["JobType"] = JobType,
+        };
+        if (!string.IsNullOrWhiteSpace(Body)) fields["Body"] = Body;
+        if (!string.IsNullOrWhiteSpace(SubjectEmail)) fields["SubjectEmail"] = SubjectEmail;
+        if (!string.IsNullOrWhiteSpace(ToAdd)) fields["ToAdd"] = ToAdd;
+        return fields;
+    }
 }
 
 // Thin HTTP wrapper around the CRM (BlueSea Helpdesk, booklicenceapi) and BlueID user directory endpoints
@@ -114,6 +162,73 @@ public sealed class CrmApiClient(
         throw new CrmIntegrationException("CRM ไม่มีประเภทงาน 'Bug' ใน SysSrviceType กรุณาตรวจสอบฝั่ง CRM");
     }
 
+    // รายการให้เลือกในฟอร์ม "สร้าง Ticket ใหม่" (หน้า New Job ของ BlueSea ใช้ endpoint ชุดเดียวกัน — ดู CRM_INTEGRATION_PLAN §4)
+    public async Task<IReadOnlyList<CrmLookupItem>> GetServiceTypesAsync(Guid userId, CancellationToken ct) =>
+        ParseLookup(await GetBodyWithRetryAsync($"{BaseUrl}/Support/SysSrviceType", userId, ct), "SysSrviceType",
+            ["sysServiceType", "sysServiceTypeId", "serviceTypeId", "id"], ["serviceName", "sysServiceTypeName", "serviceTypeName", "name"]);
+
+    public async Task<IReadOnlyList<CrmLookupItem>> GetProductsAsync(Guid userId, CancellationToken ct) =>
+        ParseLookup(await GetBodyWithRetryAsync($"{BaseUrl}/Support/Products", userId, ct), "Products",
+            ["sysProductId", "productId", "id"], ["productName", "sysProductName", "productNameTh", "productNameEn", "name"]);
+
+    /// <summary>
+    /// แปลง lookup list ของ CRM เป็น (Id, Name) — รองรับ Array ตรง ๆ หรือห่อด้วย data/result/items/rows และชื่อ field
+    /// แบบไม่สนตัวพิมพ์ (ยังไม่มีเอกสาร contract ของ /Support/Products) ถ้าอ่าน field ไม่ได้เลยให้แจ้งชื่อ field ที่พบ
+    /// (เฉพาะชื่อ ไม่มีค่า) เพื่อปรับ mapping ได้ แทนการคืนรายการว่างเงียบ ๆ
+    /// </summary>
+    public static IReadOnlyList<CrmLookupItem> ParseLookup(string body, string source, string[] idNames, string[] nameNames)
+    {
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "[]" : body); }
+        catch (JsonException ex) { throw new CrmBadResponseException($"CRM ส่งรายการ {source} ไม่ใช่ JSON", ex); }
+        using (doc)
+        {
+            var array = FindLookupArray(doc.RootElement);
+            if (array.ValueKind != JsonValueKind.Array)
+                throw new CrmBadResponseException($"CRM ส่งรายการ {source} ในรูปแบบที่ไม่รองรับ (field: {string.Join(", ", PropertyNames(doc.RootElement))})");
+            var items = new List<CrmLookupItem>();
+            foreach (var item in array.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                var id = ReadIgnoreCase(item, idNames);
+                if (string.IsNullOrWhiteSpace(id)) continue;
+                var name = ReadIgnoreCase(item, nameNames);
+                items.Add(new CrmLookupItem(id.Trim(), string.IsNullOrWhiteSpace(name) ? id.Trim() : name.Trim()));
+            }
+            if (items.Count == 0 && array.GetArrayLength() > 0)
+                throw new CrmBadResponseException($"อ่านรายการ {source} จาก CRM ไม่ได้ (field: {string.Join(", ", PropertyNames(array[0]))})");
+            return items
+                .DistinctBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+    }
+
+    private static JsonElement FindLookupArray(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Array) return value;
+        if (value.ValueKind != JsonValueKind.Object) return default;
+        foreach (var property in value.EnumerateObject())
+        {
+            if (property.Name is not ("data" or "Data" or "result" or "Result" or "items" or "Items" or "rows" or "Rows")) continue;
+            var found = FindLookupArray(property.Value);
+            if (found.ValueKind == JsonValueKind.Array) return found;
+        }
+        return default;
+    }
+
+    private static string? ReadIgnoreCase(JsonElement obj, string[] names)
+    {
+        foreach (var name in names)
+            foreach (var property in obj.EnumerateObject())
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                    return JsonElementToString(property.Value);
+        return null;
+    }
+
+    private static IEnumerable<string> PropertyNames(JsonElement value) =>
+        value.ValueKind == JsonValueKind.Object ? value.EnumerateObject().Select(x => x.Name).Take(20) : [value.ValueKind.ToString()];
+
     // SysFollowupId ไม่มีค่า "0/ไม่ระบุ" ให้ใช้ (ตัวเลข 1-5 ที่เห็นในหน้า "New Job" เป็นแค่ hardcode ในฟอร์มนั้น
     // เฉยๆ ไม่ใช่ ID จริงจากตาราง FOLLOWUP — หน้า "Update Job" ดึงค่าจริงจาก /Support/Followup ต่างหาก และยืนยัน
     // แล้วว่า "1" ก็ยัง violate FK) — resolve ID แรกที่ CRM คืนมาจริง (พยายามหาอันที่ชื่อ "ตกลง" ก่อน ถ้าไม่เจอ
@@ -162,11 +277,31 @@ public sealed class CrmApiClient(
 
     // ดึง snapshot ปัจจุบันของ job ทั้งใบจาก CRM — จำเป็นก่อน UpdateSupportJobAsync เสมอ เพราะ PUT /Support
     // เป็นการเขียนทับทั้ง object ไม่ใช่ partial update ต้อง carry-over ทุก field เดิมมาด้วย ไม่ใช่แค่ field ที่จะแก้
-    public async Task<JsonElement> GetJobDetailAsync(Guid userId, string jobNo, string jobType, CancellationToken ct)
+    public async Task<JsonElement> GetJobDetailAsync(Guid userId, string jobNo, string jobType, CancellationToken ct) =>
+        await FindJobDetailAsync(userId, jobNo, jobType, ct)
+        ?? throw new CrmIntegrationException($"ไม่พบ Job {jobNo} ใน CRM หรือ Response ไม่ใช่รูปแบบที่รองรับ");
+
+    // null = CRM ไม่มี Job นี้ — Job No. ที่ไม่มีอยู่จริง CRM อาจตอบว่าง/null/ไม่ใช่ JSON แทน object ของ job
+    // (เดิม JsonDocument.Parse โยน JsonException ที่ไม่มีใครดัก → 500 และหน้าเว็บเห็นเป็น "Failed to fetch")
+    public async Task<JsonElement?> FindJobDetailAsync(Guid userId, string jobNo, string jobType, CancellationToken ct)
     {
         var body = await GetBodyWithRetryAsync($"{BaseUrl}/Support/HelpDesksJob?JobNo={Uri.EscapeDataString(jobNo)}&JobType={Uri.EscapeDataString(jobType)}", userId, ct);
-        using var doc = JsonDocument.Parse(body);
-        return ParseJobDetail(doc.RootElement, jobNo);
+        return TryParseJobDetail(body);
+    }
+
+    public static JsonElement? TryParseJobDetail(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var job = FindJob(doc.RootElement);
+            return job.ValueKind == JsonValueKind.Undefined ? null : job.Clone();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     public static JsonElement ParseJobDetail(JsonElement raw, string jobNo)
@@ -265,19 +400,40 @@ public sealed class CrmApiClient(
 
     // เหมือน CreateSupportJobAsync แต่เป็น PUT (CRM ไม่มี endpoint แก้ไข/เพิ่มโน้ตแยกต่างหาก — ใช้ endpoint
     // เดียวกับตอนสร้าง ticket เขียนทับทั้งใบเสมอ ดู CrmUpdateJobPayload ด้านบน)
-    public async Task UpdateSupportJobAsync(Guid userId, CrmUpdateJobPayload payload, CancellationToken ct)
+    public Task UpdateSupportJobAsync(Guid userId, CrmUpdateJobPayload payload, CancellationToken ct) =>
+        UpdateSupportJobAsync(userId, payload, [], ct);
+
+    public async Task UpdateSupportJobAsync(Guid userId, CrmUpdateJobPayload payload, IReadOnlyList<CrmAttachment> attachments, CancellationToken ct)
     {
         using var content = new MultipartFormDataContent();
-        foreach (var (key, value) in payload.ToFormFields()) content.Add(new StringContent(value ?? ""), key);
+        var fields = payload.ToFormFields();
+        foreach (var (key, value) in fields) content.Add(new StringContent(value ?? ""), key);
+        foreach (var cc in payload.CcEmails ?? []) content.Add(new StringContent(cc), "CC");
+        for (var i = 0; i < attachments.Count; i++)
+        {
+            var file = new ByteArrayContent(attachments[i].Content);
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(attachments[i].ContentType);
+            content.Add(file, $"Images{i + 1}", attachments[i].FileName);
+        }
         using var request = await AuthorizedAsync(HttpMethod.Put, $"{BaseUrl}/Support", userId, ct);
         request.Content = content;
         await SendAsync(request, userId, ct); // ไม่ต้อง parse response กลับ — ไม่มี JobNo ใหม่ให้ต้องอ่าน (JobNo เดิมอยู่แล้ว)
     }
 
-    public async Task<string> CreateSupportJobAsync(Guid userId, CrmCreateJobPayload payload, CancellationToken ct)
+    public async Task<string> CreateSupportJobAsync(Guid userId, CrmCreateJobPayload payload, CancellationToken ct) =>
+        await CreateSupportJobAsync(userId, payload, [], ct);
+
+    // ไฟล์แนบส่งเป็น Images1..ImagesN (ตาม formdata.append("Images" + (i + 1), file) ของ JobDetailsHD — endpoint /Support เดียวกัน)
+    public async Task<string> CreateSupportJobAsync(Guid userId, CrmCreateJobPayload payload, IReadOnlyList<CrmAttachment> attachments, CancellationToken ct)
     {
         using var content = new MultipartFormDataContent();
         foreach (var (key, value) in payload.ToFormFields()) content.Add(new StringContent(value ?? ""), key);
+        for (var i = 0; i < attachments.Count; i++)
+        {
+            var file = new ByteArrayContent(attachments[i].Content);
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(attachments[i].ContentType);
+            content.Add(file, $"Images{i + 1}", attachments[i].FileName);
+        }
         using var request = await AuthorizedAsync(HttpMethod.Post, $"{BaseUrl}/Support", userId, ct);
         request.Content = content;
         var body = await SendAsync(request, userId, ct);
@@ -301,9 +457,9 @@ public sealed class CrmApiClient(
     }
 
     /// <summary>
-    /// Reads CRM HelpDeskExport for the currently logged-in CRM account. The CRM endpoint returns
-    /// the complete filtered result, so QA Hub applies the final user-scope filter and pagination
-    /// locally until upstream pagination is verified against the production contract.
+    /// Reads CRM HelpDeskExport for the current user's flow. The export is requested without an
+    /// assignee filter so tickets handed from QA to Development are still returned; QA Hub then
+    /// applies the user-scope filter (Assignee, Owner, or Developer) and pagination locally.
     /// </summary>
     public async Task<CrmTicketListResult> ListJobsAsync(Guid userId, CrmTicketListQuery query, CancellationToken ct, bool refresh = false)
     {
@@ -333,7 +489,7 @@ public sealed class CrmApiClient(
                 SBranch = "",
                 SRecipientId = (string?)null,
                 SOwnerSubject = (string?)null,
-                SAssignTo = cfg.Username,
+                SAssignTo = (string?)null,
                 SContactDateS = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 SContactDateE = to.AddDays(1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 SDueDateS = "",
@@ -474,7 +630,11 @@ public sealed class CrmApiClient(
             tokenService.Invalidate(userId);
             throw new CrmIntegrationException("CRM ปฏิเสธ token (401) กรุณาลองใหม่อีกครั้ง", HttpStatusCode.Unauthorized);
         }
-        if (!response.IsSuccessStatusCode) throw new CrmIntegrationException($"CRM ตอบกลับไม่สำเร็จ ({(int)response.StatusCode}): {body}", response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogWarning("CRM request failed: {Method} {Url} -> {Status}; body={Body}", request.Method, request.RequestUri, (int)response.StatusCode, body);
+            throw new CrmIntegrationException($"CRM ตอบกลับไม่สำเร็จ ({(int)response.StatusCode}): {body}", response.StatusCode);
+        }
         return body;
     }
 }
