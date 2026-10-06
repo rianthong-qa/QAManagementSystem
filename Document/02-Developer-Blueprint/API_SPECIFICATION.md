@@ -941,6 +941,21 @@ Authorization is also checked against the current database profile for the JWT s
 - Detail Answer history follows the CRM DataTables `start`/`length` contract up to 1,000 records and de-duplicates by `answerNo`; if CRM ignores pagination, the adapter stops when a page contains no new answers.
 - The CRM adapter currently uses `POST /Support/HelpDeskExport` without an upstream assignee filter so a QA-to-Development handoff remains visible, filters grouping rows without `JobNo`,
   applies user scope across `Assignto`, `OwnerSubjectId`, and `sysDevelop`, then applies local pagination, and caps the returned ticket set at 5,000 rows.
+- Previously held tickets: a ticket whose status is not `Close`/`Finish` also stays in scope (List, Detail, and the endpoints that
+  re-check scope through Detail) when the current user previously held it — a `CrmTicketFlow` audit snapshot recorded them as
+  `Assignto` (e.g. Support → QA → back to Support), or a CRM answer on the ticket was `Posted` by them. Once the ticket is
+  `Close`/`Finish`, only the current `Assignto`/`OwnerSubjectId`/`sysDevelop` match applies.
+- `GET /crm/tickets` accepts `scope=mine` (default: the user is the current `Assignto`, any status) or `scope=previous`
+  (not `Close`/`Finish`, `Assignto` is someone else, and the user is the `OwnerSubjectId`, the `sysDevelop`, or a previous
+  holder); any other value returns `CRM_INVALID_QUERY`. Closed tickets where the user is only Owner/Developer are not listed
+  (Detail/Job No. lookup still finds them). `rows`, `total`, and
+  `summary` cover the selected scope only; `scopeCounts: { mine, previous }` counts both scopes after the date/status/search
+  filters and before pagination.
+- `GET /crm/tickets` also returns `previousQa: { "<JOBNO>": "<staff>" }` for the returned rows: the latest Flow Tracking snapshot
+  whose `Assignto` was neither the Support owner nor the job's Developer (taken from the newest snapshot that has `sysDevelop`,
+  since `Assignto` often moves to Dev before `sysDevelop` is set). Keys are upper-case Job No.; jobs without such history are
+  omitted. The UI shows it as the previous holder ("ก่อนหน้า …") when it differs from the current `Assignto`.
+- Flow Tracking audit summaries use CRM field names: `เจ้าของเรื่อง <owner> → Assign To <assignto> → Development <sysDevelop> · สถานะ <status>`.
 - Ticket mapping accepts the casing/field aliases observed across CRM List and Detail responses for
   Service Type, Product, Owner, Member, and Last Reply without changing the normalized QA Hub DTO.
 - Error responses expose a stable `code` extension: `CRM_NOT_CONFIGURED`, `CRM_UNAUTHORIZED`,

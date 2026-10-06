@@ -92,6 +92,77 @@ public sealed class CrmFlowTrackingService(QaDbContext db)
             row.UserId.HasValue && names.TryGetValue(row.UserId.Value, out var name) ? name : null)).ToArray();
     }
 
+    /// <summary>
+    /// Job numbers whose recorded route ever had the given CRM user as Assignto. Used to keep
+    /// tickets visible after the user hands them back (e.g. QA → Support).
+    /// </summary>
+    public async Task<IReadOnlySet<string>> GetJobsPreviouslyAssignedToAsync(string? crmUsername, CancellationToken ct)
+    {
+        var code = crmUsername?.Trim();
+        if (string.IsNullOrWhiteSpace(code)) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // The LIKE pre-filter keeps the scan small; the exact code match below rejects partial codes (6101 vs 61010).
+        var rows = await db.AuditLogs.AsNoTracking()
+            .Where(x => x.EntityType == EntityType && x.AfterJson != null && x.AfterJson.Contains(code))
+            .Select(x => new { x.EntityId, x.AfterJson })
+            .ToListAsync(ct);
+        return rows
+            .Where(x => CrmTicketListParser.IsAssigneeInScope(Deserialize(x.AfterJson)?.Qa, code))
+            .Select(x => x.EntityId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public async Task<bool> WasPreviouslyAssignedToAsync(string jobNo, string? crmUsername, CancellationToken ct)
+    {
+        var code = crmUsername?.Trim();
+        if (string.IsNullOrWhiteSpace(code)) return false;
+        var normalizedJobNo = NormalizeJobNo(jobNo);
+        var snapshots = await db.AuditLogs.AsNoTracking()
+            .Where(x => x.EntityType == EntityType && x.EntityId == normalizedJobNo && x.AfterJson != null && x.AfterJson.Contains(code))
+            .Select(x => x.AfterJson)
+            .ToListAsync(ct);
+        return snapshots.Any(x => CrmTicketListParser.IsAssigneeInScope(Deserialize(x)?.Qa, code));
+    }
+
+    /// <summary>
+    /// The most recent QA per job: an Assignto that was neither the Support owner nor the job's
+    /// Developer. CRM keeps a single Assignto, so once QA hands the ticket to Dev or back to
+    /// Support the QA stage can only come from history. The Developer is taken from the newest
+    /// snapshot that has one, because Assignto often moves to Dev before sysDevelop is filled in.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, string>> GetLastQaAsync(IEnumerable<string> jobNos, CancellationToken ct)
+    {
+        var keys = jobNos.Where(x => !string.IsNullOrWhiteSpace(x)).Select(NormalizeJobNo).Distinct().ToArray();
+        if (keys.Length == 0) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var rows = await db.AuditLogs.AsNoTracking()
+            .Where(x => x.EntityType == EntityType && keys.Contains(x.EntityId))
+            .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.AuditLogId)
+            .Select(x => new { x.EntityId, x.AfterJson })
+            .ToListAsync(ct);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var job in rows.GroupBy(x => x.EntityId, StringComparer.OrdinalIgnoreCase))
+        {
+            var states = job.Select(x => Deserialize(x.AfterJson)).OfType<CrmFlowState>().ToArray(); // newest first
+            var developer = states.Select(x => x.Developer).FirstOrDefault(x => x is not null);
+            var qa = states.FirstOrDefault(x => x.Qa is not null && !SameStaff(x.Qa, x.Support) && !SameStaff(x.Qa, developer))?.Qa;
+            if (qa is not null) result[job.Key] = qa;
+        }
+        return result;
+    }
+
+    // CRM sends staff either as a bare code ("6101") or "ชื่อ นามสกุล (6101)".
+    private static bool SameStaff(string? left, string? right)
+    {
+        static string? Code(string? value)
+        {
+            var text = value?.Trim();
+            if (string.IsNullOrEmpty(text)) return null;
+            var match = System.Text.RegularExpressions.Regex.Match(text, @"\((\d+)\)$");
+            return match.Success ? match.Groups[1].Value : text;
+        }
+        var a = Code(left);
+        return a is not null && string.Equals(a, Code(right), StringComparison.OrdinalIgnoreCase);
+    }
+
     private static CrmFlowState ToState(CrmTicketListItem item) => new(
         NormalizeJobNo(item.JobNo),
         Normalize(item.Status),
@@ -113,7 +184,8 @@ public sealed class CrmFlowTrackingService(QaDbContext db)
         string.Equals(left.Developer, right.Developer, StringComparison.OrdinalIgnoreCase);
 
     private static string Summary(CrmFlowState state) =>
-        $"Support {state.Support ?? "-"} → QA {state.Qa ?? "-"} → Dev {state.Developer ?? "รอส่งต่อ"} · สถานะ {state.Status ?? "ไม่ระบุ"}";
+        // CRM field names, not job roles: the person in Development may be QA, the owner may not be Support.
+        $"เจ้าของเรื่อง {state.Support ?? "-"} → Assign To {state.Qa ?? "-"} → Development {state.Developer ?? "ไม่ระบุ"} · สถานะ {state.Status ?? "ไม่ระบุ"}";
 
     private static string NormalizeJobNo(string value) => value.Trim().ToUpperInvariant();
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

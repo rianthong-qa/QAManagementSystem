@@ -38,7 +38,13 @@ type CrmListResult = {
   pageSize: number;
   summary: { total: number; open: number; inProgress: number; closed: number };
   lastFetchedAt: string;
+  scopeCounts?: { mine: number; previous: number };
+  // jobNo → QA คนล่าสุดจากประวัติ Flow Tracking (ใช้เมื่อ Ticket ถูกส่งกลับ Support แล้ว Assignto จึงไม่ใช่ QA)
+  previousQa?: Record<string, string> | null;
 };
+
+// mine = Assignto เป็นผู้ใช้ตอนนี้, previous = งานที่อยู่กับคนอื่นแล้วแต่ผู้ใช้ยังเกี่ยวข้อง (เจ้าของเรื่อง/Dev/เคยถือ) และยังไม่ Close/Finish — ตรงกับ CrmTicketScope ฝั่ง API
+type CrmTicketScope = "mine" | "previous";
 
 type CrmTicketAnswer = {
   answerNo: string;
@@ -157,14 +163,18 @@ const staffLabel = (value: string | null | undefined, names: Record<string, stri
   const firstName = withoutNameTitle(names[code] ?? withName?.[1]).split(/\s+/)[0];
   return firstName ? `${code} ${firstName}` : code;
 };
-type CrmFlowStage = "qa" | "dev" | "closed";
+// รหัสพนักงานจากค่า "6101" หรือ "ชื่อ นามสกุล (6101)" — ใช้เทียบว่าเป็นคนเดียวกัน
+const staffCode = (value?: string | null) => { const text = value?.trim(); return text ? text.match(/\((\d+)\)$/)?.[1] ?? text : null; };
+const sameStaff = (left?: string | null, right?: string | null) => { const code = staffCode(left); return Boolean(code) && code === staffCode(right); };
+// Flow ใช้ "ช่องของ CRM" ไม่เดาตำแหน่งงาน (ผู้ใช้ยืนยัน 2026-10-06): คนใน Development อาจเป็น QA และเจ้าของเรื่องอาจไม่ใช่ Support
+// เจ้าของเรื่อง (OwnerSubjectId) → Assign To (Assignto = คนที่ถืองานตอนนี้) → Development (sysDevelop)
 const crmFlowInfo = (item: CrmTicket | CrmFlowState) => {
   const status = item.status?.trim().toLocaleLowerCase();
   const developer = item.developer?.trim() && item.developer.trim() !== "0" ? item.developer.trim() : null;
+  const owner = "owner" in item ? item.owner : (item as CrmFlowState).support;
+  const assignee = "assignee" in item ? item.assignee : (item as CrmFlowState).qa;
   const closed = status === "finish" || status === "close" || status === "closed";
-  const returnedToQa = status === "test";
-  const currentStage: CrmFlowStage = closed ? "closed" : returnedToQa || !developer ? "qa" : "dev";
-  return { developer, currentStage, returnedToQa, waitingForDev: currentStage === "dev" };
+  return { owner, assignee, developer, closed, waitingTest: status === "test" };
 };
 // Test/Testing = รอทดสอบ (ม่วง) แยกจาก Continue และสถานะกำลังดำเนินการอื่น (น้ำเงิน)
 const statusTone = (status?: string | null) => status === "Open" ? "yellow" : status === "Close" || status === "Finish" ? "green" : /^test/i.test(status ?? "") ? "purple" : status ? "blue" : "gray";
@@ -361,6 +371,7 @@ export function CrmPage({ search, onConfigure, configVersion = 0, contextProject
   const [ticketDetail, setTicketDetail] = useState<CrmTicketDetail | null>(null), [ticketDetailLoading, setTicketDetailLoading] = useState(false), [ticketDetailError, setTicketDetailError] = useState(""), [ticketDetailErrorCode, setTicketDetailErrorCode] = useState<string | undefined>(), [detailReload, setDetailReload] = useState(0);
   const [probeLoading, setProbeLoading] = useState(false), [probeMessage, setProbeMessage] = useState(""), [probeError, setProbeError] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "board">("list");
+  const [ticketScope, setTicketScope] = useState<CrmTicketScope>("mine"), [scopeCounts, setScopeCounts] = useState<{ mine: number; previous: number } | null>(null), [previousQa, setPreviousQa] = useState<Record<string, string> | null>(null);
   const [linkedDefect, setLinkedDefect] = useState<CrmLinkedDefect | null>(null), [linkedDefectLoading, setLinkedDefectLoading] = useState(false), [linkedDefectSaving, setLinkedDefectSaving] = useState(false), [linkedDefectError, setLinkedDefectError] = useState("");
   const [defectLinkDialogOpen, setDefectLinkDialogOpen] = useState(false), [linkableDefects, setLinkableDefects] = useState<LinkableDefect[]>([]), [linkDefectSearch, setLinkDefectSearch] = useState(""), [linkDefectLoading, setLinkDefectLoading] = useState(false), [linkDefectSaving, setLinkDefectSaving] = useState(false), [linkDefectError, setLinkDefectError] = useState("");
   const [createDefectDialogOpen, setCreateDefectDialogOpen] = useState(false), [createDefectTitle, setCreateDefectTitle] = useState(""), [createDefectSeverity, setCreateDefectSeverity] = useState("Medium"), [createDefectDescription, setCreateDefectDescription] = useState(""), [createDefectSaving, setCreateDefectSaving] = useState(false), [createDefectError, setCreateDefectError] = useState("");
@@ -432,7 +443,7 @@ export function CrmPage({ search, onConfigure, configVersion = 0, contextProject
   useEffect(() => {
     if (!connection) return;
     if (!connection.isConfigured || !connection.isEnabled) {
-      setRows([]); setTotal(0); setSummary({ total: 0, open: 0, inProgress: 0, closed: 0 }); setLastFetchedAt(""); setError(""); setErrorCode(undefined); setLoading(false);
+      setRows([]); setTotal(0); setSummary({ total: 0, open: 0, inProgress: 0, closed: 0 }); setScopeCounts(null); setLastFetchedAt(""); setError(""); setErrorCode(undefined); setLoading(false);
       return;
     }
     const controller = new AbortController();
@@ -443,19 +454,20 @@ export function CrmPage({ search, onConfigure, configVersion = 0, contextProject
       lastListReload.current = reload;
       if (search.trim()) params.set("search", search.trim());
       if (status) params.set("status", status);
+      if (ticketScope !== "mine") params.set("scope", ticketScope);
       getJson<CrmListResult>(`${apiUrl}/crm/tickets?${params.toString()}`, controller.signal)
-        .then((value) => { setRows(Array.isArray(value.rows) ? value.rows : []); setTotal(value.total ?? 0); setSummary(value.summary ?? { total: 0, open: 0, inProgress: 0, closed: 0 }); setLastFetchedAt(value.lastFetchedAt ?? ""); })
+        .then((value) => { setRows(Array.isArray(value.rows) ? value.rows : []); setTotal(value.total ?? 0); setSummary(value.summary ?? { total: 0, open: 0, inProgress: 0, closed: 0 }); setScopeCounts(value.scopeCounts ?? null); setPreviousQa(value.previousQa ?? null); setLastFetchedAt(value.lastFetchedAt ?? ""); })
         .catch((reason: unknown) => {
           if (isAbortError(reason)) return;
           const apiError = reason instanceof ApiError ? reason : null;
-          setRows([]);
+          setRows([]); setScopeCounts(null);
           setErrorCode(apiError?.code);
           setError(crmErrorMessage(reason, "โหลดรายการ CRM ไม่สำเร็จ"));
         })
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 300);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [connection, from, page, pageSize, reload, search, status, to]);
+  }, [connection, from, page, pageSize, reload, search, status, ticketScope, to]);
 
   useEffect(() => {
     if (!selectedJobNo) return;
@@ -659,33 +671,30 @@ export function CrmPage({ search, onConfigure, configVersion = 0, contextProject
   };
   const flowPerson = (value?: string | null, empty = "ยังไม่ระบุ") => staff(value) ?? value ?? empty;
   const renderFlowTracking = (item: CrmTicket | CrmFlowState, compact = false) => {
-    const flow = crmFlowInfo(item);
-    const support = "owner" in item ? item.owner : (item as CrmFlowState).support;
-    const qa = "assignee" in item ? item.assignee : (item as CrmFlowState).qa;
-    const developer = flow.developer;
-    const stepClass = (role: "support" | "qa" | "dev") => {
-      const value = role === "support" ? support : role === "qa" ? qa : developer;
-      const assigned = Boolean(value);
-      const current = role === flow.currentStage;
-      const done = role === "support" ? assigned : role === "qa" ? assigned && (flow.currentStage === "dev" || flow.currentStage === "closed") : assigned && (flow.returnedToQa || flow.currentStage === "closed");
-      return `crm-flow-step ${current ? "current" : done ? "done" : "waiting"}`;
+    const { owner, assignee, developer, closed, waitingTest } = crmFlowInfo(item);
+    // คนที่ถืองานก่อนหน้า (จากประวัติ Flow Tracking) — แสดงในบรรทัดสรุปเมื่อไม่ใช่คนที่ถืออยู่ตอนนี้
+    const recorded = previousQa?.[item.jobNo.toUpperCase()] ?? previousQa?.[item.jobNo] ?? null;
+    const previousHolder = recorded && !sameStaff(recorded, assignee) ? recorded : null;
+    const step = (key: "owner" | "assignee" | "developer", label: string, value: string | null | undefined, empty: string) => {
+      const isCurrent = key === "assignee" && !closed && Boolean(value);
+      const state = isCurrent ? "current" : value ? "done" : "waiting";
+      return <div className={`crm-flow-step ${state}`} title={`${label}: ${flowPerson(value, empty)}`} aria-current={isCurrent ? "step" : undefined}><small>{label}</small><strong>{flowPerson(value, empty)}</strong></div>;
     };
-    const currentText = flow.currentStage === "closed"
-      ? "ปิดงานแล้ว"
-      : flow.currentStage === "dev"
-        ? `อยู่ที่ Dev · รอส่งกลับ: ${flowPerson(developer)}`
-        : flow.returnedToQa
-          ? `อยู่ที่ QA · รอทดสอบ: ${flowPerson(qa)}`
-          : `อยู่ที่ QA: ${flowPerson(qa)}`;
-    return <div className={`crm-flow-tracking${compact ? " compact" : ""}`} aria-label={`Flow Tracking ${item.jobNo}: Support ${flowPerson(support)} ไป QA ${flowPerson(qa)} ไป Dev ${flowPerson(developer, "รอส่งต่อ")}`}>
+    // บรรทัดสรุปตอบ "ตอนนี้อยู่กับใคร" ก่อน แล้วบอกว่าคนนั้นอยู่ในช่องไหนของ Ticket / สิ่งที่รออยู่
+    const notes = [
+      sameStaff(assignee, owner) ? "เจ้าของเรื่อง" : sameStaff(assignee, developer) ? "Development" : "",
+      waitingTest ? "รอทดสอบ" : "",
+      previousHolder ? `ก่อนหน้า ${flowPerson(previousHolder)}` : "",
+    ].filter(Boolean);
+    return <div className={`crm-flow-tracking${compact ? " compact" : ""}`} aria-label={`Flow Tracking ${item.jobNo}: เจ้าของเรื่อง ${flowPerson(owner)} · Assign To ${flowPerson(assignee)} · Development ${flowPerson(developer, "ไม่ระบุ")}${closed ? " · ปิดงานแล้ว" : ` · ตอนนี้อยู่กับ ${flowPerson(assignee)}`}`}>
       <div className="crm-flow-steps">
-        <div className={stepClass("support")} title={`Support: ${flowPerson(support)}`}><small>Support</small><strong>{flowPerson(support)}</strong></div>
+        {step("owner", "เจ้าของเรื่อง", owner, "ไม่ระบุ")}
         <span className="crm-flow-arrow" aria-hidden="true">→</span>
-        <div className={stepClass("qa")} title={`QA: ${flowPerson(qa)}`}><small>QA</small><strong>{flowPerson(qa)}</strong></div>
+        {step("assignee", "Assign To", assignee, "ไม่ระบุ")}
         <span className="crm-flow-arrow" aria-hidden="true">→</span>
-        <div className={stepClass("dev")} title={`Dev: ${flowPerson(developer, "รอส่งต่อ")}`}><small>Dev</small><strong>{flowPerson(developer, "รอส่งต่อ")}</strong></div>
+        {step("developer", "Development", developer, "ไม่ระบุ")}
       </div>
-      {!compact && <small className="crm-flow-current"><span className="material-symbols-outlined" aria-hidden="true">{flow.currentStage === "closed" ? "task_alt" : flow.currentStage === "dev" ? "engineering" : "hourglass_top"}</span>{currentText}</small>}
+      {!compact && <small className="crm-flow-current"><span className="material-symbols-outlined" aria-hidden="true">{closed ? "task_alt" : waitingTest ? "hourglass_top" : "person_pin_circle"}</span>{closed ? "ปิดงานแล้ว" : <span>ตอนนี้อยู่กับ <strong>{flowPerson(assignee)}</strong>{notes.length > 0 && <> · {notes.join(" · ")}</>}</span>}</small>}
     </div>;
   };
   const sortedRows = useMemo(() => {
@@ -763,7 +772,7 @@ export function CrmPage({ search, onConfigure, configVersion = 0, contextProject
     const serviceChanged = Boolean(draftServiceType && draftServiceType !== serviceOriginalValue.trim());
     const productChanged = Boolean(draftProductId && draftProductId !== productOriginalValue.trim());
     if (!current || ticketClosed || !selectedJobNo || replySaving || (!message && !replyStatus && !replyToOwner && !assigneeChanged && !serviceChanged && !productChanged && replyFiles.length === 0)) return;
-    if (replyToOwner && !(await confirmDialog({ title: "ส่งกลับเจ้าของเรื่อง", message: `เปลี่ยนผู้รับผิดชอบ ${selectedJobNo} เป็นเจ้าของเรื่อง${current.owner ? ` (${staff(current.owner)})` : ""} — Ticket จะออกจากรายการงานของคุณ`, confirmLabel: "ส่งกลับเจ้าของเรื่อง" }))) return;
+    if (replyToOwner && !(await confirmDialog({ title: "ส่งกลับเจ้าของเรื่อง", message: `เปลี่ยนผู้รับผิดชอบ ${selectedJobNo} เป็นเจ้าของเรื่อง${current.owner ? ` (${staff(current.owner)})` : ""} — Ticket จะย้ายไปแท็บ "ส่งต่อแล้ว" จนกว่าจะปิดงาน`, confirmLabel: "ส่งกลับเจ้าของเรื่อง" }))) return;
     setReplySaving(true); setReplyError("");
     try {
       const body = new FormData();
@@ -850,9 +859,15 @@ export function CrmPage({ search, onConfigure, configVersion = 0, contextProject
       {stale && <div className="crm-stale-alert" role="status"><span className="material-symbols-outlined" aria-hidden="true">schedule</span><span><strong>ข้อมูลอาจเก่า</strong> โหลดล่าสุด {displayDate(lastFetchedAt)} แล้ว</span><button className="btn" type="button" onClick={() => setReload((value) => value + 1)} disabled={loading}>รีเฟรชข้อมูล</button></div>}
       <div className="crm-list-card card">
         <div className="crm-list-heading"><div><h3>รายการ Ticket</h3><p>{loading ? "กำลังโหลดข้อมูลจาก CRM..." : `แสดง ${rows.length.toLocaleString()} จาก ${total.toLocaleString()} รายการ`}</p></div><div className="crm-list-heading-actions">{lastFetchedAt && <small>ดึงข้อมูลล่าสุด {displayDate(lastFetchedAt)}</small>}{canEditCrm && configured && <button type="button" className="btn primary crm-create-ticket-button" onClick={() => setCreateTicketOpen(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span>สร้าง Ticket ใหม่</button>}<div className="crm-view-switcher" role="group" aria-label="รูปแบบการแสดงผล"><button type="button" className={`btn ${viewMode === "list" ? "active" : ""}`} aria-pressed={viewMode === "list"} onClick={() => setViewMode("list")}>List</button><button type="button" className={`btn ${viewMode === "board" ? "active" : ""}`} aria-pressed={viewMode === "board"} onClick={() => setViewMode("board")}>Board</button></div></div></div>
+        <div className="crm-scope-tabs" role="group" aria-label="กลุ่ม Ticket">
+          {([
+            { key: "mine", label: "ส่งมาหาฉัน", hint: "Assign ให้ฉันอยู่ตอนนี้", icon: "assignment_ind" },
+            { key: "previous", label: "ส่งต่อแล้ว", hint: "อยู่กับคนอื่นแล้ว · ยังไม่ปิดงาน", icon: "forward_to_inbox" },
+          ] as const).map((tab) => <button key={tab.key} type="button" aria-pressed={ticketScope === tab.key} className={`crm-scope-tab${ticketScope === tab.key ? " active" : ""}`} onClick={() => { if (ticketScope !== tab.key) { setTicketScope(tab.key); setPage(1); } }}><span className="material-symbols-outlined" aria-hidden="true">{tab.icon}</span><span className="crm-scope-tab-text"><strong>{tab.label}</strong><small>{tab.hint}</small></span><span className="crm-scope-count" aria-label={`${scopeCounts?.[tab.key] ?? 0} รายการ`}>{scopeCounts ? scopeCounts[tab.key].toLocaleString() : "-"}</span></button>)}
+        </div>
         {error ? <div className="crm-state crm-state-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span><div><strong>{crmErrorTitle(errorCode)}</strong><p>{error}</p><button className="btn" type="button" onClick={() => setReload((value) => value + 1)}>ลองอีกครั้ง</button></div></div>
           : loading ? <div className="crm-state" role="status"><span className="spinner" aria-hidden="true" /><p>กำลังโหลดรายการ Ticket...</p></div>
-            : rows.length === 0 ? <div className="crm-state"><span className="material-symbols-outlined" aria-hidden="true">inbox</span><p>ไม่พบ Ticket ตามตัวกรองนี้</p><small>ลองเปลี่ยนช่วงวันที่ สถานะ หรือคำค้นหา</small></div>
+            : rows.length === 0 ? <div className="crm-state"><span className="material-symbols-outlined" aria-hidden="true">{ticketScope === "previous" ? "forward_to_inbox" : "inbox"}</span><p>{ticketScope === "previous" ? "ไม่มี Ticket ที่ส่งต่อแล้วและยังไม่ปิดงาน" : "ไม่พบ Ticket ตามตัวกรองนี้"}</p><small>{ticketScope === "previous" ? "งานที่คุณเกี่ยวข้องแต่อยู่กับคนอื่นแล้วจะแสดงที่นี่จนกว่าจะ Finish / Close" : "ลองเปลี่ยนช่วงวันที่ สถานะ หรือคำค้นหา"}</small></div>
               : <><div className={`table-wrap crm-table-wrap ${viewMode === "board" ? "crm-board-hidden" : ""}`} aria-hidden={viewMode === "board"}>{activeRows.length === 0 ? <div className="crm-active-empty"><span className="material-symbols-outlined" aria-hidden="true">celebration</span>ไม่มีงานที่ต้องดำเนินการในหน้านี้</div> : <table className="table-cards crm-table">{ticketTableHead}<tbody>{activeRows.map(renderTicketRow)}</tbody></table>}</div><div className={`crm-board ${viewMode === "list" ? "crm-board-hidden" : ""}`} aria-hidden={viewMode === "list"}>{boardColumns.map((column) => <section className="crm-board-column" data-bucket={column.key} key={column.key} aria-label={`${column.label} ${column.items.length} รายการ`}><div className="crm-board-column-head"><strong>{column.label}</strong><span>{column.items.length}</span></div><div className="crm-board-column-body">{column.items.length === 0 ? <small className="crm-board-empty">ไม่มี Ticket</small> : column.items.map((item) => <button type="button" className="crm-board-ticket" data-tone={statusTone(item.status)} key={item.jobNo} onClick={() => setSelectedTicket(item)} aria-label={`เปิดรายละเอียด ${item.jobNo} ${item.subject || ""}`} title={item.subject || undefined}><span className="crm-board-ticket-top"><strong>{item.jobNo}</strong><Badge tone={statusTone(item.status)}>{item.status || "Unknown"}</Badge></span><span className="crm-board-ticket-subject">{item.subject || "ไม่มี Subject"}</span>{renderFlowTracking(item, true)}<span className="crm-board-ticket-meta"><span><span className="material-symbols-outlined" aria-hidden="true">category</span><span>{item.serviceType || "-"}</span></span><span><span className="material-symbols-outlined" aria-hidden="true">person</span><span>{staff(item.member) ?? "-"}</span></span><span className="crm-board-ticket-age"><span className="material-symbols-outlined" aria-hidden="true">schedule</span><span>{ageLabel(item.contactDate)}</span></span></span></button>)}</div></section>)}</div>{closedRows.length > 0 && <details className={`crm-closed-section ${viewMode === "board" ? "crm-board-hidden" : ""}`}><summary><span className="crm-closed-icon material-symbols-outlined" aria-hidden="true">task_alt</span><span className="crm-closed-title"><strong>ปิดงานแล้ว</strong><small>สถานะ Finish / Close · แยกจากงานที่ต้องดำเนินการ</small></span><span className="crm-closed-count">{closedRows.length.toLocaleString()} รายการ</span><span className="crm-closed-chevron material-symbols-outlined" aria-hidden="true">expand_more</span></summary><div className="table-wrap crm-table-wrap crm-closed-table"><table className="table-cards crm-table">{ticketTableHead}<tbody>{closedRows.map(renderTicketRow)}</tbody></table></div></details>}<div className="crm-pagination"><small>หน้า {page} จาก {pageCount}</small><div><button className="btn" type="button" disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}>ก่อนหน้า</button><button className="btn" type="button" disabled={page >= pageCount || loading} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>ถัดไป</button></div></div></>}
       </div>
       {ticketView && <ModalShell labelledBy="crm-ticket-detail-title" boxClassName="modal-box crm-ticket-modal" onDismiss={() => setSelectedTicket(null)}>
@@ -880,7 +895,7 @@ export function CrmPage({ search, onConfigure, configVersion = 0, contextProject
               : ticketDetailError ? <div className="crm-detail-note crm-detail-note-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span><div><strong>{crmErrorTitle(ticketDetailErrorCode)}</strong><p>{ticketDetailError}</p><button className="btn" type="button" onClick={() => setDetailReload((value) => value + 1)}>ลองโหลดรายละเอียดอีกครั้ง</button></div></div>
                 : ticketDetail && <><section className="crm-flow-history" aria-label="ประวัติ Flow Tracking">
   <div className="crm-flow-history-head"><h4>ประวัติ Flow Tracking</h4><small>{flowHistory.length.toLocaleString()} เหตุการณ์</small></div>
-  {flowHistoryLoading ? <p className="crm-flow-history-empty">กำลังโหลดประวัติ Flow...</p> : flowHistoryError ? <p className="crm-flow-history-empty">{flowHistoryError}</p> : flowHistory.length === 0 ? <p className="crm-flow-history-empty">ยังไม่มีประวัติการติดตามในฐานข้อมูล</p> : <ol className="crm-flow-history-list">{flowHistory.map((event, index) => <li key={`${event.timestamp}-${event.action}-${index}`}><div><strong>{event.action === "FlowStarted" ? "เริ่มติดตาม Flow" : "เปลี่ยนเส้นทางงาน"}</strong><time>{displayDate(event.timestamp)}</time></div><span className="crm-flow-history-route">Support {flowPerson(event.after.support)} → QA {flowPerson(event.after.qa)} → Dev {flowPerson(event.after.developer, "รอส่งต่อ")}</span><small>{event.actorName ? `บันทึกโดย ${event.actorName}` : "บันทึกโดยระบบ"} · สถานะ {event.after.status || "ไม่ระบุ"}</small></li>)}</ol>}
+  {flowHistoryLoading ? <p className="crm-flow-history-empty">กำลังโหลดประวัติ Flow...</p> : flowHistoryError ? <p className="crm-flow-history-empty">{flowHistoryError}</p> : flowHistory.length === 0 ? <p className="crm-flow-history-empty">ยังไม่มีประวัติการติดตามในฐานข้อมูล</p> : <ol className="crm-flow-history-list">{flowHistory.map((event, index) => <li key={`${event.timestamp}-${event.action}-${index}`}><div><strong>{event.action === "FlowStarted" ? "เริ่มติดตาม Flow" : "เปลี่ยนเส้นทางงาน"}</strong><time>{displayDate(event.timestamp)}</time></div><span className="crm-flow-history-route">เจ้าของเรื่อง {flowPerson(event.after.support)} → Assign To {flowPerson(event.after.qa)} → Development {flowPerson(event.after.developer, "ไม่ระบุ")}</span><small>{event.actorName ? `บันทึกโดย ${event.actorName}` : "บันทึกโดยระบบ"} · สถานะ {event.after.status || "ไม่ระบุ"}</small></li>)}</ol>}
 </section><section className="crm-detail-section"><h3><span className="material-symbols-outlined" aria-hidden="true">description</span>รายละเอียด</h3><p className="crm-detail-description">{ticketDescription || "ไม่มี Description"}</p></section><section className="crm-detail-section"><div className="crm-detail-section-heading"><div><h3><span className="material-symbols-outlined" aria-hidden="true">forum</span>{historyTab === "edit" ? "ประวัติการแก้ไข" : "ประวัติการติดต่อ"}</h3><small>{historyAnswers.length.toLocaleString()} รายการ · ล่าสุดอยู่บน</small></div><div className="crm-history-tabs" role="tablist" aria-label="ประเภทประวัติ"><button type="button" role="tab" aria-selected={historyTab === "contact"} className={historyTab === "contact" ? "active" : undefined} onClick={() => setHistoryTab("contact")}>ประวัติการติดต่อ <span>{contactAnswers.length.toLocaleString()}</span></button><button type="button" role="tab" aria-selected={historyTab === "edit"} className={historyTab === "edit" ? "active" : undefined} onClick={() => setHistoryTab("edit")}>ประวัติการแก้ไข <span>{editHistoryAnswers.length.toLocaleString()}</span></button></div></div>{historyAnswers.length === 0 ? <div className="crm-detail-empty">{historyTab === "edit" ? "ยังไม่มีประวัติการแก้ไขจาก CRM" : "ยังไม่มีข้อความจาก CRM"}</div> : <div className="crm-answer-list">{historyAnswers.map((answer) => <article className="crm-answer" key={answer.answerNo}><span className="crm-answer-avatar" aria-hidden="true">{initials(staff(answer.posted)?.replace(/^\d+\s*/, "") || answer.posted)}</span><div><div className="crm-answer-meta"><strong>{staff(answer.posted) ?? "CRM User"}</strong><small>{displayDate(answer.answerDate)}</small></div><p>{answer.description}</p><CrmAnswerAttachments image={answer.image} onOpen={openAnswerImage} /></div></article>)}</div>}</section></>}
           </div>
           <aside className="crm-ticket-aside" aria-label="ข้อมูล Ticket">

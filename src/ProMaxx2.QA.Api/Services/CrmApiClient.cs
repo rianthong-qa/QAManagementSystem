@@ -459,9 +459,15 @@ public sealed class CrmApiClient(
     /// <summary>
     /// Reads CRM HelpDeskExport for the current user's flow. The export is requested without an
     /// assignee filter so tickets handed from QA to Development are still returned; QA Hub then
-    /// applies the user-scope filter (Assignee, Owner, or Developer) and pagination locally.
+    /// applies the user-scope filter (Assignee, Owner, Developer, or an active ticket the user
+    /// previously held — <paramref name="previouslyAssignedJobNos"/>) and pagination locally.
     /// </summary>
-    public async Task<CrmTicketListResult> ListJobsAsync(Guid userId, CrmTicketListQuery query, CancellationToken ct, bool refresh = false)
+    public async Task<CrmTicketListResult> ListJobsAsync(
+        Guid userId,
+        CrmTicketListQuery query,
+        CancellationToken ct,
+        bool refresh = false,
+        Func<string, CancellationToken, Task<IReadOnlySet<string>>>? previouslyAssignedJobNos = null)
     {
         try
         {
@@ -521,9 +527,10 @@ public sealed class CrmApiClient(
                 cache.Set(cacheKey, cached, TicketListCacheLifetime);
             }
             var body = cached.Body;
+            var previouslyAssigned = previouslyAssignedJobNos is null ? null : await previouslyAssignedJobNos(cfg.Username, ct);
             try
             {
-                var result = CrmTicketListParser.Parse(body, query with { From = from, To = to }, cfg.Username, cached.FetchedAt);
+                var result = CrmTicketListParser.Parse(body, query with { From = from, To = to }, cfg.Username, cached.FetchedAt, previouslyAssigned);
                 if (result.Total == 0)
                 {
                     var diagnostics = CrmTicketListParser.Diagnose(body);

@@ -86,7 +86,7 @@ public sealed class CrmTicketListParserTests
     }
 
     [Fact]
-    public void Parse_keeps_tickets_handed_from_qa_to_developer_in_the_original_users_scope()
+    public void Parse_lists_tickets_handed_from_qa_to_developer_under_previous_scope()
     {
         const string json = """
         [
@@ -95,14 +95,108 @@ public sealed class CrmTicketListParserTests
         ]
         """;
 
-        var result = CrmTicketListParser.Parse(
-            json,
-            new CrmTicketListQuery(1, 25, "BHD-QA-DEV", null, null, null),
-            "6101",
-            DateTimeOffset.UtcNow);
+        var mine = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, "BHD-QA-DEV", null, null, null), "6101", DateTimeOffset.UtcNow);
+        var previous = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, "BHD-QA-DEV", null, null, null, CrmTicketScope.Previous), "6101", DateTimeOffset.UtcNow);
 
-        Assert.Single(result.Rows);
-        Assert.Equal("BHD-QA-DEV", result.Rows[0].JobNo);
+        Assert.Empty(mine.Rows);
+        Assert.Equal("BHD-QA-DEV", Assert.Single(previous.Rows).JobNo);
+    }
+
+    [Fact]
+    public void Parse_moves_ticket_assigned_to_someone_else_out_of_mine_even_when_user_is_developer()
+    {
+        // BHD690928000002: Owner = Assignto = Support 5807, sysDevelop = 6101, status Test
+        const string json = """
+        [
+          { "jobNo": "BHD690928000002", "assignto": "5807", "ownerSubjectId": "5807", "sysDevelop": "6101", "status": "Test" },
+          { "jobNo": "BHD-DEV-CLOSED", "assignto": "5807", "ownerSubjectId": "5807", "sysDevelop": "6101", "status": "Finish" },
+          { "jobNo": "BHD-MINE", "assignto": "6101", "ownerSubjectId": "5807", "sysDevelop": "6101", "status": "Close" }
+        ]
+        """;
+
+        var mine = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, null, null, null, null), "6101", DateTimeOffset.UtcNow);
+        var previous = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, null, null, null, null, CrmTicketScope.Previous), "6101", DateTimeOffset.UtcNow);
+
+        Assert.Equal("BHD-MINE", Assert.Single(mine.Rows).JobNo);
+        Assert.Equal("BHD690928000002", Assert.Single(previous.Rows).JobNo);
+        Assert.Equal(new CrmTicketScopeCounts(1, 1), mine.ScopeCounts);
+    }
+
+    [Fact]
+    public void Parse_keeps_active_ticket_handed_back_from_qa_to_support_but_drops_closed_ones()
+    {
+        // BHD691006000009: Support 6710 → QA 6101 → back to Support 6710
+        const string json = """
+        [
+          { "fd": { "jobNo": "BHD-BACK", "assignto": "6710", "ownerSubjectId": "6710", "status": "Test" }, "answers": [] },
+          { "fd": { "jobNo": "BHD-BACK-CLOSED", "assignto": "6710", "ownerSubjectId": "6710", "status": "Close" }, "answers": [] },
+          { "fd": { "jobNo": "BHD-BACK-FINISH", "assignto": "6710", "ownerSubjectId": "6710", "status": "Finish" }, "answers": [] },
+          { "fd": { "jobNo": "BHD-REPLIED", "assignto": "6710", "ownerSubjectId": "6710", "status": "Continue" },
+            "answers": [ { "answerNo": "1", "posted": "เหรียญทอง เจือบุญ (6101)" } ] },
+          { "fd": { "jobNo": "BHD-REPLIED-FINISH", "assignto": "6710", "ownerSubjectId": "6710", "status": "Finish" },
+            "answers": [ { "answerNo": "2", "posted": "6101" } ] },
+          { "fd": { "jobNo": "BHD-UNRELATED", "assignto": "6710", "ownerSubjectId": "6710", "status": "Continue" },
+            "answers": [ { "answerNo": "3", "posted": "61010" } ] }
+        ]
+        """;
+
+        var previouslyAssigned = new HashSet<string>(["bhd-back", "BHD-BACK-CLOSED", "BHD-BACK-FINISH"], StringComparer.OrdinalIgnoreCase);
+
+        var mine = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, null, null, null, null), "6101", DateTimeOffset.UtcNow, previouslyAssigned);
+        var previous = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, null, null, null, null, CrmTicketScope.Previous), "6101", DateTimeOffset.UtcNow, previouslyAssigned);
+
+        Assert.Empty(mine.Rows);
+        Assert.Equal(new CrmTicketScopeCounts(0, 2), mine.ScopeCounts);
+        Assert.Equal(new[] { "BHD-BACK", "BHD-REPLIED" }, previous.Rows.Select(x => x.JobNo).OrderBy(x => x));
+        Assert.Equal(2, previous.Total);
+        Assert.Equal(new CrmTicketScopeCounts(0, 2), previous.ScopeCounts);
+    }
+
+    [Fact]
+    public void Parse_separates_current_work_from_handed_back_tickets_and_counts_both_after_filters()
+    {
+        const string json = """
+        [
+          { "jobNo": "BHD-MINE-1", "assignto": "6101", "status": "Continue", "subject": "Login" },
+          { "jobNo": "BHD-MINE-2", "assignto": "6101", "status": "Open", "subject": "Printer" },
+          { "jobNo": "BHD-BACK", "assignto": "6710", "ownerSubjectId": "6710", "status": "Test", "subject": "Login back" }
+        ]
+        """;
+        var previouslyAssigned = new HashSet<string>(["BHD-BACK", "BHD-MINE-1"], StringComparer.OrdinalIgnoreCase);
+
+        var mine = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, "login", null, null, null), "6101", DateTimeOffset.UtcNow, previouslyAssigned);
+        var previous = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, "login", null, null, null, CrmTicketScope.Previous), "6101", DateTimeOffset.UtcNow, previouslyAssigned);
+
+        // A ticket currently assigned to the user stays in "mine" even if it was also held before.
+        Assert.Equal(new[] { "BHD-MINE-1" }, mine.Rows.Select(x => x.JobNo));
+        Assert.Equal(new[] { "BHD-BACK" }, previous.Rows.Select(x => x.JobNo));
+        Assert.Equal(new CrmTicketScopeCounts(1, 1), mine.ScopeCounts);
+        Assert.Equal(1, previous.Summary.InProgress);
+    }
+
+    [Fact]
+    public void DetailParser_accepts_active_ticket_previously_assigned_to_current_user()
+    {
+        using var active = JsonDocument.Parse("""
+        { "jobNo": "BHD-9", "assignto": "6710", "ownerSubjectId": "6710", "status": "Test" }
+        """);
+        using var closed = JsonDocument.Parse("""
+        { "jobNo": "BHD-9", "assignto": "6710", "ownerSubjectId": "6710", "status": "Close" }
+        """);
+
+        Assert.Equal("BHD-9", CrmTicketDetailParser.Parse(active.RootElement, "BHD-9", "6101", [], DateTimeOffset.UtcNow, wasPreviouslyAssigned: true).Ticket.JobNo);
+        Assert.Throws<CrmTicketNotFoundException>(() => CrmTicketDetailParser.Parse(
+            active.RootElement, "BHD-9", "6101", [], DateTimeOffset.UtcNow));
+        Assert.Throws<CrmTicketNotFoundException>(() => CrmTicketDetailParser.Parse(
+            closed.RootElement, "BHD-9", "6101", [], DateTimeOffset.UtcNow, wasPreviouslyAssigned: true));
     }
 
     [Fact]

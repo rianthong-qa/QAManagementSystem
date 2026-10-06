@@ -751,6 +751,19 @@ git diff --check
 
 ## 16. Progress Log
 
+### 2026-10-06 — CRM List: keep active tickets handed back from QA
+
+- Requirement: a Job that was once assigned to the QA user and then sent back (e.g. `BHD691006000009`: Support `6710` → QA `6101` → Support `6710`) must stay in the QA user's list unless its status is `Close`/`Finish`.
+- Scope now also accepts an active ticket when Flow Tracking (`CrmTicketFlow` audit snapshots) ever recorded the user as `Assignto`, or a HelpDeskExport/HelpDeskAnswerMain answer was `Posted` by the user. Detail (and actions that re-check scope through Detail) follow the same rule, so the row opens instead of returning `CRM_TICKET_NOT_FOUND`.
+- Limitation: Flow Tracking only knows assignments QA Hub has observed (from 2026-10-06, and only for rows returned on a list page or opened in Detail); older hand-backs are found only when the user posted an answer on the ticket.
+- Verification: backend Unit Tests `529/529`, API build `0 warnings / 0 errors`; API restarted in the Production profile and `/health` returned `200`.
+- Follow-up (same day, user confirmed `BHD691006000009` now appears): hand-back tickets are separated from current work. `GET /crm/tickets?scope=mine|previous` + `scopeCounts`; the CRM page shows **ส่งมาหาฉัน** / **ส่งต่อแล้ว** toggles with counts. Verification: Unit Tests `530/530`, frontend build/lint passed, API restarted (`/health` 200, `/crm/tickets?scope=previous` without token = 401), layout checked at 1280px and a 390px iframe.
+- Follow-up: the Flow column showed the Support owner in the QA box for hand-back tickets (QA box = current `Assignto`). The list now returns `previousQa` (latest non-owner Assignto from Flow Tracking) and the UI marks the Support stage as current with "กลับไปที่ Support", keeping the QA box as the QA who handled it. Unit Tests `531/531`, frontend build/lint passed, API restarted (`/health` 200).
+- Follow-up: the QA box showed the Developer for tickets handed QA → Dev (`BHD690929000002`: snapshots `qa 6101` → `qa 4208, dev null` → `qa 4208, dev 4208`). `previousQa` now skips Assignto values equal to the Support owner or the job's Developer, and the UI uses it whenever Assignto is the Developer. Unit Tests `532/532`, frontend build/lint passed, API restarted (`/health` 200).
+- Scope rule change (user, `BHD690928000002`): `scope=mine` is now current Assignto only; Owner/Developer-only matches and previous holders move to `scope=previous` while active. Closed tickets where the user is only Owner/Developer are no longer listed (the earlier "QA-to-Development handoff visibility" entry is superseded for the list; Detail scope is unchanged). Unit Tests `533/533`, frontend build/lint passed, API restarted (`/health` 200).
+- Flow labels changed (user): roles are not fixed per position, so the Flow shows CRM fields `เจ้าของเรื่อง → Assign To → Development` with their raw values; Assign To is always the highlighted current holder and `previousQa` is shown as "ก่อนหน้า …". Audit summary text uses the same field names. This removes the role-guessing behind the gap below for display purposes. Unit Tests `533/533`, frontend build/lint passed, API restarted (`/health` 200).
+- Known gap (now display-only, superseded by the field-name labels): while Assignto has moved to a Dev but `sysDevelop` is still empty, the stage still reads as QA with the Dev in the QA box — CRM gives no way to tell that Assignto is a developer at that point.
+
 ### 2026-10-06 — CRM List: QA-to-Development handoff visibility
 
 - Ticket List/Detail scope now includes the current CRM user when they are the current `Assignto`, the original `OwnerSubjectId`, or the `sysDevelop` staff member.

@@ -536,20 +536,26 @@ button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in 
 .crm-flow-tracking { display: grid; gap: 6px; min-width: 220px; }
 .crm-flow-steps { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 5px; min-width: 0; }
 .crm-flow-step { display: grid; gap: 2px; min-width: 0; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
-.crm-flow-step small { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
-.crm-flow-step strong { overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.crm-flow-step.done { border-color: color-mix(in srgb, var(--green) 35%, var(--line)); background: color-mix(in srgb, var(--green) 7%, var(--card)); }
-.crm-flow-step.current { border-color: var(--primary); background: var(--primary-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent); }
-.crm-flow-step.waiting { background: var(--surface); }
+/* ป้ายเป็นชื่อช่องของ CRM (เจ้าของเรื่อง / Assign To / Development) — ไม่ uppercase เพื่อให้พอดีกล่องแคบ */
+.crm-flow-step small { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+/* ชื่อขึ้นบรรทัดใหม่ได้ 2 บรรทัด (รหัส / ชื่อ) แทนการตัด … ในคอลัมน์แคบ */
+.crm-flow-step strong { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* ขั้นที่ผ่านแล้วใช้โทนกลาง ๆ เพื่อไม่แข่งกับขั้นปัจจุบัน */
+.crm-flow-step.done { border-color: var(--line); background: var(--card); }
+.crm-flow-step.done strong { color: var(--muted); font-weight: 600; }
+/* ขั้นปัจจุบัน = คนที่ถืองานตอนนี้: พื้นทึบ primary ตัวอักษรขาว (aria-current="step") */
+.crm-flow-step.current { border-color: var(--primary); background: var(--primary); box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 30%, transparent); }
+.crm-flow-step.current small, .crm-flow-step.current strong { color: var(--card); }
+.crm-flow-step.waiting { border-style: dashed; background: var(--surface); }
 .crm-flow-step.waiting strong { color: var(--muted); font-weight: 600; }
 .crm-flow-arrow { color: var(--muted); font-size: 14px; font-weight: 800; }
 .crm-flow-current { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .crm-flow-current .material-symbols-outlined { color: var(--primary); font-size: 15px; }
 .crm-flow-current strong { color: var(--primary); }
+.crm-flow-current > span:last-child { color: var(--text); }
 .crm-flow-tracking.compact { min-width: 0; }
 .crm-flow-tracking.compact .crm-flow-steps { gap: 3px; }
 .crm-flow-tracking.compact .crm-flow-step { padding: 4px; }
-.crm-flow-tracking.compact .crm-flow-step strong { font-size: 10px; }
 .crm-flow-history { display: grid; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary-soft) 35%, var(--card)); }
 .crm-flow-history-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .crm-flow-history-head h4 { margin: 0; color: var(--text); font-size: 13px; }
@@ -558,14 +564,13 @@ button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in 
 .crm-flow-history-list li { display: grid; gap: 3px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); }
 .crm-flow-history-list li > div { display: flex; justify-content: space-between; gap: 8px; }
 .crm-flow-history-list strong { color: var(--text); font-size: 11px; }
-.crm-flow-history-list time, .crm-flow-history-list small { color: var(--muted); font-size: 10px; }
+.crm-flow-history-list time, .crm-flow-history-list small { color: var(--muted); font-size: 11px; }
 .crm-flow-history-route { color: var(--text); font-size: 11px; overflow-wrap: anywhere; }
 .crm-flow-history-empty { margin: 0; color: var(--muted); font-size: 11px; }
 @media (max-width: 760px) {
   .crm-flow-tracking { min-width: 0; }
   .crm-flow-steps { gap: 3px; }
   .crm-flow-step { padding: 5px 4px; }
-  .crm-flow-step strong { font-size: 10px; }
   .crm-flow-arrow { font-size: 12px; }
 }
 
@@ -573,3 +578,21 @@ button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in 
 .crm-table th:nth-child(6) { width: 24%; }
 .crm-table th:nth-child(7) { width: 10%; }
 .crm-table th:nth-child(8) { width: 10%; }
+/* Ticket groups: งานที่ส่งมาหาฉัน vs ส่งต่อแล้ว (ยังไม่ปิด). button.<class> beats the global button rule. */
+.crm-scope-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-width: 640px; }
+.crm-scope-tabs button.crm-scope-tab { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+.crm-scope-tabs button.crm-scope-tab > .material-symbols-outlined { flex: 0 0 auto; color: var(--muted); font-size: 20px; }
+.crm-scope-tab-text { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
+.crm-scope-tab-text strong { font-size: 13px; font-weight: 700; }
+.crm-scope-tab-text small { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.crm-scope-count { flex: 0 0 auto; min-width: 28px; padding: 2px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 800; text-align: center; }
+.crm-scope-tabs button.crm-scope-tab:hover { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); }
+.crm-scope-tabs button.crm-scope-tab:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); }
+.crm-scope-tabs button.crm-scope-tab.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary-soft) 55%, var(--card)); box-shadow: inset 0 -2px 0 var(--primary); }
+.crm-scope-tabs button.crm-scope-tab.active > .material-symbols-outlined, .crm-scope-tabs button.crm-scope-tab.active strong { color: var(--primary); }
+.crm-scope-tabs button.crm-scope-tab.active .crm-scope-count { background: var(--primary); color: var(--card); }
+@media (max-width: 760px) {
+  .crm-scope-tabs { max-width: none; }
+  .crm-scope-tabs button.crm-scope-tab { gap: 8px; padding: 8px 10px; }
+  .crm-scope-tab-text small { display: none; }
+}

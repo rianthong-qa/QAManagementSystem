@@ -3,13 +3,23 @@ using System.Text.Json;
 
 namespace ProMaxx2.QA.Api.Services;
 
+/// <summary>
+/// <c>Mine</c>: the user is the current Assignto.
+/// <c>Previous</c>: active (not Close/Finish) tickets now with someone else that the user is still part of —
+/// Owner, Developer, or a previous Assignto (e.g. QA → back to Support).
+/// </summary>
+public enum CrmTicketScope { Mine, Previous }
+
 public sealed record CrmTicketListQuery(
     int Page,
     int PageSize,
     string? Search,
     string? Status,
     DateOnly? From,
-    DateOnly? To);
+    DateOnly? To,
+    CrmTicketScope Scope = CrmTicketScope.Mine);
+
+public sealed record CrmTicketScopeCounts(int Mine, int Previous);
 
 public sealed record CrmTicketListItem(
     string JobNo,
@@ -44,7 +54,10 @@ public sealed record CrmTicketListResult(
     int Page,
     int PageSize,
     CrmTicketSummary Summary,
-    DateTimeOffset LastFetchedAt);
+    DateTimeOffset LastFetchedAt,
+    CrmTicketScopeCounts ScopeCounts,
+    // jobNo → last QA from Flow Tracking history, for tickets that have been sent back to Support
+    IReadOnlyDictionary<string, string>? PreviousQa = null);
 
 public sealed record CrmConnectionStatus(
     bool IsConfigured,
@@ -70,19 +83,30 @@ public static class CrmTicketListParser
         string body,
         CrmTicketListQuery query,
         string currentCrmUsername,
-        DateTimeOffset lastFetchedAt)
+        DateTimeOffset lastFetchedAt,
+        IReadOnlySet<string>? previouslyAssignedJobNos = null)
     {
         using var document = JsonDocument.Parse(body);
         var records = CoerceRecords(document.RootElement);
         var tickets = new List<CrmTicketListItem>();
+        int mineCount = 0, previousCount = 0;
 
         foreach (var record in records)
         {
             var item = MapTicket(record);
             if (item is null) continue;
-            if (!IsTicketInScope(item, currentCrmUsername)) continue;
+            // "ส่งมาหาฉัน" = Assignto is the user right now. Being Owner/Developer or a past holder only keeps
+            // an active ticket under "ส่งต่อแล้ว" — the work is with someone else (user rule, 2026-10-06).
+            var isMine = IsAssigneeInScope(item.Assignee, currentCrmUsername);
+            var isPrevious = !isMine && !IsClosed(item.Status) &&
+                             (IsTicketInScope(item, currentCrmUsername) ||
+                              (previouslyAssignedJobNos?.Contains(item.JobNo) ?? false) ||
+                              HasAnswerPostedBy(record, currentCrmUsername));
+            if (!isMine && !isPrevious) continue;
 
             if (!MatchesQuery(item, query)) continue;
+            if (isMine) mineCount++; else previousCount++;
+            if (isMine != (query.Scope == CrmTicketScope.Mine)) continue;
             tickets.Add(item);
             if (tickets.Count > MaxTicketRows)
                 throw new CrmResultTooLargeException($"CRM ส่งข้อมูลเกินขีดจำกัด {MaxTicketRows:N0} รายการ กรุณาระบุช่วงวันที่ให้แคบลง");
@@ -99,7 +123,7 @@ public static class CrmTicketListParser
             ordered.Count(x => IsClosed(x.Status)));
         var rows = ordered.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).ToArray();
 
-        return new(rows, ordered.Length, query.Page, query.PageSize, summary, lastFetchedAt);
+        return new(rows, ordered.Length, query.Page, query.PageSize, summary, lastFetchedAt, new(mineCount, previousCount));
     }
 
     /// <summary>Maps a single CRM job record into the normalized list contract.</summary>
@@ -198,11 +222,31 @@ public static class CrmTicketListParser
     /// A CRM ticket can move from QA to Development by changing Assignto while keeping
     /// the original owner and development staff on the ticket. Keep the ticket visible
     /// to any staff member who is part of that route, without exposing unrelated jobs.
+    /// A ticket the user previously held (e.g. Support → QA → back to Support) stays visible
+    /// only while it is still active; Close/Finish tickets drop out once ownership moves on.
     /// </summary>
-    public static bool IsTicketInScope(CrmTicketListItem item, string? currentCrmUsername) =>
+    public static bool IsTicketInScope(CrmTicketListItem item, string? currentCrmUsername, bool wasPreviouslyAssigned = false) =>
         IsAssigneeInScope(item.Assignee, currentCrmUsername) ||
         IsAssigneeInScope(item.Owner, currentCrmUsername) ||
-        IsAssigneeInScope(item.Developer, currentCrmUsername);
+        IsAssigneeInScope(item.Developer, currentCrmUsername) ||
+        (wasPreviouslyAssigned && !IsClosed(item.Status));
+
+    /// <summary>
+    /// HelpDeskExport records are shaped as <c>{ fd, answers }</c>. An answer posted by the user
+    /// means they worked the ticket before it was handed back, even if QA Hub never saw that state.
+    /// </summary>
+    private static bool HasAnswerPostedBy(JsonElement record, string? currentCrmUsername)
+    {
+        if (record.ValueKind != JsonValueKind.Object || string.IsNullOrWhiteSpace(currentCrmUsername)) return false;
+        foreach (var name in new[] { "answers", "Answers" })
+        {
+            if (!record.TryGetProperty(name, out var answers) || answers.ValueKind != JsonValueKind.Array) continue;
+            return answers.EnumerateArray().Any(answer =>
+                answer.ValueKind == JsonValueKind.Object &&
+                IsAssigneeInScope(StringValue(answer, "posted", "Posted"), currentCrmUsername));
+        }
+        return false;
+    }
 
     private static bool MatchesQuery(CrmTicketListItem item, CrmTicketListQuery query)
     {
@@ -231,7 +275,7 @@ public static class CrmTicketListParser
     private static bool Contains(string? value, string search) =>
         !string.IsNullOrWhiteSpace(value) && value.Contains(search, StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsClosed(string? status) =>
+    public static bool IsClosed(string? status) =>
         string.Equals(status, "Close", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(status, "Closed", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(status, "Finish", StringComparison.OrdinalIgnoreCase);

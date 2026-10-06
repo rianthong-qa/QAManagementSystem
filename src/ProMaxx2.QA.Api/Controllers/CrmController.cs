@@ -80,10 +80,14 @@ public sealed class CrmController(
         [FromQuery] DateOnly? from = null,
         [FromQuery] DateOnly? to = null,
         [FromQuery] bool refresh = false,
+        [FromQuery] string? scope = null,
         CancellationToken ct = default)
     {
         if (page < 1 || pageSize is < 1 or > 100)
             return BadRequest(Failure("CRM_INVALID_QUERY", "ข้อมูลค้นหาไม่ถูกต้อง", "page ต้องเริ่มที่ 1 และ pageSize ต้องอยู่ระหว่าง 1 ถึง 100", StatusCodes.Status400BadRequest));
+        var ticketScope = CrmTicketScope.Mine;
+        if (!string.IsNullOrWhiteSpace(scope) && (!Enum.TryParse(scope.Trim(), ignoreCase: true, out ticketScope) || !Enum.IsDefined(ticketScope)))
+            return BadRequest(Failure("CRM_INVALID_QUERY", "ข้อมูลค้นหาไม่ถูกต้อง", "scope ต้องเป็น mine หรือ previous", StatusCodes.Status400BadRequest));
         if (from.HasValue && to.HasValue && to.Value < from.Value)
             return BadRequest(Failure("CRM_INVALID_QUERY", "ช่วงวันที่ไม่ถูกต้อง", "วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น", StatusCodes.Status400BadRequest));
 
@@ -92,8 +96,10 @@ public sealed class CrmController(
 
         try
         {
-            var query = new CrmTicketListQuery(page, pageSize, search, status, from, to);
-            var result = await crm.ListJobsAsync(userId.Value, query, ct, refresh);
+            var query = new CrmTicketListQuery(page, pageSize, search, status, from, to, ticketScope);
+            var result = await crm.ListJobsAsync(userId.Value, query, ct, refresh, flowTracking.GetJobsPreviouslyAssignedToAsync);
+            try { result = result with { PreviousQa = await flowTracking.GetLastQaAsync(result.Rows.Select(x => x.JobNo), ct) }; }
+            catch (Exception ex) { logger.LogWarning(ex, "CRM flow QA history lookup failed for list request"); }
             try { await flowTracking.RecordSnapshotsAsync(userId.Value, result.Rows, ct); }
             catch (Exception ex) { logger.LogWarning(ex, "CRM flow snapshot persistence failed for list request"); }
             return Ok(result);
