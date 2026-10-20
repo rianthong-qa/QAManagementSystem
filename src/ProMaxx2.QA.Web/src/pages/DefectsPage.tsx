@@ -53,7 +53,10 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(30);
-  const [moduleFilter, setModuleFilter] = useState("");
+  // Module ที่หน้าอื่นส่งมา (qa.targetModuleId เช่นจาก Dashboard) ใช้เป็นตัวกรองเริ่มต้นครั้งเดียวแล้วลบทิ้ง
+  const [moduleFilter, setModuleFilter] = useState(() => {
+    try { const target = localStorage.getItem("qa.targetModuleId") ?? ""; localStorage.removeItem("qa.targetModuleId"); return target; } catch { return ""; }
+  });
   const [jumpToList, setJumpToList] = useState(false);
   const [severityFilter, setSeverityFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");

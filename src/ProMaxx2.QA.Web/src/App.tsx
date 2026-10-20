@@ -919,7 +919,7 @@ function App() {
           <div className="page-transition" key={page}>
           <Suspense fallback={pageLoading}>
           {page === "dashboard" ? (
-            <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode ? `${contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} · ${contextReleases.find(x => x.releaseId === contextReleaseId)?.version}` : undefined} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} />
+            <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode ? `${contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} · ${contextReleases.find(x => x.releaseId === contextReleaseId)?.version}` : undefined} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} onOpenModule={(moduleId, target) => { localStorage.setItem("qa.targetModuleId", moduleId); go(target); }} />
           ) : page === "my-work" ? (
             <MyWorkPage user={user} onOpenExecution={(cycleId) => { localStorage.setItem("qa.targetCycleId", cycleId); go("execution"); }} onNavigate={go} />
           ) : page === "performance" ? (

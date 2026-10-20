@@ -161,7 +161,12 @@ export function TestCasesPage({
       .catch(error=>{if(!cancelled){setFilterModules([]);setError(error instanceof Error?error.message:"โหลดข้อมูล Module ไม่สำเร็จ");}});
     return()=>{cancelled=true};
   },[projects,projectFilter,reload]);
-  useEffect(() => { setProjectFilter(contextProjectId ?? ""); setModuleFilter(""); setPage(1); }, [contextProjectId]);
+  // เปลี่ยน Project context = ล้างตัวกรอง Module; ครั้งแรกที่เปิดหน้ารับ Module ที่หน้าอื่นส่งมา (qa.targetModuleId เช่นจาก Dashboard) แล้วลบทิ้ง
+  useEffect(() => {
+    let target = "";
+    try { target = localStorage.getItem("qa.targetModuleId") ?? ""; localStorage.removeItem("qa.targetModuleId"); } catch { /* ไม่มี storage ก็ไม่กรอง */ }
+    setProjectFilter(contextProjectId ?? ""); setModuleFilter(target); setPage(1);
+  }, [contextProjectId]);
   useEffect(() => {
     if (!form || editing || !projectId || !moduleId) return;
     const project = projects.find((x) => x.projectId === projectId);
