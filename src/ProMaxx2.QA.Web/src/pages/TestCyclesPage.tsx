@@ -172,11 +172,25 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
       const data: unknown = await response.json();
       return Array.isArray(data) ? (data as T[]) : (data as any)?.items?.rows ?? (data as any)?.rows ?? [];
     };
+    // API คืน Test Suite หน้าละไม่เกิน 100 รายการ — ต้องโหลดให้ครบทุกหน้า ไม่เช่นนั้น Suite ที่อยู่หลังหน้าแรก
+    // (ทั้งระบบมีหลายร้อย Suite) จะหายจาก dropdown "Test Suite" ของฟอร์มสร้าง Test Cycle เมื่อกรองตาม Module
+    const readAllSuites = async (): Promise<TestSuiteItem[]> => {
+      const all: TestSuiteItem[] = [];
+      for (let page = 1; page <= 50; page++) {
+        const response = await fetch(`${apiUrl}/test-suites?isActive=true&size=100&page=${page}`, { headers: h });
+        if (!response.ok) throw new Error(`โหลด Test Suite ไม่สำเร็จ (${response.status})`);
+        const data = await response.json() as { total?: number; rows?: TestSuiteItem[] };
+        const rows = data.rows ?? [];
+        all.push(...rows);
+        if (rows.length < 100 || all.length >= (data.total ?? 0)) break;
+      }
+      return all;
+    };
     Promise.all([
       readList<ProjectItem>(`${apiUrl}/projects`),
       readList<CycleRelease>(`${apiUrl}/releases`),
       readList<CycleEnvironment>(`${apiUrl}/test-environments`),
-      readList<TestSuiteItem>(`${apiUrl}/test-suites?size=100`),
+      readAllSuites(),
       readList<UserLookup>(`${apiUrl}/lookups/users`),
     ]).then(async ([p, r, e, s, u]) => {
       const activeProjects = (p as ProjectItem[]).filter((x) => x.isActive);

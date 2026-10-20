@@ -1690,6 +1690,8 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ReleaseId");
 
+                    b.HasIndex("CreatedBy", "CreatedAt");
+
                     b.HasIndex("ProjectId", "DefectCode")
                         .IsUnique();
 
@@ -2436,10 +2438,10 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("EnvironmentId");
 
-                    b.HasIndex("TesterUserId");
-
                     b.HasIndex("TestCycleCaseId", "ExecutionNo")
                         .IsUnique();
+
+                    b.HasIndex("TesterUserId", "CompletedAt");
 
                     b.ToTable("TestExecutions", (string)null);
                 });
@@ -2898,6 +2900,66 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.ToTable("CrmConfigurations", (string)null);
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Integrations.CrmMirrorRun", b =>
+                {
+                    b.Property<Guid>("CrmMirrorRunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AccountUsername")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("ChangedTickets")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DiagnosticsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("NewAnswers")
+                        .HasColumnType("int");
+
+                    b.Property<int>("NewTickets")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("RangeFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("RangeTo")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("RequestedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("TicketCount")
+                        .HasColumnType("int");
+
+                    b.HasKey("CrmMirrorRunId");
+
+                    b.HasIndex("StartedAt");
+
+                    b.ToTable("CrmMirrorRuns", (string)null);
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Integrations.CrmProjectMapping", b =>
                 {
                     b.Property<Guid>("CrmProjectMappingId")
@@ -2942,6 +3004,724 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasKey("CrmSyncSettingsId");
 
                     b.ToTable("CrmSyncSettings", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Integrations.CrmTicket", b =>
+                {
+                    b.Property<string>("JobNo")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("AssigneeCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Branch")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("ContactDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeveloperCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("JobType")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("LastChangedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LastReplyAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LastSyncedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OwnerCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Product")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ServiceType")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.HasKey("JobNo");
+
+                    b.HasIndex("AssigneeCode");
+
+                    b.HasIndex("ContactDate");
+
+                    b.ToTable("CrmTickets", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Integrations.CrmTicketEvent", b =>
+                {
+                    b.Property<long>("CrmTicketEventId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("CrmTicketEventId"));
+
+                    b.Property<string>("ActorCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("AnswerNo")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("FromAssigneeCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("FromDeveloperCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("FromStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("JobNo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OwnerCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ToAssigneeCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ToDeveloperCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ToStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("CrmTicketEventId");
+
+                    b.HasIndex("OccurredAt");
+
+                    b.HasIndex("JobNo", "AnswerNo")
+                        .IsUnique()
+                        .HasFilter("[AnswerNo] IS NOT NULL");
+
+                    b.HasIndex("JobNo", "OccurredAt");
+
+                    b.ToTable("CrmTicketEvents", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EmployeeProfile", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("EmployeeCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("EmploymentStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateOnly?>("HireDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Level")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Position")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateOnly?>("ProbationEndDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("SupervisorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("EmploymentStatus");
+
+                    b.HasIndex("SupervisorUserId");
+
+                    b.ToTable("EmployeeProfiles", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.Evaluation", b =>
+                {
+                    b.Property<Guid>("EvaluationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("AcknowledgedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("EmployeeComment")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid?>("EvaluatorUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("ExtendToDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Grade")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("Improvements")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("MetricsSnapshotJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NextGoals")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<decimal?>("OverallScore")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)");
+
+                    b.Property<DateOnly>("PeriodEnd")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("PeriodStart")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Recommendation")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ReopenReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Round")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("SelfComment")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTime?>("SelfSubmittedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Strengths")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("TemplateName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("EvaluationId");
+
+                    b.HasIndex("EvaluatorUserId");
+
+                    b.HasIndex("Status", "DueDate");
+
+                    b.HasIndex("UserId", "Round", "Year");
+
+                    b.ToTable("Evaluations", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationNotification", b =>
+                {
+                    b.Property<Guid>("EvaluationNotificationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("EvaluationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("RecipientUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.HasKey("EvaluationNotificationId");
+
+                    b.HasIndex("RecipientUserId");
+
+                    b.HasIndex("EvaluationId", "Kind", "DueDate", "RecipientUserId")
+                        .IsUnique();
+
+                    b.ToTable("EvaluationNotifications", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationScore", b =>
+                {
+                    b.Property<Guid>("EvaluationScoreId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("EvaluationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Group")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ManagerComment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int?>("ManagerScore")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SelfComment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int?>("SelfScore")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Weight")
+                        .HasColumnType("int");
+
+                    b.HasKey("EvaluationScoreId");
+
+                    b.HasIndex("EvaluationId");
+
+                    b.ToTable("EvaluationScores", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationTemplate", b =>
+                {
+                    b.Property<Guid>("EvaluationTemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("EvaluationTemplateId");
+
+                    b.HasIndex("Type", "IsActive");
+
+                    b.ToTable("EvaluationTemplates", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationTemplateCriterion", b =>
+                {
+                    b.Property<Guid>("EvaluationTemplateCriterionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("EvaluationTemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Group")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Weight")
+                        .HasColumnType("int");
+
+                    b.HasKey("EvaluationTemplateCriterionId");
+
+                    b.HasIndex("EvaluationTemplateId");
+
+                    b.ToTable("EvaluationTemplateCriteria", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.PerformanceShareLink", b =>
+                {
+                    b.Property<Guid>("PerformanceShareLinkId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<DateOnly>("FromDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IncludeEvaluations")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IncludeWorkLogs")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastViewedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("RevokedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("ToDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ViewCount")
+                        .HasColumnType("int");
+
+                    b.HasKey("PerformanceShareLinkId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("RevokedBy");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("PerformanceShareLinks", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.WeeklyReportNote", b =>
+                {
+                    b.Property<Guid>("WeeklyReportNoteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Ask")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Headline")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Health")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("KeyRisk")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("MemberNotesJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NextWeekPlan")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("WeekStart")
+                        .HasColumnType("date");
+
+                    b.HasKey("WeeklyReportNoteId");
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("UpdatedBy");
+
+                    b.HasIndex("WeekStart")
+                        .IsUnique();
+
+                    b.ToTable("WeeklyReportNotes", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.WorkLogAttachment", b =>
+                {
+                    b.Property<Guid>("WorkLogAttachmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StoredFileName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("UploadedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkLogEntryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("WorkLogAttachmentId");
+
+                    b.HasIndex("UploadedBy");
+
+                    b.HasIndex("WorkLogEntryId");
+
+                    b.ToTable("WorkLogAttachments", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.WorkLogEntry", b =>
+                {
+                    b.Property<Guid>("WorkLogEntryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<decimal?>("EffortHours")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ReferenceUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("WorkDate")
+                        .HasColumnType("date");
+
+                    b.HasKey("WorkLogEntryId");
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("UserId", "WorkDate");
+
+                    b.ToTable("WorkLogEntries", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Projects.ProductModule", b =>
@@ -4375,6 +5155,135 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EmployeeProfile", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("SupervisorUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithOne()
+                        .HasForeignKey("ProMaxx2.QA.Domain.Performance.EmployeeProfile", "UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.Evaluation", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("EvaluatorUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationNotification", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Performance.Evaluation", null)
+                        .WithMany()
+                        .HasForeignKey("EvaluationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("RecipientUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationScore", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Performance.Evaluation", null)
+                        .WithMany("Scores")
+                        .HasForeignKey("EvaluationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationTemplateCriterion", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Performance.EvaluationTemplate", null)
+                        .WithMany("Criteria")
+                        .HasForeignKey("EvaluationTemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.PerformanceShareLink", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("RevokedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.WeeklyReportNote", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.WorkLogAttachment", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UploadedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Performance.WorkLogEntry", null)
+                        .WithMany()
+                        .HasForeignKey("WorkLogEntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.WorkLogEntry", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Projects.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Projects.ProductModule", b =>
                 {
                     b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
@@ -4614,6 +5523,16 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ProMaxx2.QA.Domain.Identity.User", b =>
                 {
                     b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.Evaluation", b =>
+                {
+                    b.Navigation("Scores");
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationTemplate", b =>
+                {
+                    b.Navigation("Criteria");
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Projects.Project", b =>

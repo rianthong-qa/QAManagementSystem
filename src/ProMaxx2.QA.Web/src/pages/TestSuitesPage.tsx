@@ -5,6 +5,7 @@ import { notify, confirmDialog } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
+import { BatchCycleModal } from "./BatchCycleModal";
 import { type ModuleItem, type SessionUser, type TestCaseItem, type TestSuiteItem, fmtDateTimeBE, masterOptionElements, nextBusinessCode, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
 
 type GeneratedTestSuiteDraft={suiteName:string;suiteType:string;description:string;riskTier:string;testCases:{testCaseId:string;isRequired:boolean;reason:string}[];selectionSummary:string};
@@ -14,12 +15,17 @@ export function TestSuitesPage({
   contextProjectId,
   onOpenCycle,
   onCreateCycle,
+  canCreateCycle = false,
+  onOpenCycleList,
 }: {
   search: string;
   canEdit: boolean;
   contextProjectId?: string;
   onOpenCycle?: (page: "test-cycles" | "execution", cycleId: string) => void;
   onCreateCycle?: (projectId: string, testSuiteId: string) => void;
+  /** มีสิทธิ์สร้าง Test Cycle (EXECUTION.RUN) — เปิดการเลือกหลาย Suite เพื่อสร้าง Cycle พร้อมกัน */
+  canCreateCycle?: boolean;
+  onOpenCycleList?: () => void;
 }) {
   const masterOptions = useMasterOptions(), suiteTypes = masterOptions("TestSuiteType"), riskTiers = masterOptions("TestSuiteRiskTier");
   const [items, setItems] = useState<TestSuiteItem[]>([]),
@@ -54,6 +60,8 @@ export function TestSuitesPage({
     [suiteAiDrafts,setSuiteAiDrafts]=useState<GeneratedTestSuiteDraft[]>([]),[suiteAiExpanded,setSuiteAiExpanded]=useState<number|undefined>(undefined),
     [suiteAiCaseSearch,setSuiteAiCaseSearch]=useState(""),[suiteAiPriorityFilter,setSuiteAiPriorityFilter]=useState(""),[suiteAiTypeFilter,setSuiteAiTypeFilter]=useState("");
   const [suitePage, setSuitePage] = useState(1), [suitePageSize, setSuitePageSize] = useState(30);
+  // เลือกหลาย Suite เพื่อสร้าง Test Cycle พร้อมกัน — Release/Build/Environment เป็นของ Project จึงเลือกได้ทีละ Project
+  const [selectedSuiteIds, setSelectedSuiteIds] = useState<string[]>([]), [batchCycleOpen, setBatchCycleOpen] = useState(false);
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
     [formModuleId, setFormModuleId] = useState(""),
@@ -347,6 +355,29 @@ export function TestSuitesPage({
   const pagedSuiteRows = rows.slice((suitePage - 1) * suitePageSize, suitePage * suitePageSize);
   useEffect(() => { setSuitePage(1); }, [projectFilter, suiteModuleFilter, typeFilter, riskFilter, createdByFilter, activeFilter, noCycleOnly, search, suitePageSize]);
   useEffect(() => { if (suitePage > suitePageCount) setSuitePage(suitePageCount); }, [suitePage, suitePageCount]);
+  const selectableSuite = (x: TestSuiteItem) => canCreateCycle && x.isActive;
+  const selectedSuites = selectedSuiteIds.map((id) => items.find((x) => x.testSuiteId === id)).filter((x): x is TestSuiteItem => Boolean(x && x.isActive));
+  const selectedProjectId = selectedSuites[0]?.projectId;
+  const selectedProject = projects.find((x) => x.projectId === selectedProjectId);
+  const pageSelectable = pagedSuiteRows.filter((x) => selectableSuite(x) && (!selectedProjectId || x.projectId === selectedProjectId));
+  const pageProjects = new Set(pagedSuiteRows.filter(selectableSuite).map((x) => x.projectId));
+  // เลือกทั้งหน้าได้เมื่อแถวในหน้ามาจาก Project เดียว (หรือเลือก Project นั้นไว้แล้ว) — กันการผสม Suite ข้าม Project
+  const canSelectPage = pageSelectable.length > 0 && (selectedProjectId ? true : pageProjects.size === 1);
+  const pageAllSelected = pageSelectable.length > 0 && pageSelectable.every((x) => selectedSuiteIds.includes(x.testSuiteId));
+  const toggleSuite = (x: TestSuiteItem) => {
+    if (selectedSuiteIds.includes(x.testSuiteId)) { setSelectedSuiteIds((ids) => ids.filter((id) => id !== x.testSuiteId)); return; }
+    if (selectedProjectId && x.projectId !== selectedProjectId) {
+      notify(`เลือกได้เฉพาะ Suite ใน Project ${selectedProject?.projectCode ?? "เดียวกัน"} — Release/Build/Environment เป็นของแต่ละ Project`, "error");
+      return;
+    }
+    setSelectedSuiteIds((ids) => [...ids, x.testSuiteId]);
+  };
+  const togglePage = () => {
+    const ids = pageSelectable.map((x) => x.testSuiteId);
+    setSelectedSuiteIds((current) => pageAllSelected ? current.filter((id) => !ids.includes(id)) : [...new Set([...current, ...ids])]);
+  };
+  // เปลี่ยน Project ที่กรอง หรือ Suite ที่เลือกถูกปิดใช้งาน/ลบ → ตัดออกจากรายการที่เลือก
+  useEffect(() => { setSelectedSuiteIds((ids) => ids.filter((id) => items.some((x) => x.testSuiteId === id && x.isActive && (!projectFilter || x.projectId === projectFilter)))); }, [items, projectFilter]);
   // When editing, cases live against the already-saved suite (managing). When creating, there's no
   // suite yet — the project comes straight from the form, and picks are staged locally in `checked`
   // until the suite is actually created (then added in one batch right after).
@@ -400,10 +431,25 @@ export function TestSuitesPage({
             </div>
           </div>
         </div>
+        {canCreateCycle && selectedSuites.length > 0 && (
+          <div className="testcase-bulk-bar suite-bulk-bar" role="region" aria-label="Suite ที่เลือก">
+            <span className="bulk-count">เลือก {selectedSuites.length.toLocaleString()} Suite{selectedProject ? ` · ${selectedProject.projectCode}` : ""}</span>
+            <small className="suite-bulk-hint">{selectedSuites.reduce((sum, x) => sum + (x.cases?.length ?? x.caseCount ?? 0), 0).toLocaleString()} Test Case · สร้าง Suite ละ 1 Test Cycle</small>
+            <button className="btn primary" type="button" onClick={() => setBatchCycleOpen(true)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span> สร้าง Test Cycle ({selectedSuites.length})</button>
+            <button className="bulk-clear" type="button" onClick={() => setSelectedSuiteIds([])}>ยกเลิกเลือก</button>
+          </div>
+        )}
         <div className="table-wrap">
-          <table className="suite-table">
+          <table className={canCreateCycle ? "suite-table suite-table-selectable" : "suite-table"}>
             <thead>
               <tr>
+                {canCreateCycle && (
+                  <th className="select-col" data-label="เลือก">
+                    <input type="checkbox" checked={pageAllSelected} disabled={!canSelectPage} onChange={togglePage}
+                      aria-label={pageAllSelected ? "ยกเลิกเลือก Suite ทั้งหน้า" : "เลือก Suite ที่ใช้งานอยู่ทั้งหน้า"}
+                      title={canSelectPage ? undefined : "หน้านี้มี Suite หลาย Project — กรอง Project ก่อนจึงเลือกทั้งหน้าได้"} />
+                  </th>
+                )}
                 <th>Suite Code</th>
                 <th>Suite Name</th>
                 <th>Module</th>
@@ -416,7 +462,16 @@ export function TestSuitesPage({
             </thead>
             <tbody>
               {pagedSuiteRows.map((x) => (
-                <tr key={x.testSuiteId}>
+                <tr key={x.testSuiteId} className={selectedSuiteIds.includes(x.testSuiteId) ? "is-selected" : undefined}>
+                  {canCreateCycle && (
+                    <td className="select-col" data-label="เลือก">
+                      {selectableSuite(x) && (
+                        <input type="checkbox" checked={selectedSuiteIds.includes(x.testSuiteId)} onChange={() => toggleSuite(x)}
+                          disabled={!!selectedProjectId && x.projectId !== selectedProjectId}
+                          aria-label={`เลือก ${x.suiteCode} เพื่อสร้าง Test Cycle`} />
+                      )}
+                    </td>
+                  )}
                   <td data-label="Suite Code">
                     <button className="link-button" onClick={() => openSuiteDetail(x)}>{x.suiteCode}</button>
                     {x.suiteType && <small className="cell-sub">{x.suiteType}</small>}
@@ -500,6 +555,16 @@ export function TestSuitesPage({
           <button className="btn" disabled={suitePage >= suitePageCount} onClick={() => setSuitePage(page => page + 1)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
         </div>
       </article>
+      {batchCycleOpen && selectedProjectId && (
+        <BatchCycleModal
+          projectId={selectedProjectId}
+          projectCode={selectedProject?.projectCode}
+          suites={selectedSuites}
+          onClose={() => setBatchCycleOpen(false)}
+          onCreated={(ids) => { setSelectedSuiteIds((current) => current.filter((id) => !ids.includes(id))); setReload((x) => x + 1); }}
+          onOpenCycles={onOpenCycleList ? () => { setBatchCycleOpen(false); onOpenCycleList(); } : undefined}
+        />
+      )}
       {suiteAiModal&&<ModalShell labelledBy="suite-ai-title" dirty={suiteAiDrafts.length > 0} className="requirement-ai-modal suite-ai-modal" boxStyle={{position:"relative"}} onDismiss={() => { if (!suiteAiGenerating) setSuiteAiModal(false); }}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(suiteAiModules)}</select></label></div><div className="ai-draft-note"><span className="material-symbols-outlined" aria-hidden="true">info</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<><div className="suite-case-toolbar"><div className="suite-case-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input value={suiteAiCaseSearch} onChange={e=>setSuiteAiCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." /></div><select value={suiteAiPriorityFilter} onChange={e=>setSuiteAiPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(suiteAiModuleCases.map(x=>x.priority))].map(x=><option key={x}>{x}</option>)}</select><select value={suiteAiTypeFilter} onChange={e=>setSuiteAiTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(suiteAiModuleCases.map(x=>x.testType).filter(Boolean))].map(x=><option key={x} value={x}>{x}</option>)}</select></div><section className="suite-panel suite-ai-candidate-panel"><div className="suite-panel-head"><h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Test Case ที่ AI จะวิเคราะห์</h3><span className="suite-panel-count">{suiteAiCandidates.length}</span></div><div className="suite-panel-body">{suiteAiCandidates.length?suiteAiCandidates.map(x=><div className="suite-case" key={x.testCaseId}><span className="suite-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small></span><Badge tone={x.priority==="P0"||x.priority==="P1"?"red":"blue"}>{x.priority}</Badge></div>):<div className="suite-panel-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><p>ไม่พบ Test Case ที่ตรงกับตัวกรอง</p></div>}</div></section><div className="requirement-ai-actions"><small>{suiteAiModuleCases.length} Test Cases พร้อมวิเคราะห์{suiteAiCandidates.length!==suiteAiModuleCases.length?` (แสดง ${suiteAiCandidates.length} รายการตามตัวกรอง)`:""}</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div></>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</ModalShell>}
       {form && (
         <ModalShell className="suite-editor" onDismiss={() => setForm(false)}>

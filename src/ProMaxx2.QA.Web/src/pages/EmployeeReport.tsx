@@ -1,0 +1,206 @@
+import type { ReactNode } from "react";
+import { Badge } from "../components/Badge";
+import { formatThaiDateTime } from "../dateTime";
+import {
+  employmentStatusLabel, employmentStatusTone, evalStatus, fmtDate, metricGroups, passRate, recommendationLabel, roundText, workCategoryLabel,
+  type EmployeeReport,
+} from "./performanceUtils";
+import "./PerformanceReport.css";
+
+// สรุปผลงานพนักงานแบบหน้าเดียว — ใช้ทั้งแท็บ "สรุปผลงาน" ในแอปและหน้าแชร์ให้ HR (`/?p=`) จึงรับข้อมูลเป็น props อย่างเดียว ไม่เรียก API เอง
+// และต้องไม่แสดงอะไรที่ API ไม่ได้ส่งมา (ข้อสังเกตของหัวหน้า/ไฟล์แนบ/คะแนนร่างไม่อยู่ใน EmployeeReportDto ตั้งแต่ต้น)
+
+const kindLabel: Record<string, string> = { WorkLog: "บันทึกงาน", Highlight: "ผลงานเด่น" };
+
+/** อายุงานจากวันเริ่มงานถึงวันสิ้นสุดช่วงรายงาน เช่น "1 ปี 3 เดือน" */
+function tenure(hireDate?: string | null, until?: string): string | null {
+  if (!hireDate || !until) return null;
+  const [hy, hm, hd] = hireDate.slice(0, 10).split("-").map(Number);
+  const [uy, um, ud] = until.slice(0, 10).split("-").map(Number);
+  let months = (uy - hy) * 12 + (um - hm) - (ud < hd ? 1 : 0);
+  if (months < 0) return null;
+  const years = Math.floor(months / 12);
+  months %= 12;
+  if (!years && !months) return "ไม่ถึง 1 เดือน";
+  return [years ? `${years} ปี` : "", months ? `${months} เดือน` : ""].filter(Boolean).join(" ");
+}
+
+export function EmployeeReportView({ report, actions, banner }: { report: EmployeeReport; actions?: ReactNode; banner?: ReactNode }) {
+  const p = report.profile;
+  const m = report.metrics;
+  const highlights = report.workLogs.filter((x) => x.kind === "Highlight");
+  const otherLogs = report.workLogs.filter((x) => x.kind !== "Highlight");
+  const closedRounds = report.comparison?.rounds ?? [];
+  const probationPct = p.probationDay != null ? Math.min(100, (p.probationDay / p.probationTotalDays) * 100) : null;
+  const detailGroups = metricGroups(m).filter((g) => g.title === "การทดสอบ" || g.title === "งาน CRM" || g.items.some(([, value]) => {
+    const text = String(value).trim();
+    return text !== "0" && text !== "0 / 0" && text !== "-" && text !== "ยังไม่ได้ผูก";
+  }));
+  const kpis: { icon: string; label: string; value: string; note?: string }[] = [
+    { icon: "play_circle", label: "Execution", value: m.executions.toLocaleString("th-TH"), note: `Pass rate ${passRate(m)}` },
+    { icon: "bug_report", label: "Defect ที่แจ้ง", value: m.defectsReported.toLocaleString("th-TH"), note: `Critical/High ${m.defectsCritical + m.defectsHigh}` },
+    { icon: "fact_check", label: "Test Case ที่สร้าง", value: m.testCasesCreated.toLocaleString("th-TH"), note: `แก้ไข ${m.testCaseRevisions.toLocaleString("th-TH")} ครั้ง` },
+    { icon: "support_agent", label: "CRM Ticket ที่ดูแล", value: m.hasCrmAccount ? m.crmTicketsHandled.toLocaleString("th-TH") : "-", note: m.hasCrmAccount ? `ปิดงาน ${m.crmClosed.toLocaleString("th-TH")}` : "ยังไม่ได้ผูกบัญชี CRM" },
+    { icon: "star", label: "ผลงานเด่น", value: m.highlights.toLocaleString("th-TH"), note: `บันทึกงาน ${m.workLogs.toLocaleString("th-TH")} รายการ` },
+  ];
+
+  return (
+    <article className="perf-report" aria-labelledby="perf-report-title">
+      {banner}
+      <section className="content-card perf-report-head">
+        <div className="perf-report-title">
+          <span className="perf-avatar large" aria-hidden="true">{p.displayName.slice(0, 1).toUpperCase()}</span>
+          <div>
+            <span className="perf-report-eyebrow">สรุปผลงานพนักงาน</span>
+            <h2 id="perf-report-title">{p.displayName}</h2>
+            <p>{[p.position, p.level].filter(Boolean).join(" · ") || "ยังไม่ได้ระบุตำแหน่ง"}</p>
+          </div>
+          {actions && <div className="perf-report-actions perf-noprint">{actions}</div>}
+        </div>
+        <dl className="perf-report-meta">
+          <div><dt>รหัสพนักงาน</dt><dd>{p.employeeCode || "-"}</dd></div>
+          <div><dt>สถานะ</dt><dd><Badge tone={employmentStatusTone[p.employmentStatus] ?? "gray"}>{employmentStatusLabel[p.employmentStatus] ?? p.employmentStatus}</Badge></dd></div>
+          <div><dt>หัวหน้า (ผู้ประเมิน)</dt><dd>{p.supervisorName || "-"}</dd></div>
+          <div><dt>วันเริ่มงาน</dt><dd>{fmtDate(p.hireDate)}{tenure(p.hireDate, report.to) && <small> · อายุงาน {tenure(p.hireDate, report.to)}</small>}</dd></div>
+          <div><dt>ช่วงข้อมูลผลงาน</dt><dd>{fmtDate(report.from)} – {fmtDate(report.to)}</dd></div>
+          <div><dt>ข้อมูล ณ</dt><dd>{formatThaiDateTime(report.generatedAt, { dateStyle: "medium", timeStyle: "short" })}</dd></div>
+        </dl>
+        {probationPct != null && (
+          <div className="perf-report-probation">
+            <div className="perf-report-probation-head"><b>ช่วงทดลองงาน</b><span>วันที่ {p.probationDay} จาก {p.probationTotalDays} · สิ้นสุด {fmtDate(p.probationEndDate)}</span></div>
+            <div className="perf-report-track" role="progressbar" aria-valuemin={1} aria-valuemax={p.probationTotalDays} aria-valuenow={Math.min(p.probationDay!, p.probationTotalDays)} aria-label={`ทดลองงานวันที่ ${p.probationDay} จาก ${p.probationTotalDays}`}>
+              <span style={{ width: `${probationPct}%` }} />
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="perf-report-kpis" aria-label="ตัวเลขสำคัญ">
+        {kpis.map((k) => (
+          <div key={k.label} className="perf-report-kpi" data-perf-category={k.icon}>
+            <span className="material-symbols-outlined" aria-hidden="true">{k.icon}</span>
+            <div><small>{k.label}</small><b>{k.value}</b>{k.note && <span>{k.note}</span>}</div>
+          </div>
+        ))}
+      </section>
+
+      <section className="perf-report-detail-block" aria-labelledby="perf-report-details-title">
+        <div className="perf-report-detail-head">
+          <div><span className="material-symbols-outlined" aria-hidden="true">view_quilt</span><span><b id="perf-report-details-title">รายละเอียดผลงาน</b><small>เลือกหัวข้อเพื่อเปิดดูตัวเลขเพิ่มเติม · ข้อมูลชุดเดียวกับ KPI ด้านบน</small></span></div>
+          <span>{detailGroups.length} กลุ่มข้อมูล</span>
+        </div>
+        <div className="perf-report-metric-groups">
+          {detailGroups.map((g, index) => <ReportMetricGroup key={g.icon} icon={g.icon} title={g.title} items={g.items} defaultOpen={index === 0 || (g.title === "บันทึกงานเพิ่มเติม" && m.workLogs + m.highlights > 0)} />)}
+        </div>
+      </section>
+
+      {report.weekly.length > 0 && (
+        <section className="content-card perf-report-section">
+          <h3><span className="material-symbols-outlined" aria-hidden="true">insights</span>แนวโน้มรายสัปดาห์</h3>
+          <div className="table-wrap">
+            <table className="table-cards perf-report-table">
+              <thead><tr><th>สัปดาห์ที่เริ่ม</th><th className="num">Execution</th><th className="num">Defect ที่แจ้ง</th><th className="num">Test Case ที่สร้าง</th></tr></thead>
+              <tbody>
+                {report.weekly.map((w) => (
+                  <tr key={w.weekStart}><td>{fmtDate(w.weekStart)}</td><td className="num">{w.executions.toLocaleString("th-TH")}</td><td className="num">{w.defects.toLocaleString("th-TH")}</td><td className="num">{w.testCases.toLocaleString("th-TH")}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {report.includesWorkLogs && (
+        <section className="content-card perf-report-section">
+          <h3><span className="material-symbols-outlined" aria-hidden="true">edit_note</span>ผลงานเด่นและบันทึกงาน<small>{report.workLogs.length.toLocaleString("th-TH")} รายการ</small></h3>
+          {report.workLogs.length === 0 ? (
+            <p className="perf-report-empty">ไม่มีบันทึกงานหรือผลงานเด่นในช่วงนี้</p>
+          ) : (
+            <ul className="perf-report-logs">
+              {[...highlights, ...otherLogs].map((x, i) => (
+                <li key={`${x.workDate}-${i}`} className={x.kind === "Highlight" ? "highlight" : ""}>
+                  <div className="perf-report-log-head">
+                    <Badge tone={x.kind === "Highlight" ? "green" : "blue"}>{kindLabel[x.kind] ?? x.kind}</Badge>
+                    <b>{x.title}</b>
+                  </div>
+                  <small>{fmtDate(x.workDate)} · {workCategoryLabel[x.category] ?? x.category}{x.effortHours != null && ` · ${x.effortHours.toLocaleString("th-TH")} ชม.`}{x.projectName && ` · ${x.projectName}`}</small>
+                  {x.description && <p>{x.description}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {report.includesEvaluations && (
+        <section className="content-card perf-report-section">
+          <h3><span className="material-symbols-outlined" aria-hidden="true">rate_review</span>ผลการประเมิน<small>ทุกรอบ ไม่จำกัดตามช่วงข้อมูลผลงาน</small></h3>
+          {report.evaluations.length === 0 ? (
+            <p className="perf-report-empty">ยังไม่มีรอบการประเมิน</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="table-cards perf-report-table">
+                <thead><tr><th>รอบ</th><th>ช่วงประเมิน</th><th>สถานะ</th><th>ผลรวม</th><th>ผลทดลองงาน</th><th>ผู้ประเมิน</th></tr></thead>
+                <tbody>
+                  {report.evaluations.map((x) => (
+                    <tr key={`${x.round}-${x.year}-${x.periodStart}`}>
+                      <td><b>{roundText(x)}</b></td>
+                      <td>{fmtDate(x.periodStart)} – {fmtDate(x.periodEnd)}</td>
+                      <td><Badge tone={evalStatus[x.status]?.tone ?? "gray"}>{evalStatus[x.status]?.label ?? x.status}</Badge>{x.isOverdue && <small className="perf-overdue perf-sub">เลยกำหนด {fmtDate(x.dueDate)}</small>}</td>
+                      <td>{x.grade ? <span className="perf-report-grade"><b>{x.grade}</b>{x.overallScore != null && <span>{x.overallScore.toFixed(2)} / 5</span>}</span> : <span className="perf-sub">ยังไม่ปิดรอบ</span>}</td>
+                      <td>{x.recommendation ? <Badge tone={x.recommendation === "Pass" ? "green" : x.recommendation === "Extend" ? "yellow" : "red"}>{recommendationLabel[x.recommendation] ?? x.recommendation}</Badge> : "-"}</td>
+                      <td>{x.evaluatorName ?? "-"}{x.completedAt && <small className="perf-sub">ส่งผล {formatThaiDateTime(x.completedAt, { dateStyle: "medium" })}</small>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {closedRounds.length > 0 && report.comparison && (
+            <>
+              <h4>คะแนนหัวหน้ารายกลุ่มเกณฑ์ (รอบที่ปิดแล้ว ล่าสุด {closedRounds.length} รอบ)</h4>
+              <div className="table-wrap">
+                <table className="table-cards perf-report-table">
+                  <thead><tr><th>กลุ่มเกณฑ์</th>{closedRounds.map((r) => <th key={r.evaluationId} className="num">{roundText(r)}</th>)}</tr></thead>
+                  <tbody>
+                    <tr className="perf-report-total"><td><b>คะแนนรวม</b></td>{closedRounds.map((r) => <td key={r.evaluationId} className="num"><b>{r.overallScore.toFixed(2)}</b> ({r.grade})</td>)}</tr>
+                    {report.comparison.groups.map((g) => (
+                      <tr key={g}><td>{g}</td>{closedRounds.map((r) => { const v = r.groups.find((x) => x.group === g)?.score; return <td key={r.evaluationId} className="num">{v != null ? v.toFixed(2) : "-"}</td>; })}</tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      <p className="perf-hint perf-report-note">
+        ตัวเลขนับจากข้อมูลในระบบ QA Hub ช่วง {fmtDate(report.from)} – {fmtDate(report.to)} ใช้เป็นหลักฐานประกอบการประเมิน ไม่ใช่คะแนน เพราะงานแต่ละชิ้นยากง่ายไม่เท่ากัน
+        · งาน CRM นับจากข้อมูลที่ QA Hub ดึงจาก CRM ทุก 15 นาที · คะแนนการประเมินแสดงเฉพาะรอบที่หัวหน้าส่งผลแล้ว (1–5 ถ่วงน้ำหนัก; เกรด A ≥ 4.5, B ≥ 3.5, C ≥ 2.5, D ≥ 1.5)
+      </p>
+    </article>
+  );
+}
+
+function ReportMetricGroup({ icon, title, items, defaultOpen }: { icon: string; title: string; items: [string, number | string][]; defaultOpen: boolean }) {
+  const activeCount = items.filter(([, value]) => {
+    const text = String(value).trim();
+    return text !== "0" && text !== "0 / 0" && text !== "-" && text !== "ยังไม่ได้ผูก";
+  }).length;
+  const summary = activeCount > 0 ? `${activeCount} ตัวชี้วัดมีข้อมูล` : "ยังไม่มีรายการเคลื่อนไหว";
+
+  return (
+    <details className="perf-report-metric-group" data-perf-category={icon} open={defaultOpen}>
+      <summary>
+        <span className="perf-report-metric-title"><span className="material-symbols-outlined" aria-hidden="true">{icon}</span><span><b>{title}</b><small>{summary}</small></span></span>
+        <span className="perf-report-metric-toggle"><span>{items.length} ค่า</span><span className="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+      </summary>
+      <dl>
+        {items.map(([label, value]) => (
+          <div key={label}><dt>{label}</dt><dd>{typeof value === "number" ? value.toLocaleString("th-TH") : value}</dd></div>
+        ))}
+      </dl>
+    </details>
+  );
+}

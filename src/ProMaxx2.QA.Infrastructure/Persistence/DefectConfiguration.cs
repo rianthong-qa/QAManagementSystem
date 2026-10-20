@@ -36,6 +36,8 @@ public sealed class DefectConfiguration : IEntityTypeConfiguration<Defect>
         b.HasOne<ProductModule>().WithMany().HasForeignKey(x => x.ModuleId).OnDelete(DeleteBehavior.Restrict);
         // รายการ Defect กรองตาม Project + IsDeleted แล้วเรียงตาม CreatedAt เสมอ (List/Stats)
         b.HasIndex(x => new { x.ProjectId, x.IsDeleted, x.CreatedAt });
+        // หน้าผลงานรายคนนับ Defect ที่แต่ละคนแจ้งในช่วงวันที่
+        b.HasIndex(x => new { x.CreatedBy, x.CreatedAt });
     }
 }
 

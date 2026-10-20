@@ -27,7 +27,7 @@ public sealed record CrmFlowHistoryItem(
 /// </summary>
 public sealed class CrmFlowTrackingService(QaDbContext db)
 {
-    private const string EntityType = "CrmTicketFlow";
+    internal const string EntityType = "CrmTicketFlow";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task RecordSnapshotsAsync(Guid userId, IEnumerable<CrmTicketListItem> tickets, CancellationToken ct)
@@ -150,7 +150,7 @@ public sealed class CrmFlowTrackingService(QaDbContext db)
     }
 
     // CRM sends staff either as a bare code ("6101") or "ชื่อ นามสกุล (6101)".
-    private static bool SameStaff(string? left, string? right)
+    internal static bool SameStaff(string? left, string? right)
     {
         static string? Code(string? value)
         {
@@ -170,7 +170,7 @@ public sealed class CrmFlowTrackingService(QaDbContext db)
         Normalize(item.Assignee),
         NormalizeDeveloper(item.Developer));
 
-    private static CrmFlowState? Deserialize(string? json)
+    internal static CrmFlowState? Deserialize(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<CrmFlowState>(json, JsonOptions); }

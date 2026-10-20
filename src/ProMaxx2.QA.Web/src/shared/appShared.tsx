@@ -7,6 +7,7 @@ import { toUtcDate } from "../dateTime";
 export type Page =
   | "dashboard"
   | "my-work"
+  | "performance"
   | "projects"
   | "releases"
   | "requirements"
@@ -133,6 +134,7 @@ export const nav: {
     items: [
       { id: "dashboard", icon: "dashboard", label: "Dashboard" },
       { id: "my-work", icon: "assignment_ind", label: "My Work" },
+      { id: "performance", icon: "workspace_premium", label: "ผลงานและการประเมิน" },
       { id: "projects", icon: "account_tree", label: "Project / Module" },
       { id: "releases", icon: "inventory_2", label: "Release / Build" },
     ],
@@ -266,6 +268,8 @@ export type TestSuiteItem = {
   riskTier?: string;
   isActive: boolean;
   cycleCount: number;
+  /** จาก API รายการ (`GET /test-suites`) — รายการไม่มี `cases` ต้องโหลด `GET /test-suites/{id}` ถ้าต้องการรายละเอียด */
+  caseCount?: number;
   createdBy?: string;
   createdByName?: string;
   createdAt?: string;

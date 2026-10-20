@@ -217,7 +217,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     // อัปเดต Ticket จากหน้า CRM ของ QA Hub (ไม่ต้องผูก Defect): เพิ่มประวัติการติดต่อ / เปลี่ยนสถานะ / ส่งกลับเจ้าของเรื่อง
     // ใน PUT เดียว — ฟอร์ม Update ของ CRM บันทึก Description ที่ส่งไปเป็น "แถวใหม่ในประวัติการติดต่อ" (ยืนยันกับผู้ใช้
     // 2026-10-03) จึงส่งเฉพาะข้อความใหม่ ไม่ต่อท้าย Description เดิม (แบบเดียวกับ AppendCommentAsync)
-    public async Task<CrmTicketMutationResult> UpdateTicketAsync(Guid actingUserId, string jobNo, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, CancellationToken ct, string? requestedServiceTypeId = null, string? requestedProductId = null, IReadOnlyList<CrmAttachment>? attachments = null)
+    public async Task<CrmTicketMutationResult> UpdateTicketAsync(Guid actingUserId, string jobNo, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, CancellationToken ct, string? requestedServiceTypeId = null, string? requestedProductId = null, IReadOnlyList<CrmAttachment>? attachments = null, string? requestedSubject = null)
     {
         var (cfg, _) = await crmConfig.GetRuntimeAsync(actingUserId, ct);
         var job = await crmApi.GetJobDetailAsync(actingUserId, jobNo, "HD", ct);
@@ -232,7 +232,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
                     .FirstOrDefault(x => string.Equals(x.StaffCode, recipientCode, StringComparison.OrdinalIgnoreCase))?.Email;
             }
         }
-        var payload = BuildTicketUpdatePayload(job, jobNo, cfg.Username, message, requestedStatus, assignToStaffCode, assignToOwner, actorDisplayName, DateTime.UtcNow.AddHours(7), requestedServiceTypeId, requestedProductId, closeNotificationEmail, attachments?.Count ?? 0);
+        var payload = BuildTicketUpdatePayload(job, jobNo, cfg.Username, message, requestedStatus, assignToStaffCode, assignToOwner, actorDisplayName, DateTime.UtcNow.AddHours(7), requestedServiceTypeId, requestedProductId, closeNotificationEmail, attachments?.Count ?? 0, requestedSubject);
         try
         {
             await crmApi.UpdateSupportJobAsync(actingUserId, payload, attachments ?? [], ct);
@@ -244,7 +244,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
                 string.Join(",", job.ValueKind == JsonValueKind.Object ? job.EnumerateObject().Select(x => x.Name) : []));
             throw;
         }
-        return new(CrmTicketListParser.NormalizeStatus(payload.Status) ?? payload.Status, payload.Assignto);
+        return new(CrmTicketListParser.NormalizeStatus(payload.Status) ?? payload.Status, payload.Assignto, payload.Subject);
     }
 
     /// <summary>
@@ -252,7 +252,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     /// OwnerSubjectId (เหมือน checkbox "to เจ้าของเรื่อง" ของ CRM จึงไม่แตะ SysDevelop); เลือก Dev คนอื่น = Assignto/SysDevelop
     /// ← รหัสนั้นตาม convention ของ SendAsync; ไม่มีข้อความแต่มีการเปลี่ยนแปลง จะเขียนบันทึกสั้น ๆ แทนเพื่อให้มีร่องรอยในประวัติ
     /// </summary>
-    public static CrmUpdateJobPayload BuildTicketUpdatePayload(JsonElement job, string jobNo, string username, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, DateTime nowThai, string? requestedServiceTypeId = null, string? requestedProductId = null, string? closeNotificationEmail = null, int attachmentCount = 0)
+    public static CrmUpdateJobPayload BuildTicketUpdatePayload(JsonElement job, string jobNo, string username, string? message, string? requestedStatus, string? assignToStaffCode, bool assignToOwner, string actorDisplayName, DateTime nowThai, string? requestedServiceTypeId = null, string? requestedProductId = null, string? closeNotificationEmail = null, int attachmentCount = 0, string? requestedSubject = null)
     {
         var currentStatus = CrmApiClient.GetFieldAsString(job, "status");
         var currentAssignee = CrmApiClient.GetFieldAsString(job, "assignto", "assignTo", "assigneeCode");
@@ -261,6 +261,8 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         var status = string.IsNullOrWhiteSpace(requestedStatus) ? currentStatus : requestedStatus.Trim();
         var serviceType = string.IsNullOrWhiteSpace(requestedServiceTypeId) ? currentServiceType : requestedServiceTypeId.Trim();
         var productId = string.IsNullOrWhiteSpace(requestedProductId) ? currentProductId : requestedProductId.Trim();
+        var currentSubject = CrmApiClient.GetFieldAsString(job, "subject");
+        var subject = string.IsNullOrWhiteSpace(requestedSubject) ? currentSubject : requestedSubject.Trim();
         var assignee = currentAssignee;
         var sysDevelop = CrmApiClient.GetFieldAsString(job, "sysDevelop");
         if (assignToOwner)
@@ -282,6 +284,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         if (!string.Equals(currentServiceType, serviceType, StringComparison.OrdinalIgnoreCase)) changes.Add($"Service {currentServiceType} → {serviceType}");
         if (!string.Equals(currentProductId, productId, StringComparison.OrdinalIgnoreCase)) changes.Add($"Product {currentProductId} → {productId}");
         if (!string.Equals(currentAssignee, assignee, StringComparison.OrdinalIgnoreCase)) changes.Add(assignToOwner ? $"ส่งกลับเจ้าของเรื่อง ({assignee})" : $"ผู้รับผิดชอบ → {assignee}");
+        if (!string.Equals(currentSubject, subject, StringComparison.Ordinal)) changes.Add($"ชื่อเรื่อง → {subject}");
         if (attachmentCount > 0) changes.Add($"แนบไฟล์ {attachmentCount} รายการ");
         var text = message?.Trim() ?? "";
         if (text.Length == 0)
@@ -290,13 +293,13 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
             text = BuildReplyNote(actorDisplayName, nowThai, string.Join(", ", changes));
         }
         if (text.Length > CrmDescriptionMaxLength) text = text[..CrmDescriptionMaxLength];
-        return BuildUpdatePayload(job, jobNo, username, status, serviceType, productId, assignee, text, sysDevelop, closeNotificationEmail);
+        return BuildUpdatePayload(job, jobNo, username, status, serviceType, productId, assignee, text, sysDevelop, closeNotificationEmail, subject);
     }
 
     // CRM's native Close flow requires the notification metadata below even when the QA Hub message is generated automatically.
-    private static CrmUpdateJobPayload BuildUpdatePayload(JsonElement job, string ticketId, string username, string status, string serviceType, string productId, string assignee, string description, string sysDevelop, string? closeNotificationEmail = null) => new(
+    private static CrmUpdateJobPayload BuildUpdatePayload(JsonElement job, string ticketId, string username, string status, string serviceType, string productId, string assignee, string description, string sysDevelop, string? closeNotificationEmail = null, string? subject = null) => new(
         JobNo: ticketId,
-        Subject: CrmApiClient.GetFieldAsString(job, "subject"),
+        Subject: subject ?? CrmApiClient.GetFieldAsString(job, "subject"),
         Member: CrmApiClient.GetFieldAsString(job, "member"),
         SysCustomerType: CrmApiClient.GetFieldAsString(job, "sysCustomerType"),
         FName: CrmApiClient.GetFieldAsString(job, "fname"),
@@ -399,7 +402,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     }
 }
 
-public sealed record CrmTicketMutationResult(string Status, string Assignee);
+public sealed record CrmTicketMutationResult(string Status, string Assignee, string? Subject = null);
 
 public sealed record CrmNewTicketInput(
     string Subject, string Description, string ServiceTypeId, string ProductId,

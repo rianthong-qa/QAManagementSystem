@@ -2528,6 +2528,13 @@ button.icon-button:hover {
 
 .required { color: var(--red); }
 
+/* label ในฟอร์มเป็น flex แนวตั้ง — ข้อความกับเครื่องหมาย * จึงถูกแยกเป็นคนละแถว ทำให้ field ที่บังคับสูงกว่า field อื่นและช่องกรอกในแถวเดียวกันไม่ตรงกัน
+   ให้ชื่อ field + * อยู่บรรทัดเดียวกัน แล้วช่องกรอก/คำอธิบายขึ้นบรรทัดใหม่เต็มความกว้าง (§7) */
+.form-grid label:has(> .required, > .required-mark) { flex-flow: row wrap; align-items: baseline; column-gap: 4px; }
+.form-grid label:has(> .required, > .required-mark) > :not(.required):not(.required-mark) { flex: 1 0 100%; min-width: 0; }
+/* คำอธิบายใต้ช่องกรอกไม่ควรรับตัวหนาของ label */
+.form-grid label > small:not([class]) { font-size: 12px; font-weight: 400; color: var(--muted); }
+
 .form-grid input,
 .form-grid select,
 .form-grid textarea {
@@ -2962,7 +2969,14 @@ input[type="radio"] {
 .cycle-modal { width: min(900px, calc(100vw - 32px)); max-width: 900px; }
 .modal-box.cycle-modal:not(.cycle-detail-modal) { width: min(1200px, calc(100vw - 32px)) !important; max-width: 1200px !important; }
 .modal-box.cycle-modal:not(.cycle-detail-modal) .modal-head { margin-bottom: 16px; }
-.cycle-form-columns { display: grid; grid-template-columns: 1fr 1fr; column-gap: 22px; align-items: start; }
+/* minmax(0, 1fr) — ให้ 2 คอลัมน์กว้างเท่ากันเสมอ; 1fr เฉย ๆ ยอมให้ select ที่มีตัวเลือกยาว (ชื่อ Test Suite) ดันคอลัมน์ซ้ายกว้างขึ้น */
+.cycle-form-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 22px; align-items: start; }
+.cycle-form-columns .modal-section,
+.cycle-form-columns .form-grid > *,
+.cycle-form-columns .form-row > * { min-width: 0; }
+.cycle-form-columns select,
+.cycle-form-columns input,
+.cycle-form-columns textarea { width: 100%; min-width: 0; max-width: 100%; }
 .cycle-form-columns .modal-section { margin-bottom: 0; }
 .cycle-form-columns .modal-section:last-child { padding-left: 22px; border-left: 1px solid var(--line); }
 .cycle-detail-modal { width: min(1080px, calc(100vw - 32px)) !important; max-width: 1080px !important; max-height: calc(100dvh - 32px); padding: 0 22px 20px; overflow-x: hidden; }
@@ -3262,7 +3276,7 @@ td.actions-col .row-actions { justify-content: center; }
   .cycle-detail-timeline i { width: 2px; height: 16px; margin-left: 13px; background: repeating-linear-gradient(180deg,#b8c8ed 0 5px,transparent 5px 9px); }
   .cycle-detail-timeline i::after { content: "arrow_downward"; top: auto; bottom: -8px; right: auto; left: 50%; transform: translateX(-50%); }
   .form-grid-2col { grid-template-columns: 1fr; }
-  .cycle-form-columns { grid-template-columns: 1fr; row-gap: 16px; }
+  .cycle-form-columns { grid-template-columns: minmax(0, 1fr); row-gap: 16px; }
   .cycle-form-columns .modal-section:last-child { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); padding-top: 16px; }
   .suite-columns { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
   .suite-detail-cases { max-height: none; overflow: visible; padding-right: 0; }
@@ -3814,16 +3828,22 @@ input, select, textarea { max-width: 100%; }
 .app-dialog-message { margin: 14px 0; white-space: pre-line; overflow-wrap: anywhere; line-height: 1.6; color: var(--text); }
 .app-dialog input, .app-dialog textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: inherit; font-weight: 400; }
 .app-dialog input:focus-visible, .app-dialog textarea:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); border-color: var(--primary); }
-.app-toasts { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: grid; gap: 8px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
-.app-toast { pointer-events: auto; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 12px 12px 12px 14px; border-radius: 12px; background: var(--card, #fff); border: 1px solid var(--line); border-left: 4px solid var(--info, var(--primary)); box-shadow: 0 8px 24px rgba(16, 24, 40, .14); font-size: 14px; }
-.app-toast.success { border-left-color: var(--green); }
-.app-toast.success > .material-symbols-outlined { color: var(--green); }
-.app-toast.error { border-left-color: var(--red); }
-.app-toast.error > .material-symbols-outlined { color: var(--red); }
-.app-toast.info > .material-symbols-outlined { color: var(--info, var(--primary)); }
-.app-toast-text { white-space: pre-line; overflow-wrap: anywhere; }
-.app-toast button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0; line-height: 1; }
-@media (max-width: 760px) { .app-toasts { left: 16px; right: 16px; width: auto; } }
+.app-toasts { position: fixed; top: 80px; left: 50%; z-index: 200; display: grid; gap: 8px; width: min(440px, calc(100vw - 32px)); transform: translateX(-50%); pointer-events: none; }
+.app-toast { --toast-accent: var(--info); pointer-events: auto; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 12px 10px 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--toast-accent) 9%, var(--card)); border: 1px solid color-mix(in srgb, var(--toast-accent) 35%, var(--card)); border-left: 5px solid var(--toast-accent); box-shadow: 0 12px 32px rgba(16, 24, 40, .2); color: var(--text); font-size: 14px; font-weight: 500; animation: appToastEnter .22s ease-out; }
+.app-toast.success { --toast-accent: var(--green); }
+.app-toast.error { --toast-accent: var(--red); }
+.app-toast > .material-symbols-outlined { color: var(--toast-accent); font-size: 22px; }
+.app-toast-text { align-self: center; white-space: pre-line; overflow-wrap: anywhere; line-height: 1.5; }
+.app-toast button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; padding: 0; line-height: 1; }
+.app-toast button:hover { background: color-mix(in srgb, var(--toast-accent) 14%, transparent); color: var(--text); }
+.app-toast button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); }
+@keyframes appToastEnter { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .app-toast { animation: none; } }
+@media (max-width: 760px) { .app-toasts { top: calc(72px + env(safe-area-inset-top, 0px)); } .app-toast button { width: 36px; height: 36px; } }
+/* CopyButton: ยืนยันการคัดลอกบนตัวปุ่ม แทน toast */
+.copy-button.copied, .copy-button.copied:hover { border-color: color-mix(in srgb, var(--green) 45%, var(--card)); background: color-mix(in srgb, var(--green) 12%, var(--card)); color: color-mix(in srgb, var(--green) 80%, var(--text)); }
+.copy-button.copied > .material-symbols-outlined { color: var(--green); }
+.copy-button-status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* UI รอบ 5: ตารางแบบ card บน Mobile — ใส่ class `table-cards` ที่ <table>; data-label ของแต่ละ cell เติมอัตโนมัติจาก <th>
    (src/components/tableCardLabels.ts) ห้ามทำให้เกิด horizontal scroll ระดับหน้า */

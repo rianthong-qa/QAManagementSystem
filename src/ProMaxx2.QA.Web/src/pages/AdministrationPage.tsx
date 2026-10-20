@@ -271,6 +271,7 @@ export function AdministrationPage({ refresh, allProjects }: { refresh: number; 
   const areaMenuMap: Record<string, { group: string; icon: string }> = {
     DASHBOARD: { group: "ภาพรวม", icon: "D" },
     MYWORK: { group: "ภาพรวม", icon: "MW" },
+    PERFORMANCE: { group: "ภาพรวม", icon: "PF" },
     WORKLOAD: { group: "ภาพรวม", icon: "WL" },
     PROJECT: { group: "ภาพรวม", icon: "P" },
     REQUIREMENT: { group: "REQUIREMENT & TEST DESIGN", icon: "REQ" },
@@ -282,6 +283,7 @@ export function AdministrationPage({ refresh, allProjects }: { refresh: number; 
     DEFECT: { group: "TEST EXECUTION", icon: "DEF" },
     REGRESSION: { group: "TEST EXECUTION", icon: "REG" },
     AUTOMATION: { group: "TEST EXECUTION", icon: "AUT" },
+    CRM: { group: "TEST EXECUTION", icon: "CRM" },
     REPORT: { group: "RELEASE GOVERNANCE", icon: "SUM" },
     RISK: { group: "RELEASE GOVERNANCE", icon: "RISK" },
     RELEASE: { group: "RELEASE GOVERNANCE", icon: "REL" },
@@ -295,9 +297,9 @@ export function AdministrationPage({ refresh, allProjects }: { refresh: number; 
   const grouped = menuGroupOrder.map((group) => ({ group, icon: Object.values(areaMenuMap).find((v) => v.group === group)?.icon ?? "…", items: visiblePermissions.filter((p) => { const area = p.moduleArea || "OTHER"; return (areaMenuMap[area]?.group ?? "Other") === group; }) })).filter((g) => g.items.length > 0 || g.group !== "Other");
   // Same groups/items/order as the `nav` sidebar menu, so "Menu" rows here match what users see on the left.
   const menuTree = [
-    ["ภาพรวม", [["Dashboard", "DASHBOARD"], ["My Work", "MYWORK"], ["Project / Module", "PROJECT"], ["Release / Build", "PROJECT"]]],
+    ["ภาพรวม", [["Dashboard", "DASHBOARD"], ["My Work", "MYWORK"], ["ผลงานและการประเมิน", "PERFORMANCE"], ["Project / Module", "PROJECT"], ["Release / Build", "PROJECT"]]],
     ["REQUIREMENT & TEST DESIGN", [["Requirement", "REQUIREMENT"], ["RTM", "RTM"], ["Test Case", "TESTCASE"], ["Test Suite", "TESTSUITE"]]],
-    ["TEST EXECUTION", [["Test Cycle", "TESTCYCLE"], ["Execution Workspace", "EXECUTION"], ["Defect", "DEFECT"], ["Regression", "REGRESSION"], ["Automation", "AUTOMATION"]]],
+    ["TEST EXECUTION", [["Test Cycle", "TESTCYCLE"], ["Execution Workspace", "EXECUTION"], ["Defect", "DEFECT"], ["Regression", "REGRESSION"], ["Automation", "AUTOMATION"], ["CRM", "CRM"]]],
     ["RELEASE GOVERNANCE", [["Test Summary", "REPORT"], ["Risk Acceptance", "RISK"], ["Release Sign-off", "RELEASE"]]],
     ["ADMINISTRATION", [["User / Role", "ADMIN"], ["Setting Center", "SETTING"], ["System Monitor", "MONITOR"], ["Audit Log", "AUDIT"]]],
   ] as const;
@@ -650,7 +652,7 @@ export function AdministrationPage({ refresh, allProjects }: { refresh: number; 
         <div className="permission-matrix-wrap">
           <table className="permission-matrix">
             <thead><tr><th>Menu</th><th>Create</th><th>Delete</th><th>Edit</th><th>View only</th></tr></thead>
-            <tbody>{matrixGroups.map((g) => <_F key={g.group}><tr className="permission-menu-group"><th colSpan={5}>{g.group}</th></tr>{g.areas.map((row) => <tr key={row.area}><td className="permission-submenu">{row.label}</td>{["CREATE", "DELETE", "EDIT", "VIEW"].map((action) => { const permission = matrixPermission(row.items, action); return <td key={action}><input type="checkbox" aria-label={`${row.label} ${action}`} checked={permission ? selected.includes(permission.permissionId) : false} onChange={(e) => permission && togglePermission(permission.permissionId, e.target.checked)} /></td>; })}</tr>)}</_F>)}</tbody>
+            <tbody>{matrixGroups.map((g) => <_F key={g.group}><tr className="permission-menu-group"><th colSpan={5}>{g.group}</th></tr>{g.areas.map((row) => <tr key={row.area}><td className="permission-submenu">{row.label}</td>{["CREATE", "DELETE", "EDIT", "VIEW"].map((action) => { const permission = matrixPermission(row.items, action); return <td key={action}>{permission ? <input type="checkbox" aria-label={`${row.label} ${action}`} checked={selected.includes(permission.permissionId)} onChange={(e) => togglePermission(permission.permissionId, e.target.checked)} /> : <span className="permission-unavailable" title={`เมนู ${row.label} ไม่มีสิทธิ์ ${action}`} aria-label={`${row.label} ${action}: ไม่ใช้กับเมนูนี้`}>–</span>}</td>; })}</tr>)}</_F>)}</tbody>
           </table>
         </div>
         {extraGroups.length > 0 && <h3 className="permission-extra-title">สิทธิ์เพิ่มเติม <small>อนุมัติ, Sign-off, Export, Execute และสิทธิ์เฉพาะอื่นที่ตารางด้านบนไม่ครอบคลุม</small></h3>}

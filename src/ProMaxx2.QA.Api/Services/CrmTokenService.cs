@@ -154,6 +154,26 @@ public sealed class CrmTokenService
         throw new CrmIntegrationException($"CRM / BlueID ไม่พร้อมใช้งานชั่วคราว (เชื่อมต่อเซิร์ฟเวอร์ login ไม่ได้) — ระบบจะลองเชื่อมต่อใหม่หลัง {retryAt} น.", HttpStatusCode.ServiceUnavailable);
     }
 
+    /// <summary>
+    /// หน้า error ของ BlueID หลัง submit ฟอร์ม เช่น <c>{"error":"invalid_grant","error_description":"C0003 : NotCloudProductLicence"}</c>
+    /// → ข้อความภาษาไทยที่บอกสาเหตุและสิ่งที่ต้องทำ (null = ไม่ใช่หน้า error ของ BlueID)
+    /// </summary>
+    public static string? BlueIdRejectionMessage(string? pageText, string? username)
+    {
+        if (string.IsNullOrWhiteSpace(pageText) || !pageText.Contains("\"error\"", StringComparison.Ordinal)) return null;
+        var error = System.Text.RegularExpressions.Regex.Match(pageText, "\"error\"\\s*:\\s*\"([^\"]+)\"");
+        if (!error.Success) return null;
+        var description = System.Text.RegularExpressions.Regex.Match(pageText, "\"error_description\"\\s*:\\s*\"([^\"]*)\"");
+        var detail = description.Success && description.Groups[1].Value.Length > 0 ? description.Groups[1].Value : error.Groups[1].Value;
+        // "C0003 : NotCloudProductLicence" → แสดงเฉพาะรหัส C0003 ท้ายข้อความไว้แจ้งผู้ดูแล ผู้ใช้ไม่ต้องอ่านชื่อ error ภาษาอังกฤษ
+        var code = detail.Split(':', 2)[0].Trim();
+        var reference = code.Length is > 0 and <= 20 ? $" (รหัสจาก BlueID: {code})" : "";
+        var who = string.IsNullOrWhiteSpace(username) ? "บัญชี CRM ของคุณ" : $"บัญชี CRM {username.Trim()}";
+        if (detail.Contains("NotCloudProductLicence", StringComparison.OrdinalIgnoreCase))
+            return $"{who} ยังไม่ได้รับสิทธิ์ใช้งาน CRM (รหัสผ่านถูกต้องแล้ว) — กรุณาตรวจสอบ Merchant ID ในหน้าตั้งค่าบัญชี CRM หรือติดต่อผู้ดูแล BlueID เพื่อขอเปิดสิทธิ์{reference}";
+        return $"เข้าสู่ระบบ CRM ด้วย{who}ไม่สำเร็จ — กรุณาตรวจสอบ Merchant ID, ชื่อผู้ใช้ และรหัสผ่านในหน้าตั้งค่าบัญชี CRM หรือติดต่อผู้ดูแล BlueID{reference}";
+    }
+
     /// <summary>Playwright error ที่เกิดจากเครือข่าย/เซิร์ฟเวอร์ปลายทาง (เช่น net::ERR_CONNECTION_TIMED_OUT) ไม่ใช่ credential ผิด</summary>
     public static string? NetworkErrorCode(string? message)
     {
@@ -197,6 +217,14 @@ public sealed class CrmTokenService
             // ถ้ายังไม่จับ token ได้ (เช่น request ที่ต้องการยิงไปก่อนที่เราจะติด listener ทัน) ลอง reload อีกครั้ง
             // ด้วย session ที่ login แล้ว — รอบนี้ควรมี request ที่มี Authorization header แน่นอน
             string? firstAttemptScreenshot = null;
+            // BlueID ปฏิเสธบัญชี (เช่น ไม่มี License BlueSea) จะตอบเป็น JSON error ของ OIDC แทนการ redirect — แจ้งสาเหตุจริงทันที
+            // ไม่ต้อง reload/รอ token ต่อ และไม่ให้ไปจบที่ข้อความ "หน้าเว็บ CRM อาจมีการเปลี่ยนแปลง" ซึ่งทำให้เข้าใจผิด
+            if (capturedToken is null)
+            {
+                string? body = null;
+                try { body = await page.InnerTextAsync("body", new PageInnerTextOptions { Timeout = 5_000 }); } catch (PlaywrightException) { }
+                if (BlueIdRejectionMessage(body, username) is { } rejection) throw new CrmIntegrationException(rejection);
+            }
             if (capturedToken is null)
             {
                 // เก็บ screenshot ของสถานะหลัง submit ครั้งแรกไว้ก่อน reload จะทับ (reload รีเซ็ตหน้ากลับไปที่แท็บ

@@ -456,6 +456,53 @@ public sealed class CrmApiClient(
         return result;
     }
 
+    /// <summary>body ของ HelpDeskExport — ไม่กรองผู้รับผิดชอบ (CRM ส่ง Ticket ทั้งหมดในช่วงวันที่ติดต่อที่บัญชีนั้นเห็น)</summary>
+    private static object HelpDeskExportPayload(DateOnly from, DateOnly to, string? status) => new
+    {
+        SJobtype = "0",
+        SService = "",
+        SProduct = "",
+        SStatus = string.IsNullOrWhiteSpace(status) ? Array.Empty<string>() : new[] { status.Trim() },
+        SSysCustomer = Array.Empty<string>(),
+        SCaseModify = Array.Empty<string>(),
+        SFstatus = Array.Empty<string>(),
+        SFModify = Array.Empty<string>(),
+        SPayMent = Array.Empty<string>(),
+        SSysUnregisterlist = Array.Empty<string>(),
+        SBranch = "",
+        SRecipientId = (string?)null,
+        SOwnerSubject = (string?)null,
+        SAssignTo = (string?)null,
+        SContactDateS = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        SContactDateE = to.AddDays(1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        SDueDateS = "",
+        SDueDateE = "",
+        SBegDateModifyS = "",
+        SBegDateModifyE = "",
+        SEndDateModifyS = "",
+        SEndDateModifyE = ""
+    };
+
+    /// <summary>ดึง HelpDeskExport แบบดิบ (ไม่ผ่าน cache) สำหรับ CrmMirrorSyncService — ใช้ token ของบัญชี <paramref name="userId"/></summary>
+    public async Task<string> ExportHelpDeskRawAsync(Guid userId, DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        if (to < from || to.DayNumber - from.DayNumber > MaxTicketListRangeDays) throw new ArgumentException($"ช่วงวันที่ต้องไม่เกิน {MaxTicketListRangeDays} วัน");
+        var payload = HelpDeskExportPayload(from, to, null);
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var request = await AuthorizedAsync(HttpMethod.Post, $"{BaseUrl}/Support/HelpDeskExport", userId, ct);
+                request.Content = JsonContent.Create(payload);
+                return await SendAsync(request, userId, ct);
+            }
+            catch (CrmIntegrationException ex) when (ex.RemoteStatusCode == HttpStatusCode.Unauthorized && attempt == 0)
+            {
+                // SendAsync ล้าง token เมื่อได้ 401 — รอบถัดไปขอ token ใหม่
+            }
+        }
+    }
+
     /// <summary>
     /// Reads CRM HelpDeskExport for the current user's flow. The export is requested without an
     /// assignee filter so tickets handed from QA to Development are still returned; QA Hub then
@@ -480,31 +527,7 @@ public sealed class CrmApiClient(
                 throw new ArgumentException($"ช่วงวันที่ต้องไม่เกิน {MaxTicketListRangeDays} วัน");
             var cacheKey = $"crm:list:{userId:N}:{cfg.Username}:{query.Status?.Trim()}:{from:yyyyMMdd}:{to:yyyyMMdd}";
 
-            var payload = new
-            {
-                SJobtype = "0",
-                SService = "",
-                SProduct = "",
-                SStatus = string.IsNullOrWhiteSpace(query.Status) ? Array.Empty<string>() : new[] { query.Status.Trim() },
-                SSysCustomer = Array.Empty<string>(),
-                SCaseModify = Array.Empty<string>(),
-                SFstatus = Array.Empty<string>(),
-                SFModify = Array.Empty<string>(),
-                SPayMent = Array.Empty<string>(),
-                SSysUnregisterlist = Array.Empty<string>(),
-                SBranch = "",
-                SRecipientId = (string?)null,
-                SOwnerSubject = (string?)null,
-                SAssignTo = (string?)null,
-                SContactDateS = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                SContactDateE = to.AddDays(1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                SDueDateS = "",
-                SDueDateE = "",
-                SBegDateModifyS = "",
-                SBegDateModifyE = "",
-                SEndDateModifyS = "",
-                SEndDateModifyE = ""
-            };
+            var payload = HelpDeskExportPayload(from, to, query.Status);
 
             if (refresh || !cache.TryGetValue(cacheKey, out CachedTicketList? cached) || cached is null)
             {

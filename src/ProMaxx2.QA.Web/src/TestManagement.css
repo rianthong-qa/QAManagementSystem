@@ -270,3 +270,54 @@
 .testcase-list-table .tc-select-col{width:42px;min-width:42px;vertical-align:middle;padding-left:14px;text-align:left}.testcase-list-table .tc-select-col input{width:18px;height:18px;accent-color:var(--primary);cursor:pointer;margin:0}.testcase-list-table tbody tr.is-selected{background:#eef4ff}.testcase-list-table tbody tr.is-selected:hover td{background:#e6efff}
 .testcase-bulk-bar{position:sticky;top:74px;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;margin-bottom:12px;border:1px solid #cddcff;border-radius:11px;background:rgba(238,244,255,.97);box-shadow:0 8px 24px rgba(36,87,214,.10);backdrop-filter:blur(8px)}.testcase-bulk-bar .bulk-count{font-size:13px;font-weight:800;color:var(--primary)}.testcase-bulk-bar .bulk-status,.testcase-bulk-bar .bulk-automation{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;font-weight:700}.testcase-bulk-bar .bulk-status select,.testcase-bulk-bar .bulk-automation select{width:auto;min-width:0;height:38px}.testcase-bulk-bar .bulk-clear{margin-left:auto;padding:8px 14px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer}.testcase-bulk-bar .bulk-clear:hover{border-color:#9db5f5;color:var(--primary)}@media(max-width:800px){.testcase-bulk-bar{top:60px}}@media(max-width:420px){.testcase-bulk-bar{top:134px}}
 .testcase-list-table th{font-size:12px}.testcase-list-table .table-sort-button{display:inline-flex;align-items:center;justify-content:center;gap:4px;border:0;background:transparent;padding:4px;color:inherit;font:inherit;font-weight:inherit;cursor:pointer}.testcase-list-table .table-sort-button:hover{color:var(--primary)}.testcase-list-table .table-sort-button:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:5px}.testcase-list-table .table-sort-button .material-symbols-outlined{font-size:16px}
+
+/* Test Suite: เลือกหลาย Suite เพื่อสร้าง Test Cycle พร้อมกัน — คอลัมน์ checkbox แรกทำให้ลำดับคอลัมน์เลื่อน 1 ช่อง */
+.suite-list-card .suite-table .select-col{width:44px;padding-inline:13px 4px;text-align:center}
+.suite-list-card .suite-table .select-col input{width:18px;height:18px;margin:0;vertical-align:middle}
+.suite-list-card .suite-table tbody tr.is-selected{background:color-mix(in srgb,var(--primary) 6%,var(--card));box-shadow:inset 3px 0 0 var(--primary)}
+.suite-list-card .suite-table-selectable td:nth-child(2){min-width:0;color:inherit;font-weight:inherit}
+.suite-list-card .suite-table-selectable td:nth-child(2) .link-button{color:#175cd3;font-size:11px}
+.suite-list-card .suite-table-selectable td:nth-child(3){min-width:300px;color:#263244;font-weight:600;line-height:1.45}
+.suite-list-card>.suite-bulk-bar{margin:0;border-width:0 0 1px;border-radius:0;box-shadow:none}
+.suite-bulk-bar .suite-bulk-hint{color:var(--muted);font-size:12px}
+.suite-bulk-bar .btn.primary{min-height:38px}
+@media(max-width:760px){
+  .suite-list-card .suite-table-selectable td:nth-child(3){min-width:0}
+  .suite-list-card .suite-table .select-col{width:100%;padding:5px 0;text-align:left}
+  .suite-list-card .suite-table .select-col:empty{display:none}
+  .suite-bulk-bar .btn.primary,.suite-bulk-bar .bulk-clear{flex:1 1 140px;margin-left:0;justify-content:center}
+}
+
+/* หน้าต่างสร้าง Test Cycle จากหลาย Suite */
+.modal > .modal-box.batch-cycle-modal{width:min(900px,calc(100vw - 32px));max-width:900px}
+.batch-cycle-body{display:grid;gap:16px;min-width:0}
+.batch-cycle-common{margin:0;padding:12px 14px 14px;border:1px solid var(--line);border-radius:12px;min-width:0}
+.batch-cycle-common legend{padding:0 6px;color:var(--muted);font-size:12px;font-weight:700}
+.batch-cycle-common .required,.batch-cycle-modal .field-error{color:var(--red)}
+.batch-cycle-modal .field-error{font-size:11px}
+.batch-cycle-common .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;margin:0}
+.batch-cycle-common .form-grid label.full{grid-column:1/-1}
+.batch-cycle-common input,.batch-cycle-common select{width:100%;min-width:0;font-weight:400}
+.batch-cycle-common .batch-cycle-check{display:flex;flex-direction:row;align-items:center;gap:8px;font-weight:400}
+.batch-cycle-common .batch-cycle-check input{width:18px;height:18px;flex:none}
+.batch-cycle-list-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;margin-bottom:8px}
+.batch-cycle-list-head h3{margin:0;font-size:14px}
+.batch-cycle-list-head span{color:var(--muted);font-size:12px}
+.batch-cycle-warning{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--yellow) 35%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--yellow) 10%,var(--card));color:var(--warning-text);font-size:12px;line-height:1.5}
+.batch-cycle-warning .material-symbols-outlined{font-size:18px}
+.batch-cycle-list ol{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.batch-cycle-list li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-left:4px solid var(--line);border-radius:10px;min-width:0}
+.batch-cycle-list li.is-running{border-left-color:var(--primary)}
+.batch-cycle-list li.is-done{border-left-color:var(--green);background:color-mix(in srgb,var(--green) 5%,var(--card))}
+.batch-cycle-list li.is-error{border-left-color:var(--red);background:color-mix(in srgb,var(--red) 4%,var(--card))}
+.batch-cycle-suite{display:grid;gap:2px;min-width:0}
+.batch-cycle-suite b{color:var(--primary);font-size:12px}
+.batch-cycle-suite span{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.batch-cycle-suite small{color:var(--muted);font-size:11px}
+.batch-cycle-name{display:grid;gap:4px;min-width:0}
+.batch-cycle-name input{width:100%;min-width:0;height:40px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font:inherit;font-size:13px;font-weight:400}
+.batch-cycle-name input:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 15%,transparent)}
+.batch-cycle-name input[aria-invalid="true"]{border-color:var(--red)}
+.batch-cycle-progress{display:inline-flex;align-items:center;gap:6px;color:var(--primary);font-size:11px}
+.batch-cycle-result{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;font-size:12px;overflow-wrap:anywhere}
+@media(max-width:760px){.batch-cycle-list li,.batch-cycle-common .form-grid{grid-template-columns:minmax(0,1fr)}}

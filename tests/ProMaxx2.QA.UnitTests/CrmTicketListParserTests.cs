@@ -25,11 +25,20 @@ public sealed class CrmTicketListParserTests
             "6101",
             DateTimeOffset.Parse("2026-10-02T00:00:00Z"));
 
-        Assert.Equal(2, result.Total);
+        var closed = CrmTicketListParser.Parse(
+            json,
+            new CrmTicketListQuery(1, 25, null, null, null, null, CrmTicketScope.Closed),
+            "6101",
+            DateTimeOffset.Parse("2026-10-02T00:00:00Z"));
+
+        // งานที่ Close แล้วอยู่แท็บ "ปิดงานแล้ว" — "ส่งมาหาฉัน" เหลือเฉพาะงานที่ยังต้องทำ; Ticket ของ 6202 ไม่หลุดเข้ามาทั้งสองแท็บ
+        Assert.Equal(1, result.Total);
         Assert.Equal(1, result.Summary.InProgress);
         Assert.Equal(0, result.Summary.Open);
-        Assert.Equal(1, result.Summary.Closed);
-        Assert.Equal(new[] { "BHD690902000002", "BHD690901000001" }, result.Rows.Select(x => x.JobNo));
+        Assert.Equal(new[] { "BHD690902000002" }, result.Rows.Select(x => x.JobNo));
+        Assert.Equal(new[] { "BHD690901000001" }, closed.Rows.Select(x => x.JobNo));
+        Assert.Equal(1, closed.Summary.Closed);
+        Assert.Equal(new CrmTicketScopeCounts(1, 0, 1), result.ScopeCounts);
         // วันที่ไม่มีเวลาเป็นเที่ยงคืนตามเวลาไทย (00:00 +07:00) ไม่ใช่เที่ยงคืน UTC ซึ่งจะแสดงเป็น 07:00 น.
         Assert.Equal("2026-09-01T17:00:00.0000000Z", result.Rows[0].ContactDate);
     }
@@ -75,7 +84,7 @@ public sealed class CrmTicketListParserTests
             DateTimeOffset.UtcNow);
         var userTwo = CrmTicketListParser.Parse(
             json,
-            new CrmTicketListQuery(1, 25, null, null, null, null),
+            new CrmTicketListQuery(1, 25, null, null, null, null, CrmTicketScope.Closed),
             "6202",
             DateTimeOffset.UtcNow);
 
@@ -120,10 +129,14 @@ public sealed class CrmTicketListParserTests
             json, new CrmTicketListQuery(1, 25, null, null, null, null), "6101", DateTimeOffset.UtcNow);
         var previous = CrmTicketListParser.Parse(
             json, new CrmTicketListQuery(1, 25, null, null, null, null, CrmTicketScope.Previous), "6101", DateTimeOffset.UtcNow);
+        var closed = CrmTicketListParser.Parse(
+            json, new CrmTicketListQuery(1, 25, null, null, null, null, CrmTicketScope.Closed), "6101", DateTimeOffset.UtcNow);
 
-        Assert.Equal("BHD-MINE", Assert.Single(mine.Rows).JobNo);
+        // BHD-MINE เป็นของฉันแต่ Close แล้ว → แท็บ "ปิดงานแล้ว" ไม่ใช่ "ส่งมาหาฉัน"
+        Assert.Empty(mine.Rows);
+        Assert.Equal("BHD-MINE", Assert.Single(closed.Rows).JobNo);
         Assert.Equal("BHD690928000002", Assert.Single(previous.Rows).JobNo);
-        Assert.Equal(new CrmTicketScopeCounts(1, 1), mine.ScopeCounts);
+        Assert.Equal(new CrmTicketScopeCounts(0, 1, 1), mine.ScopeCounts);
     }
 
     [Fact]

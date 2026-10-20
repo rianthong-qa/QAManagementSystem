@@ -81,6 +81,34 @@ public sealed class CrmTicketDetailService(CrmApiClient crm, CrmConfigurationSer
             .Select(x => new CrmTicketAnswerItem(x.AnswerNo, x.Description, x.Posted, CrmTicketListParser.NormalizeDate(x.AnsDate), x.FAnswerType, x.Image))
             .ToArray();
 
-        return detailWithoutAnswers with { Answers = normalizedAnswers, LastFetchedAt = DateTimeOffset.UtcNow };
+        var resolvedTicket = await ResolveLookupNamesAsync(userId, raw, detailWithoutAnswers.Ticket, ct);
+        return detailWithoutAnswers with { Ticket = resolvedTicket, Answers = normalizedAnswers, LastFetchedAt = DateTimeOffset.UtcNow };
+    }
+
+    // HelpDesksJob มีแค่รหัส Service/Product (sysserviceType/sysProductId) ไม่มีชื่อ — เติมชื่อจาก lookup ของ CRM
+    // (best-effort: lookup ล้มเหลวก็คืนรายละเอียดตามเดิม ไม่ให้เปิด Ticket ไม่ได้เพราะชื่อ Service/Product)
+    private async Task<CrmTicketListItem> ResolveLookupNamesAsync(Guid userId, JsonElement raw, CrmTicketListItem ticket, CancellationToken ct)
+    {
+        var record = CrmTicketListParser.TicketRecord(raw);
+        var serviceTypeId = string.IsNullOrWhiteSpace(ticket.ServiceType) ? CrmTicketListParser.ReadString(record, "sysserviceType", "sysServiceType", "SysserViceType", "sysserViceType", "serviceTypeId") : null;
+        var productId = string.IsNullOrWhiteSpace(ticket.Product) ? CrmTicketListParser.ReadString(record, "sysProductId", "sysproductId", "SysProductId", "productId") : null;
+        if (serviceTypeId is not null)
+            ticket = ticket with { ServiceType = await LookupNameAsync(() => crm.GetServiceTypesAsync(userId, ct), serviceTypeId, ct) };
+        if (productId is not null)
+            ticket = ticket with { Product = await LookupNameAsync(() => crm.GetProductsAsync(userId, ct), productId, ct) };
+        return ticket;
+    }
+
+    private static async Task<string?> LookupNameAsync(Func<Task<IReadOnlyList<CrmLookupItem>>> load, string id, CancellationToken ct)
+    {
+        try
+        {
+            var items = await load();
+            return items.FirstOrDefault(x => string.Equals(x.Id, id.Trim(), StringComparison.OrdinalIgnoreCase))?.Name;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
     }
 }

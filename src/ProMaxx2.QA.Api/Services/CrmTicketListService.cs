@@ -8,7 +8,8 @@ namespace ProMaxx2.QA.Api.Services;
 /// <c>Previous</c>: active (not Close/Finish) tickets now with someone else that the user is still part of —
 /// Owner, Developer, or a previous Assignto (e.g. QA → back to Support).
 /// </summary>
-public enum CrmTicketScope { Mine, Previous }
+/// <summary>Mine = Assign ให้ฉันและยังไม่ปิด · Previous = อยู่กับคนอื่นแล้วและยังไม่ปิด · Closed = Assign ให้ฉันและ Finish/Close แล้ว</summary>
+public enum CrmTicketScope { Mine, Previous, Closed }
 
 public sealed record CrmTicketListQuery(
     int Page,
@@ -19,7 +20,7 @@ public sealed record CrmTicketListQuery(
     DateOnly? To,
     CrmTicketScope Scope = CrmTicketScope.Mine);
 
-public sealed record CrmTicketScopeCounts(int Mine, int Previous);
+public sealed record CrmTicketScopeCounts(int Mine, int Previous, int Closed = 0);
 
 public sealed record CrmTicketListItem(
     string JobNo,
@@ -89,7 +90,7 @@ public static class CrmTicketListParser
         using var document = JsonDocument.Parse(body);
         var records = CoerceRecords(document.RootElement);
         var tickets = new List<CrmTicketListItem>();
-        int mineCount = 0, previousCount = 0;
+        int mineCount = 0, previousCount = 0, closedCount = 0;
 
         foreach (var record in records)
         {
@@ -105,8 +106,11 @@ public static class CrmTicketListParser
             if (!isMine && !isPrevious) continue;
 
             if (!MatchesQuery(item, query)) continue;
-            if (isMine) mineCount++; else previousCount++;
-            if (isMine != (query.Scope == CrmTicketScope.Mine)) continue;
+            // งานที่ Finish/Close แล้วแยกเป็นแท็บ "ปิดงานแล้ว" ไม่ปนกับงานที่ต้องทำ (user rule, 2026-10-07)
+            // — เฉพาะที่ยัง Assign ให้ฉัน: Ticket ที่เคยถือแต่ปิดหลังส่งต่อไปแล้วไม่แสดง (กฎเดิม 2026-10-06)
+            var bucket = isMine ? (IsClosed(item.Status) ? CrmTicketScope.Closed : CrmTicketScope.Mine) : CrmTicketScope.Previous;
+            if (bucket == CrmTicketScope.Mine) mineCount++; else if (bucket == CrmTicketScope.Closed) closedCount++; else previousCount++;
+            if (bucket != query.Scope) continue;
             tickets.Add(item);
             if (tickets.Count > MaxTicketRows)
                 throw new CrmResultTooLargeException($"CRM ส่งข้อมูลเกินขีดจำกัด {MaxTicketRows:N0} รายการ กรุณาระบุช่วงวันที่ให้แคบลง");
@@ -123,7 +127,7 @@ public static class CrmTicketListParser
             ordered.Count(x => IsClosed(x.Status)));
         var rows = ordered.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).ToArray();
 
-        return new(rows, ordered.Length, query.Page, query.PageSize, summary, lastFetchedAt, new(mineCount, previousCount));
+        return new(rows, ordered.Length, query.Page, query.PageSize, summary, lastFetchedAt, new(mineCount, previousCount, closedCount));
     }
 
     /// <summary>Maps a single CRM job record into the normalized list contract.</summary>
@@ -280,7 +284,7 @@ public static class CrmTicketListParser
         string.Equals(status, "Closed", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(status, "Finish", StringComparison.OrdinalIgnoreCase);
 
-    private static IReadOnlyList<JsonElement> CoerceRecords(JsonElement root)
+    internal static IReadOnlyList<JsonElement> CoerceRecords(JsonElement root)
     {
         if (root.ValueKind == JsonValueKind.Array) return root.EnumerateArray().Select(x => x.Clone()).ToArray();
         if (root.ValueKind != JsonValueKind.Object) return [];
@@ -308,7 +312,7 @@ public static class CrmTicketListParser
         names.Any(name => record.TryGetProperty(name, out var value) &&
                           value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined);
 
-    private static JsonElement TicketRecord(JsonElement record)
+    internal static JsonElement TicketRecord(JsonElement record)
     {
         if (record.ValueKind == JsonValueKind.Object &&
             record.TryGetProperty("fd", out var nested) &&

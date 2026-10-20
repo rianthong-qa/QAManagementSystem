@@ -49,7 +49,7 @@ tools/ProMaxx2.ServiceManager ← WinForms: Start/Stop/Restart API + Web, log, C
 | ไฟล์ | เนื้อหา |
 |---|---|
 | `App.tsx` | App shell เท่านั้น: sidebar/topbar, context selector (Project/Release/Build), routing ด้วย `React.lazy` + `Suspense`, Login และลิงก์ Dashboard ที่แชร์ |
-| `pages/*.tsx` | หน้าละไฟล์ (โหลดเป็น chunk แยกเมื่อเปิดหน้า): `Dashboard`, `DefectsPage`, `ProjectsPage`, `ReleasesPage`, `RequirementsPage`, `RtmPage`, `TestCasesPage`, `TestSuitesPage`, `TestCyclesPage`, `ExecutionWorkspacePage`, `RegressionPage`, `MyWorkPage`, `TestSummaryPage`, `RiskAcceptancePage`, `ReleaseSignoffPage`, `AdministrationPage`, `MasterSettingsPage`, `SystemMonitorPage` — type/ค่าคงที่ที่ใช้หน้าเดียวอยู่ในไฟล์หน้านั้น; หน้าใหม่ให้สร้างที่นี่แล้วเพิ่ม lazy import ใน App.tsx |
+| `pages/*.tsx` | หน้าละไฟล์ (โหลดเป็น chunk แยกเมื่อเปิดหน้า): `Dashboard`, `PerformancePage`, `DefectsPage`, `ProjectsPage`, `ReleasesPage`, `RequirementsPage`, `RtmPage`, `TestCasesPage`, `TestSuitesPage`, `TestCyclesPage`, `ExecutionWorkspacePage`, `RegressionPage`, `MyWorkPage`, `TestSummaryPage`, `RiskAcceptancePage`, `ReleaseSignoffPage`, `AdministrationPage`, `MasterSettingsPage`, `SystemMonitorPage` — type/ค่าคงที่ที่ใช้หน้าเดียวอยู่ในไฟล์หน้านั้น; หน้าใหม่ให้สร้างที่นี่แล้วเพิ่ม lazy import ใน App.tsx |
 | `shared/appShared.tsx`, `shared/types.ts`, `shared/defects.ts`, `components/Badge.tsx` | ของที่หลายหน้าใช้ร่วม: type `Page`/`SessionUser`/`ModuleItem`/`TestCaseItem`/`TestCycleItem`/`TestSuiteItem`/`AdminUser`/`RtmItem` ฯลฯ, `nav`, module tree (`buildModuleTree`, `renderModuleSelectOptions`), `useMasterOptions`, `nextBusinessCode`, `okJsonOrEmpty`, `copyText`, `Badge` — ไฟล์ใน `shared/` ห้าม import จาก `pages/` หรือ `App.tsx` |
 | `components/*` | `ModalShell`, `dialogStore` + `DialogHost` (confirm/prompt/toast), `useDebounced`, `tableCardLabels` |
 | `AutomationPage.tsx` + `automation/*` + `Automation.css` | หน้า Automation: `AutomationPage.tsx` (หน้าหลัก/แท็บ Cases, ~1,300 บรรทัด) + `automation/` แยกตามแท็บ — `types.ts`, `shared.ts` (`fetchJson`, `useDebounced`, `useBuildsAndEnvironments`), `ui.tsx` (`ModalShell`, `Badge`, `Pager`), `caseModals`, `manageTabs`, `executionTabs`, `suiteTab`, `scheduleTabs` (Schedule/Build Trigger/Webhook), `dataTabs` (Snapshot/Seed/Data Profile) |
@@ -64,13 +64,15 @@ tools/ProMaxx2.ServiceManager ← WinForms: Start/Stop/Restart API + Web, log, C
 |---|---|
 | `AutomationScheduleWorker` | poll ทุก 30 วินาที ยิง Automation Schedule ที่ถึงเวลา (เปิด/ปิดได้จาก Service Manager) |
 | `CrmSyncWorker` | poll Defect ที่ Linked กับ CRM ทุก 2 นาที — หยุดรอบทันทีเมื่อ CRM ล่ม/ช้า และไม่หยุดถาวรเมื่อ HTTP timeout; login BlueID ใช้ headless Chromium พร้อมกันได้สูงสุด 2 ตัวทั้งระบบ (`CrmTokenService`), CRM call timeout 30 วินาที |
+| `CrmMirrorWorker` | ทุก 15 นาที ดึง CRM Ticket ทั้งทีม (ติดต่อใน 90 วัน; รอบใหญ่ 366 วันวันละครั้ง) ด้วยบัญชีกลาง `CrmMirror:AccountUsername` (6101) มาเก็บใน `CrmTickets`/`CrmTicketEvents` สำหรับวัดผลงาน CRM — สถานะดูที่แผงท้ายหน้า CRM (SYS_ADMIN), ปิดได้ด้วย `CrmMirror:Enabled=false` |
+| `PerformanceReminderWorker` | ทุก 1 ชม. (หลัง 08:00 น.) ส่งอีเมลเตือนหัวหน้าเมื่อการประเมินเหลือ ≤ 7 วัน/เลยกำหนด และเตือนพนักงานที่ยังไม่ส่งแบบประเมินตนเอง (อีเมลแยก) — กันซ้ำด้วย `EvaluationNotifications`, ปิดได้ด้วย `Performance:RemindersEnabled=false` |
 | `AutomationReaperWorker` | ทุก 1 นาที ปิด Automation Execution ที่ Agent เงียบเกิน 10 นาที (AgentLost) หรือรันเกิน 6 ชม. (Timeout) และปิด snapshot/restore/verification ที่ Agent ไม่รายงานผล (AUT-REL-002) |
 
-## 3. Modules / Pages (20 หน้า)
+## 3. Modules / Pages (21 หน้า)
 
 | Group | Pages |
 |---|---|
-| ภาพรวม | Dashboard, My Work, Project/Module, Release/Build |
+| ภาพรวม | Dashboard, My Work, ผลงานและการประเมิน (`#/performance`), Project/Module, Release/Build |
 | Requirement & Test Design | Requirement, RTM, Test Case, Test Suite |
 | Test Execution | Test Cycle, Execution Workspace, Defect, Regression, Automation |
 | Release Governance | Test Summary, Risk Acceptance, Release Sign-off |
@@ -169,6 +171,7 @@ powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1
 | `03-Architecture-and-Plan/AUTOMATION_PLAN.md`, `SELECTOR_CONTRACT.md`, `AUTOMATIONID_IMPLEMENTATION_GUIDE.md` | แผน Automation Phase 0–5, Selector Contract, คู่มือใส่ AutomationId |
 | `03-Architecture-and-Plan/CRM_INTEGRATION_PLAN.md`, `CRM_DEFECT_KANBAN_PLAN.md` | การเชื่อม CRM และแผน Defect Kanban (ยังเป็นแผน) |
 | `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
+| `03-Architecture-and-Plan/PERFORMANCE_EVALUATION_PLAN.md` | ผลงานและการประเมินทีม QA — เฟส 1 (ผลงานรายคน/ทดลองงาน/บันทึกงาน) และเฟส 2 (แบบประเมิน, รอบทดลองงาน 30/60/90/สรุป, รายไตรมาส, ประเมินตนเอง) และเฟส 3 (อีเมลเตือน, ไฟล์หลักฐานของบันทึกงาน, Export PDF, เทียบผลข้ามรอบ) และสรุปผลงานรายคน + ลิงก์แชร์ HR (`/?p=`) + สรุปประจำสัปดาห์ส่งผู้บริหาร implement แล้ว |
 | `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน) |
 | `05-Module/` | เอกสารรายโมดูล |
 

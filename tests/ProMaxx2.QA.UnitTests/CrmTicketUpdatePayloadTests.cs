@@ -32,6 +32,24 @@ public sealed class CrmTicketUpdatePayloadTests
     }
 
     [Fact]
+    public void Subject_change_is_sent_and_noted_when_there_is_no_message()
+    {
+        var payload = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", null, null, null, false, "QA", NowThai, requestedSubject: "  POS ค้างหลังอัปเดต 1.3  ");
+
+        Assert.Equal("POS ค้างหลังอัปเดต 1.3", payload.Subject);
+        Assert.Contains("ชื่อเรื่อง → POS ค้างหลังอัปเดต 1.3", payload.Description);
+        Assert.Equal("Continue", payload.Status);
+    }
+
+    [Fact]
+    public void Blank_subject_keeps_the_current_subject()
+    {
+        var payload = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", "ข้อความ", null, null, false, "QA", NowThai, requestedSubject: "  ");
+
+        Assert.Equal("POS ค้าง", payload.Subject);
+    }
+
+    [Fact]
     public void Assign_to_owner_sets_assignto_from_owner_subject_without_touching_sysdevelop()
     {
         var payload = CrmSendToCrmService.BuildTicketUpdatePayload(Job(), "BHD-1", "6101", "แก้ไขแล้ว ฝากตรวจสอบ", "Test", null, true, "QA", NowThai);

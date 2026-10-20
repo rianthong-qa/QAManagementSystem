@@ -66,6 +66,9 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
             }
         }
 
+        // Ticket ปิดใน CRM โดยตรง (Finish/Close) → ปรับสถานะ Defect ให้ตรง — ทำแม้เป็น poll ครั้งแรก เพราะเป็นสถานะจริงของงาน ไม่ใช่การแจ้งเตือนย้อนหลัง
+        if (statusChanged) await CrmDefectStatusSync.ApplyAndLogAsync(defect, status, null, activityService, ct);
+
         // ต้องเช็คคอมเมนต์ใหม่ทุก tick แยกจาก status/assignto ข้างบน — คอมเมนต์เกิดขึ้นได้แม้ status/assignto
         // ไม่เปลี่ยนเลยก็ตาม (early-return ตัวเดิมก่อนหน้านี้จะพลาดจุดนี้ไปเลยถ้าลบไม่ครบ)
         await PollCommentsAsync(defect, assigneeUserId, ct);

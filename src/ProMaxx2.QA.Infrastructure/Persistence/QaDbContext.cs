@@ -13,6 +13,7 @@ using ProMaxx2.QA.Domain.Dashboard;
 using ProMaxx2.QA.Domain.Governance;
 using ProMaxx2.QA.Domain.Automation;
 using ProMaxx2.QA.Domain.Integrations;
+using ProMaxx2.QA.Domain.Performance;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -60,6 +61,9 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<CrmConfiguration> CrmConfigurations => Set<CrmConfiguration>();
     public DbSet<CrmProjectMapping> CrmProjectMappings => Set<CrmProjectMapping>();
     public DbSet<CrmSyncSettings> CrmSyncSettings => Set<CrmSyncSettings>();
+    public DbSet<CrmTicket> CrmTickets => Set<CrmTicket>();
+    public DbSet<CrmTicketEvent> CrmTicketEvents => Set<CrmTicketEvent>();
+    public DbSet<CrmMirrorRun> CrmMirrorRuns => Set<CrmMirrorRun>();
     public DbSet<DashboardShare> DashboardShares => Set<DashboardShare>();
     public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
     public DbSet<RiskAcceptance> RiskAcceptances => Set<RiskAcceptance>();
@@ -94,6 +98,14 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<AutomationDataSeedRun> AutomationDataSeedRuns => Set<AutomationDataSeedRun>();
     public DbSet<AutomationEnvironmentDataProfile> AutomationEnvironmentDataProfiles => Set<AutomationEnvironmentDataProfile>();
     public DbSet<AutomationCaptureSession> AutomationCaptureSessions => Set<AutomationCaptureSession>();
+    public DbSet<EmployeeProfile> EmployeeProfiles => Set<EmployeeProfile>();
+    public DbSet<WorkLogEntry> WorkLogEntries => Set<WorkLogEntry>();
+    public DbSet<EvaluationTemplate> EvaluationTemplates => Set<EvaluationTemplate>();
+    public DbSet<Evaluation> Evaluations => Set<Evaluation>();
+    public DbSet<WorkLogAttachment> WorkLogAttachments => Set<WorkLogAttachment>();
+    public DbSet<EvaluationNotification> EvaluationNotifications => Set<EvaluationNotification>();
+    public DbSet<PerformanceShareLink> PerformanceShareLinks => Set<PerformanceShareLink>();
+    public DbSet<WeeklyReportNote> WeeklyReportNotes => Set<WeeklyReportNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 

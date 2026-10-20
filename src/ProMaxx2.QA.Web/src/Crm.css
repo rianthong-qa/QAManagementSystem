@@ -365,7 +365,7 @@ button.crm-board-ticket:focus-visible { outline: 3px solid color-mix(in srgb, va
 .crm-ticket-head-title .crm-age-pill { align-items: center; }
 .crm-ticket-head-title .crm-age-pill .material-symbols-outlined { font-size: 15px; }
 .crm-ticket-head-title .crm-age-pill strong { font-size: 13px; }
-.crm-ticket-head-main > p { display: -webkit-box; margin: 2px 0 0; overflow: hidden; color: var(--text); font-size: 15px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.crm-ticket-head-main > p, .crm-subject-view > p { display: -webkit-box; margin: 2px 0 0; overflow: hidden; color: var(--text); font-size: 15px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .crm-ticket-body { display: grid; grid-template-columns: minmax(0, 1fr) 330px; min-height: 0; }
 .crm-ticket-main { display: grid; align-content: start; gap: 16px; min-width: 0; min-height: 0; padding: 18px 22px; overflow-y: auto; overscroll-behavior: contain; }
 .crm-ticket-aside { display: grid; align-content: start; gap: 12px; min-width: 0; min-height: 0; padding: 18px; overflow-y: auto; overscroll-behavior: contain; border-left: 1px solid var(--line); background: var(--surface); }
@@ -422,27 +422,9 @@ button.crm-fact-edit .material-symbols-outlined { font-size: 16px; }
 }
 
 /* List แยกงานที่ปิดแล้วไว้ใน <details>; Board แสดง Finish/Close เป็นคอลัมน์สุดท้าย */
-.crm-board { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.crm-active-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 120px; color: var(--muted); font-size: 13px; }
-.crm-active-empty .material-symbols-outlined { color: var(--green); font-size: 22px; }
-.crm-closed-section { overflow: hidden; border: 1px solid color-mix(in srgb, var(--green) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--green) 4%, var(--card)); }
-.crm-closed-section > summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; list-style: none; }
-.crm-closed-section > summary::-webkit-details-marker { display: none; }
-.crm-closed-section > summary:hover { background: color-mix(in srgb, var(--green) 7%, var(--card)); }
-.crm-closed-section > summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: -3px; }
-.crm-closed-icon { display: grid; flex: 0 0 auto; width: 34px; height: 34px; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--green) 14%, var(--card)); color: var(--green); font-size: 20px; }
-.crm-closed-title { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
-.crm-closed-title strong { color: var(--text); font-size: 14px; }
-.crm-closed-title small { color: var(--muted); font-size: 11px; }
-.crm-closed-count { flex: 0 0 auto; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--green) 14%, var(--card)); color: var(--green); font-size: 12px; font-weight: 700; white-space: nowrap; }
-.crm-closed-chevron { flex: 0 0 auto; color: var(--muted); font-size: 22px; transition: transform .2s ease; }
-.crm-closed-section[open] .crm-closed-chevron { transform: rotate(180deg); }
-.crm-closed-section[open] > summary { border-bottom: 1px solid var(--line); }
-.crm-closed-table { margin: 0; border: 0; border-radius: 0; background: var(--card); }
-.crm-closed-table .crm-table tbody tr { opacity: .82; }
-.crm-closed-table .crm-table tbody tr:hover { opacity: 1; }
+.crm-board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.crm-board.crm-board-closed { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 1100px) and (min-width: 761px) { .crm-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 760px) { .crm-closed-section > summary { flex-wrap: wrap; } .crm-closed-table { padding: 10px; } }
 
 /* Board card ใช้สีตามสถานะของ Ticket (ตรงกับ Badge จาก statusTone) แทนสีคอลัมน์: แถบซ้าย + พื้นอ่อน + เส้นขอบโทนเดียวกัน */
 button.crm-board-ticket { --crm-card: var(--info); border-color: color-mix(in srgb, var(--crm-card) 22%, var(--line)); border-left-color: var(--crm-card); background: color-mix(in srgb, var(--crm-card) 5%, var(--card)); }
@@ -450,6 +432,8 @@ button.crm-board-ticket[data-tone="yellow"] { --crm-card: var(--yellow); }
 button.crm-board-ticket[data-tone="green"] { --crm-card: var(--green); }
 button.crm-board-ticket[data-tone="purple"] { --crm-card: #7c3aed; }
 button.crm-board-ticket[data-tone="gray"] { --crm-card: var(--muted); }
+/* EditErr — แดงแบบนุ่ม ไม่ให้เด่นเท่าสถานะ error จริง */
+button.crm-board-ticket[data-tone="red"] { --crm-card: color-mix(in srgb, var(--red) 70%, var(--card)); }
 button.crm-board-ticket:hover { border-color: color-mix(in srgb, var(--crm-card) 45%, var(--line)); border-left-color: var(--crm-card); background: color-mix(in srgb, var(--crm-card) 8%, var(--card)); }
 button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in srgb, var(--crm-card) 18%, var(--line)); }
 
@@ -485,6 +469,7 @@ button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in 
 .crm-reply-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
 .crm-reply-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .crm-reply-status select { height: 36px; min-width: 150px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.crm-reply-defect-hint { flex-basis: 100%; color: var(--warning-text); font-size: 12px; font-weight: 400; }
 .crm-reply-owner { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
 .crm-reply-owner input { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
 .crm-reply-owner > span { display: grid; gap: 0; line-height: 1.3; }
@@ -556,8 +541,38 @@ button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in 
 .crm-flow-tracking.compact { min-width: 0; }
 .crm-flow-tracking.compact .crm-flow-steps { gap: 3px; }
 .crm-flow-tracking.compact .crm-flow-step { padding: 4px; }
+/* ชื่อเรื่องแก้ไขได้ที่หัว modal รายละเอียด Ticket */
+.crm-subject-view { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.crm-subject-view > p { flex: 1 1 auto; min-width: 0; }
+.crm-subject-edit-btn { display: grid; place-items: center; flex: none; width: 32px; height: 32px; margin-top: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--muted); cursor: pointer; }
+.crm-subject-edit-btn:hover, .crm-subject-edit-btn:focus-visible { border-color: var(--primary); color: var(--primary); }
+.crm-subject-edit-btn .material-symbols-outlined { font-size: 18px; }
+.crm-subject-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+.crm-subject-edit input { flex: 1 1 320px; min-width: 0; height: 38px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font: inherit; font-size: 14px; font-weight: 400; }
+.crm-subject-edit input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.crm-subject-edit input[aria-invalid="true"] { border-color: var(--red); }
+/* .modal-head button บังคับทุกปุ่มในหัว modal เป็นปุ่มไอคอน 36×36 (สำหรับปุ่มปิด) — ปุ่มของฟอร์มแก้ชื่อเรื่องต้องกลับเป็นปุ่มข้อความปกติ */
+.modal-head .crm-subject-edit .btn { width: auto; height: 38px; min-height: 38px; flex: none; padding: 0 14px; gap: 6px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.modal-head .crm-subject-edit .btn.primary { border-color: var(--primary); background: var(--primary); color: #fff; }
+.modal-head .crm-subject-edit .btn.primary:hover { background: color-mix(in srgb, var(--primary) 88%, #000); color: #fff; }
+.modal-head .crm-subject-edit .btn:disabled { opacity: .55; cursor: not-allowed; }
+.modal-head .crm-subject-edit .btn .material-symbols-outlined { font-size: 18px; }
+.modal-head .crm-subject-edit-btn { width: 32px; height: 32px; font-size: 18px; }
+@media (max-width: 760px) {
+  .crm-subject-edit input { flex-basis: 100%; }
+  .modal-head .crm-subject-edit .btn { flex: 1 1 0; }
+}
+.crm-subject-edit small { flex-basis: 100%; color: var(--muted); font-size: 11px; }
+.crm-subject-edit small.crm-subject-error { color: var(--red); }
 .crm-flow-history { display: grid; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary-soft) 35%, var(--card)); }
 .crm-flow-history-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+summary.crm-flow-history-head { min-height: 32px; cursor: pointer; list-style: none; }
+summary.crm-flow-history-head::-webkit-details-marker { display: none; }
+summary.crm-flow-history-head h4 { flex: 1 1 auto; }
+summary.crm-flow-history-head:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: 2px; border-radius: 8px; }
+.crm-flow-history-chevron { color: var(--muted); font-size: 20px; transition: transform .15s ease; }
+.crm-flow-history[open] .crm-flow-history-chevron { transform: rotate(180deg); }
+.crm-flow-history:not([open]) { gap: 0; }
 .crm-flow-history-head h4 { margin: 0; color: var(--text); font-size: 13px; }
 .crm-flow-history-head small { color: var(--muted); font-size: 11px; }
 .crm-flow-history-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
@@ -579,7 +594,7 @@ button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in 
 .crm-table th:nth-child(7) { width: 10%; }
 .crm-table th:nth-child(8) { width: 10%; }
 /* Ticket groups: งานที่ส่งมาหาฉัน vs ส่งต่อแล้ว (ยังไม่ปิด). button.<class> beats the global button rule. */
-.crm-scope-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-width: 640px; }
+.crm-scope-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 960px; }
 .crm-scope-tabs button.crm-scope-tab { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
 .crm-scope-tabs button.crm-scope-tab > .material-symbols-outlined { flex: 0 0 auto; color: var(--muted); font-size: 20px; }
 .crm-scope-tab-text { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
@@ -595,4 +610,35 @@ button.crm-board-ticket .crm-board-ticket-meta { border-top-color: color-mix(in 
   .crm-scope-tabs { max-width: none; }
   .crm-scope-tabs button.crm-scope-tab { gap: 8px; padding: 8px 10px; }
   .crm-scope-tab-text small { display: none; }
+}
+/* 3 แท็บในแถวเดียวบนจอแคบ — ซ่อนไอคอนเพื่อให้ชื่อแท็บและจำนวนพอดี */
+@media (max-width: 480px) {
+  .crm-scope-tabs button.crm-scope-tab > .material-symbols-outlined { display: none; }
+  .crm-scope-tabs button.crm-scope-tab { padding: 8px; }
+}
+
+/* สถานะการดึงสำเนา CRM (SYS_ADMIN) — ท้ายหน้า CRM แบบพับได้ */
+.crm-mirror-panel { margin-top: 16px; padding: 0; overflow: hidden; }
+.crm-mirror-panel > summary { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; list-style: none; }
+.crm-mirror-panel > summary::-webkit-details-marker { display: none; }
+.crm-mirror-panel > summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: -3px; }
+.crm-mirror-panel > summary > .material-symbols-outlined:first-child { color: var(--primary); font-size: 22px; }
+.crm-mirror-title { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
+.crm-mirror-title strong { color: var(--text); font-size: 14px; }
+.crm-mirror-title small, .crm-mirror-last { color: var(--muted); font-size: 12px; }
+.crm-mirror-chevron { color: var(--muted); transition: transform .15s ease; }
+.crm-mirror-panel[open] .crm-mirror-chevron { transform: rotate(180deg); }
+.crm-mirror-body { display: grid; gap: 12px; padding: 0 16px 16px; }
+.crm-mirror-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.crm-mirror-stats > div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.crm-mirror-stats dt { color: var(--muted); font-size: 12px; }
+.crm-mirror-stats dd { margin: 2px 0 0; color: var(--text); font-size: 16px; font-weight: 700; }
+.crm-mirror-note { margin: 0; color: var(--muted); font-size: 12px; }
+.crm-mirror-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.crm-mirror-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.crm-mirror-error { max-width: 360px; white-space: normal; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
+@media (max-width: 760px) {
+  .crm-mirror-stats { grid-template-columns: minmax(0, 1fr); }
+  .crm-mirror-last { display: none; }
+  .crm-mirror-actions .btn { flex: 1 1 0; justify-content: center; }
 }

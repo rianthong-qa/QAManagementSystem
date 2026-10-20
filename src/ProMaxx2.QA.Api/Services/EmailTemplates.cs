@@ -235,6 +235,103 @@ public static class EmailTemplates
         """;
     }
 
+    public sealed record EvaluationReminderItem(string EmployeeName, string RoundLabel, DateOnly DueDate, string StatusLabel, int DaysLeft);
+
+    /// <summary>อีเมลเตือนพนักงานให้ประเมินตนเอง (รอบที่ยังไม่ส่งแบบประเมินตนเอง) — PerformanceReminderService.PlanSelf</summary>
+    public static string EvaluationSelfReminder(string employeeName, IReadOnlyList<EvaluationReminderItem> items, string pageLink)
+    {
+        var sb = new StringBuilder();
+        var overdue = items.Count(x => x.DaysLeft < 0);
+        sb.Append($$"""
+        <div style="background:{{BgSoft}};padding:32px 16px;font-family:'Segoe UI',Tahoma,Arial,sans-serif;">
+          <table role="presentation" width="100%" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid {{Line}};">
+            <tr><td style="background:{{Primary}};padding:20px 28px;">
+              <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:.3px;">QA Hub</span>
+              <div style="color:#dbe6ff;font-size:13px;margin-top:2px;">แจ้งเตือนการประเมินตนเอง</div>
+            </td></tr>
+            <tr><td style="padding:28px;">
+              <div style="color:{{Ink}};font-size:15px;margin-bottom:6px;">เรียน {{Html(employeeName)}}</div>
+              <div style="color:{{Muted}};font-size:13px;margin-bottom:16px;">{{(overdue > 0 ? "แบบประเมินตนเองของคุณเลยกำหนดแล้ว กรุณาประเมินตนเองโดยเร็ว เพื่อให้หัวหน้าประเมินผลต่อได้" : "กรุณาประเมินตนเองก่อนครบกำหนด เพื่อให้หัวหน้าใช้ประกอบการประเมิน")}}</div>
+              <table role="presentation" width="100%" style="border-collapse:collapse;font-size:13px;">
+                <tr style="background:{{BgSoft}};color:{{Muted}};text-align:left;">
+                  <th style="padding:8px;">รอบการประเมิน</th><th style="padding:8px;">กำหนดส่ง</th>
+                </tr>
+        """);
+        foreach (var item in items)
+        {
+            var (bg, fg, text) = item.DaysLeft < 0 ? ("#fdecec", "#c83a3a", $"เลยกำหนด {-item.DaysLeft} วัน")
+                : item.DaysLeft == 0 ? ("#fff4d6", "#9a6d00", "ครบกำหนดวันนี้")
+                : ("#fff4d6", "#9a6d00", $"อีก {item.DaysLeft} วัน");
+            sb.Append($$"""
+                <tr style="border-bottom:1px solid {{Line}};">
+                  <td style="padding:8px;color:{{Ink}};font-weight:600;">{{Html(item.RoundLabel)}}</td>
+                  <td style="padding:8px;color:{{Ink}};white-space:nowrap;">{{ThaiDate(item.DueDate)}} <span style="display:inline-block;margin-left:6px;background:{{bg}};color:{{fg}};font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;">{{text}}</span></td>
+                </tr>
+            """);
+        }
+        sb.Append($$"""
+              </table>
+              <div style="text-align:center;margin-top:26px;">
+                <a href="{{pageLink}}" style="display:inline-block;background:{{Primary}};color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:8px;">ประเมินตนเอง →</a>
+              </div>
+              <div style="color:{{Muted}};font-size:11px;margin-top:20px;">เข้าเมนู ผลงานและการประเมิน → การประเมินของฉัน · อีเมลนี้ส่งอัตโนมัติเมื่อเหลือ 7 วันก่อนครบกำหนดและเมื่อเลยกำหนด</div>
+            </td></tr>
+          </table>
+        </div>
+        """);
+        return sb.ToString();
+    }
+
+    /// <summary>อีเมลสรุปการประเมินที่ใกล้ครบกำหนด/เลยกำหนด ส่งให้หัวหน้า 1 ฉบับต่อรอบการตรวจ (PerformanceReminderService)</summary>
+    public static string EvaluationReminder(string recipientName, IReadOnlyList<EvaluationReminderItem> items, string pageLink)
+    {
+        var sb = new StringBuilder();
+        var overdue = items.Count(x => x.DaysLeft < 0);
+        sb.Append($$"""
+        <div style="background:{{BgSoft}};padding:32px 16px;font-family:'Segoe UI',Tahoma,Arial,sans-serif;">
+          <table role="presentation" width="100%" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid {{Line}};">
+            <tr><td style="background:{{Primary}};padding:20px 28px;">
+              <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:.3px;">QA Hub</span>
+              <div style="color:#dbe6ff;font-size:13px;margin-top:2px;">แจ้งเตือนการประเมินพนักงาน</div>
+            </td></tr>
+            <tr><td style="padding:28px;">
+              <div style="color:{{Ink}};font-size:15px;margin-bottom:6px;">เรียน {{Html(recipientName)}}</div>
+              <div style="color:{{Muted}};font-size:13px;margin-bottom:16px;">มีการประเมิน {{items.Count}} รายการที่ต้องดำเนินการ{{(overdue > 0 ? $" (เลยกำหนด {overdue} รายการ)" : "")}}</div>
+              <table role="presentation" width="100%" style="border-collapse:collapse;font-size:13px;">
+                <tr style="background:{{BgSoft}};color:{{Muted}};text-align:left;">
+                  <th style="padding:8px;">พนักงาน</th><th style="padding:8px;">รอบ</th><th style="padding:8px;">กำหนดส่ง</th><th style="padding:8px;">สถานะ</th>
+                </tr>
+        """);
+        foreach (var item in items)
+        {
+            var (bg, fg, text) = item.DaysLeft < 0 ? ("#fdecec", "#c83a3a", $"เลยกำหนด {-item.DaysLeft} วัน")
+                : item.DaysLeft == 0 ? ("#fff4d6", "#9a6d00", "ครบกำหนดวันนี้")
+                : ("#fff4d6", "#9a6d00", $"อีก {item.DaysLeft} วัน");
+            sb.Append($$"""
+                <tr style="border-bottom:1px solid {{Line}};">
+                  <td style="padding:8px;color:{{Ink}};font-weight:600;">{{Html(item.EmployeeName)}}</td>
+                  <td style="padding:8px;color:{{Ink}};">{{Html(item.RoundLabel)}}</td>
+                  <td style="padding:8px;color:{{Ink}};white-space:nowrap;">{{ThaiDate(item.DueDate)}}<br><span style="display:inline-block;margin-top:3px;background:{{bg}};color:{{fg}};font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;">{{text}}</span></td>
+                  <td style="padding:8px;color:{{Muted}};">{{Html(item.StatusLabel)}}</td>
+                </tr>
+            """);
+        }
+        sb.Append($$"""
+              </table>
+              <div style="text-align:center;margin-top:26px;">
+                <a href="{{pageLink}}" style="display:inline-block;background:{{Primary}};color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:8px;">เปิดหน้าการประเมิน →</a>
+              </div>
+              <div style="color:{{Muted}};font-size:11px;margin-top:20px;">อีเมลนี้ส่งอัตโนมัติเมื่อเหลือ 7 วันก่อนครบกำหนดและเมื่อเลยกำหนด (แต่ละรอบเตือนอย่างละครั้ง)</div>
+            </td></tr>
+          </table>
+        </div>
+        """);
+        return sb.ToString();
+    }
+
+    private static readonly string[] ThaiMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+    private static string ThaiDate(DateOnly d) => $"{d.Day} {ThaiMonths[d.Month - 1]} {d.Year + 543}";
+
     private static string Row(string label, string valueHtml) => $"""
         <tr>
           <td style="padding:6px 0;color:{Muted};width:120px;vertical-align:top;">{label}</td>

@@ -24,6 +24,7 @@ import "./Automation.css";
 // หน้าใหม่ให้สร้างใน src/pages/ แล้วเพิ่ม lazy import ที่นี่; ของที่หลายหน้าใช้ร่วมอยู่ใน src/shared/
 const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const SharedDefectPage = lazy(() => import("./pages/SharedDefectPage"));
+const SharedPerformancePage = lazy(() => import("./pages/SharedPerformancePage"));
 const DefectsPage = lazy(() => import("./pages/DefectsPage").then((m) => ({ default: m.DefectsPage })));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
 const ReleasesPage = lazy(() => import("./pages/ReleasesPage").then((m) => ({ default: m.ReleasesPage })));
@@ -34,6 +35,7 @@ const RtmPage = lazy(() => import("./pages/RtmPage").then((m) => ({ default: m.R
 const TestCyclesPage = lazy(() => import("./pages/TestCyclesPage").then((m) => ({ default: m.TestCyclesPage })));
 const ExecutionWorkspacePage = lazy(() => import("./pages/ExecutionWorkspacePage").then((m) => ({ default: m.ExecutionWorkspacePage })));
 const TestSuitesPage = lazy(() => import("./pages/TestSuitesPage").then((m) => ({ default: m.TestSuitesPage })));
+const PerformancePage = lazy(() => import("./pages/PerformancePage").then((m) => ({ default: m.PerformancePage })));
 const MyWorkPage = lazy(() => import("./pages/MyWorkPage").then((m) => ({ default: m.MyWorkPage })));
 const MasterSettingsPage = lazy(() => import("./pages/MasterSettingsPage").then((m) => ({ default: m.MasterSettingsPage })));
 const SystemMonitorPage = lazy(() => import("./pages/SystemMonitorPage").then((m) => ({ default: m.SystemMonitorPage })));
@@ -74,7 +76,7 @@ if (typeof window !== "undefined") {
       // จากการ login เอง หรือจากลิงก์แชร์ Dashboard/Defect (endpoint anonymous)
       // 401 ที่มี code CRM_* (เช่น CRM_NOT_CONFIGURED, CRM_UNAUTHORIZED) คือบัญชี CRM มีปัญหา ไม่ใช่ session QA Hub หมดอายุ — ห้าม logout
       const problem = await resp.clone().json().catch(() => null) as { code?: string } | null;
-      if (!isApiRequest(reqUrl) || reqUrl.includes("/auth/login") || reqUrl.includes("/dashboard/shared") || reqUrl.includes("/shared/defects") || problem?.code?.startsWith("CRM_")) return resp;
+      if (!isApiRequest(reqUrl) || reqUrl.includes("/auth/login") || reqUrl.includes("/dashboard/shared") || reqUrl.includes("/shared/") || problem?.code?.startsWith("CRM_")) return resp;
       try { localStorage.removeItem("qa.accessToken"); localStorage.removeItem("qa.user"); } catch {}
       const isLoginPath = window.location.pathname === "/" || window.location.pathname.startsWith("/login");
       if (!isLoginPath) {
@@ -116,6 +118,7 @@ function restoredActivePage(): Page {
 const viewPermission: Record<Page, string> = {
   dashboard: "PROJECT.VIEW",
   "my-work": "QA.MYWORK.VIEW",
+  performance: "PERFORMANCE.VIEW",
   projects: "PROJECT.VIEW",
   releases: "PROJECT.VIEW",
   requirements: "REQUIREMENT.VIEW",
@@ -269,6 +272,9 @@ function App() {
   const shareToken = shareParams.get("dashboardShare") ?? "";
   // ลิงก์แชร์ Defect: short code `?d=` (ปัจจุบัน) หรือ token ยาว `?defectShare=` (รุ่นแรก)
   const defectShareToken = shareParams.get("d") ?? shareParams.get("defectShare") ?? "";
+  // ลิงก์สรุปผลงานพนักงานที่หัวหน้าส่งให้ HR: `?p=`
+  const performanceShareCode = shareParams.get("p") ?? "";
+  const isSharedView = Boolean(shareCode || shareToken || defectShareToken || performanceShareCode);
   const [page, setPage] = useState<Page>(restoredActivePage),
     [menu, setMenu] = useState(false),
     [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("qa.sidebar.collapsed") === "true"),
@@ -308,11 +314,11 @@ function App() {
     } catch {}
   }, []);
   useEffect(() => {
-    if (shareCode || shareToken || defectShareToken) return;
+    if (isSharedView) return;
     localStorage.setItem("qa.activePage", page);
     const expectedHash = `#/${page}`;
     if (window.location.hash !== expectedHash) window.history.replaceState(null, "", expectedHash);
-  }, [page, shareCode, shareToken, defectShareToken]);
+  }, [page, isSharedView]);
   useEffect(() => {
     const restoreFromHistory = () => {
       const hashPage = window.location.hash.match(/^#\/([^/?#]+)/)?.[1];
@@ -360,7 +366,7 @@ function App() {
   // ข้อมูล Topbar (Release/Build/Blocker) ต้องโหลดเฉพาะตอน login แล้วและไม่ใช่หน้าแชร์ — contextProjectId คืนค่าจาก
   // localStorage ของเครื่องที่เคยใช้ QA Hub ถ้าไม่กันไว้ หน้าแชร์ Defect/Dashboard (ไม่มี token) จะยิง API แล้วได้ 401
   // ขึ้น toast "โหลดรายการ Release/Build ไม่สำเร็จ (401)" ทั้งที่หน้านั้นไม่ได้ใช้ข้อมูลนี้
-  const contextEnabled = Boolean(user) && !shareCode && !shareToken && !defectShareToken;
+  const contextEnabled = Boolean(user) && !isSharedView;
   useEffect(() => {
     if (contextProjectId) localStorage.setItem("qa.context.project", contextProjectId);
   }, [contextProjectId]);
@@ -555,6 +561,8 @@ function App() {
           ? "จัดการค่ากลางและบริการ AI ที่ทุกระบบใช้งานร่วมกัน"
         : page === "audit"
           ? "ตรวจสอบประวัติการเปลี่ยนแปลงและกิจกรรมในระบบ"
+        : page === "performance"
+          ? "ผลงานจากระบบ บันทึกงานเพิ่มเติม และติดตามช่วงทดลองงานของทีม QA"
         : page === "test-suites"
           ? "Test Suite จัดเก็บระดับ Project · เลือก Release/Build ตอนนำไปสร้าง Test Cycle"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
@@ -752,6 +760,7 @@ function App() {
     }
   };
   if (shareCode || shareToken) return <div className="shared-dashboard"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Executive Read-only Report</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><Dashboard shareCode={shareCode} shareToken={shareToken} /></Suspense></main><footer>ข้อมูลสำหรับการบริหารจัดการ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
+  if (performanceShareCode) return <div className="shared-dashboard shared-performance-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>สรุปผลงานพนักงาน (สำหรับ HR)</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><SharedPerformancePage code={performanceShareCode} /></Suspense></main><footer>เอกสารภายใน • เปิดจากลิงก์แชร์ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
   if (defectShareToken) return <div className="shared-dashboard shared-defect-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>รายละเอียด Defect</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><SharedDefectPage token={defectShareToken} /></Suspense></main><footer>เปิดจากลิงก์แชร์ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
   if (!user) return <Login onLogin={(u) => { localStorage.removeItem("qa.activePage"); setPage("dashboard"); setUser(u); }} />;
   const can = (permission: string) =>
@@ -796,7 +805,7 @@ function App() {
           <button className="menu-btn topbar-menu" aria-label={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} title={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} onClick={() => { if (window.matchMedia("(max-width: 900px)").matches) setMenu((v) => !v); else { const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("qa.sidebar.collapsed", String(next)); } }}>
             <span aria-hidden="true">☰</span>
           </button>
-          {!["projects","users","settings","system-monitor","crm"].includes(page) && <div className="context">
+          {!["projects","users","settings","system-monitor","crm","performance"].includes(page) && <div className="context">
             {contextLoading && <span className="context-loading" role="status">กำลังเปลี่ยน Context...</span>}
             <label className="context-field"><span>Project</span><select
               value={contextProjectId}
@@ -884,7 +893,7 @@ function App() {
               <p>{description}</p>
             </div>
             <div className="actions">
-              {page !== "audit" && <label className="search">
+              {page !== "audit" && page !== "performance" && <label className="search">
                 ⌕
                 <input
                   value={search}
@@ -915,6 +924,8 @@ function App() {
             <Dashboard projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode ? `${contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} · ${contextReleases.find(x => x.releaseId === contextReleaseId)?.version}` : undefined} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} />
           ) : page === "my-work" ? (
             <MyWorkPage user={user} onOpenExecution={(cycleId) => { localStorage.setItem("qa.targetCycleId", cycleId); go("execution"); }} onNavigate={go} />
+          ) : page === "performance" ? (
+            <PerformancePage user={user} canManage={can("PERFORMANCE.EDIT")} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (
@@ -930,7 +941,7 @@ function App() {
           ) : page === "automation" ? (
             <Suspense fallback={pageLoading}><AutomationPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canView={can("AUTOMATION.VIEW")} canEdit={can("AUTOMATION.EDIT")} canValidate={can("AUTOMATION.VALIDATE")} canApprove={can("AUTOMATION.APPROVE")} canRun={can("AUTOMATION.EXECUTE") || can("EXECUTION.RUN")} canManage={can("AUTOMATION.MANAGE")} canViewEvidence={can("AUTOMATION.VIEWEVIDENCE")} canGenerateAi={can("AUTOMATION.GENERATEAI")} canCreateDefect={can("DEFECT.EDIT")} /></Suspense>
           ) : page === "crm" ? (
-              <Suspense fallback={pageLoading}><CrmPage search={search} onConfigure={openMyCrmModal} configVersion={myCrmConfigVersion} contextProjectId={contextProjectId} canLinkDefect={can("DEFECT.EDIT")} canEditCrm={can("CRM.EDIT")} /></Suspense>
+              <Suspense fallback={pageLoading}><CrmPage search={search} onConfigure={openMyCrmModal} configVersion={myCrmConfigVersion} contextProjectId={contextProjectId} canLinkDefect={can("DEFECT.EDIT")} canEditCrm={can("CRM.EDIT")} canManageMirror={user.roles.includes("SYS_ADMIN")} /></Suspense>
           ) : page === "users" ? (
             <AdministrationPage refresh={refresh} allProjects={contextProjects} />
           ) : page === "settings" ? (
@@ -952,7 +963,7 @@ function App() {
           ) : page === "test-cycles" ? (
             <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} />
           ) : (
-            <TestSuitesPage search={search} canEdit={can("TESTCASE.EDIT")} contextProjectId={contextProjectId} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} />
+            <TestSuitesPage search={search} canEdit={can("TESTCASE.EDIT")} contextProjectId={contextProjectId} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} canCreateCycle={can("EXECUTION.RUN")} onOpenCycleList={() => go("test-cycles")} />
           )}
           </Suspense>
           </div>

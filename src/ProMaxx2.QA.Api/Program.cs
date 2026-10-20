@@ -17,6 +17,7 @@ using ProMaxx2.QA.Api.Services;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Governance;
 using ProMaxx2.QA.Application.Automation;
+using ProMaxx2.QA.Application.Performance;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers(options => options.Filters.Add<ProjectAccessFilter>());
@@ -57,6 +58,17 @@ builder.Services.AddScoped<ProjectService>();
 builder.Services.AddScoped<ReleaseService>();
 builder.Services.AddScoped<TestSummaryService>();
 builder.Services.AddScoped<RiskAcceptanceService>();
+builder.Services.AddScoped<CrmMirrorSyncService>(); // สำเนา CRM Ticket ทั้งทีม (บัญชีกลาง CrmMirror:AccountUsername) สำหรับวัดผลงาน
+builder.Services.AddHostedService<CrmMirrorWorker>(); // ดึงทุก 15 นาที (90 วัน) + รอบใหญ่ 366 วันวันละครั้ง
+builder.Services.AddScoped<ICrmPerformanceSource, CrmPerformanceSource>(); // ผลงาน CRM รายคน (หน้า ผลงานและการประเมิน)
+builder.Services.AddScoped<PerformanceService>();
+builder.Services.AddScoped<EvaluationService>();
+builder.Services.AddScoped<PerformanceReportService>();
+builder.Services.AddScoped<PerformanceShareLinkService>();
+builder.Services.AddScoped<WeeklyReportService>(); // สรุปประจำสัปดาห์ส่งผู้บริหาร (หน้า ผลงานและการประเมิน)
+builder.Services.AddScoped<PerformanceEvidenceStorage>(); // ไฟล์หลักฐานของบันทึกงาน (App_Data/PerformanceEvidence)
+builder.Services.AddScoped<PerformanceReminderService>();
+builder.Services.AddHostedService<PerformanceReminderWorker>(); // เตือนหัวหน้าทางอีเมลเมื่อการประเมินใกล้/เลยกำหนด ทุก 1 ชม.
 builder.Services.AddScoped<ReleaseSignoffService>();
 builder.Services.AddScoped<RequirementService>();
 builder.Services.AddScoped<TestCaseService>();
@@ -139,6 +151,7 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RiskApprove",p=>p.RequireClaim("permission","RISK.APPROVE"))
     .AddPolicy("ReleaseSignoff",p=>p.RequireClaim("permission","RELEASE.SIGNOFF"))
     .AddPolicy("AuditView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","AUDIT.VIEW")))
+    .AddPolicy("PerformanceView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","PERFORMANCE.VIEW")||c.User.HasClaim("permission","PERFORMANCE.EDIT")))
     .AddAutomationPolicies()
     // endpoint ที่ลืมใส่ [Authorize] ต้องไม่กลายเป็น public โดยปริยาย — endpoint anonymous ต้องประกาศ [AllowAnonymous] เอง
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
