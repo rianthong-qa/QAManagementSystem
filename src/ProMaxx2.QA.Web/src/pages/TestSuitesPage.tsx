@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import type { ProjectItem, UserLookup } from "../shared/types";
-import { apiUrl, getJson } from "../api";
+import { apiUrl, getJson, isAbortError } from "../api";
 import { notify, confirmDialog } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { BatchCycleModal } from "./BatchCycleModal";
-import { type ModuleItem, type SessionUser, type TestSuiteItem, fmtDateTimeBE, masterOptionElements, nextBusinessCode, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
+import { type ModuleItem, type SessionUser, type TestSuiteItem, fmtDateTimeBE, masterOptionElements, nextBusinessCode, priorityTone, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
 
 /** แถวจาก GET /test-cases/picker — ข้อมูลย่อพอสำหรับตัวเลือกในฟอร์มและ AI Generate */
 type PickerCase = { testCaseId: string; projectId: string; moduleId: string; testCaseCode: string; title: string; priority: string; testType?: string; status: string };
@@ -147,7 +147,7 @@ export function TestSuitesPage({
     const controller = new AbortController();
     getJson<PickerCase[]>(`${apiUrl}/test-cases/picker?projectId=${pickerProjectId}`, controller.signal)
       .then((rows) => { pickerCache.current.set(pickerProjectId, rows); if (!controller.signal.aborted) setTestCases(rows); })
-      .catch((e) => { if (!controller.signal.aborted && !(e instanceof DOMException && e.name === "AbortError")) { if (form) setError("โหลดรายการ Test Case ไม่สำเร็จ"); else setSuiteAiError("โหลดรายการ Test Case ไม่สำเร็จ"); } });
+      .catch((e) => { if (!controller.signal.aborted && !isAbortError(e)) { if (form) setError("โหลดรายการ Test Case ไม่สำเร็จ"); else setSuiteAiError("โหลดรายการ Test Case ไม่สำเร็จ"); } });
     return () => controller.abort();
     // form แยกไว้ใน deps ไม่ได้ — ต้องการให้โหลดใหม่เฉพาะตอน Project ที่ต้องใช้เปลี่ยน ไม่ใช่ทุกครั้งที่เปิด/ปิดฟอร์มของ Project เดิม
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -600,7 +600,6 @@ export function TestSuitesPage({
         const inSuiteRequired = inSuiteCases.filter((x) => x.isRequired).length;
         const missing = [!name.trim() && "Suite Name", !editing && !formModuleId && "Module"].filter(Boolean) as string[];
         const canSave = !saving && !!projectId && !!code.trim() && missing.length === 0;
-        const priorityTone = (p?: string) => (p === "P0" || p === "P1" ? "red" : "blue");
         const caseMeta = (moduleId?: string, testType?: string) => [moduleCodeOf(moduleId), testType].filter(Boolean).join(" · ");
         return (
         <ModalShell labelledBy="testsuite-form-title" className="testsuite-editor" onDismiss={() => setForm(false)}>

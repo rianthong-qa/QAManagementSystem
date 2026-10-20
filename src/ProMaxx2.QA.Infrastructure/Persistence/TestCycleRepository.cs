@@ -43,9 +43,10 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         if (!string.IsNullOrWhiteSpace(cycleType)) query = query.Where(x => x.CycleType == cycleType);
         if (createdBy.HasValue) query = query.Where(x => x.CreatedBy == createdBy);
         // นับต่อสถานะก่อนกรอง status — ชิปสถานะหน้า Test Cycle ใช้ค่านี้แทนการยิงคำขอแยกทีละสถานะ (เดิม 6 คำขอต่อการเปลี่ยน filter)
-        var statusCounts = await query.GroupBy(x => x.Status).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+        var statusCounts = await query.GroupBy(x => x.Status).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, StringComparer.OrdinalIgnoreCase, ct);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(x => x.Status == status);
-        int CountOf(string s) => string.IsNullOrWhiteSpace(status) || status == s ? statusCounts.GetValueOrDefault(s) : 0;
+        // SQL เทียบ status แบบ case-insensitive (collation) — dictionary ต้องเทียบแบบเดียวกัน ไม่งั้น ?status=inprogress ได้ total = 0
+        int CountOf(string s) => string.IsNullOrWhiteSpace(status) || string.Equals(status, s, StringComparison.OrdinalIgnoreCase) ? statusCounts.GetValueOrDefault(s) : 0;
         var total = string.IsNullOrWhiteSpace(status) ? statusCounts.Values.Sum() : statusCounts.GetValueOrDefault(status);
         var inProgress = CountOf("InProgress");
         var completed = CountOf("Completed");

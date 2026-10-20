@@ -108,6 +108,7 @@
 .execution-progress-bar .is-fail, .execution-status-chip.is-fail > i { background: var(--red); }
 .execution-progress-bar .is-blocked, .execution-status-chip.is-blocked > i { background: var(--yellow); }
 .execution-progress-bar .is-inprogress, .execution-status-chip.is-inprogress > i { background: var(--info); }
+.execution-progress-bar .is-skipped, .execution-status-chip.is-skipped > i { background: var(--muted); }
 .execution-progress-bar .is-notrun { background: #d5dbe5; }
 .execution-status-chip.is-notrun > i { background: #b4bcc8; }
 .execution-status-chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }

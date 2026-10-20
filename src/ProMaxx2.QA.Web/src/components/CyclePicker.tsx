@@ -20,6 +20,7 @@ export function CyclePicker({ cycles, value, onChange, placeholder = "เลื�
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const id = useId();
   const selected = cycles.find((x) => x.testCycleId === value);
 
@@ -38,7 +39,8 @@ export function CyclePicker({ cycles, value, onChange, placeholder = "เลื�
   }, [cycles, query]);
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 
-  const close = () => { setOpen(false); setQuery(""); };
+  // ปิดด้วยคีย์บอร์ด/เลือกรายการ = คืน focus ไปที่ปุ่ม (ไม่งั้นแผงหายแล้ว focus หลุดไป <body>); คลิกนอกแผงไม่ดึง focus กลับ
+  const close = (returnFocus = true) => { setOpen(false); setQuery(""); if (returnFocus) triggerRef.current?.focus(); };
   const choose = (cycleId: string) => { onChange(cycleId); close(); };
   const openPicker = () => {
     if (disabled) return;
@@ -52,7 +54,7 @@ export function CyclePicker({ cycles, value, onChange, placeholder = "เลื�
     const index = flat.findIndex((x) => x.testCycleId === value);
     setActive(index >= 0 ? index : 0);
     inputRef.current?.focus();
-    const onDown = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) close(); };
+    const onDown = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) close(false); };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,7 +75,7 @@ export function CyclePicker({ cycles, value, onChange, placeholder = "เลื�
   let index = -1;
   return (
     <div className={`cycle-picker${open ? " is-open" : ""}`} ref={rootRef}>
-      <button type="button" className="cycle-picker-trigger" aria-haspopup="listbox" aria-expanded={open} disabled={disabled}
+      <button type="button" ref={triggerRef} className="cycle-picker-trigger" aria-haspopup="listbox" aria-expanded={open} disabled={disabled}
         aria-label={`${label}: ${selected ? `${selected.cycleCode} ${selected.cycleName}` : placeholder}`}
         onClick={() => (open ? close() : openPicker())}
         onKeyDown={(e) => { if (!open && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) { e.preventDefault(); openPicker(); } }}>

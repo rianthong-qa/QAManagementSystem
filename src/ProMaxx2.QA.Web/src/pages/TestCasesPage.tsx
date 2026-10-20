@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { ProjectItem, UserLookup } from "../shared/types";
 import { apiUrl } from "../api";
 import { notify } from "../components/dialogStore";
@@ -45,7 +45,10 @@ export function TestCasesPage({
     [editing, setEditing] = useState<TestCaseItem | null>(null),
     [saving, setSaving] = useState(false),
     [statusFilter, setStatusFilter] = useState(""),
-    [projectFilter,setProjectFilter]=useState(""),[moduleFilter,setModuleFilter]=useState(""),
+    [projectFilter,setProjectFilter]=useState(contextProjectId ?? ""),
+    // Module ที่หน้าอื่นส่งมา (qa.targetModuleId เช่นจาก Dashboard) เป็นตัวกรองเริ่มต้นครั้งเดียวแล้วลบทิ้ง — อ่านตอนสร้าง state
+    // (ไม่ใช่ใน effect) จึงไม่ยิงคำขอแบบไม่กรองก่อน และ StrictMode ที่รัน effect ซ้ำไม่ล้างตัวกรองทิ้ง
+    [moduleFilter,setModuleFilter]=useState(()=>{try{const target=localStorage.getItem("qa.targetModuleId")??"";localStorage.removeItem("qa.targetModuleId");return target;}catch{return "";}}),
     [automationFilter,setAutomationFilter]=useState(""),
     [createdByFilter,setCreatedByFilter]=useState(""),
     [users,setUsers]=useState<UserLookup[]>([]),[ownerUserId,setOwnerUserId]=useState(""),
@@ -161,11 +164,12 @@ export function TestCasesPage({
       .catch(error=>{if(!cancelled){setFilterModules([]);setError(error instanceof Error?error.message:"โหลดข้อมูล Module ไม่สำเร็จ");}});
     return()=>{cancelled=true};
   },[projects,projectFilter,reload]);
-  // เปลี่ยน Project context = ล้างตัวกรอง Module; ครั้งแรกที่เปิดหน้ารับ Module ที่หน้าอื่นส่งมา (qa.targetModuleId เช่นจาก Dashboard) แล้วลบทิ้ง
+  // เปลี่ยน Project context (หลังเปิดหน้าแล้ว) = ล้างตัวกรอง Module — ค่าเริ่มต้นตั้งใน useState แล้ว จึงข้ามรอบแรก
+  const contextProjectRef = useRef(contextProjectId);
   useEffect(() => {
-    let target = "";
-    try { target = localStorage.getItem("qa.targetModuleId") ?? ""; localStorage.removeItem("qa.targetModuleId"); } catch { /* ไม่มี storage ก็ไม่กรอง */ }
-    setProjectFilter(contextProjectId ?? ""); setModuleFilter(target); setPage(1);
+    if (contextProjectRef.current === contextProjectId) return;
+    contextProjectRef.current = contextProjectId;
+    setProjectFilter(contextProjectId ?? ""); setModuleFilter(""); setPage(1);
   }, [contextProjectId]);
   useEffect(() => {
     if (!form || editing || !projectId || !moduleId) return;

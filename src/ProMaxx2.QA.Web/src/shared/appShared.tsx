@@ -177,6 +177,8 @@ export const nav: {
     ],
   },
 ];
+/** สี Badge ของ Priority — P0/P1 (หรือ Critical/High) = แดง ที่เหลือ = น้ำเงิน; ใช้ร่วมกันหน้า Execution Workspace และ Test Suite */
+export const priorityTone = (p?: string) => (p === "P0" || p === "P1" || p === "Critical" || p === "High" ? "red" : "blue");
 export const defectStatusTones: Record<string, string> = { Open: "yellow", "In Progress": "blue", Resolved: "green", Closed: "green", Rejected: "gray" };
 // รูปแบบ DD/MM/YYYY HH:MM:SS แบบปี พ.ศ. (เช่น 28/08/2569 14:35:02) — เดิมใช้ d.getDate()/d.getHours()
 // ฯลฯ ตรงๆ ซึ่งอ่านค่าตาม timezone ของเครื่อง (ถูกก็ต่อเมื่อเครื่องตั้งเป็นไทยพอดี) เปลี่ยนมาใช้ toUtcDate

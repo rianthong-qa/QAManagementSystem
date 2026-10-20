@@ -7,7 +7,7 @@ import { type StepStatus, calculateOverallResult } from "../overallResult";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { formatThaiDateTime } from "../dateTime";
-import { type ModuleItem, type SessionUser, type TestCycleItem, currentUserId, defectStatusTones, renderModuleSelectOptions } from "../shared/appShared";
+import { type ModuleItem, type SessionUser, type TestCycleItem, currentUserId, defectStatusTones, priorityTone, renderModuleSelectOptions } from "../shared/appShared";
 
 // เหตุผลของ Skip Test Case (test-case-execution-ui-spec.md §18) — ไม่มีคอลัมน์ DB แยกเก็บ Reason
 // เลยเข้ารหัสรวมไว้ใน Comment field เดิมตอนส่ง (ดู confirmSkip ใน ExecutionWorkspacePage)
@@ -31,8 +31,6 @@ function executionStatusTone(status: string): string {
     default: return "gray"; // NotRun
   }
 }
-// P0/P1 (หรือ Critical/High) = แดง ที่เหลือ = น้ำเงิน — แบบเดียวกับหน้า Test Suite
-const priorityTone = (p?: string) => (p === "P0" || p === "P1" || p === "Critical" || p === "High" ? "red" : "blue");
 const isOpenDefectStatus = (status: string) => !["Resolved", "Closed", "Rejected"].includes(status);
 type ExecutionCase = {
   testCycleCaseId: string;
@@ -128,15 +126,21 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     };
     // ขอเฉพาะ InProgress จาก server — เดิมขอ 100 Cycle ล่าสุดทุกสถานะแล้วกรองในหน้าเว็บ ทำให้ Cycle ที่ InProgress แต่เก่ากว่า
     // 100 รายการล่าสุดไม่โผล่ใน dropdown เลย (ตรวจ 2026-10-20: PMX2 มี InProgress 191 รายการ หายไป 91)
-    const query = `?status=InProgress&size=500${cycleModuleFilter ? `&moduleId=${cycleModuleFilter}` : ""}`;
+    // server จำกัด size สูงสุด 500 — ขอทีละหน้าจนครบ total ไม่งั้น Cycle เกิน 500 รายการจะหายเงียบ ๆ อีก
+    const pageSize = 500;
+    const query = `?status=InProgress&size=${pageSize}${cycleModuleFilter ? `&moduleId=${cycleModuleFilter}` : ""}`;
     setCyclesLoaded(false);
     setCycleLoadError("");
-    fetch(`${apiUrl}/test-cycles${query}`, { headers: h })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
-        const data: unknown = await r.json();
-        return Array.isArray(data) ? (data as TestCycleItem[]) : (data as any)?.items?.rows ?? [];
-      })
+    const loadPage = async (page: number, acc: TestCycleItem[]): Promise<TestCycleItem[]> => {
+      const r = await fetch(`${apiUrl}/test-cycles${query}&page=${page}`, { headers: h });
+      if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
+      const data: unknown = await r.json();
+      if (Array.isArray(data)) return data as TestCycleItem[];
+      const items = (data as { items?: { total?: number; rows?: TestCycleItem[] } })?.items;
+      const rows = [...acc, ...(items?.rows ?? [])];
+      return (items?.rows?.length ?? 0) === pageSize && rows.length < (items?.total ?? 0) ? loadPage(page + 1, rows) : rows;
+    };
+    loadPage(1, [])
       .then((data: TestCycleItem[]) => {
         // Only offer cycles that are actively being executed — Draft hasn't started yet, and
         // Completed/Closed/Cancelled have no more work to do, so none of them belong in this dropdown.
@@ -262,19 +266,25 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   }, [selectedTestCaseId, reload]);
   // เคสที่แสดงอยู่: รอรายละเอียด + Linked Defects ของเคสใหม่มาครบก่อนแล้วสลับทีเดียว — ระหว่างรอคงเคสเดิมไว้ (หรี่ลง)
   // เดิมแสดงเคสใหม่แบบไม่มี Step ก่อน แล้ว Step/Defect ค่อยตามมา ความสูงพื้นที่ทดสอบยุบแล้วขยาย หน้าเด้ง
-  const shownCaseRef = useRef<ExecutionCase | undefined>(undefined);
-  const selected = useMemo(
+  // Linked Defects สลับพร้อมเคสในชุดเดียวกัน — ไม่งั้นช่วงที่ Defect ของเคสใหม่มาก่อน เคสเดิมบนจอจะแสดง Defect ของเคสใหม่
+  // โหลดรายละเอียดเคสใหม่ไม่สำเร็จ = เลิกแสดงเคสเดิม (แสดงข้อความ error แทน) ไม่ให้ค้างเคสเก่าที่ยังกดแก้ผลได้แต่บันทึกไม่ได้
+  type ShownCase = { item?: ExecutionCase; defects: WorkspaceDefect[]; defectsError: string };
+  const shownCaseRef = useRef<ShownCase>({ defects: [], defectsError: "" });
+  const shown = useMemo(
     () => {
       const base = workspace?.cases.find((x) => x.testCycleCaseId === selectedId);
       if (base && caseDetail && caseDetail.testCycleCaseId === selectedId && linkedDefectsFor === base.testCaseId) {
-        shownCaseRef.current = { ...base, ...caseDetail };
-      } else if (!workspace?.cases.length) {
-        shownCaseRef.current = undefined;
+        shownCaseRef.current = { item: { ...base, ...caseDetail }, defects: linkedDefects, defectsError: linkedDefectsError };
+      } else if (!workspace?.cases.length || caseDetailLoadError) {
+        shownCaseRef.current = { defects: [], defectsError: "" };
       }
       return shownCaseRef.current;
     },
-    [workspace, selectedId, caseDetail, linkedDefectsFor],
+    [workspace, selectedId, caseDetail, linkedDefectsFor, linkedDefects, linkedDefectsError, caseDetailLoadError],
   );
+  const selected = shown.item;
+  const selectedDefects = shown.defects;
+  const selectedDefectsError = shown.defectsError;
   const executionStats = useMemo(() => {
     const cases = workspace?.cases ?? [];
     return {
@@ -282,6 +292,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       passed: cases.filter((x) => x.currentStatus === "Pass").length,
       failed: cases.filter((x) => x.currentStatus === "Fail").length,
       blocked: cases.filter((x) => x.currentStatus === "Blocked").length,
+      skipped: cases.filter((x) => x.currentStatus === "Skipped").length,
       inProgress: cases.filter((x) => x.currentStatus === "InProgress").length,
       pending: cases.filter((x) => x.currentStatus === "NotRun").length,
     };
@@ -333,8 +344,16 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     }
   }, [selected]);
   // กำลังสลับไปเคส/Cycle อื่น — หน้าจอยังแสดงของเดิม จึงต้องปิดการบันทึก/ปุ่มลัดไว้จนของใหม่พร้อม
+  const filteredCycles = useMemo(() => cycles.filter((x) =>
+    (!contextProjectId || x.projectId === contextProjectId) &&
+    (!contextReleaseId || x.releaseId === contextReleaseId) &&
+    (!contextBuildId || x.buildId === contextBuildId)
+  ), [cycles, contextProjectId, contextReleaseId, contextBuildId]);
   const workspaceSwitching = workspaceLoading && !!workspace;
-  const caseSwitching = workspaceSwitching || (!!selected && selected.testCycleCaseId !== selectedId);
+  // Cycle ที่เปิดทันทีจาก qa.execution.lastCycleId/qa.targetCycleId ก่อนรายการ Cycle มา — ยังไม่รู้ว่าอยู่ใน context ปัจจุบันและยัง InProgress
+  // จึงให้ดูได้แต่ยังบันทึก/ใช้ปุ่มลัดไม่ได้ จนรายการยืนยัน (ถ้าไม่อยู่ในรายการ effect ด้านล่างจะเปลี่ยน Cycle ให้)
+  const cycleUnconfirmed = !!cycleId && !filteredCycles.some((x) => x.testCycleId === cycleId);
+  const caseSwitching = workspaceSwitching || cycleUnconfirmed || (!!selected && selected.testCycleCaseId !== selectedId);
   // UI รอบ 2: เปลี่ยนเคสแล้ว effect ด้านบนคืนค่าที่บันทึกล่าสุด — ผลที่กรอกแต่ยังไม่บันทึกจะหายเงียบ ๆ จึงถามก่อน
   const hasUnsavedResults = !!selected && (
     selected.steps.some((step) => (stepStatuses[step.stepNo] ?? "NotRun") !== (step.lastStatus ?? "NotRun") || (stepActuals[step.stepNo] ?? "") !== (step.lastActualResult ?? ""))
@@ -467,7 +486,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const key = event.key.toLowerCase();
       const stepNos = selected.steps.map((step) => step.stepNo);
-      if (mainTab === "steps" && (event.key === "ArrowDown" || event.key === "ArrowUp") && stepNos.length) {
+      // ลูกศรขึ้น/ลงเลื่อน Step เฉพาะเมื่อเริ่มเลือก Step แล้ว และโฟกัสอยู่ในพื้นที่ทดสอบ (หรือไม่ได้อยู่ที่ control ใด) —
+      // โฟกัสอยู่ที่ปุ่ม/ลิงก์นอกพื้นที่ทดสอบ (คิว, แท็บ, toolbar) ปล่อยให้ลูกศรทำงาน/เลื่อนหน้าตามปกติ
+      const inSteps = target === document.body || !!(target && mainRef.current?.contains(target));
+      if (mainTab === "steps" && (event.key === "ArrowDown" || event.key === "ArrowUp") && stepNos.length && activeStep != null && inSteps) {
         event.preventDefault();
         const index = activeStep == null ? -1 : stepNos.indexOf(activeStep);
         const nextIndex = event.key === "ArrowDown" ? Math.min(stepNos.length - 1, index + 1) : Math.max(0, index - 1);
@@ -574,11 +596,6 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       setDeletingHistoryId(null);
     }
   };
-  const filteredCycles = useMemo(() => cycles.filter((x) =>
-    (!contextProjectId || x.projectId === contextProjectId) &&
-    (!contextReleaseId || x.releaseId === contextReleaseId) &&
-    (!contextBuildId || x.buildId === contextBuildId)
-  ), [cycles, contextProjectId, contextReleaseId, contextBuildId]);
   useEffect(() => {
     if (!cyclesLoaded) return;
     if (!filteredCycles.length) {
@@ -606,7 +623,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     setActual(text);
   };
   // Step ที่ Fail แต่ยังไม่มี Defect — ไม่มี Defect ที่ยังเปิดผูกกับเคสนี้ และยังไม่ได้สร้างรายสเต็ปในรอบนี้
-  const failedStepsWithoutDefect = !selected || linkedDefects.some((d) => isOpenDefectStatus(d.status)) ? []
+  const failedStepsWithoutDefect = !selected || selectedDefects.some((d) => isOpenDefectStatus(d.status)) ? []
     : selected.steps.filter((s) => (stepStatuses[s.stepNo] ?? "NotRun") === "Fail" && !stepDefectCodes[s.stepNo]);
   // ===== Presentation helpers (UI ปรับใหม่ 2026-10-20 — ไม่เปลี่ยน logic/flow การบันทึกตาม EXECUTION-WORKSPACE-RESPONSIVE-UI-SPEC §2) =====
   const resultIcon = (status: string) => status === "Pass" ? "check_circle" : status === "Fail" ? "cancel" : status === "Blocked" ? "block" : "radio_button_unchecked";
@@ -625,6 +642,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     { status: "Pass", label: "Passed", count: executionStats.passed },
     { status: "Fail", label: "Failed", count: executionStats.failed },
     { status: "Blocked", label: "Blocked", count: executionStats.blocked },
+    // Skipped นับเป็น "ทดสอบแล้ว" (executedCount = ทั้งหมด − Not Run) — ต้องมีในแถบ/ชิปด้วย ไม่งั้นแถบเต็มไม่ถึง % ที่แสดง
+    { status: "Skipped", label: "Skipped", count: executionStats.skipped },
     { status: "InProgress", label: "In Progress", count: executionStats.inProgress },
     { status: "NotRun", label: "Not Run", count: executionStats.pending },
   ];
@@ -788,7 +807,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
               </div>
               {mainTab === "steps" ? (
                 <div role="tabpanel" id="execution-panel-steps" aria-labelledby="execution-tab-steps" className="execution-steps-panel">
-                  {(selected.preconditions || linkedDefects.length > 0 || linkedDefectsError) && (
+                  {(selected.preconditions || selectedDefects.length > 0 || selectedDefectsError) && (
                     <div className="execution-context-notes">
                       {selected.preconditions && (
                         <div className="precondition">
@@ -796,11 +815,11 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                           <p>{selected.preconditions}</p>
                         </div>
                       )}
-                      {linkedDefectsError && <div className="inline-alert error" role="alert"><span>{linkedDefectsError}</span></div>}
-                      {linkedDefects.length > 0 && (
+                      {selectedDefectsError && <div className="inline-alert error" role="alert"><span>{selectedDefectsError}</span></div>}
+                      {selectedDefects.length > 0 && (
                         <div className="execution-linked-defects">
                           <b>Linked Defects</b>
-                          {linkedDefects.map((d) => (
+                          {selectedDefects.map((d) => (
                             <span className="execution-linked-defect" key={d.defectId}>
                               <Badge tone={defectStatusTones[d.status] ?? "gray"}>{d.defectCode}</Badge>
                               <small>{d.title}</small>
