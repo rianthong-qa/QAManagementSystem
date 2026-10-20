@@ -1072,6 +1072,11 @@ INCLUDE (TestCaseCode, Title, RevisionNo);
 
 CREATE INDEX IX_TestCycleCases_Cycle_Status_Tester
 ON dbo.TestCycleCases (TestCycleId, CurrentStatus, AssignedTesterUserId);
+-- ของจริงใน DB (migration AddTestCycleCaseStatusIndex, 2026-10-20) ยังไม่มี index ข้างบน แต่มีตัวนี้แทน:
+-- รายการ Test Cycle นับเคสทั้งหมด/ที่รันแล้วต่อ Cycle — เดิมเฉลี่ย ~34,000 logical reads ต่อคำขอ เหลือ ~2,200
+CREATE INDEX IX_TestCycleCases_TestCycleId
+ON dbo.TestCycleCases (TestCycleId)
+INCLUDE (CurrentStatus);
 
 CREATE INDEX IX_TestExecutions_CycleCase_ExecutionNo
 ON dbo.TestExecutions (TestCycleCaseId, ExecutionNo);

@@ -89,12 +89,14 @@ Internet ─► api-promaxx2.qahub.store              ─► cloudflared ─► 
 
 - **Frontend dev**: Vite port **5173**, `.env.development`: `VITE_API_URL=https://api-promaxx2.qahub.store/api/v1`
   → **แก้ backend แล้วต้อง restart API local ไม่งั้น domain สาธารณะยังเรียกของเก่า**
+- **HMR/WebSocket ของ Vite ปิดเป็นค่าเริ่มต้น (2026-10-20):** ผู้ใช้จริงเปิดผ่าน dev server นี้ — ถ้าเปิด HMR ทุกครั้งที่แก้ไฟล์ใน `src/` หรือ WebSocket ผ่าน Cloudflare หลุด Vite client จะสั่ง `location.reload()` ทุก browser (หน้า Execution Workspace รีโหลดเองและผลที่กรอกหาย) — ตอนนี้แก้ frontend แล้วต้องกด F5 เอง; ถ้าต้องการ HMR ตอนพัฒนาให้รัน `$env:QA_VITE_HMR='true'; npm.cmd run dev` (ดู `vite.config.ts`) — Console ขึ้น `[vite] failed to connect to websocket` เป็นเรื่องปกติ
 - **API**: ฟังที่ `http://0.0.0.0:5038` และรันแบบ **Production** (launch profile `production`)
   - Production อ่าน connection string จาก `appsettings.Production.json` (Windows auth, ไม่มี secret)
   - **JWT signing key อยู่ใน User environment variable `Jwt__Key` เท่านั้น** — ห้าม commit key; Production จะไม่สตาร์ทถ้าไม่มี key
   - Swagger/OpenAPI เปิดเฉพาะ Development
 - **CORS AllowedOrigins**: `localhost:5173`, `192.168.200.219:5173`, `promaxx2.qahub.store`, `qahub.store`
 - **Cloudflare cache ไฟล์ `.css` ของ Vite dev (ยืนยัน 2026-10-04):** Vite ส่ง `Cache-Control: no-cache` แต่ผ่าน `promaxx2.qahub.store` ไฟล์ `/src/*.css` ได้ `Cache-Control: max-age=14400` + `cf-cache-status: MISS/HIT` (ไฟล์ `.tsx` เป็น `DYNAMIC`) — หลังแก้ CSS ผู้ใช้ผ่านโดเมนสาธารณะอาจได้ JS ใหม่กับ CSS เก่าได้นานถึง 4 ชม. (UI เพี้ยน: rule ใหม่ไม่ทำงาน) แก้ชั่วคราว: Purge Cache ใน Cloudflare + Ctrl+Shift+R; แก้ถาวร: Cloudflare Cache Rule ให้ hostname ของ Vite dev เป็น Bypass cache และ Browser TTL = Respect existing headers — ตรวจด้วย `curl -sD - -o NUL https://promaxx2.qahub.store/src/Crm.css`
+- **หน่วยความจำ SQL Server (ตั้ง 2026-10-20):** เครื่องนี้รัน SQL Server 4 instance (2016/2019/2022/2025) + Analysis/Reporting Services บน RAM 32 GB — เดิม `MSSQLSERVER2025` (DB MSMAXX) ไม่จำกัด max server memory จองไป ~13 GB จน commit ของเครื่องเกือบเต็ม Windows ดึงหน่วยความจำของ `MSSQLSERVER2022` ออก (error log: *"sql server process memory has been paged out"*, buffer pool เหลือ ~18 MB) ทำให้ Execution Workspace และทุกหน้าช้า — ตั้ง max server memory: 2025 = 4096 MB, 2022 = 4096 MB (min 1024 MB), 2019/2016 = 1024 MB; ถ้าระบบช้าลงอีกให้ตรวจ `xp_readerrorlog 0,1,N'paged out'` และ commit ของเครื่องก่อนแก้โค้ด
 - traffic จาก Cloudflare Tunnel มาจาก loopback เสมอแต่มี header `CF-Connecting-IP` — endpoint ที่อนุญาตเฉพาะเครื่อง local (เช่น `automation/schedules/worker-status`) ต้องตรวจ header นี้ด้วย
 
 ### การ Run/Restart API

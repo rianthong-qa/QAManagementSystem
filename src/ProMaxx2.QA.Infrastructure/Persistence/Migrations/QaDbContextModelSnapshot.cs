@@ -2304,6 +2304,10 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TestCaseId");
 
+                    b.HasIndex("TestCycleId");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TestCycleId"), new[] { "CurrentStatus" });
+
                     b.HasIndex("TestCycleId", "TestCaseId")
                         .IsUnique();
 

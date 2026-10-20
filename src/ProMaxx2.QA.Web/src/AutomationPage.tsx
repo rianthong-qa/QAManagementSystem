@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDialog } from "./components/dialogStore";
 import { formatThaiDateTime } from "./dateTime";
 import { apiUrl } from "./api";
@@ -82,6 +82,8 @@ export function AutomationPage({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
+  // รอบ poll ระหว่างมีงานรัน — แยกจาก reload เพื่อโหลดเฉพาะข้อมูลที่เปลี่ยนตามสถานะการรัน
+  const [liveTick, setLiveTick] = useState(0);
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${token()}` }), []);
 
   const [cases, setCases] = useState<AutomationCaseItem[]>([]);
@@ -184,6 +186,31 @@ export function AutomationPage({
       .catch((err) => { if (!isAbort(err)) setError(`โหลดข้อมูล Automation ไม่สำเร็จ${err instanceof Error ? ` (${err.message})` : ""} — ข้อมูลที่แสดงอาจไม่ครบ`); });
     return () => ctrl.abort();
   }, [pid, buildId, reload]);
+  // poll ทุก 15 วินาทีโหลดแค่ 5 จาก 9 endpoint ของรอบเต็ม (ไม่โหลด Objects/Actions/Flaky/Retry Policy ที่ไม่เปลี่ยนระหว่างรัน)
+  // และโหลดไม่สำเร็จก็คงข้อมูลเดิมไว้เงียบ ๆ — รอบเต็มด้านบนเป็นตัวแจ้ง error
+  useEffect(() => {
+    if (!pid || !liveTick) return;
+    const h = { Authorization: `Bearer ${token()}` };
+    const ctrl = new AbortController();
+    const signal = ctrl.signal;
+    const build = buildId ? `&buildId=${buildId}` : "";
+    Promise.all([
+      fetchJson(`${apiUrl}/automation/cases?projectId=${pid}&page=1&size=200`, h, signal),
+      fetchJson(`${apiUrl}/automation/jobs?projectId=${pid}${build}&page=1&size=200`, h, signal),
+      fetchJson(`${apiUrl}/automation/executions?projectId=${pid}${build}&page=1&size=200`, h, signal),
+      fetch(`${apiUrl}/automation/agents`, { headers: h, signal }).then((r) => (r.ok ? r.json() : null)),
+      fetchJson(`${apiUrl}/automation/dashboard?projectId=${pid}`, h, signal),
+    ])
+      .then(([c, j, e, a, d]) => {
+        if (Array.isArray(c?.rows)) setCases(c.rows);
+        if (Array.isArray(j?.rows)) setJobs(j.rows);
+        if (Array.isArray(e?.rows)) setExecutions(e.rows);
+        if (Array.isArray(a)) setAgents(a);
+        if (d && typeof d === "object" && d.automationCases != null) setDash(d);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [pid, buildId, liveTick]);
 
   const openCase = async (item: AutomationCaseItem) => {
     setSelectedCase(item);
@@ -744,8 +771,11 @@ export function AutomationPage({
     } catch (e) { setError(e instanceof Error ? e.message : "ลบ Automation Case ไม่สำเร็จ"); }
     finally { setBulkDeleteBusy(false); }
   };
+  // ตาราง Case แสดงเฉพาะแท็บ Cases — เดิมโหลดทุกรอบ poll แม้เปิดแท็บอื่นอยู่; เปลี่ยนกลับมาแท็บนี้จะโหลดใหม่เอง
+  const casesTabActive = tab === "cases";
   useEffect(() => {
     if (!pid) { setCasesPaged({ total: 0, rows: [] }); return; }
+    if (!casesTabActive) return;
     const ctrl = new AbortController();
     const qs = new URLSearchParams({ projectId: pid, page: String(casePage), size: String(casePageSize), sortBy: caseSortBy });
     if (debouncedHeadSearch) qs.set("search", debouncedHeadSearch);
@@ -755,13 +785,19 @@ export function AutomationPage({
       .then((d) => { setCasesError(""); setCasesPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }); })
       .catch((e) => { if (!isAbort(e)) setCasesError("โหลดรายการ Automation Case ไม่สำเร็จ"); });
     return () => ctrl.abort();
-  }, [pid, casePage, casePageSize, debouncedHeadSearch, caseStatusFilter, caseTargetFilter, caseSortBy, headers, reload]);
+  }, [pid, casePage, casePageSize, debouncedHeadSearch, caseStatusFilter, caseTargetFilter, caseSortBy, headers, reload, liveTick, casesTabActive]);
 
   const hasActiveWork = kRunning > 0 || jobs.some((j) => j.status === "Queued" || j.status === "Assigned" || j.status === "Running");
   useEffect(() => {
     if (!hasActiveWork) return;
-    const t = setInterval(() => { if (!document.hidden) setReload((v) => v + 1); }, 15000);
+    const t = setInterval(() => { if (!document.hidden) setLiveTick((v) => v + 1); }, 15000);
     return () => clearInterval(t);
+  }, [hasActiveWork]);
+  // งานรันหมดแล้วโหลดรอบเต็ม 1 ครั้ง — ให้ Flaky Candidates และข้อมูลที่ poll ไม่ได้โหลดตรงกับผลล่าสุด
+  const hadActiveWork = useRef(false);
+  useEffect(() => {
+    if (hadActiveWork.current && !hasActiveWork) setReload((v) => v + 1);
+    hadActiveWork.current = hasActiveWork;
   }, [hasActiveWork]);
 
   const modName = createModules.find((m) => m.moduleId === createPick?.moduleId)?.moduleName;
@@ -1011,7 +1047,7 @@ export function AutomationPage({
         {manageTab === "retry" && <RetryPolicyTab policy={retryPolicy} canManage={canManage} busy={maintenanceBusy} onSave={updateRetryPolicy} />}
       </section>}
 
-      {tab === "execution" && <ExecutionTab projectId={pid} buildId={buildId} releaseId={releaseId} agents={agents} headers={headers} jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} reload={reload} />}
+      {tab === "execution" && <ExecutionTab projectId={pid} buildId={buildId} releaseId={releaseId} agents={agents} headers={headers} jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} reload={reload + liveTick} />}
 
       {tab === "failures" && <FailureDashboardTab projectId={pid} releaseId={releaseId} agents={agents} headers={headers} setExecDetail={setExecDetail} />}
     </>}

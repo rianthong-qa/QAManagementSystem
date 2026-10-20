@@ -143,15 +143,25 @@ export function AdministrationPage({ refresh, allProjects }: { refresh: number; 
       headers,
       body: JSON.stringify(roleModal === "create" ? { roleCode, roleName, description: roleDescription } : { roleName, description: roleDescription }),
     });
-    if (response.ok) window.location.reload();
-    else notify("บันทึกกลุ่มสิทธิ์ไม่สำเร็จ", "error");
+    if (!response.ok) { notify("บันทึกกลุ่มสิทธิ์ไม่สำเร็จ", "error"); return; }
+    // เดิม window.location.reload() ทั้งหน้า — โหลดเฉพาะข้อมูลผู้ใช้/สิทธิ์ใหม่ และเลือกกลุ่มที่เพิ่งสร้างไว้
+    if (roleModal === "create") {
+      const created = await response.json().catch(() => null) as AdminRole | null;
+      if (created?.roleId) roleIdRef.current = created.roleId;
+    }
+    setRoleModal(null);
+    setVersion((current) => current + 1);
+    notify("บันทึกกลุ่มสิทธิ์เรียบร้อยแล้ว", "success");
   };
   const deleteRole = async () => {
     const role = roles.find((x) => x.roleId === roleId);
     if (!role || !await confirmDialog(`ลบกลุ่มสิทธิ์ ${role.roleName} หรือไม่?`)) return;
     const response = await fetch(`${apiUrl}/admin/roles/${roleId}`, { method: "DELETE", headers });
-    if (response.ok) window.location.reload();
-    else notify("ลบกลุ่มสิทธิ์ไม่สำเร็จ หรือกลุ่มนี้ยังมีผู้ใช้งานอยู่", "error");
+    if (!response.ok) { notify("ลบกลุ่มสิทธิ์ไม่สำเร็จ หรือกลุ่มนี้ยังมีผู้ใช้งานอยู่", "error"); return; }
+    // เลือกกลุ่มแรกหลังลบเหมือนตอนรีโหลดทั้งหน้า (API แค่ปิดใช้งาน กลุ่มนี้จึงยังอยู่ในรายการ)
+    roleIdRef.current = "";
+    setVersion((current) => current + 1);
+    notify("ลบกลุ่มสิทธิ์เรียบร้อยแล้ว", "success");
   };
   const openEdit = (user: AdminUser) => {
     setEditing(user);

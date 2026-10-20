@@ -235,6 +235,8 @@ internal sealed class MainForm : Form
         if(batch.Length==0)return;
         _log.AppendText(batch.ToString());
         if(_log.TextLength>MaxLogCharacters){_log.Select(0,_log.TextLength-MaxLogCharacters+20_000);_log.SelectedText="";}
+        // RichTextBox เก็บ Undo ของทุก AppendText/การตัด log เก่าไว้ตลอด (แม้ ReadOnly) — เปิดค้างทั้งวันหน่วยความจำโตเกิน 1 GB
+        _log.ClearUndo();
         if(keepAtBottom){_log.SelectionStart=_log.TextLength;_log.ScrollToCaret();}
     }
 
@@ -242,6 +244,7 @@ internal sealed class MainForm : Form
     {
         while(_pendingLogs.TryDequeue(out _))Interlocked.Decrement(ref _queuedLogLines);
         _log.Clear();
+        _log.ClearUndo();
         return Task.CompletedTask;
     }
 

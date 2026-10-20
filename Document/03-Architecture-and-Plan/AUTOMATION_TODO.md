@@ -2,7 +2,7 @@
 
 > สถานะ: **Automation Work Tracker — Single Source of Truth**
 >
-> อัปเดตล่าสุด: 24 กันยายน 2026
+> อัปเดตล่าสุด: 20 ตุลาคม 2026
 >
 > ขอบเขต: Automation UI, API, Domain, Database, Windows Agent, DSL, Queue, Evidence, Test Data, Regression และ CI/CD
 
@@ -204,6 +204,12 @@
 8. `AUT-P2-001` ถึง `AUT-P2-008` — Monitoring, UX และ Scalability
 
 ## 11. Progress Log
+
+### 2026-10-20 — ลดการโหลดซ้ำของหน้า Automation ระหว่างมีงานรัน
+
+- เดิมเมื่อมีงาน Queued/Assigned/Running หน้า Automation เพิ่ม `reload` ทุก 15 วินาที ทำให้โหลดใหม่ครบ 9 endpoint (Cases/Objects/Jobs/Executions/Agents/Actions/Dashboard/Flaky/Retry Policy) + ตาราง Case แบบแบ่งหน้า (แม้เปิดแท็บอื่นอยู่) + ตาราง Queue/Run History
+- แยกเป็น `liveTick`: รอบ poll โหลดแค่ Cases/Jobs/Executions/Agents/Dashboard และโหลดไม่สำเร็จจะคงข้อมูลเดิมไว้ (รอบเต็มยังเป็นตัวแจ้ง error); ตาราง Case แบบแบ่งหน้าโหลดเฉพาะตอนอยู่แท็บ Cases; เมื่องานรันหมดจะโหลดรอบเต็ม 1 ครั้งให้ Flaky Candidates ตรงกับผลล่าสุด; ไม่เปลี่ยน logic/endpoint ฝั่ง API
+- หลักฐาน: `npm.cmd run build`, `npm.cmd run lint`, `git diff --check` ผ่าน; **ยังไม่ได้ทดสอบกับงานรันจริงบนหน้าเว็บ** (ต้องตรวจว่า KPI/Queue/Run History อัปเดตระหว่างรันและหยุด poll เมื่องานจบ)
 
 ### 2026-09-25 — UI รอบ 6 (ทั้งแอป) กระทบหน้า Automation
 

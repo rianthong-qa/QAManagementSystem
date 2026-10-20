@@ -142,7 +142,9 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         setCycleId("");
         setCycleLoadError(e instanceof Error ? e.message : "โหลด Test Cycle ไม่สำเร็จ");
       });
-  }, [reload, cycleModuleFilter, myCyclesOnly]);
+    // ไม่ผูกกับ reload — บันทึก/ลบผลไม่ได้เปลี่ยนรายการ Cycle แต่ถ้าโหลดใหม่ cycles จะเป็น array ใหม่ ทำให้โหลด Module
+    // ของทุก Project ซ้ำและ effect เลือก Cycle ทำงานอีกรอบ ดูเหมือนหน้ารีโหลดเองทุกครั้งที่กดบันทึก
+  }, [cycleModuleFilter, myCyclesOnly]);
   useEffect(() => {
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
     // Keep the filter options stable while the cycle list is being reloaded
