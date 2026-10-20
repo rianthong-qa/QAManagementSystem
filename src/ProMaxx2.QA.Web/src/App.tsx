@@ -820,7 +820,7 @@ function App() {
                 </option>
               ))}
             </select></label>
-            <label className="context-field"><span>Release</span><select
+            <label className="context-field context-release"><span>Release</span><select
               value={contextReleaseId}
               onChange={(e) => { setContextLoading(true); setContextReleaseId(e.target.value); }}
               aria-label="Release ปัจจุบัน"
@@ -835,7 +835,7 @@ function App() {
                 </option>
               ))}
             </select></label>
-            <label className="context-field"><span>Build</span><select
+            <label className="context-field context-build"><span>Build</span><select
               value={contextBuildId}
               onChange={(e) => setContextBuildId(e.target.value)}
               aria-label="Build ปัจจุบัน"

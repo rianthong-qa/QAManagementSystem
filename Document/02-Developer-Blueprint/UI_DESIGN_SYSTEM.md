@@ -340,6 +340,10 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-21 — Topbar: ป้าย Project/Release/Build ซ้อนกันบน Mobile
+- สาเหตุ: กฎเก่าใน `App.css` (≤800px) `.context select:nth-child(n+2){display:none}` เขียนไว้ตอน select อยู่ใต้ `.context` ตรง ๆ — ตอนนี้ select อยู่ใน `<label class="context-field">` ถัดจาก `<span>` จึงถูกซ่อนทุกช่อง เหลือแต่ label (position absolute) ซ้อนกันที่มุมซ้ายบน
+- แก้ใน `TestManagement.css`: คืนการแสดง select ใน `.qa-topbar .context-field` และ ≤760px ซ่อนเฉพาะ `.context-release`/`.context-build` (แสดงแค่ Project เต็มแถว ตามกฎ Topbar บน Mobile); 761–900px แสดงครบ 3 ช่อง — ตรวจ 390/780/1024/1440px ไม่มี horizontal scroll
+
 ### 2026-10-21 — Execution Workspace / CyclePicker: แก้จาก code review
 - ชิปสถานะและแถบความคืบหน้าเพิ่ม **Skipped** (สี `--muted`) — Skipped นับเป็น "ทดสอบแล้ว" แถบจึงต้องเต็มตาม % ที่แสดง และกรองคิวด้วย Skipped ได้
 - Linked Defects สลับพร้อมเคสบนจอ, โหลดรายละเอียดเคสไม่สำเร็จแสดง error แทนเคสเดิม, Cycle จากครั้งก่อนยังบันทึกไม่ได้จนรายการยืนยัน, รายการ Cycle ขอทีละหน้า (500) จนครบ
