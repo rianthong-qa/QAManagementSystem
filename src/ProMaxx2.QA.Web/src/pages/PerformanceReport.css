@@ -152,3 +152,112 @@
   .performance-page .perf-report-metric-group > dl { display: grid; }
   .performance-page .perf-report-metric-group summary { cursor: default; }
 }
+
+/* ===== สรุปผลงาน (ออกแบบใหม่ 2026-10-21) — `.perf-report-v2` ใช้ทั้งแท็บสรุปผลงานและหน้าแชร์ HR: หัวเอกสาร (แถบช่วงข้อมูล → ตัวตน → ข้อมูลพนักงาน → ทดลองงาน → สถิติ 5 ช่อง) → ผลงานเด่น → รายละเอียด → แนวโน้ม → บันทึกงาน → ผลประเมิน ===== */
+.performance-page .content-card.perf-report-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 14px; }
+.performance-page .perf-report-picker { display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--primary); }
+.performance-page .perf-report-picker:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.performance-page .perf-report-picker-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.performance-page .perf-report-picker select { min-width: 220px; max-width: 100%; min-height: 40px; padding: 6px 30px 6px 0; border: 0; background-color: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 600; box-shadow: none; outline: none; cursor: pointer; }
+.performance-page .perf-report-toolbar-hint { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-links-chip { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 4px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); font-size: 12px; white-space: nowrap; }
+.performance-page .perf-report-links-chip.active { background: color-mix(in srgb, var(--green) 10%, var(--card)); color: color-mix(in srgb, var(--green) 80%, var(--text)); font-weight: 600; }
+.performance-page .perf-report-links-chip .material-symbols-outlined { font-size: 16px; }
+
+.performance-page .perf-report-v2 .perf-report-head { display: grid; gap: 0; padding: 0; overflow: hidden; border-top: 0; }
+.performance-page .perf-report-docbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 10px 22px; border-bottom: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 9%, var(--card)), color-mix(in srgb, var(--perf-purple) 5%, var(--card))); }
+.performance-page .perf-report-v2 .perf-report-eyebrow { display: inline-flex; align-items: center; gap: 5px; color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.performance-page .perf-report-docbar .material-symbols-outlined { font-size: 17px; }
+.performance-page .perf-report-period { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 999px; background: var(--card); color: var(--text); font-size: 12px; font-weight: 600; }
+.performance-page .perf-report-period .material-symbols-outlined { color: var(--primary); }
+.performance-page .perf-report-generated { margin-left: auto; color: var(--muted); font-size: 11px; }
+.performance-page .perf-report-v2 .perf-report-title { gap: 14px; padding: 16px 20px 0; }
+.performance-page .perf-report-avatar { display: grid; place-items: center; width: 56px; height: 56px; flex: none; border: 3px solid var(--card); border-radius: 50%; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, var(--card)), color-mix(in srgb, var(--perf-purple) 16%, var(--card))); color: var(--primary); font-size: 22px; font-weight: 700; box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 20%, var(--line)), 0 6px 14px color-mix(in srgb, var(--primary) 14%, transparent); }
+.performance-page .perf-report-v2 .perf-report-title h2 { font-size: 22px; }
+.performance-page .perf-report-v2 .perf-report-title p { font-size: 14px; }
+.performance-page .perf-report-v2 .perf-report-meta { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 14px 20px 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--bg) 50%, var(--card)); }
+.performance-page .perf-report-v2 .perf-report-meta > div { padding: 10px 12px; border-left: 1px solid var(--line); }
+.performance-page .perf-report-v2 .perf-report-meta > div:first-child { border-left: 0; }
+.performance-page .perf-report-v2 .perf-report-meta dt { display: flex; align-items: center; gap: 4px; }
+.performance-page .perf-report-v2 .perf-report-meta dt .material-symbols-outlined { color: var(--primary); font-size: 15px; }
+.performance-page .perf-report-v2 .perf-report-meta dd { font-size: 14px; font-weight: 600; }
+.performance-page .perf-report-v2 .perf-report-meta dd small { display: block; margin-top: 2px; font-weight: 400; }
+.performance-page .perf-report-v2 .perf-report-probation { margin: 12px 20px 0; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--warning-text) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--yellow) 6%, var(--card)); }
+.performance-page .perf-report-v2 .perf-report-probation-head b { display: inline-flex; align-items: center; gap: 5px; color: var(--warning-text); }
+.performance-page .perf-report-v2 .perf-report-probation-head .material-symbols-outlined { font-size: 18px; }
+.performance-page .perf-report-v2 .perf-report-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 16px 0 0; border-top: 1px solid var(--line); }
+.performance-page .perf-report-v2 .perf-report-kpi { display: grid; align-content: start; gap: 4px; min-height: 0; padding: 12px 16px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; box-shadow: none; }
+.performance-page .perf-report-v2 .perf-report-kpi:first-child { border-left: 0; }
+.performance-page .perf-report-v2 .perf-report-kpi dt { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; font-weight: 600; }
+.performance-page .perf-report-v2 .perf-report-kpi dt .material-symbols-outlined { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: color-mix(in srgb, var(--perf-accent) 12%, var(--card)); color: var(--perf-accent); font-size: 17px; }
+.performance-page .perf-report-v2 .perf-report-kpi dd { display: grid; gap: 2px; margin: 0; min-width: 0; }
+.performance-page .perf-report-v2 .perf-report-kpi dd b { color: var(--text); font-size: 24px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.performance-page .perf-report-v2 .perf-report-kpi dd small { color: var(--muted); font-size: 11px; }
+
+.performance-page .perf-report-v2 .perf-report-section h3 { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 16px; }
+.performance-page .perf-report-v2 .perf-report-section h3 > .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); }
+.performance-page .perf-report-highlights { border-top: 3px solid var(--perf-orange); }
+.performance-page .perf-report-v2 .perf-report-highlights h3 > .material-symbols-outlined { background: color-mix(in srgb, var(--perf-orange) 12%, var(--card)); color: var(--perf-orange); }
+.performance-page .perf-report-highlight-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-report-highlight-grid li { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--perf-orange) 20%, var(--line)); border-radius: 12px; background: linear-gradient(160deg, color-mix(in srgb, var(--perf-orange) 7%, var(--card)), var(--card) 65%); }
+.performance-page .perf-report-highlight-meta { display: inline-flex; align-items: center; gap: 4px; color: var(--perf-orange); font-size: 12px; font-weight: 600; }
+.performance-page .perf-report-highlight-meta .material-symbols-outlined { font-size: 17px; font-variation-settings: "FILL" 1; }
+.performance-page .perf-report-highlight-grid b { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.performance-page .perf-report-highlight-grid p { margin: 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.performance-page .perf-report-highlight-grid small { color: var(--muted); font-size: 12px; }
+
+.performance-page .perf-report-weekly th { text-align: left; }
+.performance-page .perf-report-weekbar { display: grid; gap: 4px; min-width: 90px; max-width: 220px; }
+.performance-page .perf-report-weekbar b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.performance-page .perf-report-weekbar > span { display: block; height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--perf-accent) 12%, var(--card)); overflow: hidden; }
+.performance-page .perf-report-weekbar > span > span { display: block; height: 100%; border-radius: 999px; background: var(--perf-accent); }
+
+.performance-page .perf-report-evals { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-report-evals li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.performance-page .perf-report-evals li.closed { border-color: color-mix(in srgb, var(--primary) 20%, var(--line)); background: color-mix(in srgb, var(--primary) 3%, var(--card)); }
+.performance-page .perf-report-eval-grade { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 14px; background: var(--bg); color: var(--muted); font-size: 24px; font-weight: 800; }
+.performance-page .perf-report-evals li.closed .perf-report-eval-grade { background: var(--primary); color: var(--card); }
+.performance-page .perf-report-eval-main { display: grid; gap: 2px; min-width: 0; }
+.performance-page .perf-report-eval-main b { font-size: 14px; }
+.performance-page .perf-report-eval-main small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.performance-page .perf-report-eval-score { display: inline-flex; align-items: baseline; gap: 3px; white-space: nowrap; }
+.performance-page .perf-report-eval-score b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.performance-page .perf-report-eval-score small { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-eval-badges { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.performance-page .perf-report-eval-badges small { font-size: 11px; }
+
+@media (max-width: 1100px) {
+  .performance-page .perf-report-v2 .perf-report-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(4) { border-left: 0; }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(n + 4) { border-top: 1px solid var(--line); }
+  .performance-page .perf-report-v2 .perf-report-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .performance-page .perf-report-v2 .perf-report-meta > div:nth-child(3) { border-left: 0; }
+  .performance-page .perf-report-v2 .perf-report-meta > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
+@media (max-width: 760px) {
+  .performance-page .perf-report-picker { flex: 1 1 100%; }
+  .performance-page .perf-report-picker select { flex: 1 1 auto; min-width: 0; }
+  .performance-page .perf-report-links-chip { margin-left: 0; }
+  .performance-page .perf-report-docbar { padding: 10px 16px; }
+  .performance-page .perf-report-generated { flex-basis: 100%; margin-left: 0; }
+  .performance-page .perf-report-v2 .perf-report-title { padding: 16px 16px 0; }
+  .performance-page .perf-report-v2 .perf-report-title h2 { font-size: 21px; }
+  .performance-page .perf-report-v2 .perf-report-meta,
+  .performance-page .perf-report-v2 .perf-report-probation { margin-left: 16px; margin-right: 16px; }
+  .performance-page .perf-report-v2 .perf-report-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .performance-page .perf-report-v2 .perf-report-kpi { padding: 14px 16px; }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(n) { border-left: 1px solid var(--line); border-top: 1px solid var(--line); }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(odd) { border-left: 0; }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(-n + 2) { border-top: 0; }
+  .performance-page .perf-report-v2 .perf-report-kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .performance-page .perf-report-v2 .perf-report-kpi dd b { font-size: 22px; }
+  .performance-page .perf-report-evals li { grid-template-columns: 44px minmax(0, 1fr); gap: 10px 12px; }
+  .performance-page .perf-report-eval-grade { width: 44px; height: 44px; font-size: 20px; }
+  .performance-page .perf-report-eval-score,
+  .performance-page .perf-report-eval-badges { grid-column: 2; justify-content: flex-start; }
+  .performance-page .perf-report-weekbar { max-width: none; }
+}
+@media print {
+  .performance-page .perf-report-v2 .perf-report-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .performance-page .perf-report-v2 :is(.perf-report-highlight-grid li, .perf-report-evals li) { break-inside: avoid; }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { ApiError, apiFetch, isAbortError } from "../api";
 import { Badge } from "../components/Badge";
 import { DateField } from "../components/DateField";
@@ -37,6 +37,7 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
   const [selected, setSelected] = useState<string | null>(null);
   const [quarterOpen, setQuarterOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -52,10 +53,12 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
   }, [userId, openOnly, refreshKey]);
 
   const overdue = items.filter((x) => x.isOverdue).length;
-  // มุมมองทีม: แยกกลุ่มรายพนักงาน (คนที่มีรอบเลยกำหนดมากก่อน) ภายในกลุ่มเรียงตามกำหนดส่ง — ไม่ให้รอบของหลายคนปนกัน
+  // มุมมองทีม: แยกการ์ดรายพนักงาน (คนที่มีรอบเลยกำหนดมากก่อน) ภายในการ์ดเรียงตามกำหนดส่ง — ไม่ให้รอบของหลายคนปนกัน
   const grouped = !userId;
   const today = thaiToday();
-  const groups = Object.values(items.reduce<Record<string, { userId: string; userName?: string | null; items: EvaluationSummary[]; overdue: number }>>((acc, x) => {
+  const statusCount = (status: string) => items.filter((x) => x.status === status).length;
+  const shown = statusFilter === "all" ? items : statusFilter === "overdue" ? items.filter((x) => x.isOverdue) : items.filter((x) => x.status === statusFilter);
+  const groups = Object.values(shown.reduce<Record<string, { userId: string; userName?: string | null; items: EvaluationSummary[]; overdue: number }>>((acc, x) => {
     const g = acc[x.userId] ??= { userId: x.userId, userName: x.userName, items: [], overdue: 0 };
     g.items.push(x);
     if (x.isOverdue) g.overdue++;
@@ -64,11 +67,10 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
     .map((g) => ({ ...g, items: [...g.items].sort((a, b) => a.dueDate.localeCompare(b.dueDate)) }))
     .sort((a, b) => b.overdue - a.overdue || (a.items[0]?.dueDate ?? "").localeCompare(b.items[0]?.dueDate ?? "") || (a.userName ?? "").localeCompare(b.userName ?? "", "th"));
   const overdueDays = (dueDate: string) => Math.max(0, Math.round((Date.parse(today) - Date.parse(dueDate.slice(0, 10))) / 86_400_000));
+  const toggleStatus = (value: string) => setStatusFilter((v) => (v === value ? "all" : value));
   const renderRow = (x: EvaluationSummary) => (
     <tr key={x.evaluationId} className={x.isOverdue ? "perf-eval-overdue" : undefined}>
-      {!userId && !grouped && <td><span className="perf-person"><span className="perf-avatar" aria-hidden="true">{(x.userName ?? "?").slice(0, 1).toUpperCase()}</span><b>{x.userName ?? "-"}</b></span></td>}
-      <td>{grouped ? <><b className="perf-eval-round">{roundText(x)}</b><small className="perf-sub">{fmtDate(x.periodStart)} – {fmtDate(x.periodEnd)}</small></> : roundText(x)}</td>
-      {!compact && !grouped && <td>{fmtDate(x.periodStart)} – {fmtDate(x.periodEnd)}</td>}
+      <td>{compact ? roundText(x) : <><b className="perf-eval-round">{roundText(x)}</b><small className="perf-sub">{fmtDate(x.periodStart)} – {fmtDate(x.periodEnd)}</small></>}</td>
       <td>{fmtDate(x.dueDate)}{x.isOverdue && <small className="perf-eval-late">เลยมา {overdueDays(x.dueDate).toLocaleString("th-TH")} วัน</small>}</td>
       <td><Badge tone={evalStatus[x.status]?.tone ?? "blue"}>{evalStatus[x.status]?.label ?? x.status}</Badge></td>
       <td>
@@ -78,10 +80,16 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
       <td className="perf-row-action"><button className="btn" type="button" onClick={() => setSelected(x.evaluationId)} aria-label={`เปิดการประเมิน ${roundText(x)} ${x.userName ?? ""}`}>ดูการประเมิน<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button></td>
     </tr>
   );
+  // แถบขั้นตอน: รอประเมินตนเอง → รอหัวหน้า → ส่งผลแล้ว → รับทราบ + เลยกำหนด — กดเพื่อกรอง (กดซ้ำเพื่อยกเลิก)
+  const steps: { value: string; icon: string; label: string; count: number; tone: string }[] = [
+    { value: "Open", icon: "edit_note", label: evalStatus.Open.label, count: statusCount("Open"), tone: "warning" },
+    { value: "SelfSubmitted", icon: "pending_actions", label: evalStatus.SelfSubmitted.label, count: statusCount("SelfSubmitted"), tone: "info" },
+    { value: "Completed", icon: "task", label: evalStatus.Completed.label, count: statusCount("Completed"), tone: "purple" },
+    { value: "Acknowledged", icon: "verified", label: evalStatus.Acknowledged.label, count: statusCount("Acknowledged"), tone: "green" },
+  ];
   return (
     <>
-    {canManage && !userId && <TeamQuarterComparison refreshKey={refreshKey} onOpen={setSelected} />}
-    <section className="content-card perf-evaluations" aria-label="การประเมิน">
+    <section className={`content-card perf-evaluations${grouped ? " perf-evaluations-team" : ""}`} aria-label="การประเมิน">
       <div className="perf-section-head">
         <div>
           <h3><span className="material-symbols-outlined" aria-hidden="true">rate_review</span>{userId ? "ประวัติการประเมิน" : "รอบการประเมิน"}</h3>
@@ -89,7 +97,7 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
         </div>
         <div className="perf-eval-actions">
           {!userId && (
-            <label className="perf-check"><input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />เฉพาะที่ยังไม่ปิด</label>
+            <label className="perf-check"><input type="checkbox" checked={openOnly} onChange={(e) => { setOpenOnly(e.target.checked); setStatusFilter("all"); }} />เฉพาะที่ยังไม่ปิด</label>
           )}
           {canManage && !userId && (
             <>
@@ -99,11 +107,30 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
           )}
         </div>
       </div>
-      {!userId && !loading && !error && items.length > 0 && <div className="perf-eval-summary" aria-label="สรุปการประเมินในรายการที่แสดง">
-        <div data-perf-category="assignment"><span className="material-symbols-outlined" aria-hidden="true">assignment</span><span>รายการที่แสดง</span><b>{items.length.toLocaleString("th-TH")}</b></div>
-        <div data-perf-category="pending_actions"><span className="material-symbols-outlined" aria-hidden="true">pending_actions</span><span>รอหัวหน้าประเมิน</span><b>{items.filter((x) => x.status === "SelfSubmitted").length.toLocaleString("th-TH")}</b></div>
-        <div data-perf-category="schedule" className={overdue ? "perf-overdue" : ""}><span className="material-symbols-outlined" aria-hidden="true">event_busy</span><span>เลยกำหนด</span><b>{overdue.toLocaleString("th-TH")}</b></div>
-      </div>}
+      {grouped && !loading && !error && items.length > 0 && (
+        <div className="perf-eval-pipeline" role="group" aria-label="กรองตามสถานะ (นับจากรายการที่แสดง)">
+          <ol>
+            {steps.map((s) => (
+              <li key={s.value}>
+                <button type="button" className={`tone-${s.tone}`} aria-pressed={statusFilter === s.value} onClick={() => toggleStatus(s.value)} disabled={s.count === 0 && statusFilter !== s.value}>
+                  <span className="material-symbols-outlined" aria-hidden="true">{s.icon}</span>
+                  <span><b>{s.count.toLocaleString("th-TH")}</b><small>{s.label}</small></span>
+                </button>
+              </li>
+            ))}
+          </ol>
+          <button type="button" className={`perf-eval-pipeline-overdue${overdue ? " has" : ""}`} aria-pressed={statusFilter === "overdue"} onClick={() => toggleStatus("overdue")} disabled={overdue === 0 && statusFilter !== "overdue"}>
+            <span className="material-symbols-outlined" aria-hidden="true">event_busy</span>
+            <span><b>{overdue.toLocaleString("th-TH")}</b><small>เลยกำหนด</small></span>
+          </button>
+        </div>
+      )}
+      {grouped && statusFilter !== "all" && (
+        <p className="perf-eval-filter-note" role="status">
+          แสดง {shown.length.toLocaleString("th-TH")} จาก {items.length.toLocaleString("th-TH")} รายการ · {statusFilter === "overdue" ? "เลยกำหนด" : evalStatus[statusFilter]?.label}
+          <button className="btn" type="button" onClick={() => setStatusFilter("all")}>แสดงทั้งหมด</button>
+        </p>
+      )}
       {error ? <div className="inline-alert error" role="alert"><span>{error}</span></div>
         : loading && items.length === 0 ? <div className="perf-feedback" role="status">กำลังโหลด...</div>
           : items.length === 0 ? (
@@ -112,26 +139,41 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
               <b>{openOnly ? "ไม่มีการประเมินที่ค้างอยู่" : "ยังไม่มีการประเมิน"}</b>
               <small>{canManage ? "รอบทดลองงานถูกสร้างอัตโนมัติเมื่อตั้งสถานะพนักงานเป็นทดลองงาน · รอบไตรมาสสร้างจากปุ่มด้านบน" : "เมื่อหัวหน้าเปิดรอบประเมิน รายการจะแสดงที่นี่"}</small>
             </div>
+          ) : grouped ? (
+            <ul className="perf-eval-people">
+              {groups.map((g) => (
+                <li key={g.userId} className={g.overdue ? "has-overdue" : undefined}>
+                  <div className="perf-eval-person-head">
+                    <span className="perf-person">
+                      <span className="perf-avatar" aria-hidden="true">{(g.userName ?? "?").slice(0, 1).toUpperCase()}</span>
+                      <span><b>{g.userName ?? "-"}</b><small>{g.items.length.toLocaleString("th-TH")} รอบ{g.overdue ? "" : " · ไม่มีรอบที่เลยกำหนด"}</small></span>
+                    </span>
+                    {g.overdue > 0 && <Badge tone="red">เลยกำหนด {g.overdue.toLocaleString("th-TH")} รอบ</Badge>}
+                  </div>
+                  <ul className="perf-eval-rounds">
+                    {g.items.map((x) => (
+                      <li key={x.evaluationId} className={x.isOverdue ? "overdue" : undefined}>
+                        <span className="perf-eval-round-name"><b>{roundText(x)}</b><small>{fmtDate(x.periodStart)} – {fmtDate(x.periodEnd)}</small></span>
+                        <span className="perf-eval-round-due"><small>กำหนดส่ง</small>{fmtDate(x.dueDate)}{x.isOverdue && <small className="perf-eval-late">เลยมา {overdueDays(x.dueDate).toLocaleString("th-TH")} วัน</small>}</span>
+                        <span className="perf-eval-round-status"><Badge tone={evalStatus[x.status]?.tone ?? "blue"}>{evalStatus[x.status]?.label ?? x.status}</Badge></span>
+                        <span className="perf-eval-round-result">
+                          {x.grade ? <span className="perf-grade">{x.grade}<small>{x.overallScore?.toFixed(2)}</small></span> : <small className="perf-sub">ยังไม่มีผล</small>}
+                          {x.recommendation && <small className="perf-sub">{recommendationLabel[x.recommendation]}</small>}
+                        </span>
+                        <button className="btn" type="button" onClick={() => setSelected(x.evaluationId)} aria-label={`เปิดการประเมิน ${roundText(x)} ${x.userName ?? ""}`}>ดูการประเมิน<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
           ) : (
             <div className="table-wrap">
-              <table className={`table-cards perf-eval-table${grouped ? " perf-eval-grouped" : ""}`}>
+              <table className="table-cards perf-eval-table">
                 <thead>
-                  <tr>{!userId && !grouped && <th>พนักงาน</th>}<th>รอบ</th>{!compact && !grouped && <th>ช่วงประเมิน</th>}<th>กำหนดส่ง</th><th>สถานะ</th><th>ผล</th><th><span className="sr-only">เปิด</span></th></tr>
+                  <tr><th>รอบ</th><th>กำหนดส่ง</th><th>สถานะ</th><th>ผล</th><th><span className="sr-only">เปิด</span></th></tr>
                 </thead>
-                {grouped ? groups.map((g) => (
-                  <tbody key={g.userId} className="perf-eval-group">
-                    <tr className="perf-eval-group-head">
-                      <th colSpan={5} scope="rowgroup"><div className="perf-eval-group-title">
-                        <span className="perf-person">
-                          <span className="perf-avatar" aria-hidden="true">{(g.userName ?? "?").slice(0, 1).toUpperCase()}</span>
-                          <span><b>{g.userName ?? "-"}</b><small>{g.items.length.toLocaleString("th-TH")} รอบ{g.overdue ? "" : " · ไม่มีรอบที่เลยกำหนด"}</small></span>
-                        </span>
-                        {g.overdue > 0 && <Badge tone="red">เลยกำหนด {g.overdue.toLocaleString("th-TH")} รอบ</Badge>}
-                      </div></th>
-                    </tr>
-                    {g.items.map(renderRow)}
-                  </tbody>
-                )) : <tbody>{items.map(renderRow)}</tbody>}
+                <tbody>{items.map(renderRow)}</tbody>
               </table>
             </div>
           )}
@@ -139,6 +181,7 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
       {quarterOpen && <QuarterModal onClose={() => setQuarterOpen(false)} onCreated={() => { setQuarterOpen(false); onChanged(); }} />}
       {templatesOpen && <TemplatesModal onClose={() => setTemplatesOpen(false)} />}
     </section>
+    {canManage && !userId && <TeamQuarterComparison refreshKey={refreshKey} onOpen={setSelected} />}
     </>
   );
 }
@@ -179,7 +222,7 @@ function TeamQuarterComparison({ refreshKey, onOpen }: { refreshKey: number; onO
   return (
     <section className="content-card perf-team-quarters" aria-label="เทียบผลรายไตรมาสทั้งทีม">
       <div className="perf-section-head">
-        <div><h3><span className="material-symbols-outlined" aria-hidden="true">query_stats</span>เทียบผลรายไตรมาสทั้งทีม</h3><p>คะแนนรวม (1–5) และเกรดของรอบที่ส่งผลแล้ว · ลูกศรเทียบกับไตรมาสก่อนหน้า</p></div>
+        <div><h3><span className="material-symbols-outlined" aria-hidden="true">query_stats</span>เทียบผลรายไตรมาสทั้งทีม</h3><p>คะแนนรวม (1–5) และเกรดของรอบที่ส่งผลแล้ว · ลูกศรเทียบกับไตรมาสก่อนหน้า</p><span className="perf-heat-legend" aria-hidden="true">คะแนนต่ำ<span className="perf-heat-scale" />คะแนนสูง</span></div>
         <label className="perf-year-pick"><span>ปี</span>
           <select value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label="เลือกปีที่เทียบ">
             {Array.from({ length: 5 }, (_, i) => currentYear - i).map((y) => <option key={y} value={y}>{y + 543}</option>)}
@@ -202,7 +245,7 @@ function TeamQuarterComparison({ refreshKey, onOpen }: { refreshKey: number; onO
                         {row.quarters.map((cell, i) => {
                           const previous = i === 0 ? row.previousYearQ4Score : row.quarters[i - 1].overallScore;
                           return (
-                            <td key={cell.round} className="perf-quarter-cell">
+                            <td key={cell.round} className={`perf-quarter-cell${cell.grade ? " has-score" : ""}`} style={cell.grade && cell.overallScore != null ? { "--perf-heat": `${Math.round(6 + (Math.max(0, cell.overallScore - 1) / 4) * 26)}%` } as CSSProperties : undefined}>
                               {!cell.evaluationId ? <span className="perf-quarter-empty" aria-label="ไม่มีรอบประเมิน">–</span>
                                 : (
                                   <button type="button" className="perf-quarter-open" onClick={() => onOpen(cell.evaluationId!)} aria-label={`เปิดการประเมิน ${roundText({ round: cell.round, year })} ของ ${row.displayName}`}>

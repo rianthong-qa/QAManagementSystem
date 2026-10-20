@@ -63,15 +63,15 @@ function hasActivity(m: Member): boolean {
   return m.workItems.length > 0 || c.executions + c.defectsReported + c.testCasesCreated + c.testCaseRevisions + c.requirementsCreated + c.crmTicketsHandled + c.crmAnswers + c.automationRuns + c.regressionActions > 0;
 }
 
-/** สรุปงานรายคนเป็นข้อความสั้น — ใช้ทั้งในตารางและข้อความที่คัดลอก (เฉพาะหมวดที่มีงาน) */
-function workParts(m: Metrics): string[] {
-  const parts: string[] = [];
-  if (m.executions) parts.push(`รันเทส ${num(m.executions)} (Pass ${rate(m.passed, m.executions)})`);
-  if (m.defectsReported) parts.push(`แจ้ง Defect ${num(m.defectsReported)}${m.defectsCritical + m.defectsHigh ? ` (Critical/High ${m.defectsCritical + m.defectsHigh})` : ""}`);
-  if (m.hasCrmAccount && (m.crmTicketsHandled || m.crmAnswers)) parts.push(`CRM ดูแล ${num(m.crmTicketsHandled)} · ปิด ${num(m.crmClosed)} · ส่ง Dev ${num(m.crmHandedToDev)}`);
-  if (m.testCasesCreated || m.testCaseRevisions) parts.push(`Test Case สร้าง ${num(m.testCasesCreated)} / แก้ ${num(m.testCaseRevisions)}`);
-  if (m.requirementsCreated) parts.push(`Requirement ${num(m.requirementsCreated)}`);
-  if (m.automationRuns || m.automationCasesCreated) parts.push(`Automation ${num(m.automationCasesCreated + m.automationRuns)}`);
+/** สรุปงานรายคนเป็นข้อความสั้น — ใช้ทั้งในการ์ดรายคนและข้อความที่คัดลอก (เฉพาะหมวดที่มีงาน) */
+function workParts(m: Metrics): { icon: string; text: string }[] {
+  const parts: { icon: string; text: string }[] = [];
+  if (m.executions) parts.push({ icon: "play_circle", text: `รันเทส ${num(m.executions)} (Pass ${rate(m.passed, m.executions)})` });
+  if (m.defectsReported) parts.push({ icon: "bug_report", text: `แจ้ง Defect ${num(m.defectsReported)}${m.defectsCritical + m.defectsHigh ? ` (Critical/High ${m.defectsCritical + m.defectsHigh})` : ""}` });
+  if (m.hasCrmAccount && (m.crmTicketsHandled || m.crmAnswers)) parts.push({ icon: "support_agent", text: `CRM ดูแล ${num(m.crmTicketsHandled)} · ปิด ${num(m.crmClosed)} · ส่ง Dev ${num(m.crmHandedToDev)}` });
+  if (m.testCasesCreated || m.testCaseRevisions) parts.push({ icon: "fact_check", text: `Test Case สร้าง ${num(m.testCasesCreated)} / แก้ ${num(m.testCaseRevisions)}` });
+  if (m.requirementsCreated) parts.push({ icon: "description", text: `Requirement ${num(m.requirementsCreated)}` });
+  if (m.automationRuns || m.automationCasesCreated) parts.push({ icon: "smart_toy", text: `Automation ${num(m.automationCasesCreated + m.automationRuns)}` });
   return parts;
 }
 
@@ -142,28 +142,27 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
 
   return (
     <div className="perf-report perf-weekly">
-      <section className="content-card perf-report-head perf-weekly-head">
-        <div className="perf-weekly-hero">
-          <div className="perf-weekly-hero-mark" aria-hidden="true"><span className="material-symbols-outlined">event_note</span></div>
-          <div className="perf-report-title">
-            <div>
-              <div className="perf-weekly-eyebrow-row"><span className="perf-report-eyebrow">สรุปงานประจำสัปดาห์ · ทีม QA</span><span className="perf-weekly-audience"><span className="material-symbols-outlined" aria-hidden="true">business</span>ส่งผู้บริหาร</span></div>
-              <h2>{fmtDate(week)} – {fmtDate(addDays(week, 6))}</h2>
-              <p>{data ? <>ข้อมูล ณ {formatThaiDateTime(data.generatedAt)}{narrative && <> · ข้อความแก้ล่าสุดโดย {narrative.updatedByName ?? "-"} {formatThaiDateTime(narrative.updatedAt)}</>}</> : "จันทร์ – อาทิตย์ ตามเวลาไทย"}</p>
-            </div>
-            <div className="perf-report-actions perf-noprint">
-              {!editing && <button className="btn" type="button" onClick={() => setEditing(true)} disabled={!data}><span className="material-symbols-outlined" aria-hidden="true">edit</span>เขียนสรุป</button>}
-              <CopyButton text={() => (data ? summaryText(data) : "")} disabled={!data || editing} title={editing ? "บันทึกหรือยกเลิกการแก้ไขก่อน" : "คัดลอกข้อความสรุปไปวางในอีเมลหรือแชท"}>คัดลอกข้อความ</CopyButton>
-              <button className="btn" type="button" onClick={() => window.print()} disabled={!data || editing} title={editing ? "บันทึกหรือยกเลิกการแก้ไขก่อน" : undefined}><span className="material-symbols-outlined" aria-hidden="true">print</span>พิมพ์ / PDF</button>
-            </div>
+      <section className="content-card perf-weekly-head">
+        <div className="perf-weekly-head-top">
+          <div className="perf-weekly-title">
+            <span className="perf-weekly-eyebrow"><span className="material-symbols-outlined" aria-hidden="true">event_note</span>สรุปงานประจำสัปดาห์ · ทีม QA<span className="perf-weekly-audience">ส่งผู้บริหาร</span></span>
+            <h2>{fmtDate(week)} – {fmtDate(addDays(week, 6))}{week === thisWeek && <span className="perf-weekly-now">สัปดาห์นี้</span>}</h2>
+            <p>{data ? <>ข้อมูล ณ {formatThaiDateTime(data.generatedAt)}{narrative && <> · ข้อความแก้ล่าสุดโดย {narrative.updatedByName ?? "-"} {formatThaiDateTime(narrative.updatedAt)}</>}</> : "จันทร์ – อาทิตย์ ตามเวลาไทย"}</p>
+          </div>
+          <div className="perf-report-actions perf-weekly-actions perf-noprint">
+            {!editing && <button className="btn primary" type="button" onClick={() => setEditing(true)} disabled={!data}><span className="material-symbols-outlined" aria-hidden="true">edit</span>เขียนสรุป</button>}
+            <CopyButton text={() => (data ? summaryText(data) : "")} disabled={!data || editing} title={editing ? "บันทึกหรือยกเลิกการแก้ไขก่อน" : "คัดลอกข้อความสรุปไปวางในอีเมลหรือแชท"}>คัดลอกข้อความ</CopyButton>
+            <button className="btn" type="button" onClick={() => window.print()} disabled={!data || editing} title={editing ? "บันทึกหรือยกเลิกการแก้ไขก่อน" : undefined}><span className="material-symbols-outlined" aria-hidden="true">print</span>พิมพ์ / PDF</button>
           </div>
         </div>
         <div className="perf-weekly-nav perf-noprint" role="group" aria-label="เลือกสัปดาห์">
-          <span className="perf-weekly-nav-caption"><span className="material-symbols-outlined" aria-hidden="true">calendar_month</span>ช่วงรายงาน</span>
-          <button className="btn" type="button" onClick={() => goToWeek(addDays(week, -7))} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span>สัปดาห์ก่อน</button>
-          <label className="perf-weekly-pick"><span className="sr-only">เลือกวันที่ในสัปดาห์</span><DateField value={week} max={thisWeek} ariaLabel="เลือกวันที่ในสัปดาห์" onChange={(v) => v && goToWeek(v)} /></label>
-          <button className="btn" type="button" onClick={() => goToWeek(addDays(week, 7))} disabled={loading || week >= thisWeek}>สัปดาห์ถัดไป<span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
-          {week !== thisWeek && <button className="btn" type="button" onClick={() => goToWeek(thisWeek)} disabled={loading}>สัปดาห์นี้</button>}
+          <div className="perf-weekly-stepper">
+            <button type="button" onClick={() => goToWeek(addDays(week, -7))} disabled={loading} aria-label="สัปดาห์ก่อน" title="สัปดาห์ก่อน"><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
+            <label className="perf-weekly-pick"><span className="sr-only">เลือกวันที่ในสัปดาห์</span><DateField value={week} max={thisWeek} ariaLabel="เลือกวันที่ในสัปดาห์" onChange={(v) => v && goToWeek(v)} /></label>
+            <button type="button" onClick={() => goToWeek(addDays(week, 7))} disabled={loading || week >= thisWeek} aria-label="สัปดาห์ถัดไป" title="สัปดาห์ถัดไป"><span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+          </div>
+          {week !== thisWeek && <button className="btn perf-weekly-today" type="button" onClick={() => goToWeek(thisWeek)} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true">today</span>กลับสัปดาห์นี้</button>}
+          <span className="perf-weekly-nav-hint">เลือกวันใดก็ได้ ระบบปัดเป็นวันจันทร์ของสัปดาห์นั้น</span>
         </div>
       </section>
 
@@ -173,8 +172,8 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
         <div className="inline-alert error" role="alert"><span>{error}</span></div>
       ) : data && (
         <>
-          <section className="content-card perf-report-section perf-weekly-exec" aria-labelledby="weekly-exec">
-            <h3 id="weekly-exec"><span className="material-symbols-outlined" aria-hidden="true">campaign</span>สรุปสำหรับผู้บริหาร</h3>
+          <section className="content-card perf-weekly-exec" aria-labelledby="weekly-exec">
+            <h3 id="weekly-exec" className="perf-weekly-h"><span className="material-symbols-outlined" aria-hidden="true">campaign</span>สรุปสำหรับผู้บริหาร</h3>
             {editing ? (
               <div className="form-grid perf-weekly-form">
                 <fieldset className="perf-weekly-health-pick full">
@@ -193,26 +192,28 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
               </div>
             ) : (
               <div className="perf-weekly-exec-body">
-                {health ? (
-                  <span className={`perf-weekly-health ${health.toLowerCase()}`}><span className="material-symbols-outlined" aria-hidden="true">{healthInfo[health].icon}</span>สถานะภาพรวม: {healthInfo[health].label}</span>
-                ) : <span className="perf-weekly-health none"><span className="material-symbols-outlined" aria-hidden="true">help</span>ยังไม่ได้ระบุสถานะภาพรวม</span>}
-                {narrative?.headline || narrative?.keyRisk || narrative?.ask ? (
-                  <dl className="perf-weekly-text">
-                    {narrative.headline && <div><dt>สรุป</dt><dd>{narrative.headline}</dd></div>}
-                    {narrative.keyRisk && <div><dt>ความเสี่ยงหลัก</dt><dd>{narrative.keyRisk}</dd></div>}
-                    {narrative.ask && <div className="ask"><dt>ขอให้ผู้บริหารช่วย</dt><dd>{narrative.ask}</dd></div>}
-                  </dl>
-                ) : (
-                  <p className="perf-report-empty perf-noprint">ยังไม่ได้เขียนสรุป — กด "เขียนสรุป" เพื่อเพิ่มภาพรวม ความเสี่ยง และเรื่องที่ต้องการให้ผู้บริหารช่วย</p>
+                <div className={`perf-weekly-health ${health ? health.toLowerCase() : "none"}`}>
+                  <span className="material-symbols-outlined" aria-hidden="true">{health ? healthInfo[health].icon : "help"}</span>
+                  <div className="perf-weekly-health-label">
+                    <small>สถานะภาพรวม</small>
+                    <b>{health ? healthInfo[health].label : "ยังไม่ระบุ"}</b>
+                  </div>
+                  <p>{narrative?.headline || (health ? "ไม่มีข้อความสรุปภาพรวม" : <span className="perf-noprint">ยังไม่ได้เขียนสรุป — กด "เขียนสรุป" เพื่อเพิ่มภาพรวม ความเสี่ยง และเรื่องที่ต้องการให้ผู้บริหารช่วย</span>)}</p>
+                </div>
+                {(narrative?.keyRisk || narrative?.ask) && (
+                  <div className="perf-weekly-callouts">
+                    {narrative.keyRisk && <div className="risk"><span className="perf-weekly-callout-label"><span className="material-symbols-outlined" aria-hidden="true">report</span>ความเสี่ยงหลัก</span><p>{narrative.keyRisk}</p></div>}
+                    {narrative.ask && <div className="ask"><span className="perf-weekly-callout-label"><span className="material-symbols-outlined" aria-hidden="true">front_hand</span>ขอให้ผู้บริหารช่วย</span><p>{narrative.ask}</p></div>}
+                  </div>
                 )}
               </div>
             )}
           </section>
 
           <section className="perf-weekly-kpi-block" aria-labelledby="weekly-kpis">
-            <div className="perf-weekly-section-intro">
-              <div><span className="material-symbols-outlined" aria-hidden="true">analytics</span><span><b id="weekly-kpis">ภาพรวมตัวเลขทีม</b><small>สัปดาห์นี้เทียบกับสัปดาห์ก่อนและค่าปกติ</small></span></div>
-              <span className="perf-weekly-section-tag">ข้อมูลจาก QA Hub</span>
+            <div className="perf-weekly-block-head">
+              <h3 id="weekly-kpis" className="perf-weekly-h"><span className="material-symbols-outlined" aria-hidden="true">analytics</span>ภาพรวมตัวเลขทีม</h3>
+              <span className="perf-weekly-legend-key"><span className="perf-weekly-key-bar" aria-hidden="true" />สัปดาห์นี้<span className="perf-weekly-key-tick" aria-hidden="true" />ค่าปกติ</span>
             </div>
             <div className="perf-weekly-kpis">
               <WeeklyKpi icon="play_circle" label="รันเทส (Execution)" value={data.current.executions} previous={data.previous.executions} typical={data.typical.executions}
@@ -225,108 +226,111 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
                 note={`แก้ไข ${num(data.current.testCaseRevisions)} ครั้ง`} />
               <WeeklyKpi icon="edit_note" label="ผลงานเด่น / บันทึกงาน" value={data.current.highlights + data.current.workLogs} previous={data.previous.highlights + data.previous.workLogs} typical={data.typical.highlights + data.typical.workLogs}
                 note={`ผลงานเด่น ${num(data.current.highlights)} · บันทึกงาน ${num(data.current.workLogs)}`} />
-              <div className={`perf-report-kpi perf-weekly-kpi${data.assignedOverdue ? " perf-overdue" : ""}`} data-perf-category="schedule">
-                <span className="material-symbols-outlined" aria-hidden="true">schedule</span>
-                <div><small>งานเลยกำหนด (ตอนนี้)</small><b>{num(data.assignedOverdue)}</b><span>งานค้างทั้งหมด {num(data.assignedPending)} เคส · สถานะ ณ ปัจจุบัน ไม่ใช่ย้อนหลัง</span></div>
+              <div className={`perf-weekly-kpi${data.assignedOverdue ? " perf-overdue" : ""}`} data-perf-category="schedule">
+                <div className="perf-weekly-kpi-head"><span className="material-symbols-outlined" aria-hidden="true">schedule</span><small>งานเลยกำหนด (ตอนนี้)</small></div>
+                <div className="perf-weekly-kpi-value"><b>{num(data.assignedOverdue)}</b></div>
+                <span className="perf-weekly-compare">งานค้างทั้งหมด <b>{num(data.assignedPending)}</b> เคส</span>
+                <span className="perf-weekly-kpi-note">สถานะ ณ ปัจจุบัน ไม่ใช่ย้อนหลัง</span>
               </div>
             </div>
-            <p className="perf-report-note perf-weekly-legend">ตัวเลขเทียบกับ <b>สัปดาห์ก่อน</b> และ <b>ค่าปกติ</b> = ค่ากลาง (median) รายสัปดาห์ของ 4 สัปดาห์ก่อนหน้า ({fmtDate(data.typicalFrom)} – {fmtDate(data.typicalTo)}) ซึ่งไม่เพี้ยนตามสัปดาห์ที่มีการนำเข้าข้อมูลจำนวนมาก · นับเฉพาะ Project ที่คุณเป็นสมาชิก</p>
+            <p className="perf-report-note">ค่าปกติ = ค่ากลาง (median) รายสัปดาห์ของ 4 สัปดาห์ก่อนหน้า ({fmtDate(data.typicalFrom)} – {fmtDate(data.typicalTo)}) ซึ่งไม่เพี้ยนตามสัปดาห์ที่มีการนำเข้าข้อมูลจำนวนมาก · ลูกศรบอกว่าสูง/ต่ำกว่าปกติเกิน 20% ไม่ได้บอกว่าดีหรือแย่ · นับเฉพาะ Project ที่คุณเป็นสมาชิก</p>
           </section>
 
           <DataNotes data={data} />
 
-          <section className="content-card perf-report-section" aria-labelledby="weekly-members">
-            <h3 id="weekly-members"><span className="material-symbols-outlined" aria-hidden="true">groups</span>งานรายคน<small>เรียงตามชื่อ · ไม่ใช่การจัดอันดับ</small></h3>
-            {idleCount > 0 && (
-              <label className="perf-weekly-idle perf-noprint"><input type="checkbox" checked={showIdle} onChange={(e) => setShowIdle(e.target.checked)} />แสดงคนที่ไม่มีกิจกรรมในระบบสัปดาห์นี้ ({idleCount} คน)</label>
-            )}
+          <section className="content-card perf-weekly-members-block" aria-labelledby="weekly-members">
+            <div className="perf-weekly-block-head">
+              <h3 id="weekly-members" className="perf-weekly-h"><span className="material-symbols-outlined" aria-hidden="true">groups</span>งานรายคน<small>เรียงตามชื่อ · ไม่ใช่การจัดอันดับ</small></h3>
+              {idleCount > 0 && (
+                <label className="perf-weekly-idle perf-noprint"><input type="checkbox" checked={showIdle} onChange={(e) => setShowIdle(e.target.checked)} />แสดงคนที่ไม่มีกิจกรรม ({idleCount} คน)</label>
+              )}
+            </div>
             {shownMembers.length === 0 ? (
               <p className="perf-report-empty">ไม่มีกิจกรรมในระบบของสัปดาห์นี้</p>
             ) : (
-              <div className="table-wrap">
-                <table className="table-cards perf-weekly-table">
-                  <thead><tr><th>พนักงาน</th><th>งานในระบบสัปดาห์นี้</th><th>ผลงานเด่น / บันทึกงาน</th><th>ความเห็นหัวหน้า</th></tr></thead>
-                  <tbody>
-                    {shownMembers.map((m) => {
-                      const parts = workParts(m.current);
-                      const prev = m.previous;
-                      const note = editing ? draft.memberNotes[m.userId] ?? "" : narrative?.memberNotes[m.userId] ?? "";
-                      return (
-                        <tr key={m.userId}>
-                          <td>
-                            <span className="perf-person"><span className="perf-avatar" aria-hidden="true">{m.displayName.slice(0, 1).toUpperCase()}</span><span><b>{m.displayName}</b><small>{m.position || "-"}</small></span></span>
-                            {m.employmentStatus !== "Permanent" && <Badge tone={employmentStatusTone[m.employmentStatus]}>{employmentStatusLabel[m.employmentStatus] ?? m.employmentStatus}{m.probationDay != null ? ` · วันที่ ${m.probationDay}` : ""}</Badge>}
-                          </td>
-                          <td>
-                            {parts.length ? <ul className="perf-weekly-parts">{parts.map((p) => <li key={p}>{p}</li>)}</ul> : <span className="perf-sub">ไม่มีงานที่บันทึกในระบบ</span>}
-                            <small className="perf-sub">สัปดาห์ก่อน: รันเทส {num(prev.executions)} · Defect {num(prev.defectsReported)}{prev.hasCrmAccount ? ` · CRM ${num(prev.crmTicketsHandled)}` : ""}</small>
-                            {!m.current.hasCrmAccount && <small className="perf-sub">ยังไม่ได้ผูกบัญชี CRM</small>}
-                          </td>
-                          <td>
-                            {m.workItems.length ? (
-                              <ul className="perf-weekly-items">
-                                {m.workItems.slice(0, 4).map((w, i) => (
-                                  <li key={i} className={w.kind === "Highlight" ? "highlight" : ""}>
-                                    {w.kind === "Highlight" && <span className="perf-weekly-star">ผลงานเด่น</span>}
-                                    <span>{w.title}</span>
-                                    <small>{fmtDate(w.workDate)} · {workCategoryLabel[w.category] ?? w.category}{w.projectName ? ` · ${w.projectName}` : ""}</small>
-                                  </li>
-                                ))}
-                                {m.workItems.length > 4 && <li className="more">และอีก {m.workItems.length - 4} รายการ</li>}
-                              </ul>
-                            ) : <span className="perf-sub">ยังไม่มีบันทึกงานสัปดาห์นี้</span>}
-                          </td>
-                          <td>
-                            {editing ? (
-                              <label className="perf-weekly-note-field">
-                                <span className="sr-only">ความเห็นหัวหน้าของ {m.displayName}</span>
-                                <textarea value={note} maxLength={limits.member} rows={2} placeholder="ไม่บังคับ"
-                                  onChange={(e) => setDraft({ ...draft, memberNotes: { ...draft.memberNotes, [m.userId]: e.target.value } })} />
-                                <small>{note.length}/{limits.member}</small>
-                              </label>
-                            ) : note ? <p className="perf-weekly-note">{note}</p> : <span className="perf-sub">-</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="perf-weekly-members">
+                {shownMembers.map((m) => {
+                  const parts = workParts(m.current);
+                  const prev = m.previous;
+                  const note = editing ? draft.memberNotes[m.userId] ?? "" : narrative?.memberNotes[m.userId] ?? "";
+                  return (
+                    <li key={m.userId} className="perf-weekly-member">
+                      <div className="perf-weekly-member-head">
+                        <span className="perf-person"><span className="perf-avatar" aria-hidden="true">{m.displayName.slice(0, 1).toUpperCase()}</span><span><b>{m.displayName}</b><small>{m.position || "-"}</small></span></span>
+                        {m.employmentStatus !== "Permanent" && <Badge tone={employmentStatusTone[m.employmentStatus]}>{employmentStatusLabel[m.employmentStatus] ?? m.employmentStatus}{m.probationDay != null ? ` · วันที่ ${m.probationDay}` : ""}</Badge>}
+                      </div>
+                      <div className="perf-weekly-member-section">
+                        <span className="perf-weekly-member-label">งานในระบบ</span>
+                        {parts.length ? (
+                          <ul className="perf-weekly-chips">{parts.map((x) => <li key={x.text} data-perf-category={x.icon}><span className="material-symbols-outlined" aria-hidden="true">{x.icon}</span>{x.text}</li>)}</ul>
+                        ) : <span className="perf-sub">ไม่มีงานที่บันทึกในระบบ</span>}
+                        <small className="perf-sub">สัปดาห์ก่อน: รันเทส {num(prev.executions)} · Defect {num(prev.defectsReported)}{prev.hasCrmAccount ? ` · CRM ${num(prev.crmTicketsHandled)}` : ""}{!m.current.hasCrmAccount ? " · ยังไม่ได้ผูกบัญชี CRM" : ""}</small>
+                      </div>
+                      <div className="perf-weekly-member-section">
+                        <span className="perf-weekly-member-label">ผลงานเด่น / บันทึกงาน</span>
+                        {m.workItems.length ? (
+                          <ul className="perf-weekly-items">
+                            {m.workItems.slice(0, 4).map((w, i) => (
+                              <li key={i} className={w.kind === "Highlight" ? "highlight" : ""}>
+                                <span>{w.kind === "Highlight" && <span className="perf-weekly-star"><span className="material-symbols-outlined" aria-hidden="true">star</span>ผลงานเด่น</span>}{w.title}</span>
+                                <small>{fmtDate(w.workDate)} · {workCategoryLabel[w.category] ?? w.category}{w.projectName ? ` · ${w.projectName}` : ""}</small>
+                              </li>
+                            ))}
+                            {m.workItems.length > 4 && <li className="more">และอีก {m.workItems.length - 4} รายการ</li>}
+                          </ul>
+                        ) : <span className="perf-sub">ยังไม่มีบันทึกงานสัปดาห์นี้</span>}
+                      </div>
+                      {editing ? (
+                        <label className="perf-weekly-note-field">
+                          <span className="perf-weekly-member-label">ความเห็นหัวหน้า<span className="sr-only"> ของ {m.displayName}</span></span>
+                          <textarea value={note} maxLength={limits.member} rows={2} placeholder="ไม่บังคับ"
+                            onChange={(e) => setDraft({ ...draft, memberNotes: { ...draft.memberNotes, [m.userId]: e.target.value } })} />
+                          <small>{note.length}/{limits.member}</small>
+                        </label>
+                      ) : note ? (
+                        <div className="perf-weekly-note"><span className="perf-weekly-member-label">ความเห็นหัวหน้า</span><p>{note}</p></div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </section>
 
-          <section className="content-card perf-report-section" aria-labelledby="weekly-watch">
-            <h3 id="weekly-watch"><span className="material-symbols-outlined" aria-hidden="true">visibility</span>สิ่งที่ต้องติดตาม</h3>
-            <ul className="perf-weekly-watch">
-              {data.assignedOverdue > 0 && <li className="danger"><span className="material-symbols-outlined" aria-hidden="true">schedule</span>งานทดสอบเลยกำหนด {num(data.assignedOverdue)} เคส (จากงานค้าง {num(data.assignedPending)} เคส)</li>}
-              {data.evaluationsDue.map((e) => (
-                <li key={e.evaluationId} className={e.isOverdue ? "danger" : ""}>
-                  <span className="material-symbols-outlined" aria-hidden="true">rate_review</span>
-                  <span>ประเมิน {roundText(e)} ของ {e.userName ?? "-"} {e.isOverdue ? "เลยกำหนด" : "ครบกำหนด"} {fmtDate(e.dueDate)} <Badge tone={evalStatus[e.status]?.tone ?? "gray"}>{evalStatus[e.status]?.label ?? e.status}</Badge></span>
-                </li>
-              ))}
-              {data.probation.map((p) => (
-                <li key={p.userId}>
-                  <span className="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
-                  <span className="perf-weekly-probation">
-                    <span>{p.displayName} ทดลองงานวันที่ {p.probationDay} จาก {p.probationTotalDays}{p.probationEndDate ? ` · สิ้นสุด ${fmtDate(p.probationEndDate)}` : ""}</span>
-                    <span className="perf-report-track" aria-hidden="true"><span style={{ width: `${Math.min(100, (p.probationDay / p.probationTotalDays) * 100)}%` }} /></span>
-                  </span>
-                </li>
-              ))}
-              {withoutLogs.length > 0 && <li><span className="material-symbols-outlined" aria-hidden="true">edit_note</span>ยังไม่มีบันทึกงานสัปดาห์นี้: {withoutLogs.map((m) => m.displayName).join(", ")} — งานนอกระบบ (ประชุม ช่วยทีม ซัพพอร์ต) จะไม่ปรากฏในรายงาน</li>}
-              {data.assignedOverdue === 0 && data.evaluationsDue.length === 0 && data.probation.length === 0 && withoutLogs.length === 0 && <li className="ok"><span className="material-symbols-outlined" aria-hidden="true">check_circle</span>ไม่มีรายการที่ต้องติดตาม</li>}
-            </ul>
-          </section>
+          <div className="perf-weekly-bottom">
+            <section className="content-card" aria-labelledby="weekly-watch">
+              <h3 id="weekly-watch" className="perf-weekly-h"><span className="material-symbols-outlined" aria-hidden="true">visibility</span>สิ่งที่ต้องติดตาม</h3>
+              <ul className="perf-weekly-watch">
+                {data.assignedOverdue > 0 && <li className="danger"><span className="material-symbols-outlined" aria-hidden="true">schedule</span><span>งานทดสอบเลยกำหนด {num(data.assignedOverdue)} เคส (จากงานค้าง {num(data.assignedPending)} เคส)</span></li>}
+                {data.evaluationsDue.map((e) => (
+                  <li key={e.evaluationId} className={e.isOverdue ? "danger" : ""}>
+                    <span className="material-symbols-outlined" aria-hidden="true">rate_review</span>
+                    <span>ประเมิน {roundText(e)} ของ {e.userName ?? "-"} {e.isOverdue ? "เลยกำหนด" : "ครบกำหนด"} {fmtDate(e.dueDate)} <Badge tone={evalStatus[e.status]?.tone ?? "gray"}>{evalStatus[e.status]?.label ?? e.status}</Badge></span>
+                  </li>
+                ))}
+                {data.probation.map((p) => (
+                  <li key={p.userId}>
+                    <span className="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
+                    <span className="perf-weekly-probation">
+                      <span>{p.displayName} ทดลองงานวันที่ {p.probationDay} จาก {p.probationTotalDays}{p.probationEndDate ? ` · สิ้นสุด ${fmtDate(p.probationEndDate)}` : ""}</span>
+                      <span className="perf-report-track" aria-hidden="true"><span style={{ width: `${Math.min(100, (p.probationDay / p.probationTotalDays) * 100)}%` }} /></span>
+                    </span>
+                  </li>
+                ))}
+                {withoutLogs.length > 0 && <li className="info"><span className="material-symbols-outlined" aria-hidden="true">edit_note</span><span>ยังไม่มีบันทึกงานสัปดาห์นี้: {withoutLogs.map((m) => m.displayName).join(", ")} — งานนอกระบบ (ประชุม ช่วยทีม ซัพพอร์ต) จะไม่ปรากฏในรายงาน</span></li>}
+                {data.assignedOverdue === 0 && data.evaluationsDue.length === 0 && data.probation.length === 0 && withoutLogs.length === 0 && <li className="ok"><span className="material-symbols-outlined" aria-hidden="true">check_circle</span><span>ไม่มีรายการที่ต้องติดตาม</span></li>}
+              </ul>
+            </section>
 
-          <section className="content-card perf-report-section" aria-labelledby="weekly-next">
-            <h3 id="weekly-next"><span className="material-symbols-outlined" aria-hidden="true">event_upcoming</span>แผนสัปดาห์หน้า</h3>
-            {editing ? (
-              <div className="form-grid perf-weekly-form">
-                <TextArea label="แผนสัปดาห์หน้า" value={draft.nextWeekPlan} max={limits.long} onChange={(nextWeekPlan) => setDraft({ ...draft, nextWeekPlan })} placeholder={"2–3 ข้อ เช่น\n- Regression Release 2.4 รอบสุดท้าย\n- ประเมินทดลองงานรอบ 60 วัน"} full hideLabel />
-              </div>
-            ) : narrative?.nextWeekPlan ? <p className="perf-weekly-plan">{narrative.nextWeekPlan}</p> : <p className="perf-report-empty">ยังไม่ได้ระบุ</p>}
-          </section>
+            <section className="content-card" aria-labelledby="weekly-next">
+              <h3 id="weekly-next" className="perf-weekly-h"><span className="material-symbols-outlined" aria-hidden="true">event_upcoming</span>แผนสัปดาห์หน้า</h3>
+              {editing ? (
+                <div className="form-grid perf-weekly-form">
+                  <TextArea label="แผนสัปดาห์หน้า" value={draft.nextWeekPlan} max={limits.long} onChange={(nextWeekPlan) => setDraft({ ...draft, nextWeekPlan })} placeholder={"2–3 ข้อ เช่น\n- Regression Release 2.4 รอบสุดท้าย\n- ประเมินทดลองงานรอบ 60 วัน"} full hideLabel />
+                </div>
+              ) : narrative?.nextWeekPlan ? <p className="perf-weekly-plan">{narrative.nextWeekPlan}</p> : <p className="perf-report-empty">ยังไม่ได้ระบุ</p>}
+            </section>
+          </div>
 
           {editing && (
             <div className="perf-weekly-savebar perf-noprint">
@@ -348,16 +352,21 @@ function WeeklyKpi({ icon, label, value, previous, typical, note }: { icon: stri
   // ไม่ใช้สีเขียว/แดง — ตัวเลขสูงขึ้นไม่ได้แปลว่าดีหรือแย่เสมอ (เช่น Defect) จึงบอกเป็นข้อความเทียบกับค่าปกติ
   const diff = typical ? (value - typical) / typical : value ? 1 : 0;
   const trend = Math.abs(diff) < 0.2 ? { icon: "remove", text: "ใกล้เคียงปกติ" } : diff > 0 ? { icon: "arrow_upward", text: "สูงกว่าปกติ" } : { icon: "arrow_downward", text: "ต่ำกว่าปกติ" };
+  // แถบ bullet: ความยาว = สัปดาห์นี้, ขีดตั้ง = ค่าปกติ — สเกลเดียวกันจากค่ามากสุดของสามค่า
+  const scale = Math.max(value, previous, typical, 1);
   return (
-    <div className="perf-report-kpi perf-weekly-kpi" data-perf-category={icon}>
-      <span className="material-symbols-outlined" aria-hidden="true">{icon}</span>
-      <div>
-        <small>{label}</small>
+    <div className="perf-weekly-kpi" data-perf-category={icon}>
+      <div className="perf-weekly-kpi-head"><span className="material-symbols-outlined" aria-hidden="true">{icon}</span><small>{label}</small></div>
+      <div className="perf-weekly-kpi-value">
         <b>{num(value)}</b>
-        <span className="perf-weekly-compare">สัปดาห์ก่อน {num(previous)} · ปกติ {num(typical)}</span>
         <span className="perf-weekly-trend"><span className="material-symbols-outlined" aria-hidden="true">{trend.icon}</span>{trend.text}</span>
-        <span>{note}</span>
       </div>
+      <span className="perf-weekly-bullet" role="img" aria-label={`สัปดาห์นี้ ${num(value)} ค่าปกติ ${num(typical)}`}>
+        <span className="perf-weekly-bullet-fill" style={{ width: `${(value / scale) * 100}%` }} />
+        <span className="perf-weekly-bullet-tick" style={{ left: `${(typical / scale) * 100}%` }} />
+      </span>
+      <span className="perf-weekly-compare">สัปดาห์ก่อน <b>{num(previous)}</b> · ปกติ <b>{num(typical)}</b></span>
+      <span className="perf-weekly-kpi-note">{note}</span>
     </div>
   );
 }
@@ -416,7 +425,7 @@ function summaryText(d: WeeklyReport): string {
     for (const m of active) {
       const highlights = m.workItems.filter((w) => w.kind === "Highlight").map((w) => w.title);
       const note = n?.memberNotes[m.userId];
-      lines.push(`- ${m.displayName}: ${workParts(m.current).join(" · ") || "ไม่มีงานในระบบ"}${highlights.length ? ` | ผลงานเด่น: ${highlights.join(", ")}` : ""}${note ? ` | ${note}` : ""}`);
+      lines.push(`- ${m.displayName}: ${workParts(m.current).map((x) => x.text).join(" · ") || "ไม่มีงานในระบบ"}${highlights.length ? ` | ผลงานเด่น: ${highlights.join(", ")}` : ""}${note ? ` | ${note}` : ""}`);
     }
   }
   const watch = [

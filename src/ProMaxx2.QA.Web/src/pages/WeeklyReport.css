@@ -1,23 +1,57 @@
-/* แท็บ "สรุปประจำสัปดาห์" — ใช้โครงรายงาน .perf-report (PerformanceReport.css) จึงได้กฎพิมพ์/PDF ชุดเดียวกัน; selector ทั้งหมด scope ด้วย .perf-weekly */
-.performance-page .perf-weekly-head { gap: 14px; }
-.performance-page .perf-weekly-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.performance-page .perf-weekly-nav .btn { min-height: 40px; }
+/* แท็บ "สรุปประจำสัปดาห์" (ออกแบบใหม่ 2026-10-21) — ใช้โครงรายงาน .perf-report (PerformanceReport.css) จึงได้กฎพิมพ์/PDF ชุดเดียวกัน; selector ทั้งหมด scope ด้วย .perf-weekly
+   ลำดับอ่าน: หัวรายงาน + เลือกสัปดาห์ → สถานะภาพรวม/ความเสี่ยง/เรื่องที่ขอ → ตัวเลขทีม → หมายเหตุข้อมูล → งานรายคน (การ์ด) → ติดตาม | แผนสัปดาห์หน้า */
+.performance-page .perf-weekly { gap: 16px; }
+.performance-page .perf-weekly .content-card { box-shadow: 0 4px 16px color-mix(in srgb, var(--text) 3%, transparent); }
+.performance-page .perf-weekly-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 16px; font-weight: 600; }
+.performance-page .perf-weekly-h > .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); font-size: 19px; }
+.performance-page .perf-weekly-h small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.performance-page .perf-weekly-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+
+/* หัวรายงาน */
+.performance-page .content-card.perf-weekly-head { display: grid; gap: 12px; padding: 16px 18px; }
+.performance-page .perf-weekly-head-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 20px; }
+.performance-page .perf-weekly-title { display: grid; gap: 4px; min-width: 0; }
+.performance-page .perf-weekly-eyebrow { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--primary); font-size: 12px; font-weight: 600; }
+.performance-page .perf-weekly-eyebrow .material-symbols-outlined { font-size: 18px; }
+.performance-page .perf-weekly-audience { padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); font-size: 11px; }
+.performance-page .perf-weekly-title h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; font-size: 24px; line-height: 1.3; }
+.performance-page .perf-weekly-now { padding: 2px 10px; border-radius: 999px; background: color-mix(in srgb, var(--green) 12%, var(--card)); color: color-mix(in srgb, var(--green) 80%, var(--text)); font-size: 12px; font-weight: 600; }
+.performance-page .perf-weekly-title p { margin: 0; color: var(--muted); font-size: 12px; }
+.performance-page .perf-weekly-actions .btn { min-height: 40px; }
+.performance-page .perf-weekly-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.performance-page .perf-weekly-stepper { display: flex; align-items: stretch; min-height: 42px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.performance-page .perf-weekly-stepper:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.performance-page .perf-weekly-stepper > button { display: grid; place-items: center; width: 42px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--primary); cursor: pointer; }
+.performance-page .perf-weekly-stepper > button:first-child { border-right: 1px solid var(--line); border-radius: 9px 0 0 9px; }
+.performance-page .perf-weekly-stepper > button:last-child { border-left: 1px solid var(--line); border-radius: 0 9px 9px 0; }
+.performance-page .perf-weekly-stepper > button:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.performance-page .perf-weekly-stepper > button:disabled { color: var(--line); cursor: not-allowed; }
 .performance-page .perf-weekly-pick { display: block; width: 168px; }
+.performance-page .perf-weekly-pick .date-field { height: 100%; min-height: 40px; border: 0; border-radius: 0; box-shadow: none; }
+.performance-page .perf-weekly-today { min-height: 42px; }
+.performance-page .perf-weekly-nav-hint { margin-left: auto; color: var(--muted); font-size: 12px; }
 
 /* สรุปสำหรับผู้บริหาร */
-.performance-page .perf-weekly-exec { border-top: 3px solid var(--primary); }
+.performance-page .perf-weekly-exec { display: grid; gap: 14px; }
 .performance-page .perf-weekly-exec-body { display: grid; gap: 12px; }
-.performance-page .perf-weekly-health { display: inline-flex; align-items: center; gap: 6px; justify-self: start; padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; }
-.performance-page .perf-weekly-health .material-symbols-outlined { font-size: 20px; }
-.performance-page .perf-weekly-health.green { background: color-mix(in srgb, var(--green) 12%, var(--card)); color: color-mix(in srgb, var(--green) 80%, var(--text)); }
-.performance-page .perf-weekly-health.yellow { background: color-mix(in srgb, var(--yellow) 16%, var(--card)); color: var(--warning-text); }
-.performance-page .perf-weekly-health.red { background: color-mix(in srgb, var(--red) 12%, var(--card)); color: var(--red); }
-.performance-page .perf-weekly-health.none { background: var(--bg); color: var(--muted); font-weight: 400; }
-.performance-page .perf-weekly-text { display: grid; gap: 10px; margin: 0; }
-.performance-page .perf-weekly-text > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
-.performance-page .perf-weekly-text > div.ask { border-color: color-mix(in srgb, var(--primary) 30%, var(--line)); background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
-.performance-page .perf-weekly-text dt { color: var(--muted); font-size: 12px; font-weight: 600; }
-.performance-page .perf-weekly-text dd { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.performance-page .perf-weekly-health { --tone: var(--muted); display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid color-mix(in srgb, var(--tone) 28%, var(--line)); border-left: 6px solid var(--tone); border-radius: 14px; background: color-mix(in srgb, var(--tone) 8%, var(--card)); }
+.performance-page .perf-weekly-health.green { --tone: var(--green); }
+.performance-page .perf-weekly-health.yellow { --tone: var(--warning-text); }
+.performance-page .perf-weekly-health.red { --tone: var(--red); }
+.performance-page .perf-weekly-health > .material-symbols-outlined { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--tone); color: var(--card); font-size: 22px; }
+.performance-page .perf-weekly-health.none > .material-symbols-outlined { background: var(--line); color: var(--muted); }
+.performance-page .perf-weekly-health-label { display: grid; gap: 2px; padding-right: 14px; border-right: 1px solid color-mix(in srgb, var(--tone) 25%, var(--line)); }
+.performance-page .perf-weekly-health-label small { color: var(--muted); font-size: 11px; }
+.performance-page .perf-weekly-health-label b { color: var(--tone); font-size: 18px; font-weight: 700; white-space: nowrap; }
+.performance-page .perf-weekly-health.none .perf-weekly-health-label b { color: var(--muted); font-weight: 600; }
+.performance-page .perf-weekly-health p { margin: 0; color: var(--text); font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.performance-page .perf-weekly-health.none p { color: var(--muted); font-size: 13px; }
+.performance-page .perf-weekly-callouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+.performance-page .perf-weekly-callouts > div { --tone: var(--warning-text); display: grid; align-content: start; gap: 6px; padding: 14px 16px; border: 1px solid var(--line); border-top: 3px solid var(--tone); border-radius: 12px; background: color-mix(in srgb, var(--tone) 4%, var(--card)); }
+.performance-page .perf-weekly-callouts > div.ask { --tone: var(--primary); }
+.performance-page .perf-weekly-callout-label { display: inline-flex; align-items: center; gap: 6px; color: var(--tone); font-size: 13px; font-weight: 600; }
+.performance-page .perf-weekly-callout-label .material-symbols-outlined { font-size: 19px; }
+.performance-page .perf-weekly-callouts p { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ฟอร์มข้อความ (โหมดแก้ไข) */
 .performance-page .perf-weekly-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; margin: 0; }
@@ -25,26 +59,39 @@
 .performance-page .perf-weekly-form .full { grid-column: 1 / -1; }
 .performance-page .perf-weekly-form textarea { width: 100%; min-width: 0; font-weight: 400; }
 .performance-page .perf-weekly-form label > small,
-.performance-page .perf-weekly-note-field small { align-self: flex-end; color: var(--muted); font-size: 11px; font-weight: 400; }
+.performance-page .perf-weekly-note-field small { align-self: flex-end; justify-self: end; color: var(--muted); font-size: 11px; font-weight: 400; }
 .performance-page .perf-weekly-health-pick { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .performance-page .perf-weekly-health-pick legend { padding: 0 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
-.performance-page .perf-weekly-form .perf-weekly-health-pick label { flex-direction: row; align-items: center; gap: 6px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; font-weight: 400; cursor: pointer; }
+.performance-page .perf-weekly-form .perf-weekly-health-pick label { position: relative; flex-direction: row; align-items: center; gap: 6px; min-height: 40px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; font-weight: 400; cursor: pointer; }
 .performance-page .perf-weekly-health-pick label .material-symbols-outlined { font-size: 18px; }
 .performance-page .perf-weekly-health-pick label[data-health="Green"] .material-symbols-outlined { color: var(--green); }
 .performance-page .perf-weekly-health-pick label[data-health="Yellow"] .material-symbols-outlined { color: var(--warning-text); }
 .performance-page .perf-weekly-health-pick label[data-health="Red"] .material-symbols-outlined { color: var(--red); }
-.performance-page .perf-weekly-health-pick label { position: relative; }
 .performance-page .perf-weekly-form .perf-weekly-health-pick input[type="radio"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .performance-page .perf-weekly-health-pick label:focus-within { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: 1px; }
 .performance-page .perf-weekly-health-pick label:has(input:checked) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, var(--card)); font-weight: 600; }
 
-/* KPI เทียบสัปดาห์ */
-.performance-page .perf-weekly-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; }
+/* KPI เทียบสัปดาห์ — ตัวเลขสีข้อความ, แถบ bullet (ยาว = สัปดาห์นี้, ขีด = ค่าปกติ), ลูกศรสีหมวด ไม่ใช่เขียว/แดง */
+.performance-page .perf-weekly-kpi-block { display: grid; gap: 14px; }
+.performance-page .perf-weekly-legend-key { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.performance-page .perf-weekly-key-bar { width: 18px; height: 6px; border-radius: 999px; background: var(--primary); }
+.performance-page .perf-weekly-key-tick { width: 2px; height: 14px; margin-left: 8px; border-radius: 1px; background: var(--text); }
+.performance-page .perf-weekly-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.performance-page .perf-weekly-kpi { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--perf-accent) 20%, var(--line)); border-top: 4px solid var(--perf-accent); border-radius: 14px; background: linear-gradient(160deg, color-mix(in srgb, var(--perf-accent) 8%, var(--card)), var(--card) 70%); box-shadow: 0 4px 16px color-mix(in srgb, var(--perf-accent) 7%, transparent); }
 .performance-page .perf-weekly-kpi.perf-overdue { --perf-accent: var(--red); color: var(--text); font-weight: 400; }
-.performance-page .perf-report-kpi.perf-weekly-kpi span.perf-weekly-compare { color: var(--text); font-size: 12px; }
-.performance-page .perf-report-kpi.perf-weekly-kpi span.perf-weekly-trend { display: inline-flex; align-items: center; gap: 2px; color: var(--perf-accent); font-size: 12px; font-weight: 600; }
+.performance-page .perf-weekly-kpi-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.performance-page .perf-weekly-kpi-head .material-symbols-outlined { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 10px; background: var(--perf-accent); color: var(--card); font-size: 20px; }
+.performance-page .perf-weekly-kpi-head small { color: var(--text); font-size: 13px; font-weight: 600; }
+.performance-page .perf-weekly-kpi-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.performance-page .perf-weekly-kpi-value b { color: var(--text); font-size: 28px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.performance-page .perf-weekly-trend { display: inline-flex; align-items: center; gap: 2px; padding: 2px 8px 2px 4px; border-radius: 999px; background: color-mix(in srgb, var(--perf-accent) 10%, var(--card)); color: var(--perf-accent); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .performance-page .perf-weekly-trend .material-symbols-outlined { font-size: 16px; }
-.performance-page .perf-weekly-legend { margin-top: -4px; }
+.performance-page .perf-weekly-bullet { position: relative; display: block; height: 6px; margin: 4px 0 2px; border-radius: 999px; background: color-mix(in srgb, var(--perf-accent) 12%, var(--card)); }
+.performance-page .perf-weekly-bullet-fill { display: block; height: 100%; border-radius: 999px; background: var(--perf-accent); }
+.performance-page .perf-weekly-bullet-tick { position: absolute; top: -4px; width: 2px; height: 14px; border-radius: 1px; background: var(--text); box-shadow: 0 0 0 2px var(--card); transform: translateX(-1px); }
+.performance-page .perf-weekly-compare { color: var(--muted); font-size: 12px; }
+.performance-page .perf-weekly-compare b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.performance-page .perf-weekly-kpi-note { padding-top: 8px; border-top: 1px dashed color-mix(in srgb, var(--perf-accent) 25%, var(--line)); color: var(--text); font-size: 12px; line-height: 1.5; }
 
 /* หมายเหตุคุณภาพข้อมูล */
 .performance-page .perf-weekly-datanote { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--yellow) 10%, var(--card)); color: var(--text); font-size: 13px; line-height: 1.6; }
@@ -52,147 +99,79 @@
 .performance-page .perf-weekly-datanote b { color: var(--warning-text); }
 .performance-page .perf-weekly-datanote ul { margin: 4px 0 0; padding-left: 18px; }
 
-/* งานรายคน */
-.performance-page .perf-weekly-idle { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; cursor: pointer; }
-.performance-page .perf-weekly-table td { vertical-align: top; }
-.performance-page .perf-weekly-table th:first-child { width: 200px; }
-.performance-page .perf-weekly-table th:last-child { width: 220px; }
-.performance-page .perf-weekly-table td:first-child .badge { margin-top: 6px; }
-.performance-page .perf-weekly-parts,
-.performance-page .perf-weekly-items { display: grid; gap: 6px; margin: 0 0 6px; padding: 0; list-style: none; font-size: 13px; }
-.performance-page .perf-weekly-parts li { overflow-wrap: anywhere; }
+/* งานรายคน — การ์ด 2 คอลัมน์ */
+.performance-page .perf-weekly-members-block { display: grid; gap: 14px; }
+.performance-page .perf-weekly-idle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.performance-page .perf-weekly-members { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); align-items: start; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-weekly-member { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 45%, var(--card)); }
+.performance-page .perf-weekly-member-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.performance-page .perf-weekly-member-section { display: grid; gap: 6px; min-width: 0; }
+.performance-page .perf-weekly-member-label { color: var(--muted); font-size: 11px; font-weight: 600; }
+.performance-page .perf-weekly-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-weekly-chips li { display: inline-flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 10px 4px 6px; border: 1px solid color-mix(in srgb, var(--perf-accent) 22%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--perf-accent) 7%, var(--card)); color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+.performance-page .perf-weekly-chips .material-symbols-outlined { flex: none; color: var(--perf-accent); font-size: 16px; }
+.performance-page .perf-weekly-items { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
 .performance-page .perf-weekly-items li { display: grid; gap: 2px; min-width: 0; padding-left: 10px; border-left: 3px solid var(--primary); overflow-wrap: anywhere; }
 .performance-page .perf-weekly-items li.highlight { border-left-color: var(--green); }
 .performance-page .perf-weekly-items li.more { border-left: 0; padding-left: 0; color: var(--muted); font-size: 12px; }
 .performance-page .perf-weekly-items small { color: var(--muted); font-size: 11px; }
-.performance-page .perf-weekly-star { justify-self: start; color: color-mix(in srgb, var(--green) 80%, var(--text)); font-size: 11px; font-weight: 600; }
-.performance-page .perf-weekly-note { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.performance-page .perf-weekly-star { display: inline-flex; align-items: center; gap: 2px; margin-right: 6px; color: color-mix(in srgb, var(--green) 80%, var(--text)); font-size: 11px; font-weight: 600; vertical-align: 1px; }
+.performance-page .perf-weekly-star .material-symbols-outlined { font-size: 14px; }
+.performance-page .perf-weekly-note { display: grid; gap: 4px; padding: 10px 12px; border-left: 3px solid var(--primary); border-radius: 8px; background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.performance-page .perf-weekly-note p { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .performance-page .perf-weekly-note-field { display: grid; gap: 4px; }
 .performance-page .perf-weekly-note-field textarea { width: 100%; min-width: 0; min-height: 62px; font-weight: 400; }
 
-/* สิ่งที่ต้องติดตาม */
+/* ติดตาม | แผนสัปดาห์หน้า */
+.performance-page .perf-weekly-bottom { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.performance-page .perf-weekly-bottom > .content-card { display: grid; gap: 14px; }
 .performance-page .perf-weekly-watch { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.performance-page .perf-weekly-watch li { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--warning-text); border-radius: 10px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
-.performance-page .perf-weekly-watch li > .material-symbols-outlined { color: var(--warning-text); font-size: 20px; }
-.performance-page .perf-weekly-watch li.danger { border-left-color: var(--red); }
-.performance-page .perf-weekly-watch li.danger > .material-symbols-outlined { color: var(--red); }
-.performance-page .perf-weekly-watch li.ok { border-left-color: var(--green); }
-.performance-page .perf-weekly-watch li.ok > .material-symbols-outlined { color: var(--green); }
+.performance-page .perf-weekly-watch li { --tone: var(--warning-text); display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--tone) 18%, var(--line)); border-left: 4px solid var(--tone); border-radius: 10px; background: color-mix(in srgb, var(--tone) 5%, var(--card)); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.performance-page .perf-weekly-watch li.danger { --tone: var(--red); }
+.performance-page .perf-weekly-watch li.ok { --tone: var(--green); }
+.performance-page .perf-weekly-watch li.info { --tone: var(--muted); }
+.performance-page .perf-weekly-watch li > .material-symbols-outlined { flex: none; color: var(--tone); font-size: 20px; }
 .performance-page .perf-weekly-watch .badge { margin-left: 4px; }
 .performance-page .perf-weekly-probation { display: grid; flex: 1 1 auto; gap: 6px; min-width: 0; }
-.performance-page .perf-weekly-plan { margin: 0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.performance-page .perf-weekly-plan { margin: 0; padding: 12px 14px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 60%, var(--card)); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* แถบบันทึก (โหมดแก้ไข) — ติดล่างจอเพื่อกดบันทึกได้จากทุกตำแหน่ง */
 .performance-page .perf-weekly-savebar { position: sticky; bottom: 12px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--card) 94%, transparent); backdrop-filter: blur(8px); box-shadow: 0 6px 20px rgb(15 23 42 / 12%); }
 .performance-page .perf-weekly-savebar .inline-alert { flex-basis: 100%; margin: 0; }
 .performance-page .perf-weekly-savebar > .perf-sub { margin-right: auto; font-size: 12px; }
 
-@media (max-width: 760px) {
+@media (max-width: 1100px) {
   .performance-page .perf-weekly-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .performance-page .perf-weekly-nav > * { flex: 1 1 calc(50% - 8px); justify-content: center; }
-  .performance-page .perf-weekly-pick { width: auto; flex-basis: 100%; order: -1; }
-  .performance-page .perf-weekly-text > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .performance-page .perf-weekly-bottom { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .performance-page .perf-weekly-head { padding: 16px; }
+  .performance-page .perf-weekly-title h2 { font-size: 20px; }
+  .performance-page .perf-weekly-nav-hint { flex-basis: 100%; margin-left: 0; }
+  .performance-page .perf-weekly-stepper { flex: 1 1 100%; }
+  .performance-page .perf-weekly-stepper > button { width: 48px; }
+  .performance-page .perf-weekly-pick { flex: 1 1 auto; width: auto; min-width: 0; }
+  .performance-page .perf-weekly-today { flex: 1 1 100%; justify-content: center; }
+  .performance-page .perf-weekly-health { grid-template-columns: auto minmax(0, 1fr); padding: 14px; }
+  .performance-page .perf-weekly-health-label { padding-right: 0; border-right: 0; }
+  .performance-page .perf-weekly-health p { grid-column: 1 / -1; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--tone) 25%, var(--line)); }
+  .performance-page .perf-weekly-kpi { padding: 14px; }
+  .performance-page .perf-weekly-kpi-value b { font-size: 24px; }
   .performance-page .perf-weekly-form { grid-template-columns: minmax(0, 1fr); }
   .performance-page .perf-weekly-health-pick label { flex: 1 1 calc(50% - 8px); justify-content: center; }
-  .performance-page .perf-weekly-table th:first-child,
-  .performance-page .perf-weekly-table th:last-child { width: auto; }
   .performance-page .perf-weekly-savebar { bottom: 0; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
   .performance-page .perf-weekly-savebar > .perf-sub { flex-basis: 100%; }
   .performance-page .perf-weekly-savebar .btn { flex: 1 1 0; justify-content: center; }
 }
 
-@media (max-width: 360px) {
+@media (max-width: 520px) {
   .performance-page .perf-weekly-kpis { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media print {
   .performance-page .perf-weekly-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
-  .performance-page .perf-weekly .perf-weekly-watch li { break-inside: avoid; }
-}
-
-/* Weekly report refresh — executive reading order with a calmer visual hierarchy. */
-.performance-page .perf-weekly-head {
-  position: relative;
-  isolation: isolate;
-  gap: 18px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line));
-  border-top: 0;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 12%, var(--card)), var(--card) 62%);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--primary) 8%, transparent);
-}
-.performance-page .perf-weekly-head::after {
-  position: absolute;
-  z-index: -1;
-  top: -72px;
-  right: -38px;
-  width: 220px;
-  height: 220px;
-  border: 30px solid color-mix(in srgb, var(--primary) 7%, transparent);
-  border-radius: 50%;
-  content: "";
-}
-.performance-page .perf-weekly-hero { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 14px; min-width: 0; }
-.performance-page .perf-weekly-hero-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: var(--primary); color: var(--card); box-shadow: 0 8px 16px color-mix(in srgb, var(--primary) 22%, transparent); }
-.performance-page .perf-weekly-hero-mark .material-symbols-outlined { font-size: 28px; }
-.performance-page .perf-weekly-hero .perf-report-title { width: 100%; }
-.performance-page .perf-weekly-eyebrow-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.performance-page .perf-weekly-audience { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--primary) 7%, var(--card)); color: var(--primary); font-size: 11px; font-weight: 700; }
-.performance-page .perf-weekly-audience .material-symbols-outlined { font-size: 15px; }
-.performance-page .perf-weekly-head .perf-report-title h2 { margin-top: 5px; font-size: clamp(21px, 2.4vw, 28px); letter-spacing: -0.02em; }
-.performance-page .perf-weekly-head .perf-report-title p { margin-top: 5px; }
-.performance-page .perf-weekly-head .perf-report-actions { align-self: end; }
-.performance-page .perf-weekly-head .perf-report-actions .btn { background: color-mix(in srgb, var(--card) 76%, transparent); }
-.performance-page .perf-weekly-head .perf-report-actions .btn:hover { border-color: color-mix(in srgb, var(--primary) 36%, var(--line)); background: var(--card); }
-.performance-page .perf-weekly-nav { margin-top: 2px; padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); }
-.performance-page .perf-weekly-nav-caption { display: inline-flex; align-items: center; gap: 5px; margin-right: auto; color: var(--muted); font-size: 12px; font-weight: 700; }
-.performance-page .perf-weekly-nav-caption .material-symbols-outlined { color: var(--primary); font-size: 18px; }
-
-.performance-page .perf-weekly-exec { border-top: 0; background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 5%, var(--card)), var(--card) 48%); }
-.performance-page .perf-weekly-exec > h3 { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); font-size: 16px; }
-.performance-page .perf-weekly-exec > h3 .material-symbols-outlined { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 11%, var(--card)); }
-.performance-page .perf-weekly-exec-body { grid-template-columns: minmax(180px, .38fr) minmax(0, 1fr); align-items: stretch; gap: 16px; }
-.performance-page .perf-weekly-health { justify-self: stretch; align-self: stretch; min-height: 74px; justify-content: center; border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line)); border-radius: 14px; font-size: 14px; }
-.performance-page .perf-weekly-text { align-content: start; }
-.performance-page .perf-weekly-text > div { min-height: 54px; align-items: start; background: color-mix(in srgb, var(--card) 78%, var(--bg)); }
-.performance-page .perf-weekly-text > div.ask { border-left: 4px solid var(--primary); }
-
-.performance-page .perf-weekly-kpi-block { display: grid; gap: 14px; padding: 18px; border: 1px solid color-mix(in srgb, var(--primary) 13%, var(--line)); border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 4%, var(--card)), var(--card)); }
-.performance-page .perf-weekly-section-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.performance-page .perf-weekly-section-intro > div { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.performance-page .perf-weekly-section-intro > div > .material-symbols-outlined { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 10px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); }
-.performance-page .perf-weekly-section-intro > div > span:last-child { display: grid; gap: 2px; min-width: 0; }
-.performance-page .perf-weekly-section-intro b { font-size: 15px; }
-.performance-page .perf-weekly-section-intro small { color: var(--muted); font-size: 12px; }
-.performance-page .perf-weekly-section-tag { flex: none; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; }
-.performance-page .perf-weekly-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.performance-page .perf-weekly-kpi { min-height: 142px; padding: 16px; border-radius: 14px; background: var(--card); box-shadow: 0 4px 14px color-mix(in srgb, var(--text) 4%, transparent); }
-.performance-page .perf-weekly-kpi > .material-symbols-outlined { width: 38px; height: 38px; border-radius: 11px; }
-.performance-page .perf-weekly-kpi b { font-size: 28px; }
-.performance-page .perf-weekly-kpi.perf-overdue { background: color-mix(in srgb, var(--red) 5%, var(--card)); }
-.performance-page .perf-weekly-legend { padding-top: 2px; }
-
-.performance-page .perf-weekly > .perf-report-section { box-shadow: 0 4px 16px color-mix(in srgb, var(--text) 3%, transparent); }
-.performance-page .perf-weekly > .perf-report-section h3 { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.performance-page .perf-weekly > .perf-report-section h3 .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); }
-
-@media (max-width: 900px) {
-  .performance-page .perf-weekly-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 760px) {
-  .performance-page .perf-weekly-hero { grid-template-columns: 1fr; align-items: start; }
-  .performance-page .perf-weekly-hero-mark { width: 44px; height: 44px; border-radius: 13px; }
-  .performance-page .perf-weekly-hero-mark .material-symbols-outlined { font-size: 23px; }
-  .performance-page .perf-weekly-head .perf-report-actions { align-self: stretch; }
-  .performance-page .perf-weekly-nav-caption { flex-basis: 100%; margin-right: 0; }
-  .performance-page .perf-weekly-exec-body { grid-template-columns: 1fr; }
-  .performance-page .perf-weekly-health { min-height: 54px; }
-  .performance-page .perf-weekly-kpi-block { padding: 14px; }
-  .performance-page .perf-weekly-section-intro { align-items: flex-start; flex-direction: column; }
-  .performance-page .perf-weekly-section-tag { align-self: flex-start; }
-}
-
-@media (max-width: 360px) {
-  .performance-page .perf-weekly-kpis { grid-template-columns: minmax(0, 1fr); }
+  .performance-page .perf-weekly-members { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .performance-page .perf-weekly-bottom { grid-template-columns: minmax(0, 1fr) !important; }
+  .performance-page .perf-weekly :is(.perf-weekly-kpi, .perf-weekly-member, .perf-weekly-watch li, .perf-weekly-health) { break-inside: avoid; box-shadow: none !important; }
 }

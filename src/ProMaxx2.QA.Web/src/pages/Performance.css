@@ -1,5 +1,6 @@
 /* หน้า ผลงานและการประเมิน — selector ทุกตัว scope ด้วย .performance-page / .perf-modal (UI_DESIGN_SYSTEM §2) */
-.performance-page { --perf-purple: #6d28d9; --perf-orange: #c2410c; --perf-teal: #0f766e; --perf-green: color-mix(in srgb, var(--green) 80%, var(--text)); --perf-accent: var(--primary); display: grid; gap: 18px; min-width: 0; }
+.performance-page { --perf-purple: #6d28d9; --perf-orange: #c2410c; --perf-teal: #0f766e; --perf-green: color-mix(in srgb, var(--green) 80%, var(--text)); --perf-accent: var(--primary); position: relative; display: grid; gap: 18px; min-width: 0; }
+/* position: relative — ข้อความ .sr-only (position: absolute) ต้องอยู่ใน scroll container ของ <main>; ถ้าไม่มี มันอิง viewport แล้วทำให้ทั้ง document เลื่อนได้ (app shell เลื่อนหลุดขึ้นไปเหลือพื้นว่างด้านล่าง) */
 /* Category accents distinguish work areas, not quality/status; labels remain visible. */
 .performance-page [data-perf-category="play_circle"] { --perf-accent: var(--perf-green); }
 .performance-page [data-perf-category="bug_report"],
@@ -14,48 +15,19 @@
 .performance-page [data-perf-category="pending_actions"] { --perf-accent: var(--warning-text); }
 .performance-page [data-perf-category].perf-overdue { --perf-accent: var(--red); }
 .performance-page .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.performance-page .content-card { padding: 20px; min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 3px 14px color-mix(in srgb, var(--text) 3%, transparent); }
+.performance-page .content-card { padding: 16px; min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 3px 14px color-mix(in srgb, var(--text) 3%, transparent); }
 .performance-page .num { text-align: right; font-variant-numeric: tabular-nums; }
 .performance-page .material-symbols-outlined { font-size: 20px; }
 
-/* แถบเครื่องมือ: แท็บมุมมอง + ช่วงเวลา */
-.performance-page .content-card.perf-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 16px; }
-.performance-page .perf-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); max-width: 100%; }
-.performance-page .perf-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 42px; padding: 8px 16px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; white-space: normal; }
-.performance-page .perf-tabs button .material-symbols-outlined { color: var(--perf-accent); }
-.performance-page .perf-tabs button.active { background: var(--perf-accent); color: var(--card); font-weight: 600; box-shadow: 0 2px 6px color-mix(in srgb, var(--perf-accent) 16%, transparent); }
-.performance-page .perf-tabs button.active .material-symbols-outlined { color: var(--card); }
-.performance-page .perf-tabs button:not(.active):hover { background: color-mix(in srgb, var(--perf-accent) 8%, var(--card)); color: var(--perf-accent); }
-.performance-page .perf-tabs button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); }
-.performance-page .perf-toolbar-actions { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; gap: 10px; margin-left: auto; min-width: 0; }
-.performance-page .perf-period { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
-.performance-page .perf-period label,
+/* ตัวเลือกพนักงาน/กราฟ */
 .performance-page .perf-member-picker label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
-.performance-page .perf-period select,
-.performance-page .perf-period input,
 .performance-page .perf-member-picker select,
 .performance-page .perf-trend-controls select { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 14px; font-weight: 400; }
 .performance-page .perf-member-picker select { min-width: 260px; max-width: 100%; }
-/* ช่องวันที่ในแถบช่วงเวลา: ขนาดเท่า select ข้างกัน, กว้างพอสำหรับ วว/ดด/ปปปป */
-.performance-page .perf-period .date-field { width: 168px; min-height: 40px; padding: 8px 10px; border-radius: 8px; }
 .performance-page .btn { display: inline-flex; align-items: center; gap: 6px; }
-.performance-page .perf-context { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--card)); border-radius: 8px; background: color-mix(in srgb, var(--primary) 6%, var(--card)); color: var(--primary); font-size: 12px; white-space: nowrap; }
-.performance-page .perf-context .material-symbols-outlined { color: var(--primary); font-size: 18px; }
-.performance-page .perf-refresh { min-height: 40px; }
 
 /* KPI */
 .performance-page .perf-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
-.performance-page .perf-kpi { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 20px 16px; border: 1px solid color-mix(in srgb, var(--perf-accent) 24%, var(--card)); border-top: 3px solid var(--perf-accent); border-radius: 14px; background: linear-gradient(125deg, color-mix(in srgb, var(--perf-accent) 16%, var(--card)), color-mix(in srgb, var(--perf-accent) 6%, var(--card))); min-width: 0; box-shadow: 0 3px 14px color-mix(in srgb, var(--perf-accent) 7%, transparent); }
-.performance-page .perf-kpi > .material-symbols-outlined { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--perf-accent); color: var(--card); }
-.performance-page .perf-kpi div { display: grid; gap: 5px; min-width: 0; }
-.performance-page .perf-kpi small { color: var(--text); font-size: 12px; }
-.performance-page .perf-kpi b { color: var(--perf-accent); font-size: 32px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.performance-page .perf-kpi-note { color: color-mix(in srgb, var(--muted) 75%, var(--text)); font-size: 11px; line-height: 1.5; }
-.performance-page .perf-team-highlights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.performance-page .perf-team-highlights > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 16px; min-width: 0; border: 1px solid color-mix(in srgb, var(--perf-accent) 22%, var(--card)); border-left: 4px solid var(--perf-accent); border-radius: 12px; background: color-mix(in srgb, var(--perf-accent) 10%, var(--card)); font-size: 13px; }
-.performance-page .perf-team-highlights > div > span:nth-child(2) { color: var(--text); }
-.performance-page .perf-team-highlights .material-symbols-outlined { color: var(--perf-accent); font-size: 19px; }
-.performance-page .perf-team-highlights b { margin-left: auto; color: var(--perf-accent); font-size: 18px; font-variant-numeric: tabular-nums; }
 
 .performance-page .perf-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .performance-page .perf-section-head h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; font-weight: 600; }
@@ -66,13 +38,7 @@
 .performance-page .perf-count { flex: none; padding: 5px 10px; border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--card)); border-radius: 8px; background: color-mix(in srgb, var(--primary) 8%, var(--card)); color: var(--primary); font-size: 12px; }
 
 /* ทดลองงาน */
-.performance-page .perf-probation-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 12px; }
-.performance-page button.perf-probation-card { display: grid; gap: 14px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); font: inherit; font-size: 14px; text-align: left; white-space: normal; cursor: pointer; }
-.performance-page .perf-probation-card:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
-.performance-page .perf-probation-card:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); }
 .performance-page .perf-probation-name { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.performance-page .perf-card-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--primary); font-size: 12px; }
-.performance-page .perf-probation-card > small { color: var(--muted); font-size: 12px; }
 .performance-page .perf-due-soon { color: var(--warning-text) !important; font-weight: 700; }
 .performance-page .perf-probation-bar { display: grid; gap: 6px; }
 .performance-page .perf-bar-track { position: relative; height: 10px; border-radius: 999px; background: var(--line); }
@@ -93,7 +59,7 @@
 .performance-page .perf-status-filter select { width: 100%; min-width: 0; min-height: 42px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
 .performance-page .table-wrap { position: relative; border: 1px solid var(--line); border-radius: 12px; }
 .performance-page table th { padding: 12px 10px; background: var(--bg); color: var(--muted); font-size: 11px; font-weight: 600; }
-.performance-page table td { padding: 14px 10px; font-size: 13px; }
+.performance-page table td { padding: 10px; font-size: 13px; }
 .performance-page table tbody tr:hover { background: color-mix(in srgb, var(--primary) 3%, var(--card)); }
 .performance-page .perf-team-table td { vertical-align: middle; }
 .performance-page .perf-person { display: flex; align-items: center; gap: 10px; }
@@ -108,21 +74,10 @@
 .performance-page .perf-row-action .btn { min-height: 36px; padding: 6px 10px; border-color: transparent; background: color-mix(in srgb, var(--primary) 6%, var(--card)); color: var(--primary); font-size: 12px; }
 
 /* โปรไฟล์ */
-.performance-page .perf-profile { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 18px; border-top: 3px solid var(--primary); }
-.performance-page .perf-profile-main { display: flex; gap: 14px; min-width: 0; }
-.performance-page .perf-profile-main h2 { margin: 0; font-size: 20px; }
-.performance-page .perf-profile-main p { margin: 2px 0 8px; color: var(--muted); font-size: 13px; }
-.performance-page .perf-profile-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--muted); font-size: 12px; }
-.performance-page .perf-profile-meta > span { display: inline-flex; align-items: center; gap: 4px; }
-.performance-page .perf-profile-meta .material-symbols-outlined { font-size: 16px; }
-.performance-page .perf-profile-probation,
-.performance-page .perf-profile > .perf-hint { grid-column: 1 / -1; }
-.performance-page .perf-profile-probation { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
-.performance-page .perf-profile-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 /* กลุ่ม metric */
 .performance-page .perf-metric-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.performance-page .perf-metric-group { height: 100%; border-top: 3px solid var(--perf-accent); background: linear-gradient(135deg, color-mix(in srgb, var(--perf-accent) 7%, var(--card)), var(--card)); }
+.performance-page .perf-metric-group { border-top: 3px solid var(--perf-accent); background: linear-gradient(135deg, color-mix(in srgb, var(--perf-accent) 7%, var(--card)), var(--card)); }
 .performance-page .perf-metric-group h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 15px; }
 .performance-page .perf-metric-group h3 .material-symbols-outlined { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 9px; background: var(--perf-accent); color: var(--card); }
 .performance-page .perf-metric-group dl { display: grid; gap: 6px; margin: 0; }
@@ -133,7 +88,7 @@
 
 /* กราฟแท่งรายสัปดาห์ — series เดียว (สี primary), แท่งบาง มุมบน 4px, ช่องว่างระหว่างแท่ง, tooltip เมื่อ hover/focus */
 .performance-page .perf-trend-controls { display: flex; gap: 8px; }
-.performance-page .perf-bars { display: flex; align-items: stretch; gap: 6px; height: 200px; padding-top: 16px; overflow-x: auto; border-bottom: 1px solid var(--line); background: repeating-linear-gradient(to top, transparent, transparent calc(25% - 1px), var(--line) calc(25% - 1px), var(--line) 25%); }
+.performance-page .perf-bars { display: flex; align-items: stretch; gap: 6px; height: 160px; padding-top: 16px; overflow-x: auto; border-bottom: 1px solid var(--line); background: repeating-linear-gradient(to top, transparent, transparent calc(25% - 1px), var(--line) calc(25% - 1px), var(--line) 25%); }
 .performance-page .perf-bar-col { position: relative; display: grid; grid-template-rows: 1fr auto; flex: 1 0 34px; min-width: 34px; outline: none; }
 .performance-page .perf-bar-area { display: flex; align-items: flex-end; justify-content: center; padding: 0 4px; }
 .performance-page .perf-bar { width: 100%; max-width: 28px; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--primary); }
@@ -153,7 +108,7 @@
 .performance-page .perf-two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .performance-page .perf-worklog-list,
 .performance-page .perf-timeline-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.performance-page .perf-worklog-item { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--line); border-left: 4px solid var(--primary); border-radius: 12px; background: color-mix(in srgb, var(--bg) 55%, var(--card)); }
+.performance-page .perf-worklog-item { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--primary); border-radius: 12px; background: color-mix(in srgb, var(--bg) 55%, var(--card)); }
 .performance-page .perf-worklog-item.kind-highlight { border-left-color: var(--green); }
 .performance-page .perf-worklog-item.kind-concern { border-left-color: var(--red); }
 .performance-page .perf-worklog-item p { margin: 0; color: var(--text); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -188,11 +143,6 @@
 
 /* การประเมิน */
 .performance-page .perf-eval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.performance-page .perf-eval-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
-.performance-page .perf-eval-summary > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px; border: 1px solid color-mix(in srgb, var(--perf-accent) 22%, var(--card)); border-left: 4px solid var(--perf-accent); border-radius: 12px; background: color-mix(in srgb, var(--perf-accent) 10%, var(--card)); font-size: 12px; }
-.performance-page .perf-eval-summary > div > span:nth-child(2) { color: var(--text); }
-.performance-page .perf-eval-summary b { margin-left: auto; color: var(--perf-accent); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.performance-page .perf-eval-summary .material-symbols-outlined { color: var(--perf-accent); }
 .performance-page .perf-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
 .performance-page .perf-check input { width: 18px; height: 18px; }
 .perf-grade { display: inline-flex; align-items: baseline; gap: 6px; font-size: 18px; font-weight: 800; color: var(--primary); }
@@ -201,10 +151,7 @@
 .performance-page .perf-evaluations .perf-sub,
 .perf-eval-modal .perf-sub { display: block; color: var(--muted); font-size: 11px; }
 /* รอบการประเมินแบบแยกกลุ่มรายพนักงาน */
-.performance-page .perf-eval-grouped .perf-eval-group-head th { padding: 12px 14px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--primary) 5%, var(--card)); color: var(--text); font-size: 14px; font-weight: 400; text-align: left; }
-.performance-page .perf-eval-grouped tbody:first-of-type .perf-eval-group-head th { border-top: 0; }
 .performance-page .perf-eval-group-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.performance-page .perf-eval-grouped td:first-child { padding-left: 58px; }
 .performance-page .perf-eval-round { display: block; font-weight: 600; }
 .performance-page .perf-evaluations .perf-eval-late { display: block; margin-top: 2px; color: var(--red); font-size: 11px; font-weight: 600; }
 .performance-page .perf-eval-overdue td:first-child { box-shadow: inset 3px 0 0 var(--red); }
@@ -292,48 +239,18 @@ button.perf-evidence-file:disabled { opacity: 0.6; cursor: not-allowed; }
   .performance-page .perf-eval-actions { flex-direction: column; align-items: stretch; }
   .performance-page .perf-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .performance-page .content-card { padding: 16px; }
-  .performance-page .content-card.perf-toolbar,
-  .performance-page .perf-toolbar-actions,
-  .performance-page .perf-period { flex-direction: column; align-items: stretch; }
-  .performance-page .perf-toolbar-actions { width: 100%; margin-left: 0; }
-  .performance-page .perf-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .performance-page .perf-tabs:has(> button:first-child:nth-last-child(2)),
-  .performance-page .perf-tabs:has(> button:first-child:nth-last-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .performance-page .perf-tabs button { justify-content: center; flex-direction: column; gap: 4px; padding: 8px 4px; font-size: 12px; }
-  .performance-page .perf-period label { min-width: 0; }
-  .performance-page .perf-period select,
-  .performance-page .perf-period input,
-  .performance-page .perf-period .date-field { width: 100%; min-width: 0; }
-  .performance-page .perf-context,
-  .performance-page .perf-refresh { width: 100%; justify-content: center; }
-  .performance-page .perf-kpi { flex-direction: column; gap: 10px; padding: 16px; }
-  .performance-page .perf-kpi b { font-size: 28px; }
-  .performance-page .perf-team-highlights { grid-template-columns: 1fr; gap: 8px; }
-  .performance-page .perf-team-highlights > div { padding: 12px; }
   .performance-page .perf-team-filters { flex-direction: column; }
   .performance-page .perf-team-filters > * { flex-basis: auto; width: 100%; }
   .performance-page .perf-metric-groups { grid-template-columns: minmax(0, 1fr); }
   .performance-page .perf-member-picker select { min-width: 0; width: 100%; }
-  .performance-page .perf-profile { grid-template-columns: 1fr; }
-  .performance-page .perf-profile-actions { justify-content: stretch; }
-  .performance-page .perf-profile-actions .btn { flex: 1 1 200px; justify-content: center; }
   .performance-page .perf-section-head { flex-direction: column; align-items: stretch; }
   .performance-page .perf-row-action { text-align: left; }
   .performance-page .perf-row-action .btn { width: 100%; justify-content: center; }
-  .performance-page .perf-eval-grouped tbody { margin-bottom: 14px; }
-  .performance-page .perf-eval-grouped .perf-eval-group-head { margin-bottom: 8px; padding: 0; border: 0; background: none; }
-  .performance-page .perf-eval-grouped .perf-eval-group-head th { display: block; padding: 10px 12px; border: 0; border-radius: 12px; }
-  .performance-page .perf-eval-grouped td:first-child { padding-left: calc(34% + 8px); }
   .performance-page .perf-eval-overdue td:first-child { box-shadow: none; }
-  .performance-page .perf-eval-grouped tr.perf-eval-overdue { border-left: 4px solid var(--red); }
-  .performance-page .perf-team-table td:first-child { padding: 4px 0 12px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
-  .performance-page .perf-team-table td:first-child::before { display: none; }
   .performance-page .perf-count { align-self: flex-start; }
   .performance-page .perf-trend-controls { flex-wrap: wrap; }
   .performance-page .perf-trend-controls select { min-width: 0; flex: 1; }
   .performance-page .perf-pager { flex-wrap: wrap; }
-  .performance-page .perf-eval-summary { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .performance-page .perf-eval-summary > div { padding: 10px 12px; }
   .performance-page .table-cards td.num { text-align: left; }
   .performance-page table.table-cards td { padding: 5px 0 5px calc(34% + 8px); }
   .performance-page table.table-cards td[data-label=""],
@@ -347,7 +264,7 @@ button.perf-evidence-file:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 /* เทียบผลรายไตรมาสทั้งทีม (แท็บการประเมิน · หัวหน้า) */
-.performance-page .perf-year-pick { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.performance-page .perf-year-pick { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 .performance-page .perf-year-pick select { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 14px; font-weight: 400; }
 .performance-page .perf-quarter-table th,
 .performance-page .perf-quarter-table td { text-align: center; vertical-align: middle; }
@@ -468,58 +385,10 @@ button.perf-evidence-file:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
 /* Performance workspace refresh — one visual system across team, member, report and evaluation views. */
-.performance-page { gap: 20px; }
-.performance-page .content-card.perf-toolbar {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(190px, .55fr) minmax(0, 1.45fr);
-  align-items: center;
-  gap: 18px;
-  overflow: hidden;
-  padding: 16px 18px;
-  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line));
-  border-top: 0;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, var(--card)), var(--card) 54%);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--primary) 7%, transparent);
-}
-.performance-page .perf-toolbar::after {
-  position: absolute;
-  z-index: 0;
-  top: -84px;
-  right: -36px;
-  width: 210px;
-  height: 210px;
-  border: 28px solid color-mix(in srgb, var(--primary) 6%, transparent);
-  border-radius: 50%;
-  content: "";
-}
-.performance-page .perf-toolbar-heading,
-.performance-page .perf-toolbar-row { position: relative; z-index: 1; min-width: 0; }
-.performance-page .perf-toolbar-heading { display: flex; align-items: center; gap: 11px; }
-.performance-page .perf-toolbar-mark { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 13px; background: var(--primary); color: var(--card); font-size: 24px; box-shadow: 0 7px 15px color-mix(in srgb, var(--primary) 20%, transparent); }
-.performance-page .perf-toolbar-heading > div { display: grid; gap: 2px; min-width: 0; }
-.performance-page .perf-toolbar-heading > div > span { color: var(--primary); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-.performance-page .perf-toolbar-heading b { font-size: 15px; font-weight: 700; }
-.performance-page .perf-toolbar-heading small { color: var(--muted); font-size: 11px; }
-.performance-page .perf-toolbar-row { display: grid; gap: 10px; min-width: 0; }
-.performance-page .perf-toolbar-row .perf-tabs { justify-self: stretch; }
-.performance-page .perf-tabs { border-color: color-mix(in srgb, var(--primary) 13%, var(--line)); background: color-mix(in srgb, var(--card) 64%, var(--bg)); }
-.performance-page .perf-tabs button { min-width: 0; min-height: 40px; padding-inline: 13px; transition: background .16s ease, color .16s ease, transform .16s ease; }
-.performance-page .perf-tabs button.active { transform: translateY(-1px); }
-.performance-page .perf-toolbar-actions { margin-left: 0; justify-content: flex-start; align-items: end; }
-.performance-page .perf-toolbar-actions .perf-period { flex: 0 1 auto; }
-.performance-page .perf-context { max-width: min(100%, 290px); overflow: hidden; text-overflow: ellipsis; }
-.performance-page .perf-refresh { margin-left: auto; border-color: color-mix(in srgb, var(--primary) 22%, var(--line)); background: color-mix(in srgb, var(--primary) 6%, var(--card)); color: var(--primary); }
+.performance-page { gap: 16px; }
 
-.performance-page .perf-kpi { min-height: 126px; align-items: flex-start; border-top-width: 4px; background: linear-gradient(135deg, color-mix(in srgb, var(--perf-accent) 13%, var(--card)), var(--card) 78%); transition: transform .16s ease, box-shadow .16s ease; }
-.performance-page .perf-kpi::after { position: absolute; right: -34px; bottom: -48px; width: 104px; height: 104px; border: 18px solid color-mix(in srgb, var(--perf-accent) 7%, transparent); border-radius: 50%; content: ""; }
-.performance-page .perf-kpi:hover { transform: translateY(-2px); box-shadow: 0 9px 22px color-mix(in srgb, var(--perf-accent) 12%, transparent); }
-.performance-page .perf-kpi > div { position: relative; z-index: 1; }
-.performance-page .perf-kpi small { font-weight: 700; }
-.performance-page .perf-team-highlights { padding: 2px; }
-.performance-page .perf-team-highlights > div { min-height: 58px; background: color-mix(in srgb, var(--perf-accent) 8%, var(--card)); }
 
-.performance-page .perf-section-head { margin-bottom: 16px; }
+.performance-page .perf-section-head { margin-bottom: 12px; }
 .performance-page .perf-section-head h3 { font-size: 16px; }
 .performance-page .perf-section-head h3 > .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); }
 .performance-page .perf-section-head p { line-height: 1.5; }
@@ -528,44 +397,290 @@ button.perf-evidence-file:disabled { opacity: 0.6; cursor: not-allowed; }
 .performance-page .perf-team-panel,
 .performance-page .perf-trend,
 .performance-page .perf-evaluations,
-.performance-page .perf-profile,
 .performance-page .perf-member-picker { box-shadow: 0 5px 18px color-mix(in srgb, var(--text) 4%, transparent); }
 .performance-page .perf-probation-watch { border-top: 3px solid var(--warning-text); }
 .performance-page .perf-team-panel { border-top: 3px solid var(--primary); }
 .performance-page .perf-evaluations { border-top: 3px solid var(--perf-purple); }
-.performance-page .perf-team-filters { margin-top: 0; padding: 10px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
-.performance-page .table-wrap { overflow: hidden; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--primary) 4%, transparent); }
+.performance-page .perf-team-filters { margin: 0 0 12px; padding: 0; border: 0; background: none; }
+.performance-page .table-wrap { overflow-x: auto; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--primary) 4%, transparent); }
 .performance-page .perf-team-table thead th { background: color-mix(in srgb, var(--primary) 4%, var(--bg)); }
 .performance-page .perf-team-table tbody tr { transition: background .15s ease; }
 
-.performance-page .perf-profile { position: relative; overflow: hidden; border-top: 0; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 7%, var(--card)), var(--card) 54%); }
-.performance-page .perf-profile::after { position: absolute; right: -42px; top: -56px; width: 170px; height: 170px; border: 22px solid color-mix(in srgb, var(--primary) 6%, transparent); border-radius: 50%; content: ""; pointer-events: none; }
-.performance-page .perf-profile-main,
-.performance-page .perf-profile-actions,
-.performance-page .perf-profile-probation,
-.performance-page .perf-profile > .perf-hint { position: relative; z-index: 1; }
 .performance-page .perf-avatar.large { width: 64px; height: 64px; border: 4px solid var(--card); background: color-mix(in srgb, var(--primary) 14%, var(--card)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 22%, var(--line)); }
-.performance-page .perf-profile-main h2 { font-size: 22px; }
-.performance-page .perf-profile-meta { gap: 8px 12px; }
-.performance-page .perf-profile-probation { background: color-mix(in srgb, var(--card) 68%, var(--bg)); }
 .performance-page .perf-metric-group { position: relative; overflow: hidden; border-top-width: 4px; border-radius: 14px; box-shadow: 0 4px 15px color-mix(in srgb, var(--text) 3%, transparent); }
 .performance-page .perf-metric-group h3 { padding-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, var(--perf-accent) 16%, var(--line)); }
 .performance-page .perf-two-col > .content-card { box-shadow: 0 4px 15px color-mix(in srgb, var(--text) 3%, transparent); }
 .performance-page .perf-trend { border-top: 3px solid var(--perf-teal); }
-.performance-page .perf-eval-summary { margin-top: 12px; }
 
 @media (max-width: 1100px) {
-  .performance-page .content-card.perf-toolbar { grid-template-columns: 1fr; }
-  .performance-page .perf-toolbar-heading { max-width: 100%; }
 }
 
 @media (max-width: 760px) {
-  .performance-page .content-card.perf-toolbar { gap: 14px; padding: 14px; }
-  .performance-page .perf-toolbar-row { gap: 12px; }
-  .performance-page .perf-toolbar-actions { gap: 8px; }
-  .performance-page .perf-toolbar-actions .perf-period { width: 100%; }
-  .performance-page .perf-context { max-width: 100%; }
-  .performance-page .perf-refresh { margin-left: 0; }
-  .performance-page .perf-kpi { min-height: 116px; }
-  .performance-page .perf-profile-main h2 { font-size: 20px; }
 }
+
+/* ===== ภาพรวมทีม (ออกแบบใหม่ 2026-10-21) — KPI → สิ่งที่ต้องติดตาม + ทดลองงาน → ตารางรายคนพร้อมแถบเทียบในทีม ===== */
+.performance-page .perf-kpi { position: relative; display: grid; align-content: start; gap: 6px; min-width: 0; padding: 14px 16px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--perf-accent) 20%, var(--line)); border-top: 4px solid var(--perf-accent); border-radius: 14px; background: linear-gradient(160deg, color-mix(in srgb, var(--perf-accent) 9%, var(--card)), var(--card) 70%); box-shadow: 0 4px 16px color-mix(in srgb, var(--perf-accent) 7%, transparent); }
+.performance-page .perf-kpi-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.performance-page .perf-kpi-head .material-symbols-outlined { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 10px; background: var(--perf-accent); color: var(--card); font-size: 20px; }
+.performance-page .perf-kpi-head small { color: var(--text); font-size: 13px; font-weight: 600; }
+.performance-page .perf-kpi > b { margin-top: 2px; color: var(--text); font-size: 28px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.performance-page .perf-kpi-meta { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.performance-page .perf-kpi-note { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; padding-top: 8px; border-top: 1px dashed color-mix(in srgb, var(--perf-accent) 25%, var(--line)); color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+.performance-page .perf-kpi-note .material-symbols-outlined { flex: none; color: var(--perf-accent); font-size: 17px; }
+
+.performance-page .perf-team-overview { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.performance-page .perf-team-overview.single { grid-template-columns: minmax(0, 1fr); }
+.performance-page .perf-attention { border-top: 3px solid var(--red); }
+.performance-page .perf-count.warn { border-color: color-mix(in srgb, var(--red) 25%, var(--card)); background: color-mix(in srgb, var(--red) 8%, var(--card)); color: var(--red); }
+.performance-page .perf-attention-clear { display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px; border-radius: 12px; background: color-mix(in srgb, var(--green) 8%, var(--card)); color: var(--text); font-size: 13px; }
+.performance-page .perf-attention-clear .material-symbols-outlined { color: var(--green); }
+.performance-page .perf-attention-list,
+.performance-page .perf-probation-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; max-height: 340px; overflow-y: auto; }
+.performance-page .perf-attention-list li { --perf-accent: var(--muted); display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--perf-accent) 18%, var(--line)); border-left: 4px solid var(--perf-accent); border-radius: 10px; background: color-mix(in srgb, var(--perf-accent) 5%, var(--card)); }
+.performance-page .perf-attention-list li.tone-danger { --perf-accent: var(--red); }
+.performance-page .perf-attention-list li.tone-warning { --perf-accent: var(--warning-text); }
+.performance-page .perf-attention-list li > .material-symbols-outlined { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: color-mix(in srgb, var(--perf-accent) 12%, var(--card)); color: var(--perf-accent); font-size: 19px; }
+.performance-page .perf-attention-list li > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
+.performance-page .perf-attention-list b { font-size: 13px; font-weight: 600; }
+.performance-page .perf-attention-list small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.performance-page .perf-attention-list li.tone-danger small,
+.performance-page .perf-attention-list li.tone-warning small { color: var(--perf-accent); font-weight: 600; }
+.performance-page .perf-attention-list .btn { min-height: 36px; padding: 6px 12px; font-size: 12px; }
+.performance-page button.perf-probation-row { display: grid; gap: 6px; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--bg) 60%, var(--card)); color: var(--text); font: inherit; font-size: 13px; text-align: left; white-space: normal; cursor: pointer; }
+.performance-page .perf-probation-row:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
+.performance-page .perf-probation-row:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); }
+.performance-page .perf-probation-row > small { color: var(--muted); font-size: 12px; }
+
+.performance-page .perf-person-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.performance-page .perf-person-status small { color: var(--muted); font-size: 11px; }
+.performance-page .perf-team-table th { text-align: left; white-space: nowrap; }
+.performance-page .perf-team-table td:first-child { min-width: 220px; }
+.performance-page .perf-metric-cell { display: grid; gap: 4px; min-width: 84px; }
+.performance-page .perf-metric-cell b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.performance-page .perf-metric-cell small { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.performance-page .perf-metric-bar { display: block; height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--perf-accent) 12%, var(--card)); overflow: hidden; }
+.performance-page .perf-metric-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--perf-accent); }
+.performance-page .perf-pending { display: block; font-size: 15px; font-weight: 600; }
+.performance-page .perf-overdue-chip { display: inline-flex; align-items: center; gap: 3px; margin-top: 3px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--red) 10%, var(--card)); color: var(--red); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.performance-page .perf-overdue-chip .material-symbols-outlined { font-size: 14px; }
+
+@media (max-width: 1100px) {
+  .performance-page .perf-team-overview { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .performance-page .perf-kpi { padding: 14px; }
+  .performance-page .perf-kpi > b { font-size: 24px; }
+  .performance-page .perf-attention-list,
+  .performance-page .perf-probation-list { max-height: none; }
+  .performance-page .perf-attention-list li { grid-template-columns: 34px minmax(0, 1fr); }
+  .performance-page .perf-attention-list .btn { grid-column: 1 / -1; justify-content: center; }
+  .performance-page .perf-team-table td:first-child { min-width: 0; padding: 4px 0 12px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .performance-page .perf-team-table td:first-child::before { display: none; }
+  .performance-page .perf-metric-cell { min-width: 0; max-width: 220px; }
+}
+
+/* ===== แถบเครื่องมือ (จัดใหม่ 2026-10-21) — แถวเดียว: แท็บมุมมองซ้าย | ช่วงเวลา + รีเฟรชขวา; ไม่มีหัวข้อซ้ำกับ Page Header ===== */
+.performance-page .content-card.perf-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 8px; border-radius: 14px; }
+.performance-page .perf-tabs { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.performance-page .perf-tabs button { display: inline-flex; align-items: center; gap: 7px; min-width: 0; min-height: 42px; padding: 8px 14px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; transition: background .16s ease, color .16s ease; }
+.performance-page .perf-tabs button .material-symbols-outlined { color: var(--perf-accent); }
+.performance-page .perf-tabs button:not(.active):hover { background: color-mix(in srgb, var(--perf-accent) 8%, var(--card)); color: var(--text); }
+.performance-page .perf-tabs button.active { background: var(--perf-accent); color: var(--card); font-weight: 600; box-shadow: 0 3px 10px color-mix(in srgb, var(--perf-accent) 22%, transparent); }
+.performance-page .perf-tabs button.active .material-symbols-outlined { color: var(--card); }
+.performance-page .perf-tabs button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); }
+.performance-page .perf-toolbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
+/* ช่วงเวลา: select + ช่วงวันที่รวมเป็นกล่องเดียว */
+.performance-page .perf-period { display: flex; align-items: stretch; min-width: 0; min-height: 42px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.performance-page .perf-period:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.performance-page .perf-period-select { display: flex; align-items: center; gap: 6px; padding-left: 10px; color: var(--primary); }
+.performance-page .perf-period-select .material-symbols-outlined { font-size: 19px; }
+.performance-page .perf-period-select select { min-height: 40px; padding: 6px 28px 6px 2px; border: 0; background-color: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 600; box-shadow: none; outline: none; cursor: pointer; }
+.performance-page .perf-period-range,
+.performance-page .perf-period-custom { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 12px; border-left: 1px solid var(--line); color: var(--muted); font-size: 13px; white-space: nowrap; }
+.performance-page .perf-period-custom { padding: 4px 6px; color: var(--muted); }
+.performance-page .perf-period-custom .date-field { width: 150px; min-height: 32px; padding: 4px 8px; border-radius: 8px; }
+.performance-page .perf-context { display: inline-flex; align-items: center; gap: 6px; min-height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.performance-page .perf-context .material-symbols-outlined { color: var(--primary); font-size: 19px; }
+.performance-page .btn.perf-refresh { justify-content: center; min-height: 42px; padding: 8px 14px; border-radius: 10px; }
+
+@media (max-width: 760px) {
+  .performance-page .content-card.perf-toolbar { flex-direction: column; align-items: stretch; padding: 8px; }
+  .performance-page .perf-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .performance-page .perf-tabs:has(> button:first-child:nth-last-child(2)),
+  .performance-page .perf-tabs:has(> button:first-child:nth-last-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .performance-page .perf-tabs button { flex-direction: column; justify-content: center; gap: 2px; padding: 8px 4px; font-size: 12px; white-space: normal; text-align: center; }
+  .performance-page .perf-toolbar-actions { margin-left: 0; padding-top: 8px; border-top: 1px solid var(--line); }
+  .performance-page .perf-period,
+  .performance-page .perf-context { flex: 1 1 auto; }
+  .performance-page .perf-period { flex-wrap: wrap; }
+  .performance-page .perf-period-range { flex: 1 1 auto; justify-content: flex-end; padding: 0 10px; font-size: 12px; }
+  .performance-page .perf-period-custom { flex: 1 1 100%; padding: 6px; border-top: 1px solid var(--line); border-left: 0; }
+  .performance-page .perf-period-custom .date-field { flex: 1 1 0; width: auto; min-width: 0; }
+  .performance-page .btn.perf-refresh { flex: none; width: 44px; min-height: 44px; padding: 0; }
+  .performance-page .perf-refresh-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+}
+
+/* ===== รายบุคคลแบบ portfolio (ออกแบบใหม่ 2026-10-21) — ปก + โปรไฟล์ + สถิติเด่น → ผลงานเด่น → ผลงานตามด้าน → แนวโน้ม → บันทึกงาน | กิจกรรม ===== */
+.performance-page [data-perf-category="star"] { --perf-accent: var(--perf-orange); }
+.performance-page .content-card.perf-hero { padding: 0; overflow: hidden; }
+.performance-page .perf-hero-cover { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; min-height: 76px; padding: 12px 18px 34px; background: linear-gradient(120deg, var(--primary), color-mix(in srgb, var(--primary) 45%, var(--perf-purple)) 60%, color-mix(in srgb, var(--perf-teal) 70%, var(--primary))); }
+.performance-page .perf-hero-picker { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; padding-left: 10px; border: 1px solid color-mix(in srgb, var(--card) 40%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--card) 18%, transparent); color: var(--card); }
+.performance-page .perf-hero-picker select { min-width: 220px; max-width: 100%; min-height: 40px; padding: 6px 30px 6px 4px; border: 0; background-color: transparent; color: var(--card); font: inherit; font-size: 14px; font-weight: 600; box-shadow: none; cursor: pointer; }
+.performance-page .perf-hero-picker select option { color: var(--text); }
+.performance-page .perf-hero-picker:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--card) 45%, transparent); }
+.performance-page .perf-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.performance-page .perf-hero-actions .btn { min-height: 40px; border-color: color-mix(in srgb, var(--card) 40%, transparent); background: color-mix(in srgb, var(--card) 92%, transparent); color: var(--primary); }
+.performance-page .perf-hero-actions .btn:hover { background: var(--card); }
+.performance-page .perf-hero-body { display: flex; align-items: flex-start; gap: 16px; padding: 0 20px; }
+.performance-page .perf-hero-avatar { display: grid; place-items: center; width: 76px; height: 76px; flex: none; border: 4px solid var(--card); border-radius: 50%; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, var(--card)), color-mix(in srgb, var(--perf-purple) 16%, var(--card))); color: var(--primary); font-size: 30px; font-weight: 700; box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 20%, transparent); margin-top: -38px; }
+.performance-page .perf-hero-id { display: grid; gap: 2px; min-width: 0; padding-top: 8px; }
+.performance-page .perf-hero-id h2 { margin: 0; font-size: 22px; line-height: 1.25; overflow-wrap: anywhere; }
+.performance-page .perf-hero-id > p { margin: 0; color: var(--muted); font-size: 14px; }
+.performance-page .perf-hero-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 6px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
+.performance-page .perf-hero-tags li { display: inline-flex; align-items: center; gap: 4px; }
+.performance-page .perf-hero-tags .material-symbols-outlined { color: var(--primary); font-size: 16px; }
+.performance-page .perf-hero-probation { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 16px; margin: 14px 20px 0; padding: 8px 14px; border: 1px solid color-mix(in srgb, var(--warning-text) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--yellow) 6%, var(--card)); }
+.performance-page .perf-hero-probation-label { display: inline-flex; align-items: center; gap: 6px; color: var(--warning-text); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.performance-page .perf-hero-hint { margin: 14px 22px 0; }
+.performance-page .perf-hero-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 16px 0 0; border-top: 1px solid var(--line); }
+.performance-page .perf-hero-stat { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 12px 16px; border-left: 1px solid var(--line); }
+.performance-page .perf-hero-stat:first-child { border-left: 0; }
+.performance-page .perf-hero-stat dt { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; font-weight: 600; }
+.performance-page .perf-hero-stat dt .material-symbols-outlined { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: color-mix(in srgb, var(--perf-accent) 12%, var(--card)); color: var(--perf-accent); font-size: 17px; }
+.performance-page .perf-hero-stat dd { display: grid; gap: 2px; margin: 0; min-width: 0; }
+.performance-page .perf-hero-stat dd b { font-size: 24px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.performance-page .perf-hero-stat dd small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+
+.performance-page .perf-showcase { border-top: 3px solid var(--perf-orange); }
+.performance-page .perf-showcase .perf-section-head h3 > .material-symbols-outlined { background: color-mix(in srgb, var(--perf-orange) 12%, var(--card)); color: var(--perf-orange); }
+.performance-page .perf-showcase-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-showcase-card { display: grid; align-content: start; gap: 8px; min-width: 0; padding: 16px; border: 1px solid color-mix(in srgb, var(--perf-orange) 20%, var(--line)); border-radius: 14px; background: linear-gradient(160deg, color-mix(in srgb, var(--perf-orange) 7%, var(--card)), var(--card) 65%); }
+.performance-page .perf-showcase-meta { display: inline-flex; align-items: center; gap: 5px; color: var(--perf-orange); font-size: 12px; font-weight: 600; }
+.performance-page .perf-showcase-meta .material-symbols-outlined { font-size: 18px; font-variation-settings: "FILL" 1; }
+.performance-page .perf-showcase-card > b { font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.performance-page .perf-showcase-card > p { display: -webkit-box; margin: 0; overflow: hidden; color: var(--text); font-size: 13px; line-height: 1.6; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.performance-page .perf-showcase-foot { display: flex; flex-wrap: wrap; gap: 6px 12px; padding-top: 8px; border-top: 1px dashed color-mix(in srgb, var(--perf-orange) 22%, var(--line)); color: var(--muted); font-size: 12px; }
+.performance-page .perf-showcase-foot > * { display: inline-flex; align-items: center; gap: 3px; }
+.performance-page .perf-showcase-foot .material-symbols-outlined { font-size: 15px; }
+.performance-page .perf-showcase-foot a { color: var(--primary); }
+.performance-page .perf-showcase-empty { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px dashed color-mix(in srgb, var(--perf-orange) 30%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--perf-orange) 4%, var(--card)); }
+.performance-page .perf-showcase-empty > .material-symbols-outlined { color: var(--perf-orange); font-size: 28px; }
+.performance-page .perf-showcase-empty > span:last-child { display: grid; gap: 2px; }
+.performance-page .perf-showcase-empty b { font-size: 14px; }
+.performance-page .perf-showcase-empty small { color: var(--muted); font-size: 12px; }
+
+.performance-page .perf-skills { display: grid; gap: 12px; }
+.performance-page .perf-skills-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.performance-page .perf-skills-head h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; font-weight: 600; }
+.performance-page .perf-skills-head h3 > .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); }
+.performance-page .perf-skills-head p { margin: 0; color: var(--muted); font-size: 12px; }
+.performance-page .perf-metric-head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 10px; }
+.performance-page .perf-metric-head b { color: var(--text); font-size: 24px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.performance-page .perf-metric-head span { color: var(--muted); font-size: 13px; }
+
+@media (max-width: 1100px) {
+  .performance-page .perf-hero-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .performance-page .perf-hero-stat:nth-child(4) { border-left: 0; }
+  .performance-page .perf-hero-stat:nth-child(n + 4) { border-top: 1px solid var(--line); }
+}
+@media (max-width: 760px) {
+  .performance-page .perf-hero-cover { padding: 12px 12px 34px; }
+  .performance-page .perf-hero-picker { flex: 1 1 100%; }
+  .performance-page .perf-hero-picker select { flex: 1 1 auto; min-width: 0; }
+  .performance-page .perf-hero-actions { flex: 1 1 100%; }
+  .performance-page .perf-hero-actions .btn { flex: 1 1 0; justify-content: center; }
+  .performance-page .perf-hero-body { flex-direction: column; align-items: flex-start; gap: 0; padding: 0 16px; }
+  .performance-page .perf-hero-avatar { width: 68px; height: 68px; margin-top: -34px; font-size: 26px; }
+  .performance-page .perf-hero-id { padding-top: 8px; }
+  .performance-page .perf-hero-id h2 { font-size: 20px; }
+  .performance-page .perf-hero-probation { grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 16px 16px 0; }
+  .performance-page .perf-hero-hint { margin: 12px 16px 0; }
+  .performance-page .perf-hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .performance-page .perf-hero-stat { padding: 12px 14px; }
+  .performance-page .perf-hero-stat:nth-child(n) { border-left: 1px solid var(--line); border-top: 1px solid var(--line); }
+  .performance-page .perf-hero-stat:nth-child(odd) { border-left: 0; }
+  .performance-page .perf-hero-stat:nth-child(-n + 2) { border-top: 0; }
+  .performance-page .perf-hero-stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .performance-page .perf-hero-stat dd b { font-size: 22px; }
+}
+
+/* ===== แท็บการประเมิน (ออกแบบใหม่ 2026-10-21) — แถบขั้นตอนสถานะที่กดกรองได้ → การ์ดรายพนักงาน → heatmap รายไตรมาส ===== */
+.performance-page .perf-eval-pipeline { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; margin: 0 0 14px; }
+.performance-page .perf-eval-pipeline ol { display: grid; flex: 1 1 560px; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.performance-page .perf-eval-pipeline li { position: relative; min-width: 0; }
+.performance-page .perf-eval-pipeline li + li { border-left: 1px solid var(--line); }
+.performance-page .perf-eval-pipeline li + li::before { position: absolute; top: 50%; left: -9px; z-index: 1; display: grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 50%; background: var(--card); color: var(--muted); font-size: 11px; line-height: 1; content: "›"; transform: translateY(-50%); }
+.performance-page .perf-eval-pipeline button { --tone: var(--muted); display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 12px; border: 0; border-radius: 0; background: var(--card); color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.performance-page .perf-eval-pipeline button.tone-warning { --tone: var(--warning-text); }
+.performance-page .perf-eval-pipeline button.tone-info { --tone: var(--info); }
+.performance-page .perf-eval-pipeline button.tone-purple { --tone: var(--perf-purple); }
+.performance-page .perf-eval-pipeline button.tone-green { --tone: color-mix(in srgb, var(--green) 80%, var(--text)); }
+.performance-page .perf-eval-pipeline button > .material-symbols-outlined,
+.performance-page .perf-eval-pipeline-overdue > .material-symbols-outlined { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 10px; background: color-mix(in srgb, var(--tone) 12%, var(--card)); color: var(--tone); font-size: 20px; }
+.performance-page .perf-eval-pipeline button > span:last-child,
+.performance-page .perf-eval-pipeline-overdue > span:last-child { display: grid; gap: 1px; min-width: 0; }
+.performance-page .perf-eval-pipeline b { font-size: 20px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.performance-page .perf-eval-pipeline small { color: var(--muted); font-size: 12px; }
+.performance-page .perf-eval-pipeline button:hover:not(:disabled) { background: color-mix(in srgb, var(--tone) 6%, var(--card)); }
+.performance-page .perf-eval-pipeline button[aria-pressed="true"] { background: color-mix(in srgb, var(--tone) 12%, var(--card)); box-shadow: inset 0 -3px 0 var(--tone); }
+.performance-page .perf-eval-pipeline button:disabled { cursor: default; opacity: .55; }
+.performance-page .perf-eval-pipeline button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: -3px; }
+.performance-page .perf-eval-pipeline .perf-eval-pipeline-overdue { --tone: var(--muted); flex: 0 1 180px; border: 1px solid var(--line); border-radius: 12px; }
+.performance-page .perf-eval-pipeline .perf-eval-pipeline-overdue.has { --tone: var(--red); border-color: color-mix(in srgb, var(--red) 30%, var(--line)); background: color-mix(in srgb, var(--red) 5%, var(--card)); }
+.performance-page .perf-eval-pipeline .perf-eval-pipeline-overdue.has b { color: var(--red); }
+.performance-page .perf-eval-filter-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.performance-page .perf-eval-filter-note .btn { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+
+.performance-page .perf-eval-people { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-eval-people > li { display: grid; gap: 0; min-width: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); }
+.performance-page .perf-eval-people > li.has-overdue { border-color: color-mix(in srgb, var(--red) 28%, var(--line)); }
+.performance-page .perf-eval-person-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); border-bottom: 1px solid var(--line); }
+.performance-page .perf-eval-person-head .perf-person > span:last-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.performance-page .perf-eval-people > li.has-overdue .perf-eval-person-head { background: color-mix(in srgb, var(--red) 4%, var(--card)); }
+.performance-page .perf-eval-rounds { display: grid; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-eval-rounds li { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(120px, 1fr) minmax(130px, auto) minmax(90px, auto) auto; align-items: center; gap: 14px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.performance-page .perf-eval-rounds li:first-child { border-top: 0; }
+.performance-page .perf-eval-rounds li.overdue { box-shadow: inset 4px 0 0 var(--red); }
+.performance-page .perf-eval-round-name,
+.performance-page .perf-eval-round-due,
+.performance-page .perf-eval-round-result { display: grid; gap: 2px; min-width: 0; font-size: 13px; }
+.performance-page .perf-eval-round-name b { font-size: 14px; font-weight: 600; }
+.performance-page .perf-eval-round-name small,
+.performance-page .perf-eval-round-due small:first-child { color: var(--muted); font-size: 11px; }
+.performance-page .perf-eval-rounds .btn { min-height: 36px; padding: 6px 10px; border-color: transparent; background: color-mix(in srgb, var(--primary) 6%, var(--card)); color: var(--primary); font-size: 12px; }
+
+.performance-page .perf-heat-legend { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--muted); font-size: 11px; }
+.performance-page .perf-heat-scale { width: 72px; height: 8px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 6%, var(--card)), color-mix(in srgb, var(--primary) 32%, var(--card))); }
+.performance-page .perf-quarter-cell.has-score .perf-quarter-open { min-width: 96px; border-color: color-mix(in srgb, var(--primary) 18%, var(--line)); background: color-mix(in srgb, var(--primary) var(--perf-heat, 10%), var(--card)); }
+.performance-page .perf-quarter-cell.has-score .perf-quarter-open:hover { border-color: var(--primary); }
+.performance-page .perf-quarter-cell .perf-grade { color: var(--text); }
+
+@media (max-width: 900px) {
+  .performance-page .perf-eval-rounds li { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .performance-page .perf-eval-round-due { grid-column: 1; grid-row: 2; }
+  .performance-page .perf-eval-round-status { grid-column: 2; grid-row: 1; justify-self: end; }
+  .performance-page .perf-eval-round-result { grid-column: 2; grid-row: 2; justify-items: end; text-align: right; }
+  .performance-page .perf-eval-rounds .btn { grid-column: 1 / -1; justify-content: center; }
+}
+@media (max-width: 760px) {
+  .performance-page .perf-eval-pipeline ol { flex-basis: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .performance-page .perf-eval-pipeline li:nth-child(3) { border-left: 0; }
+  .performance-page .perf-eval-pipeline li:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .performance-page .perf-eval-pipeline li + li::before { display: none; }
+  .performance-page .perf-eval-pipeline .perf-eval-pipeline-overdue { flex: 1 1 100%; }
+  .performance-page .perf-eval-person-head { padding: 12px; }
+  .performance-page .perf-eval-rounds li { padding: 12px; }
+}
+
+/* Mobile touch target ≥ 44px (§13) — ปุ่ม/ช่องเลือกในแท็บผลงานและการประเมินที่ Desktop ตั้งไว้ 36–42px */
+@media (max-width: 760px) {
+  .performance-page :is(.perf-row-action .btn, .perf-attention-list .btn, .perf-eval-rounds .btn, .perf-eval-filter-note .btn, .btn.perf-refresh, .perf-weekly-actions .btn, .perf-hero-actions .btn, .perf-share-actions .btn) { min-height: 44px; }
+  .performance-page :is(.perf-period-select select, .perf-hero-picker select, .perf-report-picker select, .perf-year-pick select, .perf-trend-controls select) { min-height: 44px; }
+  .performance-page :is(.perf-worklog-actions button, .perf-evidence-remove) { width: 44px; height: 44px; }
+  .performance-page .perf-quarter-open { min-height: 44px; }
+  .performance-page .perf-check { min-height: 44px; }
+  .performance-page :is(.perf-status-filter select, .perf-section-head .btn, .perf-report-actions .btn, .perf-eval-actions .btn, .perf-evidence-file, .perf-weekly-stepper, .perf-weekly-today) { min-height: 44px; }
+}
+
+/* หัวตารางการประเมินชิดซ้ายตรงกับข้อมูล (กฎกลาง th จัดกึ่งกลาง) */
+.performance-page .perf-eval-table th { text-align: left; }

@@ -81,14 +81,17 @@ export function ReportView({ userId, currentUserId, range, refreshKey, onSelectU
 
   return (
     <>
-      <section className="content-card perf-member-picker perf-noprint">
-        <label>
-          <span>พนักงาน</span>
-          <select value={userId} onChange={(e) => onSelectUser(e.target.value)}>
+      <section className="content-card perf-report-toolbar perf-noprint" aria-label="เลือกพนักงานสำหรับสรุปผลงาน">
+        <label className="perf-report-picker">
+          <span className="material-symbols-outlined" aria-hidden="true">person_search</span>
+          <span className="perf-report-picker-label">สรุปผลงานของ</span>
+          <select value={userId} onChange={(e) => onSelectUser(e.target.value)} aria-label="เลือกพนักงาน">
             {!users.some((u) => u.userId === userId) && <option value={userId}>{report?.profile.displayName ?? "ผู้ใช้ที่เลือก"}</option>}
             {users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}{u.userId === currentUserId ? " (ฉัน)" : ""}</option>)}
           </select>
         </label>
+        <span className="perf-report-toolbar-hint">ช่วงข้อมูลเลือกจากแถบด้านบน · พิมพ์ได้ทั้งหน้าเป็น PDF</span>
+        {links && <span className={`perf-report-links-chip${activeLinks ? " active" : ""}`}><span className="material-symbols-outlined" aria-hidden="true">link</span>ลิงก์ HR ที่ใช้งานได้ {activeLinks.toLocaleString("th-TH")}</span>}
       </section>
 
       {loading && !report ? (

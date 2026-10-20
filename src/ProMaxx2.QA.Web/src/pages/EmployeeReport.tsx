@@ -44,49 +44,73 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
     { icon: "star", label: "ผลงานเด่น", value: m.highlights.toLocaleString("th-TH"), note: `บันทึกงาน ${m.workLogs.toLocaleString("th-TH")} รายการ` },
   ];
 
+  const weeklyMax = {
+    executions: Math.max(1, ...report.weekly.map((w) => w.executions)),
+    defects: Math.max(1, ...report.weekly.map((w) => w.defects)),
+    testCases: Math.max(1, ...report.weekly.map((w) => w.testCases)),
+  };
+  const tenureText = tenure(p.hireDate, report.to);
+
   return (
-    <article className="perf-report" aria-labelledby="perf-report-title">
+    <article className="perf-report perf-report-v2" aria-labelledby="perf-report-title">
       {banner}
       <section className="content-card perf-report-head">
+        <div className="perf-report-docbar">
+          <span className="perf-report-eyebrow"><span className="material-symbols-outlined" aria-hidden="true">summarize</span>สรุปผลงานพนักงาน</span>
+          <span className="perf-report-period"><span className="material-symbols-outlined" aria-hidden="true">date_range</span>{fmtDate(report.from)} – {fmtDate(report.to)}</span>
+          <span className="perf-report-generated">ข้อมูล ณ {formatThaiDateTime(report.generatedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
+        </div>
         <div className="perf-report-title">
-          <span className="perf-avatar large" aria-hidden="true">{p.displayName.slice(0, 1).toUpperCase()}</span>
+          <span className="perf-report-avatar" aria-hidden="true">{p.displayName.slice(0, 1).toUpperCase()}</span>
           <div>
-            <span className="perf-report-eyebrow">สรุปผลงานพนักงาน</span>
             <h2 id="perf-report-title">{p.displayName}</h2>
             <p>{[p.position, p.level].filter(Boolean).join(" · ") || "ยังไม่ได้ระบุตำแหน่ง"}</p>
           </div>
           {actions && <div className="perf-report-actions perf-noprint">{actions}</div>}
         </div>
         <dl className="perf-report-meta">
-          <div><dt>รหัสพนักงาน</dt><dd>{p.employeeCode || "-"}</dd></div>
-          <div><dt>สถานะ</dt><dd><Badge tone={employmentStatusTone[p.employmentStatus] ?? "gray"}>{employmentStatusLabel[p.employmentStatus] ?? p.employmentStatus}</Badge></dd></div>
-          <div><dt>หัวหน้า (ผู้ประเมิน)</dt><dd>{p.supervisorName || "-"}</dd></div>
-          <div><dt>วันเริ่มงาน</dt><dd>{fmtDate(p.hireDate)}{tenure(p.hireDate, report.to) && <small> · อายุงาน {tenure(p.hireDate, report.to)}</small>}</dd></div>
-          <div><dt>ช่วงข้อมูลผลงาน</dt><dd>{fmtDate(report.from)} – {fmtDate(report.to)}</dd></div>
-          <div><dt>ข้อมูล ณ</dt><dd>{formatThaiDateTime(report.generatedAt, { dateStyle: "medium", timeStyle: "short" })}</dd></div>
+          <div><dt><span className="material-symbols-outlined" aria-hidden="true">badge</span>รหัสพนักงาน</dt><dd>{p.employeeCode || "-"}</dd></div>
+          <div><dt><span className="material-symbols-outlined" aria-hidden="true">how_to_reg</span>สถานะ</dt><dd><Badge tone={employmentStatusTone[p.employmentStatus] ?? "gray"}>{employmentStatusLabel[p.employmentStatus] ?? p.employmentStatus}</Badge></dd></div>
+          <div><dt><span className="material-symbols-outlined" aria-hidden="true">supervisor_account</span>หัวหน้า (ผู้ประเมิน)</dt><dd>{p.supervisorName || "-"}</dd></div>
+          <div><dt><span className="material-symbols-outlined" aria-hidden="true">event</span>วันเริ่มงาน</dt><dd>{fmtDate(p.hireDate)}{tenureText && <small>อายุงาน {tenureText}</small>}</dd></div>
         </dl>
         {probationPct != null && (
           <div className="perf-report-probation">
-            <div className="perf-report-probation-head"><b>ช่วงทดลองงาน</b><span>วันที่ {p.probationDay} จาก {p.probationTotalDays} · สิ้นสุด {fmtDate(p.probationEndDate)}</span></div>
+            <div className="perf-report-probation-head"><b><span className="material-symbols-outlined" aria-hidden="true">hourglass_top</span>ช่วงทดลองงาน</b><span>วันที่ {p.probationDay} จาก {p.probationTotalDays} · สิ้นสุด {fmtDate(p.probationEndDate)}</span></div>
             <div className="perf-report-track" role="progressbar" aria-valuemin={1} aria-valuemax={p.probationTotalDays} aria-valuenow={Math.min(p.probationDay!, p.probationTotalDays)} aria-label={`ทดลองงานวันที่ ${p.probationDay} จาก ${p.probationTotalDays}`}>
               <span style={{ width: `${probationPct}%` }} />
             </div>
           </div>
         )}
+        <dl className="perf-report-kpis" aria-label="ตัวเลขสำคัญ">
+          {kpis.map((k) => (
+            <div key={k.label} className="perf-report-kpi" data-perf-category={k.icon}>
+              <dt><span className="material-symbols-outlined" aria-hidden="true">{k.icon}</span>{k.label}</dt>
+              <dd><b>{k.value}</b>{k.note && <small>{k.note}</small>}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
-      <section className="perf-report-kpis" aria-label="ตัวเลขสำคัญ">
-        {kpis.map((k) => (
-          <div key={k.label} className="perf-report-kpi" data-perf-category={k.icon}>
-            <span className="material-symbols-outlined" aria-hidden="true">{k.icon}</span>
-            <div><small>{k.label}</small><b>{k.value}</b>{k.note && <span>{k.note}</span>}</div>
-          </div>
-        ))}
-      </section>
+      {report.includesWorkLogs && highlights.length > 0 && (
+        <section className="content-card perf-report-section perf-report-highlights">
+          <h3><span className="material-symbols-outlined" aria-hidden="true">workspace_premium</span>ผลงานเด่น<small>{highlights.length.toLocaleString("th-TH")} ผลงาน</small></h3>
+          <ul className="perf-report-highlight-grid">
+            {highlights.map((x, i) => (
+              <li key={`${x.workDate}-${i}`}>
+                <span className="perf-report-highlight-meta"><span className="material-symbols-outlined" aria-hidden="true">star</span>{fmtDate(x.workDate)} · {workCategoryLabel[x.category] ?? x.category}</span>
+                <b>{x.title}</b>
+                {x.description && <p>{x.description}</p>}
+                {(x.projectName || x.effortHours != null) && <small>{[x.projectName, x.effortHours != null ? `${x.effortHours.toLocaleString("th-TH")} ชม.` : ""].filter(Boolean).join(" · ")}</small>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="perf-report-detail-block" aria-labelledby="perf-report-details-title">
         <div className="perf-report-detail-head">
-          <div><span className="material-symbols-outlined" aria-hidden="true">view_quilt</span><span><b id="perf-report-details-title">รายละเอียดผลงาน</b><small>เลือกหัวข้อเพื่อเปิดดูตัวเลขเพิ่มเติม · ข้อมูลชุดเดียวกับ KPI ด้านบน</small></span></div>
+          <div><span className="material-symbols-outlined" aria-hidden="true">view_quilt</span><span><b id="perf-report-details-title">รายละเอียดผลงาน</b><small>เลือกหัวข้อเพื่อเปิดดูตัวเลขเพิ่มเติม · ข้อมูลชุดเดียวกับตัวเลขด้านบน</small></span></div>
           <span>{detailGroups.length} กลุ่มข้อมูล</span>
         </div>
         <div className="perf-report-metric-groups">
@@ -96,13 +120,18 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
 
       {report.weekly.length > 0 && (
         <section className="content-card perf-report-section">
-          <h3><span className="material-symbols-outlined" aria-hidden="true">insights</span>แนวโน้มรายสัปดาห์</h3>
+          <h3><span className="material-symbols-outlined" aria-hidden="true">insights</span>แนวโน้มรายสัปดาห์<small>แถบเทียบกับสัปดาห์ที่มากที่สุดในช่วงนี้</small></h3>
           <div className="table-wrap">
-            <table className="table-cards perf-report-table">
-              <thead><tr><th>สัปดาห์ที่เริ่ม</th><th className="num">Execution</th><th className="num">Defect ที่แจ้ง</th><th className="num">Test Case ที่สร้าง</th></tr></thead>
+            <table className="table-cards perf-report-table perf-report-weekly">
+              <thead><tr><th>สัปดาห์ที่เริ่ม</th><th>Execution</th><th>Defect ที่แจ้ง</th><th>Test Case ที่สร้าง</th></tr></thead>
               <tbody>
                 {report.weekly.map((w) => (
-                  <tr key={w.weekStart}><td>{fmtDate(w.weekStart)}</td><td className="num">{w.executions.toLocaleString("th-TH")}</td><td className="num">{w.defects.toLocaleString("th-TH")}</td><td className="num">{w.testCases.toLocaleString("th-TH")}</td></tr>
+                  <tr key={w.weekStart}>
+                    <td>{fmtDate(w.weekStart)}</td>
+                    <td><WeekBar category="play_circle" value={w.executions} max={weeklyMax.executions} /></td>
+                    <td><WeekBar category="bug_report" value={w.defects} max={weeklyMax.defects} /></td>
+                    <td><WeekBar category="fact_check" value={w.testCases} max={weeklyMax.testCases} /></td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -112,15 +141,15 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
 
       {report.includesWorkLogs && (
         <section className="content-card perf-report-section">
-          <h3><span className="material-symbols-outlined" aria-hidden="true">edit_note</span>ผลงานเด่นและบันทึกงาน<small>{report.workLogs.length.toLocaleString("th-TH")} รายการ</small></h3>
-          {report.workLogs.length === 0 ? (
-            <p className="perf-report-empty">ไม่มีบันทึกงานหรือผลงานเด่นในช่วงนี้</p>
+          <h3><span className="material-symbols-outlined" aria-hidden="true">edit_note</span>บันทึกงาน<small>{otherLogs.length.toLocaleString("th-TH")} รายการ{highlights.length ? ` · ผลงานเด่นแสดงด้านบน` : ""}</small></h3>
+          {otherLogs.length === 0 ? (
+            <p className="perf-report-empty">{highlights.length ? "ไม่มีบันทึกงานอื่นในช่วงนี้" : "ไม่มีบันทึกงานหรือผลงานเด่นในช่วงนี้"}</p>
           ) : (
             <ul className="perf-report-logs">
-              {[...highlights, ...otherLogs].map((x, i) => (
-                <li key={`${x.workDate}-${i}`} className={x.kind === "Highlight" ? "highlight" : ""}>
+              {otherLogs.map((x, i) => (
+                <li key={`${x.workDate}-${i}`}>
                   <div className="perf-report-log-head">
-                    <Badge tone={x.kind === "Highlight" ? "green" : "blue"}>{kindLabel[x.kind] ?? x.kind}</Badge>
+                    <Badge tone="blue">{kindLabel[x.kind] ?? x.kind}</Badge>
                     <b>{x.title}</b>
                   </div>
                   <small>{fmtDate(x.workDate)} · {workCategoryLabel[x.category] ?? x.category}{x.effortHours != null && ` · ${x.effortHours.toLocaleString("th-TH")} ชม.`}{x.projectName && ` · ${x.projectName}`}</small>
@@ -138,23 +167,23 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
           {report.evaluations.length === 0 ? (
             <p className="perf-report-empty">ยังไม่มีรอบการประเมิน</p>
           ) : (
-            <div className="table-wrap">
-              <table className="table-cards perf-report-table">
-                <thead><tr><th>รอบ</th><th>ช่วงประเมิน</th><th>สถานะ</th><th>ผลรวม</th><th>ผลทดลองงาน</th><th>ผู้ประเมิน</th></tr></thead>
-                <tbody>
-                  {report.evaluations.map((x) => (
-                    <tr key={`${x.round}-${x.year}-${x.periodStart}`}>
-                      <td><b>{roundText(x)}</b></td>
-                      <td>{fmtDate(x.periodStart)} – {fmtDate(x.periodEnd)}</td>
-                      <td><Badge tone={evalStatus[x.status]?.tone ?? "gray"}>{evalStatus[x.status]?.label ?? x.status}</Badge>{x.isOverdue && <small className="perf-overdue perf-sub">เลยกำหนด {fmtDate(x.dueDate)}</small>}</td>
-                      <td>{x.grade ? <span className="perf-report-grade"><b>{x.grade}</b>{x.overallScore != null && <span>{x.overallScore.toFixed(2)} / 5</span>}</span> : <span className="perf-sub">ยังไม่ปิดรอบ</span>}</td>
-                      <td>{x.recommendation ? <Badge tone={x.recommendation === "Pass" ? "green" : x.recommendation === "Extend" ? "yellow" : "red"}>{recommendationLabel[x.recommendation] ?? x.recommendation}</Badge> : "-"}</td>
-                      <td>{x.evaluatorName ?? "-"}{x.completedAt && <small className="perf-sub">ส่งผล {formatThaiDateTime(x.completedAt, { dateStyle: "medium" })}</small>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="perf-report-evals">
+              {report.evaluations.map((x) => (
+                <li key={`${x.round}-${x.year}-${x.periodStart}`} className={x.grade ? "closed" : undefined}>
+                  <span className="perf-report-eval-grade" aria-hidden={!x.grade}>{x.grade ?? "–"}</span>
+                  <span className="perf-report-eval-main">
+                    <b>{roundText(x)}</b>
+                    <small>{fmtDate(x.periodStart)} – {fmtDate(x.periodEnd)} · ผู้ประเมิน {x.evaluatorName ?? "-"}{x.completedAt ? ` · ส่งผล ${formatThaiDateTime(x.completedAt, { dateStyle: "medium" })}` : ""}</small>
+                  </span>
+                  <span className="perf-report-eval-score">{x.overallScore != null ? <><b>{x.overallScore.toFixed(2)}</b><small>/ 5</small></> : <small>ยังไม่ปิดรอบ</small>}</span>
+                  <span className="perf-report-eval-badges">
+                    <Badge tone={evalStatus[x.status]?.tone ?? "gray"}>{evalStatus[x.status]?.label ?? x.status}</Badge>
+                    {x.recommendation && <Badge tone={x.recommendation === "Pass" ? "green" : x.recommendation === "Extend" ? "yellow" : "red"}>{recommendationLabel[x.recommendation] ?? x.recommendation}</Badge>}
+                    {x.isOverdue && <small className="perf-overdue">เลยกำหนด {fmtDate(x.dueDate)}</small>}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
           {closedRounds.length > 0 && report.comparison && (
             <>
@@ -180,6 +209,16 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
         · งาน CRM นับจากข้อมูลที่ QA Hub ดึงจาก CRM ทุก 15 นาที · คะแนนการประเมินแสดงเฉพาะรอบที่หัวหน้าส่งผลแล้ว (1–5 ถ่วงน้ำหนัก; เกรด A ≥ 4.5, B ≥ 3.5, C ≥ 2.5, D ≥ 1.5)
       </p>
     </article>
+  );
+}
+
+/** ตัวเลขรายสัปดาห์ + แถบบางเทียบกับสัปดาห์ที่มากที่สุด (ตัวเลขเป็นข้อมูลหลัก แถบช่วยสแกน) */
+function WeekBar({ category, value, max }: { category: string; value: number; max: number }) {
+  return (
+    <span className="perf-report-weekbar" data-perf-category={category}>
+      <b>{value.toLocaleString("th-TH")}</b>
+      <span aria-hidden="true"><span style={{ width: `${value ? Math.max(4, (value / max) * 100) : 0}%` }} /></span>
+    </span>
   );
 }
 
