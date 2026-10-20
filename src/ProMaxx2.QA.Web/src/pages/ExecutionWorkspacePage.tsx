@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
+import { CyclePicker } from "../components/CyclePicker";
 import { type WorkspaceDefect, type WorkspaceDefectContext, ExecutionDefectEditor } from "../ExecutionDefectEditor";
 import { apiUrl, getJson, isAbortError } from "../api";
 import { confirmDialog, notify } from "../components/dialogStore";
@@ -30,6 +31,9 @@ function executionStatusTone(status: string): string {
     default: return "gray"; // NotRun
   }
 }
+// P0/P1 (หรือ Critical/High) = แดง ที่เหลือ = น้ำเงิน — แบบเดียวกับหน้า Test Suite
+const priorityTone = (p?: string) => (p === "P0" || p === "P1" || p === "Critical" || p === "High" ? "red" : "blue");
+const isOpenDefectStatus = (status: string) => !["Resolved", "Closed", "Rejected"].includes(status);
 type ExecutionCase = {
   testCycleCaseId: string;
   testCaseId: string;
@@ -40,6 +44,7 @@ type ExecutionCase = {
   moduleId?: string;
   currentStatus: string;
   executionOrder: number;
+  assignedTesterUserId?: string | null;
   steps: {
     stepNo: number;
     action: string;
@@ -56,6 +61,7 @@ type ExecutionCase = {
     comment?: string;
     testerName: string;
     completedAt?: string;
+    stepResults?: { stepNo: number; status: string; actualResult?: string | null }[];
   }[];
 };
 type ExecutionWorkspace = {
@@ -70,7 +76,9 @@ type ExecutionWorkspace = {
 export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBuildId }: { contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
   const [cycles, setCycles] = useState<TestCycleItem[]>([]),
     [cyclesLoaded, setCyclesLoaded] = useState(false),
-    [cycleId, setCycleId] = useState(()=>localStorage.getItem("qa.targetCycleId")??""),
+    // Cycle ที่หน้าอื่นส่งมา (qa.targetCycleId) มาก่อน ไม่งั้นใช้ Cycle ล่าสุดที่เปิด — เริ่มโหลด workspace ได้ทันทีพร้อมรายการ Cycle
+    // ไม่ต้องรอรายการเสร็จก่อน (ทุกคำขอผ่าน Cloudflare ~0.2–1 วินาที); ถ้า Cycle นั้นไม่อยู่ในรายการแล้ว effect ด้านล่างจะเปลี่ยนให้เอง
+    [cycleId, setCycleId] = useState(()=>{ try { return localStorage.getItem("qa.targetCycleId") ?? localStorage.getItem("qa.execution.lastCycleId") ?? ""; } catch { return ""; } }),
     [workspace, setWorkspace] = useState<ExecutionWorkspace | null>(null),
     [selectedId, setSelectedId] = useState(""),
     [caseDetail, setCaseDetail] = useState<ExecutionCase | null>(null),
@@ -85,6 +93,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     // ปิดเป็นค่าเริ่มต้นเสมอ (ไม่กรอง) — Test Cycle ไม่มีช่องให้กำหนด "ผู้ดำเนินการ" (ownerUserId) ตอนสร้าง/แก้ไข
     // เลยเป็น null เสมอทุก Cycle ในระบบ ถ้า default เปิดไว้จะกรองจนไม่เหลือ Cycle ให้เลือกเลยสำหรับทุกคน
     [myCyclesOnly, setMyCyclesOnly] = useState(false),
+    // คิว: แสดงเฉพาะเคสที่ assign ให้ฉัน (AssignedTesterUserId) — ปุ่มแสดงเมื่อ Cycle นี้มีการ assign อย่างน้อย 1 เคส
+    [queueMineOnly, setQueueMineOnly] = useState(false),
     [workspaceLoading, setWorkspaceLoading] = useState(false),
     [saving, setSaving] = useState(false),
     [reload, setReload] = useState(0),
@@ -94,6 +104,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     [skipComment, setSkipComment] = useState(""),
     [linkedDefects, setLinkedDefects] = useState<WorkspaceDefect[]>([]),
     [linkedDefectsError, setLinkedDefectsError] = useState(""),
+    // testCaseId ที่ linkedDefects ชุดปัจจุบันเป็นของ — ใช้รอให้ Defect โหลดเสร็จพร้อมรายละเอียดเคสแล้วค่อยสลับหน้าจอทีเดียว
+    [linkedDefectsFor, setLinkedDefectsFor] = useState<string | undefined>(undefined),
     [defectEditor, setDefectEditor] = useState<{ context: WorkspaceDefectContext; existing?: WorkspaceDefect } | null>(null),
     // Defect code ที่เพิ่งสร้างจาก step นี้ในรอบทำงานปัจจุบัน — เหมือน defectCodes เดิม ยังต้องเก็บแยก
     // เป็น local state เพราะ Defect ไม่มีคอลัมน์ stepNo ให้ map กลับจาก linkedDefects ที่ persist จริงได้
@@ -114,7 +126,9 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     const h = {
       Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
     };
-    const query = cycleModuleFilter ? `?moduleId=${cycleModuleFilter}&size=100` : "?size=100";
+    // ขอเฉพาะ InProgress จาก server — เดิมขอ 100 Cycle ล่าสุดทุกสถานะแล้วกรองในหน้าเว็บ ทำให้ Cycle ที่ InProgress แต่เก่ากว่า
+    // 100 รายการล่าสุดไม่โผล่ใน dropdown เลย (ตรวจ 2026-10-20: PMX2 มี InProgress 191 รายการ หายไป 91)
+    const query = `?status=InProgress&size=500${cycleModuleFilter ? `&moduleId=${cycleModuleFilter}` : ""}`;
     setCyclesLoaded(false);
     setCycleLoadError("");
     fetch(`${apiUrl}/test-cycles${query}`, { headers: h })
@@ -160,26 +174,19 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         setCycleModules([...seen.values()].sort((a, b) => a.moduleCode.localeCompare(b.moduleCode)));
       });
   }, [contextProjectId, cycles, cycleModuleFilter]);
-  // Cycle ที่ workspace ปัจจุบันเป็นของ — ใช้แยก "เปลี่ยน Cycle" (ล้าง state + spinner เต็มหน้า) ออกจาก
+  // Cycle ที่ workspace ปัจจุบันเป็นของ — ใช้แยก "เปลี่ยน Cycle" (แสดงสถานะกำลังโหลด) ออกจาก
   // "reload หลังบันทึกผล" (refetch เงียบๆ คง Test Case ที่เลือกและตำแหน่ง scroll ไว้)
+  // เปลี่ยน Cycle แล้วไม่ล้างหน้าจอ: คงข้อมูล Cycle เดิมไว้ (หรี่ลง) จนข้อมูลใหม่มาครบแล้วสลับทีเดียว — เดิมล้างเป็น spinner
+  // แล้วค่อยเติมคิว/รายละเอียดทีละส่วน ทำให้ความสูงหน้ายุบแล้วขยาย หน้าจอเด้งไปมา (state รายเคสถูกตั้งใหม่ตอนเคสใหม่พร้อม)
   const workspaceCycleRef = useRef("");
   useEffect(() => {
     const cycleChanged = workspaceCycleRef.current !== cycleId;
     workspaceCycleRef.current = cycleId;
-    if (cycleChanged) {
-      setWorkspace(null);
-      setSelectedId("");
-      setCaseDetail(null);
-      setLinkedDefects([]);
-      setStepDefectCodes({});
-      setStepStatuses({});
-      setStepActuals({});
-      setActual("");
-      setComment("");
-      setDefectEditor(null);
-    }
+    if (cycleChanged) setDefectEditor(null);
     setWorkspaceLoadError("");
     if (!cycleId) {
+      // ไม่มี Cycle ให้เลือกจริง ๆ (รายการว่าง/โหลดไม่สำเร็จ) — ถึงตอนนี้จึงล้างหน้าจอ
+      setWorkspace(null);
       setWorkspaceLoading(false);
       return;
     }
@@ -210,17 +217,28 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       .finally(() => { if (!controller.signal.aborted) setWorkspaceLoading(false); });
     return () => controller.abort();
   }, [cycleId, reload]);
+  // แคชรายละเอียดเคส (รวมเคสถัดไปที่โหลดไว้ล่วงหน้า) — ล้างเมื่อเปลี่ยน Cycle หรือหลังบันทึก/ลบผล (reload)
+  // generation กันผล prefetch ที่ค้างอยู่จากก่อนล้างแคชมาใส่ทับข้อมูลใหม่
+  const detailCache = useRef(new Map<string, ExecutionCase>());
+  const detailCacheGeneration = useRef(0);
+  useEffect(() => { detailCache.current.clear(); detailCacheGeneration.current += 1; }, [cycleId, reload]);
   useEffect(() => {
     if (!selectedId || !cycleId) { setCaseDetail(null); setCaseDetailLoadError(""); return; }
+    const cached = detailCache.current.get(selectedId);
+    if (cached) { setCaseDetail(cached); setCaseDetailLoadError(""); return; }
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
     const controller = new AbortController();
+    const generation = detailCacheGeneration.current;
     setCaseDetailLoadError("");
     fetch(`${apiUrl}/test-cycles/${cycleId}/cases/${selectedId}`, { headers: h, signal: controller.signal })
       .then(r => {
         if (!r.ok) throw new Error(`โหลดรายละเอียด Test Case ไม่สำเร็จ (${r.status})`);
         return r.json();
       })
-      .then((data) => { if (!controller.signal.aborted) setCaseDetail(data); })
+      .then((data: ExecutionCase) => {
+        if (generation === detailCacheGeneration.current) detailCache.current.set(selectedId, data);
+        if (!controller.signal.aborted) setCaseDetail(data);
+      })
       .catch((e) => {
         if (controller.signal.aborted) return;
         setCaseDetail(null);
@@ -228,24 +246,34 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       });
     return () => controller.abort();
   }, [selectedId, cycleId, reload]);
+  useEffect(() => { if (cycleId) { try { localStorage.setItem("qa.execution.lastCycleId", cycleId); } catch { /* ไม่มี storage ก็แค่ไม่จำ */ } } }, [cycleId]);
+  // testCaseId มีอยู่ในรายการเคสของ workspace แล้ว — โหลด Defect ที่เชื่อมโยงพร้อมกับรายละเอียดเคสได้เลย (เดิมรอรายละเอียดเคสโหลดเสร็จก่อน)
+  const selectedTestCaseId = workspace?.cases.find((x) => x.testCycleCaseId === selectedId)?.testCaseId;
   useEffect(() => {
-    const testCaseId = caseDetail?.testCaseId;
-    if (!testCaseId) { setLinkedDefects([]); return; }
+    const testCaseId = selectedTestCaseId;
+    if (!testCaseId) { setLinkedDefects([]); setLinkedDefectsFor(undefined); return; }
     const controller = new AbortController();
     setLinkedDefectsError("");
     // โหลดไม่สำเร็จต้องบอก — เดิมคืน [] แล้วดูเหมือนเคสนี้ไม่มี Defect ที่เชื่อมไว้
     getJson<WorkspaceDefect[]>(`${apiUrl}/defects/by-test-case/${testCaseId}`, controller.signal)
-      .then((rows) => { if (!controller.signal.aborted) setLinkedDefects(rows); })
-      .catch((e) => { if (!controller.signal.aborted && !isAbortError(e)) { setLinkedDefects([]); setLinkedDefectsError("โหลด Defect ที่เชื่อมกับ Test Case นี้ไม่สำเร็จ"); } });
+      .then((rows) => { if (!controller.signal.aborted) { setLinkedDefects(rows); setLinkedDefectsFor(testCaseId); } })
+      .catch((e) => { if (!controller.signal.aborted && !isAbortError(e)) { setLinkedDefects([]); setLinkedDefectsFor(testCaseId); setLinkedDefectsError("โหลด Defect ที่เชื่อมกับ Test Case นี้ไม่สำเร็จ"); } });
     return () => controller.abort();
-  }, [caseDetail?.testCaseId, reload]);
+  }, [selectedTestCaseId, reload]);
+  // เคสที่แสดงอยู่: รอรายละเอียด + Linked Defects ของเคสใหม่มาครบก่อนแล้วสลับทีเดียว — ระหว่างรอคงเคสเดิมไว้ (หรี่ลง)
+  // เดิมแสดงเคสใหม่แบบไม่มี Step ก่อน แล้ว Step/Defect ค่อยตามมา ความสูงพื้นที่ทดสอบยุบแล้วขยาย หน้าเด้ง
+  const shownCaseRef = useRef<ExecutionCase | undefined>(undefined);
   const selected = useMemo(
     () => {
       const base = workspace?.cases.find((x) => x.testCycleCaseId === selectedId);
-      if (!base) return undefined;
-      return caseDetail && caseDetail.testCycleCaseId === selectedId ? { ...base, ...caseDetail } : { ...base, steps: [], history: [] };
+      if (base && caseDetail && caseDetail.testCycleCaseId === selectedId && linkedDefectsFor === base.testCaseId) {
+        shownCaseRef.current = { ...base, ...caseDetail };
+      } else if (!workspace?.cases.length) {
+        shownCaseRef.current = undefined;
+      }
+      return shownCaseRef.current;
     },
-    [workspace, selectedId, caseDetail],
+    [workspace, selectedId, caseDetail, linkedDefectsFor],
   );
   const executionStats = useMemo(() => {
     const cases = workspace?.cases ?? [];
@@ -258,19 +286,35 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       pending: cases.filter((x) => x.currentStatus === "NotRun").length,
     };
   }, [workspace]);
+  const myUserId = currentUserId();
   const filteredCases = useMemo(() => {
     const query = caseSearch.trim().toLocaleLowerCase("th-TH");
     return (workspace?.cases ?? [])
       .filter((item) =>
         (statusFilter === "All" || item.currentStatus === statusFilter) &&
+        (!queueMineOnly || item.assignedTesterUserId === myUserId) &&
         (!query || `${item.testCaseCode} ${item.title}`.toLocaleLowerCase("th-TH").includes(query)),
       )
       .sort((a, b) =>
         a.testCaseCode.localeCompare(b.testCaseCode, undefined, { numeric: true, sensitivity: "base" }) ||
         a.testCycleCaseId.localeCompare(b.testCycleCaseId),
       );
-  }, [workspace, caseSearch, statusFilter]);
+  }, [workspace, caseSearch, statusFilter, queueMineOnly, myUserId]);
+  const hasAssignedCases = useMemo(() => (workspace?.cases ?? []).some((x) => x.assignedTesterUserId), [workspace]);
+  useEffect(() => { if (!hasAssignedCases) setQueueMineOnly(false); }, [hasAssignedCases]);
+  // โหลดรายละเอียดเคสถัดไปไว้ล่วงหน้าเมื่อเคสปัจจุบันแสดงแล้ว — กด "ถัดไป" แล้วขึ้นทันทีไม่ต้องรอผ่าน Cloudflare
+  // ไม่ abort คำขอนี้ (ผลยังใช้ได้แม้ผู้ใช้เปลี่ยนเคส) — ลดการยกเลิกคำสั่ง SQL กลางทาง
   useEffect(() => {
+    if (!cycleId || !caseDetail || caseDetail.testCycleCaseId !== selectedId) return;
+    const index = filteredCases.findIndex((x) => x.testCycleCaseId === selectedId);
+    const next = index >= 0 ? filteredCases[index + 1] : undefined;
+    if (!next || detailCache.current.has(next.testCycleCaseId)) return;
+    const generation = detailCacheGeneration.current;
+    getJson<ExecutionCase>(`${apiUrl}/test-cycles/${cycleId}/cases/${next.testCycleCaseId}`)
+      .then((data) => { if (generation === detailCacheGeneration.current) detailCache.current.set(next.testCycleCaseId, data); })
+      .catch(() => { /* prefetch ไม่สำเร็จ = ตอนเลือกเคสจะโหลดตามปกติ */ });
+  }, [cycleId, caseDetail, selectedId, filteredCases]);
+  useLayoutEffect(() => {
     if (selected) {
       // Restore the last saved values for this case instead of always resetting to blank — otherwise
       // switching cases (or any background refetch) silently discards previously recorded results.
@@ -288,6 +332,9 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       setSkipComment("");
     }
   }, [selected]);
+  // กำลังสลับไปเคส/Cycle อื่น — หน้าจอยังแสดงของเดิม จึงต้องปิดการบันทึก/ปุ่มลัดไว้จนของใหม่พร้อม
+  const workspaceSwitching = workspaceLoading && !!workspace;
+  const caseSwitching = workspaceSwitching || (!!selected && selected.testCycleCaseId !== selectedId);
   // UI รอบ 2: เปลี่ยนเคสแล้ว effect ด้านบนคืนค่าที่บันทึกล่าสุด — ผลที่กรอกแต่ยังไม่บันทึกจะหายเงียบ ๆ จึงถามก่อน
   const hasUnsavedResults = !!selected && (
     selected.steps.some((step) => (stepStatuses[step.stepNo] ?? "NotRun") !== (step.lastStatus ?? "NotRun") || (stepActuals[step.stepNo] ?? "") !== (step.lastActualResult ?? ""))
@@ -300,7 +347,36 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   };
   // ล้าง Defect code รายสเต็ปเฉพาะตอนเปลี่ยน Test Case — ถ้าล้างทุกครั้งที่ selected เปลี่ยน (รวม reload
   // หลังบันทึก) ปุ่ม "+ Defect" จะกลับมาบนสเต็ปที่เพิ่งสร้าง Defect ไปแล้ว ชวนให้สร้างซ้ำ
-  useEffect(() => { setStepDefectCodes({}); }, [selectedId]);
+  useEffect(() => { setStepDefectCodes({}); }, [selected?.testCycleCaseId]);
+  // แท็บของพื้นที่ทดสอบ (บันทึกผล | ประวัติ) — เปลี่ยนเคสแล้วกลับมาที่บันทึกผลเสมอ; ค่าที่กรอกอยู่ใน state ของหน้า ไม่หายเมื่อสลับแท็บ
+  const [mainTab, setMainTab] = useState<"steps" | "history">("steps");
+  // Step ที่เลือกด้วยคีย์บอร์ด (↑/↓ เลื่อน, 1–4 ตั้งผล) — null = ยังไม่ได้เลือก กด ↓ ครั้งแรกไป Step แรก
+  const [activeStep, setActiveStep] = useState<number | null>(null);
+  // ผูกกับเคสที่ "แสดงอยู่" ไม่ใช่เคสที่เพิ่งคลิก — ไม่งั้นแท็บ/Step ที่เลือกของเคสเดิมรีเซ็ตก่อนเคสใหม่โหลดเสร็จ
+  useEffect(() => { setMainTab("steps"); setActiveStep(null); }, [selected?.testCycleCaseId]);
+  // เลื่อนจอตาม Step เฉพาะตอนใช้คีย์บอร์ด — คลิกแถวเองไม่ต้องเลื่อน (เดิมเลื่อนทุกครั้ง หน้าจอขยับตอนคลิก)
+  const scrollToActiveStep = useRef(false);
+  useEffect(() => {
+    if (activeStep == null || !scrollToActiveStep.current) return;
+    scrollToActiveStep.current = false;
+    document.getElementById(`step-row-${activeStep}`)?.scrollIntoView({ block: "nearest" });
+  }, [activeStep]);
+  // เคสใหม่พร้อมแล้ว: ถ้าหัวพื้นที่ทดสอบเลื่อนพ้นจอไปแล้ว (เลือกเคสจากท้ายคิว/กดถัดไปจาก Action Bar) ค่อย ๆ เลื่อนกลับไปหัวเคส
+  const mainRef = useRef<HTMLElement | null>(null);
+  const shownCaseId = selected?.testCycleCaseId;
+  const lastShownCaseId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const previous = lastShownCaseId.current;
+    lastShownCaseId.current = shownCaseId;
+    if (!previous || !shownCaseId || previous === shownCaseId) return;
+    const main = mainRef.current;
+    if (main && main.getBoundingClientRect().top < 0) main.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [shownCaseId]);
+  // เปลี่ยน Cycle แล้วคิวเริ่มที่บนสุด
+  const queueListRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { queueListRef.current?.scrollTo({ top: 0 }); }, [workspace?.testCycleId]);
+  // Mobile: คิว Test Case พับได้ (EXECUTION-WORKSPACE-RESPONSIVE-UI-SPEC §3.2) — Desktop แสดงตลอด
+  const [queueOpen, setQueueOpen] = useState(false);
   // Overall Result แบบ live พรีวิวจากสถานะ Step ปัจจุบันที่กำลังแก้ (test-case-execution-ui-spec.md §4-5)
   // — คำนวณด้วยฟังก์ชันเดียวกับที่ backend ใช้จริงตอนบันทึก (ดู overallResult.ts)
   const liveStepStatuses = useMemo(
@@ -318,7 +394,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   // — เอาออกตาม spec §14/§25: Overall Result ต้องมาจากการคำนวณผล Step เท่านั้น (ยกเว้น Skipped)
   // เหลือ submitExecution กลางที่ทุกปุ่มใหม่ (Save Progress/Skip/Complete) เรียกใช้ร่วมกัน
   const submitExecution = async (status: string, opts?: { confirmMessage?: string; commentOverride?: string }) => {
-    if (!selected) return;
+    if (!selected || caseSwitching) return;
     if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
       notify(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถบันทึกผล Execution เพิ่มได้`, "error");
       return;
@@ -387,9 +463,29 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (!selected || skipModalOpen || defectEditor || target?.matches("input, textarea, select, [contenteditable=\"true\"]")) return;
+      if (!selected || caseSwitching || skipModalOpen || defectEditor || target?.matches("input, textarea, select, [contenteditable=\"true\"]")) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       const key = event.key.toLowerCase();
-      if (["p", "f", "b"].includes(key)) {
+      const stepNos = selected.steps.map((step) => step.stepNo);
+      if (mainTab === "steps" && (event.key === "ArrowDown" || event.key === "ArrowUp") && stepNos.length) {
+        event.preventDefault();
+        const index = activeStep == null ? -1 : stepNos.indexOf(activeStep);
+        const nextIndex = event.key === "ArrowDown" ? Math.min(stepNos.length - 1, index + 1) : Math.max(0, index - 1);
+        scrollToActiveStep.current = true;
+        setActiveStep(stepNos[nextIndex]);
+      } else if (mainTab === "steps" && ["1", "2", "3", "4"].includes(key) && activeStep != null) {
+        event.preventDefault();
+        const status = (["Pass", "Fail", "Blocked", "NotRun"] as const)[Number(key) - 1];
+        setStepStatuses((s) => ({ ...s, [activeStep]: status }));
+        // Pass/Not Run เลื่อนไป Step ถัดไปเลย; Fail/Blocked อยู่ที่เดิมเพื่อกรอก Actual Result ต่อ (Enter = ไปช่องกรอก)
+        if (status === "Pass" || status === "NotRun") {
+          const index = stepNos.indexOf(activeStep);
+          if (index >= 0 && index < stepNos.length - 1) { scrollToActiveStep.current = true; setActiveStep(stepNos[index + 1]); }
+        }
+      } else if (mainTab === "steps" && event.key === "Enter" && activeStep != null && !target?.closest("button, a")) {
+        event.preventDefault();
+        document.getElementById(`step-actual-${activeStep}`)?.focus();
+      } else if (["p", "f", "b"].includes(key)) {
         const status = key === "p" ? "Pass" : key === "f" ? "Fail" : "Blocked";
         event.preventDefault();
         // เหมือนปุ่ม "ตั้งทุก Step" — ถามก่อนเปลี่ยนผลทุก Step (เดิมปุ่มลัดเปลี่ยนทันทีโดยไม่ถาม)
@@ -402,7 +498,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected, selectedId, filteredCases, skipModalOpen, defectEditor, hasUnsavedResults]);
+  }, [selected, caseSwitching, selectedId, filteredCases, skipModalOpen, defectEditor, hasUnsavedResults, mainTab, activeStep]);
   // §18 Skip Test Case — เปิด modal เลือก Reason + Comment ก่อนเสมอ ไม่มีปุ่มลัด
   const openSkipModal = () => { setSkipReason(""); setSkipComment(""); setSkipModalOpen(true); };
   const confirmSkip = () => {
@@ -491,67 +587,105 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       setCycleId(filteredCycles[0].testCycleId);
     }
   }, [filteredCycles, cycleId, cyclesLoaded]);
+  // Generate Summary (spec §13) — สร้าง Actual Result สรุปจากผล Step ปัจจุบัน: เน้น Step ที่ Fail/Blocked พร้อมผลที่ได้จริง
+  const generateSummary = async () => {
+    if (!selected?.steps.length) return;
+    const statusOf = (stepNo: number) => stepStatuses[stepNo] ?? "NotRun";
+    const problems = selected.steps.filter((s) => statusOf(s.stepNo) === "Fail" || statusOf(s.stepNo) === "Blocked");
+    const notRun = selected.steps.filter((s) => statusOf(s.stepNo) === "NotRun");
+    const overallText = liveOverall === "InProgress" ? "In Progress" : liveOverall === "NotRun" ? "Not Run" : liveOverall;
+    const lines = [`ผลรวม: ${overallText} (Pass ${stepCounts.passed} / Fail ${stepCounts.failed} / Blocked ${stepCounts.blocked} / Not Run ${stepCounts.notRun})`];
+    if (problems.length) {
+      problems.forEach((s) => lines.push(`- Step ${s.stepNo} ${statusOf(s.stepNo)}: ${stepActuals[s.stepNo]?.trim() || "ไม่ได้ระบุผลที่ได้จริง"} (คาดหวัง: ${s.expectedResult})`));
+    } else if (!notRun.length) {
+      lines.push(`ทุก Step (${selected.steps.length}) ได้ผลตามที่คาดหวัง`);
+    }
+    if (notRun.length) lines.push(`ยังไม่ได้ทดสอบ: Step ${notRun.map((s) => s.stepNo).join(", ")}`);
+    const text = lines.join("\n");
+    if (actual.trim() && actual.trim() !== text && !await confirmDialog("แทนที่ Actual Result ที่กรอกไว้ด้วยสรุปที่สร้างจากผล Step หรือไม่?")) return;
+    setActual(text);
+  };
+  // Step ที่ Fail แต่ยังไม่มี Defect — ไม่มี Defect ที่ยังเปิดผูกกับเคสนี้ และยังไม่ได้สร้างรายสเต็ปในรอบนี้
+  const failedStepsWithoutDefect = !selected || linkedDefects.some((d) => isOpenDefectStatus(d.status)) ? []
+    : selected.steps.filter((s) => (stepStatuses[s.stepNo] ?? "NotRun") === "Fail" && !stepDefectCodes[s.stepNo]);
+  // ===== Presentation helpers (UI ปรับใหม่ 2026-10-20 — ไม่เปลี่ยน logic/flow การบันทึกตาม EXECUTION-WORKSPACE-RESPONSIVE-UI-SPEC §2) =====
+  const resultIcon = (status: string) => status === "Pass" ? "check_circle" : status === "Fail" ? "cancel" : status === "Blocked" ? "block" : "radio_button_unchecked";
+  const resultLabel = (status: string) => status === "NotRun" ? "Not Run" : status;
+  const caseIndex = filteredCases.findIndex((x) => x.testCycleCaseId === selectedId);
+  const prevCase = caseIndex > 0 ? filteredCases[caseIndex - 1] : undefined;
+  const nextCase = caseIndex >= 0 ? filteredCases[caseIndex + 1] : undefined;
+  const executedCount = executionStats.total - executionStats.pending;
+  const executedPercent = executionStats.total ? Math.round((executedCount / executionStats.total) * 100) : 0;
+  // ข้อความอธิบาย Overall Result (test-case-execution-ui-spec.md §4)
+  const overallMessage = liveOverall === "Fail" ? `มี Step ที่ Fail จำนวน ${stepCounts.failed} รายการ`
+    : liveOverall === "Blocked" ? `มี Step ที่ Blocked จำนวน ${stepCounts.blocked} รายการ`
+    : liveOverall === "InProgress" ? `ทดสอบแล้ว ${liveStepStatuses.length - stepCounts.notRun} จาก ${liveStepStatuses.length} Step`
+    : liveOverall === "Pass" ? "ทุก Step ผ่าน" : "ยังไม่ได้บันทึกผล Step";
+  const statusChips: { status: string; label: string; count: number }[] = [
+    { status: "Pass", label: "Passed", count: executionStats.passed },
+    { status: "Fail", label: "Failed", count: executionStats.failed },
+    { status: "Blocked", label: "Blocked", count: executionStats.blocked },
+    { status: "InProgress", label: "In Progress", count: executionStats.inProgress },
+    { status: "NotRun", label: "Not Run", count: executionStats.pending },
+  ];
   return (
     <div className="execution-page">
       <div className="execution-toolbar card">
-        <label className="check-line">
-          <input type="checkbox" checked={myCyclesOnly} onChange={(e) => { setCycleId(""); setMyCyclesOnly(e.target.checked); }} />
-          เฉพาะฉัน
-        </label>
-        <label>
-          Module
-          <select className="testcase-module-filter" aria-label="กรอง Test Cycle ตาม Module" value={cycleModuleFilter} onChange={(e) => { setCycleId(""); setCycleModuleFilter(e.target.value); }} disabled={!cycleModules.length}>
-            <option value="">ทุก Module</option>
-            {renderModuleSelectOptions(cycleModules)}
-          </select>
-        </label>
-        <label>
-          Test Cycle
-          <select value={cycleId} onChange={(e) => setCycleId(e.target.value)}>
-            <option value="">เลือก Test Cycle</option>
-            {filteredCycles.map((x) => (
-              <option key={x.testCycleId} value={x.testCycleId}>
-                {x.cycleCode} · {x.cycleName}
-              </option>
-            ))}
-          </select>
-        </label>
-        {workspace && (
-          <div className="execution-context">
-            <span>
-              <small>Build</small>
-              <b>{workspace.buildNumber}</b>
-            </span>
-            <span>
-              <small>Environment</small>
-              <b>{workspace.environmentName}</b>
-            </span>
-            <Badge tone={workspace.status === "Closed" ? "green" : "yellow"}>
-              {workspace.status}
-            </Badge>
+        <div className="execution-toolbar-row">
+          {/* ไม่ห่อด้วย <label> — ในแผงมีช่องค้นหา การคลิกใน label จะไปกดปุ่มเปิด/ปิดซ้ำ */}
+          <div className="execution-cycle-field">
+            <span className="execution-field-label" aria-hidden="true">Test Cycle{workspaceSwitching && <span className="execution-switching"><span className="spinner inline" /> กำลังโหลด</span>}</span>
+            <CyclePicker cycles={filteredCycles} value={cycleId} onChange={setCycleId} disabled={!cyclesLoaded && !filteredCycles.length} />
+          </div>
+          <label className="execution-module-field">
+            <span className="execution-field-label">Module</span>
+            <select className="testcase-module-filter" value={cycleModuleFilter} onChange={(e) => setCycleModuleFilter(e.target.value)} disabled={!cycleModules.length}>
+              <option value="">ทุก Module</option>
+              {renderModuleSelectOptions(cycleModules)}
+            </select>
+          </label>
+          <label className={`execution-mine-toggle${myCyclesOnly ? " is-on" : ""}`} title="แสดงเฉพาะ Test Cycle ที่ฉันสร้าง">
+            <input type="checkbox" checked={myCyclesOnly} onChange={(e) => setMyCyclesOnly(e.target.checked)} />
+            <span className="material-symbols-outlined" aria-hidden="true">{myCyclesOnly ? "person_check" : "person"}</span>
+            เฉพาะฉัน
+          </label>
+          {/* แสดงตลอด (ค่า "-" ระหว่างโหลด/ยังไม่เลือก) — ถ้าซ่อนไว้ ช่อง Test Cycle จะยืด/หดทุกครั้งที่ workspace โหลด */}
+          <dl className="execution-context" aria-label="ข้อมูล Test Cycle">
+            <div><dt><span className="material-symbols-outlined" aria-hidden="true">deployed_code</span>Build</dt><dd title={workspace?.buildNumber || undefined}>{workspace?.buildNumber || "-"}</dd></div>
+            <div><dt><span className="material-symbols-outlined" aria-hidden="true">dns</span>Environment</dt><dd title={workspace?.environmentName || undefined}>{workspace?.environmentName || "-"}</dd></div>
+            <div><dt><span className="material-symbols-outlined" aria-hidden="true">flag</span>สถานะ</dt><dd>{workspace ? <Badge tone={workspace.status === "Closed" ? "green" : "yellow"}>{workspace.status}</Badge> : "-"}</dd></div>
+          </dl>
+        </div>
+        {workspace && workspace.cases.length > 0 && (
+          <div className={`execution-progress-row${workspaceSwitching ? " is-loading" : ""}`}>
+            <div className="execution-progress-summary">
+              <strong>{executedPercent}%</strong>
+              <span><b>{executedCount}/{executionStats.total}</b> Test Case ทดสอบแล้ว</span>
+            </div>
+            {/* แถบแบ่งสีตามสถานะ — เห็นสัดส่วน Pass/Fail/Blocked/In Progress/Not Run ในแถบเดียว */}
+            <div className="execution-progress-bar" role="img" aria-label={statusChips.map((c) => `${c.label} ${c.count}`).join(", ")}>
+              {statusChips.filter((c) => c.count > 0).map((c) => (
+                <i key={c.status} className={`is-${c.status.toLowerCase()}`} style={{ width: `${(c.count / executionStats.total) * 100}%` }} title={`${c.label} ${c.count}`} />
+              ))}
+            </div>
+            <div className="execution-status-chips" role="group" aria-label="กรองคิว Test Case ตามสถานะ">
+              {statusChips.map((chip) => (
+                <button type="button" key={chip.status} className={`execution-status-chip is-${chip.status.toLowerCase()}${statusFilter === chip.status ? " active" : ""}`}
+                  aria-pressed={statusFilter === chip.status} title={`แสดงเฉพาะ ${chip.label} ในคิว (กดซ้ำเพื่อแสดงทั้งหมด)`}
+                  onClick={() => setStatusFilter((current) => current === chip.status ? "All" : chip.status)}>
+                  <i aria-hidden="true" />{chip.label} <b>{chip.count}</b>
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
-      {workspace && (
-        <div className="execution-overview">
-          <div><small>Test Cases</small><strong>{executionStats.total}</strong></div>
-          <div className="metric-pass"><small>Passed</small><strong>{executionStats.passed}</strong></div>
-          <div className="metric-fail"><small>Failed</small><strong>{executionStats.failed}</strong></div>
-          <div className="metric-blocked"><small>Blocked</small><strong>{executionStats.blocked}</strong></div>
-          <div className="metric-inprogress"><small>In Progress</small><strong>{executionStats.inProgress}</strong></div>
-          <div className="metric-pending"><small>Not Run</small><strong>{executionStats.pending}</strong></div>
-          <div className="execution-progress-summary">
-            <span><i style={{width:`${executionStats.total ? ((executionStats.total-executionStats.pending)/executionStats.total)*100 : 0}%`}} /></span>
-            <small><b>{executionStats.total - executionStats.pending}/{executionStats.total}</b> Test Cases executed · {executionStats.total ? Math.round(((executionStats.total-executionStats.pending)/executionStats.total)*100) : 0}%</small>
-          </div>
-        </div>
-      )}
       {cycleLoadError ? (
         <article className="card empty">
           <h3>โหลดรายการ Test Cycle ไม่สำเร็จ</h3>
           <div className="login-error">{cycleLoadError}</div>
         </article>
-      ) : workspaceLoading ? (
+      ) : workspaceLoading && !workspace ? (
         <article className="card empty" role="status" aria-live="polite">
           <div className="spinner" />
           <h3>กำลังโหลด Execution Workspace...</h3>
@@ -565,7 +699,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         ) : (
           <article className="card empty">
             <h3>{cycleId ? "ไม่พบข้อมูล Execution Workspace" : "เลือก Test Cycle เพื่อเริ่มทดสอบ"}</h3>
-            <p>{cycleId ? "Cycle นี้ยังไม่มีข้อมูลสำหรับการ Execute หรือข้อมูลถูกเปลี่ยนแปลงแล้ว" : "สร้าง Cycle และ Populate Test Case จาก Test Suite ก่อนเข้า Execution Workspace"}</p>
+            <p>{cycleId ? "Cycle นี้ยังไม่มีข้อมูลสำหรับการ Execute หรือข้อมูลถูกเปลี่ยนแปลงแล้ว" : cyclesLoaded && !filteredCycles.length ? "ยังไม่มี Test Cycle ที่สถานะ InProgress ตามตัวกรองนี้ — ลองเปลี่ยน Module/เฉพาะฉัน หรือเริ่ม Cycle จากหน้า Test Cycle" : "สร้าง Cycle และ Populate Test Case จาก Test Suite ก่อนเข้า Execution Workspace"}</p>
           </article>
         )
       ) : !workspace.cases.length ? (
@@ -574,222 +708,292 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
           <p>เลือก Test Suite ตอนสร้าง Cycle เพื่อเพิ่ม Test Case อัตโนมัติ</p>
         </article>
       ) : (
-        <div className="execution-layout">
-          <aside className="card case-queue">
-            <div className="card-title">
-              <div>
-                <h3>Test Cases</h3>
-                <p>{workspace.cases.length} รายการ · เลือกเพื่อบันทึกผล</p>
+        <div className={`execution-layout${workspaceSwitching ? " is-loading" : ""}`} aria-busy={workspaceSwitching || undefined}>
+          <aside className={`card case-queue${queueOpen ? " is-open" : ""}`} aria-label="คิว Test Case">
+            <button type="button" className="case-queue-toggle" aria-expanded={queueOpen} onClick={() => setQueueOpen((v) => !v)}>
+              <span><b>Test Cases</b> {filteredCases.length === workspace.cases.length ? workspace.cases.length : `${filteredCases.length} / ${workspace.cases.length}`}</span>
+              <small>{selected ? `กำลังทดสอบ ${selected.testCaseCode}` : "เลือกเคส"}</small>
+              <span className="material-symbols-outlined" aria-hidden="true">{queueOpen ? "expand_less" : "expand_more"}</span>
+            </button>
+            <div className="case-queue-body">
+              <div className="card-title">
+                <div>
+                  <h3>Test Cases</h3>
+                  <p>{filteredCases.length === workspace.cases.length ? `${workspace.cases.length} รายการ` : `แสดง ${filteredCases.length} จาก ${workspace.cases.length} รายการ`}</p>
+                </div>
               </div>
-            </div>
-            <div className="case-queue-tools">
-              <input aria-label="ค้นหา Test Case" value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} placeholder="ค้นหารหัสหรือชื่อ Test Case" />
-              <select aria-label="กรองสถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                {["All", "NotRun", "InProgress", "Pass", "Fail", "Blocked", "Skipped"].map((status) => <option key={status} value={status}>{status === "All" ? "ทุกสถานะ" : status}</option>)}
-              </select>
-            </div>
-            <div className="case-queue-list">
-            {filteredCases.map((x) => (
-              <button
-                className={selectedId === x.testCycleCaseId ? "active" : ""}
-                aria-current={selectedId === x.testCycleCaseId ? "true" : undefined}
-                key={x.testCycleCaseId}
-                onClick={() => selectCase(x.testCycleCaseId)}
-              >
-                <span className="case-row-top">
-                  <b>{x.testCaseCode}</b>
-                  <Badge tone={executionStatusTone(x.currentStatus)}>
-                    {x.currentStatus}
-                  </Badge>
-                </span>
-                <small>{x.title}</small>
-              </button>
-            ))}
-            {!filteredCases.length && <p className="queue-empty">ไม่พบ Test Case ที่ตรงกับตัวกรอง</p>}
+              <div className="case-queue-tools">
+                <input aria-label="ค้นหา Test Case" value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} placeholder="ค้นหารหัสหรือชื่อ Test Case" />
+                <select aria-label="กรองสถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  {["All", "NotRun", "InProgress", "Pass", "Fail", "Blocked", "Skipped"].map((status) => <option key={status} value={status}>{status === "All" ? "ทุกสถานะ" : status}</option>)}
+                </select>
+                {hasAssignedCases && (
+                  <label className={`case-queue-mine${queueMineOnly ? " is-on" : ""}`}>
+                    <input type="checkbox" checked={queueMineOnly} onChange={(e) => setQueueMineOnly(e.target.checked)} />
+                    <span className="material-symbols-outlined" aria-hidden="true">assignment_ind</span>
+                    เฉพาะเคสที่ assign ให้ฉัน
+                  </label>
+                )}
+              </div>
+              <div className="case-queue-list" ref={queueListRef}>
+                {filteredCases.map((x) => (
+                  <button
+                    className={`case-queue-item is-${x.currentStatus.toLowerCase()}${selectedId === x.testCycleCaseId ? " active" : ""}`}
+                    aria-current={selectedId === x.testCycleCaseId ? "true" : undefined}
+                    key={x.testCycleCaseId}
+                    onClick={() => { void selectCase(x.testCycleCaseId); setQueueOpen(false); }}
+                  >
+                    <span className="case-row-top">
+                      <b>{x.testCaseCode}</b>
+                      <span className="case-row-badges">
+                        {x.priority && <Badge tone={priorityTone(x.priority)}>{x.priority}</Badge>}
+                        <Badge tone={executionStatusTone(x.currentStatus)}>{x.currentStatus}</Badge>
+                      </span>
+                    </span>
+                    <small>{x.title}</small>
+                  </button>
+                ))}
+                {!filteredCases.length && <p className="queue-empty">ไม่พบ Test Case ที่ตรงกับตัวกรอง</p>}
+              </div>
             </div>
           </aside>
-          {selected && (
-            <main className="card execution-main">
+          {!selected ? (
+            // ยังไม่เคยแสดงเคสใดใน Cycle นี้ — กรอบสูงเท่าพื้นที่ทดสอบ ไม่ให้หน้ายุบแล้วขยาย
+            <main className="card execution-main execution-main-placeholder" aria-busy={!caseDetailLoadError || undefined}>
+              {caseDetailLoadError ? <div className="login-error" role="alert">{caseDetailLoadError}</div> : <><div className="spinner" /><span>กำลังโหลด Test Case...</span></>}
+            </main>
+          ) : (
+            <main ref={mainRef} className={`card execution-main${caseSwitching && !workspaceSwitching && !caseDetailLoadError ? " is-loading" : ""}`} aria-busy={(caseSwitching && !caseDetailLoadError) || undefined}>
               {caseDetailLoadError && <div className="login-error" role="alert">{caseDetailLoadError}</div>}
               <div className="execution-case-head">
-                <div>
-                  <span>{selected.testCaseCode}</span>
+                <div className="execution-case-title">
+                  <span>{selected.testCaseCode}{caseIndex >= 0 && <em> · เคส {caseIndex + 1} / {filteredCases.length}</em>}</span>
                   <h2>{selected.title}</h2>
                 </div>
-                <Badge tone={executionStatusTone(selected.currentStatus)}>
-                  {selected.currentStatus}
-                </Badge>
+                <div className="execution-case-nav">
+                  <Badge tone={executionStatusTone(selected.currentStatus)}>{selected.currentStatus}</Badge>
+                  <button type="button" className="btn" disabled={!prevCase} aria-label="Test Case ก่อนหน้า" title="Test Case ก่อนหน้า" onClick={() => prevCase && void selectCase(prevCase.testCycleCaseId)}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
+                  <button type="button" className="btn" disabled={!nextCase} aria-label="Test Case ถัดไป" title="Test Case ถัดไป (N)" onClick={() => nextCase && void selectCase(nextCase.testCycleCaseId)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+                </div>
               </div>
-              {/* ตัดแถว Tester/Environment/Build/Test Cycle ออกทั้งหมด — ข้อมูลซ้ำกับที่แสดงอยู่แล้ว
-                  ในหน้านี้ (Environment/Build อยู่ใน toolbar บนสุด, Test Cycle อยู่ใน dropdown เลือก
-                  Cycle, Tester คือผู้ใช้ที่ login อยู่ซึ่งเห็นอยู่แล้วที่ profile บน topbar ของทั้งแอป) */}
-              {/* Overall Result Summary การ์ดแยกก็ตัดออกด้วย — ซ้ำกับ Badge สถานะที่ execution-case-head
-                  ด้านบนอยู่แล้ว (ยังคง bind กับ selected.currentStatus ตัวเดิม ไม่ใช่ liveOverall เพราะ
-                  ต้องโชว์สถานะที่ persist ไว้จริงรวมถึง "Skipped" ซึ่ง liveOverall ไม่มีค่านี้) */}
-              {selected.preconditions && (
-                <div className="precondition">
-                  <b>Preconditions</b>
-                  <p>{selected.preconditions}</p>
-                </div>
-              )}
-              {linkedDefectsError && <div className="inline-alert error" role="alert"><span>{linkedDefectsError}</span></div>}
-              {linkedDefects.length > 0 && (
-                <div className="execution-linked-defects">
-                  <b>Linked Defects</b>
-                  {linkedDefects.map((d) => (
-                    <span className="execution-linked-defect" key={d.defectId}>
-                      <Badge tone={defectStatusTones[d.status] ?? "gray"}>{d.defectCode}</Badge>
-                      <small>{d.title}</small>
-                      {canEditDefect && (
-                        <button type="button" className="link-btn" aria-label={`แก้ไข ${d.defectCode}`} onClick={() => editLinkedDefect(d)}>
-                          Edit
-                        </button>
+              <div className="execution-tabs" role="tablist" aria-label="บันทึกผลและประวัติ">
+                <button type="button" role="tab" id="execution-tab-steps" aria-controls="execution-panel-steps" aria-selected={mainTab === "steps"} tabIndex={mainTab === "steps" ? 0 : -1}
+                  onClick={() => setMainTab("steps")} onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { setMainTab("history"); document.getElementById("execution-tab-history")?.focus(); } }}>
+                  <span className="material-symbols-outlined" aria-hidden="true">fact_check</span> บันทึกผล
+                </button>
+                <button type="button" role="tab" id="execution-tab-history" aria-controls="execution-panel-history" aria-selected={mainTab === "history"} tabIndex={mainTab === "history" ? 0 : -1}
+                  onClick={() => setMainTab("history")} onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { setMainTab("steps"); document.getElementById("execution-tab-steps")?.focus(); } }}>
+                  <span className="material-symbols-outlined" aria-hidden="true">history</span> ประวัติการทดสอบ <span className="execution-tab-count">{selected.history.length}</span>
+                </button>
+              </div>
+              {mainTab === "steps" ? (
+                <div role="tabpanel" id="execution-panel-steps" aria-labelledby="execution-tab-steps" className="execution-steps-panel">
+                  {(selected.preconditions || linkedDefects.length > 0 || linkedDefectsError) && (
+                    <div className="execution-context-notes">
+                      {selected.preconditions && (
+                        <div className="precondition">
+                          <b>Preconditions</b>
+                          <p>{selected.preconditions}</p>
+                        </div>
                       )}
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="step-table">
-                <div className="step-bulk-actions">
-                  <span>Test Steps <b>{selected.steps.length}</b></span>
-                  <div>{(["Pass", "Fail", "Blocked", "NotRun"] as const).map((status) => {
-                    const label = status === "NotRun" ? "Not Run" : status;
-                    return (
-                      <button
-                        type="button"
-                        key={status}
-                        onClick={async () => {
-                          if (!await confirmDialog(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${label} หรือไม่?`)) return;
-                          setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
-                        }}
-                      >
-                        <span className="material-symbols-outlined bulk-result-icon" aria-hidden="true">{status === "Pass" ? "check_circle" : status === "Fail" ? "cancel" : status === "Blocked" ? "block" : "radio_button_unchecked"}</span> Set All {label}
-                      </button>
-                    );
-                  })}</div>
-                </div>
-                <div className="step-row step-head">
-                  <span>#</span>
-                  <span>Action / Test Data</span>
-                  <span>Expected Result</span>
-                  <span>Step Result</span>
-                  <span>Actual Result / Comment</span>
-                </div>
-                {selected.steps.map((x) => {
-                  const status = (stepStatuses[x.stepNo] ?? "NotRun") as StepStatus;
-                  const requiresActual = status === "Fail" || status === "Blocked";
-                  const missingActual = requiresActual && !stepActuals[x.stepNo]?.trim();
-                  const actualInputId = `step-actual-${x.stepNo}`;
-                  const actualErrorId = `step-actual-error-${x.stepNo}`;
-                  return (
-                    <div className="step-row" key={x.stepNo}>
-                      <span className="step-field step-field-no">{x.stepNo}</span>
-                      {/* .step-field-label แทน CSS ::before ที่อิง nth-child (spec §2.2/§5.2) — label
-                          เป็น element จริงในทุก breakpoint แต่ซ่อนด้วย CSS บน desktop เพราะ .step-head
-                          ทำหน้าที่เป็นหัวคอลัมน์อยู่แล้ว ไม่ต้องพึ่งตำแหน่ง DOM มาสร้าง label */}
-                      <span className="step-field">
-                        <span className="step-field-label" aria-hidden="true">Action / Test Data</span>
-                        <span className="step-field-value">
-                          <b>{x.action}</b>
-                          {x.testData && <small>{x.testData}</small>}
-                        </span>
-                      </span>
-                      <span className="step-field">
-                        <span className="step-field-label" aria-hidden="true">Expected Result</span>
-                        <span className="step-field-value">{x.expectedResult}</span>
-                      </span>
-                      <span className="step-field">
-                        <span className="step-field-label" aria-hidden="true">Step Result</span>
-                        <span className="step-result-control">
-                          {(["Pass", "Fail", "Blocked", "NotRun"] as const).map((opt) => (
-                          <button
-                            type="button"
-                            key={opt}
-                            className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
-                            title={opt === "NotRun" ? "Not Run" : opt}
-                            aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${opt === "NotRun" ? "Not Run" : opt}`}
-                              onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
-                            >
-                              <span className="material-symbols-outlined step-result-icon" aria-hidden="true">{opt === "Pass" ? "check_circle" : opt === "Fail" ? "cancel" : opt === "Blocked" ? "block" : "radio_button_unchecked"}</span>
-                            </button>
+                      {linkedDefectsError && <div className="inline-alert error" role="alert"><span>{linkedDefectsError}</span></div>}
+                      {linkedDefects.length > 0 && (
+                        <div className="execution-linked-defects">
+                          <b>Linked Defects</b>
+                          {linkedDefects.map((d) => (
+                            <span className="execution-linked-defect" key={d.defectId}>
+                              <Badge tone={defectStatusTones[d.status] ?? "gray"}>{d.defectCode}</Badge>
+                              <small>{d.title}</small>
+                              {canEditDefect && <button type="button" className="link-btn" aria-label={`แก้ไข ${d.defectCode}`} onClick={() => editLinkedDefect(d)}>Edit</button>}
+                            </span>
                           ))}
-                        </span>
-                      </span>
-                      <span className="step-field">
-                        <span className="step-field-label" aria-hidden="true">Actual Result / Comment</span>
-                        <span className="step-actual-cell">
-                          <label className="sr-only" htmlFor={actualInputId}>
-                            {`Actual Result Step ${x.stepNo}${requiresActual ? " (บังคับกรอก)" : ""}`}
-                          </label>
-                          <input
-                            id={actualInputId}
-                            className={missingActual ? "input-required" : ""}
-                            aria-required={requiresActual || undefined}
-                            aria-invalid={missingActual || undefined}
-                            aria-describedby={missingActual ? actualErrorId : undefined}
-                            value={stepActuals[x.stepNo] ?? ""}
-                            onChange={(e) =>
-                              setStepActuals((s) => ({
-                                ...s,
-                                [x.stepNo]: e.target.value,
-                              }))
-                            }
-                            placeholder={requiresActual ? "ผลที่ได้จริง (บังคับกรอก) *" : "ผลที่ได้จริง / Comment"}
-                          />
-                          {missingActual && <small id={actualErrorId} className="step-actual-error">กรุณาระบุผลที่เกิดขึ้นจริง</small>}
-                          {status === "Fail" && canEditDefect && (
-                            stepDefectCodes[x.stepNo]
-                              ? <small className="step-defect-linked">Defect: {stepDefectCodes[x.stepNo]}</small>
-                              : (
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* Overall Result Summary (test-case-execution-ui-spec.md §4) — คำนวณจากผล Step ที่กำลังแก้ ผู้ใช้กำหนดเองไม่ได้ */}
+                  <div className={`execution-overall is-${liveOverall.toLowerCase()}`} role="status" aria-live="polite">
+                    <div className="execution-overall-result">
+                      <small>Overall Result</small>
+                      <b><span className="material-symbols-outlined" aria-hidden="true">{liveOverall === "InProgress" ? "pending" : resultIcon(liveOverall)}</span> {liveOverall === "InProgress" ? "In Progress" : resultLabel(liveOverall)}</b>
+                      <span>{overallMessage}</span>
+                    </div>
+                    <dl className="execution-overall-counts">
+                      <div className="is-pass"><dt>Passed</dt><dd>{stepCounts.passed}</dd></div>
+                      <div className="is-fail"><dt>Failed</dt><dd>{stepCounts.failed}</dd></div>
+                      <div className="is-blocked"><dt>Blocked</dt><dd>{stepCounts.blocked}</dd></div>
+                      <div className="is-notrun"><dt>Not Run</dt><dd>{stepCounts.notRun}</dd></div>
+                    </dl>
+                  </div>
+                  <div className="step-table">
+                    <div className="step-bulk-actions">
+                      <span>Test Steps <b>{selected.steps.length}</b></span>
+                      <div>{(["Pass", "Fail", "Blocked", "NotRun"] as const).map((status) => (
+                        <button
+                          type="button"
+                          key={status}
+                          className={`is-${status.toLowerCase()}`}
+                          onClick={async () => {
+                            if (!await confirmDialog(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${resultLabel(status)} หรือไม่?`)) return;
+                            setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
+                          }}
+                        >
+                          <span className="material-symbols-outlined bulk-result-icon" aria-hidden="true">{resultIcon(status)}</span> Set All {resultLabel(status)}
+                        </button>
+                      ))}</div>
+                    </div>
+                    <div className="step-row step-head" aria-hidden="true">
+                      <span>#</span>
+                      <span>Action / Test Data</span>
+                      <span>Expected Result</span>
+                      <span>Step Result</span>
+                      <span>Actual Result / Comment</span>
+                    </div>
+                    {!selected.steps.length && <p className="queue-empty">Test Case นี้ไม่มี Test Step</p>}
+                    {selected.steps.map((x) => {
+                      const status = (stepStatuses[x.stepNo] ?? "NotRun") as StepStatus;
+                      const requiresActual = status === "Fail" || status === "Blocked";
+                      const missingActual = requiresActual && !stepActuals[x.stepNo]?.trim();
+                      const actualInputId = `step-actual-${x.stepNo}`;
+                      const actualErrorId = `step-actual-error-${x.stepNo}`;
+                      return (
+                        <div id={`step-row-${x.stepNo}`} className={`step-row is-${status.toLowerCase()}${activeStep === x.stepNo ? " is-current" : ""}`} key={x.stepNo} onClick={() => setActiveStep(x.stepNo)}>
+                          <span className="step-field step-field-no"><span className="sr-only">Step </span>{x.stepNo}</span>
+                          <span className="step-field">
+                            <span className="step-field-label" aria-hidden="true">Action / Test Data</span>
+                            <span className="step-field-value">
+                              <b>{x.action}</b>
+                              {x.testData && <small className="step-test-data">{x.testData}</small>}
+                            </span>
+                          </span>
+                          <span className="step-field">
+                            <span className="step-field-label" aria-hidden="true">Expected Result</span>
+                            <span className="step-field-value">{x.expectedResult}</span>
+                          </span>
+                          <span className="step-field">
+                            <span className="step-field-label" aria-hidden="true">Step Result</span>
+                            <span className="step-result-control" role="group" aria-label={`ผล Step ${x.stepNo}`}>
+                              {(["Pass", "Fail", "Blocked", "NotRun"] as const).map((opt) => (
                                 <button
                                   type="button"
-                                  className="step-create-defect"
-                                  title="Create Defect"
-                                  onClick={() => openDefectEditorForStep(x)}
+                                  key={opt}
+                                  className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
+                                  title={resultLabel(opt)}
+                                  aria-pressed={status === opt}
+                                  aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${resultLabel(opt)}`}
+                                  onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
                                 >
-                                  + Defect
+                                  <span className="material-symbols-outlined step-result-icon" aria-hidden="true">{resultIcon(opt)}</span>
+                                  <em>{opt === "NotRun" ? "—" : opt}</em>
                                 </button>
-                              )
-                          )}
-                        </span>
-                      </span>
+                              ))}
+                            </span>
+                          </span>
+                          <span className="step-field">
+                            <span className="step-field-label" aria-hidden="true">Actual Result / Comment</span>
+                            <span className="step-actual-cell">
+                              <label className="sr-only" htmlFor={actualInputId}>{`Actual Result Step ${x.stepNo}${requiresActual ? " (บังคับกรอก)" : ""}`}</label>
+                              <input
+                                id={actualInputId}
+                                className={missingActual ? "input-required" : ""}
+                                aria-required={requiresActual || undefined}
+                                aria-invalid={missingActual || undefined}
+                                aria-describedby={missingActual ? actualErrorId : undefined}
+                                value={stepActuals[x.stepNo] ?? ""}
+                                onChange={(e) => setStepActuals((s) => ({ ...s, [x.stepNo]: e.target.value }))}
+                                placeholder={requiresActual ? "ผลที่ได้จริง (บังคับกรอก) *" : "ผลที่ได้จริง / Comment"}
+                              />
+                              {missingActual && <small id={actualErrorId} className="sr-only">กรุณาระบุผลที่เกิดขึ้นจริง</small>}
+                              {status === "Fail" && canEditDefect && (
+                                stepDefectCodes[x.stepNo]
+                                  ? <small className="step-defect-linked">Defect: {stepDefectCodes[x.stepNo]}</small>
+                                  : <button type="button" className="step-create-defect" title="สร้าง Defect จาก Step นี้" aria-label={`สร้าง Defect จาก Step ${x.stepNo}`} onClick={() => openDefectEditorForStep(x)}>+ Defect</button>
+                              )}
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="execution-notes">
+                    <div className="execution-notes-field">
+                      <div className="execution-notes-head">
+                        <label htmlFor="execution-actual-summary">Actual Result (สรุปผลที่เกิดขึ้นจริง)</label>
+                        <button type="button" className="execution-generate-summary" disabled={!selected.steps.length} onClick={() => void generateSummary()} title="สร้างสรุปจากผล Step ที่ Fail/Blocked และ Step ที่ยังไม่ได้ทดสอบ">
+                          <span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Generate Summary
+                        </button>
+                      </div>
+                      <textarea id="execution-actual-summary" rows={3} value={actual} onChange={(e) => setActual(e.target.value)} placeholder="สรุปผลที่เกิดขึ้นจริง หรือกด Generate Summary" />
                     </div>
-                  );
-                })}
-              </div>
-              <div className="execution-notes">
-                <label>
-                  Actual Result (สรุปผลที่เกิดขึ้นจริง)
-                  <textarea
-                    rows={3}
-                    value={actual}
-                    onChange={(e) => setActual(e.target.value)}
-                    placeholder="สรุปผลที่เกิดขึ้นจริง"
-                  />
-                </label>
-                <label>
-                  Comment / หมายเหตุเพิ่มเติม
-                  <textarea
-                    rows={3}
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder="หมายเหตุเพิ่มเติม"
-                  />
-                </label>
-              </div>
-              {/* Action Bar (§14) — เดิมมี Pass/Fail/Blocked ให้ผู้ใช้กำหนด Overall Result เอง เอาออก
-                  หมดตาม spec เหลือ 3 ปุ่มนี้เท่านั้น */}
+                    <label>
+                      Comment / หมายเหตุเพิ่มเติม
+                      <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="หมายเหตุเพิ่มเติม" />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div role="tabpanel" id="execution-panel-history" aria-labelledby="execution-tab-history" className="execution-history">
+                  {selected.history.length ? selected.history.map((x) => (
+                    <div className="history-item" key={x.testExecutionId}>
+                      <div className="history-item-head">
+                        <Badge tone={executionStatusTone(x.status)}>{x.status}</Badge>
+                        <span className="history-run">Run #{x.executionNo}</span>
+                        <small>{x.testerName} · {x.completedAt ? formatThaiDateTime(x.completedAt) : "-"}</small>
+                      </div>
+                      {x.stepResults && x.stepResults.length > 0 && (
+                        <ol className="history-steps" aria-label={`ผลราย Step ของ Run #${x.executionNo}`}>
+                          {x.stepResults.map((r) => (
+                            <li key={r.stepNo} className={`is-${r.status.toLowerCase()}`} title={`Step ${r.stepNo}: ${resultLabel(r.status)}${r.actualResult ? ` — ${r.actualResult}` : ""}`}>
+                              <span className="material-symbols-outlined" aria-hidden="true">{resultIcon(r.status)}</span>
+                              {r.stepNo}
+                              <span className="sr-only"> {resultLabel(r.status)}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                      <p>{x.actualResult || "-"}</p>
+                      {x.stepResults?.filter((r) => (r.status === "Fail" || r.status === "Blocked") && r.actualResult).map((r) => (
+                        <p className={`history-step-note is-${r.status.toLowerCase()}`} key={r.stepNo}><b>Step {r.stepNo} · {r.status}</b> {r.actualResult}</p>
+                      ))}
+                      {x.comment && <small className="history-comment">Comment: {x.comment}</small>}
+                      {/* แยกตำแหน่งปุ่มลบออกจาก Run number (spec §3.3) ลดโอกาสกดพลาดบนมือถือ */}
+                      <div className="history-item-foot">
+                        <button
+                          className="history-delete"
+                          disabled={deletingHistoryId === x.testExecutionId || workspace?.status === "Closed" || workspace?.status === "Cancelled"}
+                          onClick={() => removeExecution(x)}
+                          aria-label={`ลบผลการทดสอบ Run #${x.executionNo}`}
+                          title={workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ"}
+                        >
+                          {deletingHistoryId === x.testExecutionId
+                            ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>
+                            : <><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบ</>}
+                        </button>
+                      </div>
+                    </div>
+                  )) : <p className="muted-text">ยังไม่มีประวัติการทดสอบของ {selected.testCaseCode}</p>}
+                </div>
+              )}
+              {/* Action Bar (§14) — 3 ปุ่มเท่านั้น ติดล่างจอ พร้อม Overall Result ย่อให้เห็นตลอดระหว่างเลื่อน Step */}
               <div className="execution-actions">
+                {failedStepsWithoutDefect.length > 0 && (
+                  <div className="execution-defect-warning" role="status">
+                    <span className="material-symbols-outlined" aria-hidden="true">warning</span>
+                    <span><b>Step {failedStepsWithoutDefect.map((s) => s.stepNo).join(", ")} Fail ยังไม่มี Defect</b> — เมื่อบันทึกผล Fail ระบบจะสร้าง Defect ให้อัตโนมัติ 1 รายการ</span>
+                    {canEditDefect && <button type="button" className="link-btn" onClick={() => openDefectEditorForStep(failedStepsWithoutDefect[0])}>สร้าง Defect เอง</button>}
+                  </div>
+                )}
+                <span className={`execution-actions-overall is-${liveOverall.toLowerCase()}`}>
+                  <span className="material-symbols-outlined" aria-hidden="true">{liveOverall === "InProgress" ? "pending" : resultIcon(liveOverall)}</span>
+                  <b>{liveOverall === "InProgress" ? "In Progress" : resultLabel(liveOverall)}</b>
+                  <small>P {stepCounts.passed} · F {stepCounts.failed} · B {stepCounts.blocked} · — {stepCounts.notRun}</small>
+                </span>
+                <small className="execution-shortcut-hint">ปุ่มลัด: ↑/↓ เลือก Step · 1–4 = Pass/Fail/Blocked/Not Run · Enter = กรอกผล · P/F/B = ทุก Step · N = เคสถัดไป</small>
                 <button className="btn" disabled={saving} onClick={saveProgress}>
-                  {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : "Save Progress"}
+                  {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">save</span> Save Progress</>}
                 </button>
-                <button className="result-btn skip" disabled={saving} onClick={openSkipModal}>
-                  Skip Test Case
-                </button>
-                <button className="result-btn pass" disabled={saving} onClick={completeTest}>
-                  Complete Test
-                </button>
-                <small className="execution-shortcut-hint">Shortcuts: P = Pass · F = Fail · B = Blocked · N = Next Case</small>
+                <button className="result-btn skip" disabled={saving} onClick={openSkipModal}><span className="material-symbols-outlined" aria-hidden="true">skip_next</span> Skip Test Case</button>
+                <button className="result-btn pass" disabled={saving} onClick={completeTest}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> Complete Test</button>
               </div>
               {skipModalOpen && (
                 <ModalShell labelledBy="skip-test-case-title" onDismiss={() => setSkipModalOpen(false)}>
@@ -828,47 +1032,6 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
               )}
             </main>
           )}
-          <aside className="card execution-history">
-            <div className="history-title">
-              <div><h3>Execution History</h3><p>ประวัติของ {selected?.testCaseCode ?? "-"}</p></div>
-              <span>{selected?.history.length ?? 0} Runs</span>
-            </div>
-            {selected?.history.length ? (
-              selected.history.map((x) => (
-                <div className="history-item" key={x.testExecutionId}>
-                  <div className="history-item-head">
-                    <Badge tone={executionStatusTone(x.status)}>
-                      {x.status}
-                    </Badge>
-                    <span className="history-run">Run #{x.executionNo}</span>
-                  </div>
-                  <p>{x.actualResult || "-"}</p>
-                  {x.comment && <small className="history-comment">Comment: {x.comment}</small>}
-                  <small>
-                    {x.testerName} ·{" "}
-                    {x.completedAt
-                      ? formatThaiDateTime(x.completedAt)
-                      : "-"}
-                  </small>
-                  {/* แยกตำแหน่งปุ่มลบออกจาก Run number (spec §3.3) ลดโอกาสกดพลาดบนมือถือ */}
-                  <div className="history-item-foot">
-                    <button
-                      className="history-delete"
-                      disabled={deletingHistoryId === x.testExecutionId || workspace?.status === "Closed" || workspace?.status === "Cancelled"}
-                      onClick={() => removeExecution(x)}
-                      title={workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ"}
-                    >
-                      {deletingHistoryId === x.testExecutionId
-                        ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>
-                        : <><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบ</>}
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="muted-text">ยังไม่มีประวัติการทดสอบ</p>
-            )}
-          </aside>
         </div>
       )}
     </div>

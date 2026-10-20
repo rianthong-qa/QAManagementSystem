@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { ProjectItem, UserLookup } from "../shared/types";
-import { apiUrl, isAbortError, getJson } from "../api";
+import { apiUrl, isAbortError } from "../api";
 import { useDebounced } from "../components/useDebounced";
 import { notify, confirmDialog } from "../components/dialogStore";
 import { Badge } from "../components/Badge";
@@ -172,17 +172,17 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
       const data: unknown = await response.json();
       return Array.isArray(data) ? (data as T[]) : (data as any)?.items?.rows ?? (data as any)?.rows ?? [];
     };
-    // API คืน Test Suite หน้าละไม่เกิน 100 รายการ — ต้องโหลดให้ครบทุกหน้า ไม่เช่นนั้น Suite ที่อยู่หลังหน้าแรก
+    // API คืน Test Suite หน้าละไม่เกิน 500 รายการ — ต้องโหลดให้ครบทุกหน้า ไม่เช่นนั้น Suite ที่อยู่หลังหน้าแรก
     // (ทั้งระบบมีหลายร้อย Suite) จะหายจาก dropdown "Test Suite" ของฟอร์มสร้าง Test Cycle เมื่อกรองตาม Module
     const readAllSuites = async (): Promise<TestSuiteItem[]> => {
       const all: TestSuiteItem[] = [];
       for (let page = 1; page <= 50; page++) {
-        const response = await fetch(`${apiUrl}/test-suites?isActive=true&size=100&page=${page}`, { headers: h });
+        const response = await fetch(`${apiUrl}/test-suites?isActive=true&size=500&page=${page}`, { headers: h });
         if (!response.ok) throw new Error(`โหลด Test Suite ไม่สำเร็จ (${response.status})`);
         const data = await response.json() as { total?: number; rows?: TestSuiteItem[] };
         const rows = data.rows ?? [];
         all.push(...rows);
-        if (rows.length < 100 || all.length >= (data.total ?? 0)) break;
+        if (rows.length < 500 || all.length >= (data.total ?? 0)) break;
       }
       return all;
     };
@@ -245,7 +245,10 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
     setLoading(true);
     setError("");
     // AbortController: ผลของคำขอเก่า (ตัวกรอง/หน้าก่อนหน้า) ต้องไม่มาทับผลของคำขอล่าสุด
-    fetch(`${apiUrl}/test-cycles?${query}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, signal: ctrl.signal })
+    const load = () => fetch(`${apiUrl}/test-cycles?${query}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, signal: ctrl.signal });
+    // 5xx ลองใหม่ 1 ครั้ง — error ชั่วคราวของ connection (เช่นหลังคำขอก่อนหน้าถูกยกเลิก) ไม่ควรทำให้ตารางว่าง
+    load()
+      .then(response => response.status >= 500 ? new Promise<Response>(resolve => setTimeout(resolve, 400)).then(() => load()) : response)
       .then(async response => {
         if (!response.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${response.status})`);
         const data = await response.json();
@@ -255,38 +258,16 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
         setTotalCount(Number(container?.total ?? rows.length));
         // summary รวมทุก Test Cycle ที่ตรงเงื่อนไข filter ปัจจุบัน (คำนวณฝั่ง server ไม่ใช่แค่หน้าที่กำลังแสดง)
         setCaseSummary({ totalCases: Number(data?.summary?.totalCases ?? 0), executedCases: Number(data?.summary?.executedCases ?? 0) });
+        // ชิปสถานะ: server นับตาม filter อื่นทั้งหมดยกเว้น status มาในคำขอเดียวกัน (เดิมยิงแยกอีก 5 คำขอ)
+        const counts: Record<string, unknown> = data?.summary?.statusCounts ?? {};
+        setStatusCounts(Object.fromEntries(cycleStatusOptions.map(s => [s, Number(counts[s] ?? 0)])));
       })
-      .catch(reason => { if (isAbortError(reason)) return; setItems([]); setTotalCount(0); setCaseSummary({ totalCases: 0, executedCases: 0 }); setError(reason instanceof Error ? reason.message : "โหลด Test Cycle ไม่สำเร็จ"); })
+      .catch(reason => { if (isAbortError(reason)) return; setItems([]); setTotalCount(0); setCaseSummary({ totalCases: 0, executedCases: 0 }); setStatusCounts({}); setError(reason instanceof Error ? reason.message : "โหลด Test Cycle ไม่สำเร็จ"); })
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
     return () => ctrl.abort();
   }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, debouncedSearch, page, pageSize, reload]);
   useEffect(() => { setPage(1); }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, debouncedSearch]);
   useEffect(() => { setCycleSelected(new Set()); }, [items]);
-  // Lightweight count-only queries (size=1, just read `total`) per status — respects every other active
-  // filter except status itself, so the chips always reflect "how many would show if you picked this status".
-  useEffect(() => {
-    const ctrl = new AbortController();
-    const baseParams = () => {
-      const q = new URLSearchParams({ page: "1", size: "1" });
-      if (contextProjectId) q.set("projectId", contextProjectId);
-      if (contextReleaseId) q.set("releaseId", contextReleaseId);
-      if (contextBuildId) q.set("buildId", contextBuildId);
-      if (listModuleFilter) q.set("moduleId", listModuleFilter);
-      if (listCycleTypeFilter) q.set("cycleType", listCycleTypeFilter);
-      if (listCreatedByFilter) q.set("createdBy", listCreatedByFilter);
-      if (debouncedSearch) q.set("search", debouncedSearch);
-      return q;
-    };
-    Promise.all(cycleStatusOptions.map(status => {
-      const q = baseParams(); q.set("status", status);
-      // นับไม่สำเร็จ = ไม่แสดงตัวเลขของสถานะนั้น (เดิมแสดง 0 ซึ่งดูเหมือนไม่มีข้อมูลจริง)
-      return getJson<{ items?: { total?: number }; total?: number }>(`${apiUrl}/test-cycles?${q}`, ctrl.signal).then(data => {
-        const container = data?.items ?? data;
-        return [status, Number(container?.total ?? 0)] as const;
-      }).catch(() => null);
-    })).then(pairs => { if (!ctrl.signal.aborted) setStatusCounts(Object.fromEntries(pairs.filter((x): x is readonly [string, number] => x !== null))); });
-    return () => ctrl.abort();
-  }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, debouncedSearch, reload]);
   useEffect(() => {
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
     const projectIds = contextProjectId ? [contextProjectId] : [...new Set(items.map((x) => x.projectId))];

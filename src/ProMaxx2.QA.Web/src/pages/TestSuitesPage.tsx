@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import type { ProjectItem, UserLookup } from "../shared/types";
 import { apiUrl, getJson } from "../api";
 import { notify, confirmDialog } from "../components/dialogStore";
@@ -6,11 +6,14 @@ import { formatThaiDateTime } from "../dateTime";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { BatchCycleModal } from "./BatchCycleModal";
-import { type ModuleItem, type SessionUser, type TestCaseItem, type TestSuiteItem, fmtDateTimeBE, masterOptionElements, nextBusinessCode, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
+import { type ModuleItem, type SessionUser, type TestSuiteItem, fmtDateTimeBE, masterOptionElements, nextBusinessCode, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
 
+/** แถวจาก GET /test-cases/picker — ข้อมูลย่อพอสำหรับตัวเลือกในฟอร์มและ AI Generate */
+type PickerCase = { testCaseId: string; projectId: string; moduleId: string; testCaseCode: string; title: string; priority: string; testType?: string; status: string };
 type GeneratedTestSuiteDraft={suiteName:string;suiteType:string;description:string;riskTier:string;testCases:{testCaseId:string;isRequired:boolean;reason:string}[];selectionSummary:string};
 export function TestSuitesPage({
   search,
+  onClearSearch,
   canEdit,
   contextProjectId,
   onOpenCycle,
@@ -19,6 +22,8 @@ export function TestSuitesPage({
   onOpenCycleList,
 }: {
   search: string;
+  /** ล้างคำค้นในช่องค้นหาที่หัวหน้า (state อยู่ใน App) — ใช้กับปุ่ม "ล้างตัวกรอง" */
+  onClearSearch?: () => void;
   canEdit: boolean;
   contextProjectId?: string;
   onOpenCycle?: (page: "test-cycles" | "execution", cycleId: string) => void;
@@ -31,17 +36,23 @@ export function TestSuitesPage({
   const [items, setItems] = useState<TestSuiteItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
     [modules, setModules] = useState<ModuleItem[]>([]),
-    [testCases, setTestCases] = useState<TestCaseItem[]>([]),
+    [testCases, setTestCases] = useState<PickerCase[]>([]),
     [users, setUsers] = useState<UserLookup[]>([]),
     [reload, setReload] = useState(0),
     [form, setForm] = useState(false),
     [editing, setEditing] = useState<TestSuiteItem | null>(null),
     [managing, setManaging] = useState<TestSuiteItem | null>(null),
     [detail, setDetail] = useState<TestSuiteItem | null>(null),
-    [caseListExpanded, setCaseListExpanded] = useState(false),
+    // ตัวค้นหา/กรอง Test Case ในหน้ารายละเอียด Suite (แสดงครบทุกเคส ไม่ตัดที่ 5 รายการแบบเดิม)
+    [detailCaseSearch, setDetailCaseSearch] = useState(""),
+    [detailCaseFilter, setDetailCaseFilter] = useState<"all" | "required" | "optional">("all"),
     [checked, setChecked] = useState<string[]>([]),
     [saving, setSaving] = useState(false),
     [error, setError] = useState(""),
+    // สถานะของรายการ Test Suite แยกจาก error ของฟอร์ม — เดิมใช้ตัวเดียวกัน error ตอนโหลดรายการจึงไปขึ้นแค่ใน modal แก้ไข
+    // หน้ารายการเห็นเป็นตารางว่างเฉยๆ
+    [listLoading, setListLoading] = useState(true),
+    [listError, setListError] = useState(""),
     [projectFilter, setProjectFilter] = useState(contextProjectId ?? ""),
     [suiteModuleFilter, setSuiteModuleFilter] = useState(""),
     [typeFilter, setTypeFilter] = useState(""),
@@ -90,7 +101,8 @@ export function TestSuitesPage({
       let pageNo = 1;
       let total = Number.POSITIVE_INFINITY;
       while (collected.length < total) {
-        const response = await fetch(`${apiUrl}/test-suites?page=${pageNo}&size=100`, { headers: requestHeaders });
+        // 500 = ขนาดหน้าสูงสุดของ API — Suite ทั้งหมดมักจบในคำขอเดียว (ทุกคำขอผ่าน Cloudflare เสีย ~0.2–1 วินาที)
+        const response = await fetch(`${apiUrl}/test-suites?page=${pageNo}&size=500`, { headers: requestHeaders });
         if (!response.ok) throw new Error(`โหลด Test Suite ไม่สำเร็จ (${response.status})`);
         const data = await response.json();
         const pageRows = Array.isArray(data) ? data : data?.rows ?? [];
@@ -101,6 +113,8 @@ export function TestSuitesPage({
       }
       return collected;
     };
+    setListLoading(true);
+    setListError("");
     Promise.all([
       fetchAllSuites(),
       getJson<ProjectItem[]>(`${apiUrl}/projects`),
@@ -111,34 +125,33 @@ export function TestSuitesPage({
       setProjects(activeProjects);
       setUsers(Array.isArray(u) ? u as typeof users : []);
       setProjectId((current) => current || activeProjects[0]?.projectId || "");
-    }).catch((e) => setError(`โหลดรายการ Test Suite ไม่สำเร็จ (${e instanceof Error ? e.message : "ไม่ทราบสาเหตุ"}) — กด ⟳ เพื่อลองใหม่`));
+    }).catch((e) => setListError(`โหลดรายการ Test Suite ไม่สำเร็จ (${e instanceof Error ? e.message : "ไม่ทราบสาเหตุ"})`))
+      .finally(() => setListLoading(false));
   }, [reload]);
   useEffect(() => {
     const target = managing?.projectId ?? (form && !editing ? projectId : null) ?? projectFilter ?? contextProjectId;
-    if (!target) { setModules([]); setTestCases([]); return; }
+    if (!target) { setModules([]); return; }
     getJson<ModuleItem[]>(`${apiUrl}/projects/${target}/modules`).then((rows) => setModules(rows.filter(x => x.isActive))).catch(() => setError("โหลดรายการ Module ไม่สำเร็จ"));
-    // The test-cases endpoint caps each page at 100 — page through all of it (scoped to this one
-    // project only) so the "จัดการ Test Case" picker sees every case, without pulling every other
-    // project's test cases too (that was the main cause of this page loading slowly).
-    let cancelled = false;
-    (async () => {
-      const collected: TestCaseItem[] = [];
-      let pageNo = 1;
-      let total = Infinity;
-      while (collected.length < total) {
-        const response = await fetch(`${apiUrl}/test-cases?projectId=${target}&page=${pageNo}&size=100`, { headers });
-        if (!response.ok) break;
-        const data = await response.json();
-        const rows = Array.isArray(data) ? data : (data?.rows ?? []);
-        if (!rows.length) break;
-        collected.push(...rows);
-        total = Number(data?.total ?? rows.length);
-        pageNo += 1;
-      }
-      if (!cancelled) setTestCases(collected);
-    })();
-    return () => { cancelled = true; };
-  }, [headers, managing?.projectId, form, editing, projectId, projectFilter, contextProjectId]);
+  }, [managing?.projectId, form, editing, projectId, projectFilter, contextProjectId]);
+  // Test Case ใช้แค่ในฟอร์มสร้าง/แก้ไข Suite และ AI Generate — เดิมโหลดทันทีที่เปิดหน้ารายการ และไล่ดึง /test-cases ทีละ 100
+  // (Project 6,500 เคส = 66 คำขอเรียงกันทุกครั้งที่เปิดหน้า) ตอนนี้โหลดเฉพาะตอนเปิดฟอร์ม/AI ด้วย /test-cases/picker ครั้งเดียว
+  // และจำไว้ราย Project (ล้างเมื่อ reload หลังบันทึก) — AI Generate ใช้ Project ที่เลือกใน modal (เดิมใช้ Project ของตัวกรองหน้ารายการ)
+  const pickerCache = useRef(new Map<string, PickerCase[]>());
+  useEffect(() => { pickerCache.current.clear(); }, [reload]);
+  const pickerProjectId = form ? (managing?.projectId ?? (editing ? editing.projectId : projectId)) : suiteAiModal ? suiteAiProjectId : "";
+  useEffect(() => {
+    if (!pickerProjectId) return;
+    const cached = pickerCache.current.get(pickerProjectId);
+    if (cached) { setTestCases(cached); return; }
+    setTestCases([]);
+    const controller = new AbortController();
+    getJson<PickerCase[]>(`${apiUrl}/test-cases/picker?projectId=${pickerProjectId}`, controller.signal)
+      .then((rows) => { pickerCache.current.set(pickerProjectId, rows); if (!controller.signal.aborted) setTestCases(rows); })
+      .catch((e) => { if (!controller.signal.aborted && !(e instanceof DOMException && e.name === "AbortError")) { if (form) setError("โหลดรายการ Test Case ไม่สำเร็จ"); else setSuiteAiError("โหลดรายการ Test Case ไม่สำเร็จ"); } });
+    return () => controller.abort();
+    // form แยกไว้ใน deps ไม่ได้ — ต้องการให้โหลดใหม่เฉพาะตอน Project ที่ต้องใช้เปลี่ยน ไม่ใช่ทุกครั้งที่เปิด/ปิดฟอร์มของ Project เดิม
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickerProjectId]);
   useEffect(()=>{
     if(!suiteAiProjectId){setSuiteAiModules([]);setSuiteAiModuleId("");return;}
     fetch(`${apiUrl}/projects/${suiteAiProjectId}/modules`,{headers}).then(async response=>response.ok?response.json():Promise.reject(new Error("โหลด Module ไม่สำเร็จ"))).then((rows:ModuleItem[])=>{const active=rows.filter(x=>x.isActive);setSuiteAiModules(active);setSuiteAiModuleId(current=>active.some(x=>x.moduleId===current)?current:(active[0]?.moduleId??""));}).catch(error=>setSuiteAiError(error instanceof Error?error.message:"โหลด Module ไม่สำเร็จ"));
@@ -304,7 +317,7 @@ export function TestSuitesPage({
       return null;
     }
   };
-  const openSuiteDetail = async (item: TestSuiteItem) => { const full = await fetchFullSuite(item); if (!full) return; setCaseListExpanded(false); setDetail(full); };
+  const openSuiteDetail = async (item: TestSuiteItem) => { const full = await fetchFullSuite(item); if (!full) return; setDetailCaseSearch(""); setDetailCaseFilter("all"); setDetail(full); };
   const downloadSuiteReport = (suite: TestSuiteItem) => {
     const activeCycles = (suite.linkedCycles ?? []).filter(c => !c.isDeleted);
     const rows: (string | number)[][] = [
@@ -338,9 +351,10 @@ export function TestSuitesPage({
     (!typeFilter || x.suiteType === typeFilter) &&
     (!riskFilter || x.riskTier === riskFilter) &&
     (!createdByFilter || x.createdBy === createdByFilter) &&
-    `${x.suiteCode} ${x.suiteName} ${x.suiteType ?? ""}`
-      .toLowerCase()
-      .includes(search.toLowerCase());
+    `${x.suiteCode} ${x.suiteName} ${x.suiteType ?? ""}`.toLowerCase().includes(search.trim().toLowerCase());
+  // ไม่นับ Project (มาจาก context ของ topbar) และสถานะ ใช้งาน/ปิดใช้งาน (ค่าเริ่มต้นของหน้า) เป็นตัวกรองที่ต้องล้าง
+  const hasExtraFilters = Boolean(search.trim() || suiteModuleFilter || typeFilter || riskFilter || createdByFilter || noCycleOnly);
+  const clearSuiteFilters = () => { onClearSearch?.(); setSuiteModuleFilter(""); setTypeFilter(""); setRiskFilter(""); setCreatedByFilter(""); setNoCycleOnly(false); };
   const baseRows = items.filter(matchesOtherSuiteFilters);
   const activeSuiteCount = baseRows.filter((x) => x.isActive).length;
   const inactiveSuiteCount = baseRows.length - activeSuiteCount;
@@ -392,7 +406,7 @@ export function TestSuitesPage({
       !existingCaseIds.has(x.testCaseId) &&
       (editing || !checked.includes(x.testCaseId)), // while creating, a staged pick moves out of "available" into the staged panel
   ).filter(x => (!caseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseSearch.toLowerCase())) && (editing ? (!caseModuleFilter || x.moduleId === caseModuleFilter) : (!formModuleId || x.moduleId === formModuleId)) && (!casePriorityFilter || x.priority === casePriorityFilter) && (!caseTypeFilter || x.testType === caseTypeFilter)).sort(caseCodeSort);
-  const stagedCases = checked.map((id) => testCases.find((x) => x.testCaseId === id)).filter((x): x is TestCaseItem => Boolean(x));
+  const stagedCases = checked.map((id) => testCases.find((x) => x.testCaseId === id)).filter((x): x is PickerCase => Boolean(x));
   // ตัวเลขที่ส่งให้ AI วิเคราะห์จริง (ทั้ง Module ไม่ผ่าน filter ตัวอย่างด้านล่าง) เทียบกับรายการที่กรองแล้วซึ่งไว้ preview ก่อนกด Generate
   const suiteAiModuleCases = testCases.filter(x => x.moduleId === suiteAiModuleId && x.status !== "Deprecated");
   const suiteAiCandidates = suiteAiModuleCases.filter(x => (!suiteAiCaseSearch || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(suiteAiCaseSearch.toLowerCase())) && (!suiteAiPriorityFilter || x.priority === suiteAiPriorityFilter) && (!suiteAiTypeFilter || x.testType === suiteAiTypeFilter));
@@ -403,6 +417,8 @@ export function TestSuitesPage({
         <div className="filter-toolbar">
           <div className="filter-toolbar-top">
             <div className="result-count"><strong>{rows.length.toLocaleString()}</strong><span>Test Suites</span></div>
+            {/* คำค้นมาจากช่องค้นหาที่หัวหน้า (App) — ที่นี่มีแค่ปุ่มล้างตัวกรองทั้งหมดรวมคำค้นนั้น */}
+            {hasExtraFilters && <button type="button" className="btn suite-clear-filters" onClick={clearSuiteFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span> ล้างตัวกรอง</button>}
             {canEdit && (
               <div className="suite-create-actions"><button className="btn ai-button" onClick={openSuiteAi}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span> AI Generate</button><button className="btn primary" onClick={() => openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Suite</button></div>
             )}
@@ -423,14 +439,15 @@ export function TestSuitesPage({
               </button>
             </div>
             <div className="cycle-filters-right">
-              <select className="testcase-module-filter" value={suiteModuleFilter} onChange={e => setSuiteModuleFilter(e.target.value)} disabled={!modules.length}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}</select>
-              <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">ทุก Type</option>{suiteTypes.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
-              <select value={riskFilter} onChange={e => setRiskFilter(e.target.value)}><option value="">ทุก Risk Tier</option>{riskTiers.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
+              <select className="testcase-module-filter" aria-label="กรองตาม Module" value={suiteModuleFilter} onChange={e => setSuiteModuleFilter(e.target.value)} disabled={!modules.length}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}</select>
+              <select aria-label="กรองตาม Type" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">ทุก Type</option>{suiteTypes.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
+              <select aria-label="กรองตาม Risk Tier" value={riskFilter} onChange={e => setRiskFilter(e.target.value)}><option value="">ทุก Risk Tier</option>{riskTiers.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}</select>
               <select aria-label="กรองผู้สร้าง" value={createdByFilter} onChange={e => setCreatedByFilter(e.target.value)}><option value="">ผู้สร้างทั้งหมด</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
-              <select value={projectFilter} onChange={e => { setProjectFilter(e.target.value); setSuiteModuleFilter(""); }}><option value="">ทุก Project</option>{projects.map(x => <option key={x.projectId} value={x.projectId}>{x.projectCode} · {x.projectName}</option>)}</select>
+              <select aria-label="กรองตาม Project" value={projectFilter} onChange={e => { setProjectFilter(e.target.value); setSuiteModuleFilter(""); }}><option value="">ทุก Project</option>{projects.map(x => <option key={x.projectId} value={x.projectId}>{x.projectCode} · {x.projectName}</option>)}</select>
             </div>
           </div>
         </div>
+        {listError && <div className="inline-alert error suite-list-alert" role="alert"><span>{listError}</span><button onClick={() => setReload((value) => value + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div>}
         {canCreateCycle && selectedSuites.length > 0 && (
           <div className="testcase-bulk-bar suite-bulk-bar" role="region" aria-label="Suite ที่เลือก">
             <span className="bulk-count">เลือก {selectedSuites.length.toLocaleString()} Suite{selectedProject ? ` · ${selectedProject.projectCode}` : ""}</span>
@@ -461,7 +478,15 @@ export function TestSuitesPage({
               </tr>
             </thead>
             <tbody>
-              {pagedSuiteRows.map((x) => (
+              {listLoading && <tr><td className="empty-cell" colSpan={(canCreateCycle ? 1 : 0) + (canEdit ? 8 : 7)}><div className="empty-state" role="status"><div className="spinner" /><b>กำลังโหลด Test Suite...</b></div></td></tr>}
+              {!listLoading && !listError && rows.length === 0 && (
+                <tr><td className="empty-cell" colSpan={(canCreateCycle ? 1 : 0) + (canEdit ? 8 : 7)}>
+                  {items.length === 0
+                    ? <div className="empty-state"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span><b>ยังไม่มี Test Suite</b><small>{canEdit ? "กด \"สร้าง Test Suite\" หรือ \"AI Generate\" เพื่อเริ่มจัดชุด Test Case" : "ยังไม่มีการสร้าง Test Suite ในระบบ"}</small></div>
+                    : <div className="empty-state"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><b>ไม่พบ Test Suite ที่ตรงกับตัวกรอง</b><small>ลองเปลี่ยนคำค้นหา สถานะ หรือตัวกรอง</small>{hasExtraFilters && <button type="button" className="btn" onClick={clearSuiteFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span> ล้างตัวกรอง</button>}</div>}
+                </td></tr>
+              )}
+              {!listLoading && pagedSuiteRows.map((x) => (
                 <tr key={x.testSuiteId} className={selectedSuiteIds.includes(x.testSuiteId) ? "is-selected" : undefined}>
                   {canCreateCycle && (
                     <td className="select-col" data-label="เลือก">
@@ -566,359 +591,308 @@ export function TestSuitesPage({
         />
       )}
       {suiteAiModal&&<ModalShell labelledBy="suite-ai-title" dirty={suiteAiDrafts.length > 0} className="requirement-ai-modal suite-ai-modal" boxStyle={{position:"relative"}} onDismiss={() => { if (!suiteAiGenerating) setSuiteAiModal(false); }}>{suiteAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{suiteAiDrafts.length?<p>กำลังบันทึก Test Suite...</p>:<p>AI กำลังวิเคราะห์ Test Suite...</p>}<small>{suiteAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังประมวลผล Requirement และ Test Case"}</small></div>}<div className="modal-head"><div><h2 id="suite-ai-title">AI Generate Test Suite</h2><small>{suiteAiDrafts.length?`พบ ${suiteAiDrafts.length} Suite ที่ AI สร้าง — ตรวจสอบและบันทึก`:"วิเคราะห์ Requirement และ Test Case จาก Module ที่เลือก"}</small></div><button disabled={suiteAiGenerating} aria-label="ปิดหน้าต่าง AI Generate" onClick={()=>setSuiteAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>{suiteAiDrafts.length===0?(<section className="requirement-ai-panel"><div className="requirement-ai-head"><div><span className="ai-spark">AI</span><p><strong>ผู้ช่วยจัดกลุ่ม Test Case</strong><small>AI จะสร้าง Test Suite หลายชุดจาก Module ที่เลือก</small></p></div><span className="ai-review-badge">ตรวจสอบก่อนบันทึก</span></div>{suiteAiError&&<div className="inline-alert error"><span>{suiteAiError}</span></div>}{(!suiteTypes.length||!riskTiers.length)&&<div className="inline-alert error"><span>กรุณาเพิ่ม Test Suite Type และ Risk Tier ในการตั้งค่ากลางก่อนใช้งาน AI</span></div>}<div className="form-grid"><label>Project<select value={suiteAiProjectId} disabled={suiteAiGenerating} onChange={event=>{setSuiteAiProjectId(event.target.value);setSuiteAiModuleId("");setSuiteAiError("")}}><option value="">เลือก Project</option>{projects.map(project=><option key={project.projectId} value={project.projectId}>{project.projectCode} · {project.projectName}</option>)}</select></label><label>Module<select className="testcase-module-filter" value={suiteAiModuleId} disabled={suiteAiGenerating||!suiteAiProjectId} onChange={event=>setSuiteAiModuleId(event.target.value)}><option value="">เลือก Module</option>{renderModuleSelectOptions(suiteAiModules)}</select></label></div><div className="ai-draft-note"><span className="material-symbols-outlined" aria-hidden="true">info</span><p><strong>ใช้ข้อมูลที่มีอยู่ในระบบ</strong><small>ระบบส่งเฉพาะ Requirement และ Test Case ของ Module ที่เลือกให้ AI วิเคราะห์ ผลลัพธ์ยังไม่ถูกบันทึกจนกว่าจะตรวจ Draft และกดบันทึก</small></p></div>{suiteAiModuleId&&<><div className="suite-case-toolbar"><div className="suite-case-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input value={suiteAiCaseSearch} onChange={e=>setSuiteAiCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." /></div><select value={suiteAiPriorityFilter} onChange={e=>setSuiteAiPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(suiteAiModuleCases.map(x=>x.priority))].map(x=><option key={x}>{x}</option>)}</select><select value={suiteAiTypeFilter} onChange={e=>setSuiteAiTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(suiteAiModuleCases.map(x=>x.testType).filter(Boolean))].map(x=><option key={x} value={x}>{x}</option>)}</select></div><section className="suite-panel suite-ai-candidate-panel"><div className="suite-panel-head"><h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Test Case ที่ AI จะวิเคราะห์</h3><span className="suite-panel-count">{suiteAiCandidates.length}</span></div><div className="suite-panel-body">{suiteAiCandidates.length?suiteAiCandidates.map(x=><div className="suite-case" key={x.testCaseId}><span className="suite-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small></span><Badge tone={x.priority==="P0"||x.priority==="P1"?"red":"blue"}>{x.priority}</Badge></div>):<div className="suite-panel-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><p>ไม่พบ Test Case ที่ตรงกับตัวกรอง</p></div>}</div></section><div className="requirement-ai-actions"><small>{suiteAiModuleCases.length} Test Cases พร้อมวิเคราะห์{suiteAiCandidates.length!==suiteAiModuleCases.length?` (แสดง ${suiteAiCandidates.length} รายการตามตัวกรอง)`:""}</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiProjectId||!suiteAiModuleId||!suiteTypes.length||!riskTiers.length} onClick={generateSuiteWithAi}>{suiteAiGenerating?"AI กำลังวิเคราะห์...":"✦ สร้าง Test Suite"}</button></div></div></>}</section>):(<section className="requirement-ai-panel suite-ai-review"><div className="suite-ai-review-head"><div><h3>Suites ที่ AI สร้าง ({suiteAiDrafts.length})</h3><p>{suiteAiDrafts.reduce((sum,d)=>sum+d.testCases.length,0)} Test Cases ถูกจัดกลุ่มเป็น {suiteAiDrafts.length} Suite</p></div></div>{suiteAiError&&<div className="inline-alert error" style={{marginBottom:8}}><span>{suiteAiError}</span></div>}<div className="suite-ai-draft-list">{suiteAiDrafts.map((draft,index)=>{const isExpanded=suiteAiExpanded===index;return<div key={index} className={`suite-ai-draft-card${isExpanded?" expanded":""}`}><div className="suite-ai-draft-head" onClick={()=>setSuiteAiExpanded(isExpanded?undefined:index)}><div className="suite-ai-draft-title"><b>{draft.suiteName}</b><div className="suite-ai-draft-tags"><Badge tone="blue">{draft.suiteType}</Badge><Badge tone="yellow">{draft.riskTier}</Badge><span className="suite-ai-case-count">{draft.testCases.length} Cases</span></div></div><span className="suite-ai-expand-icon">{isExpanded?"▾":"▸"}</span></div>{isExpanded&&<div className="suite-ai-draft-body"><p className="suite-ai-draft-desc">{draft.description}</p><p className="suite-ai-draft-summary"><strong>สรุป:</strong> {draft.selectionSummary}</p><div className="suite-ai-case-list">{draft.testCases.map((tc,ci)=>{const testCase=testCases.find(x=>x.testCaseId===tc.testCaseId);return<div key={tc.testCaseId}><b>{ci+1}</b><span><strong>{testCase?.testCaseCode??tc.testCaseId}</strong><small>{testCase?.title??"ไม่พบรายละเอียด"}</small><small>{tc.reason}</small></span><Badge tone={tc.isRequired?"blue":"yellow"}>{tc.isRequired?"Required":"Optional"}</Badge></div>})}</div><button className="table-action danger-action" style={{marginTop:8}} onClick={()=>removeSuiteAiDraft(index)}>นำ Suite นี้ออก</button></div>}</div>})}</div><div className="requirement-ai-actions"><small>{suiteAiDrafts.length} Suite พร้อมบันทึก</small><div className="row-actions"><button className="btn" disabled={suiteAiGenerating} onClick={()=>setSuiteAiDrafts([])}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> สร้างใหม่</button><button className="btn primary" disabled={suiteAiGenerating||!suiteAiDrafts.length} onClick={saveAllSuiteDrafts}>{suiteAiGenerating?"กำลังบันทึก...":`✦ บันทึกทั้งหมด (${suiteAiDrafts.length} Suite)`}</button></div></div></section>)}</ModalShell>}
-      {form && (
-        <ModalShell className="suite-editor" onDismiss={() => setForm(false)}>
-            <div className="modal-head suite-editor-head">
-              <div>
-                <span className="suite-editor-eyebrow">{editing ? "แก้ไข Test Suite" : "สร้าง Test Suite"}</span>
-                <h2>{editing ? `${editing.suiteCode} · ${editing.suiteName}` : "กำหนดข้อมูลและเลือก Test Case ในหน้าเดียว"}</h2>
+      {form && (() => {
+        const formProjectName = projects.find((x) => x.projectId === projectId)?.projectName ?? "-";
+        const caseById = new Map(testCases.map((x) => [x.testCaseId, x]));
+        const projectCases = testCases.filter((x) => x.projectId === caseProjectId);
+        const moduleCodeOf = (moduleId?: string) => modules.find((m) => m.moduleId === moduleId)?.moduleCode;
+        const inSuiteCases = editing ? managing?.cases ?? [] : [];
+        const inSuiteRequired = inSuiteCases.filter((x) => x.isRequired).length;
+        const missing = [!name.trim() && "Suite Name", !editing && !formModuleId && "Module"].filter(Boolean) as string[];
+        const canSave = !saving && !!projectId && !!code.trim() && missing.length === 0;
+        const priorityTone = (p?: string) => (p === "P0" || p === "P1" ? "red" : "blue");
+        const caseMeta = (moduleId?: string, testType?: string) => [moduleCodeOf(moduleId), testType].filter(Boolean).join(" · ");
+        return (
+        <ModalShell labelledBy="testsuite-form-title" className="testsuite-editor" onDismiss={() => setForm(false)}>
+            <div className="modal-head">
+              <div className="modal-head-title-group">
+                <div>
+                  <span className="cycle-detail-eyebrow">{editing ? "แก้ไข TEST SUITE" : "สร้าง TEST SUITE"} · {formProjectName}</span>
+                  <h2 id="testsuite-form-title">{code || "Test Suite ใหม่"}</h2>
+                  <small>{name.trim() || "ยังไม่ได้ตั้งชื่อ Test Suite"}</small>
+                </div>
               </div>
               <button aria-label="ปิดหน้าต่าง" onClick={() => setForm(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
             </div>
-            {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
-            <div className="suite-editor-body">
-              <section className="suite-editor-meta">
-                <div className="form-grid">
-                  <label className="full">
-                    Suite Name <span className="required">*</span>
-                    <input value={name} onChange={(e) => setName(e.target.value)} />
+            {error && <div className="inline-alert error tse-alert" role="alert"><span>{error}</span></div>}
+            <div className="tse-body">
+              <section className="tse-meta" aria-label="ข้อมูล Suite">
+                <h3><span className="material-symbols-outlined" aria-hidden="true">info</span> ข้อมูล Suite</h3>
+                <label className="tse-field">
+                  <span>Suite Name <b className="required-mark">*</b></span>
+                  <textarea rows={2} value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!editing && !name.trim()} />
+                </label>
+                {!editing && (
+                  <label className="tse-field">
+                    <span>Project</span>
+                    <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                      {projects.map((x) => <option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}
+                    </select>
                   </label>
-                  <label>
-                    Project
+                )}
+                {!editing && (
+                  <label className="tse-field">
+                    <span>Module <b className="required-mark">*</b></span>
                     <select
-                      value={projectId}
-                      disabled={Boolean(editing)}
-                      onChange={(e) => setProjectId(e.target.value)}
+                      className="testcase-module-filter"
+                      value={formModuleId}
+                      disabled={!modules.length}
+                      required
+                      onChange={(e) => {
+                        const nextModuleId = e.target.value;
+                        setFormModuleId(nextModuleId);
+                        const nextModule = modules.find((m) => m.moduleId === nextModuleId);
+                        setName((current) => {
+                          const stripped = modules.reduce((acc, m) => acc.startsWith(`${m.moduleName}-`) ? acc.slice(m.moduleName.length + 1) : acc, current);
+                          return nextModule ? `${nextModule.moduleName}-${stripped}` : stripped;
+                        });
+                      }}
                     >
-                      {projects.map((x) => (
-                        <option key={x.projectId} value={x.projectId}>
-                          {x.projectName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Suite Code
-                    <input
-                      disabled
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                    />
-                  </label>
-                  {!editing && (
-                    <label>
-                      Module <span className="required">*</span>
-                      <select
-                        className="testcase-module-filter"
-                        value={formModuleId}
-                        disabled={!modules.length}
-                        required
-                        onChange={(e) => {
-                          const nextModuleId = e.target.value;
-                          setFormModuleId(nextModuleId);
-                          const nextModule = modules.find((m) => m.moduleId === nextModuleId);
-                          setName((current) => {
-                            const stripped = modules.reduce((acc, m) => acc.startsWith(`${m.moduleName}-`) ? acc.slice(m.moduleName.length + 1) : acc, current);
-                            return nextModule ? `${nextModule.moduleName}-${stripped}` : stripped;
-                          });
-                        }}
-                      >
-                        <option value="">เลือก Module</option>
-                        {renderModuleSelectOptions(modules)}
-                      </select>
-                    </label>
-                  )}
-                  <label>
-                    Type
-                    <select value={type} onChange={(e) => setType(e.target.value)}>
-                      {masterOptionElements(suiteTypes, type)}
-                    </select>
-                  </label>
-                  <label>
-                    Risk Tier
-                    <select value={risk} onChange={(e) => setRisk(e.target.value)}>
-                      {masterOptionElements(riskTiers, risk)}
-                    </select>
-                  </label>
-                  <label className="full">
-                    รายละเอียด
-                    <textarea
-                      rows={2}
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                    />
-                  </label>
-                  {editing && (
-                    <label className="full check-line">
-                      <input
-                        type="checkbox"
-                        checked={active}
-                        onChange={(e) => setActive(e.target.checked)}
-                      />{" "}
-                      เปิดใช้งาน
-                    </label>
-                  )}
-                </div>
-              </section>
-              <section className="suite-editor-cases">
-                <div className="suite-case-toolbar">
-                  <div className="suite-case-search">
-                    <span className="material-symbols-outlined" aria-hidden="true">search</span>
-                    <input value={caseSearch} onChange={e => setCaseSearch(e.target.value)} placeholder="ค้นหา Test Case..." />
-                  </div>
-                  {editing && (
-                    <select className="testcase-module-filter" value={caseModuleFilter} onChange={e => setCaseModuleFilter(e.target.value)}>
-                      <option value="">ทุก Module</option>
+                      <option value="">เลือก Module</option>
                       {renderModuleSelectOptions(modules)}
                     </select>
-                  )}
-                  <select value={casePriorityFilter} onChange={e => setCasePriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(testCases.map(x => x.priority))].map(x => <option key={x}>{x}</option>)}</select>
-                  <select value={caseTypeFilter} onChange={e => setCaseTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(testCases.map(x => x.testType).filter(Boolean))].map(x => <option key={x} value={x}>{x}</option>)}</select>
-                  <small className="suite-case-toolbar-note"><span className="material-symbols-outlined" aria-hidden="true">check</span> เฉพาะสถานะ Ready</small>
+                    <small className="tse-hint">ชื่อ Suite จะขึ้นต้นด้วยชื่อ Module และรายการ Test Case ที่เพิ่มได้จะกรองตาม Module นี้</small>
+                  </label>
+                )}
+                <div className="tse-row">
+                  <label className="tse-field">
+                    <span>Type</span>
+                    <select value={type} onChange={(e) => setType(e.target.value)}>{masterOptionElements(suiteTypes, type)}</select>
+                  </label>
+                  <label className="tse-field">
+                    <span>Risk Tier</span>
+                    <select value={risk} onChange={(e) => setRisk(e.target.value)}>{masterOptionElements(riskTiers, risk)}</select>
+                  </label>
                 </div>
-                <div className="suite-columns">
+                <label className="tse-field">
+                  <span>รายละเอียด</span>
+                  <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Suite นี้ใช้ทดสอบอะไร" />
+                </label>
+                {editing && (
+                  <label className="check-line tse-check">
+                    <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> เปิดใช้งาน
+                  </label>
+                )}
+                <dl className="tse-stats">
+                  <div><dt>{editing ? "ในชุด" : "จะเพิ่ม"}</dt><dd>{editing ? inSuiteCases.length : checked.length}</dd></div>
+                  {editing && <div><dt>Required</dt><dd>{inSuiteRequired}</dd></div>}
+                  {editing && <div><dt>Optional</dt><dd>{inSuiteCases.length - inSuiteRequired}</dd></div>}
+                  <div><dt>เพิ่มได้</dt><dd>{available.length}</dd></div>
+                </dl>
+              </section>
+              <section className="tse-cases" aria-label="จัด Test Case ในชุด">
+                {editing && <div className="suite-editor-autosave-note" role="note"><span className="material-symbols-outlined" aria-hidden="true">bolt</span><span><b>Test Case บันทึกทันที:</b> การเพิ่ม นำออก เลื่อนลำดับ และสลับ Required/Optional มีผลทันทีที่กด — ปุ่ม "บันทึกข้อมูล Suite" ด้านล่างใช้กับข้อมูลทางซ้ายเท่านั้น</span></div>}
+                <div className="tse-columns">
                   <section className="suite-panel">
                     <div className="suite-panel-head">
-                      <h3><span className="material-symbols-outlined" aria-hidden="true">description</span> {editing ? "Test Case ในชุด" : "Test Case ที่จะเพิ่ม"}</h3>
-                      <span className="suite-panel-count">{editing ? managing?.cases.length ?? 0 : checked.length}</span>
+                      <h3><span className="material-symbols-outlined" aria-hidden="true">checklist</span> {editing ? "Test Case ในชุด" : "Test Case ที่จะเพิ่ม"}</h3>
+                      <span className="suite-panel-count">{editing ? inSuiteCases.length : checked.length}</span>
                     </div>
                     <div className="suite-panel-body">
                       {editing ? (
-                        managing && managing.cases.length ? (
-                          managing.cases.map((x, index) => (
-                            <div className="suite-case" key={x.testCaseId}>
+                        managing && managing.cases.length ? managing.cases.map((x, index) => {
+                          const tc = caseById.get(x.testCaseId);
+                          return (
+                            <div className="suite-case tse-case" key={x.testCaseId}>
                               <span className="suite-case-order">{x.sortOrder}</span>
-                              <span className="suite-case-info">
-                                <b>{x.testCaseCode}</b>
-                                <small>{x.title}</small>
-                              </span>
-                              <Badge tone={x.isRequired ? "blue" : "yellow"}>{x.isRequired ? "Required" : "Optional"}</Badge>
-                              <div className="suite-case-actions">
-                                <button disabled={saving || index === 0} title="เลื่อนขึ้น" onClick={() => updateCase(managing, x.testCaseId, managing.cases[index - 1]?.sortOrder ?? x.sortOrder, x.isRequired)}>↑</button>
-                                <button disabled={saving || index === managing.cases.length - 1} title="เลื่อนลง" onClick={() => updateCase(managing, x.testCaseId, managing.cases[index + 1]?.sortOrder ?? x.sortOrder, x.isRequired)}>↓</button>
-                                <button className="requirement-toggle" disabled={saving} onClick={() => updateCase(managing, x.testCaseId, x.sortOrder, !x.isRequired)}>{x.isRequired ? "Required" : "Optional"}</button>
+                              <span className="suite-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small>{tc && caseMeta(tc.moduleId, tc.testType) && <small className="tse-case-meta">{caseMeta(tc.moduleId, tc.testType)}</small>}</span>
+                              {x.priority && <Badge tone={priorityTone(x.priority)}>{x.priority}</Badge>}
+                              <button type="button" className={`tse-required-toggle${x.isRequired ? " is-required" : ""}`} disabled={saving} aria-pressed={x.isRequired} title="สลับ Required / Optional" onClick={() => updateCase(managing, x.testCaseId, x.sortOrder, !x.isRequired)}>{x.isRequired ? "Required" : "Optional"}</button>
+                              <div className="tse-case-actions">
+                                <button type="button" disabled={saving || index === 0} title="เลื่อนขึ้น" aria-label={`เลื่อน ${x.testCaseCode} ขึ้น`} onClick={() => updateCase(managing, x.testCaseId, managing.cases[index - 1]?.sortOrder ?? x.sortOrder, x.isRequired)}><span className="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+                                <button type="button" disabled={saving || index === managing.cases.length - 1} title="เลื่อนลง" aria-label={`เลื่อน ${x.testCaseCode} ลง`} onClick={() => updateCase(managing, x.testCaseId, managing.cases[index + 1]?.sortOrder ?? x.sortOrder, x.isRequired)}><span className="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+                                <button type="button" className="tse-case-remove" title="นำออกจาก Suite" aria-label={`นำ ${x.testCaseCode} ออกจาก Suite`} onClick={() => removeCase(managing.testSuiteId, x.testCaseId)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
                               </div>
-                              <button
-                                className="suite-case-remove"
-                                title="นำออกจาก Suite"
-                                aria-label={`นำ ${x.testCaseCode} ออกจาก Suite`}
-                                onClick={() =>
-                                  removeCase(managing.testSuiteId, x.testCaseId)
-                                }
-                              >
-                                ✕
-                              </button>
                             </div>
-                          ))
-                        ) : (
-                          <div className="suite-panel-empty">
-                            <span aria-hidden="true">▢</span>
-                            <p>ยังไม่มี Test Case ในชุดนี้</p>
-                          </div>
+                          );
+                        }) : (
+                          <div className="suite-panel-empty"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span><p>ยังไม่มี Test Case ในชุดนี้ — เลือกจากรายการด้านขวาแล้วกด "เพิ่มเข้าชุด"</p></div>
                         )
-                      ) : stagedCases.length ? (
-                        stagedCases.map((x, index) => (
-                          <div className="suite-case" key={x.testCaseId}>
-                              <span className="suite-case-info">
-                                <b>{x.testCaseCode}</b>
-                                <small>{x.title}</small>
-                              </span>
-                              <Badge tone={x.priority === "P0" || x.priority === "P1" ? "red" : "blue"}>{x.priority}</Badge>
-                              <div className="suite-case-actions">
-                                <button disabled={index === 0} title="เลื่อนขึ้น" onClick={() => setChecked(c => { const next = [...c]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })}>↑</button>
-                                <button disabled={index === stagedCases.length - 1} title="เลื่อนลง" onClick={() => setChecked(c => { const next = [...c]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; })}>↓</button>
-                              </div>
-                              <button
-                              className="suite-case-remove"
-                              title="เอาออกจากรายการที่จะเพิ่ม"
-                              aria-label={`เอา ${x.testCaseCode} ออกจากรายการที่จะเพิ่ม`}
-                              onClick={() => setChecked((c) => c.filter((id) => id !== x.testCaseId))}
-                            >
-                              ✕
-                            </button>
+                      ) : stagedCases.length ? stagedCases.map((x, index) => (
+                        <div className="suite-case tse-case" key={x.testCaseId}>
+                          <span className="suite-case-order">{index + 1}</span>
+                          <span className="suite-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small>{caseMeta(x.moduleId, x.testType) && <small className="tse-case-meta">{caseMeta(x.moduleId, x.testType)}</small>}</span>
+                          <Badge tone={priorityTone(x.priority)}>{x.priority}</Badge>
+                          <div className="tse-case-actions">
+                            <button type="button" disabled={index === 0} title="เลื่อนขึ้น" aria-label={`เลื่อน ${x.testCaseCode} ขึ้น`} onClick={() => setChecked(c => { const next = [...c]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; })}><span className="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+                            <button type="button" disabled={index === stagedCases.length - 1} title="เลื่อนลง" aria-label={`เลื่อน ${x.testCaseCode} ลง`} onClick={() => setChecked(c => { const next = [...c]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; })}><span className="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+                            <button type="button" className="tse-case-remove" title="เอาออกจากรายการที่จะเพิ่ม" aria-label={`เอา ${x.testCaseCode} ออกจากรายการที่จะเพิ่ม`} onClick={() => setChecked((c) => c.filter((id) => id !== x.testCaseId))}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
                           </div>
-                        ))
-                      ) : (
-                        <div className="suite-panel-empty">
-                          <span aria-hidden="true">▢</span>
-                          <p>ยังไม่ได้เลือก Test Case — เลือกจากรายการด้านขวา</p>
                         </div>
+                      )) : (
+                        <div className="suite-panel-empty"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span><p>{formModuleId ? "ยังไม่ได้เลือก Test Case — เลือกจากรายการด้านขวา" : "เลือก Module ทางซ้ายก่อน แล้วเลือก Test Case จากรายการด้านขวา"}</p></div>
                       )}
                     </div>
                   </section>
                   <section className="suite-panel">
                     <div className="suite-panel-head">
-                      <h3><span className="material-symbols-outlined" aria-hidden="true">add</span> Test Case ที่เพิ่มได้</h3>
+                      <h3><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span> Test Case ที่เพิ่มได้</h3>
                       <span className="suite-panel-count">{available.length}</span>
-                      <div className="suite-panel-head-actions">
-                        <button className="table-action" disabled={!available.length} onClick={() => setChecked((c) => [...new Set([...c, ...available.map(x => x.testCaseId)])])}><span aria-hidden="true">☑</span> เลือกทั้งหมด</button>
-                        <button className="table-action" disabled={!checked.length} onClick={() => setChecked([])}><span className="material-symbols-outlined" aria-hidden="true">close</span> ล้าง</button>
-                      </div>
+                      <small className="tse-ready-note">เฉพาะสถานะ Ready</small>
+                    </div>
+                    <div className="tse-filters">
+                      <label className="suite-case-search">
+                        <span className="material-symbols-outlined" aria-hidden="true">search</span>
+                        <input value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} aria-label="ค้นหา Test Case ที่เพิ่มได้" placeholder="ค้นหา Code / ชื่อ" />
+                      </label>
+                      {editing && (
+                        <select className="testcase-module-filter" aria-label="กรองตาม Module" value={caseModuleFilter} onChange={(e) => setCaseModuleFilter(e.target.value)}>
+                          <option value="">ทุก Module</option>
+                          {renderModuleSelectOptions(modules)}
+                        </select>
+                      )}
+                      <select aria-label="กรองตาม Priority" value={casePriorityFilter} onChange={(e) => setCasePriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{[...new Set(projectCases.map((x) => x.priority))].sort().map((x) => <option key={x}>{x}</option>)}</select>
+                      <select aria-label="กรองตาม Type" value={caseTypeFilter} onChange={(e) => setCaseTypeFilter(e.target.value)}><option value="">ทุก Type</option>{[...new Set(projectCases.map((x) => x.testType).filter(Boolean))].sort().map((x) => <option key={x} value={x}>{x}</option>)}</select>
+                    </div>
+                    <div className="tse-select-bar">
+                      <button type="button" className="tse-select-btn" disabled={!available.length} onClick={() => setChecked((c) => [...new Set([...c, ...available.map((x) => x.testCaseId)])])}><span className="material-symbols-outlined" aria-hidden="true">done_all</span> เลือกทั้งหมด ({available.length})</button>
+                      <button type="button" className="tse-select-btn" disabled={!checked.length} onClick={() => setChecked([])}><span className="material-symbols-outlined" aria-hidden="true">close</span> ล้างที่เลือก</button>
                     </div>
                     <div className="suite-panel-body">
                       {available.length ? available.map((x) => (
-                        <label className={`suite-case selectable${checked.includes(x.testCaseId) ? " is-checked" : ""}`} key={x.testCaseId}>
-                          <input
-                            type="checkbox"
-                            checked={checked.includes(x.testCaseId)}
-                            onChange={(e) =>
-                              setChecked((c) =>
-                                e.target.checked
-                                  ? [...c, x.testCaseId]
-                                  : c.filter((id) => id !== x.testCaseId),
-                              )
-                            }
-                          />
-                          <span className="suite-case-info">
-                            <b>{x.testCaseCode}</b>
-                            <small>{x.title}</small>
-                          </span>
-                          <Badge tone={x.priority === "P0" || x.priority === "P1" ? "red" : "blue"}>{x.priority}</Badge>
+                        <label className={`suite-case selectable tse-case${checked.includes(x.testCaseId) ? " is-checked" : ""}`} key={x.testCaseId}>
+                          <input type="checkbox" checked={checked.includes(x.testCaseId)} onChange={(e) => setChecked((c) => e.target.checked ? [...c, x.testCaseId] : c.filter((id) => id !== x.testCaseId))} />
+                          <span className="suite-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small>{caseMeta(x.moduleId, x.testType) && <small className="tse-case-meta">{caseMeta(x.moduleId, x.testType)}</small>}</span>
+                          <Badge tone={priorityTone(x.priority)}>{x.priority}</Badge>
                         </label>
                       )) : (
-                        <div className="suite-panel-empty">
-                          <span className="material-symbols-outlined" aria-hidden="true">search_off</span>
-                          <p>{caseProjectId ? "ไม่พบ Test Case ที่ตรงกับตัวกรอง" : "เลือก Project ก่อนเพื่อดู Test Case ที่เพิ่มได้"}</p>
-                        </div>
+                        <div className="suite-panel-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><p>{!caseProjectId ? "เลือก Project ก่อนเพื่อดู Test Case ที่เพิ่มได้" : !editing && !formModuleId ? "เลือก Module ทางซ้ายก่อน" : "ไม่พบ Test Case ที่ตรงกับตัวกรอง"}</p></div>
                       )}
+                    </div>
+                    <div className="tse-add-bar">
+                      <label className="suite-required-choice"><input type="checkbox" checked={addRequired} onChange={(e) => setAddRequired(e.target.checked)} /> เพิ่มเป็น Required</label>
+                      {editing ? (
+                        <button className="btn primary" onClick={addCases} disabled={saving || !checked.length}>
+                          {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม {checked.length} รายการเข้าชุด</>}
+                        </button>
+                      ) : <small className="tse-hint">{checked.length ? `เลือกแล้ว ${checked.length} รายการ — เพิ่มให้ตอนกด "สร้าง Test Suite"` : "ติ๊กเลือก Test Case ที่ต้องการ"}</small>}
                     </div>
                   </section>
                 </div>
-                <div className="suite-editor-case-actions">
-                  <label className="suite-required-choice"><input type="checkbox" checked={addRequired} onChange={e => setAddRequired(e.target.checked)} /> เพิ่มเป็น Required</label>
-                  {editing ? (
-                    <button
-                      className="btn primary"
-                      onClick={addCases}
-                      disabled={saving || !checked.length}
-                    >
-                      {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม {checked.length} รายการเข้าชุด</>}
-                    </button>
-                  ) : checked.length > 0 && (
-                    <small className="suite-editor-staged-hint">จะเพิ่ม {checked.length} Test Case ทันทีที่กด "สร้าง Test Suite"</small>
-                  )}
-                </div>
               </section>
             </div>
-            <div className="modal-actions">
-              <button className="btn" onClick={() => setForm(false)}>
-                ยกเลิก
-              </button>
-              <button
-                className="btn primary"
-                disabled={saving || !projectId || !code.trim() || !name.trim() || (!editing && !formModuleId)}
-                onClick={save}
-              >
-                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : editing ? <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</> : checked.length ? <><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Suite + {checked.length} Test Case</> : <><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Suite</>}
+            <div className="tse-footer">
+              <p className={missing.length ? "tse-missing" : "tse-ready"} role="status">
+                <span className="material-symbols-outlined" aria-hidden="true">{missing.length ? "error" : "check_circle"}</span>
+                {missing.length ? <>ยังขาด: {missing.join(" · ")}</> : editing ? "การแก้ Test Case บันทึกแล้ว — กดบันทึกเมื่อแก้ข้อมูล Suite ทางซ้าย" : `พร้อมสร้าง${checked.length ? ` พร้อม ${checked.length} Test Case` : ""}`}
+              </p>
+              <button className="btn" onClick={() => setForm(false)}>{editing ? "ปิด" : "ยกเลิก"}</button>
+              <button className="btn primary" disabled={!canSave} onClick={save}>
+                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : editing ? <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึกข้อมูล Suite</> : checked.length ? <><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Suite + {checked.length} Test Case</> : <><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Suite</>}
               </button>
             </div>
           </ModalShell>
-      )}
+        );
+      })()}
       {detail && (() => {
         const activeLinkedCycles = (detail.linkedCycles ?? []).filter(c => !c.isDeleted);
+        const deletedCycleCount = (detail.linkedCycles ?? []).length - activeLinkedCycles.length;
         const totalCycleCases = activeLinkedCycles.reduce((sum, c) => sum + c.caseCount, 0);
         const totalCycleExecuted = activeLinkedCycles.reduce((sum, c) => sum + c.executedCount, 0);
         const cyclesProgressPercent = totalCycleCases ? Math.round((totalCycleExecuted * 100) / totalCycleCases) : 0;
         const linkedReleaseBuilds = Array.from(new Map(activeLinkedCycles.map(c => [`${c.releaseCode ?? ""}|${c.buildNumber ?? ""}`, c])).values());
-        const visibleCases = caseListExpanded ? detail.cases : detail.cases.slice(0, 5);
+        const requiredCount = detail.cases.filter(c => c.isRequired).length;
+        const caseQuery = detailCaseSearch.trim().toLowerCase();
+        const visibleCases = [...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder).filter(x =>
+          (detailCaseFilter === "all" || (detailCaseFilter === "required" ? x.isRequired : !x.isRequired)) &&
+          (!caseQuery || `${x.testCaseCode} ${x.title}`.toLowerCase().includes(caseQuery)));
+        const cycleTone = (status: string) => status === "Completed" || status === "Closed" ? "green" : status === "Cancelled" ? "red" : "yellow";
+        const shortDate = (value?: string) => value ? formatThaiDateTime(value, { day: "numeric", month: "short", year: "2-digit" }) : "-";
         return (
-          <ModalShell labelledBy="suite-detail-title" className="cycle-modal cycle-detail-modal suite-detail" onDismiss={() => setDetail(null)}>
+          <ModalShell labelledBy="suite-detail-title" className="suite-detail" onDismiss={() => setDetail(null)}>
               <div className="modal-head">
                 <div className="modal-head-title-group">
                   <button className="modal-back-btn" aria-label="ปิดรายละเอียด Test Suite" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
-                  <div><span className="cycle-detail-eyebrow">TEST SUITE</span><h2 id="suite-detail-title">{detail.suiteCode}</h2><small>{projects.find(x => x.projectId === detail.projectId)?.projectName ?? "-"}</small></div>
+                  <div>
+                    <span className="cycle-detail-eyebrow">TEST SUITE · {projects.find(x => x.projectId === detail.projectId)?.projectName ?? "-"}</span>
+                    <h2 id="suite-detail-title">{detail.suiteCode}</h2>
+                    <small>{detail.suiteName}</small>
+                  </div>
                 </div>
-                <button aria-label="ปิดรายละเอียด Test Suite" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
-              </div>
-              <section className="cycle-detail-hero">
-                <div className="suite-detail-hero-text">
-                  <span className="suite-detail-hero-icon material-symbols-outlined" aria-hidden="true">fact_check</span>
-                  <div><h3>{detail.suiteName}</h3><p>{detail.description || "ไม่มีรายละเอียด"}</p></div>
-                </div>
-                <div className="cycle-detail-badges">
+                <div className="suite-detail-head-badges">
                   <Badge tone={detail.isActive ? "green" : "red"}>{detail.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</Badge>
                   {detail.suiteType && <Badge tone="blue">{detail.suiteType}</Badge>}
                   {detail.riskTier && <Badge tone={detail.riskTier === "P0" ? "red" : "yellow"}>{detail.riskTier}</Badge>}
                 </div>
-              </section>
-              <div className="admin-stats-row suite-detail-stats">
-                <div className="admin-stat-card"><span className="admin-stat-icon blue material-symbols-outlined" aria-hidden="true">description</span><div><b>{detail.cases.length}</b><small>Test Cases ทั้งหมด</small></div></div>
-                <div className="admin-stat-card"><span className="admin-stat-icon purple material-symbols-outlined" aria-hidden="true">checklist</span><div><b>{detail.cases.filter(c => c.isRequired).length}</b><small>Required</small></div></div>
-                <div className="admin-stat-card"><span className="admin-stat-icon green material-symbols-outlined" aria-hidden="true">cycle</span><div><b>{activeLinkedCycles.length}</b><small>Test Cycle</small></div></div>
-                <div className="admin-stat-card"><span className="admin-stat-icon orange material-symbols-outlined" aria-hidden="true">monitoring</span><div><b>{cyclesProgressPercent}%</b><small>ความคืบหน้า</small></div></div>
+                <button aria-label="ปิดรายละเอียด Test Suite" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
               </div>
-              <section className="cycle-detail-section">
-                <h3><span className="material-symbols-outlined" aria-hidden="true">info</span> ข้อมูลทั่วไป</h3>
-                <div className="suite-info-cards">
-                  <div className="suite-info-card"><span className="suite-info-card-label"><span className="material-symbols-outlined" aria-hidden="true">account_tree</span> Module</span><b>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</b></div>
-                  <div className="suite-info-card"><span className="suite-info-card-label"><span className="material-symbols-outlined" aria-hidden="true">person</span> สร้างโดย</span><b>{detail.createdByName || "-"}</b></div>
-                  <div className="suite-info-card"><span className="suite-info-card-label"><span className="material-symbols-outlined" aria-hidden="true">calendar_today</span> สร้างเมื่อ</span><b>{formatThaiDateTime(detail.createdAt, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</b></div>
-                </div>
-              </section>
-              <div className="suite-detail-split">
-                <section className="cycle-detail-section">
-                  <div className="cycle-detail-section-head"><div><h3>Release / Build ที่ใช้งาน ({linkedReleaseBuilds.length})</h3><small className="suite-usage-helper">สรุปจาก Test Cycle ที่อ้างอิง Suite นี้</small></div></div>
-                  <div className="suite-release-build-list">
-                    {linkedReleaseBuilds.length ? linkedReleaseBuilds.map(c => (
-                      <div className="suite-release-build-row" key={`${c.releaseCode ?? ""}|${c.buildNumber ?? ""}`}>
-                        <span className="material-symbols-outlined" aria-hidden="true">inventory_2</span>
-                        <span><b>{c.releaseCode || "ไม่ระบุ Release"}{c.releaseVersion ? ` · ${c.releaseVersion}` : ""}</b><small>Build {c.buildNumber || "ไม่ระบุ"}</small></span>
-                      </div>
-                    )) : <p className="muted-text">ยังไม่มี Test Cycle ผูกกับ Suite นี้</p>}
-                  </div>
-                </section>
-                <section className="cycle-detail-section">
-                  <h3>Test Cycles ทั้งหมด ({activeLinkedCycles.length})</h3>
-                  <div className="suite-cycle-cards">
-                    {activeLinkedCycles.length ? activeLinkedCycles.map(c => (
-                      <div className="suite-cycle-card" key={c.testCycleId}>
-                        <div className="suite-cycle-card-head">
-                          <b>{c.cycleCode}</b>
-                          <Badge tone={c.status === "Completed" || c.status === "Closed" ? "green" : c.status === "Cancelled" ? "red" : "yellow"}>{c.status}</Badge>
-                        </div>
-                        <p className="suite-cycle-card-sub">{c.cycleName}</p>
-                        <div className="suite-cycle-card-scope"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span><span><b>{c.releaseCode || "ไม่ระบุ Release"}{c.releaseVersion ? ` · ${c.releaseVersion}` : ""}</b><small>Build {c.buildNumber || "ไม่ระบุ"}</small></span></div>
-                        <div className="suite-cycle-card-meta">
-                          <div><span className="material-symbols-outlined" aria-hidden="true">event_available</span><span><small>เริ่มต้น</small><b>{formatThaiDateTime(c.startDate, { day: "numeric", month: "short", year: "numeric" })}</b></span></div>
-                          <div><span className="material-symbols-outlined" aria-hidden="true">event</span><span><small>สิ้นสุด</small><b>{formatThaiDateTime(c.endDate, { day: "numeric", month: "short", year: "numeric" })}</b></span></div>
-                        </div>
-                        <div className="suite-cycle-card-owner"><span className="material-symbols-outlined" aria-hidden="true">person</span><span><small>ผู้ดำเนินการ</small><b>{c.ownerName || "-"}</b></span></div>
-                        <div className="suite-cycle-card-progress">
-                          <div className="suite-cycle-card-progress-head"><span>ความคืบหน้า</span><b>{c.progressPercent}%</b></div>
-                          <div className="suite-cycle-card-progress-track"><span style={{ width: `${Math.min(100, Math.max(0, c.progressPercent))}%` }} /></div>
-                        </div>
-                        {onOpenCycle && <button className="btn" onClick={() => { setDetail(null); onOpenCycle("test-cycles", c.testCycleId); }}><span className="material-symbols-outlined" aria-hidden="true">open_in_new</span> ดูรายละเอียด Test Cycle</button>}
-                      </div>
-                    )) : <p className="muted-text">ยังไม่มี Test Cycle ผูกกับ Suite นี้</p>}
-                  </div>
-                  {!!detail.linkedCycles?.some(c => c.isDeleted) && (
-                    <p className="muted-text">มี Test Cycle ที่ถูกลบไปแล้ว {detail.linkedCycles.filter(c => c.isDeleted).length} รายการ (ไม่แสดงในนี้)</p>
-                  )}
-                </section>
-                <section className="cycle-detail-section suite-detail-cases-section">
-                  <div className="cycle-detail-section-head">
-                    <h3>Test Cases ({detail.cases.length})</h3>
-                    {detail.cases.length > 5 && (
-                      <button className="link-button" onClick={() => setCaseListExpanded(v => !v)}>
-                        {caseListExpanded ? "ย่อรายการ" : "ดูทั้งหมด"} <span className="material-symbols-outlined" aria-hidden="true">{caseListExpanded ? "expand_less" : "arrow_forward"}</span>
-                      </button>
-                    )}
-                  </div>
-                  <div className="suite-detail-cases">
-                    {visibleCases.length ? visibleCases.map(x => (
-                      <div key={x.testCaseId}>
-                        <span><b>{x.sortOrder}. {x.testCaseCode}</b><small>{x.title}</small></span>
-                        <Badge tone={x.isRequired ? "blue" : "yellow"}>{x.isRequired ? "Required" : "Optional"}</Badge>
-                      </div>
-                    )) : <p className="muted-text">ยังไม่มี Test Case ในชุดนี้</p>}
-                  </div>
-                </section>
-              </div>
-              <div className="modal-actions">
+              <div className="suite-detail-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Suite">
+                {canEdit && <button className="btn primary" onClick={() => { const suite = detail; setDetail(null); openForm(suite); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข / จัด Test Case</button>}
+                {onCreateCycle && detail.isActive && <button className="btn" onClick={() => onCreateCycle(detail.projectId, detail.testSuiteId)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span> สร้าง Test Cycle</button>}
                 <button className="btn suite-detail-download" onClick={() => downloadSuiteReport(detail)}><span className="material-symbols-outlined" aria-hidden="true">download</span> ดาวน์โหลดรายงาน</button>
-                <button className="btn" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button>
-                {onCreateCycle && detail.isActive && <button className="btn" onClick={() => onCreateCycle(detail.projectId, detail.testSuiteId)}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Cycle</button>}
-                {canEdit && <button className="btn primary" onClick={() => { const suite = detail; setDetail(null); openForm(suite); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
+              </div>
+              <div className="suite-detail-body">
+                <div className="suite-detail-main">
+                  <dl className="suite-detail-summary">
+                    <div><dt>Test Cases</dt><dd><b>{detail.cases.length}</b> <small>Required {requiredCount} · Optional {detail.cases.length - requiredCount}</small></dd></div>
+                    <div><dt>Test Cycle</dt><dd><b>{activeLinkedCycles.length}</b>{deletedCycleCount > 0 && <small> (ลบแล้ว {deletedCycleCount})</small>}</dd></div>
+                    <div className="suite-detail-summary-progress"><dt>ความคืบหน้ารวม</dt><dd><b>{cyclesProgressPercent}%</b><span className="suite-detail-progress-track" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.max(0, cyclesProgressPercent))}%` }} /></span></dd></div>
+                    <div><dt>Module</dt><dd>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</dd></div>
+                    <div><dt>สร้างโดย</dt><dd>{detail.createdByName || "-"} <small>{detail.createdAt ? formatThaiDateTime(detail.createdAt, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</small></dd></div>
+                  </dl>
+                  {detail.description && <p className="suite-detail-description">{detail.description}</p>}
+                  <section className="suite-detail-cases-panel" aria-labelledby="suite-detail-cases-title">
+                    <div className="suite-detail-cases-head">
+                      <h3 id="suite-detail-cases-title"><span className="material-symbols-outlined" aria-hidden="true">checklist</span> Test Cases <span className="suite-detail-count">{visibleCases.length === detail.cases.length ? detail.cases.length : `${visibleCases.length} / ${detail.cases.length}`}</span></h3>
+                      <div className="suite-detail-cases-tools">
+                        <label className="suite-case-search">
+                          <span className="material-symbols-outlined" aria-hidden="true">search</span>
+                          <input value={detailCaseSearch} onChange={(e) => setDetailCaseSearch(e.target.value)} aria-label="ค้นหา Test Case ใน Suite" placeholder="ค้นหา Code / ชื่อ Test Case" />
+                        </label>
+                        <div className="cycle-status-chips" role="group" aria-label="กรอง Required / Optional">
+                          {([["all", "ทั้งหมด", detail.cases.length], ["required", "Required", requiredCount], ["optional", "Optional", detail.cases.length - requiredCount]] as const).map(([value, label, count]) => (
+                            <button key={value} type="button" className={"status-chip" + (detailCaseFilter === value ? " active" : "")} aria-pressed={detailCaseFilter === value} onClick={() => setDetailCaseFilter(value)}>{label} <b>{count}</b></button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="suite-detail-case-list">
+                      {visibleCases.length ? visibleCases.map(x => (
+                        <div className="suite-detail-case" key={x.testCaseId}>
+                          <span className="suite-detail-case-no">{x.sortOrder}</span>
+                          <span className="suite-detail-case-info"><b>{x.testCaseCode}</b><small>{x.title}</small></span>
+                          {x.priority && <Badge tone={x.priority === "P0" || x.priority === "P1" ? "red" : "blue"}>{x.priority}</Badge>}
+                          <Badge tone={x.isRequired ? "blue" : "yellow"}>{x.isRequired ? "Required" : "Optional"}</Badge>
+                        </div>
+                      )) : <p className="muted-text suite-detail-empty">{detail.cases.length ? "ไม่พบ Test Case ที่ตรงกับคำค้นหรือตัวกรอง" : "ยังไม่มี Test Case ในชุดนี้"}</p>}
+                    </div>
+                  </section>
+                </div>
+                <aside className="suite-detail-side" aria-label="การใช้งานของ Test Suite">
+                  <section>
+                    <h3><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span> Release / Build ที่ใช้งาน <span className="suite-detail-count">{linkedReleaseBuilds.length}</span></h3>
+                    {linkedReleaseBuilds.length ? (
+                      <div className="suite-detail-chips">
+                        {linkedReleaseBuilds.map(c => <span key={`${c.releaseCode ?? ""}|${c.buildNumber ?? ""}`}><b>{c.releaseCode || "ไม่ระบุ Release"}{c.releaseVersion ? ` · ${c.releaseVersion}` : ""}</b> Build {c.buildNumber || "-"}</span>)}
+                      </div>
+                    ) : <p className="muted-text">ยังไม่มี Test Cycle ที่อ้างอิง Suite นี้</p>}
+                  </section>
+                  <section>
+                    <h3><span className="material-symbols-outlined" aria-hidden="true">cycle</span> Test Cycles <span className="suite-detail-count">{activeLinkedCycles.length}</span></h3>
+                    {activeLinkedCycles.length ? (
+                      <div className="suite-detail-cycles">
+                        {activeLinkedCycles.map(c => (
+                          <div className="suite-detail-cycle" key={c.testCycleId}>
+                            <div className="suite-detail-cycle-head">
+                              {onOpenCycle
+                                ? <button type="button" className="link-button" title="เปิดรายละเอียด Test Cycle" onClick={() => { setDetail(null); onOpenCycle("test-cycles", c.testCycleId); }}>{c.cycleCode} <span className="material-symbols-outlined" aria-hidden="true">open_in_new</span></button>
+                                : <b>{c.cycleCode}</b>}
+                              <Badge tone={cycleTone(c.status)}>{c.status}</Badge>
+                            </div>
+                            <p>{c.cycleName}</p>
+                            <small>{c.releaseCode || "ไม่ระบุ Release"}{c.releaseVersion ? ` · ${c.releaseVersion}` : ""} · Build {c.buildNumber || "-"} · {shortDate(c.startDate)} – {shortDate(c.endDate)}{c.ownerName ? ` · ${c.ownerName}` : ""}</small>
+                            <div className="suite-detail-cycle-progress"><span className="suite-detail-progress-track" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.max(0, c.progressPercent))}%` }} /></span><b>{c.progressPercent}%</b><small>{c.executedCount}/{c.caseCount}</small></div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="suite-detail-side-empty">
+                        <p className="muted-text">ยังไม่มี Test Cycle ผูกกับ Suite นี้</p>
+                        {onCreateCycle && detail.isActive && <button className="btn" onClick={() => onCreateCycle(detail.projectId, detail.testSuiteId)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span> สร้าง Test Cycle แรก</button>}
+                      </div>
+                    )}
+                  </section>
+                </aside>
               </div>
             </ModalShell>
         );

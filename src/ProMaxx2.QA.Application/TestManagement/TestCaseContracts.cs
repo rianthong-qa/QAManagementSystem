@@ -22,8 +22,11 @@ public sealed record RtmSummaryDto(int Covered,int Partial,int NotCovered,IReadO
 public sealed record RtmListResultDto(PagedResult<RtmRow> Items,RtmSummaryDto Summary);
 public sealed record AutomationCandidateSummaryDto(int Total,int Ready,int Pos,int App,int Review);
 
+/// <summary>ข้อมูลย่อของ Test Case สำหรับตัวเลือกในฟอร์ม Test Suite / AI Generate — ทั้ง Project ใน query เดียว ไม่มี Step/COUNT</summary>
+public sealed record TestCasePickerDto(Guid TestCaseId,Guid ProjectId,Guid ModuleId,string TestCaseCode,string Title,string Priority,string? TestType,string Status);
 public interface ITestCaseRepository
 {
+    Task<IReadOnlyList<TestCasePickerDto>> PickerAsync(Guid projectId, CancellationToken ct);
     Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId,Guid? moduleId,string? priority,string? testType,string? status,bool? automation,string? search,string? automationTarget,Guid? createdBy,string? sortBy,int page,int size,CancellationToken ct);
     Task<AutomationCandidateSummaryDto> AutomationSummaryAsync(Guid projectId, CancellationToken ct);
     Task<TestCaseDto?> GetAsync(Guid id, CancellationToken ct);
@@ -52,6 +55,7 @@ public sealed class TestCaseService(ITestCaseRepository repository)
 
     public Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId,Guid? moduleId,string? priority,string? testType,string? status,bool? automation,string? search,string? automationTarget,Guid? createdBy,string? sortBy,int page,int size,CancellationToken ct) => repository.ListAsync(projectId,moduleId,priority,testType,status,automation,search,automationTarget,createdBy,sortBy,page,size,ct);
     public Task<AutomationCandidateSummaryDto> AutomationSummaryAsync(Guid projectId,CancellationToken ct)=>repository.AutomationSummaryAsync(projectId,ct);
+    public Task<IReadOnlyList<TestCasePickerDto>> PickerAsync(Guid projectId,CancellationToken ct)=>repository.PickerAsync(projectId,ct);
     public Task<IReadOnlyList<TestCaseRevisionDto>> RevisionsAsync(Guid id,CancellationToken ct)=>repository.RevisionsAsync(id,ct);
     public Task<IReadOnlyList<TestCaseRequirementDto>> RequirementsAsync(Guid id,CancellationToken ct)=>repository.RequirementsAsync(id,ct);
 

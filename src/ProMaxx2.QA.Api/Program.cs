@@ -175,7 +175,11 @@ if (allowedOrigins == null || allowedOrigins.Length == 0)
 }
 builder.Services.AddCors(options => options.AddPolicy("Web", policy => policy
     .WithOrigins(allowedOrigins)
-    .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+    .AllowAnyHeader().AllowAnyMethod().AllowCredentials()
+    // หน้าเว็บกับ API อยู่คนละโดเมน ทุกคำขอที่มี Authorization จึงต้องมี preflight (OPTIONS) — ถ้าไม่ส่ง Access-Control-Max-Age
+    // Chromium จำผลได้แค่ 5 วินาที ทำให้แทบทุกคำขอเสีย round trip เพิ่มอีกรอบผ่าน Cloudflare (วัดได้ 0.2–1.2 วินาที/รอบ);
+    // 2 ชั่วโมงคือค่าสูงสุดที่ Chromium ยอมรับ
+    .SetPreflightMaxAge(TimeSpan.FromHours(2))));
 var app = builder.Build();
 // CORS ต้องครอบ exception handler ด้วย เพื่อให้ response ที่เกิดจาก exception ยังมี
 // Access-Control-Allow-Origin; ไม่เช่นนั้น browser จะแสดง "Failed to fetch" แทน error จริง

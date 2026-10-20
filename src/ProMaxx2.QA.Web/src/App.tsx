@@ -963,7 +963,7 @@ function App() {
           ) : page === "test-cycles" ? (
             <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} />
           ) : (
-            <TestSuitesPage search={search} canEdit={can("TESTCASE.EDIT")} contextProjectId={contextProjectId} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} canCreateCycle={can("EXECUTION.RUN")} onOpenCycleList={() => go("test-cycles")} />
+            <TestSuitesPage search={search} onClearSearch={() => setSearch("")} canEdit={can("TESTCASE.EDIT")} contextProjectId={contextProjectId} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} canCreateCycle={can("EXECUTION.RUN")} onOpenCycleList={() => go("test-cycles")} />
           )}
           </Suspense>
           </div>

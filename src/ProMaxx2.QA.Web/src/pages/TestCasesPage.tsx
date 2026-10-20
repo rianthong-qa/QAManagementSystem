@@ -517,307 +517,227 @@ export function TestCasesPage({
         </section>
         )}
       </ModalShell>}
-      {form && (
+      {form && (() => {
         // ไม่ปิดเมื่อคลิกพื้นหลัง — ฟอร์มนี้มี step editor ข้อมูลที่กรอกจะหายทั้งหมด
-        <ModalShell labelledBy="testcase-form-title" className="testcase-modal" onDismiss={() => setForm(false)}>
+        const formProjectName = projects.find((x) => x.projectId === projectId)?.projectName ?? "-";
+        const statusInfo = testCaseStatusInfo.find((x) => x.value === status);
+        const incompleteSteps = steps.map((x, i) => (!x.action.trim() || !x.expectedResult.trim() ? i + 1 : 0)).filter(Boolean);
+        const missing = [
+          !title.trim() && "Title",
+          !moduleId && "Module",
+          incompleteSteps.length > 0 && `Step ${incompleteSteps.join(", ")} (Action / Expected Result)`,
+          editing && !changeReason.trim() && "เหตุผลที่แก้ไข",
+        ].filter(Boolean) as string[];
+        const canSave = !saving && !!projectId && !!code.trim() && missing.length === 0;
+        // กรอบแดงเฉพาะ Step ที่เริ่มกรอกแล้วแต่ยังไม่ครบ (หรือตอนแก้ไข) — ฟอร์มใหม่ไม่ขึ้นแดงทั้งหน้าตั้งแต่เปิด; สิ่งที่ยังขาดทั้งหมดดูที่สรุปท้ายฟอร์ม
+        const stepStarted = (x: (typeof steps)[number]) => !!editing || Boolean(x.action.trim() || x.expectedResult.trim() || x.testData?.trim());
+        const renumber = (list: typeof steps) => list.map((x, i) => ({ ...x, stepNo: i + 1 }));
+        const moveStep = (index: number, delta: number) => setSteps((current) => {
+          const next = [...current]; const target = index + delta;
+          if (target < 0 || target >= next.length) return current;
+          [next[index], next[target]] = [next[target], next[index]];
+          return renumber(next);
+        });
+        const insertStep = (index: number) => setSteps((current) => renumber([...current.slice(0, index + 1), { stepNo: 0, action: "", testData: "", expectedResult: "" }, ...current.slice(index + 1)]));
+        return (
+        <ModalShell labelledBy="testcase-form-title" className="testcase-editor" onDismiss={() => setForm(false)}>
             <div className="modal-head">
-              <h2 id="testcase-form-title">{editing ? "แก้ไข" : "เพิ่ม"} Test Case</h2>
+              <div className="modal-head-title-group">
+                <div>
+                  <span className="cycle-detail-eyebrow">{editing ? "แก้ไข TEST CASE" : "สร้าง TEST CASE"} · {formProjectName}</span>
+                  <h2 id="testcase-form-title">{code || "Test Case ใหม่"}{editing && <span className="tce-revision">Rev. {editing.revisionNo} → {editing.revisionNo + 1}</span>}</h2>
+                  <small>{title.trim() || "ยังไม่ได้ตั้งชื่อ Test Case"}</small>
+                </div>
+              </div>
               <button aria-label="ปิดฟอร์ม Test Case" onClick={() => setForm(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
             </div>
-            <div className="form-grid">
-              <label className="tc-span-2">
-                Project
-                <select
-                  disabled
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                >
-                  {projects.map((x) => (
-                    <option key={x.projectId} value={x.projectId}>
-                      {x.projectName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="tc-span-2">
-                Module
-                <select
-                  value={moduleId}
-                  onChange={(e) => setModuleId(e.target.value)}
-                >
-                  {renderModuleSelectOptions(modules.filter((x) => x.isActive))}
-                </select>
-              </label>
-              <label className="tc-span-2">
-                Test Case Code
-                <input
-                  disabled
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-              </label>
-              <label className="tc-span-2">
-                Title
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </label>
-              <label className="tc-compact-field">
-                Priority
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value)}
-                >
-                  {masterOptionElements(testCasePriorities, priority)}
-                </select>
-              </label>
-              <label className="tc-compact-field">
-                Type
-                <select
-                  value={testType}
-                  onChange={(e) => setTestType(e.target.value)}
-                >
-                  {masterOptionElements(testCaseTypes, testType)}
-                </select>
-              </label>
-              {editing && (
-                <label className="tc-compact-field">
-                  สถานะ
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                  >
-                    <option>Draft</option>
-                    <option>Review</option>
-                    <option>Ready</option>
-                    <option>Deprecated</option>
+            <div className="tce-body">
+              <section className="tce-meta" aria-label="ข้อมูลทั่วไป">
+                <h3><span className="material-symbols-outlined" aria-hidden="true">info</span> ข้อมูลทั่วไป</h3>
+                <label className="tce-field">
+                  <span>Title <b className="required-mark">*</b></span>
+                  <textarea rows={2} value={title} onChange={(e) => setTitle(e.target.value)} aria-invalid={!!editing && !title.trim()} />
+                </label>
+                <label className="tce-field">
+                  <span>Module <b className="required-mark">*</b></span>
+                  <select value={moduleId} onChange={(e) => setModuleId(e.target.value)}>
+                    {renderModuleSelectOptions(modules.filter((x) => x.isActive))}
                   </select>
                 </label>
-              )}
-              <label className="check-line tc-automation">
-                <input
-                  type="checkbox"
-                  checked={automation}
-                  onChange={(e) => setAutomation(e.target.checked)}
-                />{" "}
-                Automation Candidate
-              </label>
-              <label className="tc-span-2">Owner<select value={ownerUserId} onChange={e=>setOwnerUserId(e.target.value)}><option value="">ไม่ระบุผู้รับผิดชอบ</option>{users.map(x=><option key={x.userId} value={x.userId}>{x.displayName}</option>)}</select></label>
-              <div className="status-information tc-span-2"><strong>ข้อมูลสถานะ</strong><span>{testCaseStatusInfo.find(x=>x.value===status)?.label}</span><small>{testCaseStatusInfo.find(x=>x.value===status)?.detail}</small><small><b>ผลกระทบ:</b> {testCaseStatusInfo.find(x=>x.value===status)?.impact}</small></div>
-              <label className="tc-span-2">
-                Objective
-                <textarea
-                  rows={2}
-                  value={objective}
-                  onChange={(e) => setObjective(e.target.value)}
-                />
-              </label>
-              <label className="tc-span-2">
-                Preconditions
-                <textarea
-                  rows={2}
-                  value={preconditions}
-                  onChange={(e) => setPreconditions(e.target.value)}
-                />
-              </label>
+                <div className="tce-row">
+                  <label className="tce-field">
+                    <span>Priority</span>
+                    <select value={priority} onChange={(e) => setPriority(e.target.value)}>{masterOptionElements(testCasePriorities, priority)}</select>
+                  </label>
+                  <label className="tce-field">
+                    <span>Type</span>
+                    <select value={testType} onChange={(e) => setTestType(e.target.value)}>{masterOptionElements(testCaseTypes, testType)}</select>
+                  </label>
+                </div>
+                {editing && (
+                  <label className="tce-field">
+                    <span>สถานะ</span>
+                    <select value={status} onChange={(e) => setStatus(e.target.value)}>
+                      <option>Draft</option>
+                      <option>Review</option>
+                      <option>Ready</option>
+                      <option>Deprecated</option>
+                    </select>
+                    {statusInfo && <small className="tce-hint"><b>{statusInfo.label}</b> — {statusInfo.detail} <b>ผลกระทบ:</b> {statusInfo.impact}</small>}
+                  </label>
+                )}
+                <label className="tce-field">
+                  <span>Owner</span>
+                  <select value={ownerUserId} onChange={(e) => setOwnerUserId(e.target.value)}><option value="">ไม่ระบุผู้รับผิดชอบ</option>{users.map((x) => <option key={x.userId} value={x.userId}>{x.displayName}</option>)}</select>
+                </label>
+                <label className="check-line tce-check">
+                  <input type="checkbox" checked={automation} onChange={(e) => setAutomation(e.target.checked)} /> Automation Candidate
+                </label>
+                <label className="tce-field">
+                  <span>Objective</span>
+                  <textarea rows={3} value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="Test Case นี้ยืนยันอะไร" />
+                </label>
+                <label className="tce-field">
+                  <span>Preconditions</span>
+                  <textarea rows={3} value={preconditions} onChange={(e) => setPreconditions(e.target.value)} placeholder="ข้อมูล/สถานะที่ต้องมีก่อนเริ่มทดสอบ" />
+                </label>
+              </section>
+              <section className="tce-steps" aria-labelledby="tce-steps-title">
+                <div className="tce-steps-head">
+                  <h3 id="tce-steps-title"><span className="material-symbols-outlined" aria-hidden="true">format_list_numbered</span> Test Steps <span className="tce-count">{steps.length}</span></h3>
+                  {incompleteSteps.length > 0 && <small className="tce-steps-warning"><span className="material-symbols-outlined" aria-hidden="true">error</span> ยังกรอกไม่ครบ {incompleteSteps.length} Step</small>}
+                </div>
+                <div className="tce-step-header" aria-hidden="true"><span>#</span><span>Action <b className="required-mark">*</b></span><span>Test Data</span><span>Expected Result <b className="required-mark">*</b></span><span /></div>
+                <ol className="tce-step-list">
+                  {steps.map((step, index) => (
+                    <li className="tce-step" key={index}>
+                      <span className="tce-step-no">{index + 1}</span>
+                      <label><small>Action</small><textarea rows={2} placeholder="สิ่งที่ผู้ทดสอบทำ" value={step.action} aria-label={`Action ของ Step ${index + 1}`} aria-invalid={stepStarted(step) && !step.action.trim()} onChange={(e) => updateStep(index, "action", e.target.value)} /></label>
+                      <label><small>Test Data</small><textarea rows={2} placeholder="ข้อมูลที่ใช้ (ถ้ามี)" value={step.testData ?? ""} aria-label={`Test Data ของ Step ${index + 1}`} onChange={(e) => updateStep(index, "testData", e.target.value)} /></label>
+                      <label><small>Expected Result</small><textarea rows={2} placeholder="ผลที่ต้องเกิดขึ้น" value={step.expectedResult} aria-label={`Expected Result ของ Step ${index + 1}`} aria-invalid={stepStarted(step) && !step.expectedResult.trim()} onChange={(e) => updateStep(index, "expectedResult", e.target.value)} /></label>
+                      <div className="tce-step-actions">
+                        <button type="button" title="เลื่อนขึ้น" aria-label={`เลื่อน Step ${index + 1} ขึ้น`} disabled={index === 0} onClick={() => moveStep(index, -1)}><span className="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+                        <button type="button" title="เลื่อนลง" aria-label={`เลื่อน Step ${index + 1} ลง`} disabled={index === steps.length - 1} onClick={() => moveStep(index, 1)}><span className="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+                        <button type="button" title="แทรก Step ใหม่ด้านล่าง" aria-label={`แทรก Step ใหม่ใต้ Step ${index + 1}`} onClick={() => insertStep(index)}><span className="material-symbols-outlined" aria-hidden="true">add</span></button>
+                        <button type="button" className="tce-step-remove" title="ลบ Step" aria-label={`ลบ Step ${index + 1}`} disabled={steps.length <= 1} onClick={() => setSteps((current) => renumber(current.filter((_, i) => i !== index)))}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <button type="button" className="btn tce-add-step" onClick={() => setSteps((current) => [...current, { stepNo: current.length + 1, action: "", testData: "", expectedResult: "" }])}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม Step</button>
+              </section>
+            </div>
+            <div className="tce-footer">
               {editing && (
-                <label className="full tc-span-4">
-                  <span>
-                    เหตุผลที่แก้ไข <b className="required-mark">*</b>
-                  </span>
-                  <input
-                    value={changeReason}
-                    onChange={(e) => setChangeReason(e.target.value)}
-                    placeholder="ระบุเหตุผลเพื่อสร้าง Revision ใหม่"
-                  />
-                  {!changeReason.trim() && (
-                    <small className="field-error">
-                      กรุณาระบุเหตุผลก่อนบันทึก เพื่อสร้าง Revision ใหม่
-                    </small>
-                  )}
+                <label className="tce-reason">
+                  <span>เหตุผลที่แก้ไข <b className="required-mark">*</b></span>
+                  <input value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="ระบุเหตุผลเพื่อสร้าง Revision ใหม่" aria-required="true" />
                 </label>
               )}
-            </div>
-            <div className="testcase-steps">
-              <div className="card-title">
-                <div>
-                  <h3>Test Steps</h3>
-                  <p>{steps.length} ขั้นตอน</p>
-                </div>
-                <button
-                  className="btn"
-                  onClick={() =>
-                    setSteps((current) => [
-                      ...current,
-                      {
-                        stepNo: current.length + 1,
-                        action: "",
-                        testData: "",
-                        expectedResult: "",
-                      },
-                    ])
-                  }
-                >
-                  + Step
+              {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+              <div className="tce-footer-row">
+                <p className={missing.length ? "tce-missing" : "tce-ready"} role="status">
+                  <span className="material-symbols-outlined" aria-hidden="true">{missing.length ? "error" : "check_circle"}</span>
+                  {missing.length ? <>ยังขาด: {missing.join(" · ")}</> : "ข้อมูลครบ พร้อมบันทึก"}
+                </p>
+                <button className="btn" onClick={() => setForm(false)}>ยกเลิก</button>
+                <button className="btn primary" disabled={!canSave} onClick={save}>
+                  {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> {editing ? "บันทึก Revision ใหม่" : "สร้าง Test Case"}</>}
                 </button>
               </div>
-              <div className="testcase-step-head" aria-hidden="true">
-                <span>#</span>
-                <span>Action</span>
-                <span>Test Data</span>
-                <span>Expected Result</span>
-                <span>จัดการ</span>
-              </div>
-              {steps.map((step, index) => (
-                <div className="testcase-step" key={index}>
-                  <b>{index + 1}</b>
-                  <input
-                    placeholder="Action"
-                    value={step.action}
-                    onChange={(e) =>
-                      updateStep(index, "action", e.target.value)
-                    }
-                  />
-                  <input
-                    placeholder="Test Data"
-                    value={step.testData ?? ""}
-                    onChange={(e) =>
-                      updateStep(index, "testData", e.target.value)
-                    }
-                  />
-                  <input
-                    placeholder="Expected Result"
-                    value={step.expectedResult}
-                    onChange={(e) =>
-                      updateStep(index, "expectedResult", e.target.value)
-                    }
-                  />
-                  {steps.length > 1 && (
-                    <button
-                      className="table-action danger-action"
-                      onClick={() =>
-                        setSteps((current) =>
-                          current
-                            .filter((_, i) => i !== index)
-                            .map((x, i) => ({ ...x, stepNo: i + 1 })),
-                        )
-                      }
-                    >
-                      ลบ
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
-            <div className="modal-actions">
-              <button className="btn" onClick={() => setForm(false)}>
-                ยกเลิก
-              </button>
-              <button
-                className="btn primary"
-                disabled={
-                  saving ||
-                  !projectId ||
-                  !moduleId ||
-                  !code.trim() ||
-                  !title.trim() ||
-                  (editing && !changeReason.trim()) ||
-                  steps.some(
-                    (x) => !x.action.trim() || !x.expectedResult.trim(),
-                  )
-                }
-                onClick={save}
-              >
-                {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}
-              </button>
             </div>
           </ModalShell>
-      )}
+        );
+      })()}
  {detail && (() => {
         const ownerName = users.find(x=>x.userId===detail.ownerUserId)?.displayName || "ไม่ระบุ";
-        const moduleCode = modules.find(x=>x.moduleId===detail.moduleId)?.moduleCode || "-";
+        const detailModule = modules.find(x=>x.moduleId===detail.moduleId);
+        const projectName = projects.find(x=>x.projectId===detail.projectId)?.projectName || "-";
         return (
-        <ModalShell className="testcase-detail" onDismiss={() => setDetail(null)}>
+        <ModalShell labelledBy="testcase-detail-title" className="testcase-detail" onDismiss={() => setDetail(null)}>
             <div className="modal-head">
-              <div><h2>{detail.testCaseCode}</h2><small>{modules.find(x=>x.moduleId===detail.moduleId)?.moduleName||"-"} · {projects.find(x=>x.projectId===detail.projectId)?.projectName||""}</small></div>
-              <button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
-            </div>
-            <section className="cycle-detail-hero">
-              <div className="suite-detail-hero-text">
-                <span className="suite-detail-hero-icon" aria-hidden="true">▤</span>
-                <div><h3>{detail.title}</h3></div>
+              <div className="modal-head-title-group">
+                <button className="modal-back-btn" aria-label="ปิดรายละเอียด Test Case" onClick={()=>setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">arrow_back</span></button>
+                <div>
+                  <span className="cycle-detail-eyebrow">TEST CASE · {projectName}</span>
+                  <h2 id="testcase-detail-title">{detail.testCaseCode}</h2>
+                  <small>{detail.title}</small>
+                </div>
               </div>
-              <div className="cycle-detail-badges">
+              <div className="tcd-head-badges">
                 <Badge tone={detail.priority==="P0"||detail.priority==="P1"?"red":"blue"}>{detail.priority}</Badge>
                 <Badge tone={detail.status==="Ready"?"green":detail.status==="Deprecated"?"yellow":"blue"}>{detail.status}</Badge>
                 {detail.testType && <Badge tone="yellow">{detail.testType}</Badge>}
                 <Badge tone={detail.automationCandidate?"green":"gray"}>{detail.automationCandidate?"Automation Candidate":"Manual"}</Badge>
               </div>
-            </section>
-            <div className="suite-info-cards">
-              <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">U</span> Owner</span><b>{ownerName}</b></div>
-              <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">D</span> Revision</span><b>Rev. {detail.revisionNo}</b></div>
-              <div className="suite-info-card"><span className="suite-info-card-label"><span aria-hidden="true">M</span> Module</span><b>{moduleCode}</b></div>
+              <button aria-label="ปิดรายละเอียด Test Case" onClick={()=>setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
             </div>
-            <div className="defect-detail-split">
-              <section className="cycle-detail-section">
-                <h3><span className="material-symbols-outlined" aria-hidden="true">search_off</span> Objective</h3>
-                <p className="defect-detail-text">{detail.objective||"ไม่ระบุวัตถุประสงค์"}</p>
-              </section>
-              <section className="cycle-detail-section">
-                <h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Preconditions</h3>
-                <p className="defect-detail-text">{detail.preconditions||"ไม่มีเงื่อนไขก่อนเริ่ม"}</p>
-              </section>
-            </div>
-            <section className="cycle-detail-section">
-              <h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Test Steps ({detail.steps.length})</h3>
-              <div className="tc-detail-steps-v2">
-                {detail.steps.map((x,i)=>(
-                  <div className="tc-detail-step-row" key={x.stepNo}>
-                    <div className="tc-detail-step-timeline">
-                      <span className="tc-detail-step-dot">{x.stepNo}</span>
-                      {i<detail.steps.length-1 && <i className="tc-detail-step-line" />}
-                    </div>
-                    <div className="tc-detail-step-card">
-                      <div className="tc-detail-step-col"><span className="tc-detail-step-col-label"><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> Action</span><b>{x.action}</b></div>
-                      <div className="tc-detail-step-col"><span className="tc-detail-step-col-label"><span aria-hidden="true">●</span> Test Data</span>{x.testData ? <span className="tc-detail-step-pill amber">{x.testData}</span> : <span className="muted-text">-</span>}</div>
-                      <div className="tc-detail-step-col"><span className="tc-detail-step-col-label"><span className="material-symbols-outlined" aria-hidden="true">check</span> Expected Result</span><span className="tc-detail-step-pill green">{x.expectedResult}</span></div>
-                    </div>
-                  </div>
-                ))}
+            {canEdit && (
+              <div className="tcd-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Case">
+                <button className="btn primary" onClick={()=>{const item=detail;setDetail(null);openForm(item);}}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>
+                <button className="btn" title="สร้าง Test Case ใหม่โดยคัดลอกจากเคสนี้" onClick={()=>{const item=detail;setDetail(null);void cloneCase(item);}}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> สำเนา</button>
+                <button className="btn quick-action-red tcd-delete" onClick={()=>{const item=detail;setDetail(null);setConfirmDelete(item);}}><span className="material-symbols-outlined" aria-hidden="true">delete</span> ลบ</button>
               </div>
-            </section>
-            <section className="cycle-detail-section">
-              <h3>Requirements ที่เชื่อมโยง ({detailRequirements.length})</h3>
-              {detailRequirements.length ? (
-                <div className="defect-linked-cases">
-                  {detailRequirements.map(x=>(
-                    <div key={x.requirementId} className="defect-linked-case">
-                      <div><b>{x.requirementCode}</b><small>{x.title}{x.coverageType ? ` · Coverage: ${x.coverageType}` : ""}</small></div>
-                      <Badge tone={x.status==="Approved"?"green":x.status==="Draft"?"yellow":"blue"}>{x.status}</Badge>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="muted-text">ยังไม่มี Requirement ที่เชื่อมโยง — สามารถเชื่อมได้จากหน้า Requirement</p>}
-            </section>
-            {!!revisions.length && (
-              <section className="cycle-detail-section">
-                <h3>Revision History ({revisions.length})</h3>
-                <div className="defect-activity-list">
-                  {revisions.map(x=>(
-                    <div key={x.revisionNo} className="defect-activity-row">
-                      <Badge tone="blue">Rev. {x.revisionNo}</Badge>
-                      <div><p>{x.changeReason||"-"}</p><small>{x.changedByName||"ไม่ระบุผู้แก้ไข"} · {formatThaiDateTime(x.changedAt)}</small></div>
-                    </div>
-                  ))}
-                </div>
-              </section>
             )}
-            <div className="modal-actions">
-              <button className="btn" onClick={()=>setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>
-              {canEdit && <button className="btn primary" onClick={()=>{const item=detail;setDetail(null);openForm(item);}}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
+            <div className="tcd-body">
+              <div className="tcd-main">
+                <dl className="tcd-summary">
+                  <div><dt>Module</dt><dd>{detailModule ? `${detailModule.moduleCode} · ${detailModule.moduleName}` : "-"}</dd></div>
+                  <div><dt>Owner</dt><dd>{ownerName}</dd></div>
+                  <div><dt>Revision</dt><dd>Rev. {detail.revisionNo}</dd></div>
+                  <div><dt>Test Steps</dt><dd>{detail.steps.length}</dd></div>
+                  <div><dt>สร้างเมื่อ</dt><dd>{detail.createdAt ? formatThaiDateTime(detail.createdAt, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</dd></div>
+                </dl>
+                <div className="tcd-context">
+                  <section><h3><span className="material-symbols-outlined" aria-hidden="true">flag</span> Objective</h3><p className={detail.objective ? undefined : "muted-text"}>{detail.objective||"ไม่ระบุวัตถุประสงค์"}</p></section>
+                  <section><h3><span className="material-symbols-outlined" aria-hidden="true">rule</span> Preconditions</h3><p className={detail.preconditions ? undefined : "muted-text"}>{detail.preconditions||"ไม่มีเงื่อนไขก่อนเริ่ม"}</p></section>
+                </div>
+                <section className="tcd-steps-panel" aria-labelledby="tc-detail-steps-title">
+                  <h3 id="tc-detail-steps-title"><span className="material-symbols-outlined" aria-hidden="true">format_list_numbered</span> Test Steps <span className="tcd-count">{detail.steps.length}</span></h3>
+                  {detail.steps.length ? (
+                    <ol className="tcd-steps">
+                      <li className="tcd-steps-header" aria-hidden="true"><span>#</span><span>Action</span><span>Test Data</span><span>Expected Result</span></li>
+                      {detail.steps.map(x=>(
+                        <li className="tcd-step" key={x.stepNo}>
+                          <span className="tcd-step-no">{x.stepNo}</span>
+                          <div><small className="tcd-step-label">Action</small><b>{x.action}</b></div>
+                          <div><small className="tcd-step-label">Test Data</small>{x.testData ? <span className="tcd-step-data">{x.testData}</span> : <span className="muted-text">-</span>}</div>
+                          <div><small className="tcd-step-label">Expected Result</small><span className="tcd-step-expected">{x.expectedResult}</span></div>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : <p className="muted-text tcd-empty">ยังไม่มี Test Step</p>}
+                </section>
+              </div>
+              <aside className="tcd-side" aria-label="ความเชื่อมโยงและประวัติ">
+                <section>
+                  <h3><span className="material-symbols-outlined" aria-hidden="true">link</span> Requirements ที่เชื่อมโยง <span className="tcd-count">{detailRequirements.length}</span></h3>
+                  {detailRequirements.length ? (
+                    <div className="tcd-side-list">
+                      {detailRequirements.map(x=>(
+                        <div key={x.requirementId} className="tcd-side-item">
+                          <div><b>{x.requirementCode}</b><Badge tone={x.status==="Approved"?"green":x.status==="Draft"?"yellow":"blue"}>{x.status}</Badge></div>
+                          <p>{x.title}</p>
+                          {x.coverageType && <small>Coverage: {x.coverageType}</small>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="muted-text">ยังไม่มี Requirement ที่เชื่อมโยง — เชื่อมได้จากหน้า Requirement</p>}
+                </section>
+                <section>
+                  <h3><span className="material-symbols-outlined" aria-hidden="true">history</span> Revision History <span className="tcd-count">{revisions.length}</span></h3>
+                  {revisions.length ? (
+                    <ol className="tcd-revisions">
+                      {revisions.map(x=>(
+                        <li key={x.revisionNo}>
+                          <Badge tone="blue">Rev. {x.revisionNo}</Badge>
+                          <div><p>{x.changeReason||"-"}</p><small>{x.changedByName||"ไม่ระบุผู้แก้ไข"} · {formatThaiDateTime(x.changedAt)}</small></div>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : <p className="muted-text">ยังไม่มีการแก้ไข (Rev. {detail.revisionNo})</p>}
+                </section>
+              </aside>
             </div>
           </ModalShell>
         );

@@ -296,6 +296,10 @@ Filter:
 - tag
 - search
 
+### GET `/test-cases/picker?projectId={projectId}`
+
+Test Case ทั้ง Project แบบย่อในคำขอเดียว (ไม่แบ่งหน้า ไม่มี Step/StepCount/COUNT) สำหรับตัวเลือกในฟอร์ม Test Suite และ AI Generate — คืน `testCaseId`, `projectId`, `moduleId`, `testCaseCode`, `title`, `priority`, `testType`, `status` เรียงตาม `testCaseCode`; Project ที่ผู้เรียกไม่มีสิทธิ์คืนรายการว่าง (policy `TestCaseView`, `RequireProjectAccess`) — ใช้แทนการไล่ดึง `GET /test-cases` ทีละ 100 (Project 6,500 เคสเคยต้องยิง 66 ครั้ง)
+
 ### POST `/test-cases`
 ### GET `/test-cases/{testCaseId}`
 ### PUT `/test-cases/{testCaseId}`
@@ -353,6 +357,9 @@ Create:
 ## 15. Test Suites
 
 ### GET `/test-suites`
+
+แบ่งหน้า `page`/`size` — `size` 20–500 (เดิมสูงสุด 100; ขยาย 2026-10-20 ให้หน้า Test Suite/Test Cycle ดึงทุก Suite ในคำขอเดียว) คืน `{ total, rows }`
+
 ### POST `/test-suites`
 ### GET `/test-suites/{id}`
 ### PUT `/test-suites/{id}`
@@ -373,6 +380,10 @@ Add Cases:
 ## 16. Test Cycles
 
 ### GET `/test-cycles`
+
+แบ่งหน้า `page`/`size` — `size` 10–500 (เดิมสูงสุด 150; ขยาย 2026-10-20) รองรับ `status`, `projectId`, `releaseId`, `buildId`, `moduleId`, `cycleType`, `search`, `createdBy` — Execution Workspace ขอ `status=InProgress&size=500` เพื่อให้ได้ Cycle ที่กำลังทดสอบครบทุกรายการ
+
+`summary.statusCounts` (เพิ่ม 2026-10-20) = จำนวน Cycle ต่อสถานะ (`{ "InProgress": 3, "Closed": 1, ... }`) ตาม filter อื่นทั้งหมด **ยกเว้น** `status` — หน้า Test Cycle ใช้แสดงชิปสถานะจากคำขอเดียว (เดิมยิงแยกทีละสถานะ 5 คำขอ ซึ่งถูกยกเลิกพร้อมกันบ่อยเมื่อเปลี่ยน filter)
 ### POST `/test-cycles`
 ### GET `/test-cycles/{cycleId}`
 ### PUT `/test-cycles/{cycleId}`
@@ -414,6 +425,13 @@ Assign:
 ## 17. Test Execution
 
 ### GET `/test-cycles/{cycleId}/execution`
+
+`cases[].assignedTesterUserId` (เพิ่ม 2026-10-20) = ผู้ทดสอบที่ถูก assign เคสนี้ (null = ยังไม่ assign) — คิวใช้กรอง "เฉพาะเคสที่ assign ให้ฉัน"
+
+### GET `/test-cycles/{cycleId}/cases/{cycleCaseId}`
+
+รายละเอียดเคสใน Execution Workspace — `history[].stepResults` (เพิ่ม 2026-10-20) = ผลราย Step ของ Run นั้น `[{ stepNo, status, actualResult }]` เรียงตาม stepNo
+
 ### GET `/test-cycle-cases/{cycleCaseId}`
 ### POST `/test-cycle-cases/{cycleCaseId}/executions`
 ### GET `/test-cycle-cases/{cycleCaseId}/executions`

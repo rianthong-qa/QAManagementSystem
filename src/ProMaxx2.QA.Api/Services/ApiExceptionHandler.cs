@@ -13,7 +13,9 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetails, I
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext http, Exception exception, CancellationToken ct)
     {
-        if (exception is OperationCanceledException && http.RequestAborted.IsCancellationRequested) return true;
+        // client ยกเลิกคำขอแล้ว (AbortController/ปิดหน้า) — SqlClient มักโยน SqlException "Operation cancelled by user"
+        // แทน OperationCanceledException จึงต้องเช็กจาก RequestAborted ไม่ใช่ชนิด exception และไม่ log เป็น 500
+        if (http.RequestAborted.IsCancellationRequested) return true;
 
         var (status, title, detail) = exception switch
         {

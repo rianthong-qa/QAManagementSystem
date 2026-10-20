@@ -40,17 +40,22 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         if (buildId.HasValue) query = query.Where(x => x.BuildId == buildId);
         if (moduleId.HasValue) query = query.Where(x => x.Cases.Any(c => c.TestCase.ModuleId == moduleId));
         if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.CycleName.Contains(search) || x.CycleCode.Contains(search));
-        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(x => x.Status == status);
         if (!string.IsNullOrWhiteSpace(cycleType)) query = query.Where(x => x.CycleType == cycleType);
         if (createdBy.HasValue) query = query.Where(x => x.CreatedBy == createdBy);
-        var total = await query.CountAsync(ct);
-        var inProgress = await query.CountAsync(x => x.Status == "InProgress", ct);
-        var completed = await query.CountAsync(x => x.Status == "Completed", ct);
-        var cancelled = await query.CountAsync(x => x.Status == "Cancelled", ct);
-        var executedCases = await query.SelectMany(x => x.Cases).CountAsync(x => x.CurrentStatus != "NotRun", ct);
-        var totalCases = await query.SelectMany(x => x.Cases).CountAsync(ct);
+        // นับต่อสถานะก่อนกรอง status — ชิปสถานะหน้า Test Cycle ใช้ค่านี้แทนการยิงคำขอแยกทีละสถานะ (เดิม 6 คำขอต่อการเปลี่ยน filter)
+        var statusCounts = await query.GroupBy(x => x.Status).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(x => x.Status == status);
+        int CountOf(string s) => string.IsNullOrWhiteSpace(status) || status == s ? statusCounts.GetValueOrDefault(s) : 0;
+        var total = string.IsNullOrWhiteSpace(status) ? statusCounts.Values.Sum() : statusCounts.GetValueOrDefault(status);
+        var inProgress = CountOf("InProgress");
+        var completed = CountOf("Completed");
+        var cancelled = CountOf("Cancelled");
+        var caseCounts = await query.SelectMany(x => x.Cases).GroupBy(_ => 1).Select(g => new { Total = g.Count(), Executed = g.Count(c => c.CurrentStatus != "NotRun") }).FirstOrDefaultAsync(ct);
+        var executedCases = caseCounts?.Executed ?? 0;
+        var totalCases = caseCounts?.Total ?? 0;
         var pageNumber = Math.Max(1, page);
-        var pageSize = Math.Clamp(size, 10, 150);
+        // สูงสุด 500 — Execution Workspace ขอ Cycle ที่ InProgress ทั้งหมดในคำขอเดียว (PMX2 มี 191 รายการ)
+        var pageSize = Math.Clamp(size, 10, 500);
         var items = await Project(query.OrderByDescending(x => x.CreatedAt).Skip((pageNumber - 1) * pageSize).Take(pageSize)).ToListAsync(ct);
         var cycleIds = items.Select(x => x.TestCycleId).ToList();
         var moduleLinks = await db.TestCycleCases.AsNoTracking().Where(x => cycleIds.Contains(x.TestCycleId)).Select(x => new { x.TestCycleId, x.TestCase.ModuleId }).Distinct().ToListAsync(ct);
@@ -58,7 +63,7 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         var moduleInfo = await db.Modules.AsNoTracking().Where(m => moduleIds.Contains(m.ModuleId)).ToDictionaryAsync(m => m.ModuleId, m => new SuiteModuleDto(m.ModuleId, m.ModuleCode, m.ModuleName), ct);
         var byCycle = moduleLinks.GroupBy(x => x.TestCycleId).ToDictionary(g => g.Key, g => (IReadOnlyList<SuiteModuleDto>)g.Select(x => moduleInfo.GetValueOrDefault(x.ModuleId)).Where(x => x is not null).Select(x => x!).OrderBy(x => x.ModuleCode).ToList());
         var result = items.Select(x => x with { Modules = byCycle.GetValueOrDefault(x.TestCycleId, Array.Empty<SuiteModuleDto>()) }).ToList();
-        return new(new(total, result), new(total, inProgress, completed, cancelled, executedCases, totalCases));
+        return new(new(total, result), new(total, inProgress, completed, cancelled, executedCases, totalCases, statusCounts));
     }
 
     public async Task<IReadOnlyList<TestCycleOptionDto>> ListOptionsAsync(Guid? projectId, CancellationToken ct)

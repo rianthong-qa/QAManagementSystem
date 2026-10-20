@@ -9,7 +9,7 @@ public sealed class TestSuiteRepository(QaDbContext db,ProjectAccessContext proj
     if(!string.IsNullOrWhiteSpace(riskTier))q=q.Where(x=>x.RiskTier==riskTier);
     if(isActive.HasValue)q=q.Where(x=>x.IsActive==isActive);
     if(moduleId.HasValue)q=q.Where(x=>x.Cases.Any(c=>c.TestCase.ModuleId==moduleId));
-    var total=await q.CountAsync(ct);var p=Math.Max(1,page);var s=Math.Clamp(size,20,100);
+    var total=await q.CountAsync(ct);var p=Math.Max(1,page);var s=Math.Clamp(size,20,500);/* หน้า Test Suite ดึงทุก Suite ครั้งเดียว — เดิม cap 100 ทำให้ 477 Suite ต้องยิง 5 คำขอเรียงกันผ่าน Cloudflare */
     var items=await q.OrderByDescending(x=>x.CreatedAt).Skip((p-1)*s).Take(s).Select(x=>new TestSuiteListDto(x.TestSuiteId,x.ProjectId,x.SuiteCode,x.SuiteName,x.SuiteType,x.Description,x.RiskTier,x.IsActive,db.TestCycles.Count(c=>c.TestSuiteId==x.TestSuiteId&&!c.IsDeleted),x.Cases.Count,new List<SuiteModuleDto>(),x.CreatedBy,db.Users.Where(u=>u.UserId==x.CreatedBy).Select(u=>u.DisplayName).FirstOrDefault(),x.CreatedAt)).ToListAsync(ct);
     // Suites aren't scoped to a single module — a suite can span many. Look up every distinct module
     // touched by each suite's cases (for this page only) so the list can show/filter by them.

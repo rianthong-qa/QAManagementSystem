@@ -220,31 +220,45 @@ git diff --check
 
 - Requirement editor: ใช้มาตรฐาน modal ทั่วไป
 - Test Case editor: compact 4-column desktop และ full-screen mobile
-- Test Suite editor: 1040px, assignment columns 2 ฝั่ง; Mobile เหลือ 1 ฝั่ง
+- **รายละเอียด Test Case (`.modal-box.testcase-detail`) ใช้โครง workspace หน้าจอเดียวเดียวกับรายละเอียด Defect/Test Suite:** หัว (eyebrow `TEST CASE · Project`, รหัส, ชื่อ, Badge Priority/Status/Type/Automation) + แถบปุ่ม (แก้ไข primary, สำเนา, ลบชิดขวา — แสดงเมื่อมีสิทธิ์แก้ไข) อยู่กับที่; ซ้าย = แถบสรุป (Module code·name, Owner, Revision, จำนวน Step, วันที่สร้าง) + Objective/Preconditions 2 ช่อง + **Test Steps แบบตาราง** (#, Action, Test Data เป็นป้ายเหลือง, Expected Result สีเขียว) เลื่อนเฉพาะฝั่ง; ขวา 320–400px = Requirement ที่เชื่อมโยง + Revision History; ≤760px ตาราง Step เป็น card ที่มีหัวข้อ Action/Test Data/Expected เหนือค่า — class ใหม่ใช้ prefix `tcd-` เพราะหน้า Regression ใช้ `tc-detail-*` (body/step-no/step-data/revisions) อยู่แล้ว
+- Test Suite editor (`.modal-box.testsuite-editor`, class ภายใน `tse-*`, ปรับ 2026-10-20) ทำงานจบในหน้าจอเดียวแบบเดียวกับฟอร์ม Test Case: หัว (eyebrow `สร้าง/แก้ไข TEST SUITE · Project`, รหัสหรือ "Test Suite ใหม่", ชื่อที่กำลังพิมพ์ — Suite Code/Project ตอนแก้ไขไม่เป็นช่อง disabled); ซ้าย 280–340px = Suite Name, Project + Module (ตอนสร้าง), Type/Risk Tier, รายละเอียด, เปิดใช้งาน และตัวเลขสรุป (ในชุด/Required/Optional/เพิ่มได้); ขวา = หมายเหตุ "บันทึกทันที" (ตอนแก้ไข) + 2 แผง `.suite-panel` — "ในชุด" (ลำดับ, รหัส/ชื่อ/Module·Type, Priority, ปุ่มสลับ Required/Optional `aria-pressed`, เลื่อนขึ้น/ลง/นำออก) และ "เพิ่มได้" (ตัวกรองค้นหา/Module/Priority/Type ที่ตัวเลือกมาจาก Test Case ของ Project นั้นเท่านั้น, ปุ่มเลือกทั้งหมด/ล้างที่เลือก, แถบ "เพิ่มเป็น Required" + "เพิ่ม n รายการเข้าชุด" ติดล่างแผง); ท้ายอยู่กับที่พร้อมสรุป "ยังขาด: …"; แถวรายการให้ปุ่มควบคุมขึ้นบรรทัดใหม่เมื่อแผงแคบแทนการบีบชื่อ; ≤900px คอลัมน์เดียว (แผงเลื่อนในตัวสูงสุด 420px), ≤760px เต็มจอ — modal AI Generate ยังใช้ `.suite-panel`/`.suite-case`/`.suite-case-toolbar` เดิม
+- **รายละเอียด Test Suite (`.modal-box.suite-detail`) ใช้โครง workspace หน้าจอเดียวแบบเดียวกับรายละเอียด Defect:** หัว (eyebrow `TEST SUITE · Project`, รหัส, ชื่อ Suite, Badge สถานะ/Type/Risk) + แถบปุ่ม (แก้ไข/จัด Test Case เป็น primary, สร้าง Test Cycle, ดาวน์โหลดรายงานชิดขวา) อยู่กับที่; ซ้าย = แถบสรุป `dl.suite-detail-summary` (Test Cases + Required/Optional, Test Cycle, ความคืบหน้ารวม, Module, ผู้สร้าง/วันที่) + รายละเอียด + แผง Test Case **ครบทุกเคส** พร้อมค้นหาและชิป ทั้งหมด/Required/Optional (`aria-pressed`) เลื่อนเฉพาะรายการ; ขวา 320–400px = Release/Build เป็นชิป และ Test Cycle เป็นการ์ดย่อ (รหัสเป็นลิงก์เปิด Cycle, สถานะ, ชื่อ, Release · Build · ช่วงวันที่ · ผู้ดำเนินการบรรทัดเดียว, แถบความคืบหน้า + executed/total) และปุ่ม "สร้าง Test Cycle แรก" เมื่อยังไม่มี; breakpoint เดียวกับ Defect detail
 - Test Cycle editor: 900px; inline create ต้อง stack บน Mobile
 - Defect และ modal อื่น: ใช้มาตรฐาน 900px/2 columns
 - **รายละเอียด Defect (`.modal-box.defect-detail`) เป็น workspace หน้าจอเดียว:** กว้างสูงสุด 1320px และสูงคงที่ `100dvh - 48px`; หัว (รหัส + ปุ่มคัดลอก, ชื่อ, Badge Severity/Status) และแถบปุ่มดำเนินการ (`.defect-detail-toolbar` role="toolbar", ปุ่มลบชิดขวา, คำอธิบายปุ่มเป็น `title` ไม่มีไอคอน ⓘ) อยู่กับที่; เนื้อหาแบ่ง 2 ฝั่ง — ซ้าย `.defect-detail-main` (แถบข้อมูลย่อ `dl.defect-detail-meta`, Description/Steps, Expected/Actual, Linked Test Cases) เลื่อนเฉพาะฝั่ง, ขวา `.defect-detail-side` 340–420px เป็นแท็บ Comments | Activities (`role="tablist"`, ลูกศรซ้าย/ขวาสลับแท็บ) ที่เลื่อนเฉพาะรายการ และช่องเขียนคอมเมนต์ติดล่างแผง; คอมเมนต์เลื่อนไปล่างสุด (ล่าสุด) อัตโนมัติ; ≤1280px Description/Steps เรียงซ้อน, ≤900px ทั้ง modal เรียงคอลัมน์เดียวและเลื่อนทั้งกล่อง (หัว sticky), ≤760px เต็มจอและปุ่มในแถบดำเนินการแบ่ง 2 คอลัมน์ สูง 44px
 
 ## 10. Test Case Editor
 
-- Desktop: Project/Module, Code/Title จัดคู่; Priority/Type/Status/Automation จัดแถวกระชับ
-- Objective และ Preconditions แสดงคู่กัน
-- Test Steps แสดงแบบตาราง: ลำดับ, Action, Test Data, Expected Result, Action
+ฟอร์มสร้าง/แก้ไข Test Case (`.modal-box.testcase-editor`, class ภายใน `tce-*`) ทำงานจบในหน้าจอเดียว (ปรับ 2026-10-20):
+
+- หัว: eyebrow `สร้าง/แก้ไข TEST CASE · Project`, รหัส (หรือ "Test Case ใหม่") + ป้าย `Rev. n → n+1` ตอนแก้ไข และชื่อที่กำลังพิมพ์ — Project/Code ที่แก้ไม่ได้แสดงเป็นข้อความ ไม่ใช่ช่อง disabled
+- Desktop 2 ฝั่งเลื่อนแยกกัน: ซ้าย 300–380px = ข้อมูลทั่วไป (Title, Module, Priority/Type, สถานะ + คำอธิบายผลกระทบ, Owner, Automation, Objective, Preconditions); ขวา = Test Steps (งานหลัก) แบบแถว: ลำดับ, Action, Test Data, Expected Result เป็น textarea (ต่ำสุด 58px — textarea ทั้งแอป min-height 100px จึงต้องกำหนดเอง) และปุ่มเลื่อนขึ้น/ลง/แทรก Step ด้านล่าง/ลบ ต่อ Step + ปุ่ม "เพิ่ม Step" ท้ายรายการ
+- ท้ายฟอร์มอยู่กับที่: ช่อง "เหตุผลที่แก้ไข" (ตอนแก้ไข) อยู่ติดปุ่มบันทึก, ข้อความสรุป "ยังขาด: …" (`role="status"`) บอกว่าทำไมปุ่มบันทึกยังกดไม่ได้ หรือ "ข้อมูลครบ พร้อมบันทึก" และปุ่ม ยกเลิก / "บันทึก Revision ใหม่" หรือ "สร้าง Test Case"
+- กรอบแดง (`aria-invalid`) เฉพาะ Step ที่เริ่มกรอกแล้วแต่ยังไม่ครบ หรือทุกช่องบังคับตอนแก้ไข — ฟอร์มใหม่ไม่ขึ้นแดงทั้งหน้าตั้งแต่เปิด
 - Input ใน step ต้อง `min-width: 0` เพื่อป้องกัน overflow
-- Header และปุ่มบันทึก sticky
-- Mobile: Step แต่ละรายการเปลี่ยนเป็น card; input เรียงแนวตั้งและปุ่มลบอยู่ท้าย card
+- ≤900px เรียงคอลัมน์เดียวเลื่อนทั้ง modal (หัวและท้าย sticky); ≤760px เต็มจอ, Step เป็น card ที่มีหัวข้อ Action/Test Data/Expected เหนือช่อง และปุ่มจัดการ 4 ปุ่มขนาด 36px อยู่ท้าย card
 - ห้ามตัด field, action หรือ expected result ออกจาก mobile flow
 
 ## 11. Execution Workspace
 
-- Toolbar แสดง Test Cycle, Build, Environment และสถานะ
-- Overview แสดง Total, Passed, Failed, Blocked, Not Run และ progress
-- Desktop ใช้ 3 ส่วน: Test Case Queue, Execution Detail, History
-- Queue รองรับค้นหาด้วย code/title และกรองสถานะ
-- Selected case ต้องเห็นชัดด้วยพื้นหลังและเส้น primary
-- Test Steps รองรับตั้งผลทั้งหมดเป็น Pass, Fail หรือ NotRun
-- Result action มี Pass, Fail, Blocked และ Skipped พร้อมสีตามความหมาย
-- Responsive: History ย้ายลงแถวใหม่ก่อน และทุกส่วนเรียงหนึ่งคอลัมน์บน Mobile
+ปรับใหม่ 2026-10-20 (รักษากฎใน `test-case-execution-ui-spec.md` และ `EXECUTION-WORKSPACE-RESPONSIVE-UI-SPEC.md` — ไม่เปลี่ยน API, สูตร Overall Result, validation และ flow การบันทึก):
+
+- Toolbar 2 แถว: (1) ป้ายชื่อเหนือช่อง (`.execution-field-label` 11px) — `CyclePicker` (ค้นหาได้ จัดกลุ่มตาม Module) + Module + ปุ่มสลับ "เฉพาะฉัน" (`.execution-mine-toggle` สูง 42px เท่าช่องอื่น, เปิดแล้วเป็นสี primary) + กล่องข้อมูล `dl.execution-context` (Build / Environment / สถานะ Cycle มีไอคอนกำกับ คั่นด้วยเส้น ไม่ใช้กรอบแบบช่องกรอก) (2) พื้นหลังอ่อน: เปอร์เซ็นต์ตัวใหญ่ + "n/N Test Case ทดสอบแล้ว", แถบความคืบหน้าแบ่งสีตามสถานะ (Pass เขียว / Fail แดง / Blocked เหลือง / In Progress ฟ้า / Not Run เทา, `role="img"` + `aria-label` สรุปจำนวน) และชิปสถานะมีจุดสีนำหน้า กดเพื่อกรองคิว (`aria-pressed`, กดซ้ำเพื่อยกเลิก) — แทนการ์ดสถิติ 7 ใบเดิม
+- 2 คอลัมน์: คิว Test Case (250–300px, sticky, เลื่อนในตัว, แถบซ้ายสีตามสถานะ) | พื้นที่ทดสอบ — ประวัติการทดสอบย้ายเป็นแท็บ "ประวัติการทดสอบ (n)" ข้างแท็บ "บันทึกผล" (`role="tablist"`, ลูกศรซ้าย/ขวา, เปลี่ยนเคสแล้วกลับแท็บบันทึกผล; ค่าที่กรอกไม่หายเมื่อสลับแท็บ)
+- หัวเคส: รหัส + "เคส n / N" (ตามตัวกรอง), ชื่อ, Badge สถานะ, ปุ่มก่อนหน้า/ถัดไป (ถามยืนยันเมื่อมีผลที่ยังไม่บันทึกเหมือนการเลือกจากคิว)
+- Overall Result Summary (spec §4) เหนือ Test Steps: ผลรวมที่คำนวณจาก Step (`calculateOverallResult`) + ข้อความอธิบาย + จำนวน Passed/Failed/Blocked/Not Run, สีพื้น/เส้นซ้ายตามผล
+- Test Steps เป็นตาราง flexible (`40px 1fr 1fr 300px 1.15fr`, ไม่มี min-width/scroll แนวนอน) — ปุ่มผลมีไอคอน + ข้อความ (Pass/Fail เป็นพื้นทึบเมื่อเลือก) + `aria-pressed`; แถว Fail/Blocked มีพื้นและเส้นซ้ายตามสี; พื้นที่ทดสอบใช้ `container-type: inline-size` — กว้าง ≤940px Step เป็น card แนวตั้งมีหัวข้อทุก field
+- Action Bar (spec §14: Save Progress / Skip Test Case / Complete Test) ติดล่างจอพร้อม Overall Result ย่อและ hint ปุ่มลัด — ปุ่มมีไอคอน Material แบบเติมสี: Save Progress `save` (สี primary), Skip `skip_next`, Complete Test `task_alt` (ปุ่มเขียวทึบ); ≤760px Save/Skip แบ่งครึ่งแถว และ Complete Test เต็มแถวล่างสุด — การ์ด `.execution-main` ต้อง `overflow: visible` ไม่งั้น sticky ยึดกับการ์ด (`.card` ตั้ง overflow ไว้)
+- ช่อง Test Cycle เต็มพื้นที่ที่เหลือ (`flex: 1 1 0`, min 280px) แต่ไม่ขยับตามข้อมูล: Module กว้างคงที่ 240px และ `dl.execution-context` แสดงตลอด (ค่า "-" ระหว่างโหลด) โดยแต่ละช่องกว้างคงที่ 120/170/120px ค่าที่ยาวตัดด้วย ellipsis พร้อม `title` — ความกว้างช่อง Test Cycle จึงขึ้นกับความกว้างจอเท่านั้น; ≤760px ทุกช่องเต็มความกว้าง
+- คิวแสดง Badge Priority (P0/P1 แดง อื่น ๆ น้ำเงิน) ข้าง Badge สถานะ (`.case-row-badges`) และมีปุ่มสลับ "เฉพาะเคสที่ assign ให้ฉัน" (`.case-queue-mine` เต็มแถวใต้ช่องค้นหา) แสดงเฉพาะเมื่อ Cycle มีการ assign เคส
+- คีย์บอร์ดราย Step: ↑/↓ เลือก Step (`.step-row.is-current` กรอบ primary + เลื่อนเข้าจอ, คลิกแถวก็เลือกได้), 1–4 = Pass/Fail/Blocked/Not Run (Pass/Not Run เลื่อนไป Step ถัดไป, Fail/Blocked อยู่ที่เดิม), Enter = ไปช่อง Actual Result ของ Step นั้น; P/F/B (ทุก Step, ถามยืนยัน) และ N ยังใช้ได้ — ไม่ทำงานเมื่อโฟกัสอยู่ในช่องกรอก
+- Generate Summary (`.execution-generate-summary` ปุ่ม pill ข้างหัวข้อ Actual Result): สร้างสรุปจากผล Step ปัจจุบัน — บรรทัดผลรวม + Step ที่ Fail/Blocked พร้อมผลจริงและผลที่คาดหวัง + Step ที่ยังไม่ทดสอบ; ถ้ามีข้อความอยู่แล้วถามก่อนแทนที่
+- แท็บประวัติ: แต่ละ Run มีชิปผลราย Step (`ol.history-steps` ไอคอน + เลข Step สีตามผล) และกล่อง `.history-step-note` แสดงผลจริงของ Step ที่ Fail/Blocked
+- Action Bar มีป้ายเตือน `.execution-defect-warning` (เหลือง เต็มแถวบนสุด) เมื่อมี Step Fail ที่ยังไม่มี Defect (ไม่มี Defect ที่เปิดอยู่ผูกกับเคส และยังไม่ได้สร้างรายสเต็ป) บอกว่าเมื่อบันทึกผล Fail ระบบจะสร้าง Defect ให้อัตโนมัติ พร้อมลิงก์ "สร้าง Defect เอง"
+- **โหลดแบบไม่เด้ง:** เปลี่ยน Cycle หรือเลือกเคสใหม่แล้ว**ไม่ล้างหน้าจอ** — คงข้อมูลเดิมไว้ (`.is-loading` หรี่เหลือ 50% หลังหน่วง .15s, ปิดการคลิก, `aria-busy`) จนรายละเอียดเคส **และ** Linked Defects ของเคสใหม่มาครบ แล้วสลับทีเดียว (state รายเคสตั้งใหม่ด้วย `useLayoutEffect` ก่อน paint); spinner เต็มกรอบใช้เฉพาะครั้งแรกที่ยังไม่มีข้อมูล (`.execution-main-placeholder` สูง 420px); ป้าย "กำลังโหลด" ข้างหัวข้อ Test Cycle ระหว่างสลับ Cycle; ถ้าหัวพื้นที่ทดสอบพ้นจอไปแล้วจะเลื่อนกลับแบบ smooth; คลิกแถว Step ไม่เลื่อนจอ (เลื่อนเฉพาะ ↑/↓); ข้อความ "กรุณาระบุผลที่เกิดขึ้นจริง" ใต้ช่อง Step เป็น `sr-only` (ช่องเป็นสีแดง + placeholder บังคับกรอกแทน) แถวจึงไม่สูงขึ้นตอนเลือก Fail/Blocked
+- โหลดรายละเอียดเคสถัดไปไว้ล่วงหน้า (แคชในหน้า ล้างเมื่อเปลี่ยน Cycle/หลังบันทึก) — กด "ถัดไป" แล้วแสดงทันที
+- ≤900px คอลัมน์เดียว คิวพับได้ (ปุ่ม "Test Cases n · กำลังทดสอบ …", เลือกเคสแล้วพับเอง); ≤760px toolbar เรียงแนวตั้ง, ชิปสถานะเลื่อนในแถบ, ปุ่มใน Action Bar สูง 44px
+- **ข้อควรระวัง CSS:** กฎกลาง `button:not(.icon-button)` (specificity 0,1,1) ตั้ง `display:inline-flex`, `padding:10px 16px`, `white-space:nowrap` และ `button { transition: .2s }` — selector ปุ่มในหน้านี้จึงขึ้นต้นด้วย `.execution-page` และปุ่มที่มีข้อความยาวต้องตั้ง `white-space: normal`; การตรวจด้วย headless browser ต้องปิด transition ไม่งั้นภาพที่ได้คือปุ่มกำลัง animate จากค่า default
 
 ## 12. Responsive Breakpoints
 
@@ -269,6 +283,7 @@ git diff --check
 - Toast อยู่**กลางด้านบนใต้ topbar** (`top: 80px`, Mobile `72px` + safe-area; กว้างสูงสุด 440px และเว้นขอบ 16px) และ `z-index: 200` อยู่เหนือ modal (`100`) — พื้นสีอ่อน 9% ตามประเภท (success เขียว / error แดง / info น้ำเงิน) + เส้นซ้าย 5px + ไอคอน และเลื่อนลงเข้า 0.22s (ปิดเมื่อ `prefers-reduced-motion`)
 - **การคัดลอก (ข้อความ/ลิงก์) ใช้ `CopyButton` (`src/components/CopyButton.tsx`)** ซึ่งยืนยันผลบนตัวปุ่มเป็น "✓ คัดลอกแล้ว" สีเขียว 2 วินาที (มี `role="status"` ให้ screen reader) แทน toast เพราะผู้ใช้กำลังมองปุ่มอยู่; คัดลอกไม่สำเร็จยังแจ้ง toast error พร้อมวิธีทำต่อ — ยกเว้นกรณีที่ต้องบอกข้อมูลเพิ่ม (เช่นวันหมดอายุของลิงก์ Dashboard) ใช้ toast ได้
 - Loading และ disabled state ต้องป้องกันการ submit ซ้ำ
+- ตัวเลือกที่มีหลายสิบรายการขึ้นไป (เช่น Test Cycle หลายร้อยรายการ) ห้ามใช้ `<select>` ยาวเหยียด — ใช้ช่องเลือกที่ค้นหาได้และจัดกลุ่ม แบบ `CyclePicker` (`src/components/CyclePicker.tsx`: ARIA combobox + listbox, ↑/↓/Enter/Esc, คลิกนอกแผงเพื่อปิด, Mobile เปิดเป็นแผ่นจากด้านล่างจอ); อย่าห่อ component แบบนี้ด้วย `<label>` เพราะคลิกในแผงจะไปกดปุ่มเปิด/ปิดซ้ำ — ใช้ `label` prop เป็นชื่อสำหรับ screen reader
 - หน้าที่มี Workflow หลายขั้นตอนต้องจัดลำดับ section ตามขั้นตอนการทำงานจริง (งานหลักก่อนข้อมูลประกอบ) และใช้ Step Guide Strip แสดงสถานะ done/active พร้อม scroll-to-section — reference implementation `.regression-steps` ใน Regression.css
 - ข้อความไทยต้องบันทึกเป็น UTF-8 และห้ามมี mojibake
 
@@ -285,6 +300,96 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-10-20 — Execution Workspace: โหลดข้อมูลแบบไม่เด้ง
+
+- ผู้ใช้แจ้งว่าเลือก Test Cycle/เคสแล้วหน้าจอเด้งไปมา — สาเหตุ: เปลี่ยน Cycle ล้างหน้าเป็น spinner แล้วเติมทีละส่วน, เลือกเคสแสดงหัวเคสแบบไม่มี Step ก่อน แล้ว Step และ Linked Defects ตามมาทีหลัง, คลิก Step ทำให้ `scrollIntoView` และข้อความ error ทำให้แถวสูงขึ้น — แก้ตาม §11 (คงของเดิมจนของใหม่ครบแล้วสลับทีเดียว)
+
+### 2026-10-20 — Execution Workspace: ช่อง Test Cycle เต็มพื้นที่แต่คงที่
+
+- ผู้ใช้ขอให้ช่อง Test Cycle เต็มพื้นที่ (ต่อจากรอบที่ล็อก 560px) — ใช้ `flex: 1 1 0` แทน และทำให้สิ่งที่อยู่ในแถวเดียวกันกว้างคงที่ทั้งหมด (Module 240px, กล่อง Build/Environment/สถานะ 120/170/120px แสดงตลอดแม้ยังโหลดไม่เสร็จ) ช่องจึงไม่ยืด/หดตามข้อมูล
+- ตรวจด้วย headless Edge 1440px / 1024px (2 Cycle ข้อมูลต่างกัน ช่องกว้างเท่ากัน) และ iframe 390px ไม่มี horizontal scroll
+
+### 2026-10-20 — Execution Workspace: ช่อง Test Cycle/Module กว้างคงที่
+
+- ผู้ใช้แจ้งว่าช่องขยายตามข้อมูล — เดิม `.execution-cycle-field` ใช้ `flex: 1 1 420px` จึงยืด/หดเมื่อกล่อง Build/Environment โหลดเข้ามาหรือข้อความยาวต่างกัน; เปลี่ยนเป็นความกว้างคงที่ (560px / 240px) และตัดค่าใน context box ด้วย ellipsis
+- ตรวจด้วย headless Edge 1440px (2 Cycle ข้อมูลต่างกัน ช่องกว้างเท่ากัน) และ iframe 390px ไม่มี horizontal scroll
+
+### 2026-10-20 — Execution Workspace: Generate Summary, คีย์บอร์ดราย Step, prefetch, ประวัติราย Step, Priority/เคสของฉัน, เตือน Defect
+
+- ทำตามข้อเสนอ 4–9: ปุ่ม Generate Summary, ↑/↓ + 1–4 + Enter ตั้งผลทีละ Step, โหลดเคสถัดไปล่วงหน้า, ชิปผลราย Step ในแท็บประวัติ (API ส่ง `history[].stepResults`), Badge Priority + ตัวกรอง "เฉพาะเคสที่ assign ให้ฉัน" (API ส่ง `cases[].assignedTesterUserId`), ป้ายเตือน Step Fail ที่ยังไม่มี Defect ใน Action Bar — รายละเอียดใน §11
+- ตรวจด้วย headless Edge ที่ 1440px และ iframe 390px (ไม่มี horizontal scroll ระดับหน้า)
+
+### 2026-10-20 — Execution Workspace: ไอคอนในปุ่ม Action Bar
+
+- ผู้ใช้ขอให้ปุ่ม Save Progress / Skip Test Case / Complete Test มีไอคอน — เพิ่ม `save` / `skip_next` / `task_alt` (FILL 1, 19px) และบน Mobile ย้าย Complete Test เป็นแถวเต็มด้านล่าง (เดิม 3 ปุ่มแถวเดียวข้อความถูกตัด)
+- ตรวจด้วย headless Edge พร้อมฟอนต์ Material Symbols จริงที่ 1100px และ iframe 390px
+
+### 2026-10-20 — Execution Workspace: toolbar สวยและอ่านง่ายขึ้น
+
+- ผู้ใช้ขอให้ปรับส่วน toolbar ให้สวยขึ้น — ป้ายชื่อย้ายขึ้นเหนือช่อง (ช่องเรียงแนวเดียวกัน), checkbox "เฉพาะฉัน" เป็นปุ่มสลับ, Build/Environment/สถานะ รวมเป็นกล่องข้อมูลเดียวมีไอคอน (เดิมเป็นกรอบแยกที่ดูเหมือนช่องกรอก), แถวความคืบหน้ามีเปอร์เซ็นต์ตัวใหญ่และแถบแบ่งสีตามสถานะ, ชิปมีจุดสี (รายละเอียด §11)
+- ตรวจด้วย headless Edge (CSS จริงจาก build, ปิด transition, 2 กรณี: 6/6 ผ่านหมด และ 16/42 ผลปนกัน) ที่ 1440px, 1024px และ iframe 390px — ไม่มี horizontal scroll ระดับหน้า; ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
+
+### 2026-10-20 — Execution Workspace: ปรับ UI ให้ใช้งานง่าย
+
+- ผู้ใช้ขอให้หน้า Execution Workspace ใช้งานง่ายขึ้น — ปัญหาเดิม: toolbar + การ์ดสถิติ 7 ใบกินพื้นที่ก่อนถึงงาน, 3 คอลัมน์ (คิว | ทดสอบ | ประวัติ) บีบตาราง Step ที่ตั้ง min-width 900px จนต้องเลื่อนแนวนอน, ปุ่มผล Step มีแต่ไอคอน, ไม่มี Overall Result Summary แบบ live ตาม spec §4, ไม่มีปุ่มเคสก่อนหน้า/ถัดไป และ Action Bar ไม่ติดล่างจอจริง (การ์ดมี overflow)
+- จัดใหม่ตาม §11 — logic/API ไม่เปลี่ยน; ชิปสถานะกรองคิวได้, ประวัติเป็นแท็บ, หัวเคสมีลำดับ + ก่อนหน้า/ถัดไป, Overall Result Summary, ปุ่มผลมีข้อความ, ตาราง Step ปรับตามความกว้างพื้นที่จริง (container query), Action Bar ติดล่างจอ, Mobile คิวพับได้
+- ตรวจด้วย headless Edge (CSS จริงจาก build, markup จำลอง 5 Step/8 เคส, ปิด transition) ที่ 1440px, 1024px และ iframe 390px — ไม่มี horizontal scroll ระดับหน้า, Action Bar อยู่ล่างจอ (วัดตำแหน่ง sticky แล้ว); frontend test 29/29; ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
+
+### 2026-10-20 — Execution Workspace: ช่องเลือก Test Cycle ค้นหาได้และจัดกลุ่ม
+
+- ผู้ใช้แจ้งว่า dropdown Test Cycle เรียงยาวลงมาดูยาก (Cycle InProgress เกือบ 200 รายการ, ลำดับตามวันที่สร้างทำให้รหัสสลับไปมา และอ่านได้แค่ "รหัส · ชื่อ") — เพิ่ม component `CyclePicker` (`components/CyclePicker.tsx` + `.css`): ปุ่มแสดงรหัส (primary) + ชื่อ, แผงมีช่องค้นหา (รหัส/ชื่อ/Suite/Module/Release/Build/Environment) พร้อมจำนวนผลลัพธ์, หัวกลุ่ม Module แบบ sticky พร้อมจำนวน, แต่ละรายการแสดงรหัส ชื่อ Release · Build · Environment และแถบความคืบหน้า + executed/total, รายการที่เลือกมีเส้นซ้าย primary
+- Toolbar: ช่อง Test Cycle เปลี่ยนจาก `<label>` เป็น `.execution-cycle-field`; แก้ Mobile ที่ toolbar ยัง `flex-wrap: wrap` ทำให้ความกว้างของคอลัมน์เท่าข้อความยาวที่สุดของปุ่ม (ล้นการ์ด 475px บนจอ 390px) — ≤760px ตั้ง `nowrap`
+- ตรวจด้วย headless Edge (CSS จริงจาก build, markup จำลอง 3 Module) ที่ 1440px และ iframe 390px — ไม่มี horizontal scroll; ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
+
+### 2026-10-20 — Execution Workspace: Cycle ครบและเปิดเร็วขึ้น
+
+- แก้บั๊ก: dropdown Test Cycle ขอ 100 Cycle ล่าสุดทุกสถานะแล้วกรอง InProgress ในหน้าเว็บ — Cycle ที่กำลังทดสอบแต่เก่ากว่า 100 รายการล่าสุดไม่โผล่เลย (PMX2: InProgress 191 รายการ หายไป 91); ตอนนี้ขอ `status=InProgress&size=500` จาก server (API ขยาย `size` สูงสุดเป็น 500)
+- ลดคำขอที่ต้องรอกันเป็นทอด (ทุกคำขอผ่าน Cloudflare ~0.2–1 วินาที) จาก 4 ทอดเหลือ 2: เริ่มโหลด workspace ของ Cycle ล่าสุดที่เปิด (`localStorage` `qa.execution.lastCycleId`, ต่อจาก `qa.targetCycleId` ที่หน้าอื่นส่งมา) พร้อมกับรายการ Cycle และโหลด Defect ที่เชื่อมโยงพร้อมรายละเอียดเคสโดยใช้ `testCaseId` จาก workspace; ถ้า Cycle ที่จำไว้ไม่อยู่ในรายการแล้วจะเปลี่ยนเป็น Cycle แรกเหมือนเดิม
+- ยังไม่ได้วัดเวลาในเบราว์เซอร์จริง; ต้อง restart API (เพดาน `size` ใหม่)
+
+### 2026-10-20 — Test Suite โหลดเร็วขึ้น
+
+- ผู้ใช้แจ้งว่าหน้า Test Suite โหลดช้ามาก — สาเหตุ: เปิดหน้ารายการแล้วหน้าเว็บไล่ดึง `GET /test-cases` ของทั้ง Project ทีละ 100 เรียงกัน (PMX2 มี 6,521 เคส = ~66 คำขอ แต่ละครั้ง COUNT + StepCount ~17,000 logical reads) ทั้งที่ Test Case ใช้แค่ในฟอร์มสร้าง/แก้ไขและ AI Generate; Query Store บันทึก query นี้ 4,305 ครั้งใน 24 ชม.
+- เพิ่ม `GET /test-cases/picker` (ข้อมูลย่อทั้ง Project ใน query เดียว — 1,135 reads, ~126 ms สำหรับ 6,521 แถว) และโหลดเฉพาะตอนเปิดฟอร์ม/AI Generate โดยจำไว้ราย Project (ล้างเมื่อรายการ reload หลังบันทึก); ระหว่างโหลดรายการ "เพิ่มได้" แสดงว่าง
+- แก้บั๊ก: AI Generate ใช้ Test Case ของ Project ในตัวกรองหน้ารายการ แทนที่จะเป็น Project ที่เลือกใน modal — ตอนนี้ใช้ Project ของ modal
+- ต้อง restart API ก่อนใช้งาน (endpoint ใหม่); ยังไม่ได้วัดเวลาในเบราว์เซอร์จริง
+
+### 2026-10-20 — ฟอร์มแก้ไข Test Suite: ทำงานจบในหน้าเดียว
+
+- ผู้ใช้ขอให้หน้าแก้ไข Test Suite ทำงานจบในหน้าเดียวและอ่านง่าย — เดิมมีช่อง Suite Code/Project แบบ disabled, แผงข้อมูลซ้ายกว้าง 450px จนพื้นที่จัด Test Case แคบ, รายการบอกแค่รหัส/ชื่อ/Priority, ตัวเลือก Priority/Type รวมทุก Project, ปุ่ม "เพิ่มเข้าชุด" อยู่ใต้แผงทั้งสองห่างจากรายการที่เลือก และไม่บอกว่าทำไมปุ่มบันทึกกดไม่ได้
+- จัดใหม่ตาม §9 Modal เฉพาะทาง (Test Suite editor): หัวบอกรหัส/Project, แผงซ้ายแคบลงพร้อมตัวเลขสรุป, รายการแสดง Module · Type, ปุ่มเลื่อน/นำออกเป็นไอคอนพร้อม `aria-label`, ตัวกรองย้ายเข้าแผง "เพิ่มได้" และใช้ค่าจาก Project ที่เลือก, แถบเพิ่มเข้าชุดติดล่างแผง, ท้ายฟอร์มสรุปสิ่งที่ยังขาด; API และพฤติกรรมการบันทึกเหมือนเดิมทุกอย่าง
+- ลบ CSS ของฟอร์มเดิม (`.suite-editor*`, `.suite-columns`, `.suite-case-actions`, `.requirement-toggle`, `.suite-case-remove`, `.suite-case-toolbar-note`) โดยตัดเฉพาะ selector นั้นออกจากรายการ — กฎที่ใช้ร่วม เช่น `.modal-box > .form-grid` และ `.modal > .modal-box` (Mobile เต็มจอ) ยังอยู่ครบ
+- ตรวจด้วย headless Edge (CSS จริงจาก build, markup จำลองโหมดแก้ไข 5 เคสในชุด/6 เคสที่เพิ่มได้) ที่ 1440px, 1024px และ iframe 390px — ไม่มี horizontal scroll (`scrollWidth` = `clientWidth`); ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
+
+### 2026-10-20 — ฟอร์มแก้ไข Test Case: ทำงานจบในหน้าเดียว
+
+- ผู้ใช้ขอให้หน้าแก้ไข Test Case ทำงานจบในหน้าเดียวและอ่านง่าย — เดิมฟอร์ม 4 คอลัมน์เรียงยาว: ช่อง Project/Code ที่ disabled กินพื้นที่, Test Steps (งานหลัก) อยู่ล่างสุดเป็น input บรรทัดเดียว เพิ่มได้แค่ท้ายรายการและเลื่อนลำดับไม่ได้, ช่อง "เหตุผลที่แก้ไข" ที่บังคับอยู่ไกลจากปุ่มบันทึก และไม่บอกว่าทำไมปุ่มบันทึกกดไม่ได้
+- จัดใหม่ตาม §10: ข้อมูลทั่วไปซ้าย / Test Steps ขวา, Step เป็น textarea พร้อมเลื่อนขึ้น/ลง/แทรก/ลบ, ท้ายฟอร์มอยู่กับที่พร้อมเหตุผลที่แก้ไขและสรุปสิ่งที่ยังขาด; เงื่อนไขการบันทึกเหมือนเดิมทุกข้อ (Project, Code, Title, Module, Step ต้องมี Action + Expected Result, เหตุผลที่แก้ไขตอนแก้ไข)
+- ลบ CSS ชุดเดิม (`.testcase-modal`, `.testcase-step*`, `.testcase-steps`, `tc-span-*`, `tc-compact-field`, `tc-automation`) ที่มีแค่ฟอร์มนี้ใช้ — คง `.required-mark`/`.field-error` ไว้เพราะใช้ทั้งแอป
+- ตรวจด้วย headless Edge (CSS จริงจาก build, markup จำลองโหมดแก้ไข 4 Step) ที่ 1440px, 1024px และ iframe 390px — ไม่มี horizontal scroll (`scrollWidth` = `clientWidth`); ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
+
+### 2026-10-20 — รายละเอียด Test Case: ทำงานจบในหน้าเดียว
+
+- ผู้ใช้ขอให้หน้ารายละเอียด Test Case ทำงานจบในหน้าเดียวและอ่านง่าย — เดิมเป็น hero + การ์ดข้อมูล 3 ใบ + Objective/Preconditions + Test Step แบบ timeline card (Step ละ 3 คอลัมน์ในกรอบสูง) + Requirement + Revision ซ้อนลงไป และปุ่มแก้ไขอยู่ footer
+- จัดใหม่ตาม §9 Modal เฉพาะทาง: ปุ่มแก้ไข/สำเนา/ลบย้ายขึ้นเป็นแถบใต้หัว (สำเนาและลบเดิมมีเฉพาะในแถวตาราง), Badge ย้ายเข้าหัว, การ์ดข้อมูลรวมเป็นแถบสรุปแถวเดียว, Test Step เป็นตารางกระชับ, Requirement และ Revision History ย้ายไปแผงขวา (Revision แสดง "ยังไม่มีการแก้ไข" แทนการซ่อนทั้ง section) และเอาปุ่ม "ปิด" ท้าย modal ออก
+- ลบ CSS ที่ไม่ได้ใช้แล้ว: `tc-detail-steps-v2`, `tc-detail-step-row/-timeline/-dot/-line/-card/-col*/-pill*` และกฎ `.testcase-detail` รุ่นเก่า (กว้าง 900px, `section{margin-top:16px}`) — `tc-detail-*` ที่หน้า Regression ใช้ยังคงไว้
+- ตรวจด้วย headless Edge (CSS จริงจาก build, markup จำลองตาม JSX ใหม่) ที่ 1440px, 1024px และ iframe 390px — ไม่มี horizontal scroll (`scrollWidth` = `clientWidth`); ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
+
+### 2026-10-20 — รายละเอียด Test Suite: ทำงานจบในหน้าเดียว
+
+- ผู้ใช้ขอให้หน้ารายละเอียด Test Suite ทำงานจบในหน้าเดียวและอ่านง่าย — เดิมเป็น hero + การ์ดสถิติ 4 ใบ + การ์ดข้อมูล 3 ใบ ซ้อนลงไป, Test Case แสดงแค่ 5 รายการ (ต้องกด "ดูทั้งหมด") อยู่ล่างสุด และปุ่มดำเนินการอยู่ footer
+- จัดใหม่ตาม §9 Modal เฉพาะทาง: ปุ่มย้ายขึ้นเป็นแถบใต้หัว, สถิติและข้อมูลทั่วไปรวมเป็นแถบสรุปแถวเดียว, Test Case แสดงครบพร้อมค้นหา/กรอง Required และ Priority, การใช้งาน (Release/Build + Test Cycle) ย้ายไปแผงขวาแบบย่อ; เอาปุ่ม "ยกเลิก" ท้าย modal ออก (ใช้ ✕/← ที่หัว) และไอคอนสร้าง Test Cycle เป็น `playlist_add`
+- ลบ CSS ที่ไม่ได้ใช้แล้ว (`suite-detail-stats`, `suite-detail-split`, `suite-usage-helper`, `suite-release-build-*`, `suite-cycle-card-*`, `.suite-detail-cases` แบบเก่า) — `suite-detail-hero-*`/`suite-info-card*` ยังใช้ในหน้า Test Case/Test Cycle จึงคงไว้
+- ตรวจด้วย headless Edge (CSS จริงจาก build, markup จำลองตาม JSX ใหม่) ที่ 1440px, 1024px และ iframe 390px — ไม่มี horizontal scroll (`scrollWidth` = `clientWidth`); ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
+
+### 2026-10-20 — Test Suite: ล้างตัวกรอง, สถานะโหลด/ว่าง/ผิดพลาด และความชัดเจนของโหมดแก้ไข
+
+- รายการ: ปุ่ม "ล้างตัวกรอง" ข้างจำนวน Suite แสดงเมื่อมีคำค้น/Module/Type/Risk/ผู้สร้าง/"ยังไม่มี Test Cycle" และล้างคำค้นในช่องค้นหาที่หัวหน้าด้วย (prop `onClearSearch` จาก App) — ไม่ล้าง Project ที่มาจาก context และสถานะใช้งาน; ไม่เพิ่มช่องค้นหาในการ์ดรายการเพราะซ้ำกับช่องค้นหาที่หัวหน้า (เคยเพิ่มแล้วผู้ใช้แจ้งว่าซ้ำ จึงเอาออก)
+- แก้บั๊ก: error ตอนโหลดรายการเดิมเก็บใน state เดียวกับฟอร์ม จึงขึ้นแค่ใน modal แก้ไขและหน้ารายการเป็นตารางว่าง — แยก `listError`/`listLoading` แสดงแถบ error + ปุ่ม "ลองใหม่", แถว "กำลังโหลด" และ empty state แยก "ยังไม่มี Test Suite" กับ "ไม่พบตามตัวกรอง" (มีปุ่มล้างตัวกรอง); บน Mobile แถวนี้ไม่มีคอลัมน์หัวข้อ
+- dropdown ตัวกรอง Module/Type/Risk Tier/Project มี `aria-label` ครบ
+- โหมดแก้ไข: หมายเหตุ "Test Case บันทึกทันที" เหนือรายการ Test Case (เพิ่ม/นำออก/เลื่อนลำดับ/Required มีผลทันที) และปุ่มท้ายเปลี่ยนเป็น "บันทึกข้อมูล Suite" กับ "ปิด" เพื่อไม่ให้เข้าใจว่า "ยกเลิก" ย้อนการแก้ Test Case ได้
+- ตรวจด้วย headless Edge (CSS จริงจาก build, markup จำลอง toolbar/error/empty) ที่ 1440px และ iframe 390px — ไม่มี horizontal scroll ระดับหน้า (แถบชิปสถานะเลื่อนในตัวเองตามเดิม); ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
 
 ### 2026-10-20 — รายละเอียด Defect: จัดการได้ในหน้าจอเดียว
 

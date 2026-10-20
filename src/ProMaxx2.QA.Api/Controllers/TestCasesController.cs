@@ -17,6 +17,10 @@ public sealed class TestCasesController(TestCaseService service, ProjectService 
     [HttpGet("test-cases")]
     public Task<PagedResult<TestCaseListDto>> List([FromQuery] Guid? projectId, [FromQuery] Guid? moduleId, [FromQuery] string? priority, [FromQuery] string? testType, [FromQuery] string? status, [FromQuery] bool? automation, [FromQuery] string? search, [FromQuery] string? automationTarget, [FromQuery] Guid? createdBy, [FromQuery] string? sortBy, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, moduleId, priority, testType, status, automation, search, automationTarget, createdBy, sortBy, page, size, ct);
 
+    /// <summary>Test Case ทั้ง Project แบบย่อ (ไม่แบ่งหน้า) สำหรับตัวเลือกในฟอร์ม Test Suite — ดู TestCasePickerDto</summary>
+    [HttpGet("test-cases/picker"), Authorize(Policy="TestCaseView")]
+    public async Task<ActionResult<IReadOnlyList<TestCasePickerDto>>> Picker([FromQuery] Guid projectId, CancellationToken ct) { return Ok(await service.PickerAsync(projectId, ct)); }
+
     [HttpGet("test-cases/automation-summary"), Authorize(Policy="TestCaseView")]
     public async Task<ActionResult<AutomationCandidateSummaryDto>> AutomationSummary([FromQuery] Guid projectId, CancellationToken ct) { return Ok(await service.AutomationSummaryAsync(projectId, ct)); }
 
