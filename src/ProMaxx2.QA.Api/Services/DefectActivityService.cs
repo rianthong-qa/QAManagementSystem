@@ -7,9 +7,26 @@ namespace ProMaxx2.QA.Api.Services;
 
 public sealed partial class DefectActivityService(QaDbContext db)
 {
-    public async Task<IReadOnlyList<DefectActivityDto>> GetActivitiesAsync(Guid defectId, CancellationToken ct) =>
-        await db.DefectActivities.AsNoTracking().Where(x => x.DefectId == defectId).OrderByDescending(x => x.CreatedAt)
-            .Select(x => new DefectActivityDto(x.DefectActivityId, x.DefectId, x.ActionType, x.Message, x.ActorUserId, x.CreatedAt)).ToListAsync(ct);
+    public async Task<IReadOnlyList<DefectActivityDto>> GetActivitiesAsync(Guid defectId, CancellationToken ct)
+    {
+        var rows = await db.DefectActivities.AsNoTracking().Where(x => x.DefectId == defectId).OrderByDescending(x => x.CreatedAt)
+            .Select(x => new DefectActivityDto(x.DefectActivityId, x.DefectId, x.ActionType, x.Message, x.ActorUserId, x.CreatedAt, null)).ToListAsync(ct);
+        var uploads = rows.Where(x => x.ActivityType == "AttachmentAdded").ToList();
+        if (uploads.Count == 0) return rows;
+        var images = await db.DefectAttachments.AsNoTracking().Where(x => x.DefectId == defectId && x.CommentId == null).OrderBy(x => x.UploadedAt).ThenBy(x => x.FileName)
+            .Select(x => new { x.UploadedBy, x.UploadedAt, Dto = new DefectAttachmentDto(x.DefectAttachmentId, x.FileName, x.SizeBytes) }).ToListAsync(ct);
+        var byActivity = images.Select(img => (img.Dto, Activity: MatchUpload(uploads, img.UploadedBy, img.UploadedAt)))
+            .Where(x => x.Activity is not null).GroupBy(x => x.Activity!.ActivityId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<DefectAttachmentDto>)g.Select(x => x.Dto).ToList());
+        return rows.Select(x => byActivity.TryGetValue(x.ActivityId, out var list) ? x with { Attachments = list } : x).ToList();
+    }
+
+    /// <summary>activity "AttachmentAdded" ไม่ได้เก็บ id ของรูป แต่ UploadAttachments บันทึกรูปกับ activity ใน SaveChanges เดียวกัน
+    /// (UploadedAt ก่อน CreatedAt ไม่กี่ ms และทั้งคู่เก็บละเอียดระดับวินาที) — จับคู่กับ activity ของผู้อัปโหลดคนเดียวกันที่เวลาใกล้สุดภายใน 5 วินาที;
+    /// รูปที่ถูกลบแล้วไม่อยู่ในตาราง จึงไม่แสดง และรูปที่นำเข้าจากดิสก์รุ่นเก่า (ไม่มี activity) จะไม่ถูกจับคู่</summary>
+    private static DefectActivityDto? MatchUpload(List<DefectActivityDto> uploads, Guid? uploadedBy, DateTime uploadedAt) =>
+        uploads.Where(a => a.PerformedByUserId == uploadedBy && Math.Abs((a.PerformedAt - uploadedAt).TotalSeconds) <= 5)
+            .OrderBy(a => Math.Abs((a.PerformedAt - uploadedAt).TotalSeconds)).FirstOrDefault();
 
     public async Task AddCommentAsync(Guid defectId, string body, Guid? userId, CancellationToken ct)
     {

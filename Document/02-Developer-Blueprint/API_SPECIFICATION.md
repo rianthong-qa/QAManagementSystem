@@ -495,6 +495,9 @@ Filter:
 ### POST `/defects/{defectId}/links/test-cases`
 ### POST `/defects/{defectId}/links/requirements`
 ### POST `/defects/{defectId}/links/executions`
+### GET `/defects/{defectId}/activities`
+
+คืน activity ใหม่ → เก่า: `activityId`, `defectId`, `activityType`, `description`, `performedByUserId`, `performedAt`, `attachments` — `attachments` มีค่าเฉพาะ activity `AttachmentAdded` (รายการ `{attachmentId, fileName, size}` ของรูปที่อัปโหลดครั้งนั้น ซึ่ง API จับคู่จากผู้อัปโหลดเดียวกันและเวลาที่ใกล้สุดภายใน 5 วินาที เพราะ activity ไม่ได้เก็บ id ของรูป; รูปที่ถูกลบแล้วไม่แสดง) ส่วน activity อื่นเป็น `null`; ดึงรูปด้วย `GET /defects/{defectId}/attachments/{attachmentId}`
 
 Create:
 

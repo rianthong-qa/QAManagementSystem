@@ -17,7 +17,7 @@
 > RTM rule (13 สิงหาคม 2026): หน้า RTM ต้องอ้างอิง Project/Release ที่ผู้ใช้เลือก, แสดง KPI Covered/Partial/Not Covered, กรอง Module/Requirement Status/Coverage ได้, เปิดดู Requirement และ Test Case แบบ read-only modal, จัดการ Direct/Indirect Link ตามสิทธิ์, Export CSV และเปลี่ยนตารางเป็น card บน Mobile
 
 > สถานะ: **UI Single Source of Truth**
-> อัปเดตล่าสุด: 12 ตุลาคม 2026
+> อัปเดตล่าสุด: 20 ตุลาคม 2026
 > ขอบเขต: Web frontend ทั้งหมดใน `src/ProMaxx2.QA.Web`
 
 เอกสารนี้เป็นหลักสำหรับการออกแบบ สร้าง และแก้ไข UI ทุกหน้า หากโค้ดเดิมไม่สอดคล้องกับเอกสารนี้ ให้ปรับโค้ดเข้าหาเอกสาร เว้นแต่ requirement ใหม่ระบุเป็นอย่างอื่นอย่างชัดเจน ทุกครั้งที่มีการเปลี่ยนแปลง UI ต้องอัปเดตหัวข้อที่เกี่ยวข้องและ Change Log ในไฟล์นี้ในงานเดียวกัน
@@ -223,6 +223,7 @@ git diff --check
 - Test Suite editor: 1040px, assignment columns 2 ฝั่ง; Mobile เหลือ 1 ฝั่ง
 - Test Cycle editor: 900px; inline create ต้อง stack บน Mobile
 - Defect และ modal อื่น: ใช้มาตรฐาน 900px/2 columns
+- **รายละเอียด Defect (`.modal-box.defect-detail`) เป็น workspace หน้าจอเดียว:** กว้างสูงสุด 1320px และสูงคงที่ `100dvh - 48px`; หัว (รหัส + ปุ่มคัดลอก, ชื่อ, Badge Severity/Status) และแถบปุ่มดำเนินการ (`.defect-detail-toolbar` role="toolbar", ปุ่มลบชิดขวา, คำอธิบายปุ่มเป็น `title` ไม่มีไอคอน ⓘ) อยู่กับที่; เนื้อหาแบ่ง 2 ฝั่ง — ซ้าย `.defect-detail-main` (แถบข้อมูลย่อ `dl.defect-detail-meta`, Description/Steps, Expected/Actual, Linked Test Cases) เลื่อนเฉพาะฝั่ง, ขวา `.defect-detail-side` 340–420px เป็นแท็บ Comments | Activities (`role="tablist"`, ลูกศรซ้าย/ขวาสลับแท็บ) ที่เลื่อนเฉพาะรายการ และช่องเขียนคอมเมนต์ติดล่างแผง; คอมเมนต์เลื่อนไปล่างสุด (ล่าสุด) อัตโนมัติ; ≤1280px Description/Steps เรียงซ้อน, ≤900px ทั้ง modal เรียงคอลัมน์เดียวและเลื่อนทั้งกล่อง (หัว sticky), ≤760px เต็มจอและปุ่มในแถบดำเนินการแบ่ง 2 คอลัมน์ สูง 44px
 
 ## 10. Test Case Editor
 
@@ -284,6 +285,18 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-10-20 — รายละเอียด Defect: จัดการได้ในหน้าจอเดียว
+
+- ผู้ใช้แจ้งว่าหน้ารายละเอียด Defect ต้องเลื่อนลงยาวกว่าจะถึง Quick Actions/คอมเมนต์ — จัด layout ใหม่ (ดู §9 Modal เฉพาะทาง): ปุ่มดำเนินการย้ายขึ้นมาเป็นแถบใต้หัว, Severity/Status เป็น Badge ในหัว, การ์ดสถิติ 6 ใบเปลี่ยนเป็นแถบข้อมูลย่อแถวเดียว, คอมเมนต์และ Activities ย้ายไปแผงขวาแบบแท็บพร้อมช่องเขียนคอมเมนต์ติดล่าง และเอาปุ่ม "ปิด" ท้าย modal ออก (ใช้ ✕/← ที่หัว)
+- แก้ปุ่มคัดลอกรหัสที่ถูกกฎ `.modal-head button` ขยายเป็น 36px จนตกบรรทัด และแถว Linked Test Case ที่ล้นแนวนอนบน Mobile (ตอนนี้ตัดบรรทัด ปุ่ม "ดูรายละเอียด" เต็มความกว้าง)
+- ตรวจด้วย headless Edge (CSS จริงจาก build, markup จำลองตาม JSX ใหม่) ที่ 1440px, 1024px และ iframe 390px — ไม่มี horizontal scroll (`scrollWidth` = `clientWidth`); ยังไม่ได้ทดสอบกับข้อมูลจริงในเบราว์เซอร์
+
+### 2026-10-20 — Defect detail: รูปใน Activity "แนบรูปภาพ"
+
+- ผู้ใช้ขอให้ activity `AttachmentAdded` ("แนบรูปภาพ n ไฟล์") แสดงรูปที่แนบด้วย — แสดงรูปย่อใต้บรรทัดผู้ทำ/เวลาโดยใช้ `.defect-comment-thumbs` ชุดเดียวกับคอมเมนต์ (72px, Mobile 64px) + `.defect-activity-thumbs` (เว้นระยะบน 8px); คลิกรูปเปิด `ImageLightbox` ของชุดรูปใน activity นั้น และรูปที่ยังโหลดไม่เสร็จ/โหลดไม่ได้แสดงไอคอน `image`
+- รูปโหลดผ่าน `useAuthedAttachmentUrls` (blob URL พร้อม token) และ API ส่ง `attachments` มากับ `GET /defects/{id}/activities`; activity เก่าที่จับคู่รูปไม่ได้ (รูปถูกลบ/นำเข้าจากดิสก์รุ่นเก่า) ยังแสดงเป็นข้อความอย่างเดียว
+- ยังไม่ได้ตรวจในเบราว์เซอร์จริงที่ Desktop/Mobile (ต้อง restart API ก่อน); pattern รูปย่อเดิมผ่านการตรวจ 1440px/390px แล้วใน Change Log 2026-09-30
 
 ### 2026-10-12 — ผลงานและการประเมิน: รอบการประเมินแยกกลุ่มรายพนักงาน
 

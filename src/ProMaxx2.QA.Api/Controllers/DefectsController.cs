@@ -241,7 +241,7 @@ public sealed record DefectDto(Guid DefectId,Guid ProjectId,Guid?ReleaseId,Guid?
 public sealed record SendToCrmRequest(string AssignToStaffCode,bool Relink=false);
 public sealed record SendToCrmResponse(string CrmTicketId,string CrmSyncStatus,DateTime?CrmLastSyncedAt);
 public sealed record CrmReassignRequest(string AssignToStaffCode);
-public sealed record DefectActivityDto(Guid ActivityId,Guid DefectId,string ActivityType,string? Description,Guid? PerformedByUserId,DateTime PerformedAt);
+public sealed record DefectActivityDto(Guid ActivityId,Guid DefectId,string ActivityType,string? Description,Guid? PerformedByUserId,DateTime PerformedAt,IReadOnlyList<DefectAttachmentDto>? Attachments);
 public sealed record DefectTestCaseDto(Guid TestCaseId,string TestCaseCode,string Title);
 public sealed record DefectSummaryDto(int Open,int InProgress,int Closed);
 public sealed record DefectListResultDto(IReadOnlyList<DefectDto> Rows,int Total,int Open,int InProgress,int Closed);

@@ -3,7 +3,8 @@ import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import type { DefectItem, UserLookup } from "../shared/types";
 import { apiUrl, authHeaders, getJson } from "../api";
 import { DefectCommentComposer, DefectCommentList } from "../components/DefectComments";
-import { type DefectComment, useAuthedAttachmentUrls } from "../components/defectCommentUtils";
+import { type DefectComment, type DefectCommentAttachment, toLightboxImages, useAuthedAttachmentUrls } from "../components/defectCommentUtils";
+import { ImageLightbox } from "../components/ImageLightbox";
 import { confirmDialog, notify } from "../components/dialogStore";
 import { exportDefectModulePdf } from "../DefectModulePdf";
 import { Badge } from "../components/Badge";
@@ -12,7 +13,7 @@ import { ReproSteps } from "../components/ReproSteps";
 import { ModalShell } from "../components/ModalShell";
 import { type ModuleItem, copyText, defectStatusTones, renderModuleSelectOptions } from "../shared/appShared";
 
-type DefectActivityItem = { activityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string; performedByUserId?: string | null; performedAt?: string };
+type DefectActivityItem = { activityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string; performedByUserId?: string | null; performedAt?: string; attachments?: DefectCommentAttachment[] };
 type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority?: string; status?: string; linkedAt?: string };
 const defectSeverities = ["Critical", "High", "Medium", "Low"];
 const defectStatuses = ["Open", "In Progress", "Resolved", "Closed", "Rejected"];
@@ -67,6 +68,13 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [detailError, setDetailError] = useState("");
   const [comments, setComments] = useState<DefectComment[]>([]);
   const commentImageUrls = useAuthedAttachmentUrls(apiUrl, detail?.defectId, comments.flatMap((c) => c.attachments.map((a) => a.attachmentId)));
+  // รูปของ activity "แนบรูปภาพ n ไฟล์" (API จับคู่ให้) — คลิกรูปย่อเปิด ImageLightbox ของชุดรูปในรายการนั้น
+  const activityImageUrls = useAuthedAttachmentUrls(apiUrl, detail?.defectId, activities.flatMap((a) => a.attachments?.map((x) => x.attachmentId) ?? []));
+  const [activityViewer, setActivityViewer] = useState<{ attachments: DefectCommentAttachment[]; index: number } | null>(null);
+  // แผงขวาของรายละเอียด: คอมเมนต์ (ค่าเริ่มต้น) หรือ Activities — คอมเมนต์เรียงเก่า → ใหม่ จึงเลื่อนไปล่างสุดให้เห็นล่าสุดก่อน
+  const [detailTab, setDetailTab] = useState<"comments" | "activities">("comments");
+  const commentScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { const el = commentScrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [comments, detailTab]);
   const [codeCopied, setCodeCopied] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<DefectItem | null>(null);
@@ -239,7 +247,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     finally { setCrmSending(false); }
   };
   const openDetail = async (item: DefectItem) => {
-    setDetail(item); setActivities([]); setLinkedCases([]); setComments([]); setCodeCopied(false); setDetailLoading(true); setDetailError("");
+    setDetail(item); setActivities([]); setActivityViewer(null); setDetailTab("comments"); setLinkedCases([]); setComments([]); setCodeCopied(false); setDetailLoading(true); setDetailError("");
     try {
       // โหลดไม่สำเร็จต้องบอก — เดิมแสดงเป็น "ยังไม่มีกิจกรรม / ยังไม่มี Test Case ที่เชื่อมโยง"
       const failed: string[] = [];
@@ -250,7 +258,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       ]);
       setComments(Array.isArray(commentRes) ? commentRes : []);
       if (failed.length) setDetailError(`โหลด${failed.join(" และ ")}ไม่สำเร็จ — ปิดแล้วเปิดใหม่เพื่อลองอีกครั้ง`);
-      setActivities(Array.isArray(actRes) ? actRes.map((a: any) => ({ activityId: a.activityId ?? a.defectActivityId ?? "", actionType: a.actionType ?? a.activityType ?? "", message: a.message ?? a.description ?? "", actorUserId: a.actorUserId ?? a.performedByUserId ?? null, actorName: a.actorName ?? null, createdAt: a.createdAt ?? a.performedAt ?? "", performedAt: a.performedAt ?? a.createdAt ?? "" })) : []);
+      setActivities(Array.isArray(actRes) ? actRes.map((a: any) => ({ activityId: a.activityId ?? a.defectActivityId ?? "", actionType: a.actionType ?? a.activityType ?? "", message: a.message ?? a.description ?? "", actorUserId: a.actorUserId ?? a.performedByUserId ?? null, actorName: a.actorName ?? null, createdAt: a.createdAt ?? a.performedAt ?? "", performedAt: a.performedAt ?? a.createdAt ?? "", attachments: Array.isArray(a.attachments) ? a.attachments : [] })) : []);
       setLinkedCases(Array.isArray(tcRes) ? tcRes : []);
     } catch {} finally { setDetailLoading(false); }
   };
@@ -516,7 +524,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       const steps = detail.stepsToReproduce ? parseReproSteps(detail.stepsToReproduce) : null;
       const moduleName = modules.find(m => m.moduleId === detail.moduleId)?.moduleName ?? "-";
       return (
-        <ModalShell labelledBy="defect-detail-title" className="cycle-modal cycle-detail-modal defect-detail" onDismiss={() => setDetail(null)}>
+        <ModalShell labelledBy="defect-detail-title" className="defect-detail" onDismiss={() => setDetail(null)}>
             <div className="modal-head">
               <div className="modal-head-title-group">
                 <button className="modal-back-btn" aria-label="ปิดรายละเอียด Defect" onClick={() => setDetail(null)}>←</button>
@@ -531,116 +539,129 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                   <small>{detail.title}</small>
                 </div>
               </div>
+              <div className="defect-detail-head-badges">
+                <Badge tone={defectSeverityTones[detail.severity] ?? "blue"}>{detail.severity}</Badge>
+                <Badge tone={defectStatusTones[detail.status] ?? "gray"}>{detail.status}</Badge>
+              </div>
               <button aria-label="ปิดรายละเอียด Defect" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
             </div>
-            <div className="defect-detail-stats">
-              <div className="defect-detail-stat"><span className="defect-detail-stat-icon orange" aria-hidden="true">⚠</span><div><small>Severity</small><Badge tone={defectSeverityTones[detail.severity] ?? "blue"}>{detail.severity}</Badge></div></div>
-              <div className="defect-detail-stat"><span className="defect-detail-stat-icon green" aria-hidden="true">✓</span><div><small>Status</small><Badge tone={defectStatusTones[detail.status] ?? "gray"}>{detail.status}</Badge></div></div>
-              <div className="defect-detail-stat"><span className="defect-detail-stat-icon blue" aria-hidden="true">▢</span><div><small>Module</small><b>{moduleName}</b></div></div>
-              <div className="defect-detail-stat"><span className="defect-detail-stat-icon purple" aria-hidden="true">◔</span><div><small>Age</small><b>{defectAgeDays(detail.createdAt)} วัน</b></div></div>
-              <div className="defect-detail-stat"><span className="defect-detail-stat-icon blue" aria-hidden="true">▤</span><div><small>Created</small><b>{fmtAgo(detail.createdAt)}</b><small className="defect-detail-stat-sub">{formatThaiDateTime(detail.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small></div></div>
-              <div className="defect-detail-stat"><span className="defect-detail-stat-icon gray" aria-hidden="true">U</span><div><small>Assignee</small><b>{detail.assigneeName ?? "ไม่ระบุ"}</b></div></div>
-              {detail.crmSyncStatus === "Linked" && detail.crmTicketId && <div className="defect-detail-stat"><span className="defect-detail-stat-icon green" aria-hidden="true">⇪</span><div><small>CRM Ticket</small><a href={`https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo=${encodeURIComponent(detail.crmTicketId)}&JobType=HD`} target="_blank" rel="noreferrer" title={`เปิด Ticket #${detail.crmTicketId} ใน CRM`}>#{detail.crmTicketId}</a></div></div>}
-              {detail.crmSyncStatus === "Failed" && <div className="defect-detail-stat"><span className="defect-detail-stat-icon red" aria-hidden="true">⚠</span><div><small>CRM</small><Badge tone="red">ส่งไม่สำเร็จ</Badge></div></div>}
-            </div>
-            <div className="defect-detail-split">
-              <section className="cycle-detail-section">
-                <h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Description</h3>
-                <div className="defect-detail-text defect-description-text">
-                  {(detail.description || "ไม่มีคำอธิบาย").split(/\r?\n/).map((line, index) => {
-                    const labeledLine = line.match(/^(.{2,40}):\s*(.*)$/);
-                    return <span key={`${index}-${line}`}>{labeledLine ? <><b>{labeledLine[1]}:</b>{labeledLine[2] && <span className="defect-description-value"> {labeledLine[2]}</span>}</> : (line || "\u00a0")}</span>;
-                  })}
-                </div>
-              </section>
-              <section className="cycle-detail-section">
-                <h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Steps to Reproduce</h3>
-                {detail.stepsToReproduce ? (steps ? <ReproSteps steps={steps} /> :<p className="defect-detail-text">{detail.stepsToReproduce}</p>) : <p className="defect-detail-text muted-text">ไม่มีขั้นตอนการทำซ้ำ</p>}
-              </section>
-            </div>
-            {(detail.expectedResult || detail.actualResult) && (
-              <div className="defect-detail-split">
-                {detail.expectedResult && <section className="cycle-detail-section"><h3>Expected Result</h3><p className="defect-detail-text">{detail.expectedResult}</p></section>}
-                {detail.actualResult && <section className="cycle-detail-section"><h3>Actual Result</h3><p className="defect-detail-text">{detail.actualResult}</p></section>}
-              </div>
-            )}
-            <section className="cycle-detail-section">
-              <h3>Linked Test Cases ({linkedCases.length})</h3>
-              <div className="defect-linked-cases">
-                {linkedCases.length ? linkedCases.map(tc => (
-                  <div key={tc.testCaseId} className="defect-linked-case">
-                    <div><b>{tc.testCaseCode}</b><small>{tc.title}</small></div>
-                    <Badge tone={tc.status ? (testCaseStatusTones[tc.status] ?? "gray") : "gray"}>{tc.status ?? "-"}</Badge>
-                    {onOpenTestCase && <button className="btn" onClick={() => { const id = tc.testCaseId; setDetail(null); onOpenTestCase(id); }}><span aria-hidden="true">⤢</span> ดูรายละเอียด</button>}
-                  </div>
-                )) : <p className="muted-text">{detailError ? "โหลด Test Case ที่เชื่อมโยงไม่สำเร็จ" : "ยังไม่มี Test Case ที่เชื่อมโยง"}</p>}
-              </div>
-            </section>
+            {/* ปุ่มดำเนินการอยู่ใต้หัวตลอด (เดิมอยู่กลางหน้า ต้องเลื่อนหา) — คำอธิบายย้ายจากไอคอน ⓘ ข้างปุ่มไปเป็น tooltip ของปุ่มเอง */}
             {canEdit !== false && (
-              <section className="cycle-detail-section">
-                <h3>Quick Actions</h3>
-                <div className="defect-quick-actions">
-                  {detail.status !== "In Progress" && detail.status !== "Closed" && (
-                    <span className="quick-action-item">
-                      <button className="btn quick-action-blue" onClick={() => { quickStatus(detail, "In Progress"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span> In Progress</button>
-                      <span className="quick-action-info" tabIndex={0} title="เปลี่ยนสถานะ Defect นี้เป็น In Progress" aria-label="เปลี่ยนสถานะ Defect นี้เป็น In Progress">ⓘ</span>
-                    </span>
-                  )}
-                  {detail.status !== "Resolved" && detail.status !== "Closed" && (
-                    <span className="quick-action-item">
-                      <button className="btn quick-action-green" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">check</span> Resolve</button>
-                      <span className="quick-action-info" tabIndex={0} title="เปลี่ยนสถานะ Defect นี้เป็น Resolved" aria-label="เปลี่ยนสถานะ Defect นี้เป็น Resolved">ⓘ</span>
-                    </span>
-                  )}
-                  {detail.status !== "Closed" && (
-                    <span className="quick-action-item">
-                      <button className="btn quick-action-purple" onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}><span aria-hidden="true">⏹</span> Closed</button>
-                      <span className="quick-action-info" tabIndex={0} title="เปลี่ยนสถานะ Defect นี้เป็น Closed" aria-label="เปลี่ยนสถานะ Defect นี้เป็น Closed">ⓘ</span>
-                    </span>
-                  )}
-                  <span className="quick-action-item">
-                    <button className="btn" onClick={() => { openForm(detail); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>
-                    <span className="quick-action-info" tabIndex={0} title="เปิดฟอร์มแก้ไขรายละเอียด Defect นี้ (หัวข้อ, Severity, คำอธิบาย, ผู้รับผิดชอบ ฯลฯ)" aria-label="เปิดฟอร์มแก้ไขรายละเอียด Defect นี้">ⓘ</span>
-                  </span>
-                  <span className="quick-action-item">
-                    <button className="btn quick-action-red" onClick={() => { const item = detail; setDetail(null); removeDefect(item); }}><span aria-hidden="true">🗑</span> ลบ</button>
-                    <span className="quick-action-info" tabIndex={0} title="ลบ Defect นี้ออกจากระบบ (soft delete — ยังกู้คืนได้จากฐานข้อมูล ไม่แสดงในรายการอีก)" aria-label="ลบ Defect นี้ออกจากระบบ">ⓘ</span>
-                  </span>
-                  {detail.crmSyncStatus !== "Linked" && (
-                    <span className="quick-action-item">
-                      <button className="btn quick-action-blue" onClick={() => openCrmDialog("send", detail)}><span aria-hidden="true">⇪</span> ส่งไป CRM</button>
-                      <span className="quick-action-info" tabIndex={0} title="สร้าง Ticket ใหม่ใน CRM (BlueSea Helpdesk) จากข้อมูล Defect นี้ ให้เลือกผู้รับผิดชอบฝั่ง Dev แล้วผูก Ticket ID ไว้กับ Defect นี้" aria-label="สร้าง Ticket ใหม่ใน CRM จากข้อมูล Defect นี้">ⓘ</span>
-                    </span>
-                  )}
-                  {detail.crmSyncStatus === "Linked" && (
-                    <span className="quick-action-item">
-                      <button className="btn quick-action-blue" onClick={() => openCrmDialog("reassign", detail)}><span aria-hidden="true">↺</span> เปลี่ยนผู้รับผิดชอบ CRM</button>
-                      <span className="quick-action-info" tabIndex={0} title={`เปลี่ยนผู้รับผิดชอบ (Assignto) บน CRM Ticket #${detail.crmTicketId} เดิมที่ผูกไว้แล้ว ไม่สร้าง Ticket ใหม่`} aria-label="เปลี่ยนผู้รับผิดชอบบน CRM Ticket เดิม ไม่สร้าง Ticket ใหม่">ⓘ</span>
-                    </span>
-                  )}
-                </div>
-              </section>
-            )}
-            <section className="cycle-detail-section">
-              {detailError && <div className="inline-alert error" role="alert"><span>{detailError}</span></div>}
-              <h3><span className="material-symbols-outlined" aria-hidden="true">forum</span> Comments ({comments.length})</h3>
-              <DefectCommentList comments={comments} imageSrc={(id) => commentImageUrls[id]} emptyText={detailError.includes("คอมเมนต์") ? "โหลดคอมเมนต์ไม่สำเร็จ" : "ยังไม่มีคอมเมนต์"} />
-              {canEdit !== false && <DefectCommentComposer onSubmit={submitComment} />}
-            </section>
-            <section className="cycle-detail-section">
-              {(() => { const history = activities.filter(a => a.actionType !== "Comment" && a.actionType !== "CrmComment"); return <>
-              <h3>Activities ({history.length})</h3>
-              <div className="defect-activity-list">
-                {history.length ? history.map(a => (
-                  <div key={a.activityId} className="defect-activity-row">
-                    <Badge tone="blue">{defectActionLabels[a.actionType] ?? a.actionType}</Badge>
-                    <div><p>{a.message ?? a.actionType}</p><small>{a.actorName ?? "System"} · {fmtAgo(a.performedAt ?? a.createdAt)}</small></div>
-                  </div>
-                )) : <p className="muted-text">ยังไม่มี Activity</p>}
+              <div className="defect-detail-toolbar" role="toolbar" aria-label="การดำเนินการกับ Defect">
+                {detail.status !== "In Progress" && detail.status !== "Closed" && (
+                  <button className="btn quick-action-blue" title="เปลี่ยนสถานะ Defect นี้เป็น In Progress" onClick={() => { quickStatus(detail, "In Progress"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span> In Progress</button>
+                )}
+                {detail.status !== "Resolved" && detail.status !== "Closed" && (
+                  <button className="btn quick-action-green" title="เปลี่ยนสถานะ Defect นี้เป็น Resolved" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">check</span> Resolve</button>
+                )}
+                {detail.status !== "Closed" && (
+                  <button className="btn quick-action-purple" title="เปลี่ยนสถานะ Defect นี้เป็น Closed" onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}><span aria-hidden="true">⏹</span> Closed</button>
+                )}
+                <button className="btn" title="เปิดฟอร์มแก้ไขรายละเอียด Defect นี้ (หัวข้อ, Severity, คำอธิบาย, ผู้รับผิดชอบ ฯลฯ)" onClick={() => { openForm(detail); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>
+                {detail.crmSyncStatus !== "Linked" && (
+                  <button className="btn quick-action-blue" title="สร้าง Ticket ใหม่ใน CRM (BlueSea Helpdesk) จากข้อมูล Defect นี้ ให้เลือกผู้รับผิดชอบฝั่ง Dev แล้วผูก Ticket ID ไว้กับ Defect นี้" onClick={() => openCrmDialog("send", detail)}><span aria-hidden="true">⇪</span> ส่งไป CRM</button>
+                )}
+                {detail.crmSyncStatus === "Linked" && (
+                  <button className="btn quick-action-blue" title={`เปลี่ยนผู้รับผิดชอบ (Assignto) บน CRM Ticket #${detail.crmTicketId} เดิมที่ผูกไว้แล้ว ไม่สร้าง Ticket ใหม่`} onClick={() => openCrmDialog("reassign", detail)}><span aria-hidden="true">↺</span> เปลี่ยนผู้รับผิดชอบ CRM</button>
+                )}
+                <button className="btn quick-action-red defect-detail-delete" title="ลบ Defect นี้ออกจากระบบ (soft delete — ยังกู้คืนได้จากฐานข้อมูล ไม่แสดงในรายการอีก)" onClick={() => { const item = detail; setDetail(null); removeDefect(item); }}><span aria-hidden="true">🗑</span> ลบ</button>
               </div>
-              </>; })()}
-            </section>
-            <div className="modal-actions"><button className="btn primary" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div>
+            )}
+            {detailError && <div className="inline-alert error defect-detail-alert" role="alert"><span>{detailError}</span></div>}
+            <div className="defect-detail-body">
+              <div className="defect-detail-main">
+                <dl className="defect-detail-meta">
+                  <div><dt>Module</dt><dd>{moduleName}</dd></div>
+                  <div><dt>Assignee</dt><dd>{detail.assigneeName ?? "ไม่ระบุ"}</dd></div>
+                  <div><dt>Age</dt><dd>{defectAgeDays(detail.createdAt)} วัน</dd></div>
+                  <div><dt>Created</dt><dd>{fmtAgo(detail.createdAt)} <small>{formatThaiDateTime(detail.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small></dd></div>
+                  {detail.crmSyncStatus === "Linked" && detail.crmTicketId && <div><dt>CRM Ticket</dt><dd><a href={`https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo=${encodeURIComponent(detail.crmTicketId)}&JobType=HD`} target="_blank" rel="noreferrer" title={`เปิด Ticket #${detail.crmTicketId} ใน CRM`}>#{detail.crmTicketId}</a></dd></div>}
+                  {detail.crmSyncStatus === "Failed" && <div><dt>CRM</dt><dd><Badge tone="red">ส่งไม่สำเร็จ</Badge></dd></div>}
+                </dl>
+                <div className="defect-detail-split">
+                  <section className="cycle-detail-section">
+                    <h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Description</h3>
+                    <div className="defect-detail-text defect-description-text">
+                      {(detail.description || "ไม่มีคำอธิบาย").split(/\r?\n/).map((line, index) => {
+                        const labeledLine = line.match(/^(.{2,40}):\s*(.*)$/);
+                        return <span key={`${index}-${line}`}>{labeledLine ? <><b>{labeledLine[1]}:</b>{labeledLine[2] && <span className="defect-description-value"> {labeledLine[2]}</span>}</> : (line || " ")}</span>;
+                      })}
+                    </div>
+                  </section>
+                  <section className="cycle-detail-section">
+                    <h3><span className="material-symbols-outlined" aria-hidden="true">format_list_numbered</span> Steps to Reproduce</h3>
+                    {detail.stepsToReproduce ? (steps ? <ReproSteps steps={steps} /> :<p className="defect-detail-text">{detail.stepsToReproduce}</p>) : <p className="defect-detail-text muted-text">ไม่มีขั้นตอนการทำซ้ำ</p>}
+                  </section>
+                </div>
+                {(detail.expectedResult || detail.actualResult) && (
+                  <div className="defect-detail-split">
+                    {detail.expectedResult && <section className="cycle-detail-section"><h3>Expected Result</h3><p className="defect-detail-text">{detail.expectedResult}</p></section>}
+                    {detail.actualResult && <section className="cycle-detail-section"><h3>Actual Result</h3><p className="defect-detail-text">{detail.actualResult}</p></section>}
+                  </div>
+                )}
+                <section className="cycle-detail-section">
+                  <h3>Linked Test Cases ({linkedCases.length})</h3>
+                  <div className="defect-linked-cases">
+                    {linkedCases.length ? linkedCases.map(tc => (
+                      <div key={tc.testCaseId} className="defect-linked-case">
+                        <div><b>{tc.testCaseCode}</b><small>{tc.title}</small></div>
+                        <Badge tone={tc.status ? (testCaseStatusTones[tc.status] ?? "gray") : "gray"}>{tc.status ?? "-"}</Badge>
+                        {onOpenTestCase && <button className="btn" onClick={() => { const id = tc.testCaseId; setDetail(null); onOpenTestCase(id); }}><span aria-hidden="true">⤢</span> ดูรายละเอียด</button>}
+                      </div>
+                    )) : <p className="muted-text">{detailError ? "โหลด Test Case ที่เชื่อมโยงไม่สำเร็จ" : "ยังไม่มี Test Case ที่เชื่อมโยง"}</p>}
+                  </div>
+                </section>
+              </div>
+              {(() => { const history = activities.filter(a => a.actionType !== "Comment" && a.actionType !== "CrmComment"); return (
+              <aside className="defect-detail-side" aria-label="คอมเมนต์และประวัติ">
+                <div className="defect-detail-tabs" role="tablist" aria-label="คอมเมนต์และประวัติ">
+                  <button type="button" role="tab" id="defect-tab-comments" aria-controls="defect-panel-comments" aria-selected={detailTab === "comments"} tabIndex={detailTab === "comments" ? 0 : -1}
+                    onClick={() => setDetailTab("comments")} onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { setDetailTab("activities"); document.getElementById("defect-tab-activities")?.focus(); } }}>
+                    <span className="material-symbols-outlined" aria-hidden="true">forum</span> Comments <span className="defect-detail-tab-count">{comments.length}</span>
+                  </button>
+                  <button type="button" role="tab" id="defect-tab-activities" aria-controls="defect-panel-activities" aria-selected={detailTab === "activities"} tabIndex={detailTab === "activities" ? 0 : -1}
+                    onClick={() => setDetailTab("activities")} onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { setDetailTab("comments"); document.getElementById("defect-tab-comments")?.focus(); } }}>
+                    <span className="material-symbols-outlined" aria-hidden="true">history</span> Activities <span className="defect-detail-tab-count">{history.length}</span>
+                  </button>
+                </div>
+                {detailTab === "comments" ? (
+                  <>
+                    <div className="defect-detail-side-scroll" role="tabpanel" id="defect-panel-comments" aria-labelledby="defect-tab-comments" ref={commentScrollRef}>
+                      <DefectCommentList comments={comments} imageSrc={(id) => commentImageUrls[id]} emptyText={detailError.includes("คอมเมนต์") ? "โหลดคอมเมนต์ไม่สำเร็จ" : "ยังไม่มีคอมเมนต์"} />
+                    </div>
+                    {canEdit !== false && <div className="defect-detail-composer"><DefectCommentComposer onSubmit={submitComment} /></div>}
+                  </>
+                ) : (
+                  <div className="defect-detail-side-scroll" role="tabpanel" id="defect-panel-activities" aria-labelledby="defect-tab-activities">
+                    <div className="defect-activity-list">
+                      {history.length ? history.map(a => (
+                        <div key={a.activityId} className="defect-activity-row">
+                          <Badge tone="blue">{defectActionLabels[a.actionType] ?? a.actionType}</Badge>
+                          <div>
+                            <p>{a.message ?? a.actionType}</p><small>{a.actorName ?? "System"} · {fmtAgo(a.performedAt ?? a.createdAt)}</small>
+                            {a.attachments && a.attachments.length > 0 && (
+                              <div className="defect-comment-thumbs defect-activity-thumbs">
+                                {a.attachments.map((x, i) => {
+                                  const src = activityImageUrls[x.attachmentId];
+                                  return (
+                                    <button type="button" key={x.attachmentId} aria-label={`ดูรูป ${x.fileName} ขนาดใหญ่`} title={x.fileName}
+                                      onClick={() => setActivityViewer({ attachments: a.attachments!, index: i })}>
+                                      {src ? <img src={src} alt={x.fileName} loading="lazy" /> : <span className="material-symbols-outlined" aria-hidden="true">image</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )) : <p className="muted-text">ยังไม่มี Activity</p>}
+                    </div>
+                  </div>
+                )}
+              </aside>
+              ); })()}
+            </div>
+            {activityViewer && <ImageLightbox images={toLightboxImages(activityViewer.attachments, (id) => activityImageUrls[id])} index={activityViewer.index} onIndexChange={(index) => setActivityViewer({ ...activityViewer, index })} onClose={() => setActivityViewer(null)} />}
           </ModalShell>
       );
     })()}
