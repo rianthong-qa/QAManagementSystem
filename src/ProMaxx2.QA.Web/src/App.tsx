@@ -9,8 +9,6 @@ import { type AdminUser, type ModuleItem, type Page, type SessionUser, copyText,
 import "./App.css";
 import "./styles.css";
 import "./ExecutionWorkspace.css";
-import "./DragDrop.css";
-import "./ReleaseBuild.css";
 import "./TestManagement.css";
 import "./PermissionMatrix.css";
 import "./RoleManagement.css";
