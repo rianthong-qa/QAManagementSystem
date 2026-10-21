@@ -396,28 +396,30 @@ export function TestCasesPage({
           {filterCount > 0 && <button type="button" className="btn tcl-clear" onClick={()=>{setModuleFilter("");setStatusFilter("");setAutomationFilter("");setCreatedByFilter("");setPage(1);}}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
         </div>
         {canEdit && tcSelected.size > 0 && (
-          <div className="testcase-bulk-bar" role="region" aria-label="กำหนดข้อมูลกลุ่ม">
-            <span className="bulk-count">{tcSelected.size} เลือกแล้ว</span>
-            <label className="bulk-status">กำหนดสถานะ
-              <select value={tcBulkStatus} onChange={e=>setTcBulkStatus(e.target.value)}>
-                <option value="">เลือกสถานะ...</option>
+          <div className="testcase-bulk-bar tcl-bulk" role="region" aria-label="กำหนดข้อมูลกลุ่ม">
+            <span className="tcl-bulk-count"><b>{tcSelected.size.toLocaleString()}</b> เลือกแล้ว</span>
+            <span className="tcl-bulk-group">
+              <select aria-label="สถานะที่จะกำหนด" value={tcBulkStatus} onChange={e=>setTcBulkStatus(e.target.value)}>
+                <option value="">สถานะ...</option>
                 <option>Draft</option>
                 <option>Review</option>
                 <option>Ready</option>
                 <option>Deprecated</option>
               </select>
-            </label>
-            <button type="button" className="btn primary" disabled={tcSaving!==""||!tcBulkStatus} onClick={applyTcBulkStatus}>{tcSaving==="bulk"?<><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</>:<><span className="material-symbols-outlined" aria-hidden="true">check</span> กำหนดสถานะ</>}</button>
-            <label className="bulk-automation">Automation Candidate
-              <select value={tcBulkAutomation} onChange={e=>setTcBulkAutomation(e.target.value)}>
-                <option value="">เลือกค่า...</option>
+              <button type="button" className="btn primary" disabled={tcSaving!==""||!tcBulkStatus} onClick={applyTcBulkStatus} aria-label="กำหนดสถานะให้รายการที่เลือก">{tcSaving==="bulk"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">check</span>}<span className="tcl-btn-text">กำหนดสถานะ</span></button>
+            </span>
+            <span className="tcl-bulk-group">
+              <select aria-label="Automation Candidate ที่จะกำหนด" value={tcBulkAutomation} onChange={e=>setTcBulkAutomation(e.target.value)}>
+                <option value="">Automation...</option>
                 <option value="yes">เป็น Candidate</option>
                 <option value="no">Manual</option>
               </select>
-            </label>
-            <button type="button" className="btn primary" disabled={tcSaving!==""||tcBulkAutomation===""} onClick={applyTcBulkAutomation}>{tcSaving==="bulk"?<><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</>:<><span className="material-symbols-outlined" aria-hidden="true">check</span> กำหนด Candidate</>}</button>
-            <button type="button" className="btn danger" disabled={tcSaving!==""} onClick={()=>setConfirmBulkDelete(true)}>{tcSaving==="bulk-delete"?<><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>:<><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบที่เลือก</>}</button>
-            <button type="button" className="bulk-clear" disabled={tcSaving!==""} onClick={()=>setTcSelected(new Set())}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิกเลือก</button>
+              <button type="button" className="btn primary" disabled={tcSaving!==""||tcBulkAutomation===""} onClick={applyTcBulkAutomation} aria-label="กำหนด Automation Candidate ให้รายการที่เลือก">{tcSaving==="bulk"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">check</span>}<span className="tcl-btn-text">กำหนด</span></button>
+            </span>
+            <span className="tcl-bulk-end">
+              <button type="button" className="btn tcl-bulk-delete" disabled={tcSaving!==""} onClick={()=>setConfirmBulkDelete(true)}>{tcSaving==="bulk-delete"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">delete</span>}ลบที่เลือก</button>
+              <button type="button" className="tcl-bulk-clear" disabled={tcSaving!==""} onClick={()=>setTcSelected(new Set())} aria-label="ยกเลิกการเลือกทั้งหมด" title="ยกเลิกการเลือก"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+            </span>
           </div>
         )}
         <div className="tcl-table-wrap">

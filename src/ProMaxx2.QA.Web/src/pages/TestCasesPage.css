@@ -1,6 +1,6 @@
 /* ===== รายการ Test Case (ออกแบบใหม่ 2026-10-21, prefix `tcl-`) =====
    หัวการ์ด: จำนวน + ปุ่ม | แถวตัวกรองเดียว | ตาราง 7 คอลัมน์ไม่เลื่อนแนวนอน: เลือก · Test Case (รหัส + ชื่อ + ประเภท/Steps/Rev.) · Module · Priority · สถานะ · สร้างเมื่อ · จัดการ */
-.testcase-list-card { padding: 0; overflow: hidden; }
+.testcase-list-card { padding: 0; overflow: clip; } /* clip ไม่ใช่ scroll container — แถบเลือกหลายรายการ (sticky) จึงเลื่อนตามหน้าได้ */
 .tcl-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; padding: 16px 18px 12px; }
 .tcl-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .tcl-title strong { color: var(--text); font-size: 22px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -82,4 +82,34 @@ button.tcl-case:focus-visible { outline: 3px solid color-mix(in srgb, var(--prim
   .tcl-table .tcl-col-actions { width: auto; margin-left: auto; padding: 0; }
   .tcl-row-actions button { width: 40px; height: 40px; }
   .tcl-table tr.tcl-empty-row td { flex: 1 1 100%; }
+}
+
+/* แถบเลือกหลายรายการ: แถวเดียวกระชับ (ปุ่ม/ช่องเลือกสูง 32px) ติดใต้ topbar ขณะเลื่อน */
+.testcase-list-card .testcase-bulk-bar.tcl-bulk { position: sticky; top: 74px; z-index: 6; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 0; padding: 8px 18px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); border-radius: 0; background: color-mix(in srgb, var(--primary-soft) 92%, var(--card)); box-shadow: 0 6px 14px rgb(15 23 42 / 8%); backdrop-filter: none; }
+.tcl-bulk-count { color: var(--primary); font-size: 13px; white-space: nowrap; }
+.tcl-bulk-count b { font-size: 15px; }
+.tcl-bulk-group { display: inline-flex; align-items: center; gap: 6px; }
+.tcl-bulk select { height: 32px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 12px; }
+.tcl-bulk .btn { gap: 4px; min-height: 32px; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
+.tcl-bulk .btn .material-symbols-outlined { font-size: 16px; }
+.tcl-bulk-end { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.tcl-bulk .btn.tcl-bulk-delete { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); background: var(--card); color: var(--red); }
+.tcl-bulk .btn.tcl-bulk-delete:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 8%, var(--card)); }
+button.tcl-bulk-clear { display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--muted); cursor: pointer; }
+button.tcl-bulk-clear:hover { color: var(--text); }
+button.tcl-bulk-clear .material-symbols-outlined { font-size: 18px; }
+@media (max-width: 900px) {
+  .testcase-list-card .testcase-bulk-bar.tcl-bulk { top: 60px; }
+}
+/* มือถือ 2 แถว: จำนวน · ลบ · ยกเลิก | สถานะ ✓ · Automation ✓ (ปุ่มยืนยันเหลือไอคอน มี aria-label) */
+@media (max-width: 760px) {
+  .testcase-list-card .testcase-bulk-bar.tcl-bulk { top: 54px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 8px 12px; }
+  .tcl-bulk-count { grid-column: 1; grid-row: 1; align-self: center; }
+  .tcl-bulk-end { grid-column: 2; grid-row: 1; justify-content: flex-end; margin-left: 0; }
+  .tcl-bulk-group { min-width: 0; }
+  .tcl-bulk-group select { flex: 1 1 auto; width: 100%; min-width: 0; height: 40px; }
+  .tcl-bulk .btn, button.tcl-bulk-clear { height: 40px; min-height: 40px; }
+  .tcl-bulk-group .btn { width: 40px; flex: none; justify-content: center; padding: 0; }
+  .tcl-bulk-group .tcl-btn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  button.tcl-bulk-clear { width: 40px; }
 }
