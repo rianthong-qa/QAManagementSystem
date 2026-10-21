@@ -151,6 +151,8 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RiskApprove",p=>p.RequireClaim("permission","RISK.APPROVE"))
     .AddPolicy("ReleaseSignoff",p=>p.RequireClaim("permission","RELEASE.SIGNOFF"))
     .AddPolicy("AuditView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","AUDIT.VIEW")))
+    .AddPolicy("KnowledgeView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","KNOWLEDGE.VIEW")))
+    .AddPolicy("KnowledgeEdit",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","KNOWLEDGE.EDIT")))
     .AddPolicy("PerformanceView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","PERFORMANCE.VIEW")||c.User.HasClaim("permission","PERFORMANCE.EDIT")))
     .AddAutomationPolicies()
     // endpoint ที่ลืมใส่ [Authorize] ต้องไม่กลายเป็น public โดยปริยาย — endpoint anonymous ต้องประกาศ [AllowAnonymous] เอง

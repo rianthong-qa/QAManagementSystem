@@ -3181,6 +3181,18 @@ textarea::placeholder {
 }
 @media (max-width: 1100px) { .master-ai-form { grid-template-columns: 1fr 1fr; } .master-ai-form label:nth-child(3) { grid-column: 1 / -1; } }
 @media (max-width: 760px) { .master-ai-form { grid-template-columns: 1fr; } .master-ai-form label:nth-child(3) { grid-column: 1; } }
+/* คลังความรู้ (AI Chat) ใต้ฟอร์ม AI หลัก — selector 2 class เพื่อชนะ grid 5 คอลัมน์ของ .master-ai-form จึงต้องประกาศ breakpoint เอง */
+.master-knowledge { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 18px; }
+.master-knowledge-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.master-knowledge-head h3 { margin: 0; color: var(--text); font-size: 15px; font-weight: 800; }
+.master-knowledge-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.master-ai-form.master-knowledge-form { grid-template-columns: 200px minmax(200px, 1fr) minmax(240px, 1.3fr); align-items: start; }
+.master-knowledge-form .master-ai-toggle { grid-column: 1 / -1; align-items: flex-start; }
+.master-knowledge-form .master-ai-toggle input { flex: 0 0 auto; margin-top: 2px; }
+.master-knowledge-form label small { font-size: 12px; }
+.master-knowledge-form .master-ai-toggle small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 400; }
+@media (max-width: 1100px) { .master-ai-form.master-knowledge-form { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 760px) { .master-ai-form.master-knowledge-form { grid-template-columns: 1fr; } .master-knowledge-head { flex-direction: column; } }
 @media (max-width: 760px) { .monitor-summary { grid-template-columns: 1fr; } .monitor-service { grid-template-columns: auto minmax(0, 1fr) auto; } .monitor-service > .row-actions { grid-column: 2 / -1; justify-content: flex-end; } .monitor-service > .row-actions .btn { flex: 1; } .monitor-section-head { align-items: flex-start; } }
 
 /* ===== DASHBOARD MODULE OVERVIEW ===== */

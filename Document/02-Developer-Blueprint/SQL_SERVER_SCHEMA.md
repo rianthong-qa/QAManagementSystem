@@ -1286,3 +1286,24 @@ WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์�
 
 - `CRM.VIEW` / `CRM.EDIT` (ModuleArea `CRM`) เคย seed เฉพาะใน `DatabaseInitializer` ซึ่งไม่ทำงานเมื่อ `Database:ApplyMigrations=false` — migration นี้ seed แบบ idempotent
 - ค่าเริ่มต้น: `CRM.VIEW` → SYS_ADMIN, QA_LEAD, QA_TESTER, DEVELOPER, PRODUCT_OWNER, RELEASE_OWNER, VIEWER; `CRM.EDIT` → SYS_ADMIN, QA_LEAD, QA_TESTER, DEVELOPER — ปรับต่อได้ในหน้า User / Role
+
+## Addendum: คลังความรู้ / AI Chat (migration `AddKnowledgeHub`, 2026-10-21)
+
+ดูแผนเต็มที่ `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md`
+
+| ตาราง | Key / ฟิลด์หลัก |
+|---|---|
+| `KnowledgeDocuments` | PK `KnowledgeDocumentId` (guid); unique (`SourceType` Defect/CrmTicket/Article/File, `SourceKey`); `Scope` Project/Crm/Global + `ProjectId?` (index คู่กัน ใช้กรองสิทธิ์); `State` Stale/Indexed/Failed/Excluded (index); `ContentHash` (SHA-256), `ExcludeFromAi`, `ContainsCustomerData`, `ChunkCount`, `IndexedAt`, `Error` |
+| `KnowledgeChunks` | PK `KnowledgeChunkId` int identity (KEY INDEX ของ Full-Text); FK `KnowledgeDocumentId` cascade; unique (`KnowledgeDocumentId`, `ChunkNo`); `Text` nvarchar(max) — **Full-Text Index LANGUAGE 1054 (Thai) ใน catalog `KnowledgeCatalog`, CHANGE_TRACKING AUTO**; `Embedding` varbinary(max) (float32 little-endian), `EmbeddingModel`, `EmbeddingDim` |
+| `KnowledgeArticles` | บทความในระบบ: `Title` (300), `BodyMarkdown`, `ProjectId?` (null = ความรู้กลาง), `Tags` (500), `Status` Draft/Published, `IsDeleted`, audit columns |
+| `KnowledgeFiles` | ไฟล์อัปโหลด PDF/DOCX/MD/TXT: `FileName` (260), `ContentType`, `SizeBytes`, `StoragePath` (`App_Data/KnowledgeFiles`), `ProjectId?`, `ExtractedText`, `ExtractError`, `IsDeleted` |
+| `CrmTicketContents` | PK/FK `JobNo` → `CrmTickets` (cascade); `DescriptionMasked`, `ContentHash`, `FetchedAt` — เก็บเฉพาะข้อความที่ mask แล้ว |
+| `CrmTicketAnswers` | PK bigint; FK `JobNo` → `CrmTickets` (cascade); unique (`JobNo`, `AnswerNo`); `AnswerType`, `TextMasked`, `AnsweredAt` |
+| `ChatSessions` | PK guid; `UserId`, `Title` (200), `ProjectId?`, `IsDeleted`; index (`UserId`, `IsDeleted`, `UpdatedAt`) |
+| `ChatMessages` | PK bigint; FK `ChatSessionId` cascade; `Role` user/assistant, `Content`, `CitationsJson`, `Model`, token usage, `Feedback` (1/-1), `FeedbackNote` |
+
+`AiConfigurations` เพิ่ม `EmbeddingProvider` (default `None`), `EmbeddingModel`, `EmbeddingBaseUrl`, `EncryptedEmbeddingApiKey` (default ''), `EmbeddingApiKeyHint`, `AllowCrmDataToExternalAi` (default 0)
+
+สิทธิ์ (ModuleArea `KNOWLEDGE`, seed idempotent): `KNOWLEDGE.VIEW` → ทุก Role; `KNOWLEDGE.EDIT` → SYS_ADMIN, QA_LEAD
+
+ต้องติดตั้ง Full-Text Search ใน instance (`SELECT SERVERPROPERTY('IsFullTextInstalled')` = 1 — ตรวจแล้วบน `MSSQLSERVER2022` พร้อม Thai LCID 1054)

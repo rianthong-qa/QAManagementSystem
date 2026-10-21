@@ -1,6 +1,7 @@
 # แผนระบบสรุปข้อมูล Defect สำหรับ AI Local (Defect Knowledge)
 
 > สถานะ: **แผน — ยังไม่เริ่มพัฒนา**
+> อัปเดต 21 ตุลาคม 2026: Phase 2–4 (Knowledge Record, Export, AI/Embeddings/RAG) ย้ายไปรวมในคลังความรู้กลาง `AI_KNOWLEDGE_CHAT_PLAN.md` — Phase 1/1B ของแผนนี้ (ฟิลด์ Root Cause/Resolution, CRM Inbox) ยังใช้ต่อ
 > จัดทำ: 25 กันยายน 2026
 > ขอบเขต: Defect ที่พบจากการทดสอบ (Manual Execution, Auto-create เมื่อ Fail, Automation Failure) และ **เคสที่ CRM (BlueSea Helpdesk) ส่งมาหา QA** ทุก Project
 

@@ -28,6 +28,13 @@ public sealed class MasterSettingsController(QaDbContext db, SharedAiConfigurati
         catch (ArgumentException ex) { return BadRequest(Problem(ex.Message)); }
     }
 
+    [HttpPut("ai/knowledge"), Authorize(Policy = "AdminUser")]
+    public async Task<ActionResult<AiConfigurationView>> SaveAiKnowledgeConfiguration(SaveAiKnowledgeConfigurationRequest request, CancellationToken ct)
+    {
+        try { return Ok(await aiConfiguration.SaveKnowledgeAsync(request.EmbeddingProvider, request.EmbeddingModel, request.EmbeddingBaseUrl, request.EmbeddingApiKey, request.ClearEmbeddingApiKey, request.AllowCrmDataToExternalAi, ct)); }
+        catch (ArgumentException ex) { return BadRequest(Problem(ex.Message)); }
+    }
+
     [HttpPost("ai/models"), Authorize(Policy = "AdminUser")]
     public async Task<ActionResult<IReadOnlyList<AiModelView>>> ListAiModels(ListAiModelsRequest request, CancellationToken ct)
     {
@@ -200,6 +207,7 @@ public sealed record SaveMasterOptionRequest(string Category, string Value, stri
 public sealed record EnvironmentSettingDto(Guid TestEnvironmentId, Guid ProjectId, string EnvironmentName, string? BaseUrl, bool IsActive);
 public sealed record SaveEnvironmentSettingRequest(Guid ProjectId, string EnvironmentName, string? BaseUrl, bool IsActive = true);
 public sealed record SaveAiConfigurationRequest(string Provider, string Model, string? BaseUrl, string? ApiKey, bool IsEnabled = true, bool ClearApiKey = false);
+public sealed record SaveAiKnowledgeConfigurationRequest(string EmbeddingProvider, string? EmbeddingModel, string? EmbeddingBaseUrl, string? EmbeddingApiKey, bool ClearEmbeddingApiKey = false, bool AllowCrmDataToExternalAi = false);
 public sealed record ListAiModelsRequest(string Provider, string? BaseUrl, string? ApiKey);
 public sealed record SaveCrmSyncSettingsRequest(int PollIntervalMinutes);
 public sealed record CrmProjectMappingDto(Guid CrmProjectMappingId, Guid ProjectId, string CrmProductId, string? CrmVersionId);

@@ -175,7 +175,8 @@ powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1
 | `03-Architecture-and-Plan/CRM_INTEGRATION_PLAN.md`, `CRM_DEFECT_KANBAN_PLAN.md` | การเชื่อม CRM และแผน Defect Kanban (ยังเป็นแผน) |
 | `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
 | `03-Architecture-and-Plan/PERFORMANCE_EVALUATION_PLAN.md` | ผลงานและการประเมินทีม QA — เฟส 1 (ผลงานรายคน/ทดลองงาน/บันทึกงาน) และเฟส 2 (แบบประเมิน, รอบทดลองงาน 30/60/90/สรุป, รายไตรมาส, ประเมินตนเอง) และเฟส 3 (อีเมลเตือน, ไฟล์หลักฐานของบันทึกงาน, Export PDF, เทียบผลข้ามรอบ) และสรุปผลงานรายคน + ลิงก์แชร์ HR (`/?p=`) + สรุปประจำสัปดาห์ส่งผู้บริหาร implement แล้ว |
-| `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน) |
+| `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน; Phase 2–4 ย้ายไป `AI_KNOWLEDGE_CHAT_PLAN.md`) |
+| `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md` | ระบบ AI Chat + คลังความรู้ (Defect, CRM, บทความ/ไฟล์ PDF·DOCX·MD) แบบ Hybrid Full-Text ไทย + embedding บน SQL 2022 (ยังเป็นแผน) |
 | `05-Module/` | เอกสารรายโมดูล |
 
 ## 8. สถานะงานล่าสุด (2026-09-25)

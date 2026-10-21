@@ -282,6 +282,7 @@ export function AdministrationPage({ refresh, allProjects }: { refresh: number; 
     DASHBOARD: { group: "ภาพรวม", icon: "D" },
     MYWORK: { group: "ภาพรวม", icon: "MW" },
     PERFORMANCE: { group: "ภาพรวม", icon: "PF" },
+    KNOWLEDGE: { group: "ภาพรวม", icon: "AI" },
     WORKLOAD: { group: "ภาพรวม", icon: "WL" },
     PROJECT: { group: "ภาพรวม", icon: "P" },
     REQUIREMENT: { group: "REQUIREMENT & TEST DESIGN", icon: "REQ" },
@@ -307,7 +308,7 @@ export function AdministrationPage({ refresh, allProjects }: { refresh: number; 
   const grouped = menuGroupOrder.map((group) => ({ group, icon: Object.values(areaMenuMap).find((v) => v.group === group)?.icon ?? "…", items: visiblePermissions.filter((p) => { const area = p.moduleArea || "OTHER"; return (areaMenuMap[area]?.group ?? "Other") === group; }) })).filter((g) => g.items.length > 0 || g.group !== "Other");
   // Same groups/items/order as the `nav` sidebar menu, so "Menu" rows here match what users see on the left.
   const menuTree = [
-    ["ภาพรวม", [["Dashboard", "DASHBOARD"], ["My Work", "MYWORK"], ["ผลงานและการประเมิน", "PERFORMANCE"], ["Project / Module", "PROJECT"], ["Release / Build", "PROJECT"]]],
+    ["ภาพรวม", [["Dashboard", "DASHBOARD"], ["My Work", "MYWORK"], ["ผลงานและการประเมิน", "PERFORMANCE"], ["ผู้ช่วย AI / คลังความรู้", "KNOWLEDGE"], ["Project / Module", "PROJECT"], ["Release / Build", "PROJECT"]]],
     ["REQUIREMENT & TEST DESIGN", [["Requirement", "REQUIREMENT"], ["RTM", "RTM"], ["Test Case", "TESTCASE"], ["Test Suite", "TESTSUITE"]]],
     ["TEST EXECUTION", [["Test Cycle", "TESTCYCLE"], ["Execution Workspace", "EXECUTION"], ["Defect", "DEFECT"], ["Regression", "REGRESSION"], ["Automation", "AUTOMATION"], ["CRM", "CRM"]]],
     ["RELEASE GOVERNANCE", [["Test Summary", "REPORT"], ["Risk Acceptance", "RISK"], ["Release Sign-off", "RELEASE"]]],

@@ -3157,6 +3157,361 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.ToTable("CrmTicketEvents", (string)null);
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.ChatMessage", b =>
+                {
+                    b.Property<long>("ChatMessageId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("ChatMessageId"));
+
+                    b.Property<Guid>("ChatSessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CitationsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("CompletionTokens")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<short?>("Feedback")
+                        .HasColumnType("smallint");
+
+                    b.Property<string>("FeedbackNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("PromptTokens")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("ChatMessageId");
+
+                    b.HasIndex("ChatSessionId", "ChatMessageId");
+
+                    b.ToTable("ChatMessages", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.ChatSession", b =>
+                {
+                    b.Property<Guid>("ChatSessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ChatSessionId");
+
+                    b.HasIndex("UserId", "IsDeleted", "UpdatedAt");
+
+                    b.ToTable("ChatSessions", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.CrmTicketAnswer", b =>
+                {
+                    b.Property<long>("CrmTicketAnswerId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("CrmTicketAnswerId"));
+
+                    b.Property<string>("AnswerNo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("AnswerType")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime?>("AnsweredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FetchedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("JobNo")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("TextMasked")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CrmTicketAnswerId");
+
+                    b.HasIndex("JobNo", "AnswerNo")
+                        .IsUnique();
+
+                    b.ToTable("CrmTicketAnswers", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.CrmTicketContent", b =>
+                {
+                    b.Property<string>("JobNo")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("DescriptionMasked")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("FetchedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("JobNo");
+
+                    b.ToTable("CrmTicketContents", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeArticle", b =>
+                {
+                    b.Property<Guid>("KnowledgeArticleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("BodyMarkdown")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Tags")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("KnowledgeArticleId");
+
+                    b.HasIndex("IsDeleted", "ProjectId");
+
+                    b.ToTable("KnowledgeArticles", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeChunk", b =>
+                {
+                    b.Property<int>("KnowledgeChunkId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("KnowledgeChunkId"));
+
+                    b.Property<int>("ChunkNo")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("Embedding")
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<int?>("EmbeddingDim")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EmbeddingModel")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("KnowledgeDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("KnowledgeChunkId");
+
+                    b.HasIndex("KnowledgeDocumentId", "ChunkNo")
+                        .IsUnique();
+
+                    b.ToTable("KnowledgeChunks", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeDocument", b =>
+                {
+                    b.Property<Guid>("KnowledgeDocumentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ChunkCount")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("ContainsCustomerData")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<bool>("ExcludeFromAi")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("IndexedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("SourceUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.HasKey("KnowledgeDocumentId");
+
+                    b.HasIndex("State");
+
+                    b.HasIndex("Scope", "ProjectId");
+
+                    b.HasIndex("SourceType", "SourceKey")
+                        .IsUnique();
+
+                    b.ToTable("KnowledgeDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeFile", b =>
+                {
+                    b.Property<Guid>("KnowledgeFileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ExtractError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ExtractedText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StoragePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UploadedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("KnowledgeFileId");
+
+                    b.HasIndex("IsDeleted", "ProjectId");
+
+                    b.ToTable("KnowledgeFiles", (string)null);
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EmployeeProfile", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -4237,6 +4592,9 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("AllowCrmDataToExternalAi")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ApiKeyHint")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
@@ -4245,10 +4603,36 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("EmbeddingApiKeyHint")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("EmbeddingBaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("EmbeddingModel")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("EmbeddingProvider")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("None");
+
                     b.Property<string>("EncryptedApiKey")
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("EncryptedEmbeddingApiKey")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasDefaultValue("");
 
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
@@ -5277,6 +5661,42 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasOne("ProMaxx2.QA.Domain.Projects.Project", null)
                         .WithMany()
                         .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.ChatMessage", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Knowledge.ChatSession", null)
+                        .WithMany()
+                        .HasForeignKey("ChatSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.CrmTicketAnswer", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Integrations.CrmTicket", null)
+                        .WithMany()
+                        .HasForeignKey("JobNo")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.CrmTicketContent", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Integrations.CrmTicket", null)
+                        .WithOne()
+                        .HasForeignKey("ProMaxx2.QA.Domain.Knowledge.CrmTicketContent", "JobNo")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeChunk", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Knowledge.KnowledgeDocument", null)
+                        .WithMany()
+                        .HasForeignKey("KnowledgeDocumentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

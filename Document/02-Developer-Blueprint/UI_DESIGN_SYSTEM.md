@@ -350,6 +350,13 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-21 — Setting Center: บล็อก "คลังความรู้ (AI Chat)" ใน AI Configuration
+
+- ใต้ฟอร์ม AI หลักในการ์ดเดียวกัน คั่นด้วยเส้นบน (`.master-knowledge`): หัวข้อ h3 + คำอธิบาย | Badge วิธีค้น ("ค้นด้วยคำ (Full-Text)" น้ำเงิน / "ค้นด้วยคำ + ความหมาย" เขียว) → กล่องหมายเหตุ Embedding (`.master-ai-note`) → ฟอร์ม `.master-ai-form.master-knowledge-form` (Embedding Provider | Model | Base URL หรือ API key ตาม provider) → checkbox "อนุญาตส่งข้อมูล CRM (mask แล้ว) ให้ AI ภายนอก" พร้อมคำอธิบาย 12px ใต้ข้อความ → แถวปุ่มบันทึกแยกจากฟอร์มหลัก พร้อมข้อความ "ยังขาด: …" สีแดง (`role="status"`) เมื่อกดบันทึกไม่ได้
+- Grid 3 คอลัมน์ (200px / 1fr / 1.3fr, `align-items: start` เพื่อให้ช่องตรงกันแม้บางช่องมีคำแนะนำ 12px ด้านล่าง — `<small>` ใน label 11px จะเล็กเหลือ 9px ถ้าไม่กำหนดขนาด) → ≤1100px 2 คอลัมน์ → ≤760px คอลัมน์เดียว หัวข้อเรียงแนวตั้ง — ต้องประกาศ breakpoint เองเพราะ selector 2 class ชนะ media query ของ `.master-ai-form`
+- ป้าย "พร้อม" ของ AI Configuration นับ AI Local / opencode ที่ไม่มี API key ว่าพร้อม (ตรงกับ backend)
+- User / Role: permission matrix เพิ่มแถว "ผู้ช่วย AI / คลังความรู้" (`KNOWLEDGE.VIEW` / `KNOWLEDGE.EDIT`) ในกลุ่มภาพรวม
+
 ### 2026-10-21 — Test Case: แถบเลือกหลายรายการกระชับ + ติดใต้ topbar ขณะเลื่อน
 - แถบ `.tcl-bulk` แถวเดียวสูง ~49px: "n เลือกแล้ว" | สถานะ ▾ + กำหนดสถานะ | Automation ▾ + กำหนด | ลบที่เลือก (ขอบแดง ไม่ใช่พื้นแดงทึบ) + ปุ่ม × ยกเลิกเลือก — ปุ่ม/ช่องเลือกสูง 32px ตัวอักษร 12px
 - เลื่อนตามหน้า: `position: sticky; top: 74px` (≤ 900px 60px, ≤ 760px 54px) — การ์ดรายการต้องเป็น `overflow: clip` ไม่ใช่ `hidden` (hidden ทำให้ sticky ไม่ทำงาน) **กฎ:** การ์ดที่มี element sticky ข้างในใช้ `overflow: clip`

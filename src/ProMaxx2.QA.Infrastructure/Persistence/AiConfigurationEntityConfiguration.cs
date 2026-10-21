@@ -15,5 +15,10 @@ public sealed class AiConfigurationEntityConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.BaseUrl).HasMaxLength(500);
         builder.Property(x => x.EncryptedApiKey).HasMaxLength(4000).IsRequired();
         builder.Property(x => x.ApiKeyHint).HasMaxLength(20);
+        builder.Property(x => x.EmbeddingProvider).HasMaxLength(20).IsRequired().HasDefaultValue("None");
+        builder.Property(x => x.EmbeddingModel).HasMaxLength(100);
+        builder.Property(x => x.EmbeddingBaseUrl).HasMaxLength(500);
+        builder.Property(x => x.EncryptedEmbeddingApiKey).HasMaxLength(4000).IsRequired().HasDefaultValue("");
+        builder.Property(x => x.EmbeddingApiKeyHint).HasMaxLength(20);
     }
 }

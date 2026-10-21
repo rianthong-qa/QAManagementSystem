@@ -14,6 +14,7 @@ using ProMaxx2.QA.Domain.Governance;
 using ProMaxx2.QA.Domain.Automation;
 using ProMaxx2.QA.Domain.Integrations;
 using ProMaxx2.QA.Domain.Performance;
+using ProMaxx2.QA.Domain.Knowledge;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -107,6 +108,14 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<PerformanceShareLink> PerformanceShareLinks => Set<PerformanceShareLink>();
     public DbSet<EvaluationExternalReview> EvaluationExternalReviews => Set<EvaluationExternalReview>();
     public DbSet<WeeklyReportNote> WeeklyReportNotes => Set<WeeklyReportNote>();
+    public DbSet<KnowledgeDocument> KnowledgeDocuments => Set<KnowledgeDocument>();
+    public DbSet<KnowledgeChunk> KnowledgeChunks => Set<KnowledgeChunk>();
+    public DbSet<KnowledgeArticle> KnowledgeArticles => Set<KnowledgeArticle>();
+    public DbSet<KnowledgeFile> KnowledgeFiles => Set<KnowledgeFile>();
+    public DbSet<CrmTicketContent> CrmTicketContents => Set<CrmTicketContent>();
+    public DbSet<CrmTicketAnswer> CrmTicketAnswers => Set<CrmTicketAnswer>();
+    public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
 
