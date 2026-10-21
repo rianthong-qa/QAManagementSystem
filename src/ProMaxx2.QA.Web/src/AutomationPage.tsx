@@ -1,95 +1,28 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { confirmDialog } from "./components/dialogStore";
 import { formatThaiDateTime } from "./dateTime";
+import { apiUrl } from "./api";
 import {
   automationCaseTone as caseStatusTone,
   automationExecutionTone as executionStatusTone,
-  automationJobTone as jobStatusTone,
-  automationVersionTone as versionStatusTone,
-  automationVerificationTone as verificationStatusTone,
   automationCoverage,
   parseDslSteps,
-  buildObjectKey,
 } from "./automationUtils";
+import type { AutomationCaseItem, AutomationVersionItem, AutomationActionItem, AutomationObjectItem, AutomationAgentItem, AutomationJobItem, FlakyCandidateItem, RetryPolicyItem, AutomationStepResultItem, AutomationExecutionItem, AutomationEvidenceItem, TestCandidate, TestCaseDetailItem, AutomationDashboardItem } from "./automation/types";
+import { token, fetchJson, isAbort, useDebounced, AI_GENERATE_TIMEOUT_MS, targetTone, failureTone, sampleDsl } from "./automation/shared";
+import { ModalShell, Badge, Pager } from "./automation/ui";
+import { VersionEditor, RunModal, BatchRunModal, QuarantineModal } from "./automation/caseModals";
+import { ActionLibraryTab, ObjectRepositoryTab, RetryPolicyTab, AgentsSection } from "./automation/manageTabs";
+import { ExecutionTab, FailureDashboardTab } from "./automation/executionTabs";
+import { AutomationSuiteTab } from "./automation/suiteTab";
+import { AutomationScheduleTab, AutomationBuildTriggerTab, AutomationWebhookTab } from "./automation/scheduleTabs";
+import { AutomationDataSnapshotTab, AutomationDataSeedTab, AutomationEnvironmentDataProfileTab } from "./automation/dataTabs";
 
-const apiUrl = import.meta.env.VITE_API_URL ?? "/api/v1";
-const token = () => localStorage.getItem("qa.accessToken");
+const aiGenerateErrorMessage = (e: unknown) =>
+  e instanceof DOMException && e.name === "TimeoutError"
+    ? `AI ใช้เวลานานเกินไป (เกิน ${AI_GENERATE_TIMEOUT_MS / 1000} วินาที) ไม่ได้รับคำตอบจาก AI Provider — กรุณาลองใหม่ หรือตรวจสอบการตั้งค่า AI ที่ Setting Center`
+    : e instanceof Error ? e.message : "Generate AI ไม่สำเร็จ";
 
-type AutomationCaseItem = {
-  automationCaseId: string; testCaseId: string; testCaseCode: string; testCaseTitle: string; automationCode: string;
-  automationType: string; status: string; currentVersionNo: number; versionCount: number; ownerUserId?: string; ownerName?: string; isAiGenerated: boolean; createdAt: string;
-  maintenanceReason?: string; maintenanceOwnerUserId?: string; maintenanceOpenedAt?: string;
-  isQuarantined?: boolean; quarantineReason?: string; quarantineOwnerUserId?: string; quarantineExpiresAt?: string;
-};
-type AutomationVersionItem = {
-  automationVersionId: string; automationCaseId: string; versionNo: number; testCaseRevisionNo: number; dslVersion: string; dslJson: string;
-  generatedByAi: boolean; aiProvider?: string; aiModel?: string; aiConfidence?: number; validationStatus: string; validationErrors?: string;
-  approvedBy?: string; approvedAt?: string; changeReason?: string; createdAt: string;
-};
-type AutomationActionItem = {
-  automationActionId: string; actionCode: string; actionName: string; category: string; description?: string; parameterSchemaJson: string;
-  handlerKey: string; minimumAgentVersion?: string; isActive: boolean; retrySafety: string;
-};
-type AutomationObjectItem = {
-  automationObjectId: string; projectId: string; moduleId?: string; moduleCode?: string; moduleName?: string; applicationCode: string;
-  screenCode: string; objectCode: string; objectName: string; controlType: string; automationId?: string; selectorJson: string; objectVersion: number; isActive: boolean;
-};
-type AutomationObjectImportDraft = {
-  clientId: string; moduleId?: string; applicationCode: string; screenCode: string; objectCode: string; objectName: string; controlType: string; automationId?: string; selectorJson: string;
-  status: "Ready" | "DuplicateKey" | "DuplicateAutomationId" | "Invalid"; message: string;
-};
-type AutomationObjectImportResult = { imported: number; skipped: number; rows: { businessKey: string; automationId?: string; status: string; message: string }[] };
-type AutomationObjectVerificationItem = {
-  automationObjectVerificationId: string; automationObjectId: string; objectCode: string; screenCode: string; expectedAutomationId?: string; expectedControlType: string;
-  actualAutomationId?: string; actualControlType?: string; status: string; assignedAgentId?: string; assignedAgentCode?: string; requestedAt: string; completedAt?: string; message?: string;
-};
-type AutomationAgentItem = {
-  agentId: string; agentCode: string; machineName: string; agentVersion: string; operatingSystem: string; architecture: string; status: string;
-  lastHeartbeatAt: string; currentExecutionId?: string; registeredAt: string; isEnabled: boolean; connectivity: string; capabilities: string[];
-};
-type AutomationJobItem = {
-  jobId: string; automationExecutionId: string; priority: number; requestedAgentId?: string; assignedAgentId?: string; assignedAgentCode?: string;
-  status: string; queuedAt: string; assignedAt?: string; startedAt?: string; completedAt?: string; retryCount: number; lastError?: string;
-};
-type FlakyCandidateItem = { automationCaseId: string; automationCode: string; recentRuns: number; transitions: number; lastExecutedAt: string };
-type AutomationSuiteCaseItem = { automationCaseId: string; automationCode: string; testCaseCode: string; testCaseTitle: string; automationType: string; status: string; sortOrder: number; isRequired: boolean };
-type AutomationSuiteListItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdAt: string; closedAt?: string; caseCount: number; readyCaseCount: number };
-type AutomationSuiteDetailItem = { automationSuiteId: string; projectId: string; suiteCode: string; suiteName: string; description?: string; isActive: boolean; createdBy?: string; createdAt: string; updatedAt?: string; closedAt?: string; cases: AutomationSuiteCaseItem[] };
-type RetryPolicyItem = { maxAttempts: number; backoffSeconds: number; enabled: boolean; updatedAt?: string };
-type CountByKeyItem = { key: string; count: number };
-type FailureBreakdownItem = { totalFailed: number; byFailureType: CountByKeyItem[]; byBuild: CountByKeyItem[]; byAgent: CountByKeyItem[]; byAutomationCase: CountByKeyItem[] };
-type AutomationStepResultItem = {
-  automationStepResultId: string; stepNo: number; actionCode: string; status: string; startedAt: string; completedAt: string; durationMs: number;
-  actualResult?: string; errorCode?: string; errorMessage?: string; evidencePath?: string;
-};
-type AutomationExecutionItem = {
-  automationExecutionId: string; automationCaseId: string; automationCode: string; testCaseCode?: string; testCaseTitle?: string; automationVersionId: string; versionNo: number; testExecutionId?: string; defectId?: string; targetApp?: string;
-  agentId?: string; agentCode?: string; buildId: string; buildNumber: string; environmentId: string; environmentName: string; jobId?: string; status: string;
-  startedAt?: string; completedAt?: string; durationMs?: number; failureType?: string; errorCode?: string; errorMessage?: string; stepResults: AutomationStepResultItem[];
-  evidence?: AutomationEvidenceItem[];
-  classifiedFailureType?: string; classifiedRecommendation?: string; retryOfExecutionId?: string; retryCount?: number;
-};
-type AutomationEvidenceItem = { automationEvidenceId: string; stepNo?: number; evidenceType: string; filePath: string; capturedBy?: string; capturedAt: string };
-type TestCandidate = { testCaseId: string; testCaseCode: string; title: string; priority: string; status: string; moduleId: string; automationCandidate?: boolean; testType?: string };
-type TestCaseDetailItem = {
-  testCaseId: string; projectId: string; moduleId: string; testCaseCode: string; title: string;
-  objective?: string; preconditions?: string; priority: string; testType?: string; automationCandidate: boolean; status: string;
-  revisionNo: number; ownerUserId?: string;
-  steps: { stepNo: number; action: string; testData?: string; expectedResult: string }[];
-};
-type BuildOption = { buildId: string; buildNumber: string; applicationVersion?: string; status: string };
-type EnvironmentOption = { testEnvironmentId: string; environmentName: string; isActive: boolean };
-type AutomationDashboardItem = {
-  totalTestCases: number; automationCandidates: number; automationCases: number; ready: number; maintenanceRequired: number;
-  needsReview: number; inProgress: number; running: number; passToday: number; failToday: number; averageDurationMs?: number;
-  agentsOnline: number; agentsTotal: number; readyCoverage: number; candidateCoverage: number;
-};
-
-function Badge({ children, tone = "blue" }: { children: React.ReactNode; tone?: string }) {
-  return <span className={`badge ${tone}`}>{children}</span>;
-}
-
-const targetTone: Record<string, string> = { Pos: "blue", App: "purple", WindowsUI: "gray" };
-const failureTone: Record<string, string> = { ApplicationFailure: "red", AssertionFailure: "yellow", TestDataFailure: "yellow", AutomationFailure: "blue", EnvironmentFailure: "yellow", AgentFailure: "blue", Unknown: "gray" };
 const evidenceTone: Record<string, string> = { Screenshot: "blue", SqlResult: "yellow", AutomationLog: "green", AppLog: "yellow", Video: "blue" };
 
 function moduleTreeOptions(modules: { moduleId: string; moduleCode: string; moduleName: string; parentModuleId?: string; sortOrder?: number }[]): React.ReactElement[] {
@@ -112,20 +45,6 @@ function moduleTreeOptions(modules: { moduleId: string; moduleCode: string; modu
   ));
 }
 
-const sampleDsl = JSON.stringify({
-  dslVersion: "1.0",
-  automationType: "WindowsUI",
-  steps: [
-    { stepNo: 1, action: "LOGIN", parameters: { userRef: "QA_STANDARD_USER" } },
-    { stepNo: 2, action: "OPEN_MENU", parameters: { menu: "SALES" } },
-    { stepNo: 3, action: "NEW_DOCUMENT", parameters: { documentType: "SALES" } },
-    { stepNo: 4, action: "SELECT_ITEM", parameters: { itemCode: "A001" } },
-    { stepNo: 5, action: "SET_QTY", parameters: { object: "Sales.Quantity", value: "20" } },
-    { stepNo: 6, action: "SAVE_DOCUMENT", parameters: {} },
-    { stepNo: 7, action: "EXPECT_MESSAGE", parameters: { messageKey: "STOCK_NOT_ENOUGH" } },
-  ],
-}, null, 2);
-
 const splitTaskText = (text: string) => {
   const idx = text.indexOf("—");
   return idx > -1 ? [text.slice(0, idx).trim(), text.slice(idx + 1).trim()] : [text, ""];
@@ -140,40 +59,6 @@ const formatDuration = (ms?: number) => {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 };
 
-const parseAutomationObjectImport = (text: string): Omit<AutomationObjectImportDraft, "clientId" | "status" | "message">[] => {
-  const clean = text.trim();
-  if (!clean) return [];
-  if (clean.startsWith("[") || clean.startsWith("{")) {
-    const raw = JSON.parse(clean);
-    const rows = Array.isArray(raw) ? raw : Array.isArray(raw.objects) ? raw.objects : [raw];
-    return rows.map((x: Record<string, unknown>) => ({
-      moduleId: typeof x.moduleId === "string" ? x.moduleId : undefined,
-      applicationCode: String(x.applicationCode ?? x.app ?? "Promaxx2"),
-      screenCode: String(x.screenCode ?? x.screen ?? "Default"),
-      objectCode: String(x.objectCode ?? x.name ?? x.automationId ?? ""),
-      objectName: String(x.objectName ?? x.name ?? x.objectCode ?? x.automationId ?? ""),
-      controlType: String(x.controlType ?? x.type ?? "Button"),
-      automationId: x.automationId == null ? undefined : String(x.automationId),
-      selectorJson: typeof x.selectorJson === "string" ? x.selectorJson : JSON.stringify(x.selector ?? { automationId: x.automationId ?? "" }),
-    }));
-  }
-  const lines = clean.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
-  const header = lines[0].split(",").map((x) => x.trim().toLowerCase());
-  const hasHeader = header.some((x) => ["applicationcode", "screencode", "objectcode", "objectname", "controltype", "automationid"].includes(x));
-  const dataLines = hasHeader ? lines.slice(1) : lines;
-  return dataLines.map((line) => {
-    const cols = line.split(",").map((x) => x.trim());
-    const get = (name: string, index: number) => hasHeader ? cols[header.indexOf(name.toLowerCase())] : cols[index];
-    const applicationCode = get("applicationCode", 0) || "Promaxx2";
-    const screenCode = get("screenCode", 1) || "Default";
-    const objectCode = get("objectCode", 2) || get("automationId", 5) || "";
-    const objectName = get("objectName", 3) || objectCode;
-    const controlType = get("controlType", 4) || "Button";
-    const automationId = get("automationId", 5) || undefined;
-    return { applicationCode, screenCode, objectCode, objectName, controlType, automationId, selectorJson: JSON.stringify({ automationId: automationId ?? "" }) };
-  });
-};
-
 const taskClass = (text: string, tab: string) => {
   if (/Fail/i.test(text)) return "red";
   if (/Maintenance/i.test(text)) return "orange";
@@ -184,9 +69,9 @@ const taskClass = (text: string, tab: string) => {
 const taskIcon = (tab: string) => (tab === "execution" ? "!" : tab === "suites" ? "▶" : tab === "manage" || tab === "agents" ? "◉" : "▤");
 
 export function AutomationPage({
-  projectId, releaseId, buildId, canEdit, canValidate, canApprove, canRun, canManage, canViewEvidence, canGenerateAi,
+  projectId, releaseId, buildId, canEdit, canValidate, canApprove, canRun, canManage, canViewEvidence, canGenerateAi, canCreateDefect,
 }: {
-  projectId?: string; releaseId?: string; buildId?: string; canView: boolean; canEdit: boolean; canValidate: boolean; canApprove: boolean; canRun: boolean; canManage: boolean; canViewEvidence: boolean; canGenerateAi: boolean;
+  projectId?: string; releaseId?: string; buildId?: string; canView: boolean; canEdit: boolean; canValidate: boolean; canApprove: boolean; canRun: boolean; canManage: boolean; canViewEvidence: boolean; canGenerateAi: boolean; canCreateDefect: boolean;
 }) {
   const [tab, setTab] = useState("dashboard");
   const [headSearch, setHeadSearch] = useState("");
@@ -197,6 +82,8 @@ export function AutomationPage({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
+  // รอบ poll ระหว่างมีงานรัน — แยกจาก reload เพื่อโหลดเฉพาะข้อมูลที่เปลี่ยนตามสถานะการรัน
+  const [liveTick, setLiveTick] = useState(0);
   const headers = useMemo(() => ({ "Content-Type": "application/json", Authorization: `Bearer ${token()}` }), []);
 
   const [cases, setCases] = useState<AutomationCaseItem[]>([]);
@@ -214,6 +101,7 @@ export function AutomationPage({
   const [createModal, setCreateModal] = useState(false);
   const [candidates, setCandidates] = useState<TestCandidate[]>([]);
   const [createBusy, setCreateBusy] = useState(false);
+  const [createLoadError, setCreateLoadError] = useState("");
   const [createModules, setCreateModules] = useState<{ moduleId: string; moduleCode: string; moduleName: string; parentModuleId?: string; sortOrder?: number }[]>([]);
   const [createModuleFilter, setCreateModuleFilter] = useState("");
   const [createPick, setCreatePick] = useState<TestCandidate | null>(null);
@@ -238,8 +126,6 @@ export function AutomationPage({
   const [objectModal, setObjectModal] = useState(false);
 
   const [runModal, setRunModal] = useState(false);
-  const [builds, setBuilds] = useState<BuildOption[]>([]);
-  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
   const [manageTab, setManageTab] = useState("actions");
   const [batchModal, setBatchModal] = useState(false);
 
@@ -259,34 +145,72 @@ export function AutomationPage({
 
   const pid = projectId ?? "";
 
+  // AUT-UI-001: ผลจำแนก/วิเคราะห์ AI/Defect เป็นของ execution ใดตัวหนึ่ง — เปลี่ยน execution ต้องล้าง ไม่ให้ผลของตัวก่อนค้างใน modal
+  const execDetailId = execDetail?.automationExecutionId;
+  useEffect(() => { setClassification(null); setAiAnalysis(null); setDefectResult(""); setClassifyBusy(""); }, [execDetailId]);
+
   useEffect(() => {
     if (!pid) { setCases([]); setObjects([]); setExecutions([]); setDash(null); return; }
     const h = { Authorization: `Bearer ${token()}` };
+    const ctrl = new AbortController();
+    const signal = ctrl.signal;
+    // endpoint เสริม (flaky/retry-policy/agents/actions) อาจตอบ 403 ตามสิทธิ์ — ใช้ค่าว่างได้; ส่วน cases/jobs/executions/dashboard ต้องแจ้ง error
+    const optional = (url: string, fallback: unknown) => fetch(url, { headers: h, signal }).then((r) => (r.ok ? r.json() : fallback));
     setError("");
+    // Cases/jobs/executions here deliberately stay a flat "up to 200" load (AUT-P2-001 kept this shared, cross-
+    // cutting fetch as-is) — it feeds dashboard KPIs, CSV export, and the batch-run/suite case pickers, none of
+    // which need true pagination. The three endpoints now always return a PagedResult ({total, rows}) — see
+    // AutomationCasesTab/ExecutionTab below for the components that fetch real server-paginated pages of their own.
     Promise.all([
-      fetch(`${apiUrl}/automation/cases?projectId=${pid}&take=200`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/objects?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/jobs?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&take=200`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/executions?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&take=200`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/agents`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/actions`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/dashboard?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
-      fetch(`${apiUrl}/automation/cases/flaky-candidates?projectId=${pid}`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${apiUrl}/automation/settings/retry-policy`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
+      fetchJson(`${apiUrl}/automation/cases?projectId=${pid}&page=1&size=200`, h, signal),
+      optional(`${apiUrl}/automation/objects?projectId=${pid}`, []),
+      fetchJson(`${apiUrl}/automation/jobs?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&page=1&size=200`, h, signal),
+      fetchJson(`${apiUrl}/automation/executions?projectId=${pid}${buildId ? `&buildId=${buildId}` : ""}&page=1&size=200`, h, signal),
+      optional(`${apiUrl}/automation/agents`, []),
+      optional(`${apiUrl}/automation/actions`, []),
+      fetchJson(`${apiUrl}/automation/dashboard?projectId=${pid}`, h, signal),
+      optional(`${apiUrl}/automation/cases/flaky-candidates?projectId=${pid}`, []),
+      optional(`${apiUrl}/automation/settings/retry-policy`, null),
     ])
       .then(([c, o, j, e, a, ac, d, fk, rp]) => {
-        setCases(Array.isArray(c) ? c : []);
+        setCases(Array.isArray(c?.rows) ? c.rows : []);
         setObjects(Array.isArray(o) ? o : []);
-        setJobs(Array.isArray(j) ? j : []);
-        setExecutions(Array.isArray(e) ? e : []);
+        setJobs(Array.isArray(j?.rows) ? j.rows : []);
+        setExecutions(Array.isArray(e?.rows) ? e.rows : []);
         setAgents(Array.isArray(a) ? a : []);
         setActions(Array.isArray(ac) ? ac : []);
         setDash(d && typeof d === "object" && d.automationCases != null ? d : null);
         setFlakyCandidates(Array.isArray(fk) ? fk : []);
-        setRetryPolicy(rp && typeof rp === "object" ? rp : null);
+        setRetryPolicy(rp && typeof rp === "object" ? (rp as RetryPolicyItem) : null);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "โหลดข้อมูล Automation ไม่สำเร็จ"));
+      .catch((err) => { if (!isAbort(err)) setError(`โหลดข้อมูล Automation ไม่สำเร็จ${err instanceof Error ? ` (${err.message})` : ""} — ข้อมูลที่แสดงอาจไม่ครบ`); });
+    return () => ctrl.abort();
   }, [pid, buildId, reload]);
+  // poll ทุก 15 วินาทีโหลดแค่ 5 จาก 9 endpoint ของรอบเต็ม (ไม่โหลด Objects/Actions/Flaky/Retry Policy ที่ไม่เปลี่ยนระหว่างรัน)
+  // และโหลดไม่สำเร็จก็คงข้อมูลเดิมไว้เงียบ ๆ — รอบเต็มด้านบนเป็นตัวแจ้ง error
+  useEffect(() => {
+    if (!pid || !liveTick) return;
+    const h = { Authorization: `Bearer ${token()}` };
+    const ctrl = new AbortController();
+    const signal = ctrl.signal;
+    const build = buildId ? `&buildId=${buildId}` : "";
+    Promise.all([
+      fetchJson(`${apiUrl}/automation/cases?projectId=${pid}&page=1&size=200`, h, signal),
+      fetchJson(`${apiUrl}/automation/jobs?projectId=${pid}${build}&page=1&size=200`, h, signal),
+      fetchJson(`${apiUrl}/automation/executions?projectId=${pid}${build}&page=1&size=200`, h, signal),
+      fetch(`${apiUrl}/automation/agents`, { headers: h, signal }).then((r) => (r.ok ? r.json() : null)),
+      fetchJson(`${apiUrl}/automation/dashboard?projectId=${pid}`, h, signal),
+    ])
+      .then(([c, j, e, a, d]) => {
+        if (Array.isArray(c?.rows)) setCases(c.rows);
+        if (Array.isArray(j?.rows)) setJobs(j.rows);
+        if (Array.isArray(e?.rows)) setExecutions(e.rows);
+        if (Array.isArray(a)) setAgents(a);
+        if (d && typeof d === "object" && d.automationCases != null) setDash(d);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [pid, buildId, liveTick]);
 
   const openCase = async (item: AutomationCaseItem) => {
     setSelectedCase(item);
@@ -303,16 +227,19 @@ export function AutomationPage({
     setCreateModal(true);
     resetWizard();
     setError("");
+    setCreateLoadError("");
+    const h = { Authorization: `Bearer ${token()}` };
     try {
       const [tc, md] = await Promise.all([
-        fetch(`${apiUrl}/test-cases?projectId=${pid}&automation=true&page=1&size=200`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : null)),
-        fetch(`${apiUrl}/projects/${pid}/modules`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
+        fetchJson(`${apiUrl}/test-cases?projectId=${pid}&automation=true&page=1&size=200`, h),
+        fetchJson(`${apiUrl}/projects/${pid}/modules`, h),
       ]);
       setCandidates(Array.isArray(tc?.rows) ? tc.rows : []);
       setCreateModules(Array.isArray(md) ? md.filter((m: { isActive?: boolean }) => m.isActive !== false) : []);
     } catch {
       setCandidates([]);
       setCreateModules([]);
+      setCreateLoadError("โหลดรายการ Test Case/Module ไม่สำเร็จ — ปิดหน้าต่างแล้วลองใหม่");
     }
   };
 
@@ -389,7 +316,7 @@ export function AutomationPage({
     setValErrors("");
     setValidatedOk(false);
     try {
-      const r = await fetch(`${apiUrl}/automation/cases/${createdCaseId}/generate?projectId=${pid}`, { method: "POST", headers });
+      const r = await fetch(`${apiUrl}/automation/cases/${createdCaseId}/generate?projectId=${pid}`, { method: "POST", headers, signal: AbortSignal.timeout(AI_GENERATE_TIMEOUT_MS) });
       if (!r.ok) {
         const p = await r.json().catch(() => null);
         throw new Error(p?.detail ?? "Generate AI ไม่สำเร็จ");
@@ -400,7 +327,7 @@ export function AutomationPage({
       setCreatedStatus("NeedsReview");
       setNotice(`AI สร้าง DSL แล้ว (confidence ${v.aiConfidence != null ? `${Math.round(v.aiConfidence * 100)}%` : "-"}) — ตรวจแล้วกด Validate`);
     } catch (e) {
-      setNewVersionError(e instanceof Error ? e.message : "Generate AI ไม่สำเร็จ");
+      setNewVersionError(aiGenerateErrorMessage(e));
     } finally {
       setCreateBusy(false);
     }
@@ -423,7 +350,7 @@ export function AutomationPage({
       const vd = await vr.json();
       if (vd.validationStatus !== "Valid") {
         const msg = vd.validationErrors || "Validate ไม่ผ่าน";
-        setValErrors(msg);
+        setValErrors(msg.includes("Object Repository") ? `${msg} Fix: add the missing Object to Object Repository or change the object parameter to an existing BusinessKey, then Validate again.` : msg);
         throw new Error(msg);
       }
       setValidatedOk(true);
@@ -474,6 +401,7 @@ export function AutomationPage({
   };
 
   const approveVersion = async (v: AutomationVersionItem) => {
+    if (!await confirmDialog({ title: "อนุมัติ Automation Version", message: `อนุมัติ Rev ${v.versionNo} ใช่หรือไม่?\nCase จะเป็น Ready และ Agent รับไปรันได้ทันที`, confirmLabel: "อนุมัติ" })) return;
     setVersionError("");
     try {
       const r = await fetch(`${apiUrl}/automation/versions/${v.automationVersionId}/approve?projectId=${pid}`, { method: "POST", headers });
@@ -494,7 +422,7 @@ export function AutomationPage({
     setCreateBusy(true);
     setVersionError("");
     try {
-      const r = await fetch(`${apiUrl}/automation/cases/${selectedCase.automationCaseId}/generate?projectId=${pid}`, { method: "POST", headers });
+      const r = await fetch(`${apiUrl}/automation/cases/${selectedCase.automationCaseId}/generate?projectId=${pid}`, { method: "POST", headers, signal: AbortSignal.timeout(AI_GENERATE_TIMEOUT_MS) });
       if (!r.ok) {
         const p = await r.json().catch(() => null);
         throw new Error(p?.detail ?? "Generate AI ไม่สำเร็จ");
@@ -503,7 +431,7 @@ export function AutomationPage({
       setReload((x) => x + 1);
       setNotice("AI สร้าง DSL แล้ว — Version ใหม่เป็น NeedsReview รอตรวจ/Validate/อนุมัติ");
     } catch (e) {
-      setVersionError(e instanceof Error ? e.message : "Generate AI ไม่สำเร็จ");
+      setVersionError(aiGenerateErrorMessage(e));
     } finally {
       setCreateBusy(false);
     }
@@ -527,23 +455,17 @@ export function AutomationPage({
     }
   };
 
-  const openRun = async () => {
+  const openRun = () => {
     setRunModal(true);
     setError("");
-    try {
-      const [b, e] = await Promise.all([
-        releaseId ? fetch(`${apiUrl}/releases/${releaseId}/builds`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])) : Promise.resolve([]),
-        fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
-      ]);
-      setBuilds(Array.isArray(b) ? b : []);
-      setEnvironments(Array.isArray(e) ? e.filter((x: EnvironmentOption) => x.isActive) : []);
-    } catch {
-      setBuilds([]);
-      setEnvironments([]);
-    }
   };
 
+
   const runCase = async (item: AutomationCaseItem, versionId: string, selBuildId: string, envId: string, agentId: string, priority: number) => {
+    if (!agents.some((agent) => agent.isEnabled && agent.connectivity !== "Offline" && ["Online", "Idle", "Available"].includes(agent.status))) {
+      setError("ยังไม่มี Automation Agent ที่พร้อมทำงาน งานยังไม่ถูกส่งเข้าคิว");
+      return;
+    }
     setCreateBusy(true);
     setError("");
     try {
@@ -565,6 +487,10 @@ export function AutomationPage({
 
   const runBatch = async (caseIds: string[], selBuildId: string, envId: string, priority: number) => {
     if (!caseIds.length || !selBuildId || !envId) return;
+    if (!agents.some((agent) => agent.isEnabled && agent.connectivity !== "Offline" && ["Online", "Idle", "Available"].includes(agent.status))) {
+      setError("ยังไม่มี Automation Agent ที่พร้อมทำงาน งาน Batch ยังไม่ถูกส่งเข้าคิว");
+      return;
+    }
     setCreateBusy(true);
     setError("");
     try {
@@ -585,7 +511,7 @@ export function AutomationPage({
   };
 
   const cancelExecution = async (x: AutomationExecutionItem) => {
-    if (!window.confirm(`ยืนยันยกเลิก Execution "${x.automationCode}" ?`)) return;
+    if (!await confirmDialog(`ยืนยันยกเลิก Execution "${x.automationCode}" ?`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/executions/${x.automationExecutionId}/cancel?projectId=${pid}`, { method: "POST", headers });
@@ -600,7 +526,11 @@ export function AutomationPage({
   };
 
   const rerunExecution = async (x: AutomationExecutionItem) => {
-    if (!window.confirm(`สั่งรัน "${x.automationCode}" ซ้ำ?\nRev ${x.versionNo} · Build ${x.buildNumber} · ${x.environmentName}`)) return;
+    if (!agents.some((agent) => agent.isEnabled && agent.connectivity !== "Offline" && ["Online", "Idle", "Available"].includes(agent.status))) {
+      setError("ยังไม่มี Automation Agent ที่พร้อมทำงาน จึงยัง Retry ไม่ได้");
+      return;
+    }
+    if (!await confirmDialog(`สั่งรัน "${x.automationCode}" ซ้ำ?\nRev ${x.versionNo} · Build ${x.buildNumber} · ${x.environmentName}`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/cases/${x.automationCaseId}/run?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ versionId: x.automationVersionId, buildId: x.buildId, environmentId: x.environmentId, agentId: null, priority: 5 }) });
@@ -624,7 +554,7 @@ export function AutomationPage({
   };
 
   const deleteAgent = async (a: AutomationAgentItem) => {
-    if (!window.confirm(`ต้องการลบ Agent "${a.agentCode}" ออกหรือไม่?\n(ถ้า Agent ยังรันอยู่จะลงทะเบียนใหม่เองอัตโนมัติ)`)) return;
+    if (!await confirmDialog(`ต้องการลบ Agent "${a.agentCode}" ออกหรือไม่?\n(ถ้า Agent ยังรันอยู่จะลงทะเบียนใหม่เองอัตโนมัติ)`)) return;
     setError("");
     try {
       const r = await fetch(`${apiUrl}/automation/agents/${a.agentId}`, { method: "DELETE", headers });
@@ -671,7 +601,7 @@ export function AutomationPage({
 
   const runClassify = async () => {
     if (!execDetail) return;
-    setClassifyBusy("classify"); setClassification(null); setAiAnalysis(null); setDefectResult("");
+    setClassifyBusy("classify"); setClassification(null);
     try {
       const r = await fetch(`${apiUrl}/automation/executions/${execDetail.automationExecutionId}/classify?projectId=${pid}`, { method: "POST", headers: { Authorization: `Bearer ${token()}` } });
       if (!r.ok) throw new Error("จำแนก Fail ไม่สำเร็จ");
@@ -690,13 +620,19 @@ export function AutomationPage({
   };
 
   const runCreateDefect = async () => {
-    if (!execDetail) return;
+    if (!execDetail || execDetail.defectId || defectResult) return;
+    if (!await confirmDialog(`สร้าง Defect จาก Execution "${execDetail.automationCode}" (Build ${execDetail.buildNumber}) ?`)) return;
+    const executionId = execDetail.automationExecutionId;
     setClassifyBusy("defect");
     try {
       const r = await fetch(`${apiUrl}/automation/executions/${execDetail.automationExecutionId}/defect?projectId=${pid}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` }, body: JSON.stringify({ classification: aiAnalysis?.classification ?? null, severity: "High", title: null, description: null }) });
       if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Defect ไม่สำเร็จ"); }
       const d = await r.json();
       setDefectResult(d.defectCode);
+      // เชื่อม defect กับ execution ใน state ทันที — ปุ่ม "สร้าง Defect" จะหายไปทั้งใน modal และเมื่อเปิดซ้ำจากรายการ
+      const link = (x: AutomationExecutionItem) => (x.automationExecutionId === executionId ? { ...x, defectId: d.defectId ?? x.defectId ?? executionId } : x);
+      setExecDetail((prev) => (prev ? link(prev) : prev));
+      setExecutions((prev) => prev.map(link));
       setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Defect ไม่สำเร็จ"); } finally { setClassifyBusy(""); }
   };
@@ -742,6 +678,7 @@ export function AutomationPage({
   };
 
   const unquarantineCase = async (caseId: string) => {
+    if (!await confirmDialog({ title: "ยกเลิก Quarantine", message: "นำ Case นี้กลับเข้าการรันปกติใช่หรือไม่? Schedule / Batch จะรัน Case นี้อีกครั้ง", confirmLabel: "ยกเลิก Quarantine" })) return;
     setMaintenanceBusy(true);
     try {
       const r = await fetch(`${apiUrl}/automation/cases/${caseId}/unquarantine?projectId=${pid}`, { method: "POST", headers });
@@ -797,18 +734,70 @@ export function AutomationPage({
     { label: "Agents Online", value: `${kAgentsOnline} / ${kAgentsTotal}`, note: "พร้อมใช้งาน", tone: "cyan", icon: "♙", go: () => { setManageTab("agents"); setTab("manage"); } },
   ] as { label: string; value: number | string; note: string; tone: string; icon: string; go: () => void }[];
 
-  const headQuery = headSearch.trim().toLowerCase();
-  const filteredCases = cases.filter((c) => (!headQuery || c.automationCode.toLowerCase().includes(headQuery) || c.testCaseCode.toLowerCase().includes(headQuery) || c.testCaseTitle.toLowerCase().includes(headQuery)) && (caseStatusFilter === "all" || c.status === caseStatusFilter) && (caseTargetFilter === "all" || c.automationType === caseTargetFilter));
+  // AUT-P2-001: the Cases table is server-paginated for real (separate fetch from the shared "up to 200" load
+  // above) — filters/sort become query params instead of a client-side .filter(), and only the current page's rows
+  // ever reach the browser.
   const casePageSize = 15;
-  const casePageCount = Math.max(1, Math.ceil(filteredCases.length / casePageSize));
-  const pagedCases = filteredCases.slice((casePage - 1) * casePageSize, casePage * casePageSize);
-  useEffect(() => setCasePage(1), [headSearch, caseStatusFilter, caseTargetFilter]);
+  const [casesPaged, setCasesPaged] = useState<{ total: number; rows: AutomationCaseItem[] }>({ total: 0, rows: [] });
+  const [caseSortBy, setCaseSortBy] = useState("created");
+  const [casesError, setCasesError] = useState("");
+  const debouncedHeadSearch = useDebounced(headSearch.trim());
+  const casePageCount = Math.max(1, Math.ceil(casesPaged.total / casePageSize));
+  useEffect(() => setCasePage(1), [headSearch, caseStatusFilter, caseTargetFilter, caseSortBy]);
+  // เลือกได้เฉพาะแถวในหน้าปัจจุบัน — ล้างการเลือกทุกครั้งที่เปลี่ยนหน้า/ตัวกรอง กันเลือก Case จากหน้าอื่นค้างไว้
+  // แล้วโดนลบไปด้วยโดยไม่รู้ตัว
+  const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  useEffect(() => setSelectedCaseIds(new Set()), [pid, casePage, headSearch, caseStatusFilter, caseTargetFilter, caseSortBy]);
+  const toggleCaseSelected = (id: string) => setSelectedCaseIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const allCasesOnPageSelected = casesPaged.rows.length > 0 && casesPaged.rows.every((c) => selectedCaseIds.has(c.automationCaseId));
+  const toggleSelectAllCasesOnPage = () => setSelectedCaseIds((prev) => {
+    const next = new Set(prev);
+    if (allCasesOnPageSelected) casesPaged.rows.forEach((c) => next.delete(c.automationCaseId));
+    else casesPaged.rows.forEach((c) => next.add(c.automationCaseId));
+    return next;
+  });
+  const hardDeleteSelectedCases = async () => {
+    if (!selectedCaseIds.size || !pid) return;
+    const targets = casesPaged.rows.filter((c) => selectedCaseIds.has(c.automationCaseId));
+    const preview = targets.slice(0, 5).map((c) => c.automationCode).join(", ") + (targets.length > 5 ? ` และอีก ${targets.length - 5} รายการ` : "");
+    if (!await confirmDialog(`ยืนยันลบ Automation Case ถาวร ${selectedCaseIds.size} รายการ (${preview})?\n\nการลบนี้ไม่สามารถกู้คืนได้ รวม Version/DSL และประวัติการรัน (Execution) ทั้งหมดของ Case ที่เลือกไปด้วย`)) return;
+    setBulkDeleteBusy(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/automation/cases/hard-delete?projectId=${pid}`, { method: "POST", headers, body: JSON.stringify({ automationCaseIds: [...selectedCaseIds] }) });
+      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ลบ Automation Case ไม่สำเร็จ"); }
+      setSelectedCaseIds(new Set());
+      setReload((v) => v + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "ลบ Automation Case ไม่สำเร็จ"); }
+    finally { setBulkDeleteBusy(false); }
+  };
+  // ตาราง Case แสดงเฉพาะแท็บ Cases — เดิมโหลดทุกรอบ poll แม้เปิดแท็บอื่นอยู่; เปลี่ยนกลับมาแท็บนี้จะโหลดใหม่เอง
+  const casesTabActive = tab === "cases";
+  useEffect(() => {
+    if (!pid) { setCasesPaged({ total: 0, rows: [] }); return; }
+    if (!casesTabActive) return;
+    const ctrl = new AbortController();
+    const qs = new URLSearchParams({ projectId: pid, page: String(casePage), size: String(casePageSize), sortBy: caseSortBy });
+    if (debouncedHeadSearch) qs.set("search", debouncedHeadSearch);
+    if (caseStatusFilter !== "all") qs.set("status", caseStatusFilter);
+    if (caseTargetFilter !== "all") qs.set("automationTarget", caseTargetFilter);
+    fetchJson(`${apiUrl}/automation/cases?${qs}`, headers, ctrl.signal)
+      .then((d) => { setCasesError(""); setCasesPaged(d && typeof d === "object" && Array.isArray(d.rows) ? d : { total: 0, rows: [] }); })
+      .catch((e) => { if (!isAbort(e)) setCasesError("โหลดรายการ Automation Case ไม่สำเร็จ"); });
+    return () => ctrl.abort();
+  }, [pid, casePage, casePageSize, debouncedHeadSearch, caseStatusFilter, caseTargetFilter, caseSortBy, headers, reload, liveTick, casesTabActive]);
 
   const hasActiveWork = kRunning > 0 || jobs.some((j) => j.status === "Queued" || j.status === "Assigned" || j.status === "Running");
   useEffect(() => {
     if (!hasActiveWork) return;
-    const t = setInterval(() => { if (!document.hidden) setReload((v) => v + 1); }, 15000);
+    const t = setInterval(() => { if (!document.hidden) setLiveTick((v) => v + 1); }, 15000);
     return () => clearInterval(t);
+  }, [hasActiveWork]);
+  // งานรันหมดแล้วโหลดรอบเต็ม 1 ครั้ง — ให้ Flaky Candidates และข้อมูลที่ poll ไม่ได้โหลดตรงกับผลล่าสุด
+  const hadActiveWork = useRef(false);
+  useEffect(() => {
+    if (hadActiveWork.current && !hasActiveWork) setReload((v) => v + 1);
+    hadActiveWork.current = hasActiveWork;
   }, [hasActiveWork]);
 
   const modName = createModules.find((m) => m.moduleId === createPick?.moduleId)?.moduleName;
@@ -874,27 +863,52 @@ export function AutomationPage({
   if (kFailToday > 0) nextActions.push({ text: `มี Fail วันนี้ ${kFailToday} ครั้ง — ตรวจผล/Evidence และจำแนก Fail ก่อนสร้าง Defect`, btn: "ไป Execution", tab: "execution" });
   if (executions.length > 0 && kFailToday === 0) nextActions.push({ text: "ผลล่าสุดผ่านทั้งหมด — ดูประวัติและ Evidence ในหน้า Execution", btn: "ไป Execution", tab: "execution" });
 
-  const tabs = [
-    { id: "dashboard", label: "ภาพรวม", icon: "◉" },
-    { id: "cases", label: "Automation Cases", icon: "▤" },
-    { id: "suites", label: "Automation Suite", icon: "▶" },
-    { id: "execution", label: "Execution", icon: "▶" },
-    { id: "failures", label: "Failure Dashboard", icon: "!" },
-    { id: "manage", label: "การจัดการ", icon: "⚙" },
+  // Grouped instead of one flat row of 12 tabs — that read as cluttered
+  // (a wall of pills, several needing a horizontal scroll to even see).
+  // Each group is one pill in the primary bar; a group with more than one
+  // screen reveals a second, smaller row (reusing the same visual family
+  // "การจัดการ" already used for its own Action Library/Objects/Agents/Retry
+  // sub-nav) so nothing that used to be reachable in one click is lost —
+  // most things are now just one click to reveal, one more to open.
+  const tabGroups = [
+    { id: "dashboard", label: "ภาพรวม", icon: "◉", tabs: [
+      { id: "dashboard", label: "ภาพรวม" },
+    ] },
+    { id: "testing", label: "Automation Testing", icon: "▤", tabs: [
+      { id: "cases", label: "Automation Cases" },
+      { id: "suites", label: "Automation Suite" },
+      { id: "execution", label: "Execution" },
+      { id: "failures", label: "Failure Dashboard" },
+    ] },
+    { id: "scheduling", label: "Scheduling & CI", icon: "◷", tabs: [
+      { id: "schedules", label: "Schedule" },
+      { id: "buildTriggers", label: "Build Trigger" },
+      { id: "webhooks", label: "Webhook" },
+    ] },
+    { id: "data", label: "Test Data", icon: "💾", tabs: [
+      { id: "dataSnapshots", label: "DB Snapshot" },
+      { id: "dataSeeds", label: "Seed & Cleanup" },
+      { id: "dataProfiles", label: "Environment Data Profile" },
+    ] },
+    { id: "manage", label: "การจัดการ", icon: "⚙", tabs: [
+      { id: "manage", label: "การจัดการ" },
+    ] },
   ];
+  const activeGroup = tabGroups.find((g) => g.tabs.some((t) => t.id === tab)) ?? tabGroups[0];
 
   return <article className="automation-page">
     {!pid ? <div className="empty"><p>เลือก Project เพื่อดู Automation Workspace</p></div> : <>
       <section className="automation-page-head">
         <div className="automation-page-actions">
-          <div className="automation-search"><input aria-label="ค้นหา Automation Case" placeholder="ค้นหา Automation Case..." value={headSearch} onChange={(e) => setHeadSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") setTab("cases"); }} /></div>
-          <button className="btn" type="button" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล" onClick={() => setReload((v) => v + 1)}>↻ <span className="automation-hide-mobile">รีเฟรช</span></button>
+          <div className="automation-search"><input type="text" aria-label="ค้นหา Automation Case" placeholder="ค้นหา Automation Case..." value={headSearch} onChange={(e) => setHeadSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") setTab("cases"); }} /></div>
+          <button className="btn" type="button" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล" onClick={() => setReload((v) => v + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> <span className="automation-hide-mobile">รีเฟรช</span></button>
           <button className="btn" type="button" disabled={!cases.length} onClick={exportCases}>↥ Export</button>
-          {canEdit && <button className="btn primary" type="button" onClick={openCreate}>＋ สร้าง Automation Case</button>}
+          {canEdit && <button className="btn primary" type="button" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}
         </div>
       </section>
-      <nav className="automation-tabs" aria-label="Automation Module"><div className="automation-tabs-inner">{tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}><span aria-hidden="true">{t.icon}</span>{t.label}</button>)}</div></nav>
-      {error && <div className="inline-alert error"><span>{error}</span></div>}
+      <nav className="automation-tabs" aria-label="Automation Module"><div className="automation-tabs-inner">{tabGroups.map((g) => <button key={g.id} type="button" className={activeGroup.id === g.id ? "active" : ""} aria-current={activeGroup.id === g.id ? "page" : undefined} onClick={() => setTab(g.tabs[0].id)}><span aria-hidden="true">{g.icon}</span>{g.label}</button>)}</div></nav>
+      {activeGroup.tabs.length > 1 && <nav className="automation-subtabs" aria-label={activeGroup.label}>{activeGroup.tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>}
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
       {notice && <div className="inline-alert success"><span>{notice}</span></div>}
 
       {tab === "dashboard" && <section className="automation-dashboard" aria-label="Automation Dashboard">
@@ -924,7 +938,7 @@ export function AutomationPage({
             {nextActions.length ? <div className="automation-task-list">{nextActions.map((a, i) => { const [title, desc] = splitTaskText(a.text); return <button key={i} type="button" className="automation-task" onClick={() => setTab(a.tab)}><span className={`automation-task-icon ${taskClass(a.text, a.tab)}`} aria-hidden="true">{taskIcon(a.tab)}</span><span className="automation-task-body"><strong>{title}</strong>{desc && <p>{desc}</p>}</span><span className="automation-task-go" aria-hidden="true">›</span></button>; })}</div> : <div className="empty"><p>ไม่มีรายการที่ต้องดำเนินการ</p><small>ทุกอย่างพร้อม — สร้างและรัน Automation Case ได้เลย</small></div>}
           </section>
           <section className="automation-panel">
-            <div className="automation-panel-head"><h2>Agent Status</h2>{agents.length > 0 && <button className="automation-panel-link" onClick={() => setTab("manage")}>ดูทั้งหมด</button>}</div>
+            <div className="automation-panel-head"><h2>Agent Status</h2>{agents.length > 0 && <button className="automation-panel-link" onClick={() => setTab("manage")}><span aria-hidden="true">»</span> ดูทั้งหมด</button>}</div>
             {primaryAgent ? <div className="automation-agent-card">
               <div>
                 <div className="automation-agent-status"><span className="automation-online-dot" />{primaryAgent.agentCode}<span className="automation-primary-tag">Primary</span></div>
@@ -944,10 +958,10 @@ export function AutomationPage({
         </div>
 
         <section className="automation-panel automation-result-panel">
-          <div className="automation-panel-head"><h2>ผลการรันล่าสุด</h2><button className="automation-panel-link" onClick={() => setTab("execution")}>ดูทั้งหมด</button></div>
+          <div className="automation-panel-head"><h2>ผลการรันล่าสุด</h2><button className="automation-panel-link" onClick={() => setTab("execution")}><span aria-hidden="true">»</span> ดูทั้งหมด</button></div>
           {executions.length ? <>
             <div className="automation-table-wrap">
-              <table className="automation-recent-table">
+              <table className="automation-recent-table table-cards">
                 <thead><tr><th>Automation Case</th><th>Linked Test Case</th><th>Result</th><th>Agent</th><th>Execution Time</th><th>Duration</th><th></th></tr></thead>
                 <tbody>{executions.slice(0, 5).map((x) => { const c = caseByExecId.get(x.automationCaseId); const tcCode = x.testCaseCode ?? c?.testCaseCode; const tcTitle = x.testCaseTitle ?? c?.testCaseTitle; return <tr key={x.automationExecutionId}>
                   <td><span className="automation-case-code">{x.automationCode}</span>{tcTitle && <span className="automation-subline">{tcTitle}</span>}</td>
@@ -965,58 +979,82 @@ export function AutomationPage({
               </table>
             </div>
             {executions.length > 5 && <div className="automation-table-footer"><button type="button" onClick={() => setTab("execution")}>ดูผลการรันทั้งหมด ›</button></div>}
-          </> : <div className="empty"><p>ยังไม่มีประวัติการรัน</p><small>สร้าง Automation Case แล้วรันผ่าน Agent — ผลจะแสดงที่นี่</small>{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div>}
+          </> : <div className="empty"><p>ยังไม่มีประวัติการรัน</p><small>สร้าง Automation Case แล้วรันผ่าน Agent — ผลจะแสดงที่นี่</small>{canEdit && <button className="btn primary" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}</div>}
         </section>
       </section>}
 
       {tab === "cases" && <section className="automation-cases" aria-label="Automation Cases">
-        <header className="automation-section-head"><div><h2>Automation Cases</h2><p>หนึ่ง Test Case → หนึ่ง Automation Case พร้อม Version (DSL) หลายเวอร์ชัน</p></div><div className="automation-cases-actions">{canRun && <button className="btn" onClick={() => setBatchModal(true)}>▶ รันเป็นกลุ่ม</button>}{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div></header>
+        <header className="automation-section-head"><div><h2>Automation Cases</h2><p>หนึ่ง Test Case → หนึ่ง Automation Case พร้อม Version (DSL) หลายเวอร์ชัน</p></div><div className="automation-cases-actions">{canRun && <button className="btn" onClick={() => setBatchModal(true)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> รันเป็นกลุ่ม</button>}{canEdit && <button className="btn primary" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}</div></header>
         {flakyCandidates.length > 0 && <section className="automation-failure-analysis" aria-label="Flaky Candidates">
           <div className="automation-section-head"><h3>Flaky Candidates (AUT-P0-010)</h3><span className="muted-text">Pass/Fail สลับกันบ่อยใน execution ล่าสุด</span></div>
           <div className="automation-result-list">{flakyCandidates.map((f) => <div key={f.automationCaseId} className="automation-failure-row">
             <b>{f.automationCode}</b><span>{f.transitions} transitions / {f.recentRuns} runs</span><span>ล่าสุด {formatThaiDateTime(f.lastExecutedAt)}</span>
-            {canManage && <button type="button" className="table-action" onClick={() => setQuarantineModalFor(f)}>Quarantine</button>}
+            {canManage && <button type="button" className="table-action icon-only" title="Quarantine" aria-label={`Quarantine ${f.automationCode}`} onClick={() => setQuarantineModalFor(f)}><span className="material-symbols-outlined" aria-hidden="true">warning</span></button>}
           </div>)}</div>
         </section>}
         {cases.length ? <>
-          <div className="automation-case-toolbar">
-            <select aria-label="กรองสถานะ" value={caseStatusFilter} onChange={(e) => setCaseStatusFilter(e.target.value)}>
-              <option value="all">ทุกสถานะ</option>
-              {["Draft", "NeedsReview", "Validated", "Approved", "Ready", "Running", "MaintenanceRequired"].map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select aria-label="กรอง Target App" value={caseTargetFilter} onChange={(e) => setCaseTargetFilter(e.target.value)}>
-              <option value="all">ทุก Target App</option>
-              <option value="Pos">Pos · PromaxxsPos.exe</option>
-              <option value="App">App · Promaxxs.App.exe</option>
-              <option value="WindowsUI">WindowsUI · generic</option>
-            </select>
-            {(caseStatusFilter !== "all" || caseTargetFilter !== "all" || headSearch.trim()) && <button type="button" className="table-action" onClick={() => { setCaseStatusFilter("all"); setCaseTargetFilter("all"); setHeadSearch(""); }}>ล้างตัวกรอง</button>}
+          <div className="filter-toolbar">
+            <div className="filter-toolbar-top">
+              <div className="result-count"><strong>{casesPaged.total.toLocaleString()}</strong><span>Automation Cases{(headSearch.trim() || caseStatusFilter !== "all" || caseTargetFilter !== "all") ? " ที่ตรงเงื่อนไข" : ""}</span></div>
+              {(caseStatusFilter !== "all" || caseTargetFilter !== "all" || headSearch.trim()) && <button type="button" className="table-action" onClick={() => { setCaseStatusFilter("all"); setCaseTargetFilter("all"); setHeadSearch(""); }}><span className="material-symbols-outlined" aria-hidden="true">close</span> ล้างตัวกรอง</button>}
+            </div>
+            <div className="filter-toolbar-row automation-case-toolbar">
+              <select aria-label="กรองสถานะ" value={caseStatusFilter} onChange={(e) => setCaseStatusFilter(e.target.value)}>
+                <option value="all">ทุกสถานะ</option>
+                {["Draft", "NeedsReview", "Validated", "Approved", "Ready", "Running", "MaintenanceRequired"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select aria-label="กรอง Target App" value={caseTargetFilter} onChange={(e) => setCaseTargetFilter(e.target.value)}>
+                <option value="all">ทุก Target App</option>
+                <option value="Pos">Pos · PromaxxsPos.exe</option>
+                <option value="App">App · Promaxxs.App.exe</option>
+                <option value="WindowsUI">WindowsUI · generic</option>
+              </select>
+              <select aria-label="เรียงตาม" value={caseSortBy} onChange={(e) => setCaseSortBy(e.target.value)}>
+                <option value="created">ล่าสุดก่อน</option>
+                <option value="code">Code (A→Z)</option>
+                <option value="status">สถานะ</option>
+              </select>
+            </div>
           </div>
-          {(headSearch.trim() || caseStatusFilter !== "all" || caseTargetFilter !== "all") && <div className="automation-search-hint">แสดง {filteredCases.length} จาก {cases.length} รายการ{headSearch.trim() ? ` · ค้นหา "${headSearch}"` : ""}{caseStatusFilter !== "all" ? ` · สถานะ ${caseStatusFilter}` : ""}{caseTargetFilter !== "all" ? ` · Target ${caseTargetFilter}` : ""} — <button type="button" className="table-action" onClick={() => { setHeadSearch(""); setCaseStatusFilter("all"); setCaseTargetFilter("all"); }}>ล้างทั้งหมด</button></div>}
-          {pagedCases.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th></th></tr></thead><tbody>{pagedCases.map((c) => <tr key={c.automationCaseId}><td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td><button className="table-action" onClick={() => openCase(c)}>รายละเอียด</button></td></tr>)}</tbody></table></div>
+          {canManage && selectedCaseIds.size > 0 && (
+            <div className="testcase-bulk-bar" role="region" aria-label="จัดการ Automation Case ที่เลือก">
+              <span className="bulk-count">{selectedCaseIds.size} เลือกแล้ว</span>
+              <button type="button" className="btn danger" disabled={bulkDeleteBusy} onClick={hardDeleteSelectedCases}>{bulkDeleteBusy ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</> : <><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบถาวร</>}</button>
+              <button type="button" className="bulk-clear" disabled={bulkDeleteBusy} onClick={() => setSelectedCaseIds(new Set())}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิกเลือก</button>
+            </div>
+          )}
+          {casesError && <div className="inline-alert error" role="alert"><span>{casesError}</span><button type="button" className="btn" onClick={() => setReload((v) => v + 1)}>ลองใหม่</button></div>}
+          {casesPaged.rows.length ? <div className="table-wrap"><table className="table-cards"><thead><tr>{canManage && <th className="case-select-col"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={allCasesOnPageSelected} onChange={toggleSelectAllCasesOnPage} /></th>}<th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th className="actions-col">จัดการ</th></tr></thead><tbody>{casesPaged.rows.map((c) => <tr key={c.automationCaseId} className={selectedCaseIds.has(c.automationCaseId) ? "is-selected" : ""}>{canManage && <td className="case-select-col" data-label="เลือก"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selectedCaseIds.has(c.automationCaseId)} onChange={() => toggleCaseSelected(c.automationCaseId)} /></td>}<td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td className="actions-col"><button className="table-action icon-only" title="รายละเอียด" aria-label={`รายละเอียด ${c.automationCode}`} onClick={() => openCase(c)}><span className="material-symbols-outlined" aria-hidden="true">info</span></button></td></tr>)}</tbody></table></div>
             : <div className="empty"><p>ไม่พบ Automation Case ที่ตรงเงื่อนไข</p><small>ลองเปลี่ยนคำค้นหาหรือตัวกรองด้านบน</small></div>}
-          {filteredCases.length > casePageSize && <Pager page={casePage} count={casePageCount} total={filteredCases.length} pageSize={casePageSize} onPrev={() => setCasePage((p) => Math.max(1, p - 1))} onNext={() => setCasePage((p) => Math.min(casePageCount, p + 1))} />}
-        </> : <div className="empty"><p>ยังไม่มี Automation Case</p><small>สร้างจาก Test Case ที่เป็น Automation Candidate — จากนั้นเขียน DSL / Generate AI → Validate → อนุมัติ → พร้อมรัน</small>{canEdit && <button className="btn primary" onClick={openCreate}>+ สร้าง Automation Case</button>}</div>}
+          {casesPaged.total > casePageSize && <Pager page={casePage} count={casePageCount} total={casesPaged.total} pageSize={casePageSize} onPrev={() => setCasePage((p) => Math.max(1, p - 1))} onNext={() => setCasePage((p) => Math.min(casePageCount, p + 1))} />}
+        </> : <div className="empty"><p>ยังไม่มี Automation Case</p><small>สร้างจาก Test Case ที่เป็น Automation Candidate — จากนั้นเขียน DSL / Generate AI → Validate → อนุมัติ → พร้อมรัน</small>{canEdit && <button className="btn primary" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}</div>}
       <div className="automation-status-legend" role="note" aria-label="ความหมายสถานะ"><span><i className="legend-dot legend-draft" />Draft — ยังไม่มี DSL</span><span><i className="legend-dot legend-review" />NeedsReview — AI สร้างแล้ว รอตรวจ</span><span><i className="legend-dot legend-ready" />Ready — พร้อมรัน</span><span><i className="legend-dot legend-maint" />MaintenanceRequired — ต้องซ่อม DSL/Object</span></div>
       </section>}
 
-      {tab === "suites" && <AutomationSuiteTab projectId={pid} headers={headers} canEdit={canEdit} cases={cases} />}
+      {tab === "suites" && <AutomationSuiteTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} cases={cases} />}
+      {tab === "schedules" && <AutomationScheduleTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} agents={agents} setExecDetail={setExecDetail} />}
+      {tab === "buildTriggers" && <AutomationBuildTriggerTab projectId={pid} headers={headers} canEdit={canEdit} agents={agents} />}
+      {tab === "webhooks" && <AutomationWebhookTab projectId={pid} headers={headers} canEdit={canEdit} />}
+      {tab === "dataSnapshots" && <AutomationDataSnapshotTab projectId={pid} releaseId={releaseId} headers={headers} canRun={canRun} />}
+      {tab === "dataSeeds" && <AutomationDataSeedTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} />}
+      {tab === "dataProfiles" && <AutomationEnvironmentDataProfileTab projectId={pid} headers={headers} canEdit={canEdit} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
         <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
         {manageTab === "actions" && <ActionLibraryTab actions={actions} canManage={canManage} headers={headers} onReload={() => setReload((x) => x + 1)} onError={setError} actionModal={actionModal} setActionModal={setActionModal} />}
         {manageTab === "objects" && <ObjectRepositoryTab projectId={pid} objects={objects} canManage={canManage} headers={headers} onReload={() => setReload((x) => x + 1)} onError={setError} objectModal={objectModal} setObjectModal={setObjectModal} />}
-        {manageTab === "agents" && <AgentsSection agents={agents} agentsOnline={agentsOnline} canManage={canManage} onToggle={toggleAgent} onDelete={deleteAgent} />}
+        {manageTab === "agents" && <AgentsSection agents={agents} agentsOnline={agentsOnline} canManage={canManage} headers={headers} onToggle={toggleAgent} onDelete={deleteAgent} />}
         {manageTab === "retry" && <RetryPolicyTab policy={retryPolicy} canManage={canManage} busy={maintenanceBusy} onSave={updateRetryPolicy} />}
       </section>}
 
-      {tab === "execution" && <ExecutionTab jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} />}
+      {tab === "execution" && <ExecutionTab projectId={pid} buildId={buildId} releaseId={releaseId} agents={agents} headers={headers} jobs={jobs} executions={executions} setExecDetail={setExecDetail} execFilter={execFilter} setExecFilter={setExecFilter} canRun={canRun} onCancel={cancelExecution} onRerun={rerunExecution} reload={reload + liveTick} />}
 
       {tab === "failures" && <FailureDashboardTab projectId={pid} releaseId={releaseId} agents={agents} headers={headers} setExecDetail={setExecDetail} />}
     </>}
 
-    {createModal && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-create-title" onMouseDown={() => !createBusy && wizardStep !== 4 && setCreateModal(false)}><div className="modal-box automation-create-modal" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div className="acw-head"><span className="acw-head-icon" aria-hidden="true">⚙</span><div><h2 id="automation-create-title">สร้าง Automation Case</h2><small>Wizard สำหรับเลือก Test Case ตรวจสอบรายละเอียด สร้าง DSL และบันทึก Automation Case</small></div></div><button aria-label="ปิด" disabled={createBusy} onClick={() => setCreateModal(false)}>×</button></div>
+    {createModal && <ModalShell labelledBy="automation-create-title" className="automation-create-modal" onDismiss={() => { if (!createBusy && wizardStep !== 4) setCreateModal(false); }} form>
+      <div className="modal-head"><div className="acw-head"><span className="acw-head-icon" aria-hidden="true">⚙</span><div><h2 id="automation-create-title">สร้าง Automation Case</h2><small>Wizard สำหรับเลือก Test Case ตรวจสอบรายละเอียด สร้าง DSL และบันทึก Automation Case</small></div></div><button aria-label="ปิด" disabled={createBusy} onClick={() => setCreateModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+      {createLoadError && <div className="inline-alert error" role="alert"><span>{createLoadError}</span></div>}
 
       <div className="acw-stepper" aria-label="ขั้นตอนการสร้าง Automation Case">
         {["เลือก Test Case", "ตรวจสอบรายละเอียด", "สร้าง Automation Case", "เสร็จสิ้น"].map((label, i) => {
@@ -1031,12 +1069,12 @@ export function AutomationPage({
             <div className="acw-section-head"><div><h2>เลือก Test Case</h2><p>ค้นหาและเลือก Test Case ที่ต้องการสร้าง Automation Case</p></div><button type="button" className="btn" title="รีเฟรชรายการ" aria-label="รีเฟรชรายการ" disabled={createBusy} onClick={openCreate}>↻</button></div>
             <div className="acw-filters">
               {createModules.length > 0 && <select aria-label="กรอง Module" value={createModuleFilter} onChange={(e) => setCreateModuleFilter(e.target.value)}><option value="">ทุก Module</option>{moduleTreeOptions(createModules)}</select>}
-              <input aria-label="ค้นหา Test Case" placeholder="ค้นหา Code / ชื่อ..." value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
+              <input type="text" aria-label="ค้นหา Test Case" placeholder="ค้นหา Code / ชื่อ..." value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
               <select aria-label="กรอง Priority" value={wizardPriority} onChange={(e) => setWizardPriority(e.target.value)}><option value="">ทุก Priority</option><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></select>
             </div>
             {wizardList.length ? <>
               <div className="acw-table-wrap">
-                <table className="acw-table">
+                <table className="acw-table table-cards">
                   <colgroup><col style={{ width: 42 }} /><col style={{ width: 185 }} /><col /><col style={{ width: 85 }} /><col style={{ width: 115 }} /><col style={{ width: 90 }} /></colgroup>
                   <thead><tr><th aria-label="เลือก"></th><th>Test Case</th><th>ชื่อ Test Case</th><th>Priority</th><th>สถานะ</th><th>Automation</th></tr></thead>
                   <tbody>{wizardPaged.map((c) => { const taken = existingTestCaseIds.has(c.testCaseId); const sel = createPick?.testCaseId === c.testCaseId; return <tr key={c.testCaseId} className={(sel ? " is-selected" : "") + (taken ? " is-taken" : "")} onClick={() => { if (!taken && !createBusy) pickCandidate(c); }} aria-disabled={taken} title={taken ? "Test Case นี้มี Automation Case แล้ว" : undefined}>
@@ -1130,14 +1168,14 @@ export function AutomationPage({
         </div>}
 
         {wizardStep === 3 && <div className="acw-builder">
-          {newVersionError && <div className="inline-alert error"><span>{newVersionError}</span></div>}
+          {newVersionError && <div className="inline-alert error" role="alert"><span>{newVersionError}</span></div>}
           <div className="acw-card">
             <div className="acw-section-head"><div><h2>Automation Case</h2><p>ตรวจสอบข้อมูล Automation ก่อนอนุมัติ</p></div><span className="badge ai">{aiConf != null ? "AI Generated" : "Manual DSL"}</span></div>
             <div className="acw-form-grid">
-              <label className="field full">Automation Code<input value={createdCode} readOnly /></label>
-              <label className="field full">Automation Name<input value={`Automation - ${createPick?.title ?? ""}`} readOnly /></label>
-              <label className="field">Linked Test Case<input value={createPick?.testCaseCode ?? ""} readOnly /></label>
-              <label className="field">Version<input value="1.0" readOnly /></label>
+              <label className="field full">Automation Code<input type="text" value={createdCode} readOnly /></label>
+              <label className="field full">Automation Name<input type="text" value={`Automation - ${createPick?.title ?? ""}`} readOnly /></label>
+              <label className="field">Linked Test Case<input type="text" value={createPick?.testCaseCode ?? ""} readOnly /></label>
+              <label className="field">Version<input type="text" value="1.0" readOnly /></label>
               <label className="field">Status<span className="acw-status"><Badge tone={caseStatusTone[createdStatus] ?? "blue"}>{createdStatus}</Badge></span></label>
               <label className="field">Agent Target<span className="acw-status">{wizardType} · Windows Agent</span></label>
             </div>
@@ -1153,12 +1191,12 @@ export function AutomationPage({
             </div>
           </div>
           <div className="acw-card">
-            <div className="acw-section-head"><div><h2>Automation DSL</h2><p>ภาษากลางที่ Agent จะนำไป Execute กับ ProMaxx2 Windows</p></div>{canGenerateAi && <button type="button" className="btn" disabled={createBusy} onClick={generateAiForNewCase}>{createBusy ? "AI กำลังสร้าง..." : "↻ Generate AI"}</button>}</div>
+            <div className="acw-section-head"><div><h2>Automation DSL</h2><p>ภาษากลางที่ Agent จะนำไป Execute กับ ProMaxx2 Windows</p></div>{canGenerateAi && <button type="button" className="btn" title={`เรียก AI Provider จริง อาจใช้เวลาถึง ${AI_GENERATE_TIMEOUT_MS / 1000} วินาที`} disabled={createBusy} onClick={generateAiForNewCase}>{createBusy ? <><span className="spinner inline" aria-hidden="true" /> AI กำลังสร้าง... (อาจถึง {AI_GENERATE_TIMEOUT_MS / 1000}s)</> : "↻ Generate AI"}</button>}</div>
             <textarea className="acw-dsl" rows={14} value={newDsl} onChange={(e) => setNewDsl(e.target.value)} spellCheck={false} aria-label="DSL JSON" />
             <div className="acw-action-bar">
-              <button type="button" className="btn" disabled={createBusy} onClick={() => { setNewDsl(sampleDsl); setValErrors(""); setValidatedOk(false); }}>โหลดตัวอย่าง</button>
+              <button type="button" className="btn" disabled={createBusy} onClick={() => { setNewDsl(sampleDsl); setValErrors(""); setValidatedOk(false); }}><span className="material-symbols-outlined" aria-hidden="true">description</span> โหลดตัวอย่าง</button>
             </div>
-            <div className="acw-note">{valErrors ? <span className="warn">✕ Validate Error: {valErrors}</span> : <span className="ok">✓ สถานะ: {validatedOk ? "Validate ผ่าน — พร้อมบันทึก" : "DSL พร้อมตรวจสอบ — กด 'บันทึก + Validate'"}</span>}</div>
+            <div className="acw-note">{valErrors ? <span className="warn"><span className="material-symbols-outlined" aria-hidden="true">close</span> Validate Error: {valErrors}</span> : <span className="ok">✓ สถานะ: {validatedOk ? "Validate ผ่าน — พร้อมบันทึก" : "DSL พร้อมตรวจสอบ — กด 'บันทึก + Validate'"}</span>}</div>
           </div>
         </div>}
 
@@ -1174,38 +1212,38 @@ export function AutomationPage({
               <div className="acw-result-item"><div className="k">Execution Target</div><div className="v">{wizardType} · Windows Agent</div></div>
             </div>
             <div className="acw-action-bar acw-center">
-              <button type="button" className="btn" onClick={openCreatedCase}>ดู Automation Case</button>
-              <button type="button" className="btn" onClick={() => setCreateModal(false)}>ไปหน้า Automation</button>
-              <button type="button" className="btn acw-btn-success" onClick={resetWizard}>สร้าง Case เพิ่ม</button>
+              <button type="button" className="btn" onClick={openCreatedCase}><span className="material-symbols-outlined" aria-hidden="true">info</span> ดู Automation Case</button>
+              <button type="button" className="btn" onClick={() => setCreateModal(false)}>ไปหน้า Automation <span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
+              <button type="button" className="btn acw-btn-success" onClick={resetWizard}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Case เพิ่ม</button>
             </div>
           </div>
         </div>}
       </div>
 
       {wizardStep < 4 && <div className="modal-actions">
-        <button className="btn" disabled={createBusy} onClick={() => setCreateModal(false)}>ยกเลิก</button>
+        <button className="btn" disabled={createBusy} onClick={() => setCreateModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button>
         {wizardStep > 1 && <button className="btn" disabled={createBusy} onClick={() => setWizardStep((s) => s - 1)}>‹ ย้อนกลับ</button>}
         {wizardStep === 1 && <button className="btn primary" disabled={createBusy || !createPick} onClick={() => setWizardStep(2)}>ถัดไป ›</button>}
         {wizardStep === 2 && <button className="btn primary" disabled={createBusy || !createPick} onClick={async () => { const r = await createCase(createPick?.testCaseId ?? "", wizardType); if (r) setWizardStep(3); }}>{createBusy ? "กำลังสร้าง..." : "สร้าง Automation ›"}</button>}
         {wizardStep === 3 && <button className="btn primary" disabled={createBusy || !newDsl.trim()} onClick={createNewVersionAndValidate}>{createBusy ? "กำลังบันทึก..." : "บันทึก + Validate ›"}</button>}
       </div>}
-    </div></div>}
+    </ModalShell>}
 
-    {selectedCase && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-case-detail-title" onMouseDown={() => setSelectedCase(null)}><div className="modal-box automation-case-detail" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2 id="automation-case-detail-title">{selectedCase.automationCode}</h2><small>{selectedCase.testCaseCode} · {selectedCase.testCaseTitle}</small></div><button aria-label="ปิด" onClick={() => setSelectedCase(null)}>×</button></div>
+    {selectedCase && <ModalShell labelledBy="automation-case-detail-title" className="automation-case-detail" onDismiss={() => setSelectedCase(null)}>
+      <div className="modal-head"><div><h2 id="automation-case-detail-title">{selectedCase.automationCode}</h2><small>{selectedCase.testCaseCode} · {selectedCase.testCaseTitle}</small></div><button aria-label="ปิด" onClick={() => setSelectedCase(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
       <div className="automation-case-detail-hero"><Badge tone={caseStatusTone[selectedCase.status] ?? "blue"}>{selectedCase.status}</Badge><span>Target App: </span>{canEdit ? <select aria-label="Target App" value={selectedCase.automationType} disabled={createBusy} onChange={(e) => changeTarget(e.target.value)}><option value="Pos">Pos · PromaxxsPos.exe</option><option value="App">App · Promaxxs.App.exe</option><option value="WindowsUI">WindowsUI · generic</option></select> : <Badge tone={targetTone[selectedCase.automationType] ?? "blue"}>{selectedCase.automationType}</Badge>}<span>Rev {selectedCase.currentVersionNo}</span><span>AI Generated: {selectedCase.isAiGenerated ? "ใช่" : "ไม่"}</span></div>
       <p className="automation-case-hint">{selectedCase.status === "Draft" ? "ขั้นตอนถัดไป: เขียน DSL (หรือกด ✦ Generate AI) แล้ว Validate" : selectedCase.status === "NeedsReview" ? "ขั้นตอนถัดไป: ตรวจ DSL ที่ AI สร้าง → กด Validate → อนุมัติ" : selectedCase.status === "Validated" || selectedCase.status === "Approved" ? "ขั้นตอนถัดไป: กดอนุมัติ (ถ้ายัง) → Case จะเป็น Ready และสั่งรันได้" : selectedCase.status === "Ready" ? "พร้อมรัน — กด ▶ สั่งรัน หรือรันเป็นกลุ่มใน Regression Suites" : selectedCase.status === "MaintenanceRequired" ? "ต้องซ่อม: แก้ Object Repository / DSL → Validate ใหม่ → อนุมัติ" : "สร้าง Version แล้ว Validate/อนุมัติเพื่อให้พร้อมรัน"}</p>
 
       {selectedCase.status === "MaintenanceRequired" && <section className="automation-failure-analysis" aria-label="Maintenance Repair">
         <div className="automation-section-head"><h3>Maintenance Repair (AUT-P0-007)</h3></div>
-        {selectedCase.maintenanceReason && <div className="inline-alert error"><span>สาเหตุ: {selectedCase.maintenanceReason}</span></div>}
+        {selectedCase.maintenanceReason && <div className="inline-alert error" role="alert"><span>สาเหตุ: {selectedCase.maintenanceReason}</span></div>}
         <p className="muted-text">เปิดตั้งแต่ {formatThaiDateTime(selectedCase.maintenanceOpenedAt)}{selectedCase.maintenanceOwnerUserId ? ` · ผู้รับผิดชอบ: ${selectedCase.maintenanceOwnerUserId}` : " · ยังไม่ได้มอบหมายผู้รับผิดชอบ"}</p>
         {canEdit && <>
           <div className="form-grid">
-            <label>User Id ผู้รับผิดชอบ<input value={maintenanceOwnerInput} onChange={(e) => setMaintenanceOwnerInput(e.target.value)} placeholder="ระบุ User Id" /></label>
+            <label>User Id ผู้รับผิดชอบ<input type="text" value={maintenanceOwnerInput} onChange={(e) => setMaintenanceOwnerInput(e.target.value)} placeholder="ระบุ User Id" /></label>
           </div>
           <div className="automation-failure-actions">
-            <button type="button" className="btn" disabled={maintenanceBusy || !maintenanceOwnerInput.trim()} onClick={assignMaintenanceOwner}>รับผิดชอบซ่อม</button>
+            <button type="button" className="btn" disabled={maintenanceBusy || !maintenanceOwnerInput.trim()} onClick={assignMaintenanceOwner}><span className="material-symbols-outlined" aria-hidden="true">check</span> รับผิดชอบซ่อม</button>
           </div>
           <label className="full">บันทึกการแก้ไข<textarea rows={3} value={maintenanceNote} onChange={(e) => setMaintenanceNote(e.target.value)} placeholder="สาเหตุที่แท้จริงและสิ่งที่แก้ไขแล้ว เช่น อัปเดต Object Repository AutomationId ใหม่" /></label>
           <div className="automation-failure-actions">
@@ -1217,18 +1255,18 @@ export function AutomationPage({
       {selectedCase.isQuarantined && <section className="automation-failure-analysis" aria-label="Quarantine">
         <div className="automation-section-head"><h3>Flaky Quarantine</h3><Badge tone="orange">Quarantined</Badge></div>
         <p className="muted-text">เหตุผล: {selectedCase.quarantineReason}{selectedCase.quarantineExpiresAt ? ` · หมดอายุ ${formatThaiDateTime(selectedCase.quarantineExpiresAt)}` : ""}</p>
-        {canManage && <div className="automation-failure-actions"><button type="button" className="btn" disabled={maintenanceBusy} onClick={() => unquarantineCase(selectedCase.automationCaseId)}>Unquarantine</button></div>}
+        {canManage && <div className="automation-failure-actions"><button type="button" className="btn" disabled={maintenanceBusy} onClick={() => unquarantineCase(selectedCase.automationCaseId)}><span className="material-symbols-outlined" aria-hidden="true">check</span> Unquarantine</button></div>}
       </section>}
 
       <VersionEditor selectedCase={selectedCase} versions={versions} canEdit={canEdit} canValidate={canValidate} canApprove={canApprove} canRun={canRun} canGenerateAi={canGenerateAi} createBusy={createBusy} versionError={versionError} onCreate={createVersion} onValidate={validateVersion} onApprove={approveVersion} onRun={openRun} onGenerateAi={generateAi} />
-      <div className="modal-actions"><button className="btn primary" onClick={() => setSelectedCase(null)}>ปิด</button></div>
-    </div></div>}
+      <div className="modal-actions"><button className="btn primary" onClick={() => setSelectedCase(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div>
+    </ModalShell>}
 
-    {runModal && selectedCase && <RunModal item={selectedCase} versions={versions} builds={builds} environments={environments} agents={agents} busy={createBusy} onClose={() => setRunModal(false)} onRun={runCase} />}
+    {runModal && selectedCase && <RunModal item={selectedCase} versions={versions} releaseId={releaseId} agents={agents} busy={createBusy} onClose={() => setRunModal(false)} onRun={runCase} />}
     {batchModal && <BatchRunModal cases={cases} releaseId={releaseId} canRun={canRun} busy={createBusy} onClose={() => setBatchModal(false)} onRunBatch={runBatch} onError={setError} />}
     {quarantineModalFor && <QuarantineModal candidate={quarantineModalFor} busy={maintenanceBusy} onClose={() => setQuarantineModalFor(null)} onConfirm={quarantineCase} />}
-    {execDetail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-exec-detail-title" onMouseDown={() => setExecDetail(null)}><div className="modal-box automation-exec-detail" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2 id="automation-exec-detail-title">{execDetail.automationCode} · Execution</h2><small>Build {execDetail.buildNumber} · {execDetail.environmentName}{execDetail.agentCode ? ` · ${execDetail.agentCode}` : ""}</small></div><button aria-label="ปิด" onClick={() => setExecDetail(null)}>×</button></div>
+    {execDetail && <ModalShell labelledBy="automation-exec-detail-title" className="automation-exec-detail" onDismiss={() => setExecDetail(null)}>
+      <div className="modal-head"><div><h2 id="automation-exec-detail-title">{execDetail.automationCode} · Execution</h2><small>Build {execDetail.buildNumber} · {execDetail.environmentName}{execDetail.agentCode ? ` · ${execDetail.agentCode}` : ""}</small></div><button aria-label="ปิด" onClick={() => setExecDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
       <div className="automation-run-detail-summary">
         <Badge tone={executionStatusTone[execDetail.status] ?? "blue"}>{execDetail.status}</Badge>
         <span>เริ่ม {formatThaiDateTime(execDetail.startedAt)}</span>
@@ -1236,22 +1274,22 @@ export function AutomationPage({
         {execDetail.durationMs != null && <span>{(execDetail.durationMs / 1000).toFixed(2)} วิ</span>}
         {execDetail.errorCode && <Badge tone="red">{execDetail.errorCode}</Badge>}
         {execDetail.retryOfExecutionId && <Badge tone="orange">Auto-Retry #{execDetail.retryCount}</Badge>}
-        {canRun && (execDetail.status === "Running" || execDetail.status === "Queued") && <button type="button" className="btn danger automation-detail-action" onClick={() => cancelExecution(execDetail)}>✕ ยกเลิก</button>}
-        {canRun && execDetail.status !== "Running" && execDetail.status !== "Queued" && <button type="button" className="btn automation-detail-action" onClick={() => rerunExecution(execDetail)}>▶ รันซ้ำ</button>}
+        {canRun && (execDetail.status === "Running" || execDetail.status === "Queued") && <button type="button" className="btn danger automation-detail-action" onClick={() => cancelExecution(execDetail)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button>}
+        {canRun && execDetail.status !== "Running" && execDetail.status !== "Queued" && <button type="button" className="btn automation-detail-action" onClick={() => rerunExecution(execDetail)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> รันซ้ำ</button>}
       </div>
-      {execDetail.errorMessage && <div className="inline-alert error"><span>{execDetail.errorMessage}</span></div>}
+      {execDetail.errorMessage && <div className="inline-alert error" role="alert"><span>{execDetail.errorMessage}</span></div>}
       {execDetail.testExecutionId && <p className="muted-text">สร้าง TestExecution (ExecutionType = Automation) แล้ว</p>}
       {execDetail.status === "Failed" && <section className="automation-failure-analysis">
         <div className="automation-section-head"><h3>Failure Analysis (G9)</h3><div className="automation-failure-actions">
           <button className="btn" disabled={classifyBusy !== ""} onClick={runClassify}>{classifyBusy === "classify" ? "กำลังจำแนก..." : "จำแนก Fail"}</button>
           {canGenerateAi && <button className="btn" disabled={classifyBusy !== ""} onClick={runAnalyze}>{classifyBusy === "analyze" ? "AI กำลังวิเคราะห์..." : "วิเคราะห์ด้วย AI"}</button>}
-          {canEdit && !execDetail.defectId && <button className="btn danger" disabled={classifyBusy !== ""} onClick={runCreateDefect}>{classifyBusy === "defect" ? "กำลังสร้าง..." : "สร้าง Defect"}</button>}
+          {canCreateDefect && !execDetail.defectId && !defectResult && <button className="btn danger" disabled={classifyBusy !== ""} onClick={runCreateDefect}>{classifyBusy === "defect" ? "กำลังสร้าง..." : "สร้าง Defect"}</button>}
         </div></div>
         {execDetail.classifiedFailureType && !classification && <div className="automation-failure-row"><Badge tone={failureTone[execDetail.classifiedFailureType] ?? "blue"}>{execDetail.classifiedFailureType}</Badge><span>จำแนกอัตโนมัติตอน Complete</span><span>แนะนำ: {execDetail.classifiedRecommendation}</span></div>}
         {classification && <div className="automation-failure-row"><Badge tone={failureTone[classification.failureType] ?? "blue"}>{classification.failureType}</Badge><span>Product Defect Candidate: {classification.isProductDefectCandidate ? "ใช่" : "ไม่ใช่"}</span><span>แนะนำ: {classification.recommendation}</span>{classification.detail && <small>{classification.detail}</small>}</div>}
         {aiAnalysis && <div className="automation-failure-row"><Badge tone={failureTone[aiAnalysis.classification] ?? "blue"}>{aiAnalysis.classification}</Badge><span>AI Confidence {(aiAnalysis.confidence * 100).toFixed(0)}%</span><span>แนะนำ: {aiAnalysis.recommendation}</span><small>{aiAnalysis.summary}</small></div>}
         {defectResult && <div className="inline-alert success"><span>สร้าง Defect แล้ว: <b>{defectResult}</b> — เปิดหน้า Defect เพื่อดูรายละเอียด</span></div>}
-        {execDetail.defectId && <p className="muted-text">สร้าง Defect แล้ว (Execution เชื่อมกับ Defect แล้ว)</p>}
+        {execDetail.defectId && !defectResult && <p className="muted-text">สร้าง Defect แล้ว (Execution เชื่อมกับ Defect แล้ว)</p>}
       </section>}
       <div className="automation-result-list">{execDetail.stepResults.length ? execDetail.stepResults.map((s) => <article key={s.automationStepResultId} className="automation-result-card">
         <div><b>Step {s.stepNo} · {s.actionCode}</b><Badge tone={s.status === "Pass" ? "green" : s.status === "Fail" ? "red" : "yellow"}>{s.status}</Badge></div>
@@ -1267,748 +1305,8 @@ export function AutomationPage({
           <span>{ev.filePath.split("/").pop()}</span>
           <footer>{canViewEvidence && <button className="table-action" disabled={evidenceBusy === ev.automationEvidenceId} onClick={() => openEvidenceFile(ev)}>{evidenceBusy === ev.automationEvidenceId ? "กำลังเปิด..." : "เปิดไฟล์"}</button>}</footer>
         </article>)}
-      </section> : null}
-      <div className="modal-actions"><button className="btn primary" onClick={() => setExecDetail(null)}>ปิด</button></div>
-    </div></div>}
+      </section> : <section className="automation-evidence-list"><h3>Evidence</h3><p className="muted-text">ยังไม่มี Evidence สำหรับ Execution นี้</p></section>}
+      <div className="modal-actions"><button className="btn primary" onClick={() => setExecDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button></div>
+    </ModalShell>}
   </article>;
-}
-
-function VersionEditor({
-  selectedCase, versions, canEdit, canValidate, canApprove, canRun, canGenerateAi, createBusy, versionError, onCreate, onValidate, onApprove, onRun, onGenerateAi,
-}: {
-  selectedCase: AutomationCaseItem; versions: AutomationVersionItem[]; canEdit: boolean; canValidate: boolean; canApprove: boolean; canRun: boolean; canGenerateAi: boolean;
-  createBusy: boolean; versionError: string;
-  onCreate: (dsl: string, reason: string) => void; onValidate: (v: AutomationVersionItem) => void; onApprove: (v: AutomationVersionItem) => void;
-  onRun: () => void; onGenerateAi: () => void;
-}) {
-  const [dsl, setDsl] = useState(sampleDsl);
-  const [reason, setReason] = useState("");
-
-  return <div className="automation-version-editor">
-    {versionError && <div className="inline-alert error"><span>{versionError}</span></div>}
-    <section className="automation-version-list">
-      <h3>Version History ({versions.length})</h3>
-      {versions.length ? versions.map((v) => <article key={v.automationVersionId} className="automation-version-row">
-        <div className="automation-version-meta"><b>Rev {v.versionNo}</b><Badge tone={versionStatusTone[v.validationStatus] ?? "gray"}>{v.validationStatus}</Badge>{v.approvedAt && <Badge tone="green">Approved</Badge>}<span>TestCase Rev {v.testCaseRevisionNo}</span><span>{parseDslSteps(v.dslJson).length} steps</span><time>{formatThaiDateTime(v.createdAt)}</time></div>
-        <p className="automation-dsl-preview">{v.dslJson.length > 300 ? `${v.dslJson.slice(0, 300)}…` : v.dslJson}</p>
-        {v.validationErrors && <p className="automation-validation-errors">{v.validationErrors}</p>}
-        <div className="automation-version-actions">
-          {canValidate && v.validationStatus !== "Valid" && <button className="btn" disabled={createBusy} onClick={() => onValidate(v)}>Validate</button>}
-          {canApprove && v.validationStatus === "Valid" && !v.approvedAt && <button className="btn primary" disabled={createBusy} onClick={() => onApprove(v)}>อนุมัติ</button>}
-          {canRun && selectedCase.status === "Ready" && <button className="btn primary" disabled={createBusy} onClick={onRun}>▶ สั่งรัน</button>}
-        </div>
-      </article>) : <div className="empty"><p>ยังไม่มี Version</p><small>สร้าง Version แรกด้วย DSL ด้านล่าง</small></div>}
-    </section>
-    {canEdit && <section className="automation-version-create">
-      <h3>สร้าง Version ใหม่ (DSL v1)</h3>
-      <label className="full">DSL JSON<textarea rows={14} value={dsl} onChange={(e) => setDsl(e.target.value)} spellCheck={false} aria-label="DSL JSON" /></label>
-      <div className="automation-version-create-actions">
-        {canGenerateAi && <button type="button" className="btn primary" disabled={createBusy} onClick={onGenerateAi}>{createBusy ? "AI กำลังสร้าง..." : "✦ Generate AI"}</button>}
-        <button type="button" className="btn" onClick={() => setDsl(sampleDsl)}>โหลดตัวอย่าง</button>
-        <label className="automation-reason-field">หมายเหตุการเปลี่ยนแปลง<input value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="เช่น เพิ่ม step ตรวจ stock" /></label>
-        <button type="button" className="btn" disabled={createBusy || !dsl.trim()} onClick={() => onCreate(dsl, reason)}>{createBusy ? "กำลังบันทึก..." : "สร้าง Version"}</button>
-      </div>
-      <p className="muted-text">DSL ต้องเป็น JSON ตามรูปแบบ: <code>{"{ dslVersion, automationType, steps: [{ stepNo, action, parameters }] }"}</code> — Action ต้องมีใน Action Library</p>
-    </section>}
-  </div>;
-}
-
-function RunModal({
-  item, versions, builds, environments, agents, busy, onClose, onRun,
-}: {
-  item: AutomationCaseItem; versions: AutomationVersionItem[]; builds: BuildOption[]; environments: EnvironmentOption[]; agents: AutomationAgentItem[];
-  busy: boolean; onClose: () => void; onRun: (c: AutomationCaseItem, versionId: string, buildId: string, envId: string, agentId: string, priority: number) => void;
-}) {
-  const [versionId, setVersionId] = useState("");
-  const [buildId, setBuildId] = useState("");
-  const [envId, setEnvId] = useState("");
-  const [agentId, setAgentId] = useState("");
-  const [priority, setPriority] = useState(5);
-  const approved = versions.find((v) => v.approvedAt && v.validationStatus === "Valid");
-  useEffect(() => { if (!versionId && approved) setVersionId(approved.automationVersionId); }, [versionId, approved]);
-
-  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-run-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="modal-head"><div><h2 id="automation-run-title">สั่งรัน {item.automationCode}</h2><small>สร้าง Automation Execution + Job เข้าคิว ให้ Agent รับไปรัน</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
-    <div className="form-grid">
-      <label className="full">Automation Version<select value={versionId} onChange={(e) => setVersionId(e.target.value)}><option value="">เลือก Version</option>{versions.map((v) => <option key={v.automationVersionId} value={v.automationVersionId}>Rev {v.versionNo} · {v.validationStatus}{v.approvedAt ? " · Approved" : ""}</option>)}</select></label>
-      <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select></label>
-      <label>Environment<select value={envId} onChange={(e) => setEnvId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
-      <label>Agent (ไม่บังคับ)<select value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">ปล่อยให้คิวจัดสรร</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode} · {a.connectivity}</option>)}</select></label>
-      <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
-    </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !versionId || !buildId || !envId} onClick={() => onRun(item, versionId, buildId, envId, agentId, priority)}>{busy ? "กำลังส่งงาน..." : "ส่งเข้าคิว"}</button></div>
-  </div></div>;
-}
-
-function ActionLibraryTab({ actions, canManage, headers, onReload, onError, actionModal, setActionModal }: {
-  actions: AutomationActionItem[]; canManage: boolean; headers: Record<string, string>; onReload: () => void; onError: (e: string) => void;
-  actionModal: boolean; setActionModal: (v: boolean) => void;
-}) {
-  const [category, setCategory] = useState("ทั้งหมด");
-  const emptyForm = { actionCode: "", actionName: "", category: "Generic", description: "", parameterSchemaJson: "{}", handlerKey: "", minimumAgentVersion: "1.0.0", isActive: true, retrySafety: "Unsafe" };
-  const [form, setForm] = useState(emptyForm);
-  const [editing, setEditing] = useState<AutomationActionItem | null>(null);
-  const [busy, setBusy] = useState(false);
-  const cats = ["ทั้งหมด", ...Array.from(new Set(actions.map((a) => a.category)))];
-  const filtered = category === "ทั้งหมด" ? actions : actions.filter((a) => a.category === category);
-
-  const openCreate = () => { setEditing(null); setForm(emptyForm); setActionModal(true); };
-  const openEdit = (item: AutomationActionItem) => {
-    setEditing(item);
-    setForm({ actionCode: item.actionCode, actionName: item.actionName, category: item.category, description: item.description ?? "", parameterSchemaJson: item.parameterSchemaJson || "{}", handlerKey: item.handlerKey, minimumAgentVersion: item.minimumAgentVersion ?? "", isActive: item.isActive, retrySafety: item.retrySafety || "Unsafe" });
-    setActionModal(true);
-  };
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      JSON.parse(form.parameterSchemaJson || "{}");
-      const body = editing
-        ? { actionName: form.actionName, category: form.category, description: form.description, parameterSchemaJson: form.parameterSchemaJson, handlerKey: form.handlerKey, minimumAgentVersion: form.minimumAgentVersion, isActive: form.isActive, retrySafety: form.retrySafety }
-        : { actionCode: form.actionCode, actionName: form.actionName, category: form.category, description: form.description, parameterSchemaJson: form.parameterSchemaJson, minimumAgentVersion: form.minimumAgentVersion };
-      const r = await fetch(editing ? `${apiUrl}/automation/actions/${editing.automationActionId}` : `${apiUrl}/automation/actions`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
-      if (!r.ok) {
-        const p = await r.json().catch(() => null);
-        throw new Error(p?.detail ?? `${editing ? "แก้ไข" : "สร้าง"} Action ไม่สำเร็จ`);
-      }
-      setActionModal(false);
-      onReload();
-    } catch (e) {
-      onError(e instanceof SyntaxError ? "Parameter Schema ต้องเป็น JSON ที่ถูกต้อง" : e instanceof Error ? e.message : "บันทึก Action ไม่สำเร็จ");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggle = async (item: AutomationActionItem) => {
-    if (!window.confirm(`${item.isActive ? "ปิด" : "เปิด"} Action ${item.actionCode}?`)) return;
-    setBusy(true);
-    try {
-      const r = await fetch(`${apiUrl}/automation/actions/${item.automationActionId}`, { method: "PUT", headers, body: JSON.stringify({ actionName: item.actionName, category: item.category, description: item.description, parameterSchemaJson: item.parameterSchemaJson, handlerKey: item.handlerKey, minimumAgentVersion: item.minimumAgentVersion, isActive: !item.isActive, retrySafety: item.retrySafety }) });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เปลี่ยนสถานะ Action ไม่สำเร็จ"); }
-      onReload();
-    } catch (e) { onError(e instanceof Error ? e.message : "เปลี่ยนสถานะ Action ไม่สำเร็จ"); }
-    finally { setBusy(false); }
-  };
-
-  return <section className="automation-actions" aria-label="Action Library">
-    <header className="automation-section-head"><div><h2>Action Library</h2><p>ชุดคำสั่งที่ Agent รองรับ · <code>ActionCode</code> ต้องตรงกับ DSL</p></div>{canManage && <button className="btn primary" onClick={openCreate}>+ เพิ่ม Action</button>}</header>
-    <div className="automation-cand-filters" role="group" aria-label="กรอง Action ตาม Category">{cats.map((c) => <button key={c} type="button" className={"chip" + (category === c ? " active" : "")} onClick={() => setCategory(c)}>{c}</button>)}</div>
-    {filtered.length ? <div className="table-wrap"><table><thead><tr><th>Action Code</th><th>Name</th><th>Category</th><th>Handler</th><th>Min Agent</th><th>Retry Safety</th><th>Active</th>{canManage && <th>Actions</th>}</tr></thead><tbody>{filtered.map((a) => <tr key={a.automationActionId}><td><b>{a.actionCode}</b></td><td>{a.actionName}</td><td><Badge tone="blue">{a.category}</Badge></td><td><code>{a.handlerKey}</code></td><td>{a.minimumAgentVersion ?? "-"}</td><td><Badge tone={a.retrySafety === "Safe" ? "green" : a.retrySafety === "Conditional" ? "yellow" : "red"}>{a.retrySafety}</Badge></td><td><Badge tone={a.isActive ? "green" : "gray"}>{a.isActive ? "Active" : "Inactive"}</Badge></td>{canManage && <td><div className="automation-row-actions"><button type="button" className="table-action" disabled={busy} onClick={() => openEdit(a)}>แก้ไข</button><button type="button" className={`table-action${a.isActive ? " danger" : ""}`} disabled={busy} onClick={() => toggle(a)}>{a.isActive ? "ปิด" : "เปิด"}</button></div></td>}</tr>)}</tbody></table></div> : <div className="empty"><p>ไม่พบ Action</p></div>}
-
-    {actionModal && <div className="modal" role="dialog" aria-modal="true" onMouseDown={() => !busy && setActionModal(false)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2>{editing ? `แก้ไข ${editing.actionCode}` : "เพิ่ม Action"}</h2><small>Action จะถูกใช้ตรวจสอบ (Validate) ว่า DSL ถูกต้อง</small></div><button aria-label="ปิด" disabled={busy} onClick={() => setActionModal(false)}>×</button></div>
-      <div className="form-grid">
-        <label>Action Code<input value={form.actionCode} disabled={Boolean(editing)} onChange={(e) => setForm({ ...form, actionCode: e.target.value.toUpperCase() })} placeholder="เช่น SET_QTY" /></label>
-        <label>Name<input value={form.actionName} onChange={(e) => setForm({ ...form, actionName: e.target.value })} /></label>
-        <label>Category<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}><option>Authentication</option><option>Navigation</option><option>Document</option><option>Item</option><option>Generic UI</option><option>Validation</option></select></label>
-        <label>Minimum Agent Version<input value={form.minimumAgentVersion} onChange={(e) => setForm({ ...form, minimumAgentVersion: e.target.value })} /></label>
-        <label>Handler Key<input value={form.handlerKey || form.actionCode} disabled={!editing} onChange={(e) => setForm({ ...form, handlerKey: e.target.value.toUpperCase() })} /></label>
-        {editing && <label>Retry Safety<select value={form.retrySafety} onChange={(e) => setForm({ ...form, retrySafety: e.target.value })}><option value="Safe">Safe — retry ได้เสมอ</option><option value="Conditional">Conditional — retry ถ้ายังไม่สำเร็จ</option><option value="Unsafe">Unsafe — ห้าม retry (เช่น บันทึกเอกสาร)</option></select></label>}
-        {editing && <label className="checkbox-field"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> Active</label>}
-        <label className="full">Description<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
-        <label className="full">Parameter Schema JSON<textarea rows={6} spellCheck={false} value={form.parameterSchemaJson} onChange={(e) => setForm({ ...form, parameterSchemaJson: e.target.value })} /></label>
-      </div>
-      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setActionModal(false)}>ยกเลิก</button><button className="btn primary" disabled={busy || !form.actionCode.trim() || !form.actionName.trim() || (Boolean(editing) && !form.handlerKey.trim())} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
-    </div></div>}
-  </section>;
-}
-
-function ObjectRepositoryTab({ projectId, objects, canManage, headers, onReload, onError, objectModal, setObjectModal }: {
-  projectId: string; objects: AutomationObjectItem[]; canManage: boolean; headers: Record<string, string>; onReload: () => void; onError: (e: string) => void;
-  objectModal: boolean; setObjectModal: (v: boolean) => void;
-}) {
-  const [screen, setScreen] = useState("");
-  const emptyForm = { moduleId: "", applicationCode: "Promaxx2", screenCode: "Sales", objectCode: "", objectName: "", controlType: "Button", automationId: "", selectorJson: "{}", isActive: true };
-  const [form, setForm] = useState(emptyForm);
-  const [editing, setEditing] = useState<AutomationObjectItem | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [importModal, setImportModal] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [importRows, setImportRows] = useState<AutomationObjectImportDraft[]>([]);
-  const [selectedImport, setSelectedImport] = useState<Set<string>>(new Set());
-  const [verifySelected, setVerifySelected] = useState<Set<string>>(new Set());
-  const [verifications, setVerifications] = useState<AutomationObjectVerificationItem[]>([]);
-  const [verifyModal, setVerifyModal] = useState(false);
-  const [verifyReload, setVerifyReload] = useState(0);
-  const screens = ["", ...Array.from(new Set(objects.map((o) => o.screenCode)))];
-  const filtered = screen ? objects.filter((o) => o.screenCode === screen) : objects;
-  const readyImportRows = importRows.filter((r) => r.status === "Ready");
-  const latestVerificationByObject = useMemo(() => {
-    const map = new Map<string, AutomationObjectVerificationItem>();
-    for (const v of verifications) {
-      const existing = map.get(v.automationObjectId);
-      if (!existing || new Date(v.requestedAt) > new Date(existing.requestedAt)) map.set(v.automationObjectId, v);
-    }
-    return map;
-  }, [verifications]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    fetch(`${apiUrl}/automation/objects/verifications?projectId=${projectId}`, { headers: { Authorization: `Bearer ${token()}` } })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((v) => setVerifications(Array.isArray(v) ? v : []))
-      .catch(() => setVerifications([]));
-  }, [projectId, verifyReload]);
-
-  const toggleVerifySelect = (id: string) => setVerifySelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-
-  const requestVerification = async () => {
-    if (!verifySelected.size) return;
-    setBusy(true);
-    try {
-      const r = await fetch(`${apiUrl}/automation/objects/verify?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ objectIds: [...verifySelected], agentId: null }) });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ขอตรวจสอบ Object ไม่สำเร็จ"); }
-      setVerifySelected(new Set());
-      setVerifyReload((x) => x + 1);
-      setVerifyModal(true);
-      onError(`ส่งคำขอตรวจสอบ ${verifySelected.size} Object แล้ว — รัน "runner verify --exe <path>" บนเครื่อง Agent เพื่อสแกนและรายงานผล`);
-    } catch (e) { onError(e instanceof Error ? e.message : "ขอตรวจสอบ Object ไม่สำเร็จ"); }
-    finally { setBusy(false); }
-  };
-
-  const openCreate = () => { setEditing(null); setForm(emptyForm); setObjectModal(true); };
-  const openEdit = (item: AutomationObjectItem) => {
-    setEditing(item);
-    setForm({ moduleId: item.moduleId ?? "", applicationCode: item.applicationCode, screenCode: item.screenCode, objectCode: item.objectCode, objectName: item.objectName, controlType: item.controlType, automationId: item.automationId ?? "", selectorJson: item.selectorJson || "{}", isActive: item.isActive });
-    setObjectModal(true);
-  };
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      JSON.parse(form.selectorJson || "{}");
-      const body = { moduleId: form.moduleId || null, applicationCode: form.applicationCode, screenCode: form.screenCode, objectCode: form.objectCode, objectName: form.objectName, controlType: form.controlType, automationId: form.automationId || null, selectorJson: form.selectorJson };
-      const r = await fetch(editing ? `${apiUrl}/automation/objects/${editing.automationObjectId}?projectId=${projectId}` : `${apiUrl}/automation/objects`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(editing ? body : { projectId, ...body }) });
-      if (!r.ok) {
-        const p = await r.json().catch(() => null);
-        throw new Error(p?.detail ?? `${editing ? "แก้ไข" : "สร้าง"} Object ไม่สำเร็จ`);
-      }
-      setObjectModal(false);
-      onReload();
-    } catch (e) {
-      onError(e instanceof SyntaxError ? "Selector JSON ต้องเป็น JSON ที่ถูกต้อง" : e instanceof Error ? e.message : "บันทึก Object ไม่สำเร็จ");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const toggle = async (item: AutomationObjectItem) => {
-    if (!window.confirm(`${item.isActive ? "ปิด" : "เปิด"} Object ${buildObjectKey(item.screenCode, item.objectCode)}?`)) return;
-    setBusy(true);
-    try {
-      const action = item.isActive ? "deactivate" : "activate";
-      const r = await fetch(`${apiUrl}/automation/objects/${item.automationObjectId}/${action}?projectId=${projectId}`, { method: "POST", headers });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เปลี่ยนสถานะ Object ไม่สำเร็จ"); }
-      onReload();
-    } catch (e) { onError(e instanceof Error ? e.message : "เปลี่ยนสถานะ Object ไม่สำเร็จ"); }
-    finally { setBusy(false); }
-  };
-
-  const previewImport = (text = importText) => {
-    try {
-      const existingKeys = new Set(objects.map((o) => `${o.applicationCode}.${o.screenCode}.${o.objectCode}`.toUpperCase()));
-      const existingAutomationIds = new Set(objects.filter((o) => o.automationId).map((o) => `${o.applicationCode}.${o.automationId}`.toUpperCase()));
-      const batchKeys = new Set<string>();
-      const batchAutomationIds = new Set<string>();
-      const rows = parseAutomationObjectImport(text).map((r, index) => {
-        const applicationCode = r.applicationCode.trim() || "Promaxx2";
-        const screenCode = r.screenCode.trim() || "Default";
-        const objectCode = r.objectCode.trim().toUpperCase();
-        const automationId = r.automationId?.trim();
-        const key = `${applicationCode}.${screenCode}.${objectCode}`.toUpperCase();
-        const automationKey = automationId ? `${applicationCode}.${automationId}`.toUpperCase() : "";
-        let status: AutomationObjectImportDraft["status"] = "Ready";
-        let message = "Ready to import.";
-        try { JSON.parse(r.selectorJson || "{}"); } catch { status = "Invalid"; message = "Selector JSON is invalid."; }
-        if (!objectCode || !r.objectName.trim() || !r.controlType.trim()) { status = "Invalid"; message = "Required fields are missing."; }
-        else if (existingKeys.has(key) || batchKeys.has(key)) { status = "DuplicateKey"; message = "Business key already exists."; }
-        else if (automationKey && (existingAutomationIds.has(automationKey) || batchAutomationIds.has(automationKey))) { status = "DuplicateAutomationId"; message = "AutomationId already exists."; }
-        batchKeys.add(key);
-        if (automationKey) batchAutomationIds.add(automationKey);
-        return { ...r, applicationCode, screenCode, objectCode, automationId, clientId: `${index}-${key}`, status, message };
-      });
-      setImportRows(rows);
-      setSelectedImport(new Set(rows.filter((r) => r.status === "Ready").map((r) => r.clientId)));
-    } catch (e) {
-      onError(e instanceof Error ? e.message : "Cannot parse import data.");
-    }
-  };
-
-  const importSelected = async () => {
-    const items = importRows.filter((r) => selectedImport.has(r.clientId) && r.status === "Ready");
-    if (!items.length) return;
-    setBusy(true);
-    try {
-      const r = await fetch(`${apiUrl}/automation/objects/import`, { method: "POST", headers, body: JSON.stringify({ projectId, items }) });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "Import Object failed"); }
-      const result = await r.json() as AutomationObjectImportResult;
-      setImportModal(false);
-      setImportText("");
-      setImportRows([]);
-      setSelectedImport(new Set());
-      onError(`Import complete: ${result.imported} imported, ${result.skipped} skipped.`);
-      onReload();
-    } catch (e) { onError(e instanceof Error ? e.message : "Import Object failed"); }
-    finally { setBusy(false); }
-  };
-
-  return <section className="automation-objects" aria-label="Object Repository">
-    <header className="automation-section-head"><div><h2>Object Repository</h2><p>Mapping ชื่อ Business (<code>Screen.Object</code>) ไปยัง Windows Control (<code>AutomationId</code>)</p></div>{canManage && <div className="automation-row-actions"><button className="btn" disabled={busy || !verifySelected.size} onClick={requestVerification}>⌕ ตรวจสอบที่เลือก ({verifySelected.size})</button><button className="btn" onClick={() => setVerifyModal(true)}>ผลตรวจสอบ</button><button className="btn" onClick={() => setImportModal(true)}>Import Scanner</button><button className="btn primary" onClick={openCreate}>+ เพิ่ม Object</button></div>}</header>
-    <div className="automation-cand-filters" role="group" aria-label="กรอง Object ตาม Screen">{screens.map((s) => <button key={s || "all"} type="button" className={"chip" + (screen === s ? " active" : "")} onClick={() => setScreen(s)}>{s || "ทุก Screen"}</button>)}</div>
-    {filtered.length ? <div className="table-wrap"><table><thead><tr>{canManage && <th aria-label="เลือก"></th>}<th>Business Key</th><th>Name</th><th>Screen</th><th>ControlType</th><th>AutomationId</th><th>Verification</th><th>Version</th><th>Active</th>{canManage && <th>Actions</th>}</tr></thead><tbody>{filtered.map((o) => { const lastVerify = latestVerificationByObject.get(o.automationObjectId); return <tr key={o.automationObjectId}>
-      {canManage && <td><input type="checkbox" aria-label={`เลือกตรวจสอบ ${o.objectCode}`} checked={verifySelected.has(o.automationObjectId)} onChange={() => toggleVerifySelect(o.automationObjectId)} /></td>}
-      <td><b>{buildObjectKey(o.screenCode, o.objectCode)}</b></td><td>{o.objectName}</td><td><Badge tone="blue">{o.screenCode}</Badge></td><td>{o.controlType}</td><td><code>{o.automationId ?? "-"}</code></td>
-      <td>{lastVerify ? <Badge tone={verificationStatusTone[lastVerify.status] ?? "gray"}>{lastVerify.status}</Badge> : <span className="muted-text">ยังไม่ตรวจ</span>}</td>
-      <td>v{o.objectVersion}</td><td><Badge tone={o.isActive ? "green" : "gray"}>{o.isActive ? "Active" : "Inactive"}</Badge></td>
-      {canManage && <td><div className="automation-row-actions"><button type="button" className="table-action" disabled={busy} onClick={() => openEdit(o)}>แก้ไข</button><button type="button" className={`table-action${o.isActive ? " danger" : ""}`} disabled={busy} onClick={() => toggle(o)}>{o.isActive ? "ปิด" : "เปิด"}</button></div></td>}
-    </tr>; })}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Object</p><small>Agent จะใช้ <code>AutomationId</code> นี้หาคอนโทรลบน Windows UI</small></div>}
-
-    {verifyModal && <div className="modal" role="dialog" aria-modal="true" onMouseDown={() => setVerifyModal(false)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2>ผลตรวจสอบ Object (AUT-P0-006)</h2><small>รัน <code>runner verify --exe &lt;path&gt;</code> บนเครื่อง Agent เพื่อสแกนและรายงานผล Found/NotFound/Duplicate/ControlTypeMismatch</small></div><button aria-label="ปิด" onClick={() => setVerifyModal(false)}>×</button></div>
-      {verifications.length ? <div className="table-wrap"><table><thead><tr><th>Business Key</th><th>Expected AutomationId</th><th>Actual</th><th>Status</th><th>Agent</th><th>เวลา</th></tr></thead><tbody>{verifications.map((v) => <tr key={v.automationObjectVerificationId}><td><b>{buildObjectKey(v.screenCode, v.objectCode)}</b></td><td><code>{v.expectedAutomationId ?? "-"}</code></td><td>{v.actualAutomationId ? <code>{v.actualAutomationId}</code> : "-"}{v.actualControlType ? ` (${v.actualControlType})` : ""}</td><td><Badge tone={verificationStatusTone[v.status] ?? "gray"}>{v.status}</Badge>{v.message && <small>{v.message}</small>}</td><td>{v.assignedAgentCode ?? "-"}</td><td>{formatThaiDateTime(v.completedAt ?? v.requestedAt)}</td></tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มีการขอตรวจสอบ</p></div>}
-      <div className="modal-actions"><button className="btn primary" onClick={() => setVerifyModal(false)}>ปิด</button></div>
-    </div></div>}
-
-    {objectModal && <div className="modal" role="dialog" aria-modal="true" onMouseDown={() => !busy && setObjectModal(false)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2>{editing ? `แก้ไข ${buildObjectKey(editing.screenCode, editing.objectCode)}` : "เพิ่ม Object"}</h2><small>Business Key = <code>ScreenCode.ObjectCode</code> — DSL อ้างอิงด้วยค่านี้</small></div><button aria-label="ปิด" disabled={busy} onClick={() => setObjectModal(false)}>×</button></div>
-      <div className="form-grid">
-        <label>Application Code<input value={form.applicationCode} onChange={(e) => setForm({ ...form, applicationCode: e.target.value })} /></label>
-        <label>Screen Code<input value={form.screenCode} onChange={(e) => setForm({ ...form, screenCode: e.target.value })} placeholder="เช่น Sales" /></label>
-        <label>Object Code<input value={form.objectCode} onChange={(e) => setForm({ ...form, objectCode: e.target.value.toUpperCase() })} placeholder="เช่น SAVE" /></label>
-        <label>Object Name<input value={form.objectName} onChange={(e) => setForm({ ...form, objectName: e.target.value })} /></label>
-        <label>Control Type<select value={form.controlType} onChange={(e) => setForm({ ...form, controlType: e.target.value })}><option>Button</option><option>TextBox</option><option>ComboBox</option><option>CheckBox</option><option>Menu</option><option>Window</option></select></label>
-        <label>AutomationId<input value={form.automationId} onChange={(e) => setForm({ ...form, automationId: e.target.value })} placeholder="เช่น btnSave" /></label>
-        <label className="full">Selector JSON<textarea rows={5} spellCheck={false} value={form.selectorJson} onChange={(e) => setForm({ ...form, selectorJson: e.target.value })} /></label>
-      </div>
-      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setObjectModal(false)}>ยกเลิก</button><button className="btn primary" disabled={busy || !form.screenCode.trim() || !form.objectCode.trim() || !form.objectName.trim() || !form.automationId.trim()} onClick={save}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
-    </div></div>}
-    {importModal && <div className="modal" role="dialog" aria-modal="true" onMouseDown={() => !busy && setImportModal(false)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2>Import Objects from Scanner</h2><small>Paste JSON or CSV, preview duplicates, then import selected rows.</small></div><button aria-label="Close" disabled={busy} onClick={() => setImportModal(false)}>×</button></div>
-      <div className="form-grid">
-        <label className="full">Scanner Output<textarea rows={8} spellCheck={false} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={'applicationCode,screenCode,objectCode,objectName,controlType,automationId\nPromaxx2,Sales,SAVE,Save Button,Button,btnSave'} /></label>
-      </div>
-      <div className="automation-row-actions" style={{ marginBottom: 10 }}>
-        <button className="btn" disabled={busy || !importText.trim()} onClick={() => previewImport()}>Preview Diff</button>
-        <label className="btn import-button">Load File<input type="file" accept=".json,.csv,.txt" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; void f.text().then((text) => { setImportText(text); previewImport(text); }); e.target.value = ""; }} /></label>
-        {importRows.length > 0 && <button className="table-action" type="button" onClick={() => setSelectedImport(new Set(readyImportRows.map((r) => r.clientId)))}>Select Ready</button>}
-        {importRows.length > 0 && <button className="table-action" type="button" onClick={() => setSelectedImport(new Set())}>Clear</button>}
-      </div>
-      {importRows.length > 0 && <div className="table-wrap"><table><thead><tr><th></th><th>Business Key</th><th>Name</th><th>Control</th><th>AutomationId</th><th>Status</th></tr></thead><tbody>{importRows.map((r) => <tr key={r.clientId}><td><input type="checkbox" aria-label={`Select ${r.objectCode}`} checked={selectedImport.has(r.clientId)} disabled={busy || r.status !== "Ready"} onChange={() => setSelectedImport((prev) => { const next = new Set(prev); if (next.has(r.clientId)) next.delete(r.clientId); else next.add(r.clientId); return next; })} /></td><td><b>{buildObjectKey(r.screenCode, r.objectCode)}</b><small>{r.applicationCode}</small></td><td>{r.objectName}</td><td>{r.controlType}</td><td><code>{r.automationId ?? "-"}</code></td><td><Badge tone={r.status === "Ready" ? "green" : r.status === "Invalid" ? "red" : "yellow"}>{r.status}</Badge><small>{r.message}</small></td></tr>)}</tbody></table></div>}
-      <div className="modal-actions"><button className="btn" disabled={busy} onClick={() => setImportModal(false)}>Cancel</button><button className="btn primary" disabled={busy || selectedImport.size === 0} onClick={importSelected}>{busy ? "Importing..." : `Import ${selectedImport.size} rows`}</button></div>
-    </div></div>}
-  </section>;
-}
-
-function BatchRunModal({ cases, releaseId, canRun, busy, onClose, onRunBatch, onError }: {
-  cases: AutomationCaseItem[]; releaseId?: string; canRun: boolean; busy: boolean; onClose: () => void;
-  onRunBatch: (ids: string[], buildId: string, envId: string, priority: number) => Promise<void>; onError: (e: string) => void;
-}) {
-  const readyCases = cases.filter((c) => c.status === "Ready");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [buildId, setBuildId] = useState("");
-  const [envId, setEnvId] = useState("");
-  const [priority, setPriority] = useState(5);
-  const [builds, setBuilds] = useState<BuildOption[]>([]);
-  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
-
-  useEffect(() => {
-    let mounted = true;
-    Promise.all([
-      releaseId ? fetch(`${apiUrl}/releases/${releaseId}/builds`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])) : Promise.resolve([]),
-      fetch(`${apiUrl}/master-settings/environments`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])),
-    ]).then(([b, e]) => {
-      if (!mounted) return;
-      setBuilds(Array.isArray(b) ? b : []);
-      setEnvironments(Array.isArray(e) ? (e as EnvironmentOption[]).filter((x) => x.isActive) : []);
-    }).catch(() => onError("โหลด Build/Environment ไม่สำเร็จ"));
-    return () => { mounted = false; };
-  }, [releaseId, onError]);
-
-  const toggle = (id: string) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  const toggleAll = () => setSelected((prev) => prev.size === readyCases.length ? new Set() : new Set(readyCases.map((c) => c.automationCaseId)));
-
-  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-batch-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="modal-head"><div><h2 id="automation-batch-title">รันเป็นกลุ่ม (Regression)</h2><small>เลือก Automation Case ที่พร้อมรัน — งานกระจายไปหลาย Agent พร้อมกัน</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
-    <div className="form-grid">
-      <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select></label>
-      <label>Environment<select value={envId} onChange={(e) => setEnvId(e.target.value)}><option value="">เลือก Env</option>{environments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
-      <label>Priority<select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
-    </div>
-    {readyCases.length ? <div className="automation-batch-list">
-      <div className="automation-batch-head"><input type="checkbox" aria-label="เลือกทั้งหมด" checked={selected.size === readyCases.length && readyCases.length > 0} disabled={!canRun} onChange={toggleAll} /><b>เลือกทั้งหมด ({readyCases.length})</b><span>{selected.size} เลือก</span></div>
-      {readyCases.map((c) => <label key={c.automationCaseId} className="automation-batch-row"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selected.has(c.automationCaseId)} disabled={!canRun} onChange={() => toggle(c.automationCaseId)} /><span><b>{c.automationCode}</b><small>{c.testCaseCode} · {c.testCaseTitle}</small></span><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></label>)}
-    </div> : <div className="empty"><p>ยังไม่มี Automation Case ที่ Ready</p><small>สร้าง Case แล้ว Validate/อนุมัติให้เป็น Ready ก่อน</small></div>}
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={!canRun || busy || !selected.size || !buildId || !envId} onClick={() => onRunBatch([...selected], buildId, envId, priority)}>{busy ? "กำลังส่ง..." : `▶ รัน ${selected.size} case`}</button></div>
-  </div></div>;
-}
-
-function QuarantineModal({ candidate, busy, onClose, onConfirm }: {
-  candidate: FlakyCandidateItem; busy: boolean; onClose: () => void; onConfirm: (caseId: string, reason: string, ownerUserId: string, expiresAt: string) => void;
-}) {
-  const [reason, setReason] = useState(`Flaky: ${candidate.transitions} transitions ใน ${candidate.recentRuns} execution ล่าสุด`);
-  const [ownerUserId, setOwnerUserId] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
-  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-quarantine-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="modal-head"><div><h2 id="automation-quarantine-title">Quarantine {candidate.automationCode}</h2><small>แยกออกจาก Product Fail ชั่วคราวจนกว่าจะแก้ไข Flaky</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
-    <div className="form-grid">
-      <label className="full">เหตุผล<textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-      <label>User Id ผู้รับผิดชอบ (ไม่บังคับ)<input value={ownerUserId} onChange={(e) => setOwnerUserId(e.target.value)} /></label>
-      <label>หมดอายุ (ไม่บังคับ)<input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} /></label>
-    </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !reason.trim()} onClick={() => onConfirm(candidate.automationCaseId, reason.trim(), ownerUserId, expiresAt ? new Date(expiresAt).toISOString() : "")}>{busy ? "กำลังบันทึก..." : "Quarantine"}</button></div>
-  </div></div>;
-}
-
-function RetryPolicyTab({ policy, canManage, busy, onSave }: {
-  policy: RetryPolicyItem | null; canManage: boolean; busy: boolean; onSave: (policy: RetryPolicyItem) => void;
-}) {
-  const [maxAttempts, setMaxAttempts] = useState(policy?.maxAttempts ?? 2);
-  const [backoffSeconds, setBackoffSeconds] = useState(policy?.backoffSeconds ?? 30);
-  const [enabled, setEnabled] = useState(policy?.enabled ?? true);
-  useEffect(() => { if (policy) { setMaxAttempts(policy.maxAttempts); setBackoffSeconds(policy.backoffSeconds); setEnabled(policy.enabled); } }, [policy]);
-
-  return <section className="automation-actions" aria-label="Retry Policy">
-    <header className="automation-section-head"><div><h2>Retry Policy (AUT-P0-009)</h2><p>กำหนดจำนวนครั้ง/ระยะเวลา backoff สำหรับ auto-retry เมื่อ Execution ล้มเหลวจาก Environment/Agent — ไม่ retry เมื่อมี Step ที่ไม่ปลอดภัย (Unsafe) สำเร็จไปแล้ว</p></div></header>
-    <div className="form-grid">
-      <label>Max Attempts<input type="number" min={0} max={10} value={maxAttempts} disabled={!canManage} onChange={(e) => setMaxAttempts(Number(e.target.value))} /></label>
-      <label>Backoff (วินาที)<input type="number" min={0} max={3600} value={backoffSeconds} disabled={!canManage} onChange={(e) => setBackoffSeconds(Number(e.target.value))} /></label>
-      <label className="checkbox-field"><input type="checkbox" checked={enabled} disabled={!canManage} onChange={(e) => setEnabled(e.target.checked)} /> เปิดใช้งาน Auto-Retry</label>
-    </div>
-    {policy?.updatedAt && <p className="muted-text">แก้ไขล่าสุด {formatThaiDateTime(policy.updatedAt)}</p>}
-    {canManage && <div className="acw-action-bar"><button type="button" className="btn primary" disabled={busy} onClick={() => onSave({ maxAttempts, backoffSeconds, enabled })}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>}
-  </section>;
-}
-
-function AgentsSection({ agents, agentsOnline, canManage, onToggle, onDelete }: {
-  agents: AutomationAgentItem[]; agentsOnline: number; canManage: boolean; onToggle: (a: AutomationAgentItem, enable: boolean) => void; onDelete: (a: AutomationAgentItem) => void;
-}) {
-  return <section className="automation-agents" aria-label="Automation Agents">
-    <header className="automation-section-head"><div><h2>Central Windows Agents</h2><p>Agent ลงทะเบียนอัตโนมัติและส่ง heartbeat ทุก 15 วินาที · Offline เมื่อเงียบเกิน 60 วินาที</p></div><span className="automation-agent-count">{agentsOnline} Online</span></header>
-    {agents.length ? <div className="automation-agent-grid">{agents.map((a) => <article key={a.agentId}><div className="automation-agent-top"><div><Badge tone={a.connectivity === "Online" ? "green" : a.connectivity === "Disabled" ? "gray" : "yellow"}>{a.connectivity}</Badge><Badge tone={a.status === "Busy" ? "blue" : "green"}>{a.status}</Badge></div><div className="automation-agent-actions">{canManage && <button type="button" className={`table-action icon-btn${a.isEnabled ? "" : " danger"}`} title={a.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"} aria-label={a.isEnabled ? "ปิดใช้งาน" : "เปิดใช้งาน"} onClick={() => onToggle(a, !a.isEnabled)}>{a.isEnabled ? "⏻" : "⏼"}</button>}{canManage && <button type="button" className="table-action danger icon-btn" title="ลบ Agent" aria-label="ลบ Agent" onClick={() => onDelete(a)}>🗑</button>}</div></div><b>{a.agentCode}</b><span>{a.machineName} · v{a.agentVersion}</span><small>{a.operatingSystem} · {a.architecture}</small><small>รองรับ {a.capabilities.join(" + ") || "-"}</small><time dateTime={a.lastHeartbeatAt}>ล่าสุด {formatThaiDateTime(a.lastHeartbeatAt)}</time></article>)}</div> : <div className="empty"><p>ยังไม่มี Agent ลงทะเบียน</p><small>ติดตั้งบนเครื่อง Windows: ตั้งค่า env แล้วรัน <code>agent\\run-agent.ps1</code> — Agent จะ register + ส่ง heartbeat อัตโนมัติ</small></div>}
-  </section>;
-}
-
-function ExecutionTab({ jobs, executions, setExecDetail, execFilter, setExecFilter, canRun, onCancel, onRerun }: {
-  jobs: AutomationJobItem[]; executions: AutomationExecutionItem[]; setExecDetail: (v: AutomationExecutionItem | null) => void;
-  execFilter: string; setExecFilter: (v: string) => void; canRun: boolean; onCancel: (x: AutomationExecutionItem) => void; onRerun: (x: AutomationExecutionItem) => void;
-}) {
-  const [execSearch, setExecSearch] = useState("");
-  const [execPage, setExecPage] = useState(1);
-  const [jobPage, setJobPage] = useState(1);
-  const pageSize = 15;
-
-  const queuedJobs = jobs.filter((j) => j.status === "Queued");
-  const filteredExec = executions.filter((x) => (execFilter === "all" || x.status === execFilter) && (!execSearch.trim() || x.automationCode.toLowerCase().includes(execSearch.trim().toLowerCase()) || (x.agentCode ?? "").toLowerCase().includes(execSearch.trim().toLowerCase())));
-  const execPageCount = Math.max(1, Math.ceil(filteredExec.length / pageSize));
-  const pagedExec = filteredExec.slice((execPage - 1) * pageSize, execPage * pageSize);
-  const jobPageCount = Math.max(1, Math.ceil(jobs.length / pageSize));
-  const pagedJobs = jobs.slice((jobPage - 1) * pageSize, jobPage * pageSize);
-  const kpiRunning = executions.filter((e) => e.status === "Running").length;
-  const kpiPassed = executions.filter((e) => e.status === "Passed").length;
-  const kpiFailed = executions.filter((e) => e.status === "Failed").length;
-  useEffect(() => setExecPage(1), [execSearch, execFilter]);
-  useEffect(() => setJobPage(1), [jobs.length]);
-
-  return <section className="automation-execution" aria-label="Automation Execution">
-    <header className="automation-section-head"><div><h2>Execution Queue & Run History</h2><p>ติดตามงานที่ Agent รับไปรัน และผลลัพธ์ทั้งหมด — รองรับข้อมูลจำนวนมากด้วยค้นหา/กรอง/แบ่งหน้า</p></div></header>
-    <div className="automation-kpis">
-      <div><small>Queued</small><strong>{queuedJobs.length}</strong><span>รอ Agent รับ</span></div>
-      <div><small>Running</small><strong>{kpiRunning}</strong><span>กำลังรัน</span></div>
-      <div><small>Passed</small><strong>{kpiPassed}</strong><span>ผ่านทั้งหมด</span></div>
-      <div className={kpiFailed ? "needs-review" : ""}><small>Failed</small><strong>{kpiFailed}</strong><span>ไม่ผ่าน</span></div>
-      <div><small>Total</small><strong>{executions.length}</strong><span>ผลรัน</span></div>
-    </div>
-    <div className="automation-exec-grid">
-      <article className="card">
-        <div className="automation-section-head"><h3>Job Queue ({jobs.length})</h3><span className="muted-text">{queuedJobs.length} queued</span></div>
-        {jobs.length ? <>
-          <div className="automation-exec-list">{pagedJobs.map((j) => <div key={j.jobId} className="automation-queue-list"><article><div className="automation-queue-main"><Badge tone={jobStatusTone[j.status] ?? "blue"}>{j.status}</Badge><b>P{j.priority}</b><span>{j.assignedAgentCode ?? "รอ Agent"}</span>{j.retryCount > 0 && <Badge tone="orange">Retry {j.retryCount}</Badge>}</div><div><time dateTime={j.queuedAt}>{formatThaiDateTime(j.queuedAt)}</time>{j.lastError && <small className="queue-error">{j.lastError}</small>}</div></article></div>)}</div>
-          <Pager page={jobPage} count={jobPageCount} total={jobs.length} pageSize={pageSize} onPrev={() => setJobPage((p) => Math.max(1, p - 1))} onNext={() => setJobPage((p) => Math.min(jobPageCount, p + 1))} />
-        </> : <div className="empty"><p>ไม่มีงานในคิว</p></div>}
-      </article>
-      <article className="card">
-        <div className="automation-section-head"><h3>Run History ({filteredExec.length})</h3></div>
-        <div className="automation-run-toolbar">
-          <input aria-label="ค้นหาด้วยรหัสหรือ Agent" placeholder="ค้นหา Code / Agent..." value={execSearch} onChange={(e) => setExecSearch(e.target.value)} />
-          <select aria-label="กรองสถานะ" value={execFilter} onChange={(e) => setExecFilter(e.target.value)}>
-            <option value="all">ทุกสถานะ</option>
-            {["Passed", "Failed", "Running", "Queued", "Blocked", "Cancelled", "Timeout", "AgentLost"].map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        {pagedExec.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Target</th><th>Agent</th><th>Status</th><th>Duration</th><th>เวลา</th><th></th></tr></thead><tbody>{pagedExec.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className="automation-exec-tr"><td><b>{x.automationCode}</b><small>Rev {x.versionNo} · {x.buildNumber}</small></td><td><Badge tone={x.targetApp === "Pos" ? "blue" : x.targetApp === "App" ? "purple" : "gray"}>{x.targetApp ?? "WindowsUI"}</Badge></td><td>{x.agentCode ?? "-"}</td><td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td><td>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)}s` : "-"}</td><td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td><td onClick={(e) => e.stopPropagation()}><div className="automation-row-actions"><button type="button" className="automation-more" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>{canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => onRerun(x)}>▶</button>}{canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => onCancel(x)}>✕</button>}</div></td></tr>)}</tbody></table></div> : <div className="empty"><p>{execSearch || execFilter !== "all" ? "ไม่พบผลการรันที่ตรงเงื่อนไข" : "ยังไม่มีประวัติการรัน"}</p></div>}
-        {filteredExec.length > pageSize && <Pager page={execPage} count={execPageCount} total={filteredExec.length} pageSize={pageSize} onPrev={() => setExecPage((p) => Math.max(1, p - 1))} onNext={() => setExecPage((p) => Math.min(execPageCount, p + 1))} />}
-      </article>
-    </div>
-  </section>;
-}
-const failureTypeOptions = ["EnvironmentFailure", "AssertionFailure", "AutomationFailure", "AgentFailure", "Unknown"];
-
-function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDetail }: {
-  projectId: string; releaseId?: string; agents: AutomationAgentItem[]; headers: Record<string, string>; setExecDetail: (v: AutomationExecutionItem | null) => void;
-}) {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [buildId, setBuildId] = useState("");
-  const [agentId, setAgentId] = useState("");
-  const [failureType, setFailureType] = useState("");
-  const [builds, setBuilds] = useState<BuildOption[]>([]);
-  const [breakdown, setBreakdown] = useState<FailureBreakdownItem | null>(null);
-  const [rows, setRows] = useState<AutomationExecutionItem[]>([]);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!releaseId) return;
-    fetch(`${apiUrl}/releases/${releaseId}/builds`, { headers: { Authorization: `Bearer ${token()}` } }).then((r) => (r.ok ? r.json() : [])).then((b) => setBuilds(Array.isArray(b) ? b : [])).catch(() => setBuilds([]));
-  }, [releaseId]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    setBusy(true);
-    const qs = new URLSearchParams({ projectId });
-    if (from) qs.set("from", new Date(from).toISOString());
-    if (to) qs.set("to", new Date(to).toISOString());
-    if (buildId) qs.set("buildId", buildId);
-    if (agentId) qs.set("agentId", agentId);
-    if (failureType) qs.set("failureType", failureType);
-    Promise.all([
-      fetch(`${apiUrl}/automation/failures/dashboard?${qs}`, { headers }).then((r) => (r.ok ? r.json() : null)),
-      fetch(`${apiUrl}/automation/failures/executions?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])),
-    ]).then(([b, e]) => { setBreakdown(b); setRows(Array.isArray(e) ? e : []); }).finally(() => setBusy(false));
-  }, [projectId, from, to, buildId, agentId, failureType, headers]);
-
-  const clearFilters = () => { setFrom(""); setTo(""); setBuildId(""); setAgentId(""); setFailureType(""); };
-  const hasFilters = from || to || buildId || agentId || failureType;
-
-  return <section className="automation-execution" aria-label="Failure Dashboard">
-    <header className="automation-section-head"><div><h2>Failure Dashboard</h2><p>วิเคราะห์ Execution ที่ Fail ตาม Failure Type / Build / Agent / วันที่ พร้อม drill down</p></div></header>
-    <div className="automation-run-toolbar">
-      <label>จาก<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="วันที่เริ่ม" /></label>
-      <label>ถึง<input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="วันที่สิ้นสุด" /></label>
-      <select aria-label="กรอง Build" value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">ทุก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}</option>)}</select>
-      <select aria-label="กรอง Agent" value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">ทุก Agent</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select>
-      <select aria-label="กรอง Failure Type" value={failureType} onChange={(e) => setFailureType(e.target.value)}><option value="">ทุก Failure Type</option>{failureTypeOptions.map((f) => <option key={f} value={f}>{f}</option>)}</select>
-      {hasFilters && <button type="button" className="table-action" onClick={clearFilters}>ล้างตัวกรอง</button>}
-    </div>
-    {breakdown && <div className="automation-kpis">
-      <div className="needs-review"><small>Total Failed</small><strong>{breakdown.totalFailed}</strong><span>ตามตัวกรอง</span></div>
-      {breakdown.byFailureType.slice(0, 4).map((x) => <div key={x.key}><small>{x.key}</small><strong>{x.count}</strong><span>Failure Type</span></div>)}
-    </div>}
-    <div className="automation-exec-grid">
-      <article className="card">
-        <div className="automation-section-head"><h3>By Build</h3></div>
-        {breakdown?.byBuild.length ? <div className="automation-result-list">{breakdown.byBuild.map((x) => <div key={x.key} className="automation-failure-row"><b>{x.key}</b><span>{x.count} fail</span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
-      </article>
-      <article className="card">
-        <div className="automation-section-head"><h3>By Agent</h3></div>
-        {breakdown?.byAgent.length ? <div className="automation-result-list">{breakdown.byAgent.map((x) => <div key={x.key} className="automation-failure-row"><b>{x.key}</b><span>{x.count} fail</span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
-      </article>
-      <article className="card">
-        <div className="automation-section-head"><h3>Top Automation Case</h3></div>
-        {breakdown?.byAutomationCase.length ? <div className="automation-result-list">{breakdown.byAutomationCase.map((x) => <div key={x.key} className="automation-failure-row"><b>{x.key}</b><span>{x.count} fail</span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
-      </article>
-    </div>
-    <article className="card">
-      <div className="automation-section-head"><h3>Failed Executions ({rows.length})</h3>{busy && <span className="muted-text">กำลังโหลด...</span>}</div>
-      {rows.length ? <div className="table-wrap"><table className="automation-exec-table"><thead><tr><th>Code</th><th>Classified</th><th>Build</th><th>Agent</th><th>เวลา</th><th></th></tr></thead><tbody>{rows.map((x) => <tr key={x.automationExecutionId} className="automation-exec-tr" onClick={() => setExecDetail(x)}>
-        <td><b>{x.automationCode}</b><small>Rev {x.versionNo}</small></td>
-        <td>{x.classifiedFailureType ? <Badge tone={failureTone[x.classifiedFailureType] ?? "blue"}>{x.classifiedFailureType}</Badge> : <span className="muted-text">ยังไม่จำแนก</span>}</td>
-        <td>{x.buildNumber}</td>
-        <td>{x.agentCode ?? "-"}</td>
-        <td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td>
-        <td onClick={(e) => e.stopPropagation()}><button type="button" className="table-action" onClick={() => setExecDetail(x)}>ดูรายละเอียด</button></td>
-      </tr>)}</tbody></table></div> : <div className="empty"><p>ไม่พบ Execution ที่ Fail ตามเงื่อนไข</p></div>}
-    </article>
-  </section>;
-}
-
-function AutomationSuiteTab({ projectId, headers, canEdit, cases }: {
-  projectId: string; headers: Record<string, string>; canEdit: boolean; cases: AutomationCaseItem[];
-}) {
-  const [suites, setSuites] = useState<AutomationSuiteListItem[]>([]);
-  const [search, setSearch] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "closed">("active");
-  const [reload, setReload] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [createModal, setCreateModal] = useState(false);
-  const [editSuite, setEditSuite] = useState<AutomationSuiteListItem | null>(null);
-  const [detail, setDetail] = useState<AutomationSuiteDetailItem | null>(null);
-  const [addCasesModal, setAddCasesModal] = useState(false);
-
-  useEffect(() => {
-    if (!projectId) return;
-    const qs = new URLSearchParams({ projectId });
-    if (search.trim()) qs.set("search", search.trim());
-    if (activeFilter !== "all") qs.set("isActive", activeFilter === "active" ? "true" : "false");
-    fetch(`${apiUrl}/automation/suites?${qs}`, { headers }).then((r) => (r.ok ? r.json() : [])).then((s) => setSuites(Array.isArray(s) ? s : [])).catch(() => setError("โหลด Automation Suite ไม่สำเร็จ"));
-  }, [projectId, search, activeFilter, headers, reload]);
-
-  const refreshDetail = async (id: string) => {
-    const r = await fetch(`${apiUrl}/automation/suites/${id}?projectId=${projectId}`, { headers });
-    if (r.ok) setDetail(await r.json());
-  };
-
-  const openDetail = async (row: AutomationSuiteListItem) => { await refreshDetail(row.automationSuiteId); };
-
-  const createSuite = async (suiteCode: string, suiteName: string, description: string) => {
-    setBusy(true); setError("");
-    try {
-      const r = await fetch(`${apiUrl}/automation/suites?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ suiteCode: suiteCode.trim() || null, suiteName: suiteName.trim(), description: description.trim() || null }) });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "สร้าง Suite ไม่สำเร็จ"); }
-      setCreateModal(false); setReload((v) => v + 1);
-    } catch (e) { setError(e instanceof Error ? e.message : "สร้าง Suite ไม่สำเร็จ"); } finally { setBusy(false); }
-  };
-
-  const updateSuite = async (id: string, suiteName: string, description: string) => {
-    setBusy(true); setError("");
-    try {
-      const r = await fetch(`${apiUrl}/automation/suites/${id}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ suiteName: suiteName.trim(), description: description.trim() || null }) });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Suite ไม่สำเร็จ"); }
-      setEditSuite(null); setReload((v) => v + 1);
-      if (detail?.automationSuiteId === id) await refreshDetail(id);
-    } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Suite ไม่สำเร็จ"); } finally { setBusy(false); }
-  };
-
-  const toggleSuite = async (row: AutomationSuiteListItem) => {
-    if (!window.confirm(`${row.isActive ? "ปิด" : "เปิด"} Suite "${row.suiteCode}"?`)) return;
-    setError("");
-    try {
-      const r = await fetch(`${apiUrl}/automation/suites/${row.automationSuiteId}/${row.isActive ? "close" : "reopen"}?projectId=${projectId}`, { method: "POST", headers });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เปลี่ยนสถานะ Suite ไม่สำเร็จ"); }
-      setReload((v) => v + 1);
-      if (detail?.automationSuiteId === row.automationSuiteId) await refreshDetail(row.automationSuiteId);
-    } catch (e) { setError(e instanceof Error ? e.message : "เปลี่ยนสถานะ Suite ไม่สำเร็จ"); }
-  };
-
-  const addCases = async (caseIds: string[], isRequired: boolean) => {
-    if (!detail) return;
-    setBusy(true); setError("");
-    try {
-      const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases?projectId=${projectId}`, { method: "POST", headers, body: JSON.stringify({ automationCaseIds: caseIds, isRequired }) });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เพิ่ม Case ไม่สำเร็จ"); }
-      setDetail(await r.json()); setAddCasesModal(false); setReload((v) => v + 1);
-    } catch (e) { setError(e instanceof Error ? e.message : "เพิ่ม Case ไม่สำเร็จ"); } finally { setBusy(false); }
-  };
-
-  const removeCase = async (caseId: string) => {
-    if (!detail || !window.confirm("ลบ Case นี้ออกจาก Suite?")) return;
-    setError("");
-    try {
-      const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${caseId}?projectId=${projectId}`, { method: "DELETE", headers });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "ลบ Case ไม่สำเร็จ"); }
-      setDetail(await r.json()); setReload((v) => v + 1);
-    } catch (e) { setError(e instanceof Error ? e.message : "ลบ Case ไม่สำเร็จ"); }
-  };
-
-  const toggleRequired = async (row: AutomationSuiteCaseItem) => {
-    if (!detail) return;
-    setError("");
-    try {
-      const r = await fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${row.automationCaseId}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ sortOrder: row.sortOrder, isRequired: !row.isRequired }) });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "แก้ไข Case ไม่สำเร็จ"); }
-      setDetail(await r.json());
-    } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Case ไม่สำเร็จ"); }
-  };
-
-  const moveCase = async (row: AutomationSuiteCaseItem, direction: -1 | 1) => {
-    if (!detail) return;
-    const sorted = [...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder);
-    const idx = sorted.findIndex((c) => c.automationCaseId === row.automationCaseId);
-    const swapWith = sorted[idx + direction];
-    if (!swapWith) return;
-    setError("");
-    try {
-      await Promise.all([
-        fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${row.automationCaseId}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ sortOrder: swapWith.sortOrder, isRequired: row.isRequired }) }),
-        fetch(`${apiUrl}/automation/suites/${detail.automationSuiteId}/cases/${swapWith.automationCaseId}?projectId=${projectId}`, { method: "PUT", headers, body: JSON.stringify({ sortOrder: row.sortOrder, isRequired: swapWith.isRequired }) }),
-      ]);
-      await refreshDetail(detail.automationSuiteId);
-    } catch { setError("เรียงลำดับไม่สำเร็จ"); }
-  };
-
-  return <section className="automation-cases" aria-label="Automation Suite">
-    <header className="automation-section-head"><div><h2>Automation Suite (AUT-P1-001/002)</h2><p>รวม Automation Case เป็นชุดถาวรสำหรับรัน Regression/Smoke ซ้ำได้ — Required/Optional ต่อ Case</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}>＋ สร้าง Suite</button>}</header>
-    {error && <div className="inline-alert error"><span>{error}</span></div>}
-    <div className="automation-case-toolbar">
-      <input aria-label="ค้นหา Suite" placeholder="ค้นหา Suite..." value={search} onChange={(e) => setSearch(e.target.value)} />
-      <select aria-label="กรองสถานะ Suite" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "closed")}>
-        <option value="active">เปิดใช้งาน</option>
-        <option value="closed">ปิดแล้ว</option>
-        <option value="all">ทั้งหมด</option>
-      </select>
-    </div>
-    {suites.length ? <div className="table-wrap"><table><thead><tr><th>Code</th><th>ชื่อ</th><th>Case</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{suites.map((s) => <tr key={s.automationSuiteId}>
-      <td><b>{s.suiteCode}</b></td>
-      <td><span>{s.suiteName}</span>{s.description && <small>{s.description}</small>}</td>
-      <td>{s.readyCaseCount}/{s.caseCount} Ready</td>
-      <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
-      <td>{formatThaiDateTime(s.createdAt)}</td>
-      <td><button type="button" className="table-action" onClick={() => openDetail(s)}>รายละเอียด</button>{canEdit && s.isActive && <button type="button" className="table-action" onClick={() => setEditSuite(s)}>แก้ไข</button>}{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleSuite(s)}>{s.isActive ? "ปิด" : "เปิด"}</button>}</td>
-    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Automation Suite</p><small>สร้าง Suite เพื่อรวม Automation Case ที่ต้องรันซ้ำเป็นชุด (Smoke/Regression)</small></div>}
-
-    {detail && <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-detail-title" onMouseDown={() => setDetail(null)}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="modal-head"><div><h2 id="automation-suite-detail-title">{detail.suiteCode} · {detail.suiteName}</h2><small>{detail.cases.length} case · <Badge tone={detail.isActive ? "green" : "gray"}>{detail.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></small></div><button aria-label="ปิด" onClick={() => setDetail(null)}>×</button></div>
-      {!detail.isActive && <div className="inline-alert"><span>Suite นี้ปิดแล้ว — ต้องเปิดใช้งานก่อนจึงจะแก้ไข Case ได้</span></div>}
-      {canEdit && detail.isActive && <div className="acw-action-bar"><button type="button" className="btn" onClick={() => setAddCasesModal(true)}>＋ เพิ่ม Case</button></div>}
-      {detail.cases.length ? <div className="table-wrap"><table><thead><tr><th>ลำดับ</th><th>Code</th><th>Test Case</th><th>Target</th><th>สถานะ</th><th>Required</th><th></th></tr></thead><tbody>{[...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder).map((c, i, arr) => <tr key={c.automationCaseId}>
-        <td>{canEdit && detail.isActive ? <span className="automation-sort-controls"><button type="button" className="table-action icon-btn" aria-label="เลื่อนขึ้น" disabled={i === 0} onClick={() => moveCase(c, -1)}>↑</button><button type="button" className="table-action icon-btn" aria-label="เลื่อนลง" disabled={i === arr.length - 1} onClick={() => moveCase(c, 1)}>↓</button></span> : c.sortOrder}</td>
-        <td><b>{c.automationCode}</b></td>
-        <td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td>
-        <td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td>
-        <td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></td>
-        <td>{canEdit && detail.isActive ? <button type="button" className="table-action" onClick={() => toggleRequired(c)}>{c.isRequired ? "Required" : "Optional"}</button> : <Badge tone={c.isRequired ? "blue" : "gray"}>{c.isRequired ? "Required" : "Optional"}</Badge>}</td>
-        <td>{canEdit && detail.isActive && <button type="button" className="table-action danger" onClick={() => removeCase(c.automationCaseId)}>ลบ</button>}</td>
-      </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Case ใน Suite นี้</p></div>}
-      <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}>ปิดหน้าต่าง</button></div>
-    </div></div>}
-
-    {addCasesModal && detail && <AddSuiteCasesModal cases={cases} existingCaseIds={detail.cases.map((c) => c.automationCaseId)} busy={busy} onClose={() => setAddCasesModal(false)} onAdd={addCases} />}
-    {createModal && <SuiteFormModal title="สร้าง Automation Suite" busy={busy} onClose={() => setCreateModal(false)} onSave={createSuite} />}
-    {editSuite && <SuiteFormModal title={`แก้ไข ${editSuite.suiteCode}`} initialName={editSuite.suiteName} initialDescription={editSuite.description ?? ""} busy={busy} onClose={() => setEditSuite(null)} onSave={(_, name, desc) => updateSuite(editSuite.automationSuiteId, name, desc)} />}
-  </section>;
-}
-
-function SuiteFormModal({ title, initialCode = "", initialName = "", initialDescription = "", busy, onClose, onSave }: {
-  title: string; initialCode?: string; initialName?: string; initialDescription?: string; busy: boolean; onClose: () => void; onSave: (code: string, name: string, description: string) => void;
-}) {
-  const [suiteCode, setSuiteCode] = useState(initialCode);
-  const [suiteName, setSuiteName] = useState(initialName);
-  const [description, setDescription] = useState(initialDescription);
-  const isEdit = initialName !== "";
-  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-form-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="modal-head"><div><h2 id="automation-suite-form-title">{title}</h2></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
-    <div className="form-grid">
-      {!isEdit && <label>รหัส Suite (ไม่บังคับ — เว้นว่างให้ระบบสร้างให้)<input value={suiteCode} onChange={(e) => setSuiteCode(e.target.value)} placeholder="เช่น AUT-AS-SMOKE" /></label>}
-      <label className="full">ชื่อ Suite<input value={suiteName} onChange={(e) => setSuiteName(e.target.value)} /></label>
-      <label className="full">คำอธิบาย (ไม่บังคับ)<textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
-    </div>
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !suiteName.trim()} onClick={() => onSave(suiteCode, suiteName, description)}>{busy ? "กำลังบันทึก..." : "บันทึก"}</button></div>
-  </div></div>;
-}
-
-function AddSuiteCasesModal({ cases, existingCaseIds, busy, onClose, onAdd }: {
-  cases: AutomationCaseItem[]; existingCaseIds: string[]; busy: boolean; onClose: () => void; onAdd: (caseIds: string[], isRequired: boolean) => void;
-}) {
-  const available = cases.filter((c) => !existingCaseIds.includes(c.automationCaseId));
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [isRequired, setIsRequired] = useState(true);
-  const toggle = (id: string) => setSelected((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-
-  return <div className="modal" role="dialog" aria-modal="true" aria-labelledby="automation-suite-add-cases-title" onMouseDown={() => !busy && onClose()}><div className="modal-box" onMouseDown={(e) => e.stopPropagation()}>
-    <div className="modal-head"><div><h2 id="automation-suite-add-cases-title">เพิ่ม Automation Case เข้า Suite</h2><small>เลือก Case ที่ยังไม่อยู่ใน Suite นี้</small></div><button aria-label="ปิด" disabled={busy} onClick={onClose}>×</button></div>
-    <label className="checkbox-field"><input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} /> ตั้งเป็น Required (ต้องผ่านทุกตัว)</label>
-    {available.length ? <div className="automation-batch-list">
-      {available.map((c) => <label key={c.automationCaseId} className="automation-batch-row"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selected.has(c.automationCaseId)} onChange={() => toggle(c.automationCaseId)} /><span><b>{c.automationCode}</b><small>{c.testCaseCode} · {c.testCaseTitle}</small></span><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></label>)}
-    </div> : <div className="empty"><p>ทุก Automation Case ถูกเพิ่มเข้า Suite นี้หมดแล้ว</p></div>}
-    <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}>ยกเลิก</button><button className="btn primary" disabled={busy || !selected.size} onClick={() => onAdd([...selected], isRequired)}>{busy ? "กำลังเพิ่ม..." : `เพิ่ม ${selected.size} case`}</button></div>
-  </div></div>;
-}
-
-function Pager({ page, count, total, pageSize, onPrev, onNext }: { page: number; count: number; total: number; pageSize: number; onPrev: () => void; onNext: () => void }) {
-  return <div className="automation-pager" role="navigation" aria-label="แบ่งหน้า">
-    <button type="button" className="pager-btn" disabled={page <= 1} onClick={onPrev} aria-label="หน้าก่อนหน้า">‹ ก่อนหน้า</button>
-    <span className="pager-info">หน้า {page} / {count} · {total.toLocaleString()} รายการ · {pageSize}/หน้า</span>
-    <button type="button" className="pager-btn" disabled={page >= count} onClick={onNext} aria-label="หน้าถัดไป">ถัดไป ›</button>
-  </div>;
 }

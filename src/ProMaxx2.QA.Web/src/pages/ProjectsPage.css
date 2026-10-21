@@ -1,0 +1,129 @@
+/* หน้า Project / Module (ออกแบบใหม่ 2026-10-21) — selector ทั้งหมด scope ด้วย .pm-layout / .pm-modal
+   ซ้าย: รายการ Project | ขวา: หัว Project + ตัวเลขสรุป → Module tree แบบรายการ (ลากจัดลำดับได้) */
+.pm-layout { position: relative; display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); align-items: start; gap: 16px; min-width: 0; }
+.pm-layout .card { min-width: 0; margin: 0; padding: 16px; border-radius: 14px; }
+.pm-layout h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.pm-layout .btn { display: inline-flex; align-items: center; gap: 6px; }
+.pm-layout .btn .material-symbols-outlined { font-size: 18px; }
+
+/* รายการ Project */
+.pm-projects { position: sticky; top: 84px; display: grid; gap: 12px; max-height: calc(100dvh - 110px); overflow: hidden; grid-template-rows: auto minmax(0, 1fr); }
+.pm-projects-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pm-projects-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.pm-project-list { display: grid; align-content: start; gap: 4px; margin: 0 -6px; padding: 0 6px; overflow-y: auto; list-style: none; }
+.pm-layout .pm-project-list button { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.pm-layout .pm-project-list button:hover { background: var(--bg); }
+.pm-layout .pm-project-list button.active { border-color: color-mix(in srgb, var(--primary) 30%, var(--line)); background: color-mix(in srgb, var(--primary) 7%, var(--card)); box-shadow: inset 3px 0 0 var(--primary); }
+.pm-layout .pm-project-list button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.pm-project-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); font-size: 12px; font-weight: 700; }
+.pm-layout .pm-project-list button.active .pm-project-mark { background: var(--primary); color: var(--card); }
+.pm-project-text { display: grid; gap: 1px; min-width: 0; }
+.pm-project-text b { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pm-project-text small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.pm-project-chevron { color: var(--line); font-size: 20px; }
+.pm-layout .pm-project-list button.active .pm-project-chevron { color: var(--primary); }
+.pm-empty-small { margin: 0; padding: 16px 4px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* หัว Project */
+.pm-main { display: grid; gap: 16px; min-width: 0; }
+.pm-layout .pm-project-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; padding: 18px 20px 0; overflow: hidden; }
+.pm-project-title { display: grid; gap: 2px; min-width: 0; }
+.pm-eyebrow { color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.pm-project-title h2 { margin: 0; font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+.pm-project-title p { margin: 2px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.pm-project-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; }
+.pm-layout .btn.pm-danger { color: var(--red); }
+.pm-layout .btn.pm-danger:hover:not(:disabled) { border-color: var(--red); background: color-mix(in srgb, var(--red) 6%, var(--card)); }
+.pm-stats { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 4px -20px 0; border-top: 1px solid var(--line); }
+.pm-stats > div { min-width: 0; padding: 12px 20px; border-left: 1px solid var(--line); }
+.pm-stats > div:first-child { border-left: 0; }
+.pm-stats dt { color: var(--muted); font-size: 12px; }
+.pm-stats dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.pm-stats dd.pm-stat-text { font-size: 14px; line-height: 1.9; }
+
+/* Module tree */
+.pm-modules { display: grid; gap: 12px; }
+.pm-modules-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.pm-modules-head h3 { display: flex; align-items: center; gap: 8px; }
+.pm-modules-head h3 .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); font-size: 19px; }
+.pm-modules-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.pm-modules-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pm-tree { margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; list-style: none; overflow: hidden; }
+.pm-node { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 6px 10px 6px 6px; border-top: 1px solid var(--line); background: var(--card); transition: background .12s, opacity .12s, box-shadow .12s; }
+.pm-node:first-child { border-top: 0; }
+.pm-node.root { background: color-mix(in srgb, var(--bg) 55%, var(--card)); }
+.pm-node:hover { background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
+.pm-node[draggable="true"] { cursor: grab; }
+.pm-node[draggable="true"]:active { cursor: grabbing; }
+.pm-node.dragging { opacity: .35; }
+.pm-node.drop-before { box-shadow: inset 0 3px 0 var(--primary); }
+.pm-node.drop-after { box-shadow: inset 0 -3px 0 var(--primary); }
+.pm-node.drop-inside { background: color-mix(in srgb, var(--primary) 9%, var(--card)); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary) 45%, transparent); }
+.pm-drag { flex: none; width: 20px; color: color-mix(in srgb, var(--muted) 55%, var(--card)); font-size: 18px; }
+.pm-node:hover .pm-drag { color: var(--primary); }
+/* เส้นนำลำดับชั้น: เส้นตั้งทุก 22px ตามจำนวนชั้น */
+.pm-indent { flex: none; align-self: stretch; margin: -6px 0; background: repeating-linear-gradient(to right, transparent 0 10px, var(--line) 10px 11px, transparent 11px 22px); }
+.pm-layout button.pm-toggle { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.pm-layout button.pm-toggle:hover:not(:disabled) { background: var(--bg); color: var(--primary); }
+.pm-layout button.pm-toggle:disabled { cursor: default; }
+.pm-toggle .material-symbols-outlined { font-size: 20px; transition: transform .15s; }
+.pm-toggle.open .material-symbols-outlined { transform: rotate(90deg); }
+.pm-toggle-spacer { flex: none; width: 28px; }
+.pm-node-icon { flex: none; margin-right: 6px; color: var(--primary); font-size: 20px; }
+.pm-node:not(.root) .pm-node-icon { color: var(--muted); }
+.pm-node-text { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
+.pm-node-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.pm-node-name b { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.pm-node.root .pm-node-name b { font-weight: 700; }
+.pm-node-name code { padding: 0 6px; border-radius: 5px; background: var(--bg); color: var(--muted); font-family: Consolas, "Courier New", monospace; font-size: 11px; }
+.pm-node-count { color: var(--primary); font-size: 11px; }
+.pm-node-text small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.pm-node-actions { display: flex; flex: none; gap: 2px; opacity: .55; transition: opacity .12s; }
+.pm-node:hover .pm-node-actions,
+.pm-node:focus-within .pm-node-actions { opacity: 1; }
+.pm-layout .pm-node-actions button { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.pm-layout .pm-node-actions button:hover { border-color: var(--line); background: var(--card); color: var(--primary); }
+.pm-layout .pm-node-actions button.danger:hover { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); color: var(--red); }
+.pm-node-actions .material-symbols-outlined { font-size: 18px; }
+.pm-empty { display: grid; justify-items: center; gap: 8px; padding: 32px 16px; color: var(--muted); text-align: center; }
+.pm-empty > .material-symbols-outlined { color: color-mix(in srgb, var(--primary) 45%, var(--card)); font-size: 36px; }
+.pm-empty b { color: var(--text); font-size: 14px; }
+
+/* Modal */
+.pm-modal .modal-head > div { display: grid; gap: 2px; }
+.pm-modal .pm-modal-sub { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+@media (max-width: 1100px) {
+  .pm-layout { grid-template-columns: minmax(220px, 260px) minmax(0, 1fr); }
+  .pm-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pm-stats > div:nth-child(3) { border-left: 0; }
+  .pm-stats > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
+@media (max-width: 900px) {
+  .pm-layout { grid-template-columns: minmax(0, 1fr); }
+  .pm-projects { position: static; max-height: none; grid-template-rows: auto auto; }
+  /* Project เป็นแถบเลื่อนแนวนอน ไม่ดันเนื้อหาลงไปไกล */
+  .pm-project-list { grid-auto-flow: column; grid-auto-columns: minmax(220px, 72%); margin: 0 -16px; padding: 0 16px 4px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; }
+  .pm-project-list li { scroll-snap-align: start; }
+  .pm-layout .pm-project-list button { border-color: var(--line); }
+  .pm-project-chevron { display: none; }
+  .pm-layout .pm-project-list button { grid-template-columns: 36px minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .pm-layout .card { padding: 14px; }
+  .pm-layout .pm-project-head { grid-template-columns: minmax(0, 1fr); padding: 14px 14px 0; }
+  .pm-project-actions { justify-content: stretch; }
+  .pm-project-actions .btn,
+  .pm-modules-actions .btn { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .pm-stats { margin: 4px -14px 0; }
+  .pm-stats > div { padding: 10px 14px; }
+  .pm-stats dd { font-size: 20px; }
+  .pm-modules-actions { width: 100%; }
+  .pm-node { min-height: 52px; padding-right: 6px; }
+  .pm-drag { display: none; }
+  .pm-node-actions { opacity: 1; }
+  .pm-layout .pm-node-actions button { width: 40px; height: 40px; }
+  .pm-layout button.pm-toggle { width: 36px; height: 36px; }
+  .pm-toggle-spacer { width: 36px; }
+  .pm-node-text small { white-space: normal; }
+}

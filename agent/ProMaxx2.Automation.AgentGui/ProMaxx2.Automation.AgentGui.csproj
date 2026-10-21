@@ -10,4 +10,6 @@
     <RootNamespace>ProMaxx2.Automation.AgentGui</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
+  <ItemGroup><PackageReference Include="FlaUI.UIA3" Version="5.0.0" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="..\ProMaxx2.Automation.Core\ProMaxx2.Automation.Core.csproj" /></ItemGroup>
 </Project>

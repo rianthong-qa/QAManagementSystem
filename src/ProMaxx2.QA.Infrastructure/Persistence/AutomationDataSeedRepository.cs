@@ -1,0 +1,126 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using ProMaxx2.QA.Application.Automation;
+using ProMaxx2.QA.Domain.Automation;
+using ProMaxx2.QA.Domain.Projects;
+
+namespace ProMaxx2.QA.Infrastructure.Persistence;
+
+/// <summary>AUT-DATA-003/AUT-DATA-004 persistence for <see cref="AutomationDataSeedScript"/>/
+/// <see cref="AutomationDataSeedRun"/> — split into its own file as a partial of <see cref="AutomationRepository"/>,
+/// same pattern as the rest of this module.</summary>
+public sealed partial class AutomationRepository
+{
+    /// <summary>AUT-DATA-004: generous on purpose — see <see cref="AutomationDataSeedRun.ReclaimIfStale"/>.</summary>
+    private static readonly TimeSpan SeedRunStaleAfter = TimeSpan.FromMinutes(30);
+
+    public async Task<IReadOnlyList<AutomationDataSeedScriptListDto>> ListScriptsAsync(Guid projectId, string? scriptType, bool? isActive, CancellationToken ct)
+    {
+        var q = db.AutomationDataSeedScripts.AsNoTracking().Where(x => x.ProjectId == projectId);
+        if (!string.IsNullOrWhiteSpace(scriptType)) q = q.Where(x => x.ScriptType == scriptType);
+        if (isActive.HasValue) q = q.Where(x => x.IsActive == isActive.Value);
+        return await q.OrderBy(x => x.Name)
+            .Select(x => new AutomationDataSeedScriptListDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.ScriptType, x.DbKind, x.IsActive, x.ApprovalStatus, x.CreatedAt))
+            .ToListAsync(ct);
+    }
+
+    public Task<AutomationDataSeedScriptDto?> GetScriptAsync(Guid id, Guid projectId, CancellationToken ct)
+        => db.AutomationDataSeedScripts.AsNoTracking().Where(x => x.AutomationDataSeedScriptId == id && x.ProjectId == projectId)
+            .Select(x => new AutomationDataSeedScriptDto(x.AutomationDataSeedScriptId, x.ProjectId, x.Name, x.Description, x.ScriptType, x.DbKind, x.SqlScript, x.IsActive,
+                x.ApprovalStatus, x.ReviewedBy, x.ReviewedAt, x.RejectionReason, x.CreatedBy, x.CreatedAt, x.UpdatedAt))
+            .SingleOrDefaultAsync(ct);
+
+    public Task<AutomationDataSeedScript?> FindScriptAsync(Guid id, Guid projectId, CancellationToken ct)
+        => db.AutomationDataSeedScripts.SingleOrDefaultAsync(x => x.AutomationDataSeedScriptId == id && x.ProjectId == projectId, ct);
+
+    public Task AddScriptAsync(AutomationDataSeedScript entity, CancellationToken ct) => db.AutomationDataSeedScripts.AddAsync(entity, ct).AsTask();
+
+    private static IQueryable<AutomationDataSeedRunDto> ProjectSeedRunDto(QaDbContext db) =>
+        db.AutomationDataSeedRuns.AsNoTracking()
+            .Select(x => new AutomationDataSeedRunDto(x.AutomationDataSeedRunId, x.ProjectId, x.AutomationDataSeedScriptId, x.Script.Name, x.Script.ScriptType,
+                x.EnvironmentId, db.TestEnvironments.Where(e => e.TestEnvironmentId == x.EnvironmentId).Select(e => e.EnvironmentName).FirstOrDefault() ?? "-",
+                x.BuildId, db.Builds.Where(b => b.BuildId == x.BuildId).Select(b => b.BuildNumber).FirstOrDefault() ?? "-",
+                x.Status, x.AgentId, x.AgentId != null ? db.AutomationAgents.Where(a => a.AgentId == x.AgentId).Select(a => a.AgentCode).FirstOrDefault() : null,
+                x.RowsAffected, x.ErrorMessage, x.RequestedBy, x.RequestedAt, x.StartedAt, x.CompletedAt));
+
+    public async Task<IReadOnlyList<AutomationDataSeedRunDto>> ListRunsAsync(Guid projectId, Guid? scriptId, CancellationToken ct)
+    {
+        var q = ProjectSeedRunDto(db).Where(x => x.ProjectId == projectId);
+        if (scriptId.HasValue) q = q.Where(x => x.AutomationDataSeedScriptId == scriptId.Value);
+        return await q.OrderByDescending(x => x.RequestedAt).ToListAsync(ct);
+    }
+
+    public Task<AutomationDataSeedRunDto?> GetRunAsync(Guid id, Guid projectId, CancellationToken ct)
+        => ProjectSeedRunDto(db).Where(x => x.AutomationDataSeedRunId == id && x.ProjectId == projectId).SingleOrDefaultAsync(ct);
+
+    public Task<AutomationDataSeedRunDto?> GetRunByIdAsync(Guid id, CancellationToken ct)
+        => ProjectSeedRunDto(db).Where(x => x.AutomationDataSeedRunId == id).SingleOrDefaultAsync(ct);
+
+    public Task AddRunAsync(AutomationDataSeedRun entity, CancellationToken ct) => db.AutomationDataSeedRuns.AddAsync(entity, ct).AsTask();
+
+    public Task<AutomationDataSeedRun?> FindRunAsync(Guid id, CancellationToken ct)
+        => db.AutomationDataSeedRuns.SingleOrDefaultAsync(x => x.AutomationDataSeedRunId == id, ct);
+
+    private async Task<ClaimSeedRunPackageDto?> ClaimNextSeedRunRequestCoreAsync(string agentCode, CancellationToken ct)
+    {
+        var agent = await db.AutomationAgents.SingleOrDefaultAsync(x => x.AgentCode == agentCode.Trim().ToUpperInvariant(), ct);
+        if (agent is null || !agent.IsEnabled || agent.IsDeleted) return null;
+        // Serializable, same pattern as ClaimNextSnapshotRequestAsync/ClaimNextRestoreRequestAsync.
+        await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct) : null;
+
+        // AUT-DATA-004: reclaim any run whose agent went silent mid-execution before looking for new work — folded
+        // into every claim call instead of a separate background sweep, so it needs no new worker/timer at all.
+        var now = DateTime.UtcNow;
+        var stale = await db.AutomationDataSeedRuns.Where(x => x.Status == "Running").ToListAsync(ct);
+        foreach (var run in stale) run.ReclaimIfStale(now, SeedRunStaleAfter);
+
+        // AUT-SEC-005: ตรวจ script ซ้ำตอน claim — run ที่ขอไว้ก่อน script ถูกปิดหรือถูกแก้ (MasterData กลับเป็น Pending)
+        // ต้องไม่ส่ง SQL ใหม่ที่ยังไม่อนุมัติไปให้ Agent; ปฏิเสธ run นั้นแล้วหา run ถัดไป
+        AutomationDataSeedRun? next;
+        while (true)
+        {
+            next = await db.AutomationDataSeedRuns.Include(x => x.Script).Where(x => x.Status == "Requested").OrderBy(x => x.RequestedAt).FirstOrDefaultAsync(ct);
+            if (next is null || (next.Script.IsActive && (next.Script.ScriptType != "MasterData" || next.Script.ApprovalStatus == "Approved"))) break;
+            next.RejectBeforeClaim(next.Script.IsActive ? "Script ถูกแก้ไขหลังขอรันและยังไม่ได้รับการอนุมัติใหม่" : "Script ถูกปิดใช้งานหลังขอรัน");
+            await db.SaveChangesAsync(ct);
+        }
+        if (next is null) { await db.SaveChangesAsync(ct); if (transaction is not null) await transaction.CommitAsync(ct); return null; }
+        next.Claim(agent.AgentId);
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return new ClaimSeedRunPackageDto(next.AutomationDataSeedRunId, next.Script.Name, next.Script.DbKind, next.Script.SqlScript);
+    }
+}
+
+public sealed class AutomationDataSeedScriptConfiguration : IEntityTypeConfiguration<AutomationDataSeedScript>
+{
+    public void Configure(EntityTypeBuilder<AutomationDataSeedScript> b)
+    {
+        b.ToTable("AutomationDataSeedScripts");
+        b.HasKey(x => x.AutomationDataSeedScriptId);
+        b.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        b.Property(x => x.Description).HasMaxLength(2000);
+        b.Property(x => x.ScriptType).HasMaxLength(20).IsRequired();
+        b.Property(x => x.DbKind).HasMaxLength(20).IsRequired();
+        b.Property(x => x.SqlScript).HasMaxLength(50_000).IsRequired();
+        b.Property(x => x.ApprovalStatus).HasMaxLength(20).IsRequired();
+        b.Property(x => x.RejectionReason).HasMaxLength(2000);
+        b.HasIndex(x => new { x.ProjectId, x.ScriptType, x.IsActive });
+        b.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class AutomationDataSeedRunConfiguration : IEntityTypeConfiguration<AutomationDataSeedRun>
+{
+    public void Configure(EntityTypeBuilder<AutomationDataSeedRun> b)
+    {
+        b.ToTable("AutomationDataSeedRuns");
+        b.HasKey(x => x.AutomationDataSeedRunId);
+        b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+        b.Property(x => x.ErrorMessage).HasMaxLength(2000);
+        b.HasIndex(x => new { x.ProjectId, x.RequestedAt });
+        b.HasIndex(x => x.Status);
+        b.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Script).WithMany().HasForeignKey(x => x.AutomationDataSeedScriptId).OnDelete(DeleteBehavior.Restrict);
+    }
+}

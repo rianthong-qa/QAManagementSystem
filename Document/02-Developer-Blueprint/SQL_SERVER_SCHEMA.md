@@ -1072,6 +1072,11 @@ INCLUDE (TestCaseCode, Title, RevisionNo);
 
 CREATE INDEX IX_TestCycleCases_Cycle_Status_Tester
 ON dbo.TestCycleCases (TestCycleId, CurrentStatus, AssignedTesterUserId);
+-- ของจริงใน DB (migration AddTestCycleCaseStatusIndex, 2026-10-20) ยังไม่มี index ข้างบน แต่มีตัวนี้แทน:
+-- รายการ Test Cycle นับเคสทั้งหมด/ที่รันแล้วต่อ Cycle — เดิมเฉลี่ย ~34,000 logical reads ต่อคำขอ เหลือ ~2,200
+CREATE INDEX IX_TestCycleCases_TestCycleId
+ON dbo.TestCycleCases (TestCycleId)
+INCLUDE (CurrentStatus);
 
 CREATE INDEX IX_TestExecutions_CycleCase_ExecutionNo
 ON dbo.TestExecutions (TestCycleCaseId, ExecutionNo);
@@ -1196,3 +1201,88 @@ GO
 - API
 - UPDATE
 - SECURITY
+
+## Addendum: Performance & Evaluation (migration `AddPerformanceEvaluation`, 2026-10-07)
+
+### EmployeeProfiles (1:1 กับ Users)
+| Column | Type | หมายเหตุ |
+|---|---|---|
+| UserId | uniqueidentifier PK, FK Users | |
+| EmployeeCode | nvarchar(50) null | |
+| Position | nvarchar(100) null | |
+| Level | nvarchar(20) null | Junior/Mid/Senior/Lead |
+| SupervisorUserId | uniqueidentifier null, FK Users | index |
+| HireDate | date null | บังคับเมื่อ Probation/Extended |
+| EmploymentStatus | nvarchar(20) | Probation/Extended/Permanent/Resigned, index |
+| ProbationEndDate | date null | ค่าเริ่มต้น HireDate + 118 วัน |
+| Notes | nvarchar(2000) null | |
+| CreatedAt/CreatedBy/UpdatedAt/UpdatedBy | | |
+
+### WorkLogEntries
+| Column | Type | หมายเหตุ |
+|---|---|---|
+| WorkLogEntryId | uniqueidentifier PK | NEWSEQUENTIALID() |
+| UserId | uniqueidentifier FK Users | index (UserId, WorkDate) |
+| WorkDate | date | |
+| Category | nvarchar(30) | Testing/Automation/Document/Support/Training/Meeting/Other |
+| Kind | nvarchar(20) | WorkLog/Highlight/Concern |
+| Title | nvarchar(200) | |
+| Description | nvarchar(4000) null | |
+| EffortHours | decimal(5,2) null | 0–24 |
+| ProjectId | uniqueidentifier null, FK Projects | |
+| ReferenceUrl | nvarchar(500) null | http/https เท่านั้น |
+| CreatedAt/CreatedBy (FK Users)/UpdatedAt/UpdatedBy | | |
+
+### Index เพิ่มบนตารางเดิม
+- `IX_TestExecutions_TesterUserId_CompletedAt` (แทน `IX_TestExecutions_TesterUserId`)
+- `IX_Defects_CreatedBy_CreatedAt`
+
+### Permission ใหม่
+`PERFORMANCE.VIEW` (QA_LEAD, QA_TESTER), `PERFORMANCE.EDIT` / `PERFORMANCE.CREATE` / `PERFORMANCE.DELETE` (SYS_ADMIN, QA_LEAD) — seed ใน migration แบบ idempotent
+
+### EvaluationTemplates / EvaluationTemplateCriteria
+- `EvaluationTemplates`: EvaluationTemplateId (PK), Type nvarchar(20) (Probation/Quarterly), Name nvarchar(200), IsActive, Created/Updated — index (Type, IsActive)
+- `EvaluationTemplateCriteria`: EvaluationTemplateCriterionId (PK), EvaluationTemplateId (FK cascade), Group nvarchar(50), Name nvarchar(200), Description nvarchar(500), Weight int, SortOrder int
+
+### Evaluations
+| Column | Type | หมายเหตุ |
+|---|---|---|
+| EvaluationId | uniqueidentifier PK | |
+| UserId | FK Users | index (UserId, Round, Year) |
+| Type / Round / Year | nvarchar(20) / nvarchar(10) / int | Round: P30/P60/P90/PFinal/Q1–Q4 |
+| PeriodStart / PeriodEnd / DueDate | date | index (Status, DueDate) |
+| TemplateName | nvarchar(200) | ชื่อแบบประเมินตอนสร้าง |
+| Status | nvarchar(20) | Open/SelfSubmitted/Completed/Acknowledged |
+| SelfComment, Strengths, Improvements, NextGoals, EmployeeComment | nvarchar(4000) null | |
+| SelfSubmittedAt, CompletedAt, AcknowledgedAt | datetime2(0) null | |
+| EvaluatorUserId | FK Users null | |
+| OverallScore / Grade | decimal(4,2) / nvarchar(2) | คำนวณตอนส่งผล |
+| Recommendation / ExtendToDate | nvarchar(20) / date | เฉพาะ PFinal |
+| MetricsSnapshotJson | nvarchar(max) | metric ณ วันที่ส่งผล |
+| ReopenReason | nvarchar(1000) | |
+
+### EvaluationScores
+EvaluationScoreId (PK), EvaluationId (FK cascade), Group, Name, Description, Weight, SortOrder (copy จากแบบประเมิน), SelfScore/ManagerScore int null (1–5), SelfComment/ManagerComment nvarchar(1000)
+
+### WorkLogAttachments (migration `AddPerformanceEvidenceAndReminders`)
+WorkLogAttachmentId (PK), WorkLogEntryId (FK `WorkLogEntries` cascade), FileName nvarchar(100), StoredFileName nvarchar(150) (`{id:N}{ext}` ใน `App_Data/PerformanceEvidence/{workLogEntryId:N}/`), SizeBytes bigint, ContentType nvarchar(50), UploadedBy (FK Users restrict, null), UploadedAt datetime2(0) — index WorkLogEntryId
+
+### EvaluationNotifications (migration `AddPerformanceEvidenceAndReminders`)
+EvaluationNotificationId (PK), EvaluationId (FK `Evaluations` cascade), Kind nvarchar(20) (`DueSoon`/`Overdue`), DueDate date (กำหนดส่ง ณ ตอนเตือน), RecipientUserId (FK Users restrict), SentAt datetime2(0) — **unique** (EvaluationId, Kind, DueDate, RecipientUserId) กันส่งอีเมลเตือนซ้ำ
+### PerformanceShareLinks (migration `AddPerformanceShareLinks`, 2026-10-09)
+PerformanceShareLinkId (PK), Code nvarchar(12) **unique**, UserId (FK Users restrict — พนักงาน), FromDate/ToDate date, IncludeEvaluations/IncludeWorkLogs bit, Note nvarchar(200) null, ExpiresAt datetime2(0) (≤ 90 วันจากสร้าง), CreatedBy (FK Users restrict), CreatedAt datetime2(0), RevokedAt datetime2(0) null, RevokedBy (FK Users restrict, null), ViewCount int, LastViewedAt datetime2(0) null — index (UserId, CreatedAt); ยกเลิกแล้วไม่ลบแถวเพื่อเก็บประวัติการแชร์
+
+### WeeklyReportNotes (migration `AddWeeklyReportNotes`, 2026-10-09)
+WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์ตามเวลาไทย), Health nvarchar(10) null (`Green`/`Yellow`/`Red`), Headline nvarchar(500) null, KeyRisk/Ask/NextWeekPlan nvarchar(2000) null, MemberNotesJson nvarchar(max) null (`{ "userId": "ข้อความ ≤300" }`), CreatedBy/UpdatedBy (FK Users restrict), CreatedAt/UpdatedAt datetime2(0) — เก็บเฉพาะข้อความที่หัวหน้าเขียน ตัวเลขคำนวณสดทุกครั้ง
+
+## Addendum: CRM Ticket mirror (migration `AddCrmTicketMirror`, 2026-10-08)
+
+- `CrmTickets` — PK `JobNo` nvarchar(40); Subject(300), Status(30), JobType(30), ServiceType(200), Product(200), AssigneeCode/OwnerCode/DeveloperCode(50), Branch(200), ContactDate/DueDate/LastReplyAt, FirstSeenAt, LastSyncedAt, LastChangedAt — index AssigneeCode, ContactDate
+- `CrmTicketEvents` — PK bigint identity; JobNo, Kind (Snapshot/Changed/Answer), OccurredAt, RecordedAt, Source (Sync/Legacy), From/To Status, From/To AssigneeCode, From/To DeveloperCode, OwnerCode, AnswerNo, ActorCode — index (JobNo, OccurredAt), OccurredAt, unique (JobNo, AnswerNo) WHERE AnswerNo IS NOT NULL
+- `CrmMirrorRuns` — ผลการดึงแต่ละรอบ (Kind, RangeFrom/To, AccountUsername, Status, counts, Error(2000), DiagnosticsJson)
+- ไม่เก็บข้อมูลลูกค้า (ชื่อ/เบอร์/อีเมล) และเนื้อหาข้อความของ Ticket
+
+## Addendum: CRM permissions (migration `SeedCrmPermissions`, 2026-10-09)
+
+- `CRM.VIEW` / `CRM.EDIT` (ModuleArea `CRM`) เคย seed เฉพาะใน `DatabaseInitializer` ซึ่งไม่ทำงานเมื่อ `Database:ApplyMigrations=false` — migration นี้ seed แบบ idempotent
+- ค่าเริ่มต้น: `CRM.VIEW` → SYS_ADMIN, QA_LEAD, QA_TESTER, DEVELOPER, PRODUCT_OWNER, RELEASE_OWNER, VIEWER; `CRM.EDIT` → SYS_ADMIN, QA_LEAD, QA_TESTER, DEVELOPER — ปรับต่อได้ในหน้า User / Role

@@ -1,0 +1,224 @@
+/* หน้า Release / Build (ออกแบบใหม่ 2026-10-21) — โครงเดียวกับหน้า Project / Module (ProjectsPage.css), class prefix rb-
+   ซ้าย: รายการ Release + ชิปกรองสถานะ | ขวา: หัว Release + ตัวเลขสรุป → รายการ Build; หน้าต่างรายละเอียดยังใช้ ReleaseBuild.css */
+.rb-layout { position: relative; display: grid; grid-template-columns: minmax(250px, 310px) minmax(0, 1fr); align-items: start; gap: 16px; min-width: 0; }
+.rb-layout .card { min-width: 0; margin: 0; padding: 16px; border-radius: 14px; }
+.rb-layout h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.rb-layout .btn { display: inline-flex; align-items: center; gap: 6px; }
+.rb-layout .btn .material-symbols-outlined { font-size: 18px; }
+.rb-layout [data-tone] { --tone: var(--muted); }
+.rb-layout [data-tone="green"] { --tone: var(--green); }
+.rb-layout [data-tone="blue"] { --tone: var(--info); }
+.rb-layout [data-tone="yellow"] { --tone: var(--warning-text); }
+.rb-layout [data-tone="red"] { --tone: var(--red); }
+.rb-layout [data-tone="purple"] { --tone: #6d28d9; }
+
+/* รายการ Release */
+.rb-releases { position: sticky; top: 84px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 12px; max-height: calc(100dvh - 110px); overflow: hidden; }
+.rb-releases-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rb-releases-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.rb-status-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rb-layout .rb-status-chips button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.rb-layout .rb-status-chips button b { color: var(--muted); font-weight: 600; }
+.rb-layout .rb-status-chips button[aria-pressed="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); }
+.rb-layout .rb-status-chips button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.rb-release-list { display: grid; align-content: start; gap: 6px; margin: 0 -6px; padding: 0 6px 2px; overflow-y: auto; list-style: none; }
+.rb-layout .rb-release-list button { display: grid; gap: 2px; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: inset 3px 0 0 var(--tone); color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.rb-layout .rb-release-list button:hover { border-color: color-mix(in srgb, var(--primary) 35%, var(--line)); }
+.rb-layout .rb-release-list button.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--card)); box-shadow: inset 3px 0 0 var(--tone), 0 0 0 1px var(--primary); }
+.rb-layout .rb-release-list button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.rb-release-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rb-release-code { color: var(--primary); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.rb-release-list b { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.rb-release-list small { color: var(--muted); font-size: 12px; }
+.rb-empty-small { margin: 0; padding: 16px 4px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* หัว Release */
+.rb-main { display: grid; gap: 16px; min-width: 0; }
+.rb-layout .rb-release-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; padding: 18px 20px 0; overflow: hidden; }
+.rb-release-title { display: grid; gap: 4px; min-width: 0; }
+.rb-eyebrow { color: var(--primary); font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.rb-release-title h2 { margin: 0; font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+.rb-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.rb-scope { display: -webkit-box; margin: 4px 0 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.6; white-space: pre-wrap; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.rb-release-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; }
+.rb-layout .btn.rb-danger { color: var(--red); }
+.rb-layout .btn.rb-danger:hover:not(:disabled) { border-color: var(--red); background: color-mix(in srgb, var(--red) 6%, var(--card)); }
+.rb-stats { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 4px -20px 0; border-top: 1px solid var(--line); }
+.rb-stats > div { min-width: 0; padding: 12px 20px; border-left: 1px solid var(--line); }
+.rb-stats > div:first-child { border-left: 0; }
+.rb-stats dt { color: var(--muted); font-size: 12px; }
+.rb-stats dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rb-stats dd span { color: var(--muted); font-weight: 400; }
+.rb-stats dd.rb-stat-text { font-size: 14px; line-height: 1.9; }
+
+/* รายการ Build */
+.rb-builds { display: grid; gap: 12px; }
+.rb-builds-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.rb-builds-head h3 { display: flex; align-items: center; gap: 8px; }
+.rb-builds-head h3 .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); font-size: 19px; }
+.rb-builds-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.rb-build-list { margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; list-style: none; overflow: hidden; }
+.rb-build-list > li { display: grid; grid-template-columns: minmax(0, 1fr) 120px 110px auto; align-items: center; gap: 12px; min-height: 60px; padding: 10px 12px 10px 16px; border-top: 1px solid var(--line); box-shadow: inset 4px 0 0 var(--tone); }
+.rb-build-list > li:first-child { border-top: 0; }
+.rb-build-list > li:hover { background: color-mix(in srgb, var(--primary) 3%, var(--card)); }
+.rb-build-list > li.rc { background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
+.rb-build-main { display: grid; gap: 3px; min-width: 0; }
+.rb-build-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.rb-layout button.rb-build-link { padding: 0; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 15px; font-weight: 700; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.rb-layout button.rb-build-link:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.rb-layout button.rb-build-link:focus-visible { border-radius: 4px; outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: 2px; }
+.rb-rc { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px 1px 4px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 12%, var(--card)); color: var(--primary); font-size: 11px; font-weight: 700; }
+.rb-rc .material-symbols-outlined { font-size: 15px; font-variation-settings: "FILL" 1; }
+.rb-build-main small { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; color: var(--muted); font-size: 12px; }
+.rb-build-main code { padding: 0 6px; border-radius: 5px; background: var(--bg); font-family: Consolas, "Courier New", monospace; font-size: 11px; overflow-wrap: anywhere; }
+.rb-build-date { color: var(--muted); font-size: 12px; }
+.rb-build-list .badge { justify-self: start; }
+.rb-build-actions { display: flex; justify-content: flex-end; gap: 2px; width: 108px; }
+.rb-layout .rb-build-actions button { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.rb-layout .rb-build-actions button:hover:not(:disabled) { border-color: var(--line); background: var(--card); color: var(--primary); }
+.rb-layout .rb-build-actions button.danger:hover:not(:disabled) { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); color: var(--red); }
+.rb-layout .rb-build-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.rb-build-actions .material-symbols-outlined { font-size: 18px; }
+.rb-empty { display: grid; justify-items: center; gap: 8px; padding: 32px 16px; color: var(--muted); text-align: center; }
+.rb-empty > .material-symbols-outlined { color: color-mix(in srgb, var(--primary) 45%, var(--card)); font-size: 36px; }
+.rb-empty b { color: var(--text); font-size: 14px; }
+
+/* ฟอร์ม */
+.rb-modal .modal-head > div { display: grid; gap: 2px; }
+.rb-modal .rb-modal-sub { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+@media (max-width: 1100px) {
+  .rb-layout { grid-template-columns: minmax(230px, 270px) minmax(0, 1fr); }
+  .rb-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rb-stats > div:nth-child(3) { border-left: 0; }
+  .rb-stats > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .rb-build-list > li { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .rb-build-date { display: none; }
+}
+@media (max-width: 900px) {
+  .rb-layout { grid-template-columns: minmax(0, 1fr); }
+  .rb-releases { position: static; max-height: none; grid-template-rows: auto; }
+  /* Release เป็นแถบเลื่อนแนวนอน */
+  .rb-release-list { grid-auto-flow: column; grid-auto-columns: minmax(220px, 72%); margin: 0 -16px; padding: 0 16px 4px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; }
+  .rb-release-list li { scroll-snap-align: start; }
+  .rb-build-date { display: inline; }
+}
+@media (max-width: 760px) {
+  .rb-layout .card { padding: 14px; }
+  .rb-layout .rb-release-head { grid-template-columns: minmax(0, 1fr); padding: 14px 14px 0; }
+  .rb-release-actions .btn,
+  .rb-builds-head .btn { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .rb-builds-head > div { flex-basis: 100%; }
+  .rb-stats { margin: 4px -14px 0; }
+  .rb-stats > div { padding: 10px 14px; }
+  .rb-stats dd { font-size: 20px; }
+  .rb-layout .rb-status-chips button { min-height: 36px; }
+  .rb-build-list > li { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 6px 6px 14px; }
+  .rb-build-main { grid-column: 1; grid-row: 1; }
+  .rb-build-list .badge { grid-column: 2; grid-row: 1; align-self: start; justify-self: end; }
+  .rb-build-date { grid-column: 1; grid-row: 2; align-self: center; }
+  .rb-build-actions { grid-column: 2; grid-row: 2; width: auto; }
+  .rb-layout .rb-build-actions button { width: 44px; height: 44px; }
+}
+
+/* ===== หน้าต่างรายละเอียด Release/Build และฟอร์ม (ออกแบบใหม่ 2026-10-21 แทน ReleaseBuild.css) — หัว/ท้ายอยู่กับที่ เนื้อหาเลื่อนในตัว ===== */
+:is(.rb-detail, .rb-form) [data-tone] { --tone: var(--muted); }
+:is(.rb-detail, .rb-form) [data-tone="green"] { --tone: var(--green); }
+:is(.rb-detail, .rb-form) [data-tone="blue"] { --tone: var(--info); }
+:is(.rb-detail, .rb-form) [data-tone="yellow"] { --tone: var(--warning-text); }
+:is(.rb-detail, .rb-form) [data-tone="red"] { --tone: var(--red); }
+:is(.rb-detail, .rb-form) [data-tone="purple"] { --tone: #6d28d9; }
+.modal > .modal-box:is(.rb-detail, .rb-form) { display: flex; flex-direction: column; width: min(860px, calc(100vw - 32px)); max-width: 860px; max-height: calc(100dvh - 48px); padding: 0; overflow: hidden; }
+.modal > .modal-box.rb-form { width: min(760px, calc(100vw - 32px)); max-width: 760px; }
+.rb-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 22px 14px; border-bottom: 1px solid var(--line); }
+.rb-detail-head > div:first-child { display: grid; gap: 4px; min-width: 0; }
+.rb-detail-head h2 { margin: 0; font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+.rb-detail-head .rb-eyebrow { color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .02em; overflow-wrap: anywhere; }
+.rb-detail-head .rb-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rb-form-sub { color: var(--muted); font-size: 12px; }
+.rb-detail-head-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.rb-detail-head-actions .btn,
+.rb-form-foot .btn { display: inline-flex; align-items: center; gap: 6px; }
+.rb-detail-head-actions .btn .material-symbols-outlined,
+.rb-form-foot .btn .material-symbols-outlined { font-size: 18px; }
+.modal-box :is(.rb-detail-head, .rb-form-foot) button.rb-icon-close,
+.modal-box .rb-detail-head button.rb-icon-close { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--muted); cursor: pointer; }
+.modal-box .rb-detail-head button.rb-icon-close:hover { border-color: var(--primary); color: var(--primary); }
+.rb-detail-body { display: grid; align-content: start; gap: 16px; min-height: 0; padding: 18px 22px 22px; overflow-y: auto; overscroll-behavior: contain; }
+
+/* แถบขั้นตอนสถานะ Release */
+.rb-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.rb-flow li { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px 10px 8px; border-top: 4px solid var(--line); border-radius: 4px 4px 0 0; color: var(--muted); }
+.rb-flow-dot { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border: 2px solid var(--line); border-radius: 50%; background: var(--card); font-size: 12px; font-weight: 700; }
+.rb-flow-dot .material-symbols-outlined { font-size: 16px; }
+.rb-flow li > span:last-child { display: grid; min-width: 0; }
+.rb-flow b { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.rb-flow small { font-size: 11px; }
+.rb-flow li.done { border-top-color: var(--green); color: var(--text); }
+.rb-flow li.done .rb-flow-dot { border-color: var(--green); background: var(--green); color: var(--card); }
+.rb-flow li.current { border-top-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--card)); color: var(--text); }
+.rb-flow li.current .rb-flow-dot { border-color: var(--primary); background: var(--primary); color: var(--card); }
+.rb-flow li.current b { color: var(--primary); }
+
+.rb-callout { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--tone) 25%, var(--line)); border-left: 4px solid var(--tone); border-radius: 10px; background: color-mix(in srgb, var(--tone) 6%, var(--card)); color: var(--text); font-size: 13px; line-height: 1.55; }
+.rb-callout > .material-symbols-outlined { flex: none; color: var(--tone); font-size: 20px; }
+.rb-callout > span:last-child { display: grid; gap: 2px; min-width: 0; color: var(--muted); }
+.rb-callout b { color: var(--text); font-weight: 600; }
+.rb-detail-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border: 1px solid var(--line); border-radius: 12px; }
+.rb-detail-meta > div { min-width: 0; padding: 10px 14px; border-left: 1px solid var(--line); }
+.rb-detail-meta > div:first-child { border-left: 0; }
+.rb-detail-meta dt { color: var(--muted); font-size: 12px; }
+.rb-detail-meta dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.rb-detail-meta code { padding: 0 6px; border-radius: 5px; background: var(--bg); font-family: Consolas, "Courier New", monospace; font-size: 12px; font-weight: 400; }
+.rb-detail-section { display: grid; gap: 8px; }
+.rb-detail-section h3 { display: flex; align-items: baseline; gap: 8px; margin: 0; font-size: 14px; font-weight: 600; }
+.rb-detail-section h3 small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.rb-detail-text { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--bg) 50%, var(--card)); color: var(--text); font-size: 14px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rb-detail-text.empty { border-style: dashed; background: none; color: var(--muted); font-size: 13px; }
+.rb-detail-text.warn { border-color: color-mix(in srgb, var(--yellow) 40%, var(--line)); background: color-mix(in srgb, var(--yellow) 8%, var(--card)); }
+.rb-detail-builds { display: grid; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; list-style: none; overflow: hidden; }
+.rb-detail-builds li + li { border-top: 1px solid var(--line); }
+.modal-box .rb-detail-builds button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 8px 12px 8px 14px; border: 0; border-radius: 0; background: var(--card); box-shadow: inset 4px 0 0 var(--tone); color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.modal-box .rb-detail-builds button:hover { background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
+.rb-detail-builds button > span:first-child { display: grid; gap: 1px; min-width: 0; }
+.rb-detail-builds b { font-size: 14px; }
+.rb-detail-builds small { color: var(--muted); font-size: 12px; }
+.rb-detail-build-badges { display: flex; flex: none; align-items: center; gap: 6px; color: var(--muted); }
+:is(.rb-detail, .rb-form) .rb-rc { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px 1px 4px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 12%, var(--card)); color: var(--primary); font-size: 11px; font-weight: 700; }
+:is(.rb-detail, .rb-form) .rb-rc .material-symbols-outlined { font-size: 15px; font-variation-settings: "FILL" 1; }
+
+/* ฟอร์ม */
+.rb-form-section { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.rb-form-section legend { margin-bottom: 8px; padding: 0; color: var(--text); font-size: 13px; font-weight: 700; }
+.rb-form .rb-form-section .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; margin: 0; }
+.rb-form .rb-form-section .form-grid > .full { grid-column: 1 / -1; }
+.rb-form-section textarea { min-height: 72px; }
+.rb-status-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.rb-form .rb-status-pick label { position: relative; display: grid; gap: 0; min-width: 112px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); cursor: pointer; }
+.rb-form .rb-status-pick label input[type="radio"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.rb-form .rb-status-pick label b { font-size: 13px; font-weight: 600; }
+.rb-form .rb-status-pick label small { color: var(--muted); font-size: 11px; }
+.rb-form .rb-status-pick label:hover { border-color: var(--tone); }
+.rb-form .rb-status-pick label.selected { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 9%, var(--card)); box-shadow: inset 0 0 0 1px var(--tone); }
+.rb-form .rb-status-pick label.selected b { color: var(--tone); }
+.rb-form .rb-status-pick label:focus-within { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: 1px; }
+.rb-form-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 22px; border-top: 1px solid var(--line); background: var(--card); }
+.rb-form-hint { margin-right: auto; color: var(--red); font-size: 12px; }
+.rb-form-hint:empty::before { color: var(--green); content: "ข้อมูลครบ พร้อมบันทึก"; }
+
+@media (max-width: 760px) {
+  .modal > .modal-box:is(.rb-detail, .rb-form) { width: 100%; max-width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .rb-detail-head { padding: 14px 16px 12px; }
+  .rb-detail-head h2 { font-size: 20px; }
+  .rb-detail-head-actions .btn { min-height: 40px; }
+  .rb-detail-body { padding: 14px 16px 18px; }
+  .rb-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rb-detail-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rb-detail-meta > div:nth-child(3) { border-left: 0; }
+  .rb-detail-meta > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .rb-form .rb-status-pick label { flex: 1 1 calc(50% - 8px); min-height: 44px; }
+  .rb-form .rb-form-section .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .rb-form-foot { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+  .rb-form-hint { flex-basis: 100%; }
+  .rb-form-foot .btn { flex: 1 1 0; justify-content: center; min-height: 44px; }
+}

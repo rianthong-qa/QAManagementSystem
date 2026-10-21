@@ -1,0 +1,115 @@
+/* ===== รายการ Test Case (ออกแบบใหม่ 2026-10-21, prefix `tcl-`) =====
+   หัวการ์ด: จำนวน + ปุ่ม | แถวตัวกรองเดียว | ตาราง 7 คอลัมน์ไม่เลื่อนแนวนอน: เลือก · Test Case (รหัส + ชื่อ + ประเภท/Steps/Rev.) · Module · Priority · สถานะ · สร้างเมื่อ · จัดการ */
+.testcase-list-card { padding: 0; overflow: clip; } /* clip ไม่ใช่ scroll container — แถบเลือกหลายรายการ (sticky) จึงเลื่อนตามหน้าได้ */
+.tcl-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; padding: 16px 18px 12px; }
+.tcl-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.tcl-title strong { color: var(--text); font-size: 22px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.tcl-title span { color: var(--muted); font-size: 13px; }
+.tcl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tcl-actions .btn { gap: 6px; min-height: 38px; padding: 7px 14px; }
+.tcl-actions .material-symbols-outlined { font-size: 18px; }
+label.btn.tcl-import { position: relative; cursor: pointer; }
+label.btn.tcl-import input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.tcl-filters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) auto; gap: 8px; padding: 0 18px 14px; border-bottom: 1px solid var(--line); }
+.tcl-filters select { width: 100%; min-width: 0; height: 38px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; }
+.tcl-filters select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.tcl-filters .tcl-clear { gap: 4px; min-height: 38px; padding: 6px 12px; white-space: nowrap; }
+.tcl-filters .tcl-clear .material-symbols-outlined { font-size: 17px; }
+
+.tcl-table-wrap { min-width: 0; }
+.tcl-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tcl-table thead th { position: relative; padding: 9px 12px; border-bottom: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .03em; text-align: left; white-space: nowrap; }
+.tcl-table tbody td { padding: 8px 12px; white-space: normal; border-bottom: 1px solid var(--line); color: var(--text); font-size: 13px; vertical-align: middle; }
+.tcl-table tbody tr:last-child td { border-bottom: 0; }
+.tcl-table tbody tr:hover td { background: color-mix(in srgb, var(--primary-soft) 40%, var(--card)); }
+.tcl-table tbody tr.is-selected td { background: color-mix(in srgb, var(--primary-soft) 70%, var(--card)); }
+.tcl-table .tcl-col-select { width: 44px; padding-left: 16px; padding-right: 0; }
+.tcl-table .tcl-col-select input { width: 17px; height: 17px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.tcl-table .tcl-col-module { width: 20%; }
+.tcl-table .tcl-col-priority { width: 84px; }
+.tcl-table .tcl-col-status { width: 108px; }
+.tcl-table .tcl-col-date { width: 108px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tcl-table .tcl-col-actions { width: 116px; padding-right: 14px; }
+button.tcl-sort { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }
+button.tcl-sort .material-symbols-outlined { font-size: 15px; }
+button.tcl-case { white-space: normal; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tcl-code { color: var(--primary); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tcl-name { display: -webkit-box; overflow: hidden; white-space: normal; color: var(--text); font-size: 13px; font-weight: 600; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+button.tcl-case:hover .tcl-name { color: var(--primary); }
+button.tcl-case:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: 2px; border-radius: 6px; }
+.tcl-code .tcl-meta { margin-left: 8px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.tcl-code .tcl-meta::before { margin-right: 8px; color: var(--line); content: "|"; }
+.tcl-module { display: grid; gap: 1px; min-width: 0; }
+.tcl-module b { overflow: hidden; color: var(--text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.tcl-module small { color: var(--muted); font-size: 11px; }
+.tcl-muted { color: var(--muted); }
+.tcl-row-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.tcl-row-actions button { display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.tcl-row-actions button:hover { border-color: var(--line); background: var(--card); color: var(--primary); }
+.tcl-row-actions button.danger:hover { color: var(--red); }
+.tcl-row-actions .material-symbols-outlined { font-size: 18px; }
+.tcl-empty { display: grid; justify-items: center; gap: 6px; padding: 40px 16px; color: var(--muted); text-align: center; }
+.tcl-empty .material-symbols-outlined { font-size: 32px; }
+.tcl-empty b { color: var(--text); }
+
+@media (max-width: 1180px) {
+  .tcl-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tcl-table .tcl-col-date { display: none; }
+}
+@media (max-width: 900px) {
+  .tcl-table .tcl-col-module { width: 26%; }
+}
+/* มือถือ: การ์ดต่อเคส — เลือก | รหัส + ชื่อ + meta, แถวล่าง Module · Priority · สถานะ · ปุ่ม */
+@media (max-width: 760px) {
+  .tcl-head { padding: 14px; }
+  .tcl-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .tcl-actions .btn { justify-content: center; min-height: 44px; }
+  .tcl-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 14px 12px; }
+  .tcl-filters select, .tcl-filters .tcl-clear { height: 44px; min-height: 44px; }
+  .tcl-filters .tcl-clear { grid-column: 1 / -1; justify-content: center; }
+  .tcl-table, .tcl-table tbody { display: block; }
+  .tcl-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tcl-table tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .tcl-table tbody td { display: block; padding: 0; border: 0; }
+  .tcl-table tbody tr:hover td, .tcl-table tbody tr.is-selected td { background: transparent; }
+  .tcl-table tbody tr.is-selected { background: color-mix(in srgb, var(--primary-soft) 70%, var(--card)); }
+  .tcl-table .tcl-col-select { width: 24px; padding: 0; align-self: flex-start; padding-top: 2px; }
+  .tcl-table .tcl-col-case { flex: 1 1 calc(100% - 32px); min-width: 0; }
+  .tcl-table .tcl-col-module { flex: 1 1 100%; width: auto; padding-left: 32px; }
+  .tcl-module { display: flex; align-items: baseline; gap: 6px; }
+  .tcl-table .tcl-col-priority, .tcl-table .tcl-col-status { width: auto; }
+  .tcl-table .tcl-col-priority { margin-left: 32px; }
+  .tcl-table .tcl-col-actions { width: auto; margin-left: auto; padding: 0; }
+  .tcl-row-actions button { width: 40px; height: 40px; }
+  .tcl-table tr.tcl-empty-row td { flex: 1 1 100%; }
+}
+
+/* แถบเลือกหลายรายการ: แถวเดียวกระชับ (ปุ่ม/ช่องเลือกสูง 32px) ติดใต้ topbar ขณะเลื่อน */
+.testcase-list-card .testcase-bulk-bar.tcl-bulk { position: sticky; top: 74px; z-index: 6; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 0; padding: 8px 18px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); border-radius: 0; background: color-mix(in srgb, var(--primary-soft) 92%, var(--card)); box-shadow: 0 6px 14px rgb(15 23 42 / 8%); backdrop-filter: none; }
+.tcl-bulk-count { color: var(--primary); font-size: 13px; white-space: nowrap; }
+.tcl-bulk-count b { font-size: 15px; }
+.tcl-bulk-group { display: inline-flex; align-items: center; gap: 6px; }
+.tcl-bulk select { height: 32px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font: inherit; font-size: 12px; }
+.tcl-bulk .btn { gap: 4px; min-height: 32px; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
+.tcl-bulk .btn .material-symbols-outlined { font-size: 16px; }
+.tcl-bulk-end { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.tcl-bulk .btn.tcl-bulk-delete { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); background: var(--card); color: var(--red); }
+.tcl-bulk .btn.tcl-bulk-delete:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 8%, var(--card)); }
+button.tcl-bulk-clear { display: grid; width: 32px; height: 32px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--muted); cursor: pointer; }
+button.tcl-bulk-clear:hover { color: var(--text); }
+button.tcl-bulk-clear .material-symbols-outlined { font-size: 18px; }
+@media (max-width: 900px) {
+  .testcase-list-card .testcase-bulk-bar.tcl-bulk { top: 60px; }
+}
+/* มือถือ 2 แถว: จำนวน · ลบ · ยกเลิก | สถานะ ✓ · Automation ✓ (ปุ่มยืนยันเหลือไอคอน มี aria-label) */
+@media (max-width: 760px) {
+  .testcase-list-card .testcase-bulk-bar.tcl-bulk { top: 54px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 8px 12px; }
+  .tcl-bulk-count { grid-column: 1; grid-row: 1; align-self: center; }
+  .tcl-bulk-end { grid-column: 2; grid-row: 1; justify-content: flex-end; margin-left: 0; }
+  .tcl-bulk-group { min-width: 0; }
+  .tcl-bulk-group select { flex: 1 1 auto; width: 100%; min-width: 0; height: 40px; }
+  .tcl-bulk .btn, button.tcl-bulk-clear { height: 40px; min-height: 40px; }
+  .tcl-bulk-group .btn { width: 40px; flex: none; justify-content: center; padding: 0; }
+  .tcl-bulk-group .tcl-btn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  button.tcl-bulk-clear { width: 40px; }
+}

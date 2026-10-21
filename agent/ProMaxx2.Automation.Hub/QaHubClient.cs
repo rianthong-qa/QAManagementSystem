@@ -16,26 +16,50 @@ public sealed record AgentInfo(Guid AgentId, string AgentCode, string Status, st
 public sealed record VerificationObjectItem(Guid VerificationId, string ObjectCode, string ApplicationCode, string ScreenCode, string? ExpectedAutomationId, string ExpectedControlType);
 public sealed record VerificationBatchPackage(IReadOnlyList<VerificationObjectItem> Items);
 
+/// <summary>AUT-DATA-001.</summary>
+public sealed record SnapshotPackage(Guid AutomationDbSnapshotId, Guid EnvironmentId, string EnvironmentName, Guid BuildId, string BuildNumber);
+
+/// <summary>AUT-DATA-002.</summary>
+public sealed record RestorePackage(Guid AutomationDbRestoreId, Guid AutomationDbSnapshotId, string SnapshotPath, string ExpectedChecksum);
+
+/// <summary>AUT-DATA-003.</summary>
+public sealed record SeedRunPackage(Guid AutomationDataSeedRunId, string ScriptName, string DbKind, string SqlScript);
+
 public sealed class QaHubClient : IDisposable
 {
-    private readonly HttpClient _http = new();
+    private readonly HttpClient _http;
     private readonly AgentConfig _config;
     private string? _token;
 
-    public QaHubClient(AgentConfig config) => _config = config;
+    public QaHubClient(AgentConfig config) : this(config, null) { }
+
+    /// <summary><paramref name="innerHandler"/> ใช้แทน network จริงใน test</summary>
+    public QaHubClient(AgentConfig config, HttpMessageHandler? innerHandler, Func<int, TimeSpan>? backoff = null)
+    {
+        _config = config;
+        // AUT-AGT-001: token ถูกใส่ต่อ request โดย HubResilienceHandler (ไม่ใช้ DefaultRequestHeaders) เพื่อให้ login ใหม่แล้ว
+        // request ถัดไปและ request ที่ส่งซ้ำได้ token ใหม่ทันที
+        async Task<string?> Relogin(CancellationToken ct) => await LoginAsync(ct) ? _token : null;
+        var handler = backoff is null
+            ? new HubResilienceHandler(Relogin, () => _token, innerHandler)
+            : new HubResilienceHandler(Relogin, () => _token, innerHandler) { Backoff = backoff };
+        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
+    }
 
     public void Dispose() => _http.Dispose();
 
+    /// <summary>true = login สำเร็จ, false = Hub ปฏิเสธ credential (400/401/403). Hub ติดต่อไม่ได้หรือตอบผิดปกติจะ throw
+    /// เพื่อให้ผู้เรียกแยกได้ว่าควรหยุด (รหัสผิด) หรือรอแล้วลองใหม่ (Hub ล่ม/เครือข่ายขาด)</summary>
     public async Task<bool> LoginAsync(CancellationToken ct)
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/auth/login", new { username = _config.Username, password = _config.Password }, ct);
-        if (!response.IsSuccessStatusCode) return false;
+        if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden) return false;
+        response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(ct);
         var doc = JsonSerializer.Deserialize<JsonElement>(json);
         var token = doc.TryGetProperty("accessToken", out var at) ? at.GetString() : doc.TryGetProperty("token", out var tk) ? tk.GetString() : null;
         if (string.IsNullOrWhiteSpace(token)) return false;
         _token = token;
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return true;
     }
 
@@ -86,6 +110,7 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/executions/{executionId}/steps/{stepNo}/result", new
         {
+            agentCode = _config.AgentCode,
             stepNo,
             actionCode,
             status,
@@ -106,6 +131,7 @@ public sealed class QaHubClient : IDisposable
         var file = new StreamContent(stream);
         file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         content.Add(file, "file", $"step{stepNo}.png");
+        content.Add(new StringContent(_config.AgentCode), "agentCode");
         var response = await _http.PostAsync($"{_config.HubBaseUrl}/automation/executions/{executionId}/steps/{stepNo}/evidence", content, ct);
         response.EnsureSuccessStatusCode();
     }
@@ -121,6 +147,7 @@ public sealed class QaHubClient : IDisposable
         content.Add(file, "file", fileName);
         if (stepNo.HasValue) content.Add(new StringContent(stepNo.Value.ToString()), "stepNo");
         content.Add(new StringContent(evidenceType), "evidenceType");
+        content.Add(new StringContent(_config.AgentCode), "agentCode");
         var response = await _http.PostAsync($"{_config.HubBaseUrl}/automation/executions/{executionId}/evidence/upload", content, ct);
         response.EnsureSuccessStatusCode();
     }
@@ -129,6 +156,7 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/executions/{executionId}/complete", new
         {
+            agentCode = _config.AgentCode,
             status,
             failureType,
             errorCode,
@@ -149,11 +177,79 @@ public sealed class QaHubClient : IDisposable
     {
         var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/verifications/result", new
         {
+            agentCode = _config.AgentCode,
             verificationId,
             status,
             actualAutomationId,
             actualControlType,
             message
+        }, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>AUT-DATA-001.</summary>
+    public async Task<SnapshotPackage?> ClaimSnapshotAsync(CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/snapshots/claim", new { agentCode = _config.AgentCode, agentVersion = _config.AgentVersion }, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SnapshotPackage>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+    }
+
+    public async Task CompleteSnapshotAsync(Guid snapshotId, string status, string? dbKind, string? snapshotPath, string? checksum, long? sizeBytes, string? errorMessage, CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/snapshots/{snapshotId}/complete", new
+        {
+            agentCode = _config.AgentCode,
+            status,
+            dbKind,
+            snapshotPath,
+            checksum,
+            sizeBytes,
+            errorMessage
+        }, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>AUT-DATA-002.</summary>
+    public async Task<RestorePackage?> ClaimRestoreAsync(CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/restores/claim", new { agentCode = _config.AgentCode, agentVersion = _config.AgentVersion }, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RestorePackage>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+    }
+
+    public async Task CompleteRestoreAsync(Guid restoreId, string status, bool checksumVerified, bool availabilityVerified, string? errorMessage, CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/restores/{restoreId}/complete", new
+        {
+            agentCode = _config.AgentCode,
+            status,
+            checksumVerified,
+            availabilityVerified,
+            errorMessage
+        }, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>AUT-DATA-003.</summary>
+    public async Task<SeedRunPackage?> ClaimSeedRunAsync(CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/seed-runs/claim", new { agentCode = _config.AgentCode, agentVersion = _config.AgentVersion }, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SeedRunPackage>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+    }
+
+    public async Task CompleteSeedRunAsync(Guid seedRunId, string status, int? rowsAffected, string? errorMessage, CancellationToken ct)
+    {
+        var response = await _http.PostAsJsonAsync($"{_config.HubBaseUrl}/automation/seed-runs/{seedRunId}/complete", new
+        {
+            agentCode = _config.AgentCode,
+            status,
+            rowsAffected,
+            errorMessage
         }, ct);
         response.EnsureSuccessStatusCode();
     }

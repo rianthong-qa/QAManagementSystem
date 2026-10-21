@@ -24,10 +24,36 @@ public sealed class DefectConfiguration : IEntityTypeConfiguration<Defect>
         b.Property(x => x.StepsToReproduce).HasMaxLength(4000);
         b.Property(x => x.ExpectedResult).HasMaxLength(2000);
         b.Property(x => x.ActualResult).HasMaxLength(2000);
+        b.Property(x => x.CrmTicketId).HasMaxLength(50);
+        b.Property(x => x.CrmSyncStatus).HasMaxLength(20).IsRequired().HasDefaultValue("None");
+        b.Property(x => x.CrmLastSyncedAt).HasPrecision(0);
+        b.Property(x => x.CrmLastKnownStatus).HasMaxLength(50);
+        b.Property(x => x.CrmLastKnownAssignto).HasMaxLength(20);
+        b.Property(x => x.CrmLastSeenAnswerNo).HasMaxLength(20);
         b.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Release>().WithMany().HasForeignKey(x => x.ReleaseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Build>().WithMany().HasForeignKey(x => x.BuildId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ProductModule>().WithMany().HasForeignKey(x => x.ModuleId).OnDelete(DeleteBehavior.Restrict);
+        // รายการ Defect กรองตาม Project + IsDeleted แล้วเรียงตาม CreatedAt เสมอ (List/Stats)
+        b.HasIndex(x => new { x.ProjectId, x.IsDeleted, x.CreatedAt });
+        // หน้าผลงานรายคนนับ Defect ที่แต่ละคนแจ้งในช่วงวันที่
+        b.HasIndex(x => new { x.CreatedBy, x.CreatedAt });
+    }
+}
+
+public sealed class DefectAttachmentConfiguration : IEntityTypeConfiguration<DefectAttachment>
+{
+    public void Configure(EntityTypeBuilder<DefectAttachment> b)
+    {
+        b.ToTable("DefectAttachments");
+        b.HasKey(x => x.DefectAttachmentId);
+        b.Property(x => x.FileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.StoredFileName).HasMaxLength(300).IsRequired();
+        b.Property(x => x.ContentType).HasMaxLength(100).IsRequired();
+        b.Property(x => x.UploadedAt).HasPrecision(0);
+        b.HasOne<Defect>().WithMany().HasForeignKey(x => x.DefectId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.DefectId);
+        b.HasIndex(x => x.CommentId);
     }
 }
 
@@ -44,6 +70,7 @@ public sealed class DefectActivityConfiguration : IEntityTypeConfiguration<Defec
         b.HasOne<Defect>().WithMany().HasForeignKey(x => x.DefectId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => x.DefectId);
         b.HasIndex(x => x.ActorUserId);
+        b.HasIndex(x => new { x.CreatedAt, x.DefectActivityId });
     }
 }
 

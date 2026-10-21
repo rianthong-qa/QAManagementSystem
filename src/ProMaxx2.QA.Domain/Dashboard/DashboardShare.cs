@@ -15,4 +15,6 @@ public sealed class DashboardShare
     public Guid? BuildId{get;private set;}
     public DateTime CreatedAt{get;private set;}
     public DateTime ExpiresAt{get;private set;}
+    /// <summary>ยกเลิกลิงก์แชร์ทันทีโดยตั้งวันหมดอายุเป็นตอนนี้ (FindShare กรองเฉพาะลิงก์ที่ยังไม่หมดอายุอยู่แล้ว)</summary>
+    public void Revoke(DateTime nowUtc){if(ExpiresAt>nowUtc)ExpiresAt=nowUtc;}
 }

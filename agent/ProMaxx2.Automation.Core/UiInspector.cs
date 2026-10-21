@@ -85,7 +85,7 @@ var stillLoggedOut = window?.FindFirstDescendant(cf => cf.ByAutomationId("TxtEmp
                 {
                     scanBox.Focus();
                     scanBox.Patterns.Value.PatternOrDefault?.SetValue(login.ScanCode);
-                    FlaUI.Core.Input.Keyboard.Type("{Enter}");
+                    FlaUiKeyboard.SendKeys("{ENTER}");
                     Console.WriteLine($"[inspect] scanned '{login.ScanCode}', waiting {login.ScanWaitSeconds}s...");
                     await Task.Delay(TimeSpan.FromSeconds(login.ScanWaitSeconds), ct);
                 }
@@ -98,13 +98,13 @@ var stillLoggedOut = window?.FindFirstDescendant(cf => cf.ByAutomationId("TxtEmp
                 {
                     qty.Focus();
                     qty.Patterns.Value.PatternOrDefault?.SetValue(login.SetQtyValue);
-                    FlaUI.Core.Input.Keyboard.Type("{Enter}");
+                    FlaUiKeyboard.SendKeys("{ENTER}");
                     Console.WriteLine($"[inspect] set qty '{login.SetQtyValue}'.");
                 }
             }
             if (!string.IsNullOrWhiteSpace(login.PressKey))
             {
-                FlaUI.Core.Input.Keyboard.Type(login.PressKey);
+                FlaUiKeyboard.SendKeys(login.PressKey);
                 Console.WriteLine($"[inspect] pressed '{login.PressKey}', waiting {login.PostPressWaitSeconds}s...");
                 await Task.Delay(TimeSpan.FromSeconds(login.PostPressWaitSeconds), ct);
             }

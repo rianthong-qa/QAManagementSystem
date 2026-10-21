@@ -181,6 +181,8 @@ Request:
 ### PUT `/builds/{buildId}`
 ### POST `/builds/{buildId}/mark-release-candidate`
 
+`PUT /builds/{buildId}` รับ `releaseId` เพิ่มเป็น optional เพื่อย้าย Build ไป Release อื่นใน Project เดียวกัน (ไม่รับ Released/Cancelled) และคืน `409` หาก Build Number ซ้ำหรือมี Test Cycle, Defect, Sign-off, Regression, Dashboard share หรือ Automation record อ้างอิง Build อยู่
+
 Request:
 
 ```json
@@ -294,6 +296,10 @@ Filter:
 - tag
 - search
 
+### GET `/test-cases/picker?projectId={projectId}`
+
+Test Case ทั้ง Project แบบย่อในคำขอเดียว (ไม่แบ่งหน้า ไม่มี Step/StepCount/COUNT) สำหรับตัวเลือกในฟอร์ม Test Suite และ AI Generate — คืน `testCaseId`, `projectId`, `moduleId`, `testCaseCode`, `title`, `priority`, `testType`, `status` เรียงตาม `testCaseCode`; Project ที่ผู้เรียกไม่มีสิทธิ์คืนรายการว่าง (policy `TestCaseView`, `RequireProjectAccess`) — ใช้แทนการไล่ดึง `GET /test-cases` ทีละ 100 (Project 6,500 เคสเคยต้องยิง 66 ครั้ง)
+
 ### POST `/test-cases`
 ### GET `/test-cases/{testCaseId}`
 ### PUT `/test-cases/{testCaseId}`
@@ -351,6 +357,9 @@ Create:
 ## 15. Test Suites
 
 ### GET `/test-suites`
+
+แบ่งหน้า `page`/`size` — `size` 20–500 (เดิมสูงสุด 100; ขยาย 2026-10-20 ให้หน้า Test Suite/Test Cycle ดึงทุก Suite ในคำขอเดียว) คืน `{ total, rows }`
+
 ### POST `/test-suites`
 ### GET `/test-suites/{id}`
 ### PUT `/test-suites/{id}`
@@ -371,6 +380,10 @@ Add Cases:
 ## 16. Test Cycles
 
 ### GET `/test-cycles`
+
+แบ่งหน้า `page`/`size` — `size` 10–500 (เดิมสูงสุด 150; ขยาย 2026-10-20) รองรับ `status`, `projectId`, `releaseId`, `buildId`, `moduleId`, `cycleType`, `search`, `createdBy` — Execution Workspace ขอ `status=InProgress&size=500` เพื่อให้ได้ Cycle ที่กำลังทดสอบครบทุกรายการ
+
+`summary.statusCounts` (เพิ่ม 2026-10-20) = จำนวน Cycle ต่อสถานะ (`{ "InProgress": 3, "Closed": 1, ... }`) ตาม filter อื่นทั้งหมด **ยกเว้น** `status` — หน้า Test Cycle ใช้แสดงชิปสถานะจากคำขอเดียว (เดิมยิงแยกทีละสถานะ 5 คำขอ ซึ่งถูกยกเลิกพร้อมกันบ่อยเมื่อเปลี่ยน filter)
 ### POST `/test-cycles`
 ### GET `/test-cycles/{cycleId}`
 ### PUT `/test-cycles/{cycleId}`
@@ -412,6 +425,13 @@ Assign:
 ## 17. Test Execution
 
 ### GET `/test-cycles/{cycleId}/execution`
+
+`cases[].assignedTesterUserId` (เพิ่ม 2026-10-20) = ผู้ทดสอบที่ถูก assign เคสนี้ (null = ยังไม่ assign) — คิวใช้กรอง "เฉพาะเคสที่ assign ให้ฉัน"
+
+### GET `/test-cycles/{cycleId}/cases/{cycleCaseId}`
+
+รายละเอียดเคสใน Execution Workspace — `history[].stepResults` (เพิ่ม 2026-10-20) = ผลราย Step ของ Run นั้น `[{ stepNo, status, actualResult }]` เรียงตาม stepNo
+
 ### GET `/test-cycle-cases/{cycleCaseId}`
 ### POST `/test-cycle-cases/{cycleCaseId}/executions`
 ### GET `/test-cycle-cases/{cycleCaseId}/executions`
@@ -493,6 +513,9 @@ Filter:
 ### POST `/defects/{defectId}/links/test-cases`
 ### POST `/defects/{defectId}/links/requirements`
 ### POST `/defects/{defectId}/links/executions`
+### GET `/defects/{defectId}/activities`
+
+คืน activity ใหม่ → เก่า: `activityId`, `defectId`, `activityType`, `description`, `performedByUserId`, `performedAt`, `attachments` — `attachments` มีค่าเฉพาะ activity `AttachmentAdded` (รายการ `{attachmentId, fileName, size}` ของรูปที่อัปโหลดครั้งนั้น ซึ่ง API จับคู่จากผู้อัปโหลดเดียวกันและเวลาที่ใกล้สุดภายใน 5 วินาที เพราะ activity ไม่ได้เก็บ id ของรูป; รูปที่ถูกลบแล้วไม่แสดง) ส่วน activity อื่นเป็น `null`; ดึงรูปด้วย `GET /defects/{defectId}/attachments/{attachmentId}`
 
 Create:
 
@@ -865,3 +888,250 @@ Filter:
 - `GET /api/v1/automation/notifications?projectId=` — alerts จาก retry queued และ terminal failed
 - Schedule payload: project/release/build, name, targetApp, pack, frequency `Daily|Weekdays`, `runAtUtc`, `maxAttempts` 1–5
 - Queue status update เพิ่ม `errorType`; retry ได้เฉพาะ Infrastructure, Timeout และ ApplicationStart
+## Addendum: Test Cycle Clone API
+
+### POST `/test-cycles/{sourceCycleId}/clone`
+
+สร้าง Target Test Cycle ใหม่จาก Source Cycle โดยไม่แก้ Source Cycle และไม่คัดลอก Execution History
+
+```json
+{
+  "targetReleaseId": "...",
+  "targetBuildId": "...",
+  "targetEnvironmentId": "...",
+  "cycleCode": "",
+  "cycleName": "Regression on new build",
+  "cycleType": "Regression",
+  "startDate": "2026-09-16T00:00:00Z",
+  "endDate": "2026-09-20T00:00:00Z",
+  "ownerUserId": "...",
+  "notes": "",
+  "cloneMode": "SourceSnapshot"
+}
+```
+
+`cloneMode` รองรับ:
+
+- `SourceSnapshot`: คัดลอก Test Case membership, order และ `TestCaseRevisionNo` จาก Source Cycle
+- `SuiteLatest`: ใช้ Test Suite ของ Source Cycle และดึง membership/Revision ล่าสุด; ถ้า Source ไม่มี Suite ให้ตอบ validation error
+
+กติกา response และ transaction:
+
+- Response เป็น `TestCycleDto` ของ Target Cycle ที่สร้างใหม่
+- `TestCycleDto` ของ Target เพิ่ม `copiedFromTestCycleId` และ `copiedFromCycleCode` สำหรับแสดง lineage
+- Target ต้องอยู่ใน Project เดียวกับ Source, Build ต้องอยู่ใต้ Target Release และ Environment ต้อง Active
+- Release ที่ `Released` หรือ `Cancelled` ห้ามใช้เป็น Target
+- Target Cycle เริ่ม `Draft`; Target Cases เริ่ม `NotRun` และไม่มี Assignment/Execution/Step Result/Evidence
+- บันทึก `CopiedFromTestCycleId` และ Audit log ที่มี Source/Target กับจำนวน Case
+- ผู้เรียกต้องมี JWT, `EXECUTION.RUN` และ Project access; ตรวจ permission ที่ Backend เสมอ
+
+## Addendum: CRM Read-only API (Phase 1)
+
+All CRM endpoints require JWT authentication and either the `CRM.VIEW` permission or the `SYS_ADMIN` role. The backend resolves the
+current QA Hub user from the JWT, loads that user's CRM configuration, and enforces
+the current user's CRM username in the ticket's `Assignto`, `OwnerSubjectId`, or `sysDevelop` field. `userId`,
+`crmUsername`, and scope fields are never accepted
+from the frontend request.
+Authorization is also checked against the current database profile for the JWT subject, so a newly granted or revoked CRM permission takes effect without relying on a stale permission claim.
+
+- `GET /api/v1/crm/connection` returns per-user CRM configuration state without exposing a password or token.
+- `GET /api/v1/crm/tickets?page=1&pageSize=25&search=&status=&from=&to=` returns normalized ticket rows,
+  total count, page metadata, and summary counts. Default date range is the latest 30 days; maximum
+  `pageSize` is 100.
+- `GET /api/v1/crm/tickets/{jobNo}` returns a normalized read-only ticket detail plus CRM answer history. CRM `HelpDesksJob` carries only the Service/Product IDs (`sysserviceType`/`sysProductId`), so the API fills `serviceType`/`product` names from the CRM `SysSrviceType`/`Products` lookups (best-effort: a lookup failure leaves the name empty instead of failing the detail).
+  The backend re-checks the returned `Assignto`, `OwnerSubjectId`, and `sysDevelop` against the current user's CRM username and returns
+  `CRM_TICKET_NOT_FOUND` when the ticket is outside the user's scope.
+- CRM date fields (`contactDate`, `dueDate`, `lastReplyAt`, answer `answerDate`) are returned as ISO 8601 UTC
+  (`yyyy-MM-ddTHH:mm:ss.fffffffZ`). CRM values without an offset — `dd/MM/yyyy[ HH:mm[:ss]]` (B.E. or A.D.),
+  `yyyy-MM-dd[THH:mm:ss]`, or digits `yyyyMMdd[HHmm[ss]]` — are treated as Bangkok time (+07:00), including
+  date-only values (midnight Bangkok). `from`/`to` are Bangkok calendar dates and are compared against the
+  ticket's Bangkok-local contact date.
+- CRM resource limits (server stability): every CRM/BlueID HTTP call times out after 30 s (`CRM_TIMEOUT`, 408) and reads
+  at most 20 MB (`CRM_RESULT_TOO_LARGE`); connection failures map to `CRM_UNAVAILABLE` (503). At most 2 headless-browser
+  BlueID logins run at once across all users (others wait up to 90 s, then `CRM_UNAVAILABLE`). A non-network login failure
+  (wrong credentials / changed login page) pauses that user's logins for 5 minutes (`CRM_UNAUTHORIZED` with the retry time)
+  until the cooldown ends or the user saves their CRM account again.
+- `GET /crm/tickets`: `from`–`to` may span at most 366 days (`CRM_INVALID_QUERY`). The raw HelpDeskExport result is cached per
+  user + status + date range for 60 s so paging/search do not re-download it; `refresh=true` bypasses the cache (the UI sends it
+  for the Refresh button and after an update). `lastFetchedAt` is the time the cached data was fetched from CRM.
+- When the BlueID login server (or BlueSea) cannot be reached from the API host (browser `net::ERR_*`, e.g.
+  `ERR_CONNECTION_TIMED_OUT`), CRM endpoints return `503` with code `CRM_UNAVAILABLE` and a `detail` that names the
+  network error or the time (Bangkok) of the next login attempt. New BlueID logins are paused for 1 minute for all
+  users after such a failure (`CrmTokenService.UnavailableCooldown`); cached CRM tokens keep working. `CrmSyncWorker`
+  logs one warning and stops the current poll tick instead of retrying every linked Defect.
+- Detail Answer history follows the CRM DataTables `start`/`length` contract up to 1,000 records and de-duplicates by `answerNo`; if CRM ignores pagination, the adapter stops when a page contains no new answers.
+- The CRM adapter currently uses `POST /Support/HelpDeskExport` without an upstream assignee filter so a QA-to-Development handoff remains visible, filters grouping rows without `JobNo`,
+  applies user scope across `Assignto`, `OwnerSubjectId`, and `sysDevelop`, then applies local pagination, and caps the returned ticket set at 5,000 rows.
+- Previously held tickets: a ticket whose status is not `Close`/`Finish` also stays in scope (List, Detail, and the endpoints that
+  re-check scope through Detail) when the current user previously held it — a `CrmTicketFlow` audit snapshot recorded them as
+  `Assignto` (e.g. Support → QA → back to Support), or a CRM answer on the ticket was `Posted` by them. Once the ticket is
+  `Close`/`Finish`, only the current `Assignto`/`OwnerSubjectId`/`sysDevelop` match applies.
+- `GET /crm/tickets` accepts `scope=mine` (default: the user is the current `Assignto`, any status) or `scope=previous`
+  (not `Close`/`Finish`, `Assignto` is someone else, and the user is the `OwnerSubjectId`, the `sysDevelop`, or a previous
+  holder); any other value returns `CRM_INVALID_QUERY`. Closed tickets where the user is only Owner/Developer are not listed
+  (Detail/Job No. lookup still finds them). `rows`, `total`, and
+  `summary` cover the selected scope only; `scopeCounts: { mine, previous }` counts both scopes after the date/status/search
+  filters and before pagination.
+- `GET /crm/tickets` also returns `previousQa: { "<JOBNO>": "<staff>" }` for the returned rows: the latest Flow Tracking snapshot
+  whose `Assignto` was neither the Support owner nor the job's Developer (taken from the newest snapshot that has `sysDevelop`,
+  since `Assignto` often moves to Dev before `sysDevelop` is set). Keys are upper-case Job No.; jobs without such history are
+  omitted. The UI shows it as the previous holder ("ก่อนหน้า …") when it differs from the current `Assignto`.
+- Flow Tracking audit summaries use CRM field names: `เจ้าของเรื่อง <owner> → Assign To <assignto> → Development <sysDevelop> · สถานะ <status>`.
+- Ticket mapping accepts the casing/field aliases observed across CRM List and Detail responses for
+  Service Type, Product, Owner, Member, and Last Reply without changing the normalized QA Hub DTO.
+- Error responses expose a stable `code` extension: `CRM_NOT_CONFIGURED`, `CRM_UNAUTHORIZED`,
+  `CRM_TIMEOUT`, `CRM_RESULT_TOO_LARGE`, `CRM_RATE_LIMITED`, `CRM_BAD_RESPONSE`, `CRM_UNAVAILABLE`,
+  `CRM_TICKET_NOT_FOUND`, and `CRM_INVALID_QUERY`.
+- `POST /api/v1/crm/connection/test` performs a user-initiated, read-only CRM probe using the current user's encrypted configuration; it returns `{ isReachable, checkedAt }` and never returns a CRM password or token.
+- Connection Probe maps configuration, credential, timeout, rate-limit, upstream availability, and malformed-response failures to the same stable CRM error codes used by the ticket endpoints.
+
+### Addendum: CRM Board and QA Hub Defect linking (Phase 3)
+
+- `GET /api/v1/crm/tickets/{jobNo}/defect` returns the QA Hub Defect linked to the CRM Ticket, if one exists. The backend re-checks the CRM Ticket scope for the current user before returning the link.
+- `POST /api/v1/crm/tickets/{jobNo}/link-defect` links an in-scope CRM Ticket to an existing accessible Defect. It requires `CRM.VIEW` plus `DEFECT.EDIT`, validates Project Access, rejects duplicate Ticket links and conflicting existing links, captures the latest CRM status/assignee snapshot, and writes a `CrmTicketLinked` activity entry.
+- `DELETE /api/v1/crm/tickets/{jobNo}/defect` requires `CRM.VIEW` plus `DEFECT.EDIT` and Project Access. It removes the QA Hub link from the accessible Defect, clears the CRM link/snapshot fields, records a `CrmTicketUnlinked` activity, and leaves the Defect itself intact. If no link exists it returns `404 CRM_DEFECT_LINK_NOT_FOUND`.
+- Link requests accept only `{ "defectId": "..." }`; the frontend cannot provide or override the CRM ownership scope.
+### CRM Phase 4 — Controlled CRM Update
+
+- `GET /api/v1/crm/staff` requires `CRM.VIEW`; returns `[{ staffCode, name }]` from the BlueID staff directory (no email) for
+  showing "6101 เหรียญทอง" instead of bare staff codes. Cached server-side for 1 hour and shared by all users
+  (`CrmStaffDirectoryCache`); the first request after expiry reloads it with the caller's CRM token.
+- `GET /api/v1/crm/assignees` requires `CRM.VIEW` and `CRM.EDIT`; returns the allow-listed CRM assignee directory without credentials.
+- `GET /api/v1/crm/lookups` requires `CRM.VIEW` and `CRM.EDIT`; returns `{ serviceTypes: [{ id, name }], products: [{ id, name }] }` read live from CRM `/Support/SysSrviceType` and `/Support/Products` (array or `data`/`result`/`items`/`rows` wrapper, field names matched case-insensitively). An unreadable list returns `502 CRM_BAD_RESPONSE` naming the fields found (names only, no values).
+- `POST /api/v1/crm/tickets` requires `CRM.VIEW` and `CRM.EDIT`. **`multipart/form-data`** (limit 27 MB): fields `subject*, description*, serviceTypeId*, productId*, member*, firstName*, lastName, tel*, nickName, lineId, email, customerType (1 None MA \| 2 MA \| 3 Demo \| 4 Dealer, default 1), status (CRM statuses, default Open), source (Call \| Email \| Facebook \| Walk In \| Remote \| Line, default Call), dueDate (yyyy-MM-dd, default today, not before today), refJobNo, assignToStaffCode, ownerStaffCode, developmentStaffCode` + files `files` (≤ 10, ≤ 5 MB each, ≤ 25 MB total, .jpg/.jpeg/.png/.xlsx/.xls/.doc/.docx/.pdf). Creates a CRM HelpDesk Ticket via `POST /Support` and returns `{ jobNo }`. Field mapping confirmed against BlueSea JobDetailsHD (same `/Support` endpoint): LineID → `Fax`, files → `Images1..N`, development empty → `SysDevelop=0` (ไม่ระบุพนักงาน). RecipientId/Posted are always the caller; assignTo/owner empty = the caller; a non-empty staff code must be the caller or in `/crm/assignees` (`CRM_INVALID_ASSIGNEE`). Version/OS `0`. Validation errors return `400 CRM_INVALID_CREATE` (required fields, lengths, email format, lookups, files). It does not create a QA Hub Defect.
+- `PATCH /api/v1/crm/tickets/{jobNo}` requires `CRM.VIEW` and `CRM.EDIT`. Works on any Ticket in the current user's CRM scope
+  (backend re-checks `Assignto`, `OwnerSubjectId`, or `sysDevelop` via the detail call); a linked Defect is **not** required. The request is `multipart/form-data` (limit 27 MB):
+  fields `{ message?, status?, serviceTypeId?, productId?, assignToOwner?, assignToStaffCode?, expectedStatus?, expectedAssignee? }` plus repeated `files` fields.
+  At least one of the update fields or one attachment is required. Attachments use the same rules as create (≤ 10 files, ≤ 5 MB each, ≤ 25 MB total,
+  `.jpg/.jpeg/.png/.xlsx/.xls/.doc/.docx/.pdf`) and are forwarded to CRM as `Images1..N`; an attachment-only update creates an automatic history note.
+  `message` (≤ 1000 chars) is sent as the CRM update `Description`, which
+  CRM records as a **new row in the answer history**; without a message a short `[QA Hub] {actor} (dd/MM/yyyy HH:mm B.E.)`
+  note describing the change is sent instead. `status` must be one of Open, Continue, Approve, Develop, Planning, Test,
+  EditErr, Finish, Close. The QA Hub contract and CRM wire value both use `Close`; the backend also normalizes legacy CRM
+  `Closed` responses back to `Close`. A Ticket already in `Close` is read-only; `PATCH /crm/tickets/{jobNo}` returns HTTP 409
+  with code `CRM_TICKET_CLOSED`. `assignToOwner=true` sets `Assignto = OwnerSubjectId` (CRM's "to เจ้าของเรื่อง"; `SysDevelop`
+  unchanged) and cannot be combined with `assignToStaffCode` (which must be in the allowed directory). Expected values
+  mismatch → `409 CRM_CONFLICT`; nothing to change or missing owner → `400 CRM_INVALID_UPDATE`. If the Ticket is linked to
+  an accessible Defect, its CRM snapshot is updated and a `CrmTicketUpdated` activity is written.
+- When `assignToStaffCode` is supplied, the backend validates it against the allow-listed CRM/BlueID directory; UI selection is not treated as a security boundary.
+- When `serviceTypeId` is supplied, the backend validates it against the live `/Support/SysSrviceType` lookup and sends it as `SysserViceType` in the CRM update payload.
+- When `productId` is supplied, the backend validates it against the live `/Support/Products` lookup and sends it as `SysProductId` in the CRM update payload.
+- When `status=Close`, the backend also sends the CRM form's required close-notification metadata (`Body`, `SubjectEmail`, `CC`, and `ToAdd` when the recipient email is available); other updates omit these notification fields.
+
+### CRM Phase 5 — Create QA Hub Defect from CRM Ticket
+
+- `POST /api/v1/crm/tickets/{jobNo}/create-defect` requires `CRM.VIEW`, `DEFECT.EDIT`, and Project Access. It creates a QA Hub Defect only; it never creates or updates a CRM Ticket.
+- Request: `{ "projectId": "...", "title": "...", "severity": "Critical|High|Medium|Low", "description": "..." }`. Title and Description may be prefilled from CRM detail, but final values are confirmed by the user.
+- The backend re-checks CRM ownership, validates the active Project, rejects an already-linked Ticket with `409 CRM_TICKET_ALREADY_LINKED`, generates a QA Hub Defect code, stores `CrmTicketId`, captures CRM Status/Assignee, and records `CreatedFromCrm` activity.
+
+### CRM Flow Tracking
+
+- `GET /api/v1/crm/tickets/{jobNo}/flow-history` requires `CRM.VIEW`. The API re-checks the current user's CRM ticket scope, then returns chronological Support/QA/Dev flow snapshots with the status and actor that observed each change.
+- CRM List/Detail reads and successful Ticket updates persist a deduplicated flow snapshot in the existing `AuditLogs` table (`EntityType = CrmTicketFlow`, `EntityId = JobNo`). A new record is written only when Support, QA, Dev, or status changes. `sysDevelop` is normalized into the Dev step and CRM value `0` means no developer assigned yet.
+
+## Addendum: Performance & Evaluation API (เฟส 1)
+
+- Base path `/api/v1/performance`, policy `PerformanceView` (SYS_ADMIN, `PERFORMANCE.VIEW` หรือ `PERFORMANCE.EDIT`). ไม่ใช้ `[RequireProjectAccess]`; metric กรองตาม Project ที่ผู้เรียกเป็นสมาชิก
+- ผู้ไม่มี `PERFORMANCE.EDIT` ขอได้เฉพาะ `userId` ของตัวเอง (อื่น ๆ ตอบ `403`), ข้อสังเกต (`Kind = Concern`) ของตัวเองตอบ `404`
+- `from`/`to` เป็นวันที่ตามเวลาไทย `yyyy-MM-dd` (ค่าเริ่มต้น: ต้นเดือนถึงวันนี้, ช่วงสูงสุด 366 วัน — เกินหรือกลับด้านตอบ `400`)
+
+| Method | Path | สิทธิ์ | คำอธิบาย |
+|---|---|---|---|
+| GET | `/performance/team?from&to` | EDIT | `{ from, to, members: [{ profile, metrics }] }` |
+| GET | `/performance/users` | EDIT | ผู้ใช้ Active `{ userId, displayName }` |
+| GET | `/performance/users/{userId}/summary?from&to` | ตัวเอง/EDIT | `{ from, to, profile, metrics, weekly: [{ weekStart, executions, defects, testCases }] }` |
+| GET | `/performance/users/{userId}/timeline?from&to&page&size` | ตัวเอง/EDIT | `{ items: [{ timestamp, source, action, summary, reference }], total, page, size }` (size ≤ 100) |
+| PUT | `/performance/users/{userId}/profile` | EDIT | `{ employeeCode, position, level, supervisorUserId, hireDate, employmentStatus, probationEndDate, notes }` — Probation/Extended ต้องมี `hireDate`; เขียน AuditLog `EmployeeProfile` |
+| GET | `/performance/users/{userId}/work-logs?from&to` | ตัวเอง/EDIT | รายการบันทึกงาน (`canEdit` บอกว่าผู้เรียกแก้ได้หรือไม่) |
+| POST | `/performance/work-logs` | ตัวเอง/EDIT | `{ userId, workDate, category, kind, title, description, effortHours, projectId, referenceUrl }` — `kind=Concern` ต้องมี EDIT; `referenceUrl` ต้องเป็น http/https; `projectId` ต้องเป็น Project ที่ผู้เรียกเป็นสมาชิก |
+| PUT/DELETE | `/performance/work-logs/{id}` | ผู้สร้าง/EDIT | แก้/ลบบันทึกงาน |
+
+### Performance — Evaluation API (เฟส 2)
+
+| Method | Path | สิทธิ์ | คำอธิบาย |
+|---|---|---|---|
+| GET | `/performance/evaluations?userId&openOnly` | ตัวเอง/EDIT | รายการ `{ evaluationId, userId, userName, type, round, year, periodStart, periodEnd, dueDate, status, overallScore, grade, recommendation, evaluatorName, isOverdue, ... }` (ไม่มี EDIT = ของตัวเองเท่านั้น; ไม่ระบุ `userId` = มุมมองทีม ไม่รวมพนักงานที่ลาออก/บัญชีถูกปิด — ระบุ `userId` ยังได้ประวัติของคนนั้นครบ) |
+| GET | `/performance/evaluations/{id}` | ตัวเอง/EDIT | รายละเอียด + `scores` + `metrics` (snapshot เมื่อปิดแล้ว) + `canSelfEdit/canManagerEdit/canAcknowledge/canReopen`; ของคนอื่นที่ไม่มีสิทธิ์ตอบ `404` |
+| POST | `/performance/evaluations/quarterly` | EDIT | `{ year, quarter }` → `{ created, skipped }` |
+| PUT | `/performance/evaluations/{id}/self` | เจ้าของ | `{ scores: [{ evaluationScoreId, score, comment }], comment, submit }` — `submit=true` ต้องให้คะแนนครบ; ส่งแล้วแก้ไม่ได้ (`409`) |
+| PUT | `/performance/evaluations/{id}/manager` | EDIT (ไม่ใช่เจ้าของ) | `{ scores, strengths, improvements, nextGoals, recommendation, extendToDate, complete }` — `recommendation` (`Pass/Extend/NotPass`) เฉพาะรอบ `PFinal`; `complete=true` ต้องให้คะแนนครบ (`400`) |
+| POST | `/performance/evaluations/{id}/acknowledge` | เจ้าของ | `{ comment }` — เฉพาะสถานะ Completed |
+| POST | `/performance/evaluations/{id}/reopen` | EDIT | `{ reason }` (บังคับ) |
+| GET | `/performance/templates` | EDIT | แบบประเมิน Probation/Quarterly (สร้างชุดตั้งต้นให้ถ้ายังไม่มี) |
+| PUT | `/performance/templates/{id}` | EDIT | `{ name, criteria: [{ group, name, description, weight }], externalWeight? }` — 1–15 เกณฑ์, น้ำหนักรวม 100; `externalWeight` 0–50 (% ของคะแนนแผนกอื่นในผลรวม, ค่าเริ่มต้น 30, ไม่ส่ง = คงเดิม) copy ไปที่รอบที่สร้างหลังจากนี้ |
+| POST | `/performance/evaluations/{id}/external-reviews` | EDIT + หัวหน้าตรง | `{ reviewerName, reviewerDepartment?, note?, expiresInDays: 7/14/30/60 }` → `EvaluationExternalReviewDto` (มี `code` สำหรับลิงก์ `/?er=code`); รอบที่ปิดแล้ว `409`; สูงสุด 10 ลิงก์ที่ยังไม่ยกเลิกต่อรอบ |
+| POST | `/performance/evaluations/{id}/external-reviews/{reviewId}/revoke` | EDIT + หัวหน้าตรง | ยกเลิกลิงก์ที่ยังไม่ส่ง (ส่งแล้ว `409`) |
+
+`PUT /performance/users/{userId}/profile` สร้าง/เลื่อนรอบประเมินทดลองงานให้อัตโนมัติหลังบันทึก
+
+### Performance — สรุปผลงานรายคน + ลิงก์แชร์ HR (2026-10-09)
+
+| Method | Path | สิทธิ์ | Request / Response |
+|---|---|---|---|
+| GET | `/performance/users/{userId}/report?from&to&evaluations=true&workLogs=true` | ตัวเอง/EDIT | `EmployeeReportDto` `{ from, to, generatedAt, profile, metrics, weekly, includesWorkLogs, workLogs, includesEvaluations, evaluations, comparison }` — `profile` ไม่มี UserId/อีเมล/Notes; `workLogs` ไม่รวม Concern และไม่มีไฟล์แนบ/ลิงก์อ้างอิง; `evaluations` ทุกรอบ แต่คะแนน/เกรด/ผลทดลองงานเฉพาะรอบ Completed/Acknowledged |
+| GET | `/performance/users/{userId}/share-links` | EDIT | ลิงก์ล่าสุด 50 รายการ `{ shareLinkId, url, from, to, includeEvaluations, includeWorkLogs, note, expiresAt, createdAt, createdByName, revokedAt, revokedByName, viewCount, lastViewedAt, status (Active/Expired/Revoked) }` |
+| POST | `/performance/users/{userId}/share-links` | EDIT | `{ from, to, expiresInDays (7/14/30/60/90), includeEvaluations, includeWorkLogs, note (≤200) }` → ลิงก์ `{PublicWebBaseUrl}/?p=<code 10 ตัว>`; เขียน AuditLog `PerformanceShareLink` (Created) |
+| POST | `/performance/share-links/{id}/revoke` | EDIT | ยกเลิกลิงก์ (ไม่ลบแถว) — AuditLog `Revoked` |
+| GET | `/shared/evaluation-reviews/{code}` | **Anonymous** (rate limit `share`) | แบบฟอร์มของหัวหน้าแผนกอื่น `ExternalReviewFormDto` { reviewerName, reviewerDepartment, note, requestedByName, employeeName, position, type, round, year, periodStart, periodEnd, templateName, expiresAt, status, submittedAt, criteria[{ evaluationScoreId, group, name, description, weight }] } — **ไม่มีคะแนนตนเอง/หัวหน้าตรง**; ส่งแล้วคืน `status: Submitted` + criteria ว่าง; `404` = ไม่มี code, `410` = ยกเลิก/หมดอายุ/การประเมินปิดแล้ว; `Cache-Control: no-store` |
+| POST | `/shared/evaluation-reviews/{code}` | **Anonymous** (rate limit `share`) | `{ scores: [{ evaluationScoreId, score: 1–5, comment? }], comment? }` ต้องครบทุกเกณฑ์ (`400`), ส่งได้ครั้งเดียว (`409`), บันทึก AuditLog `Submitted` (userId ว่าง) |
+| GET | `/shared/performance/{code}` | **Anonymous** (rate limit `share`) | `{ report: EmployeeReportDto, expiresAt, sharedAt, sharedByName, note }` + `Cache-Control: no-store`; `404` = ไม่มี code, `410` = หมดอายุ/ถูกยกเลิก/ผู้สร้างไม่ Active หรือไม่มี PERFORMANCE.EDIT แล้ว; ทุกครั้งที่เปิดสำเร็จเพิ่ม `viewCount` |
+
+ข้อมูลในลิงก์คำนวณสดทุกครั้งตามสิทธิ์ของผู้สร้าง (metric กรองตาม Project ที่ผู้สร้างเป็นสมาชิก ณ ตอนเปิด)
+
+### Performance — สรุปประจำสัปดาห์ส่งผู้บริหาร (2026-10-09)
+
+| Method | Path | สิทธิ์ | Request / Response |
+|---|---|---|---|
+| GET | `/performance/weekly?weekStart=` | EDIT | `WeeklyReportDto` `{ weekStart, weekEnd, isCurrentWeek, generatedAt, current, previous, typical, typicalFrom, typicalTo, assignedPending, assignedOverdue, members[], probation[], evaluationsDue[], anomalies[], crmDataSince, narrative }` — สัปดาห์ = จันทร์–อาทิตย์เวลาไทย (`weekStart` ไม่ระบุ = สัปดาห์นี้, วันอื่นปัดเป็นวันจันทร์, อนาคต/เกิน 2 ปี = 400); `current`/`previous` = ผลรวมทีม, `typical` = ค่ากลาง (median) รายช่องของ 4 สัปดาห์ก่อนหน้า; `members[]` = ผู้ใช้ Active ที่ไม่ลาออก `{ userId, displayName, position, employmentStatus, probationDay, probationTotalDays, current, previous, workItems[] }` (`workItems` = บันทึกงาน/ผลงานเด่นของสัปดาห์ **ไม่รวม Concern**); `evaluationsDue[]` = รอบที่ยังไม่ปิด เลยกำหนดหรือครบกำหนดภายใน 14 วันหลังสัปดาห์; `anomalies[]` `{ date, kind (Execution/Defect/TestCase), count, typicalDaily, inReportWeek }` = วันที่ ≥ 100 รายการและ ≥ 4 เท่าของค่ากลางวันอื่น; `crmDataSince` = วันแรกที่ดึง CRM ทั้งทีมสำเร็จ; `narrative` = null เมื่อยังไม่เขียน |
+| PUT | `/performance/weekly/{weekStart}/note` | EDIT | `{ health (Green/Yellow/Red/null), headline (≤500), keyRisk (≤2000), ask (≤2000), nextWeekPlan (≤2000), memberNotes: { userId: ข้อความ ≤300 } }` → `{ health, headline, keyRisk, ask, nextWeekPlan, memberNotes, updatedAt, updatedByName }`; `weekStart` ต้องเป็นวันจันทร์; เขียน AuditLog `WeeklyReport` (Created/Updated) |
+
+ไม่มีคะแนนหรืออันดับรายคน — metric ชุดเดียวกับ `/performance/team` (กรองตาม Project ของผู้ดู)
+
+### Performance — งานจาก CRM
+
+`metrics` ของ `/performance/team`, `/performance/users/{userId}/summary` และ `/performance/evaluations/{id}` มีฟิลด์ `hasCrmAccount`, `crmTicketsHandled`, `crmHandedToDev`, `crmReturnedToSupport`, `crmClosed`, `crmUpdates`, `crmDefectsCreated`; ไทม์ไลน์มี `source = "CRM"` จากการอัปเดต Ticket ผ่าน QA Hub. `PATCH /crm/tickets/{jobNo}` ที่สำเร็จบันทึก `AuditLogs` EntityType `CrmTicketUpdate` (UserId = ผู้อัปเดต) ทุกครั้ง ไม่ว่า Ticket จะผูก Defect หรือไม่
+
+### Performance — เฟส 3: ไฟล์หลักฐาน, เทียบผล, อีเมลเตือน (2026-10-07)
+
+| Method | Path | สิทธิ์ | Request / Response |
+|---|---|---|---|
+| POST | `/performance/work-logs/{id}/attachments` | ผู้สร้าง/EDIT | `multipart/form-data` field `files` (≤ 5 ไฟล์ต่อบันทึก, ไฟล์ละ ≤ 5 MB, รวม ≤ 20 MB, PNG/JPG/WebP/PDF ตรวจ signature ของไฟล์) → `WorkLogDto` ล่าสุด; ไม่ผ่านกฎ `400` |
+| GET | `/performance/work-logs/{id}/attachments/{attachmentId}` | เห็นบันทึกได้ | ไฟล์ (`Content-Disposition: inline`) — Concern ของตัวเอง/ของคนอื่นที่ไม่มีสิทธิ์ตอบ `404` |
+| DELETE | `/performance/work-logs/{id}/attachments/{attachmentId}` | ผู้สร้าง/EDIT | `204` — ลบแถวก่อนแล้วค่อยลบไฟล์บนดิสก์ |
+| GET | `/performance/users/{userId}/evaluation-comparison` | ตัวเอง/EDIT | `{ groups: string[], rounds: [{ evaluationId, type, round, year, periodStart, periodEnd, overallScore, grade, groups: [{ group, score }] }] }` — เฉพาะรอบ Completed/Acknowledged ล่าสุด 8 รอบ เรียงเก่า → ใหม่, `score` = คะแนนหัวหน้าเฉลี่ยถ่วงน้ำหนักในกลุ่ม (ทศนิยม 2) |
+
+- `WorkLogDto` เพิ่ม `attachments: [{ attachmentId, fileName, size, contentType }]`; ลบบันทึกงานแล้วไฟล์ถูกลบตาม (DB cascade + ลบโฟลเดอร์ `App_Data/PerformanceEvidence/{workLogEntryId}`)
+- `EvaluationDetailDto` เพิ่ม `employee: { employeeCode, position, level, hireDate, supervisorName }` สำหรับ Export PDF
+- **อีเมลเตือน (`PerformanceReminderWorker`, ทุก 1 ชม., เริ่มหลัง API สตาร์ท 2 นาที, ส่งหลัง 08:00 น. เวลาไทย):** การประเมินสถานะ Open/SelfSubmitted ที่เหลือ ≤ 7 วัน (`DueSoon`) หรือเลยกำหนด (`Overdue`) ของพนักงานที่ Active และไม่ได้ลาออก → ส่งหาหัวหน้าในโปรไฟล์ (ต้อง Active และมีอีเมล) ไม่เช่นนั้นส่งหาผู้ใช้ที่ได้ `PERFORMANCE.EDIT` จาก Role ทุกคน (ไม่ส่งหาตัวผู้ถูกประเมิน); รวมเป็นอีเมลเดียวต่อผู้รับ; กันซ้ำด้วย `EvaluationNotifications` (EvaluationId, Kind, DueDate, Recipient) — เลื่อนกำหนดส่งแล้วเตือนใหม่; SMTP ยังไม่ตั้งค่า/ปิดอยู่ = ข้ามโดยไม่บันทึก (ส่งเมื่อเปิดใช้งาน); ปิดทั้งระบบได้ด้วย config `Performance:RemindersEnabled=false`
+
+### CRM → Defect status sync (2026-10-07)
+
+- เมื่อ CRM Ticket ที่ผูกกับ Defect เปลี่ยนเป็น `Finish` → Defect เป็น `Resolved`, `Close` → `Closed` ทั้งตอน `PATCH /crm/tickets/{jobNo}` และตอน `CrmSyncWorker` เห็นสถานะใหม่ (ปิดใน CRM โดยตรง) — logic อยู่ที่ `CrmDefectStatusSync`
+- เปลี่ยนไปข้างหน้าเท่านั้น: ไม่ทับ Defect ที่ `Closed`/`Rejected` แล้ว และไม่ย้อน `Closed` → `Resolved`; บันทึก DefectActivity `StatusChanged` ("Status changed from X to Y (ตาม CRM Ticket #… สถานะ …)") — actor = ผู้อัปเดตใน QA Hub หรือ null เมื่อมาจาก worker
+- `CrmTicketMutationDto` เพิ่ม `defectCode` และ `defectStatusChanged` (null = ไม่เปลี่ยน) ให้หน้า CRM แจ้งผลใน toast
+
+### CRM — BlueID ปฏิเสธบัญชี (2026-10-07)
+
+- ถ้าหลัง submit ฟอร์ม BlueID ตอบหน้า JSON error ของ OIDC (เช่น `{"error":"invalid_grant","error_description":"C0003 : NotCloudProductLicence"}`) `CrmTokenService` แจ้งสาเหตุเป็นภาษาไทยทันที (`BlueIdRejectionMessage`) แทนข้อความ "จับ Bearer token ไม่ได้ — หน้าเว็บ CRM อาจเปลี่ยน" และไม่ reload รอ token ต่อ
+- `NotCloudProductLicence` = บัญชีไม่มี License ใช้งาน BlueSea (รหัสผ่านถูก) → ตรวจ Merchant ID หรือให้ผู้ดูแล BlueID เปิดสิทธิ์ — แก้ที่บัญชี ไม่ใช่โค้ด
+### CRM — แก้ชื่อเรื่อง Ticket (2026-10-07)
+
+- `PATCH /crm/tickets/{jobNo}` รับ form field `subject` (ไม่เกิน 200 ตัวอักษร, ว่าง = คงเดิม) — ส่งไปเป็น `Subject` ของการ Update CRM และเมื่อไม่มีข้อความตอบ ระบบเขียนบันทึก "ชื่อเรื่อง → …" ในประวัติการติดต่อให้; ใช้ `expectedStatus`/`expectedAssignee` กันแก้ทับเหมือนการอัปเดตอื่น; response มี `subject` ใหม่
+### CRM — แท็บ "ปิดงานแล้ว" (2026-10-07)
+
+- `GET /crm/tickets?scope=closed` = Ticket ที่ Assign ให้ผู้ใช้และสถานะ Finish/Close; `scope=mine` ไม่รวมงานที่ปิดแล้วอีกต่อไป; `scopeCounts` เพิ่ม `closed`
+- Ticket ที่เคยถือแต่ถูกปิดหลังส่งต่อไปแล้วยังไม่แสดงในแท็บใด (กฎเดิม 2026-10-06)
+### Performance — ต่อยอดเฟส 3 (2026-10-08)
+
+- `GET /performance/evaluations/team-comparison?year=` (PERFORMANCE.EDIT; ไม่ระบุปี = ปีปัจจุบันตามเวลาไทย) → `{ year, rows: [{ userId, displayName, position, employmentStatus, quarters: [{ round, evaluationId, status, overallScore, grade, isOverdue }] (Q1–Q4), averageScore, previousYearQ4Score }], quarterAverages: [Q1..Q4] }` — คะแนน/เกรดมีเฉพาะรอบที่ปิดแล้ว; ไม่รวมพนักงานที่ลาออก (`Resigned`) หรือบัญชีถูกปิด แม้มีผลในปีนั้น
+- อีเมลเตือนพนักงานให้ประเมินตนเอง: บันทึกกันซ้ำใน `EvaluationNotifications` ด้วย Kind `SelfDueSoon` / `SelfOverdue` (RecipientUserId = ผู้ถูกประเมิน)
+### CRM — สำเนา Ticket ใน QA Hub (2026-10-08)
+
+- `GET /api/v1/crm/mirror/status` (SYS_ADMIN) → `{ enabled, accountUsername, tickets, events, lastSucceededAt, runs: [{ kind: Incremental|Full, rangeFrom, rangeTo, status: Running|Succeeded|Failed|Skipped, startedAt, completedAt, ticketCount, newTickets, changedTickets, newAnswers, error }] }` (10 รอบล่าสุด)
+- `POST /api/v1/crm/mirror/sync?full=false|true` (SYS_ADMIN) — ดึงทันที (90 วัน / 366 วัน); กำลังดึงอยู่ตอบ `409`
+- `metrics` ของหน้าผลงานเพิ่ม `crmEditErr`, `crmAnswers`, `crmAvgQaHours`
+### Performance — ผู้ประเมินคือหัวหน้าที่ระบุ (2026-10-09)
+
+- **ผู้ประเมินจากแผนกอื่น:** `PUT /performance/evaluations/{id}/manager` ที่ `complete: true` คำนวณ `overallScore = managerScore × (100 − externalWeight)% + ค่าเฉลี่ย weightedScore ของผู้ประเมินแผนกอื่นที่ส่งแล้ว × externalWeight%` (ไม่มีใครส่ง หรือ externalWeight = 0 → เท่ากับ managerScore) แล้วปิดลิงก์ที่ยังไม่ส่ง; `GET /performance/evaluations/{id}` (ผู้เห็นคะแนนหัวหน้าตรง) มี `externalWeight`, `managerScore`, `externalScore` (ระหว่างร่าง = ค่าเฉลี่ยตอนนี้), `externalReviews[]`, `canManageExternal` และ `scores[].externalAverage/externalCount`
+- `PUT /performance/evaluations/{id}/manager` และ `POST /performance/evaluations/{id}/reopen` ต้องเป็นหัวหน้าที่ระบุในข้อมูลพนักงานของผู้ถูกประเมิน (นอกจาก PERFORMANCE.EDIT) — ไม่ใช่ / ยังไม่ได้ตั้งหัวหน้า ตอบ `403` พร้อมเหตุผล; `GET /performance/evaluations/{id}` มี `managerRestriction` (null = ประเมินได้)
+- `GET /performance/users` เพิ่ม `canEvaluate`; `PUT /performance/users/{userId}/profile` ปฏิเสธ (`400`) หัวหน้าที่ไม่มี PERFORMANCE.EDIT

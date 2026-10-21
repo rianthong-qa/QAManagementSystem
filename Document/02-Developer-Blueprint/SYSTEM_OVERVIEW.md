@@ -4,46 +4,77 @@
 >
 > **Agent หรือ Developer ต้องอ่านไฟล์นี้ทั้งไฟล์ก่อนเริ่มทำงานใด ๆ ใน repository นี้**
 > เพื่อให้เข้าใจโครงสร้างระบบ วิธี build/run และข้อจำกัดของ environment ก่อนแก้ไขโค้ด
-> งาน UI ต้องอ่าน `UI_DESIGN_SYSTEM.md` เพิ่มเติมด้วย (ดูกฎใน `AGENTS.md`)
+> งาน UI ต้องอ่าน `UI_DESIGN_SYSTEM.md` เพิ่มเติม และงาน Automation ต้องอ่าน `AUTOMATION_TODO.md` (ดูกฎใน `AGENTS.md`)
+>
+> อัปเดตล่าสุด: 23 กันยายน 2026
 
 ---
 
 ## 1. ระบบคืออะไร
 
 **ProMaxx2 QA Hub** = ระบบบริหารจัดการ Quality Assurance (QA Management System) ภาษาไทย
-ครอบคลุม lifecycle ทั้งหมด: Project/Module → Release/Build → Requirement → Test Design (Case/Suite/RTM) → Execution (Cycle/Workspace) → Defect/Regression → Governance (Summary/Risk/Sign-off)
+ครอบคลุม lifecycle ทั้งหมด: Project/Module → Release/Build → Requirement → Test Design (Case/Suite/RTM) → Execution (Cycle/Workspace/My Work) → Defect/Regression/Automation → Governance (Summary/Risk/Sign-off)
 
 ## 2. Architecture & Tech Stack
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Frontend | React 19 + TypeScript + Vite | SPA หลักอยู่ในไฟล์เดียว `src/ProMaxx2.QA.Web/src/App.tsx` (~6,600+ บรรทัด) + `styles.css` |
+| Frontend | React 19 + TypeScript + Vite | App shell `src/ProMaxx2.QA.Web/src/App.tsx` (~1,070 บรรทัด) + หน้าละไฟล์ใน `src/pages/` (ดู §2.2) |
 | Backend | ASP.NET Core (.NET 10) Web API | Clean Architecture 4 projects |
-| Database | SQL Server LocalDB (`(localdb)\mssqllocaldb`, DB `ProMaxx2QA`) | EF Core + Migrations |
-| Auth | JWT Bearer (Issuer `ProMaxx2.QA`, expiry 24 ชั่วโมง, Remember Me 30 วัน) | token เก็บ localStorage key `qa.accessToken`, ใช้ permission keys เช่น `PROJECT.VIEW`, `TESTCASE.VIEW`, `EXECUTION.RUN`, `DEFECT.EDIT` |
-| AI | OpenAI-compatible API (`gpt-5-mini`) | ใช้ generate requirement / test case / test suite |
+| Database | SQL Server `localhost\MSSQLSERVER2022`, DB `ProMaxx2QA` (Windows auth) | EF Core + Migrations; `Database:ApplyMigrations=false` — apply migration ด้วยมือ |
+| Auth | JWT Bearer (Issuer `ProMaxx2.QA`, อายุ 24 ชม., Remember Me 30 วัน) | token ใน localStorage `qa.accessToken`; permission claims เช่น `PROJECT.VIEW`, `DEFECT.EDIT`, `AUTOMATION.EXECUTE` |
+| Project access | `ProjectAccessFilter` + `ProjectScopeGuard` | ผู้ใช้เห็นเฉพาะ Project ที่เป็นสมาชิก (`ProjectUsers`) — ตรวจ projectId ใน route/query, `ProjectId` ใน request body และ route id (`releaseId`, `cycleId`, `cycleCaseId`, `defectId`, `testCaseId`, `requirementId`, `buildId`) |
+| AI | OpenAI-compatible (ตั้งค่าใน Setting Center) | generate requirement / test case / test suite / automation DSL |
+| Integration | CRM (BlueSea/BlueID), Email | `CrmSyncWorker` sync สถานะทุก 2 นาที; Description ที่ส่งไป CRM (จำกัด 1000 ตัวอักษร) ต่อท้ายลิงก์อ่านอย่างเดียว `/?d=<code 8 ตัว>` (ตาราง `DefectShareLinks` Defect ละ 1 code, `DefectShareLinkService` + anonymous `GET /api/v1/shared/defects/{code}`, rate limit `share`; URL หน้าเว็บจาก config `PublicWebBaseUrl`) และอีเมลแจ้ง Dev/เจ้าของเรื่องมีปุ่ม "ดูรายละเอียด Defect และรูปภาพ" ใต้ปุ่ม CRM (`EmailTemplates.ShareButton`) |
+| Automation | Windows Agent (`agent/`) + FlaUI | รับงานจาก Hub, รัน DSL, ส่ง Evidence |
 
-### โครงสร้าง Solution (`src/`)
+### 2.1 โครงสร้าง Solution
 
 ```
-ProMaxx2.QA.Domain          ← Entities: Projects, Releases, Requirements,
-                              TestManagement, Execution, Defects, Governance,
-                              Identity, Settings, Dashboard
-ProMaxx2.QA.Application     ← Services/DTOs: Common, Dashboard, Execution,
-                              Identity, Projects, Regression, Releases,
-                              Requirements, TestManagement
-ProMaxx2.QA.Infrastructure  ← EF Core (QaDbContext), Repositories, Migrations
-ProMaxx2.QA.Api             ← Controllers, Program.cs, appsettings.json
-ProMaxx2.QA.Web             ← Vite React frontend
+src/
+  ProMaxx2.QA.Domain          ← Entities: Projects, Releases, Requirements, TestManagement,
+                                Execution, Defects, Governance, Identity, Settings, Dashboard, Automation
+  ProMaxx2.QA.Application     ← Services/DTOs: Common, Dashboard, Execution, Identity, Projects,
+                                Regression, Releases, Requirements, TestManagement, Automation
+  ProMaxx2.QA.Infrastructure  ← EF Core (QaDbContext), Repositories, Migrations
+  ProMaxx2.QA.Api             ← Controllers, Services (filters, workers, CRM, AI), Program.cs
+  ProMaxx2.QA.Web             ← Vite React frontend
+tests/ProMaxx2.QA.UnitTests   ← xUnit (EF InMemory + ToQueryString translation tests)
+agent/                        ← ProMaxx2.Automation.slnx: Core, Hub, Runner, AgentGui (Capture Companion), Core.Tests
+tools/ProMaxx2.ServiceManager ← WinForms: Start/Stop/Restart API + Web, log, CPU/RAM, Automation worker toggle
 ```
 
-## 3. Modules / Pages (18 หน้า)
+### 2.2 ไฟล์ Frontend หลัก
+
+| ไฟล์ | เนื้อหา |
+|---|---|
+| `App.tsx` | App shell เท่านั้น: sidebar/topbar, context selector (Project/Release/Build), routing ด้วย `React.lazy` + `Suspense`, Login และลิงก์ Dashboard ที่แชร์ |
+| `pages/*.tsx` | หน้าละไฟล์ (โหลดเป็น chunk แยกเมื่อเปิดหน้า): `Dashboard`, `PerformancePage`, `DefectsPage`, `ProjectsPage`, `ReleasesPage`, `RequirementsPage`, `RtmPage`, `TestCasesPage`, `TestSuitesPage`, `TestCyclesPage`, `ExecutionWorkspacePage`, `RegressionPage`, `MyWorkPage`, `TestSummaryPage`, `RiskAcceptancePage`, `ReleaseSignoffPage`, `AdministrationPage`, `MasterSettingsPage`, `SystemMonitorPage` — type/ค่าคงที่ที่ใช้หน้าเดียวอยู่ในไฟล์หน้านั้น; หน้าใหม่ให้สร้างที่นี่แล้วเพิ่ม lazy import ใน App.tsx |
+| `shared/appShared.tsx`, `shared/types.ts`, `shared/defects.ts`, `components/Badge.tsx` | ของที่หลายหน้าใช้ร่วม: type `Page`/`SessionUser`/`ModuleItem`/`TestCaseItem`/`TestCycleItem`/`TestSuiteItem`/`AdminUser`/`RtmItem` ฯลฯ, `nav`, module tree (`buildModuleTree`, `renderModuleSelectOptions`), `useMasterOptions`, `nextBusinessCode`, `okJsonOrEmpty`, `copyText`, `Badge` — ไฟล์ใน `shared/` ห้าม import จาก `pages/` หรือ `App.tsx` |
+| `components/*` | `ModalShell`, `dialogStore` + `DialogHost` (confirm/prompt/toast), `useDebounced`, `tableCardLabels` |
+| `AutomationPage.tsx` + `automation/*` + `Automation.css` | หน้า Automation: `AutomationPage.tsx` (หน้าหลัก/แท็บ Cases, ~1,300 บรรทัด) + `automation/` แยกตามแท็บ — `types.ts`, `shared.ts` (`fetchJson`, `useDebounced`, `useBuildsAndEnvironments`), `ui.tsx` (`ModalShell`, `Badge`, `Pager`), `caseModals`, `manageTabs`, `executionTabs`, `suiteTab`, `scheduleTabs` (Schedule/Build Trigger/Webhook), `dataTabs` (Snapshot/Seed/Data Profile) |
+| `AuditLogPage.tsx` | หน้า Audit Log |
+| `ExecutionDefectEditor.tsx` | Modal สร้าง/แก้ Defect + แนบรูปจาก Execution Workspace |
+| `DefectModulePdf.ts` | Export PDF A4 อันดับ Defect รายโมดูล (jspdf + html2canvas โหลดแบบ dynamic import) |
+| `styles.css`, `ExecutionWorkspace.css`, `TestManagement.css`, `TestSummary.css` ฯลฯ | stylesheet ตาม `UI_DESIGN_SYSTEM.md` |
+
+### 2.3 Background workers
+
+| Worker | หน้าที่ |
+|---|---|
+| `AutomationScheduleWorker` | poll ทุก 30 วินาที ยิง Automation Schedule ที่ถึงเวลา (เปิด/ปิดได้จาก Service Manager) |
+| `CrmSyncWorker` | poll Defect ที่ Linked กับ CRM ทุก 2 นาที — หยุดรอบทันทีเมื่อ CRM ล่ม/ช้า และไม่หยุดถาวรเมื่อ HTTP timeout; login BlueID ใช้ headless Chromium พร้อมกันได้สูงสุด 2 ตัวทั้งระบบ (`CrmTokenService`), CRM call timeout 30 วินาที |
+| `CrmMirrorWorker` | ทุก 15 นาที ดึง CRM Ticket ทั้งทีม (ติดต่อใน 90 วัน; รอบใหญ่ 366 วันวันละครั้ง) ด้วยบัญชีกลาง `CrmMirror:AccountUsername` (6101) มาเก็บใน `CrmTickets`/`CrmTicketEvents` สำหรับวัดผลงาน CRM — สถานะดูที่แผงท้ายหน้า CRM (SYS_ADMIN), ปิดได้ด้วย `CrmMirror:Enabled=false` |
+| `PerformanceReminderWorker` | ทุก 1 ชม. (หลัง 08:00 น.) ส่งอีเมลเตือนหัวหน้าเมื่อการประเมินเหลือ ≤ 7 วัน/เลยกำหนด และเตือนพนักงานที่ยังไม่ส่งแบบประเมินตนเอง (อีเมลแยก) — กันซ้ำด้วย `EvaluationNotifications`, ปิดได้ด้วย `Performance:RemindersEnabled=false` |
+| `AutomationReaperWorker` | ทุก 1 นาที ปิด Automation Execution ที่ Agent เงียบเกิน 10 นาที (AgentLost) หรือรันเกิน 6 ชม. (Timeout) และปิด snapshot/restore/verification ที่ Agent ไม่รายงานผล (AUT-REL-002) |
+
+## 3. Modules / Pages (21 หน้า)
 
 | Group | Pages |
 |---|---|
-| ภาพรวม | Dashboard, Project/Module, Release/Build |
+| ภาพรวม | Dashboard, My Work, ผลงานและการประเมิน (`#/performance`), Project/Module, Release/Build |
 | Requirement & Test Design | Requirement, RTM, Test Case, Test Suite |
-| Test Execution | Test Cycle, Execution Workspace, Defect, Regression |
+| Test Execution | Test Cycle, Execution Workspace, Defect, Regression, Automation |
 | Release Governance | Test Summary, Risk Acceptance, Release Sign-off |
 | Administration | User/Role, Setting Center, System Monitor, Audit Log |
 
@@ -56,43 +87,65 @@ Internet ─► qahub.store / promaxx2.qahub.store   ─► cloudflared ─► h
 Internet ─► api-promaxx2.qahub.store              ─► cloudflared ─► localhost:5038 (API บนเครื่องนี้)
 ```
 
-- **Frontend dev**: Vite ที่ port **5173**, proxy `/api` → `https://api-promaxx2.qahub.store`
-  (`.env.development`: `VITE_API_URL=https://api-promaxx2.qahub.store/api/v1`)
+- **Frontend dev**: Vite port **5173**, `.env.development`: `VITE_API_URL=https://api-promaxx2.qahub.store/api/v1`
   → **แก้ backend แล้วต้อง restart API local ไม่งั้น domain สาธารณะยังเรียกของเก่า**
-- **API**: ฟังที่ `http://0.0.0.0:5038` (launchSettings applicationUrl)
+- **HMR/WebSocket ของ Vite ปิดเป็นค่าเริ่มต้น (2026-10-20):** ผู้ใช้จริงเปิดผ่าน dev server นี้ — ถ้าเปิด HMR ทุกครั้งที่แก้ไฟล์ใน `src/` หรือ WebSocket ผ่าน Cloudflare หลุด Vite client จะสั่ง `location.reload()` ทุก browser (หน้า Execution Workspace รีโหลดเองและผลที่กรอกหาย) — ตอนนี้แก้ frontend แล้วต้องกด F5 เอง; ถ้าต้องการ HMR ตอนพัฒนาให้รัน `$env:QA_VITE_HMR='true'; npm.cmd run dev` (ดู `vite.config.ts`) — Console ขึ้น `[vite] failed to connect to websocket` เป็นเรื่องปกติ
+- **API**: ฟังที่ `http://0.0.0.0:5038` และรันแบบ **Production** (launch profile `production`)
+  - Production อ่าน connection string จาก `appsettings.Production.json` (Windows auth, ไม่มี secret)
+  - **JWT signing key อยู่ใน User environment variable `Jwt__Key` เท่านั้น** — ห้าม commit key; Production จะไม่สตาร์ทถ้าไม่มี key
+  - Swagger/OpenAPI เปิดเฉพาะ Development
 - **CORS AllowedOrigins**: `localhost:5173`, `192.168.200.219:5173`, `promaxx2.qahub.store`, `qahub.store`
+- **Cloudflare cache ไฟล์ `.css` ของ Vite dev (ยืนยัน 2026-10-04):** Vite ส่ง `Cache-Control: no-cache` แต่ผ่าน `promaxx2.qahub.store` ไฟล์ `/src/*.css` ได้ `Cache-Control: max-age=14400` + `cf-cache-status: MISS/HIT` (ไฟล์ `.tsx` เป็น `DYNAMIC`) — หลังแก้ CSS ผู้ใช้ผ่านโดเมนสาธารณะอาจได้ JS ใหม่กับ CSS เก่าได้นานถึง 4 ชม. (UI เพี้ยน: rule ใหม่ไม่ทำงาน) แก้ชั่วคราว: Purge Cache ใน Cloudflare + Ctrl+Shift+R; แก้ถาวร: Cloudflare Cache Rule ให้ hostname ของ Vite dev เป็น Bypass cache และ Browser TTL = Respect existing headers — ตรวจด้วย `curl -sD - -o NUL https://promaxx2.qahub.store/src/Crm.css` — **แก้ถาวรแล้ว 2026-10-20:** Cache Rule `(http.host eq "promaxx2.qahub.store") or (http.host eq "qahub.store")` → Bypass cache + Browser TTL = Respect origin TTL แล้ว Purge Everything; ตรวจแล้วได้ `Cache-Control: no-cache` + `cf-cache-status: DYNAMIC` (ผู้ใช้ที่ browser ยังจำ CSS เก่าก่อนวันนี้ต้องกด Ctrl+Shift+R หนึ่งครั้ง)
+- **หน่วยความจำ SQL Server (ตั้ง 2026-10-20):** เครื่องนี้รัน SQL Server 4 instance (2016/2019/2022/2025) + Analysis/Reporting Services บน RAM 32 GB — เดิม `MSSQLSERVER2025` (DB MSMAXX) ไม่จำกัด max server memory จองไป ~13 GB จน commit ของเครื่องเกือบเต็ม Windows ดึงหน่วยความจำของ `MSSQLSERVER2022` ออก (error log: *"sql server process memory has been paged out"*, buffer pool เหลือ ~18 MB) ทำให้ Execution Workspace และทุกหน้าช้า — ตั้ง max server memory: 2025 = 4096 MB, 2022 = 4096 MB (min 1024 MB), 2019/2016 = 1024 MB; ถ้าระบบช้าลงอีกให้ตรวจ `xp_readerrorlog 0,1,N'paged out'` และ commit ของเครื่องก่อนแก้โค้ด
+- **Latency ผ่าน Cloudflare (วัด 2026-10-20):** เรียก API ผ่าน `api-promaxx2.qahub.store` ใช้ 0.2–1.2 วินาที/คำขอ (ในเครื่อง ~1 ms) และหน้าเว็บกับ API อยู่คนละโดเมน ทุกคำขอที่มี `Authorization` จึงต้องมี CORS preflight — API ตั้ง `SetPreflightMaxAge(2 ชม.)` แล้ว (เดิมไม่ตั้ง Chromium จำแค่ 5 วินาที แทบทุกคำขอเสีย 2 round trip) — **หน้าใหม่ห้ามดึงข้อมูลแบบวนทีละหน้าเรียงกันหรือ N คำขอต่อแถว** ให้ขอครั้งเดียว/ขนานกัน หรือเพิ่ม endpoint แบบย่อ (เช่น `GET /test-cases/picker`)
+- traffic จาก Cloudflare Tunnel มาจาก loopback เสมอแต่มี header `CF-Connecting-IP` — endpoint ที่อนุญาตเฉพาะเครื่อง local (เช่น `automation/schedules/worker-status`) ต้องตรวจ header นี้ด้วย
 
-### การ Run/Restart API (จาก WSL)
+### การ Run/Restart API
 
-⚠️ ประสบการณ์จากงานจริง: process ที่รันอยู่จะ **ล็อก DLL ใน bin** (MSB3027) — ต้อง kill ก่อน rebuild
+**วิธีหลัก: ใช้ Service Manager** (`.artifacts/service-manager-production/ProMaxx2.ServiceManager.exe`) กด Restart API
+— ตัวนี้อ่าน `Jwt__Key` จาก User environment ใหม่ทุกครั้งและสตาร์ทด้วย profile `production` (ถ้าไม่พบ key จะ fallback เป็น Development)
 
-```bash
-# 1) Kill API เดิม
-taskkill.exe /IM ProMaxx2.QA.Api.exe /F
+**วิธีสำรอง (PowerShell):**
 
-# 2) Build (dotnet ไม่อยู่ใน PATH ของ WSL — ใช้ full path)
-"/mnt/c/Program Files/dotnet/dotnet.exe" build src/ProMaxx2.QA.Api --nologo
+```powershell
+# 1) หยุด API เดิม (process ที่รันอยู่ล็อก DLL ใน bin — MSB3027)
+Get-Process ProMaxx2.QA.Api -ErrorAction SilentlyContinue | Stop-Process -Force
 
-# 3) Start ใหม่ — ต้องตั้ง ASPNETCORE_URLS เอง ไม่งั้นจะไปฟัง port 5000 default!
-powershell.exe -NoProfile -Command "\$env:ASPNETCORE_URLS='http://0.0.0.0:5038'; \$env:ASPNETCORE_ENVIRONMENT='Development'; Start-Process -FilePath 'H:\APP\QAManagementSystem\src\ProMaxx2.QA.Api\bin\Debug\net10.0\ProMaxx2.QA.Api.exe' -WorkingDirectory 'H:\APP\QAManagementSystem\src\ProMaxx2.QA.Api\bin\Debug\net10.0' -WindowStyle Hidden"
+# 2) Start แบบ Production โดยส่ง key จาก User environment
+$env:Jwt__Key = [Environment]::GetEnvironmentVariable('Jwt__Key','User')
+Start-Process dotnet.exe -ArgumentList 'run','--project','H:\APP\QAManagementSystem\src\ProMaxx2.QA.Api\ProMaxx2.QA.Api.csproj','--launch-profile','production' -WindowStyle Hidden
+Remove-Item Env:Jwt__Key
 
-# 4) ยืนยันว่า route ใหม่ขึ้นจริง (401 = route มี, 404 = ยังเป็น build เก่า)
-curl.exe -s -o NUL -w "%{http_code}" "http://localhost:5038/api/v1/dashboard/shared/nonexistent99"
+# 3) ยืนยัน: 200 = ขึ้นแล้ว, route ใหม่ต้องได้ 401 (ไม่ใช่ 404)
+curl.exe -s -o NUL -w "%{http_code}" http://localhost:5038/health
 ```
+
+- `Get-NetTCPConnection` ใช้ไม่ได้ในบาง shell ของเครื่องนี้ — ตรวจ port ด้วย `netstat -ano | Select-String ':5038 '`
+- ถ้าต้อง build ขณะ API รันอยู่ ให้ build ไป output แยก: `dotnet build src/ProMaxx2.QA.Api -o <temp>` (ไม่ชน DLL lock)
+- rotate JWT key: สร้าง key ใหม่ ≥ 32 bytes → `[Environment]::SetEnvironmentVariable('Jwt__Key',<key>,'User')` → restart API (token เดิมทุกใบจะใช้ไม่ได้)
 
 ## 5. Build / Check Commands
 
-```bash
-# Frontend (ใช้ npm.cmd ผ่าน interop; fallback เป็น npm ถ้า cmd ล่ม)
+```powershell
+# Frontend
 cd src/ProMaxx2.QA.Web
-npm.cmd run build    # tsc -b && vite build
-npm.cmd run lint     # oxlint
+npm.cmd run build                    # tsc -b && vite build
+npm.cmd run lint                     # oxlint (ต้องไม่มี warning)
+npx.cmd tsc --noEmit -p tsconfig.app.json
+npm.cmd run test                     # vitest
 
 # Backend
-"/mnt/c/Program Files/dotnet/dotnet.exe" build src/ProMaxx2.QA.Api --nologo
+dotnet build src/ProMaxx2.QA.Api --nologo
+dotnet test tests/ProMaxx2.QA.UnitTests --nologo
 
-# ทุกครั้งหลังแก้ frontend
-git diff --check     # ห้ามมี trailing whitespace
+# Automation Agent (solution แยก)
+dotnet test agent/ProMaxx2.Automation.slnx --nologo
+
+# ทุกครั้งหลังแก้
+git diff --check                     # ห้ามมี trailing whitespace
+
+# ก่อนเปิด PR (รวมทุกข้อข้างบน + ข้อมูลลับ/ไฟล์ต้องห้าม/กฎเอกสาร) — ดู PRE_PR_REVIEW.md
+powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1
 ```
 
 ## 6. กฎการทำงาน (จาก AGENTS.md)
@@ -100,8 +153,10 @@ git diff --check     # ห้ามมี trailing whitespace
 1. **งาน UI ทุกชนิด** ต้องอ่าน `UI_DESIGN_SYSTEM.md` ทั้งไฟล์ก่อน และใช้ design tokens/form/modal/responsive/a11y ของระบบ
 2. UI ต้องตรวจ **Desktop + Mobile** ห้ามเกิด horizontal scroll ระดับหน้าโดยไม่จำเป็น
 3. Pattern/กฎ UI ใหม่ → ต้อง update `UI_DESIGN_SYSTEM.md` + Change Log ในงานเดียวกัน
-4. Requirement ผู้ใช้ล่าสุดชนะเอกสาร — แก้เอกสารให้ตรงผลลัพธ์ใหม่
-5. **ห้าม commit เอง** เว้นแต่ผู้ใช้สั่ง
+4. งาน Automation → อ่านและอัปเดต `AUTOMATION_TODO.md` ในงานเดียวกัน
+5. Requirement ผู้ใช้ล่าสุดชนะเอกสาร — แก้เอกสารให้ตรงผลลัพธ์ใหม่
+6. **ห้าม commit เอง** เว้นแต่ผู้ใช้สั่ง
+7. Endpoint ใหม่: ต้องมี `[Authorize(Policy=...)]` (มี fallback policy บังคับ login อยู่แล้ว) และถ้าข้อมูลผูกกับ Project ต้องมี `[RequireProjectAccess]`; endpoint anonymous ต้องประกาศ `[AllowAnonymous]` พร้อมเหตุผล
 
 ## 7. แผนที่เอกสาร (`Document/`)
 
@@ -109,15 +164,33 @@ git diff --check     # ห้ามมี trailing whitespace
 |---|---|
 | `02-Developer-Blueprint/SYSTEM_OVERVIEW.md` | **ไฟล์นี้ — อ่านก่อนเสมอ** |
 | `02-Developer-Blueprint/UI_DESIGN_SYSTEM.md` | กฎ UI + design tokens + Change Log |
+| `02-Developer-Blueprint/PRE_PR_REVIEW.md` | ขั้นตอนตรวจงานก่อนเปิด PR + checklist (ใช้คู่กับ `tools/pre-pr-check.ps1` และ `.github/pull_request_template.md`) |
 | `02-Developer-Blueprint/API_SPECIFICATION.md` | สเปก API |
 | `02-Developer-Blueprint/SCREEN_SPECIFICATION.md` | สเปกหน้าจอ |
 | `02-Developer-Blueprint/SQL_SERVER_SCHEMA.md` | Schema ฐานข้อมูล |
 | `01-System-Blueprint/` | REQUIREMENTS / DATABASE_DESIGN / WORKFLOW |
-| `03-Architecture-and-Plan/` | แผนสถาปัตยกรรม + `AUTOMATION_PLAN.md` (แผน Test Automation ของ Promaxx2 POS แบบ Phase 0–5 + Encryption Readiness) + `SELECTOR_CONTRACT.md` + `AUTOMATIONID_IMPLEMENTATION_GUIDE.md` (คู่มือใส่ AutomationId ให้ทีม Dev) |
+| `03-Architecture-and-Plan/AUTOMATION_TODO.md` | **Automation Work Tracker (Single Source of Truth)** |
+| `03-Architecture-and-Plan/AUTOMATION_FIELD_TEST_CHECKLIST.md` | Checklist ทดสอบภาคสนาม Agent/หน้า Automation/Capture เพื่อปิดรายการ IN PROGRESS |
+| `03-Architecture-and-Plan/AUTOMATION_PLAN.md`, `SELECTOR_CONTRACT.md`, `AUTOMATIONID_IMPLEMENTATION_GUIDE.md` | แผน Automation Phase 0–5, Selector Contract, คู่มือใส่ AutomationId |
+| `03-Architecture-and-Plan/CRM_INTEGRATION_PLAN.md`, `CRM_DEFECT_KANBAN_PLAN.md` | การเชื่อม CRM และแผน Defect Kanban (ยังเป็นแผน) |
+| `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
+| `03-Architecture-and-Plan/PERFORMANCE_EVALUATION_PLAN.md` | ผลงานและการประเมินทีม QA — เฟส 1 (ผลงานรายคน/ทดลองงาน/บันทึกงาน) และเฟส 2 (แบบประเมิน, รอบทดลองงาน 30/60/90/สรุป, รายไตรมาส, ประเมินตนเอง) และเฟส 3 (อีเมลเตือน, ไฟล์หลักฐานของบันทึกงาน, Export PDF, เทียบผลข้ามรอบ) และสรุปผลงานรายคน + ลิงก์แชร์ HR (`/?p=`) + สรุปประจำสัปดาห์ส่งผู้บริหาร implement แล้ว |
+| `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน) |
 | `05-Module/` | เอกสารรายโมดูล |
 
-## 8. สถานะงานล่าสุด (2026-08-21)
+## 8. สถานะงานล่าสุด (2026-09-25)
 
-1. **Dashboard Module Overview** — rollup ยอด Test Case จาก submodules ขึ้น parent + health badge/status bar + responsive
-2. **Test Case page pagination fix** — หน้าเดิม fetch ข้อมูลไม่ครบ (server-paginated 20 แถว); แก้เป็น server-side filter/pagination + debounce search
-3. **Executive Timeline บน share link** — เพิ่ม endpoint `[AllowAnonymous] GET /dashboard/shared/{code}/timeline` และ `GET /dashboard/shared/timeline?token=` + frontend ดึง timeline ใน share mode; บั๊กที่พบ: ลืม controller endpoint + API รัน build เก่า (ต้อง restart ตาม §4)
+1. **UI ทั้งแอป 6 รอบ + แยก App.tsx (2026-09-24/25)** — รายละเอียดใน Change Log ของ `UI_DESIGN_SYSTEM.md`
+   - Modal ทุกหน้าใช้ `ModalShell`; confirm/prompt/toast กลาง (`dialogStore`) แทน `window.*`
+   - แยก error ออกจาก "ไม่มีข้อมูล", ยกเลิกคำขอเก่าด้วย AbortController, ค้นหาแบบ debounce
+   - ตารางหลายคอลัมน์เป็น card บน Mobile (`table-cards`), สีใช้ design token, ตัวอักษรขั้นต่ำ 11px
+   - App.tsx เหลือเฉพาะ shell; ทุกหน้าอยู่ใน `src/pages/` แบบ lazy load (chunk หลัก 741 → 246 kB)
+2. **System hardening (ตรวจทั้งระบบ, 2026-09-23)**
+   - ปิด IDOR: filter ตรวจ `ProjectId` ใน body และ route id ข้าม Project; Projects/Modules/Test Suite/Defect unlink ตรวจ Project ของ record
+   - Dashboard share ต้องผูก Project ที่ผู้สร้างมีสิทธิ์ (ลิงก์แบบทุก Project ถูกปฏิเสธ)
+   - `worker-status` ไม่เปิด anonymous จาก internet แล้ว; fallback policy บังคับ login; rate limit login/webhook; header `nosniff`
+   - ลบคอมเมนต์ Defect ได้เฉพาะเจ้าของ/SYS_ADMIN และบันทึก activity
+   - API สาธารณะเปลี่ยนเป็น Production + JWT key ใหม่จาก User environment
+   - Execution Workspace: บันทึกผลแล้วไม่เด้งกลับเคสแรก; แก้ Defect แล้ว assignee ไม่หาย
+3. **ก่อนหน้า (ก.ย. 2026)**: Execution Workspace inline Defect + แนบรูป, Defect module ranking + PDF, Audit Log, Test Cycle clone lineage, Regression AUT-REG-001/002, Automation Suite versioning, CRM integration
+4. **ค้าง/ต่อไป**: ดู `AUTOMATION_TODO.md` (AUT-REG-003+, AUT-CAP-006, AUT-P2-005+) และ Phase 4 ของการตรวจระบบ: token แบบ httpOnly cookie + refresh, credential เฉพาะ Agent, CI

@@ -12,8 +12,8 @@ agent/
 +-- ProMaxx2.Automation.Hub       <- QaHubClient: register / heartbeat / claim / step result / evidence / complete
 +-- ProMaxx2.Automation.Runner    <- console app (loop: heartbeat -> claim -> execute DSL -> report)
 +-- ProMaxx2.Automation.AgentGui  <- GUI Launcher (ตั้งค่า + เริ่ม/หยุด Agent)
-+-- run-agent.ps1                 <- ตั้ง env ชั่วคราวแล้วรัน Runner
-+-- set-agent-env.ps1             <- ตั้ง User environment variables (เก็บเฉพาะเครื่อง)
++-- run-agent.ps1                 <- อ่านค่าที่ตั้งไว้แล้วรัน Runner (ห้ามใส่รหัสผ่านในไฟล์นี้)
++-- set-agent-env.ps1             <- ตั้ง User environment variables; รหัสผ่านเก็บแบบเข้ารหัส DPAPI (*_DPAPI)
 +-- ProMaxx2.Automation.slnx
 ```
 
@@ -22,9 +22,11 @@ agent/
 1. Build: `dotnet build agent/ProMaxx2.Automation.slnx`
 2. **แนะนำ: ใช้ GUI Launcher** — เปิด `agent\ProMaxx2.Automation.AgentGui\bin\Debug\net10.0-windows\ProMaxx2.Automation.AgentGui.exe`
    - กรอกการตั้งค่า (QA Hub URL/User/Password, Agent Code, AUT exe/User/Password, Database validator) → **บันทึกตั้งค่า**
-   - **AUT EXE 1 (Pos)** + **AUT EXE 2 (App)** — รองรับ 2 แอป; กด **▶ เริ่ม Agent 1** (ใช้ path 1) และ **▶ เริ่ม Agent 2** (ใช้ path 2, Agent Code อัตโนมัติเป็น `{code}-APP`) รันพร้อมกันได้ / **■ หยุด** หยุดทั้ง 2 ตัว
+   - **AUT EXE 1 (Pos)** + **AUT EXE 2 (App)** — รองรับ 2 แอป; **▶ เริ่ม Agent (Pos + App)** เปิด Runner 2 ตัว (ตัวที่ 2 ใช้ Agent Code `{code}-APP`) / **■ หยุด** หยุดทั้ง 2 ตัว
+   - Runner ทั้งสองตัวใช้หน้าจอ/mouse/keyboard ชุดเดียวกัน จึง **รับงานทีละตัว** ผ่านไฟล์ล็อก `%TEMP%\ProMaxx2.Automation.ui-session.lock` (AUT-AGT-003) — ตัวที่รอจะแสดง "Runner อีกตัวบนเครื่องนี้กำลังใช้หน้าจอ"
    - ปุ่ม **ทดสอบเชื่อมต่อ** ตรวจ QA Hub login
-   - Password เก็บเข้ารหัส DPAPI ใน `agent-config.json` (ข้าง exe)
+   - Password เก็บเข้ารหัส DPAPI ใน `agent-config.json` (ข้าง exe) — ถ้าเข้ารหัสไม่ได้จะไม่บันทึก และถ้าถอดรหัสไม่ได้ (ไฟล์มาจาก Windows user อื่น) ช่องรหัสผ่านจะว่างพร้อมคำเตือนให้กรอกใหม่
+   - QA Hub URL ต้องเป็น `https://` (หรือ `http://localhost`) — ใช้ http ไปเครื่องอื่นได้เฉพาะเมื่อตั้ง env `QAHUB_ALLOW_INSECURE_HTTP=true`
 
 ## Target App Routing
 
@@ -32,7 +34,7 @@ agent/
 - แต่ละ **Agent** ประกาศ target เองจากชื่อ exe (`PromaxxsPos.exe`→`Pos`, `Promaxxs.App.exe`→`App`; ตั้งค่า override ได้ด้วย env `AUT_TARGET`)
 - ตอน Claim งาน QA Hub กรองให้ Agent รับเฉพาะงานที่ตรง target: `Pos` รับงาน `Pos`+`WindowsUI`, `App` รับงาน `App`+`WindowsUI`, `WindowsUI` รับทุกงาน
 - ผลจริง: รัน batch (Pos case + App case) ด้วย 2 agents → POS agent รับ Pos job, APP agent รับ App job ✓
-3. หรือตั้งค่า env เองแล้วรัน console: `agent\run-agent.ps1` หรือ `set-agent-env.ps1`
+3. หรือใช้ console: รัน `agent\set-agent-env.ps1` ครั้งเดียว (ด้วย Windows user ที่จะรัน Agent) แล้วรัน `agent\run-agent.ps1` (`-Configuration Release` ถ้า build แบบ Release)
 
 ## Flow การทำงาน
 
@@ -43,11 +45,13 @@ Runner เริ่ม -> Login QA Hub -> Register Agent
        Claim Job (POST /automation/jobs/claim)
        ถ้ามี Job:
          - Parse DSL จาก Execution Package
-         - Launch AUT (ProMaxx2.exe) + รอ Main Window
+         - ปิด ProMaxx2 ที่ค้างจากงานก่อน (ตั้ง AUT_CLOSE_EXISTING=false เพื่อให้ Fail แทนการปิด)
+         - Launch AUT (ProMaxx2.exe) + รอ Main Window — เปิดไม่ได้ = AUT-APP-001, ไม่มีหน้าต่างหลัก = AUT-APP-002
          - Execute ทุก Step ตาม Action (LOGIN/OPEN_MENU/CLICK/SET_TEXT/EXPECT_* ...)
          - ส่ง Step Result ทีละขั้น
          - ถ้า Fail: ถ่าย Screenshot แล้ว Upload Evidence
          - Complete Execution (Passed/Failed)
+         - ปิด ProMaxx2 ทุกกรณี (ปิดปกติไม่ได้ภายใน 10 วินาที → kill)
 ```
 
 ## Action ที่รองรับใน MVP
@@ -84,8 +88,8 @@ EXPECT_MESSAGE ยังไม่มีสินค้าในบิล / ม�
 
 คำสั่งสำหรับสำรวจจอใหม่:
 ```text
-Runner inspect --exe <path> --out uia.json --wait 10 --emp <user> --pwd <pwd> --after 15 [--nav <menuId>] [--scan <code>] [--qty <value>] [--press {F8}]
-Runner trylogin --exe <path>    # ลองหลาย user/pass จนกว่าจะผ่าน (dev เท่านั้น)
+Runner inspect --exe <path> --out uia.json --wait 10 --emp <user> --after 15 [--nav <menuId>] [--scan <code>] [--qty <value>] [--press {F8}]
+# รหัสผ่านอ่านจาก AUT_PASSWORD(_DPAPI) — ไม่ต้องใส่ --pwd (ถ้าใส่ รหัสผ่านจะอยู่บน command line)
 ```
 
 ## Security
@@ -93,6 +97,9 @@ Runner trylogin --exe <path>    # ลองหลาย user/pass จนกว�
 - Agent ใช้บัญชี QA Hub เฉพาะ (ไม่ใช่ admin) ที่มีสิทธิ์ `AUTOMATION.EXECUTE`
 - Credential ของ ProMaxx2 (`AUT_USER`/`AUT_PASSWORD`) อยู่เฉพาะเครื่อง ไม่ถูกส่งเข้า DSL
 - DSL ไม่มี credential ใด ๆ (ใช้ Reference เช่น `QA_STANDARD_USER`)
+- AUT-AGT-004: รหัสผ่านใน env เก็บเป็น `QAHUB_PASSWORD_DPAPI` / `AUT_PASSWORD_DPAPI` / `AUT_DB_PASSWORD_DPAPI` (DPAPI ของ Windows user) — ค่า plaintext แบบเดิมยังอ่านได้เพื่อความเข้ากันได้ แต่ `set-agent-env.ps1` จะลบทิ้งเมื่อตั้งใหม่
+- gbak ได้รับ user/password ผ่าน `ISC_USER`/`ISC_PASSWORD` ของ process ลูก ไม่อยู่บน command line
+- ไม่มีคำสั่งลองเดารหัสผ่าน (`trylogin` ถูกลบแล้ว)
 
 ## G7 — Database Validation + Evidence
 

@@ -99,6 +99,8 @@ public sealed class RequirementAndTestCaseServiceTests
 
         public Task AddModuleAsync(ProductModule module, CancellationToken ct) => Task.CompletedTask;
 
+        public Task<bool> ModuleHasReferencesAsync(Guid moduleId, CancellationToken ct) => Task.FromResult(false);
+
         public Task SaveChangesAsync(CancellationToken ct) => Task.CompletedTask;
 
         public Task AddProjectUserAsync(Guid userId, Guid projectId, CancellationToken ct) => Task.CompletedTask;
@@ -131,7 +133,9 @@ public sealed class RequirementAndTestCaseServiceTests
     {
         private readonly List<TestCaseListDto> _items = existingCodes.Select(code => new TestCaseListDto(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), code, "Title", "P1", "Functional", false, "Draft", 1, null, 0)).ToList();
 
-        public Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId, Guid? moduleId, string? priority, string? testType, string? status, bool? automation, string? search, string? automationTarget, string? sortBy, int page, int size, CancellationToken ct) => Task.FromResult(new PagedResult<TestCaseListDto>(_items.Count, _items));
+        public Task<PagedResult<TestCaseListDto>> ListAsync(Guid? projectId, Guid? moduleId, string? priority, string? testType, string? status, bool? automation, string? search, string? automationTarget, Guid? createdBy, string? sortBy, int page, int size, CancellationToken ct) => Task.FromResult(new PagedResult<TestCaseListDto>(_items.Count, _items));
+
+        public Task<IReadOnlyList<TestCasePickerDto>> PickerAsync(Guid projectId, CancellationToken ct) => Task.FromResult<IReadOnlyList<TestCasePickerDto>>(_items.Select(x => new TestCasePickerDto(x.TestCaseId, x.ProjectId, x.ModuleId, x.TestCaseCode, x.Title, x.Priority, x.TestType, x.Status)).ToList());
 
         public Task<AutomationCandidateSummaryDto> AutomationSummaryAsync(Guid projectId, CancellationToken ct) => Task.FromResult(new AutomationCandidateSummaryDto(_items.Count, _items.Count(x => x.Status == "Ready"), _items.Count(x => x.AutomationTarget == "pos"), _items.Count(x => x.AutomationTarget == "app"), _items.Count(x => x.AutomationTarget is null)));
 

@@ -55,13 +55,19 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         var content = root.GetProperty("input")[0].GetProperty("content");
         var format = root.GetProperty("text").GetProperty("format");
         var schema = format.GetProperty("schema").Clone();
-        return runtime.Provider switch
+        var raw = runtime.Provider switch
         {
             "Google" => await SendGoogleAsync(runtime, instructions, content, schema, ct),
             "Anthropic" => await SendAnthropicAsync(runtime, instructions, content, schema, ct),
             "Local" or "OpenRouter" or "opencode" => await SendOpenAiCompatibleAsync(runtime, instructions, content, schema, ct),
             _ => await SendOpenAiAsync(runtime, openAiPayload, ct)
         };
+        // Not every provider/model reliably honors the requested JSON-schema response format (this is most
+        // common on the OpenAI-compatible chat-completions path used for Local/OpenRouter/opencode models) —
+        // some reply with the JSON wrapped in a ```json fence, or prefixed with a markdown heading/explanation.
+        // Extract centrally here so every caller of SendStructuredAsync is protected, not just the ones that
+        // remember to call AiJsonParser.Extract themselves.
+        return AiJsonParser.Extract(raw);
     }
 
     public async Task<IReadOnlyList<AiModelView>> ListModelsAsync(string provider, string? baseUrl, string? apiKey, CancellationToken ct)
@@ -81,8 +87,10 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         if (provider == "Google") request.Headers.Add("x-goog-api-key", key);
         else if (provider == "Anthropic") { request.Headers.Add("x-api-key", key); request.Headers.Add("anthropic-version", "2023-06-01"); }
         else if (!string.IsNullOrWhiteSpace(key)) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        var body = await SendAsync(request, provider, ct); using var doc = JsonDocument.Parse(body);
-        var data = provider == "Google" ? doc.RootElement.GetProperty("models") : doc.RootElement.GetProperty("data");
+        var body = await SendAsync(request, provider, ct); using var doc = ParseJsonOrThrow(body, provider);
+        var data = provider == "Google" ? doc.RootElement.GetProperty("models")
+            : doc.RootElement.TryGetProperty("data", out var listed) ? listed
+            : throw new InvalidOperationException($"{provider} ไม่ได้ส่งรายการ Model กลับมาในรูปแบบที่รองรับ");
         return data.EnumerateArray().Select(x => provider == "Google"
                 ? new AiModelView((x.GetProperty("name").GetString() ?? "").Replace("models/", ""), x.TryGetProperty("displayName", out var googleDisplay) ? googleDisplay.GetString() ?? "" : "")
                 : new AiModelView(x.GetProperty("id").GetString() ?? "", x.TryGetProperty("display_name", out var providerDisplay) ? providerDisplay.GetString() ?? "" : ""))
@@ -91,6 +99,19 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
     }
 
     private static string RequireLocalUrl(string? baseUrl) { if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) throw new ArgumentException("กรุณาระบุ Base URL ของ AI Local"); return baseUrl!.TrimEnd('/'); }
+
+    // Some providers/gateways respond 200 OK with a non-JSON body (plain text error, HTML page, etc.)
+    // when misconfigured (wrong Base URL, missing/invalid API key). Surface that as a clear, catchable
+    // error instead of letting an unhandled JsonException crash the request with a raw 500.
+    private static JsonDocument ParseJsonOrThrow(string body, string provider)
+    {
+        try { return JsonDocument.Parse(body); }
+        catch (JsonException)
+        {
+            var snippet = body.Length > 300 ? body[..300] + "..." : body;
+            throw new InvalidOperationException($"{provider} ตอบกลับข้อมูลที่ไม่ใช่ JSON กรุณาตรวจสอบ Base URL/API key: {snippet}");
+        }
+    }
 
     private async Task<string> SendOpenAiAsync(AiRuntimeConfiguration runtime, object payload, CancellationToken ct)
     {

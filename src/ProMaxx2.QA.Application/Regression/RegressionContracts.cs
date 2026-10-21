@@ -70,7 +70,7 @@ public sealed record GenerateRegressionSuiteRequest(
     IReadOnlyList<Guid> TestCaseIds);
 
 public sealed record RegressionSuiteResultDto(Guid TestSuiteId, string SuiteCode, string SuiteName, int CaseCount);
-public sealed record AddImpactCasesRequest(IReadOnlyList<Guid> TestCaseIds);
+public sealed record AddImpactCasesRequest(IReadOnlyList<Guid> TestCaseIds, bool AutoAssignPreview = false);
 public sealed record RegressionHistoryDto(Guid RegressionAnalysisId,Guid ReleaseId,Guid BuildId,string BuildNumber,int ImpactedModules,int RecommendedCases,string MinimumPriority,string?ChangeNotes,Guid?AnalyzedBy,string?AnalyzedByName,DateTime AnalyzedAt);
 public sealed record RegressionBuildMetricsDto(Guid BuildId,string BuildNumber,int TotalCases,int ExecutedCases,int PassedCases,int FailedCases,int BlockedCases,int NotRunCases,decimal PassRate);
 public sealed record RegressionBaselineDto(RegressionBuildMetricsDto Baseline,RegressionBuildMetricsDto Target,int ExecutedDelta,int PassedDelta,int FailedDelta,decimal PassRateDelta);
@@ -78,6 +78,10 @@ public sealed record RegressionActivityDto(Guid RegressionActivityId,Guid Releas
 public sealed record RegressionProfileDto(Guid RegressionProfileId,Guid ProjectId,string Name,string Visibility,Guid?OwnerUserId,string?OwnerName,string SettingsJson,bool IsOwner,DateTime CreatedAt);
 public sealed record SaveRegressionProfileRequest(Guid ProjectId,string Name,string Visibility,string SettingsJson);
 public sealed record UpdateRegressionProfileRequest(string Name,string Visibility,string SettingsJson);
-public sealed record RegressionScheduleDto(Guid RegressionScheduleId,Guid ProjectId,Guid ReleaseId,Guid?RegressionProfileId,string Name,bool IsActive,DateTime CreatedAt);
-public sealed record SaveRegressionScheduleRequest(Guid ReleaseId,Guid?RegressionProfileId,string Name);
+public sealed record RegressionScheduleDto(Guid RegressionScheduleId,Guid ProjectId,Guid ReleaseId,Guid?RegressionProfileId,string Name,bool IsActive,DateTime CreatedAt,Guid?EnvironmentId,string?EnvironmentName,int Priority);
+public sealed record SaveRegressionScheduleRequest(Guid ReleaseId,Guid?RegressionProfileId,string Name,Guid?EnvironmentId=null,int Priority=5);
 public sealed record RegressionNotificationDto(Guid RegressionScheduleId,Guid BuildId,string BuildNumber,string ScheduleName,string Message,DateTime CreatedAt);
+
+public sealed record RegressionAutomationPreviewRequest(IReadOnlyList<Guid> TestCaseIds);
+public sealed record RegressionAutomationPreviewItemDto(Guid TestCaseId,string TestCaseCode,string Title,Guid?AutomationCaseId,string?AutomationCaseStatus,bool Eligible,string?SkipReason);
+public sealed record RegressionAutomationPreviewDto(IReadOnlyList<RegressionAutomationPreviewItemDto> Items,IReadOnlyList<Guid> EligibleAutomationCaseIds,int EligibleCount,int TotalCount);

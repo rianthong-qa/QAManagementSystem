@@ -45,6 +45,11 @@ public sealed class AutomationAiService(SharedAiConfigurationService configurati
         {
             model = configuration["OpenAI:Model"] ?? "gpt-5-mini",
             instructions = """
+                IMPORTANT OBJECT REPOSITORY RULES:
+                - Use an object parameter only when its exact BusinessKey appears in the Object Repository list in the input.
+                - Never invent, translate, pluralize, or derive a BusinessKey; an invented key fails validation.
+                - If the required UI object is unavailable, do not add an object parameter. Use EXPECT_MESSAGE when appropriate or leave the step for manual review.
+                - If the Object Repository list is empty, the DSL must contain no object parameters.
                 คุณเป็น Senior Automation QA Engineer เชี่ยวชาญการแปลง Test Case ภาษาคนเป็น Automation DSL v1
 
                 กฎ:

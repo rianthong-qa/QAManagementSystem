@@ -209,6 +209,24 @@
 
 ---
 
+### Phase 6 — ProMaxx2 Capture Companion (MVP)
+
+เป้าหมาย: สร้าง Windows Desktop Companion สำหรับจับ Click/Text input จาก ProMaxx2 ผ่าน UI Automation แล้วส่งกลับ QA Hub เป็น Draft Object และ Draft Test Step
+
+| งาน | รายละเอียด | สถานะ |
+|---|---|---|
+| 6.1 Foundation | ใช้ .NET 10 Windows Forms + FlaUI UIA3 และใช้ `AutomationId` เป็น selector หลัก | ✅ เริ่มแล้ว |
+| 6.2 UIA Spy | อ่าน Name, AutomationId, ControlType, ClassName และจับ Click พร้อมเตือน Missing AutomationId | ✅ เสร็จเบื้องต้น |
+| 6.3 Capture Session | เพิ่ม `AutomationCaptureSession`, สถานะ Draft/Committed/Discarded/Expired และ migration | ✅ เสร็จ |
+| 6.4 Capture API | เพิ่ม endpoint สร้าง/preview/commit/discard session และดึง Test Case พร้อม JWT/Project Access | ✅ เสร็จ |
+| 6.5 Object Matching | Match ด้วย Project + Application + AutomationId, reuse Object เดิม และสร้าง Object ใหม่แบบ transaction | ✅ เสร็จ |
+| 6.6 Step Revision | สร้าง Test Case revision จาก captured steps พร้อม Draft Expected Result และ audit reason | ✅ เสร็จ |
+| 6.7 Companion Workflow | Login, Project/Module/Test Case selector, แก้ไข step, preview และ commit จาก GUI | ⏳ ถัดไป |
+| 6.8 Text Input | อ่าน TextBox input, สร้าง TestData และ mask password/sensitive field | ⏳ ถัดไป |
+| 6.9 Verification | Integration test, network/token recovery และ field test กับ ProMaxx2 จริง | ⏳ ถัดไป |
+
+ข้อกำหนดของ Phase นี้: ห้ามเขียนฐานข้อมูลโดยตรงจาก Companion, ห้ามใช้ coordinate/image เป็น selector หลัก และต้องส่งข้อมูลผ่าน QA Hub API เท่านั้น
+
 ## 6. แผนรองรับการเข้ารหัสไฟล์ (Encryption Readiness Plan)
 
 > สมมติฐาน: อนาคตทีม POS จะ **obfuscate/encrypt assembly + resource** และอาจเข้ารหัส `config/*.ini`, `DB/FBMAXX2.FDB`

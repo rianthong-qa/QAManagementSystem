@@ -1,0 +1,247 @@
+/* สรุปผลงานพนักงาน (แท็บ "สรุปผลงาน" + หน้าแชร์ HR `/?p=`) — ทั้งสองที่อยู่ใต้ .performance-page จึงใช้ token/สีหมวดชุดเดียวกับหน้าผลงาน */
+.performance-page .perf-report { display: grid; gap: 16px; min-width: 0; }
+
+.performance-page .perf-report-head { display: grid; gap: 16px; border-top: 3px solid var(--primary); }
+.performance-page .perf-report-title { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; min-width: 0; }
+.performance-page .perf-report-title > div:nth-child(2) { flex: 1 1 240px; min-width: 0; }
+.performance-page .perf-report-eyebrow { color: var(--primary); font-size: 12px; font-weight: 600; }
+.performance-page .perf-report-title h2 { margin: 2px 0; font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+.performance-page .perf-report-title p { margin: 0; color: var(--muted); font-size: 13px; }
+.performance-page .perf-report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.performance-page .perf-report-meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); gap: 12px 18px; margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.performance-page .perf-report-meta > div { min-width: 0; }
+.performance-page .perf-report-meta dt { color: var(--muted); font-size: 11px; font-weight: 600; }
+.performance-page .perf-report-meta dd { margin: 3px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.performance-page .perf-report-meta dd small { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-probation { display: grid; gap: 8px; }
+.performance-page .perf-report-probation-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 13px; }
+.performance-page .perf-report-probation-head span { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-track { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.performance-page .perf-report-track > span { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
+
+.performance-page .perf-report-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 12px; }
+.performance-page .perf-report-kpi { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 14px; border: 1px solid color-mix(in srgb, var(--perf-accent) 24%, var(--card)); border-top: 3px solid var(--perf-accent); border-radius: 14px; background: color-mix(in srgb, var(--perf-accent) 8%, var(--card)); }
+.performance-page .perf-report-kpi > .material-symbols-outlined { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 10px; background: var(--perf-accent); color: var(--card); font-size: 20px; }
+.performance-page .perf-report-kpi > div { display: grid; gap: 2px; min-width: 0; }
+.performance-page .perf-report-kpi small { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-kpi b { color: var(--perf-accent); font-size: 26px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.performance-page .perf-report-kpi span:not(.material-symbols-outlined) { color: var(--muted); font-size: 11px; }
+.performance-page .perf-report-kpi[data-perf-category="star"] { --perf-accent: var(--perf-orange); }
+
+.performance-page .perf-report-section h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; font-size: 15px; }
+.performance-page .perf-report-section h3 .material-symbols-outlined { color: var(--primary); font-size: 20px; }
+.performance-page .perf-report-section h3 small { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; }
+.performance-page .perf-report-section h4 { margin: 18px 0 10px; font-size: 13px; color: var(--text); }
+.performance-page .perf-report-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.performance-page .perf-report-table .perf-sub { margin-top: 2px; }
+.performance-page .perf-report-total td { background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.performance-page .perf-report-grade { display: inline-flex; align-items: baseline; gap: 6px; }
+.performance-page .perf-report-grade b { color: var(--primary); font-size: 18px; font-weight: 800; }
+.performance-page .perf-report-grade span { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-empty { margin: 0; padding: 12px 0; color: var(--muted); font-size: 13px; }
+.performance-page .perf-report-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+.performance-page .perf-report-logs { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-report-logs li { display: grid; gap: 4px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--primary); border-radius: 10px; }
+.performance-page .perf-report-logs li.highlight { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 5%, var(--card)); }
+.performance-page .perf-report-log-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.performance-page .perf-report-log-head b { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.performance-page .perf-report-logs small { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-logs p { margin: 2px 0 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* หน้าแชร์ HR (`/?p=`) — ใช้ shell .shared-dashboard เดียวกับ Dashboard/Defect ที่แชร์ */
+.shared-dashboard.shared-performance-shell > main { max-width: 1120px; }
+.performance-page .perf-shared-banner { display: flex; align-items: flex-start; gap: 8px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--primary) 6%, var(--card)); color: var(--text); font-size: 12px; line-height: 1.6; }
+.performance-page .perf-shared-banner .material-symbols-outlined { color: var(--primary); font-size: 18px; }
+.perf-shared-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 20px; text-align: center; color: var(--muted); }
+.perf-shared-state .material-symbols-outlined { font-size: 36px; color: var(--red); }
+.perf-shared-state p { margin: 0; }
+
+/* ลิงก์ที่แชร์แล้ว + หน้าต่างแชร์ */
+.performance-page .perf-share-links-head h3 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 15px; }
+.performance-page .perf-share-links-head h3 .material-symbols-outlined { color: var(--primary); }
+.performance-page .perf-share-links-head p { margin: 4px 0 12px; color: var(--muted); font-size: 12px; }
+.performance-page .perf-share-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.performance-page .perf-share-actions .btn { min-height: 36px; padding: 6px 10px; font-size: 12px; }
+.perf-share-modal .perf-share-options { display: grid; gap: 10px; margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; }
+.perf-share-modal .perf-share-options legend { padding: 0 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.perf-share-modal .perf-share-always { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text); font-size: 13px; }
+.perf-share-modal .perf-share-always .material-symbols-outlined { color: var(--green); font-size: 20px; }
+.perf-share-modal .perf-share-options label { display: flex; flex-direction: row; align-items: center; gap: 8px; font-weight: 400; }
+.perf-share-modal .perf-share-warning { display: flex; align-items: flex-start; gap: 8px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--yellow) 10%, var(--card)); color: var(--warning-text); font-size: 12px; line-height: 1.5; }
+.perf-share-modal .perf-share-warning .material-symbols-outlined { font-size: 18px; }
+.perf-share-modal .perf-share-created { display: grid; gap: 14px; padding: 4px 0; }
+.perf-share-modal .perf-share-created .inline-alert { justify-content: flex-start; margin: 0; }
+.perf-share-modal .perf-share-url { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.perf-share-modal .perf-share-url-row { display: flex; gap: 8px; }
+.perf-share-modal .perf-share-url-row input { flex: 1 1 auto; min-width: 0; font-family: Consolas, "Courier New", monospace; }
+
+@media (max-width: 760px) {
+  .performance-page .perf-report-title h2 { font-size: 19px; }
+  .performance-page .perf-report-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
+  .performance-page .perf-report-actions { width: 100%; }
+  .performance-page .perf-report-actions .btn { flex: 1 1 0; justify-content: center; }
+  .performance-page .perf-report-kpi b { font-size: 22px; }
+  .performance-page .perf-report-section h3 small { flex-basis: 100%; margin-left: 0; }
+  .performance-page .perf-report-table .num,
+  .performance-page .perf-share-table .num { text-align: left; }
+  .performance-page .perf-share-actions { justify-content: flex-start; }
+  .perf-share-modal .perf-share-url-row { flex-direction: column; }
+  .shared-dashboard.shared-performance-shell > main { padding: 16px; }
+}
+
+/* พิมพ์ / บันทึก PDF — ใช้ :has เพื่อให้มีผลเฉพาะตอนหน้านี้แสดงรายงานอยู่ (CSS ของ chunk ยังค้างใน SPA หลังเปลี่ยนหน้า) */
+@media print {
+  body:has(.perf-report) { background: var(--card); }
+  body:has(.perf-report) :is(.app, .app > main, .content, .shared-dashboard, .shared-dashboard > main) { display: block !important; height: auto !important; min-height: 0 !important; max-width: none !important; overflow: visible !important; padding: 0 !important; background: var(--card) !important; }
+  body:has(.perf-report) :is(.sidebar, .sidebar-backdrop, .qa-topbar, .page-head, .back-to-top, .perf-toolbar, .perf-noprint, .shared-dashboard > header, .shared-dashboard > footer) { display: none !important; }
+  .performance-page .perf-report :is(.content-card, .perf-report-kpi, .perf-metric-group, .perf-report-logs li, tr) { break-inside: avoid; box-shadow: none !important; }
+  .performance-page .perf-report .table-wrap { overflow: visible !important; }
+  .performance-page .perf-metric-groups { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+
+/* Shared employee report refresh — keep the KPI scan short and move dense metrics behind accessible disclosure cards. */
+.performance-page .perf-report-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.performance-page .perf-report-kpi { min-height: 104px; box-shadow: 0 4px 14px color-mix(in srgb, var(--text) 4%, transparent); }
+.performance-page .perf-report-kpi b { font-size: 25px; }
+.performance-page .perf-report-detail-block { display: grid; gap: 12px; min-width: 0; }
+
+/* กลุ่มตัวเลข: แถบเต็มความกว้างต่อกลุ่ม — ชื่อกลุ่ม 170px | ช่องตัวเลข auto-fill ≥ 150px (ชื่อบน ค่าล่าง) (ปรับ 2026-10-21) */
+.performance-page .perf-report-metric-groups { display: grid; gap: 0; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.performance-page .perf-report-metric-group { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-width: 0; border-left: 4px solid var(--perf-accent); }
+.performance-page .perf-report-metric-group + .perf-report-metric-group { border-top: 1px solid var(--line); }
+.performance-page .perf-report-metric-title { display: flex; align-items: center; gap: 8px; margin: 0; padding: 12px 14px; background: color-mix(in srgb, var(--perf-accent) 6%, var(--card)); color: var(--text); font-size: 13px; font-weight: 700; }
+.performance-page .perf-report-metric-title > .material-symbols-outlined { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 8px; background: var(--perf-accent); color: var(--card); font-size: 16px; }
+.performance-page .perf-report-metric-group > dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0; margin: 0; padding: 4px 6px; }
+.performance-page .perf-report-metric-group > dl > div { display: grid; align-content: start; gap: 2px; min-width: 0; padding: 8px 10px; }
+.performance-page .perf-report-metric-group dt { color: var(--muted); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.performance-page .perf-report-metric-group dd { margin: 0; color: var(--text); font-size: 16px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.performance-page .perf-report-metric-group > dl > div.is-empty dd { color: var(--muted); font-weight: 400; }
+
+@media (max-width: 1050px) {
+  .performance-page .perf-report-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 360px) {
+  .performance-page .perf-report-kpis { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media print {
+  .performance-page .perf-report-metric-group { break-inside: avoid; }
+  .performance-page .perf-report-metric-group > dl { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* ===== สรุปผลงาน (ออกแบบใหม่ 2026-10-21) — `.perf-report-v2` ใช้ทั้งแท็บสรุปผลงานและหน้าแชร์ HR: หัวเอกสาร (แถบช่วงข้อมูล → ตัวตน → ข้อมูลพนักงาน → ทดลองงาน → สถิติ 5 ช่อง) → ผลงานเด่น → รายละเอียด → แนวโน้ม → บันทึกงาน → ผลประเมิน ===== */
+.performance-page .content-card.perf-report-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 14px; }
+.performance-page .perf-report-picker { display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--primary); }
+.performance-page .perf-report-picker:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.performance-page .perf-report-picker-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.performance-page .perf-report-picker select { min-width: 220px; max-width: 100%; min-height: 40px; padding: 6px 30px 6px 0; border: 0; background-color: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 600; box-shadow: none; outline: none; cursor: pointer; }
+.performance-page .perf-report-toolbar-hint { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-links-chip { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 4px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); font-size: 12px; white-space: nowrap; }
+.performance-page .perf-report-links-chip.active { background: color-mix(in srgb, var(--green) 10%, var(--card)); color: color-mix(in srgb, var(--green) 80%, var(--text)); font-weight: 600; }
+.performance-page .perf-report-links-chip .material-symbols-outlined { font-size: 16px; }
+
+.performance-page .perf-report-v2 .perf-report-head { display: grid; gap: 0; padding: 0; overflow: hidden; border-top: 0; }
+.performance-page .perf-report-docbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 10px 22px; border-bottom: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 9%, var(--card)), color-mix(in srgb, var(--perf-purple) 5%, var(--card))); }
+.performance-page .perf-report-v2 .perf-report-eyebrow { display: inline-flex; align-items: center; gap: 5px; color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.performance-page .perf-report-docbar .material-symbols-outlined { font-size: 17px; }
+.performance-page .perf-report-period { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 999px; background: var(--card); color: var(--text); font-size: 12px; font-weight: 600; }
+.performance-page .perf-report-period .material-symbols-outlined { color: var(--primary); }
+.performance-page .perf-report-generated { margin-left: auto; color: var(--muted); font-size: 11px; }
+.performance-page .perf-report-v2 .perf-report-title { gap: 14px; padding: 16px 20px 0; }
+.performance-page .perf-report-avatar { display: grid; place-items: center; width: 56px; height: 56px; flex: none; border: 3px solid var(--card); border-radius: 50%; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 18%, var(--card)), color-mix(in srgb, var(--perf-purple) 16%, var(--card))); color: var(--primary); font-size: 22px; font-weight: 700; box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 20%, var(--line)), 0 6px 14px color-mix(in srgb, var(--primary) 14%, transparent); }
+.performance-page .perf-report-v2 .perf-report-title h2 { font-size: 22px; }
+.performance-page .perf-report-v2 .perf-report-title p { font-size: 14px; }
+.performance-page .perf-report-v2 .perf-report-meta { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 14px 20px 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--bg) 50%, var(--card)); }
+.performance-page .perf-report-v2 .perf-report-meta > div { padding: 10px 12px; border-left: 1px solid var(--line); }
+.performance-page .perf-report-v2 .perf-report-meta > div:first-child { border-left: 0; }
+.performance-page .perf-report-v2 .perf-report-meta dt { display: flex; align-items: center; gap: 4px; }
+.performance-page .perf-report-v2 .perf-report-meta dt .material-symbols-outlined { color: var(--primary); font-size: 15px; }
+.performance-page .perf-report-v2 .perf-report-meta dd { font-size: 14px; font-weight: 600; }
+.performance-page .perf-report-v2 .perf-report-meta dd small { display: block; margin-top: 2px; font-weight: 400; }
+.performance-page .perf-report-v2 .perf-report-probation { margin: 12px 20px 0; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--warning-text) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--yellow) 6%, var(--card)); }
+.performance-page .perf-report-v2 .perf-report-probation-head b { display: inline-flex; align-items: center; gap: 5px; color: var(--warning-text); }
+.performance-page .perf-report-v2 .perf-report-probation-head .material-symbols-outlined { font-size: 18px; }
+.performance-page .perf-report-v2 .perf-report-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 16px 0 0; border-top: 1px solid var(--line); }
+.performance-page .perf-report-v2 .perf-report-kpi { display: grid; align-content: start; gap: 4px; min-height: 0; padding: 12px 16px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; box-shadow: none; }
+.performance-page .perf-report-v2 .perf-report-kpi:first-child { border-left: 0; }
+.performance-page .perf-report-v2 .perf-report-kpi dt { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; font-weight: 600; }
+.performance-page .perf-report-v2 .perf-report-kpi dt .material-symbols-outlined { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: color-mix(in srgb, var(--perf-accent) 12%, var(--card)); color: var(--perf-accent); font-size: 17px; }
+.performance-page .perf-report-v2 .perf-report-kpi dd { display: grid; gap: 2px; margin: 0; min-width: 0; }
+.performance-page .perf-report-v2 .perf-report-kpi dd b { color: var(--text); font-size: 24px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.performance-page .perf-report-v2 .perf-report-kpi dd small { color: var(--muted); font-size: 11px; }
+
+.performance-page .perf-report-v2 .perf-report-section h3 { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 16px; }
+.performance-page .perf-report-v2 .perf-report-section h3 > .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); }
+.performance-page .perf-report-highlights { border-top: 3px solid var(--perf-orange); }
+.performance-page .perf-report-v2 .perf-report-highlights h3 > .material-symbols-outlined { background: color-mix(in srgb, var(--perf-orange) 12%, var(--card)); color: var(--perf-orange); }
+.performance-page .perf-report-highlight-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-report-highlight-grid li { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--perf-orange) 20%, var(--line)); border-radius: 12px; background: linear-gradient(160deg, color-mix(in srgb, var(--perf-orange) 7%, var(--card)), var(--card) 65%); }
+.performance-page .perf-report-highlight-meta { display: inline-flex; align-items: center; gap: 4px; color: var(--perf-orange); font-size: 12px; font-weight: 600; }
+.performance-page .perf-report-highlight-meta .material-symbols-outlined { font-size: 17px; font-variation-settings: "FILL" 1; }
+.performance-page .perf-report-highlight-grid b { font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.performance-page .perf-report-highlight-grid p { margin: 0; font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.performance-page .perf-report-highlight-grid small { color: var(--muted); font-size: 12px; }
+
+.performance-page .perf-report-weekly th { text-align: left; }
+.performance-page .perf-report-weekbar { display: grid; gap: 4px; min-width: 90px; max-width: 220px; }
+.performance-page .perf-report-weekbar b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.performance-page .perf-report-weekbar > span { display: block; height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--perf-accent) 12%, var(--card)); overflow: hidden; }
+.performance-page .perf-report-weekbar > span > span { display: block; height: 100%; border-radius: 999px; background: var(--perf-accent); }
+
+.performance-page .perf-report-evals { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.performance-page .perf-report-evals li { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.performance-page .perf-report-evals li.closed { border-color: color-mix(in srgb, var(--primary) 20%, var(--line)); background: color-mix(in srgb, var(--primary) 3%, var(--card)); }
+.performance-page .perf-report-eval-grade { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 14px; background: var(--bg); color: var(--muted); font-size: 24px; font-weight: 800; }
+.performance-page .perf-report-evals li.closed .perf-report-eval-grade { background: var(--primary); color: var(--card); }
+.performance-page .perf-report-eval-main { display: grid; gap: 2px; min-width: 0; }
+.performance-page .perf-report-eval-main b { font-size: 14px; }
+.performance-page .perf-report-eval-main small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.performance-page .perf-report-eval-score { display: inline-flex; align-items: baseline; gap: 3px; white-space: nowrap; }
+.performance-page .perf-report-eval-score b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.performance-page .perf-report-eval-score small { color: var(--muted); font-size: 12px; }
+.performance-page .perf-report-eval-badges { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.performance-page .perf-report-eval-badges small { font-size: 11px; }
+
+@media (max-width: 1100px) {
+  .performance-page .perf-report-v2 .perf-report-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(4) { border-left: 0; }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(n + 4) { border-top: 1px solid var(--line); }
+  .performance-page .perf-report-v2 .perf-report-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .performance-page .perf-report-v2 .perf-report-meta > div:nth-child(3) { border-left: 0; }
+  .performance-page .perf-report-v2 .perf-report-meta > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
+@media (max-width: 760px) {
+  .performance-page .perf-report-picker { flex: 1 1 100%; }
+  .performance-page .perf-report-picker select { flex: 1 1 auto; min-width: 0; }
+  .performance-page .perf-report-links-chip { margin-left: 0; }
+  .performance-page .perf-report-docbar { padding: 10px 16px; }
+  .performance-page .perf-report-generated { flex-basis: 100%; margin-left: 0; }
+  .performance-page .perf-report-v2 .perf-report-title { padding: 16px 16px 0; }
+  .performance-page .perf-report-v2 .perf-report-title h2 { font-size: 21px; }
+  .performance-page .perf-report-v2 .perf-report-meta,
+  .performance-page .perf-report-v2 .perf-report-probation { margin-left: 16px; margin-right: 16px; }
+  .performance-page .perf-report-v2 .perf-report-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .performance-page .perf-report-v2 .perf-report-kpi { padding: 14px 16px; }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(n) { border-left: 1px solid var(--line); border-top: 1px solid var(--line); }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(odd) { border-left: 0; }
+  .performance-page .perf-report-v2 .perf-report-kpi:nth-child(-n + 2) { border-top: 0; }
+  .performance-page .perf-report-v2 .perf-report-kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .performance-page .perf-report-v2 .perf-report-kpi dd b { font-size: 22px; }
+  .performance-page .perf-report-evals li { grid-template-columns: 44px minmax(0, 1fr); gap: 10px 12px; }
+  .performance-page .perf-report-eval-grade { width: 44px; height: 44px; font-size: 20px; }
+  .performance-page .perf-report-eval-score,
+  .performance-page .perf-report-eval-badges { grid-column: 2; justify-content: flex-start; }
+  .performance-page .perf-report-weekbar { max-width: none; }
+}
+@media print {
+  .performance-page .perf-report-v2 .perf-report-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .performance-page .perf-report-v2 :is(.perf-report-highlight-grid li, .perf-report-evals li) { break-inside: avoid; }
+}
+
+@media (max-width: 760px) {
+  .performance-page .perf-report-metric-group { grid-template-columns: minmax(0, 1fr); }
+  .performance-page .perf-report-metric-title { padding: 10px 12px; }
+  .performance-page .perf-report-metric-group > dl { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 2px 2px 6px; }
+}

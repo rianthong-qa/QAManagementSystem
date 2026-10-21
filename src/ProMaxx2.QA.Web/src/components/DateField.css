@@ -1,0 +1,12 @@
+/* ช่องวันที่ วัน/เดือน/ปี พ.ศ. (components/DateField.tsx) — หน้าตาเท่ากับ text input กลาง; native input โปร่งใสวางทับเต็มช่อง */
+.date-field { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; padding: 11px 12px 11px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); font-size: 14px; font-weight: 400; line-height: 1.4; text-align: left; }
+.date-field:hover { border-color: var(--primary); }
+.date-field:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.date-field[data-invalid] { border-color: var(--red); }
+.date-field:has(> input:disabled) { background: var(--bg); color: var(--muted); opacity: .6; }
+.date-field-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.date-field-text.placeholder { color: var(--muted); }
+.date-field > .material-symbols-outlined { flex: 0 0 auto; color: var(--muted); font-size: 18px; }
+/* specificity 0,3,1 ชนะ input[type="date"] กลางและ selector ระดับหน้า เช่น `.performance-page .perf-period input` */
+.date-field > input[type="date"].date-field-native { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; box-shadow: none; opacity: 0; cursor: pointer; }
+.date-field > input[type="date"].date-field-native:disabled { cursor: not-allowed; }

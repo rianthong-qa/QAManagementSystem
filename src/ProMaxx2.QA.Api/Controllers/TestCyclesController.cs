@@ -22,7 +22,7 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
     public async Task<ActionResult<EnvironmentDto>> CreateEnvironment(SaveEnvironmentRequest request, CancellationToken ct) => Ok(await service.CreateEnvironmentAsync(request, ct));
 
     [HttpGet("test-cycles")]
-    public Task<TestCycleListResultDto> List([FromQuery] Guid? projectId, [FromQuery] Guid? releaseId, [FromQuery] Guid? buildId, [FromQuery] string? search, [FromQuery] string? status, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, releaseId, buildId, search, status, page, size, ct);
+    public Task<TestCycleListResultDto> List([FromQuery] Guid? projectId, [FromQuery] Guid? releaseId, [FromQuery] Guid? buildId, [FromQuery] Guid? moduleId, [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? cycleType, [FromQuery] Guid? createdBy, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, releaseId, buildId, moduleId, search, status, cycleType, createdBy, page, size, ct);
 
     [HttpGet("test-cycles/options")]
     public Task<IReadOnlyList<TestCycleOptionDto>> Options([FromQuery] Guid? projectId, CancellationToken ct = default) => service.ListOptionsAsync(projectId, ct);
@@ -41,6 +41,15 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
         catch (DuplicateCodeException exception) { return Conflict(new ProblemDetails { Title = "รหัส Test Cycle ซ้ำ", Detail = exception.Message, Status = 409 }); }
         catch (Exception exception) when (exception is ArgumentException or EntityNotFoundException) { return BadRequest(new ProblemDetails { Title = "ข้อมูล Test Cycle ไม่ถูกต้อง", Detail = exception.Message, Status = 400 }); }
         catch (Exception exception) { return StatusCode(500, new ProblemDetails { Title = "เกิดข้อผิดพลาด", Detail = exception.Message, Status = 500 }); }
+    }
+
+    [HttpPost("test-cycles/{sourceCycleId:guid}/clone")]
+    public async Task<ActionResult<TestCycleDto>> Clone(Guid sourceCycleId, CloneTestCycleRequest request, CancellationToken ct)
+    {
+        try { return Ok(await service.CloneAsync(sourceCycleId, request, UserId(), ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (DuplicateCodeException exception) { return Conflict(new ProblemDetails { Title = "รหัส Test Cycle ซ้ำ", Detail = exception.Message, Status = 409 }); }
+        catch (ArgumentException exception) { return BadRequest(new ProblemDetails { Title = "ข้อมูล Clone Test Cycle ไม่ถูกต้อง", Detail = exception.Message, Status = 400 }); }
     }
 
     [HttpPut("test-cycles/{id:guid}")]
@@ -84,7 +93,11 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
         catch (ArgumentException exception) { return BadRequest(new ProblemDetails { Title = "ข้อมูลไม่ครบ", Detail = exception.Message, Status = 400 }); }
         catch (InvalidOperationException exception) { var status = ai.IsConfigured ? 502 : 503; return StatusCode(status, new ProblemDetails { Title = "AI Generate Test Cycle ไม่พร้อมใช้งาน", Detail = exception.Message, Status = status }); }
         catch (OperationCanceledException) { return StatusCode(504, new ProblemDetails { Title = "AI ใช้เวลาประมวลผลนานเกินไป", Detail = "กรุณาลองใหม่อีกครั้ง", Status = 504 }); }
-        catch (Exception exception) { return StatusCode(500, new ProblemDetails { Title = "AI Generate Test Cycle ไม่สำเร็จ", Detail = exception.InnerException?.Message ?? exception.Message, Status = 500 }); }
+        catch (Exception exception)
+        {
+            HttpContext.RequestServices.GetRequiredService<ILogger<AiEndpointLog>>().LogError(exception, "AI generate failed ({Path})", HttpContext.Request.Path);
+            return StatusCode(500, new ProblemDetails { Title = "AI Generate Test Cycle ไม่สำเร็จ", Detail = $"เกิดข้อผิดพลาดระหว่างเรียก AI กรุณาลองใหม่ หรือแจ้งผู้ดูแลพร้อมรหัส {HttpContext.TraceIdentifier}", Status = 500 });
+        }
     }
 
     private Guid? UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;
