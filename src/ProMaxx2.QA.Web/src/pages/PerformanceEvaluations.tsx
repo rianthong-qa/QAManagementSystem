@@ -11,17 +11,20 @@ export type EvaluationSummary = {
   periodStart: string; periodEnd: string; dueDate: string; status: string; overallScore?: number | null; grade?: string | null;
   recommendation?: string | null; evaluatorName?: string | null; completedAt?: string | null; acknowledgedAt?: string | null; isOverdue: boolean;
 };
-type Score = { evaluationScoreId: string; group: string; name: string; description?: string | null; weight: number; selfScore?: number | null; selfComment?: string | null; managerScore?: number | null; managerComment?: string | null };
+type Score = { evaluationScoreId: string; group: string; name: string; description?: string | null; weight: number; selfScore?: number | null; selfComment?: string | null; managerScore?: number | null; managerComment?: string | null; externalAverage?: number | null; externalCount?: number };
+/** ผู้ประเมินจากแผนกอื่น 1 คน — code มีเฉพาะลิงก์ที่ยังรอส่ง (หัวหน้าตรงเท่านั้น) */
+type ExternalReview = { reviewId: string; reviewerName: string; reviewerDepartment?: string | null; note?: string | null; status: "Pending" | "Submitted" | "Revoked" | "Expired"; expiresAt: string; createdAt: string; submittedAt?: string | null; weightedScore?: number | null; comment?: string | null; viewCount: number; code?: string | null };
 type EvaluationEmployee = { employeeCode?: string | null; position?: string | null; level?: string | null; hireDate?: string | null; supervisorName?: string | null };
 type EvaluationDetail = {
   summary: EvaluationSummary; employee?: EvaluationEmployee; templateName: string; selfComment?: string | null; selfSubmittedAt?: string | null; strengths?: string | null; improvements?: string | null;
   nextGoals?: string | null; extendToDate?: string | null; employeeComment?: string | null; reopenReason?: string | null; probationEndDate?: string | null;
   scores: Score[]; metrics: Metrics; metricsIsSnapshot: boolean; canSelfEdit: boolean; canManagerEdit: boolean; canAcknowledge: boolean; canReopen: boolean; managerRestriction?: string | null;
+  externalWeight: number; managerScore?: number | null; externalScore?: number | null; externalReviews?: ExternalReview[] | null; canManageExternal: boolean;
 };
 type Criterion = { group: string; name: string; description?: string | null; weight: number };
 type ComparisonRound = { evaluationId: string; type: string; round: string; year: number; periodStart: string; periodEnd: string; overallScore: number; grade: string; groups: { group: string; score: number }[] };
 type Comparison = { groups: string[]; rounds: ComparisonRound[] };
-type Template = { evaluationTemplateId: string; type: string; name: string; isActive: boolean; criteria: Criterion[] };
+type Template = { evaluationTemplateId: string; type: string; name: string; isActive: boolean; criteria: Criterion[]; externalWeight: number };
 
 const scaleLabel = ["", "ต้องปรับปรุงมาก", "ต่ำกว่าที่คาดหวัง", "ตามที่คาดหวัง", "ดีกว่าที่คาดหวัง", "ดีเยี่ยม"];
 const criterionGroups = ["ปริมาณงาน", "คุณภาพงาน", "ความรู้และทักษะ", "พฤติกรรม", "การสื่อสาร"];
@@ -325,9 +328,10 @@ function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () =
     if (!detail) return;
     if (complete && !await confirmDialog({
       title: "ส่งผลการประเมิน",
-      message: detail.summary.round === "PFinal" && form.recommendation
+      message: (detail.summary.round === "PFinal" && form.recommendation
         ? `ส่งผลแล้วพนักงานจะเห็นคะแนนทันที และระบบจะบันทึกผลทดลองงานเป็น "${recommendationLabel[form.recommendation]}"${form.recommendation === "Pass" ? " (เปลี่ยนเป็นพนักงานประจำ)" : form.recommendation === "Extend" ? " และสร้างรอบสรุปผลใหม่" : ""} ยืนยัน?`
-        : "ส่งผลแล้วพนักงานจะเห็นคะแนนและความเห็นทันที และแก้ไขไม่ได้จนกว่าจะเปิดใหม่ ยืนยัน?",
+        : "ส่งผลแล้วพนักงานจะเห็นคะแนนและความเห็นทันที และแก้ไขไม่ได้จนกว่าจะเปิดใหม่ ยืนยัน?") +
+        (pendingExternal > 0 ? `\n\nยังมีผู้ประเมินจากแผนกอื่นที่ยังไม่ส่ง ${pendingExternal} คน — ระบบจะคำนวณจากคนที่ส่งแล้ว และปิดลิงก์ของคนที่ยังไม่ส่ง` : ""),
       confirmLabel: "ส่งผล",
     })) return;
     await run(() => apiFetch<EvaluationDetail>(`/performance/evaluations/${id}/manager`, {
@@ -380,6 +384,9 @@ function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () =
   const weighted = detail && managerComplete ? weightedScore(detail.scores, (x) => drafts[x.evaluationScoreId]?.manager ?? 0) : null;
   const selfAverage = detail && selfComplete ? weightedScore(detail.scores, (x) => drafts[x.evaluationScoreId]?.self ?? 0) : null;
   const managerScored = detail ? detail.scores.filter((x) => drafts[x.evaluationScoreId]?.manager != null).length : 0;
+  // ถ้าส่งตอนนี้: หัวหน้าตรง × (100 − w)% + ค่าเฉลี่ยแผนกอื่นที่ส่งแล้ว × w% (สูตรเดียวกับ Evaluation.CombineScores)
+  const combinedPreview = weighted != null && detail ? combineScores(weighted, detail.externalScore ?? null, detail.externalWeight) : null;
+  const pendingExternal = detail?.externalReviews?.filter((x) => x.status === "Pending").length ?? 0;
 
   return (
     <ModalShell labelledBy="eval-title" className="perf-modal perf-eval-modal" onDismiss={() => { if (!busy) onClose(); }}>
@@ -395,7 +402,7 @@ function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () =
           : (
             <div className="perf-eval-body">
               <div className="perf-eval-main">
-                <EvaluationSummaryBar detail={detail} selfAverage={selfAverage} managerPreview={detail.canManagerEdit ? weighted : null} managerScored={managerScored} />
+                <EvaluationSummaryBar detail={detail} selfAverage={selfAverage} managerPreview={detail.canManagerEdit ? combinedPreview : null} managerScored={managerScored} />
                 {detail.managerRestriction && !s.grade && <div className="inline-alert" role="note"><span><span className="material-symbols-outlined" aria-hidden="true">lock</span> {detail.managerRestriction}</span></div>}
                 {detail.reopenReason && <div className="inline-alert" role="note"><span>เปิดใหม่: {detail.reopenReason}</span></div>}
 
@@ -418,6 +425,7 @@ function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () =
                               <b>{x.name}</b>
                               {x.description && <p>{x.description}</p>}
                               <span className="perf-eval-weight">น้ำหนัก {x.weight}%</span>
+                              {!!x.externalCount && x.externalAverage != null && <span className="perf-eval-ext" title="ค่าเฉลี่ยจากหัวหน้าแผนกอื่นที่ส่งผลแล้ว"><span className="material-symbols-outlined" aria-hidden="true">groups</span>แผนกอื่นเฉลี่ย <b>{x.externalAverage.toFixed(1)}</b> ({x.externalCount} คน)</span>}
                             </div>
                             <div className="perf-eval-cell" data-label="ประเมินตนเอง">
                               {detail.canSelfEdit
@@ -437,6 +445,8 @@ function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () =
                     </div>
                   </section>
                 ))}
+
+                {detail.externalReviews && <ExternalReviewsSection detail={detail} disabled={busy} onChanged={(next) => { setDetail((d) => d ? { ...d, ...next } : d); onChanged(); }} />}
 
                 <section className="perf-eval-group perf-eval-notes" aria-label="ความเห็น">
                   <h3>ความเห็น</h3>
@@ -667,6 +677,10 @@ function EvaluationSummaryBar({ detail, selfAverage, managerPreview, managerScor
           <span>ประเมินโดย {s.evaluatorName ?? "-"}{s.completedAt && ` · ส่งผล ${fmtDate(s.completedAt)}`}{s.acknowledgedAt && ` · พนักงานรับทราบ ${fmtDate(s.acknowledgedAt)}`}</span>
         </div>
         <div className="perf-evm-summary-stats">
+          {detail.managerScore != null && detail.externalScore != null && <>
+            <div><span>หัวหน้าตรง ({100 - detail.externalWeight}%)</span><b>{detail.managerScore.toFixed(2)}</b></div>
+            <div><span>แผนกอื่น ({detail.externalWeight}%)</span><b>{detail.externalScore.toFixed(2)}</b></div>
+          </>}
           {selfAverage != null && <div><span>ตนเองเฉลี่ย</span><b>{selfAverage.toFixed(2)}</b></div>}
           {s.recommendation && <div><span>ผลทดลองงาน</span><Badge tone={s.recommendation === "Pass" ? "green" : s.recommendation === "Extend" ? "yellow" : "red"}>{recommendationLabel[s.recommendation]}{detail.extendToDate ? ` ถึง ${fmtDate(detail.extendToDate)}` : ""}</Badge></div>}
         </div>
@@ -686,7 +700,7 @@ function EvaluationSummaryBar({ detail, selfAverage, managerPreview, managerScor
       {managerPreview != null && (
         <div className="perf-evm-summary-step preview">
           <span className="perf-grade">{gradeFor(managerPreview)}</span>
-          <div><span>ถ้าส่งตอนนี้</span><b>{managerPreview.toFixed(2)} / 5</b></div>
+          <div><span>ถ้าส่งตอนนี้{detail.externalScore != null ? ` (รวมแผนกอื่น ${detail.externalWeight}%)` : ""}</span><b>{managerPreview.toFixed(2)} / 5</b></div>
         </div>
       )}
     </div>
@@ -744,6 +758,7 @@ function TemplatesModal({ onClose }: { onClose: () => void }) {
   const [activeId, setActiveId] = useState("");
   const [name, setName] = useState("");
   const [criteria, setCriteria] = useState<Criterion[]>([]);
+  const [externalWeight, setExternalWeight] = useState(30);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -759,11 +774,12 @@ function TemplatesModal({ onClose }: { onClose: () => void }) {
     setActiveId(t.evaluationTemplateId);
     setName(t.name);
     setCriteria(t.criteria.map((c) => ({ ...c })));
+    setExternalWeight(t.externalWeight ?? 30);
     setError("");
   }
 
   const total = criteria.reduce((sum, c) => sum + (Number(c.weight) || 0), 0);
-  const valid = name.trim() !== "" && criteria.length > 0 && criteria.length <= 15 && total === 100 && criteria.every((c) => c.name.trim() && c.weight >= 1 && c.weight <= 100);
+  const valid = name.trim() !== "" && criteria.length > 0 && criteria.length <= 15 && total === 100 && criteria.every((c) => c.name.trim() && c.weight >= 1 && c.weight <= 100) && externalWeight >= 0 && externalWeight <= 50;
   const update = (i: number, patch: Partial<Criterion>) => setCriteria((list) => list.map((c, idx) => idx === i ? { ...c, ...patch } : c));
   const move = (i: number, dir: -1 | 1) => setCriteria((list) => { const next = [...list]; const j = i + dir; if (j < 0 || j >= next.length) return list; [next[i], next[j]] = [next[j], next[i]]; return next; });
 
@@ -771,7 +787,7 @@ function TemplatesModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError("");
     try {
-      const saved = await apiFetch<Template>(`/performance/templates/${activeId}`, { method: "PUT", json: { name: name.trim(), criteria: criteria.map((c) => ({ ...c, name: c.name.trim(), description: c.description?.trim() || null })) }, fallbackMessage: "บันทึกแบบประเมินไม่สำเร็จ" });
+      const saved = await apiFetch<Template>(`/performance/templates/${activeId}`, { method: "PUT", json: { name: name.trim(), externalWeight, criteria: criteria.map((c) => ({ ...c, name: c.name.trim(), description: c.description?.trim() || null })) }, fallbackMessage: "บันทึกแบบประเมินไม่สำเร็จ" });
       setTemplates((list) => list.map((t) => t.evaluationTemplateId === saved.evaluationTemplateId ? saved : t));
       notify("บันทึกแบบประเมินแล้ว — มีผลกับรอบประเมินที่สร้างหลังจากนี้", "success");
     } catch (e) {
@@ -796,7 +812,13 @@ function TemplatesModal({ onClose }: { onClose: () => void }) {
       </div>
       {activeId && (
         <div className="perf-template-editor">
-          <label className="perf-template-name">ชื่อแบบประเมิน<input value={name} maxLength={200} onChange={(e) => setName(e.target.value)} /></label>
+          <div className="perf-template-head">
+            <label className="perf-template-name">ชื่อแบบประเมิน<input value={name} maxLength={200} onChange={(e) => setName(e.target.value)} /></label>
+            <label className="perf-template-external">น้ำหนักคะแนนจากแผนกอื่น
+              <span className="perf-weight"><input type="number" min={0} max={50} value={externalWeight} aria-describedby="perf-external-weight-hint" onChange={(e) => setExternalWeight(Number(e.target.value))} />%</span>
+              <small id="perf-external-weight-hint" className="perf-hint">หัวหน้าตรง {100 - (externalWeight || 0)}% · 0–50% · 0 = ใช้เป็นข้อมูลอ้างอิงเท่านั้น · ไม่มีใครส่ง = หัวหน้าตรง 100%</small>
+            </label>
+          </div>
           <ol className="perf-template-list">
             {criteria.map((c, i) => (
               <li key={i}>
@@ -840,6 +862,115 @@ function criterionGroupsOf(scores: Score[]): [string, Score[]][] {
 function weightedScore(scores: Score[], value: (s: Score) => number): number {
   const total = scores.reduce((sum, s) => sum + s.weight, 0);
   return total ? Math.round((scores.reduce((sum, s) => sum + value(s) * s.weight, 0) / total) * 100) / 100 : 0;
+}
+
+/** ต้องตรงกับ Evaluation.CombineScores ฝั่ง backend */
+function combineScores(manager: number, external: number | null, weight: number): number {
+  return external != null && weight > 0 ? Math.round((manager * (100 - weight) / 100 + external * weight / 100) * 100) / 100 : manager;
+}
+
+const externalStatus: Record<ExternalReview["status"], { label: string; tone: string }> = {
+  Pending: { label: "รอประเมิน", tone: "yellow" }, Submitted: { label: "ส่งแล้ว", tone: "green" }, Revoked: { label: "ยกเลิกแล้ว", tone: "gray" }, Expired: { label: "หมดอายุ", tone: "gray" },
+};
+const externalLink = (code: string) => `${window.location.origin}/?er=${code}`;
+
+/** ผู้ประเมินจากแผนกอื่น — หัวหน้าตรงสร้างลิงก์ 1 ลิงก์ต่อ 1 คน (ไม่ต้อง login) คัดลอก/ยกเลิกได้ และเห็นผลที่ส่งแล้ว */
+function ExternalReviewsSection({ detail, disabled, onChanged }: { detail: EvaluationDetail; disabled: boolean; onChanged: (patch: Partial<EvaluationDetail>) => void }) {
+  const reviews = detail.externalReviews ?? [];
+  const closed = detail.summary.status === "Completed" || detail.summary.status === "Acknowledged";
+  const canCreate = detail.canManageExternal && !closed;
+  const [form, setForm] = useState({ reviewerName: "", reviewerDepartment: "", note: "", expiresInDays: 14 });
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submitted = reviews.filter((x) => x.status === "Submitted");
+
+  const reload = async () => {
+    const next = await apiFetch<EvaluationDetail>(`/performance/evaluations/${detail.summary.evaluationId}`);
+    onChanged({ externalReviews: next.externalReviews, externalScore: next.externalScore, scores: next.scores });
+  };
+  const copy = async (code: string, name: string) => {
+    try { await navigator.clipboard.writeText(externalLink(code)); notify(`คัดลอกลิงก์ของ ${name} แล้ว — ส่งให้ผู้ประเมินทางอีเมลหรือแชต`, "success"); }
+    catch { await promptDialog({ title: "คัดลอกลิงก์", message: "คัดลอกลิงก์ด้านล่างไปส่งให้ผู้ประเมิน", initialValue: externalLink(code), confirmLabel: "ปิด" }); }
+  };
+  const create = async () => {
+    setBusy(true); setError("");
+    try {
+      const r = await apiFetch<ExternalReview>(`/performance/evaluations/${detail.summary.evaluationId}/external-reviews`, {
+        method: "POST", fallbackMessage: "สร้างลิงก์ไม่สำเร็จ",
+        json: { reviewerName: form.reviewerName.trim(), reviewerDepartment: form.reviewerDepartment.trim() || null, note: form.note.trim() || null, expiresInDays: form.expiresInDays },
+      });
+      await reload();
+      setForm({ reviewerName: "", reviewerDepartment: "", note: "", expiresInDays: form.expiresInDays });
+      setOpen(false);
+      if (r.code) await copy(r.code, r.reviewerName);
+    } catch (e) { setError(errorText(e, "สร้างลิงก์ไม่สำเร็จ")); } finally { setBusy(false); }
+  };
+  const revoke = async (x: ExternalReview) => {
+    if (!await confirmDialog({ title: "ยกเลิกลิงก์ประเมิน", message: `ยกเลิกลิงก์ของ ${x.reviewerName}? ผู้ประเมินจะเปิดลิงก์นี้ไม่ได้อีก`, confirmLabel: "ยกเลิกลิงก์" })) return;
+    setBusy(true); setError("");
+    try {
+      await apiFetch(`/performance/evaluations/${detail.summary.evaluationId}/external-reviews/${x.reviewId}/revoke`, { method: "POST", fallbackMessage: "ยกเลิกลิงก์ไม่สำเร็จ" });
+      await reload();
+      notify("ยกเลิกลิงก์แล้ว", "success");
+    } catch (e) { setError(errorText(e, "ยกเลิกลิงก์ไม่สำเร็จ")); } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="perf-eval-group perf-eval-external" aria-labelledby="perf-eval-external-title">
+      <h3 id="perf-eval-external-title">ผู้ประเมินจากแผนกอื่น
+        <small>{submitted.length ? `ส่งแล้ว ${submitted.length} คน · เฉลี่ย ${detail.externalScore?.toFixed(2) ?? "-"}` : "ยังไม่มีผลจากแผนกอื่น"} · น้ำหนัก {detail.externalWeight}% ของผลรวม</small>
+      </h3>
+      {reviews.length === 0 && !open && <p className="perf-hint">ส่งลิงก์ให้หัวหน้าแผนกที่ทำงานร่วมกันประเมินได้โดยไม่ต้อง login — ให้คะแนนเกณฑ์เดียวกันกับรอบนี้ และไม่เห็นคะแนนของหัวหน้าตรงหรือของพนักงาน</p>}
+      {reviews.length > 0 && (
+        <ul className="perf-ext-list">
+          {reviews.map((x) => (
+            <li key={x.reviewId} className={`perf-ext-item is-${x.status.toLowerCase()}`}>
+              <div className="perf-ext-who">
+                <b>{x.reviewerName}</b>{x.reviewerDepartment && <small>{x.reviewerDepartment}</small>}
+              </div>
+              <div className="perf-ext-state">
+                <Badge tone={externalStatus[x.status].tone}>{externalStatus[x.status].label}</Badge>
+                <small>{x.status === "Submitted" ? `ส่ง ${fmtDate(x.submittedAt)}` : x.status === "Pending" ? `ใช้ได้ถึง ${fmtDate(x.expiresAt)}${x.viewCount ? ` · เปิดแล้ว ${x.viewCount} ครั้ง` : " · ยังไม่ได้เปิด"}` : `สร้าง ${fmtDate(x.createdAt)}`}</small>
+              </div>
+              <div className="perf-ext-score">{x.weightedScore != null ? <><b>{x.weightedScore.toFixed(2)}</b><small>/ 5</small></> : <small>-</small>}</div>
+              {x.status === "Pending" && x.code && detail.canManageExternal && (
+                <div className="perf-ext-actions">
+                  <button type="button" className="btn" disabled={disabled || busy} onClick={() => void copy(x.code!, x.reviewerName)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span>คัดลอกลิงก์</button>
+                  <button type="button" className="btn perf-ext-revoke" disabled={disabled || busy} onClick={() => void revoke(x)} aria-label={`ยกเลิกลิงก์ของ ${x.reviewerName}`} title="ยกเลิกลิงก์"><span className="material-symbols-outlined" aria-hidden="true">link_off</span></button>
+                </div>
+              )}
+              {x.comment && <p className="perf-score-note perf-ext-comment">“{x.comment}”</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canCreate && (open ? (
+        <div className="perf-ext-form">
+          <div className="form-grid">
+            <label>ชื่อผู้ประเมิน<span className="required-mark"> *</span><input value={form.reviewerName} maxLength={100} disabled={busy} placeholder="เช่น คุณสมชาย ใจดี" onChange={(e) => setForm((f) => ({ ...f, reviewerName: e.target.value }))} /></label>
+            <label>แผนก / ตำแหน่ง<input value={form.reviewerDepartment} maxLength={100} disabled={busy} placeholder="เช่น หัวหน้าฝ่ายพัฒนา" onChange={(e) => setForm((f) => ({ ...f, reviewerDepartment: e.target.value }))} /></label>
+            <label className="full">ข้อความถึงผู้ประเมิน (ไม่บังคับ)<input value={form.note} maxLength={300} disabled={busy} placeholder="เช่น ช่วยประเมินงานที่ทำร่วมกับทีม Dev ในไตรมาสนี้" onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} /></label>
+            <label>ลิงก์ใช้ได้
+              <select value={form.expiresInDays} disabled={busy} onChange={(e) => setForm((f) => ({ ...f, expiresInDays: Number(e.target.value) }))}>
+                {[7, 14, 30, 60].map((d) => <option key={d} value={d}>{d} วัน</option>)}
+              </select>
+            </label>
+          </div>
+          {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+          <div className="perf-ext-form-actions">
+            <button type="button" className="btn" disabled={busy} onClick={() => { setOpen(false); setError(""); }}>ยกเลิก</button>
+            <button type="button" className="btn primary" disabled={busy || disabled || !form.reviewerName.trim()} onClick={() => void create()}>
+              {busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง...</> : <><span className="material-symbols-outlined" aria-hidden="true">add_link</span> สร้างลิงก์และคัดลอก</>}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="btn perf-ext-add" disabled={disabled} onClick={() => setOpen(true)}><span className="material-symbols-outlined" aria-hidden="true">person_add</span>ขอให้หัวหน้าแผนกอื่นประเมิน</button>
+      ))}
+      {!open && error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+    </section>
+  );
 }
 
 /** ต้องตรงกับ Evaluation.GradeFor ฝั่ง backend */

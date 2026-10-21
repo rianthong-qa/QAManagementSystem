@@ -684,3 +684,93 @@ button.perf-evidence-file:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* หัวตารางการประเมินชิดซ้ายตรงกับข้อมูล (กฎกลาง th จัดกึ่งกลาง) */
 .performance-page .perf-eval-table th { text-align: left; }
+
+/* ===== ผู้ประเมินจากแผนกอื่น (2026-10-21) ===== */
+.perf-eval-ext { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--info) 10%, var(--card)); color: var(--text); font-size: 11px; }
+.perf-eval-ext .material-symbols-outlined { color: var(--info); font-size: 14px; }
+.perf-eval-external .perf-hint { margin: 0; }
+.perf-eval-crit .perf-eval-ext { justify-self: start; width: fit-content; }
+.perf-eval-external > h3 { flex-wrap: wrap; row-gap: 2px; }
+.perf-eval-external .perf-ext-form .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 0; }
+.perf-eval-external .perf-ext-form .form-grid .full { grid-column: 1 / -1; }
+.perf-ext-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.perf-ext-item { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.3fr) 64px auto; align-items: center; gap: 6px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.perf-ext-item.is-revoked, .perf-ext-item.is-expired { opacity: .7; }
+.perf-ext-item.is-submitted { border-left: 3px solid var(--green); }
+.perf-ext-item.is-pending { border-left: 3px solid var(--yellow); }
+.perf-ext-who, .perf-ext-state { display: grid; gap: 2px; min-width: 0; }
+.perf-ext-who b { overflow-wrap: anywhere; font-size: 13px; }
+.perf-ext-who small, .perf-ext-state small { color: var(--muted); font-size: 11px; }
+.perf-ext-state .badge { justify-self: start; }
+.perf-ext-score { display: flex; align-items: baseline; justify-content: flex-end; gap: 2px; font-variant-numeric: tabular-nums; }
+.perf-ext-score b { font-size: 16px; }
+.perf-ext-score small { color: var(--muted); font-size: 11px; }
+.perf-ext-actions { display: flex; gap: 6px; }
+.perf-ext-actions .btn { gap: 4px; padding: 6px 10px; white-space: nowrap; }
+.perf-ext-actions .material-symbols-outlined { font-size: 17px; }
+.perf-ext-revoke { color: var(--red); }
+.perf-ext-comment { grid-column: 1 / -1; margin: 0; }
+.perf-ext-add { justify-self: start; gap: 6px; }
+.perf-ext-form { display: grid; gap: 10px; padding: 12px; border: 1px dashed color-mix(in srgb, var(--primary) 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--primary-soft) 40%, var(--card)); }
+.perf-ext-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.perf-template-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.perf-template-external { display: grid; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.perf-template-external .perf-weight { justify-self: start; }
+.perf-template-external .perf-hint { font-weight: 400; }
+@media (max-width: 760px) {
+  .perf-ext-item { grid-template-columns: minmax(0, 1fr) auto; }
+  .perf-ext-state { grid-column: 1 / -1; grid-row: 2; }
+  .perf-ext-actions { grid-column: 1 / -1; }
+  .perf-ext-actions .btn { flex: 1 1 auto; justify-content: center; min-height: 44px; }
+  .perf-ext-actions .perf-ext-revoke { flex: 0 0 44px; }
+  .perf-ext-add { width: 100%; justify-content: center; min-height: 44px; }
+  .perf-ext-form-actions .btn { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .perf-template-head { grid-template-columns: minmax(0, 1fr); }
+  .perf-eval-external .perf-ext-form .form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* แบบฟอร์มของผู้ประเมินภายนอก (`?er=`) */
+.perf-xr { display: grid; gap: 14px; max-width: 920px; margin: 0 auto; }
+.perf-xr-head { display: grid; gap: 6px; padding: 18px 20px; border-top: 3px solid var(--primary); }
+.perf-xr-eyebrow { color: var(--primary); font-size: 12px; font-weight: 800; }
+.perf-xr-head h1 { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 0; color: var(--text); font-size: 22px; }
+.perf-xr-head h1 small { color: var(--muted); font-size: 14px; font-weight: 600; }
+.perf-xr-meta { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 4px 0 0; }
+.perf-xr-meta div { display: grid; gap: 1px; }
+.perf-xr-meta dt { color: var(--muted); font-size: 11px; }
+.perf-xr-meta dd { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; }
+.perf-xr .perf-xr-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
+.perf-xr .perf-xr-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.perf-xr .perf-xr-legend b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--card); border: 1px solid var(--line); color: var(--text); font-size: 12px; }
+.perf-xr .perf-shared-banner { display: flex; align-items: flex-start; gap: 8px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary-soft) 45%, var(--card)); color: var(--text); font-size: 13px; line-height: 1.55; }
+.perf-xr .perf-shared-banner .material-symbols-outlined { flex: none; color: var(--primary); font-size: 18px; }
+.perf-xr-group { display: grid; gap: 4px; padding: 16px 20px; }
+.perf-xr-group h2 { margin: 0 0 4px; color: var(--text); font-size: 15px; }
+.perf-xr-group textarea { width: 100%; min-height: 90px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; resize: vertical; }
+.perf-xr-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.perf-xr-group h2 + .perf-xr-row { border-top: 0; }
+.perf-xr-crit b { color: var(--text); font-size: 14px; }
+.perf-xr-crit p { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.perf-xr-pick { display: flex; gap: 6px; }
+.perf-xr-pick label { position: relative; display: grid; width: 48px; min-height: 48px; place-items: center; align-content: center; gap: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); cursor: pointer; }
+.perf-xr-pick label span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.perf-xr-pick label b { font-size: 16px; }
+.perf-xr-pick input { position: absolute; opacity: 0; pointer-events: none; }
+.perf-xr-pick label:hover { border-color: var(--primary); }
+.perf-xr-pick label:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: 1px; }
+.perf-xr-pick label.active { border-color: var(--primary); background: var(--primary); color: var(--card); }
+.perf-xr-note { grid-column: 1 / -1; width: 100%; height: 38px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 13px; }
+.perf-xr-submit { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: 0 -4px 14px rgb(15 23 42 / 8%); }
+.perf-xr-submit > span { color: var(--muted); font-size: 13px; }
+.perf-xr-submit .inline-alert { flex-basis: 100%; margin: 0; }
+.perf-xr-submit .btn { gap: 6px; min-height: 44px; }
+.perf-xr-done small { color: var(--muted); }
+@media (max-width: 760px) {
+  .perf-xr-head, .perf-xr-group { padding: 14px; }
+  .perf-xr-head h1 { font-size: 19px; }
+  .perf-xr-row { grid-template-columns: minmax(0, 1fr); }
+  .perf-xr-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .perf-xr-pick label { width: auto; }
+  .perf-xr-submit { justify-content: space-between; }
+  .perf-xr-submit .btn { flex: 1 1 auto; justify-content: center; }
+}

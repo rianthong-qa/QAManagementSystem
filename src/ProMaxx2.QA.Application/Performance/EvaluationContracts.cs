@@ -6,9 +6,20 @@ using ProMaxx2.QA.Domain.Performance;
 namespace ProMaxx2.QA.Application.Performance;
 
 public sealed record EvaluationSummaryDto(Guid EvaluationId, Guid UserId, string? UserName, string Type, string Round, int Year, DateOnly PeriodStart, DateOnly PeriodEnd, DateOnly DueDate, string Status, decimal? OverallScore, string? Grade, string? Recommendation, string? EvaluatorName, DateTime? CompletedAt, DateTime? AcknowledgedAt, bool IsOverdue);
-public sealed record EvaluationScoreDto(Guid EvaluationScoreId, string Group, string Name, string? Description, int Weight, int? SelfScore, string? SelfComment, int? ManagerScore, string? ManagerComment);
+/// <summary>ExternalAverage/ExternalCount = ค่าเฉลี่ยคะแนนเกณฑ์นี้จากหัวหน้าแผนกอื่นที่ส่งแล้ว (เห็นเมื่อเห็นคะแนนหัวหน้าตรง)</summary>
+public sealed record EvaluationScoreDto(Guid EvaluationScoreId, string Group, string Name, string? Description, int Weight, int? SelfScore, string? SelfComment, int? ManagerScore, string? ManagerComment, decimal? ExternalAverage = null, int ExternalCount = 0);
 public sealed record EvaluationEmployeeDto(string? EmployeeCode, string? Position, string? Level, DateOnly? HireDate, string? SupervisorName);
-public sealed record EvaluationDetailDto(EvaluationSummaryDto Summary, EvaluationEmployeeDto Employee, string TemplateName, string? SelfComment, DateTime? SelfSubmittedAt, string? Strengths, string? Improvements, string? NextGoals, DateOnly? ExtendToDate, string? EmployeeComment, string? ReopenReason, DateOnly? ProbationEndDate, IReadOnlyList<EvaluationScoreDto> Scores, PerformanceMetrics Metrics, bool MetricsIsSnapshot, bool CanSelfEdit, bool CanManagerEdit, bool CanAcknowledge, bool CanReopen, string? ManagerRestriction = null);
+public sealed record EvaluationDetailDto(EvaluationSummaryDto Summary, EvaluationEmployeeDto Employee, string TemplateName, string? SelfComment, DateTime? SelfSubmittedAt, string? Strengths, string? Improvements, string? NextGoals, DateOnly? ExtendToDate, string? EmployeeComment, string? ReopenReason, DateOnly? ProbationEndDate, IReadOnlyList<EvaluationScoreDto> Scores, PerformanceMetrics Metrics, bool MetricsIsSnapshot, bool CanSelfEdit, bool CanManagerEdit, bool CanAcknowledge, bool CanReopen, string? ManagerRestriction = null,
+    int ExternalWeight = EvaluationTemplate.DefaultExternalWeight, decimal? ManagerScore = null, decimal? ExternalScore = null, IReadOnlyList<EvaluationExternalReviewDto>? ExternalReviews = null, bool CanManageExternal = false);
+/// <summary>ผู้ประเมินจากแผนกอื่นหนึ่งคน — Code ส่งเฉพาะหัวหน้าตรงและเฉพาะลิงก์ที่ยังรอส่ง (หน้าเว็บสร้างลิงก์ `/?er=code`)</summary>
+public sealed record EvaluationExternalReviewDto(Guid ReviewId, string ReviewerName, string? ReviewerDepartment, string? Note, string Status, DateTime ExpiresAt, DateTime CreatedAt, DateTime? SubmittedAt, decimal? WeightedScore, string? Comment, int ViewCount, string? Code);
+public sealed record CreateExternalReviewRequest(string ReviewerName, string? ReviewerDepartment, string? Note, int ExpiresInDays);
+/// <summary>แบบฟอร์มสำหรับผู้ประเมินภายนอก (anonymous) — ไม่มีคะแนนตนเอง/หัวหน้าตรง</summary>
+public sealed record ExternalReviewFormDto(string ReviewerName, string? ReviewerDepartment, string? Note, string? RequestedByName, string EmployeeName, string? Position, string Type, string Round, int Year, DateOnly PeriodStart, DateOnly PeriodEnd, string TemplateName, DateTime ExpiresAt, string Status, DateTime? SubmittedAt, IReadOnlyList<ExternalReviewCriterionDto> Criteria);
+public sealed record ExternalReviewCriterionDto(Guid EvaluationScoreId, string Group, string Name, string? Description, int Weight);
+public sealed record SubmitExternalReviewRequest(IReadOnlyList<EvaluationScoreInput> Scores, string? Comment);
+/// <summary>ลิงก์ประเมินถูกยกเลิก/หมดอายุ/การประเมินปิดแล้ว — ตอบ 410</summary>
+public sealed class ExternalReviewGoneException(string message) : Exception(message);
 public sealed record EvaluationScoreInput(Guid EvaluationScoreId, int? Score, string? Comment);
 public sealed record SaveSelfEvaluationRequest(IReadOnlyList<EvaluationScoreInput> Scores, string? Comment, bool Submit);
 public sealed record SaveManagerEvaluationRequest(IReadOnlyList<EvaluationScoreInput> Scores, string? Strengths, string? Improvements, string? NextGoals, string? Recommendation, DateOnly? ExtendToDate, bool Complete);
@@ -17,8 +28,8 @@ public sealed record ReopenEvaluationRequest(string Reason);
 public sealed record CreateQuarterlyEvaluationsRequest(int Year, int Quarter);
 public sealed record CreateQuarterlyEvaluationsResult(int Created, int Skipped);
 public sealed record EvaluationCriterionDto(string Group, string Name, string? Description, int Weight);
-public sealed record EvaluationTemplateDto(Guid EvaluationTemplateId, string Type, string Name, bool IsActive, IReadOnlyList<EvaluationCriterionDto> Criteria);
-public sealed record SaveEvaluationTemplateRequest(string Name, IReadOnlyList<EvaluationCriterionDto> Criteria);
+public sealed record EvaluationTemplateDto(Guid EvaluationTemplateId, string Type, string Name, bool IsActive, IReadOnlyList<EvaluationCriterionDto> Criteria, int ExternalWeight = EvaluationTemplate.DefaultExternalWeight);
+public sealed record SaveEvaluationTemplateRequest(string Name, IReadOnlyList<EvaluationCriterionDto> Criteria, int? ExternalWeight = null);
 public sealed record EvaluationGroupScoreDto(string Group, decimal Score);
 public sealed record EvaluationComparisonRoundDto(Guid EvaluationId, string Type, string Round, int Year, DateOnly PeriodStart, DateOnly PeriodEnd, decimal OverallScore, string Grade, IReadOnlyList<EvaluationGroupScoreDto> Groups);
 public sealed record EvaluationComparisonDto(IReadOnlyList<string> Groups, IReadOnlyList<EvaluationComparisonRoundDto> Rounds);
@@ -41,10 +52,16 @@ public interface IEvaluationRepository
     Task<IReadOnlyList<Evaluation>> ListQuarterlyAsync(int year, CancellationToken ct);
     Task<IReadOnlyCollection<Guid>> UsersWithRoundAsync(string round, int year, CancellationToken ct);
     Task AddAsync(Evaluation evaluation, CancellationToken ct);
+    /// <summary>ลิงก์ผู้ประเมินแผนกอื่นของการประเมินหนึ่งรอบ (tracked + Scores)</summary>
+    Task<IReadOnlyList<EvaluationExternalReview>> ListExternalReviewsAsync(Guid evaluationId, CancellationToken ct);
+    Task<EvaluationExternalReview?> FindExternalReviewAsync(Guid reviewId, CancellationToken ct);
+    Task<EvaluationExternalReview?> FindExternalReviewByCodeAsync(string code, CancellationToken ct);
+    Task<bool> ExternalReviewCodeExistsAsync(string code, CancellationToken ct);
+    Task AddExternalReviewAsync(EvaluationExternalReview review, CancellationToken ct);
     Task<IReadOnlyDictionary<Guid, string>> UserNamesAsync(IEnumerable<Guid> userIds, CancellationToken ct);
 }
 
-public sealed class EvaluationService(IEvaluationRepository repository, IPerformanceRepository performance, PerformanceService performanceService)
+public sealed partial class EvaluationService(IEvaluationRepository repository, IPerformanceRepository performance, PerformanceService performanceService)
 {
     private static readonly JsonSerializerOptions SnapshotJson = new(JsonSerializerDefaults.Web);
     private DateOnly Today => performanceService.Today;
@@ -94,8 +111,17 @@ public sealed class EvaluationService(IEvaluationRepository repository, IPerform
             var profile = await performance.FindProfileAsync(e.UserId, ct);
             var metrics = await MetricsAsync(viewer, e, ct);
             var probationEnd = profile?.ProbationEndDate ?? e.PeriodEnd;
-            e.Complete(JsonSerializer.Serialize(metrics, SnapshotJson), probationEnd, viewer.UserId);
-            Audit(viewer, e, "Completed", $"ส่งผลประเมิน {e.Round}/{e.Year} คะแนน {e.OverallScore} เกรด {e.Grade}{(e.Recommendation is null ? "" : $" ผลทดลองงาน {e.Recommendation}")}");
+            // คะแนนแผนกอื่นที่ส่งแล้วนำมาคำนวณ; ลิงก์ที่ยังไม่ส่งถูกปิด (หน้าเว็บเตือนก่อนยืนยันส่งผล)
+            var reviews = await repository.ListExternalReviewsAsync(e.EvaluationId, ct);
+            var external = reviews.Where(x => x.IsSubmitted && x.WeightedScore is not null).Select(x => x.WeightedScore!.Value).ToList();
+            e.Complete(JsonSerializer.Serialize(metrics, SnapshotJson), probationEnd, viewer.UserId, external);
+            var now = DateTime.UtcNow;
+            var closedLinks = 0;
+            foreach (var pending in reviews.Where(x => x.IsUsable(now))) { pending.Revoke(viewer.UserId, now); closedLinks++; }
+            Audit(viewer, e, "Completed", $"ส่งผลประเมิน {e.Round}/{e.Year} คะแนน {e.OverallScore} เกรด {e.Grade}" +
+                (external.Count > 0 ? $" (หัวหน้าตรง {e.ManagerScore} · แผนกอื่น {e.ExternalScore} จาก {external.Count} คน น้ำหนัก {e.ExternalWeight}%)" : "") +
+                (closedLinks > 0 ? $" ปิดลิงก์แผนกอื่นที่ยังไม่ส่ง {closedLinks} ลิงก์" : "") +
+                (e.Recommendation is null ? "" : $" ผลทดลองงาน {e.Recommendation}"));
             if (e.IsFinalProbation && profile is not null) await ApplyProbationDecisionAsync(viewer, e, profile, ct);
         }
         await performance.SaveChangesAsync(ct);
@@ -255,8 +281,8 @@ public sealed class EvaluationService(IEvaluationRepository repository, IPerform
     {
         RequireManage(viewer);
         var t = await repository.FindTemplateAsync(id, ct) ?? throw new EntityNotFoundException("ไม่พบแบบประเมิน");
-        t.ReplaceCriteria(r.Name, (r.Criteria ?? []).Select(x => (x.Group, x.Name, x.Description, x.Weight)).ToList(), viewer.UserId);
-        performance.AddAudit(new AuditLog(viewer.UserId, "Updated", "EvaluationTemplate", t.EvaluationTemplateId.ToString(), $"แก้แบบประเมิน {t.Name} ({t.Criteria.Count} เกณฑ์)", null, null, null));
+        t.ReplaceCriteria(r.Name, (r.Criteria ?? []).Select(x => (x.Group, x.Name, x.Description, x.Weight)).ToList(), viewer.UserId, r.ExternalWeight);
+        performance.AddAudit(new AuditLog(viewer.UserId, "Updated", "EvaluationTemplate", t.EvaluationTemplateId.ToString(), $"แก้แบบประเมิน {t.Name} ({t.Criteria.Count} เกณฑ์, น้ำหนักแผนกอื่น {t.ExternalWeight}%)", null, null, null));
         await performance.SaveChangesAsync(ct);
         return TemplateDto(t);
     }
@@ -336,7 +362,21 @@ public sealed class EvaluationService(IEvaluationRepository repository, IPerform
         var employee = new EvaluationEmployeeDto(profile?.EmployeeCode, profile?.Position, profile?.Level, profile?.HireDate,
             profile?.SupervisorUserId is { } sup ? names.GetValueOrDefault(sup) : null);
         var restriction = ManagerRestriction(viewer, e, profile, employee.SupervisorName);
-        var scores = e.Scores.OrderBy(x => x.SortOrder).Select(s => new EvaluationScoreDto(s.EvaluationScoreId, s.Group, s.Name, s.Description, s.Weight, s.SelfScore, s.SelfComment, showManager ? s.ManagerScore : null, showManager ? s.ManagerComment : null)).ToList();
+        var reviews = showManager ? await repository.ListExternalReviewsAsync(e.EvaluationId, ct) : [];
+        var submitted = reviews.Where(x => x.IsSubmitted).ToList();
+        var externalByCriterion = submitted.SelectMany(x => x.Scores).GroupBy(x => x.EvaluationScoreId)
+            .ToDictionary(g => g.Key, g => (Avg: Math.Round((decimal)g.Average(x => x.Score), 2), Count: g.Count()));
+        var scores = e.Scores.OrderBy(x => x.SortOrder).Select(s =>
+        {
+            var has = externalByCriterion.TryGetValue(s.EvaluationScoreId, out var ext);
+            return new EvaluationScoreDto(s.EvaluationScoreId, s.Group, s.Name, s.Description, s.Weight, s.SelfScore, s.SelfComment, showManager ? s.ManagerScore : null, showManager ? s.ManagerComment : null,
+                has ? ext.Avg : null, has ? ext.Count : 0);
+        }).ToList();
+        var canManageExternal = restriction is null && !isOwner;
+        var now = DateTime.UtcNow;
+        var externalDtos = reviews.Select(x => ExternalReviewDto(x, now, canManageExternal)).ToList();
+        // ระหว่างร่างแสดงค่าเฉลี่ยแผนกอื่นตอนนี้ — หลังส่งผลใช้ค่าที่ตรึงไว้ในการประเมิน
+        var liveExternal = submitted.Count > 0 ? Math.Round(submitted.Average(x => x.WeightedScore ?? 0), 2) : (decimal?)null;
         return new EvaluationDetailDto(Summary(e, names), employee, e.TemplateName, e.SelfComment, e.SelfSubmittedAt,
             showManager ? e.Strengths : null, showManager ? e.Improvements : null, showManager ? e.NextGoals : null, showManager ? e.ExtendToDate : null,
             e.EmployeeComment, e.ReopenReason, profile?.ProbationEndDate, scores, metrics, snapshot is not null,
@@ -344,7 +384,12 @@ public sealed class EvaluationService(IEvaluationRepository repository, IPerform
             CanManagerEdit: restriction is null && !e.IsClosed,
             CanAcknowledge: isOwner && e.Status == "Completed",
             CanReopen: restriction is null && e.IsClosed,
-            ManagerRestriction: isOwner ? null : restriction);
+            ManagerRestriction: isOwner ? null : restriction,
+            ExternalWeight: e.ExternalWeight,
+            ManagerScore: showManager ? e.ManagerScore : null,
+            ExternalScore: showManager ? (e.IsClosed ? e.ExternalScore : liveExternal) : null,
+            ExternalReviews: showManager ? externalDtos : null,
+            CanManageExternal: canManageExternal);
     }
 
     private EvaluationSummaryDto Summary(Evaluation e, IReadOnlyDictionary<Guid, string> names)
@@ -362,7 +407,7 @@ public sealed class EvaluationService(IEvaluationRepository repository, IPerform
         => (scores ?? []).GroupBy(x => x.EvaluationScoreId).ToDictionary(g => g.Key, g => (g.Last().Score, g.Last().Comment));
 
     private static EvaluationTemplateDto TemplateDto(EvaluationTemplate t)
-        => new(t.EvaluationTemplateId, t.Type, t.Name, t.IsActive, t.Criteria.OrderBy(x => x.SortOrder).Select(x => new EvaluationCriterionDto(x.Group, x.Name, x.Description, x.Weight)).ToList());
+        => new(t.EvaluationTemplateId, t.Type, t.Name, t.IsActive, t.Criteria.OrderBy(x => x.SortOrder).Select(x => new EvaluationCriterionDto(x.Group, x.Name, x.Description, x.Weight)).ToList(), t.ExternalWeight);
 
     private static void RequireManage(PerformanceViewer viewer)
     {

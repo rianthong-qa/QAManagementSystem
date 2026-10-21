@@ -97,6 +97,8 @@ public sealed class EvaluationConfiguration : IEntityTypeConfiguration<Evaluatio
         b.Property(x => x.Recommendation).HasMaxLength(20);
         b.Property(x => x.Grade).HasMaxLength(2);
         b.Property(x => x.OverallScore).HasPrecision(4, 2);
+        b.Property(x => x.ManagerScore).HasPrecision(4, 2);
+        b.Property(x => x.ExternalScore).HasPrecision(4, 2);
         b.Property(x => x.SelfSubmittedAt).HasPrecision(0);
         b.Property(x => x.CompletedAt).HasPrecision(0);
         b.Property(x => x.AcknowledgedAt).HasPrecision(0);
@@ -156,6 +158,48 @@ public sealed class EvaluationNotificationConfiguration : IEntityTypeConfigurati
         b.HasOne<Evaluation>().WithMany().HasForeignKey(x => x.EvaluationId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<User>().WithMany().HasForeignKey(x => x.RecipientUserId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.EvaluationId, x.Kind, x.DueDate, x.RecipientUserId }).IsUnique();
+    }
+}
+
+public sealed class EvaluationExternalReviewConfiguration : IEntityTypeConfiguration<EvaluationExternalReview>
+{
+    public void Configure(EntityTypeBuilder<EvaluationExternalReview> b)
+    {
+        b.ToTable("EvaluationExternalReviews");
+        b.HasKey(x => x.EvaluationExternalReviewId);
+        b.Property(x => x.EvaluationExternalReviewId).ValueGeneratedNever();
+        b.Property(x => x.Code).HasMaxLength(16).IsRequired();
+        b.Property(x => x.ReviewerName).HasMaxLength(100).IsRequired();
+        b.Property(x => x.ReviewerDepartment).HasMaxLength(100);
+        b.Property(x => x.Note).HasMaxLength(300);
+        b.Property(x => x.Comment).HasMaxLength(2000);
+        b.Property(x => x.WeightedScore).HasPrecision(4, 2);
+        b.Property(x => x.ExpiresAt).HasPrecision(0);
+        b.Property(x => x.CreatedAt).HasPrecision(0);
+        b.Property(x => x.RevokedAt).HasPrecision(0);
+        b.Property(x => x.SubmittedAt).HasPrecision(0);
+        b.Property(x => x.LastViewedAt).HasPrecision(0);
+        b.Ignore(x => x.IsSubmitted);
+        b.HasOne<Evaluation>().WithMany().HasForeignKey(x => x.EvaluationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasMany(x => x.Scores).WithOne().HasForeignKey(x => x.EvaluationExternalReviewId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<User>().WithMany().HasForeignKey(x => x.RevokedBy).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => x.Code).IsUnique();
+        b.HasIndex(x => new { x.EvaluationId, x.CreatedAt });
+    }
+}
+
+public sealed class EvaluationExternalScoreConfiguration : IEntityTypeConfiguration<EvaluationExternalScore>
+{
+    public void Configure(EntityTypeBuilder<EvaluationExternalScore> b)
+    {
+        b.ToTable("EvaluationExternalScores");
+        b.HasKey(x => x.EvaluationExternalScoreId);
+        b.Property(x => x.EvaluationExternalScoreId).ValueGeneratedNever();
+        b.Property(x => x.Comment).HasMaxLength(1000);
+        // เกณฑ์ลบตาม Evaluation อยู่แล้ว (cascade ผ่าน review) — FK นี้ห้าม cascade ซ้ำ (SQL Server multiple cascade paths)
+        b.HasOne<EvaluationScore>().WithMany().HasForeignKey(x => x.EvaluationScoreId).OnDelete(DeleteBehavior.NoAction);
+        b.HasIndex(x => new { x.EvaluationExternalReviewId, x.EvaluationScoreId }).IsUnique();
     }
 }
 

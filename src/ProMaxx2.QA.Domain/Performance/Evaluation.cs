@@ -6,6 +6,9 @@ public sealed class EvaluationTemplate
     public static readonly string[] Types = ["Probation", "Quarterly"];
     public static readonly string[] Groups = ["ปริมาณงาน", "คุณภาพงาน", "ความรู้และทักษะ", "พฤติกรรม", "การสื่อสาร"];
     public const int MaxCriteria = 15;
+    /// <summary>น้ำหนัก (%) ของคะแนนจากหัวหน้าแผนกอื่นในผลรวม — ค่าเริ่มต้น 30 (หัวหน้าตรง 70); 0 = ใช้เป็นข้อมูลอ้างอิงเท่านั้น</summary>
+    public const int DefaultExternalWeight = 30;
+    public const int MaxExternalWeight = 50;
 
     private EvaluationTemplate() { }
 
@@ -23,6 +26,7 @@ public sealed class EvaluationTemplate
     public string Type { get; private set; } = "Quarterly";
     public string Name { get; private set; } = string.Empty;
     public bool IsActive { get; private set; }
+    public int ExternalWeight { get; private set; } = DefaultExternalWeight;
     public DateTime CreatedAt { get; private set; }
     public Guid? CreatedBy { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
@@ -30,18 +34,22 @@ public sealed class EvaluationTemplate
     public ICollection<EvaluationTemplateCriterion> Criteria { get; private set; } = [];
 
     /// <summary>แทนที่เกณฑ์ทั้งชุด — ต้องมี 1–15 ข้อ น้ำหนักแต่ละข้อ 1–100 และรวมได้ 100 พอดี</summary>
-    public void ReplaceCriteria(string name, IReadOnlyList<(string Group, string Name, string? Description, int Weight)> criteria, Guid? updatedBy)
+    public void ReplaceCriteria(string name, IReadOnlyList<(string Group, string Name, string? Description, int Weight)> criteria, Guid? updatedBy, int? externalWeight = null)
     {
         if (criteria.Count is 0 or > MaxCriteria) throw new ArgumentException($"แบบประเมินต้องมีเกณฑ์ 1–{MaxCriteria} ข้อ");
         if (criteria.Any(x => x.Weight is < 1 or > 100)) throw new ArgumentException("น้ำหนักแต่ละเกณฑ์ต้องอยู่ระหว่าง 1–100");
         if (criteria.Sum(x => x.Weight) != 100) throw new ArgumentException("น้ำหนักรวมของเกณฑ์ต้องเท่ากับ 100");
         Name = RequireText(name, 200, "ชื่อแบบประเมิน");
+        if (externalWeight is { } w) ExternalWeight = ValidateExternalWeight(w);
         Criteria.Clear();
         var order = 1;
         foreach (var c in criteria) Criteria.Add(new EvaluationTemplateCriterion(EvaluationTemplateId, c.Group, c.Name, c.Description, c.Weight, order++));
         UpdatedAt = DateTime.UtcNow;
         UpdatedBy = updatedBy;
     }
+
+    public static int ValidateExternalWeight(int weight) => weight is >= 0 and <= MaxExternalWeight
+        ? weight : throw new ArgumentException($"น้ำหนักคะแนนจากแผนกอื่นต้องอยู่ระหว่าง 0–{MaxExternalWeight}%");
 
     internal static string RequireText(string? value, int max, string field)
     {
@@ -128,6 +136,7 @@ public sealed class Evaluation
         PeriodEnd = periodEnd;
         DueDate = dueDate;
         TemplateName = template.Name;
+        ExternalWeight = template.ExternalWeight;
         Status = "Open";
         CreatedBy = createdBy;
         CreatedAt = DateTime.UtcNow;
@@ -148,7 +157,15 @@ public sealed class Evaluation
     public string? SelfComment { get; private set; }
     public DateTime? SelfSubmittedAt { get; private set; }
     public Guid? EvaluatorUserId { get; private set; }
+    /// <summary>ผลรวม = คะแนนหัวหน้าตรง × (100 − ExternalWeight)% + ค่าเฉลี่ยผู้ประเมินแผนกอื่น × ExternalWeight% (ไม่มีใครส่ง = หัวหน้าตรง 100%)</summary>
     public decimal? OverallScore { get; private set; }
+    /// <summary>คะแนนเฉลี่ยถ่วงน้ำหนักเกณฑ์ของหัวหน้าตรงอย่างเดียว ณ ตอนส่งผล</summary>
+    public decimal? ManagerScore { get; private set; }
+    /// <summary>ค่าเฉลี่ยของผู้ประเมินแผนกอื่นที่ส่งแล้ว ณ ตอนส่งผล (null = ไม่มีใครส่ง)</summary>
+    public decimal? ExternalScore { get; private set; }
+    public int ExternalReviewCount { get; private set; }
+    /// <summary>น้ำหนัก (%) ของคะแนนแผนกอื่น — copy จากแบบประเมินตอนสร้างรอบ</summary>
+    public int ExternalWeight { get; private set; } = EvaluationTemplate.DefaultExternalWeight;
     public string? Grade { get; private set; }
     public string? Strengths { get; private set; }
     public string? Improvements { get; private set; }
@@ -213,7 +230,7 @@ public sealed class Evaluation
     }
 
     /// <summary>หัวหน้าส่งผล — ต้องให้คะแนนครบ, รอบสรุปผลต้องระบุผลทดลองงาน (ขยายต้องมีวันสิ้นสุดใหม่หลังวันสิ้นสุดเดิม)</summary>
-    public void Complete(string metricsSnapshotJson, DateOnly currentProbationEnd, Guid actor)
+    public void Complete(string metricsSnapshotJson, DateOnly currentProbationEnd, Guid actor, IReadOnlyCollection<decimal>? externalScores = null)
     {
         if (IsClosed) throw new InvalidOperationException("การประเมินปิดแล้ว");
         if (actor == UserId) throw new InvalidOperationException("ประเมินผลตัวเองในฐานะหัวหน้าไม่ได้");
@@ -224,7 +241,10 @@ public sealed class Evaluation
             if (Recommendation == "Extend" && (ExtendToDate is null || ExtendToDate <= currentProbationEnd)) throw new ArgumentException("การขยายทดลองงานต้องระบุวันสิ้นสุดใหม่ที่หลังวันสิ้นสุดเดิม");
         }
         var totalWeight = Scores.Sum(x => x.Weight);
-        OverallScore = totalWeight == 0 ? 0 : Math.Round(Scores.Sum(x => (decimal)x.ManagerScore!.Value * x.Weight) / totalWeight, 2);
+        ManagerScore = totalWeight == 0 ? 0 : Math.Round(Scores.Sum(x => (decimal)x.ManagerScore!.Value * x.Weight) / totalWeight, 2);
+        ExternalReviewCount = externalScores?.Count ?? 0;
+        ExternalScore = ExternalReviewCount > 0 ? Math.Round(externalScores!.Average(), 2) : null;
+        OverallScore = CombineScores(ManagerScore.Value, ExternalScore, ExternalWeight);
         Grade = GradeFor(OverallScore.Value);
         MetricsSnapshotJson = metricsSnapshotJson;
         EvaluatorUserId = actor;
@@ -253,8 +273,23 @@ public sealed class Evaluation
         CompletedAt = null;
         AcknowledgedAt = null;
         OverallScore = null;
+        ManagerScore = null;
+        ExternalScore = null;
+        ExternalReviewCount = 0;
         Grade = null;
         Touch(actor);
+    }
+
+    public static decimal CombineScores(decimal managerScore, decimal? externalScore, int externalWeight)
+        => externalScore is { } ext && externalWeight > 0
+            ? Math.Round(managerScore * (100 - externalWeight) / 100m + ext * externalWeight / 100m, 2)
+            : managerScore;
+
+    /// <summary>คะแนนรวมของผู้ประเมินหนึ่งคน = ค่าเฉลี่ยถ่วงน้ำหนักตามเกณฑ์ของรอบนี้</summary>
+    public decimal WeightedScore(IReadOnlyDictionary<Guid, int> scores)
+    {
+        var total = Scores.Sum(x => x.Weight);
+        return total == 0 ? 0 : Math.Round(Scores.Sum(x => (decimal)scores[x.EvaluationScoreId] * x.Weight) / total, 2);
     }
 
     public static string GradeFor(decimal score) => score switch

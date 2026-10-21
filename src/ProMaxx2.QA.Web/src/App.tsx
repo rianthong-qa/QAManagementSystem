@@ -23,6 +23,7 @@ import "./Automation.css";
 const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const SharedDefectPage = lazy(() => import("./pages/SharedDefectPage"));
 const SharedPerformancePage = lazy(() => import("./pages/SharedPerformancePage"));
+const SharedEvaluationReviewPage = lazy(() => import("./pages/SharedEvaluationReviewPage"));
 const DefectsPage = lazy(() => import("./pages/DefectsPage").then((m) => ({ default: m.DefectsPage })));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
 const ReleasesPage = lazy(() => import("./pages/ReleasesPage").then((m) => ({ default: m.ReleasesPage })));
@@ -272,7 +273,9 @@ function App() {
   const defectShareToken = shareParams.get("d") ?? shareParams.get("defectShare") ?? "";
   // ลิงก์สรุปผลงานพนักงานที่หัวหน้าส่งให้ HR: `?p=`
   const performanceShareCode = shareParams.get("p") ?? "";
-  const isSharedView = Boolean(shareCode || shareToken || defectShareToken || performanceShareCode);
+  // ลิงก์ให้หัวหน้าแผนกอื่นประเมินพนักงาน (ไม่ต้อง login): `?er=`
+  const evaluationReviewCode = shareParams.get("er") ?? "";
+  const isSharedView = Boolean(shareCode || shareToken || defectShareToken || performanceShareCode || evaluationReviewCode);
   const [page, setPage] = useState<Page>(restoredActivePage),
     [menu, setMenu] = useState(false),
     [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("qa.sidebar.collapsed") === "true"),
@@ -758,6 +761,7 @@ function App() {
     }
   };
   if (shareCode || shareToken) return <div className="shared-dashboard"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>Executive Read-only Report</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><Dashboard shareCode={shareCode} shareToken={shareToken} /></Suspense></main><footer>ข้อมูลสำหรับการบริหารจัดการ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
+  if (evaluationReviewCode) return <div className="shared-dashboard shared-performance-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>แบบประเมินพนักงาน (สำหรับหัวหน้าแผนกอื่น)</small></div></header><main><Suspense fallback={pageLoading}><SharedEvaluationReviewPage code={evaluationReviewCode} /></Suspense></main><footer>เอกสารภายใน • เปิดจากลิงก์ที่ได้รับ • กรุณาอย่าส่งต่อ</footer></div>;
   if (performanceShareCode) return <div className="shared-dashboard shared-performance-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>สรุปผลงานพนักงาน (สำหรับ HR)</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><SharedPerformancePage code={performanceShareCode} /></Suspense></main><footer>เอกสารภายใน • เปิดจากลิงก์แชร์ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
   if (defectShareToken) return <div className="shared-dashboard shared-defect-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>รายละเอียด Defect</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><SharedDefectPage token={defectShareToken} /></Suspense></main><footer>เปิดจากลิงก์แชร์ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
   if (!user) return <Login onLogin={(u) => { localStorage.removeItem("qa.activePage"); setPage("dashboard"); setUser(u); }} />;

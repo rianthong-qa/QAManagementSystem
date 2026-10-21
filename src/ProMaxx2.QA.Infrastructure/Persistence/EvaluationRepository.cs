@@ -53,6 +53,19 @@ public sealed class EvaluationRepository(QaDbContext db) : IEvaluationRepository
 
     public Task AddAsync(Evaluation evaluation, CancellationToken ct) => db.Evaluations.AddAsync(evaluation, ct).AsTask();
 
+    public async Task<IReadOnlyList<EvaluationExternalReview>> ListExternalReviewsAsync(Guid evaluationId, CancellationToken ct)
+        => await db.EvaluationExternalReviews.Include(x => x.Scores).Where(x => x.EvaluationId == evaluationId).OrderBy(x => x.CreatedAt).ToListAsync(ct);
+
+    public Task<EvaluationExternalReview?> FindExternalReviewAsync(Guid reviewId, CancellationToken ct)
+        => db.EvaluationExternalReviews.Include(x => x.Scores).SingleOrDefaultAsync(x => x.EvaluationExternalReviewId == reviewId, ct);
+
+    public Task<EvaluationExternalReview?> FindExternalReviewByCodeAsync(string code, CancellationToken ct)
+        => db.EvaluationExternalReviews.Include(x => x.Scores).SingleOrDefaultAsync(x => x.Code == code, ct);
+
+    public Task<bool> ExternalReviewCodeExistsAsync(string code, CancellationToken ct) => db.EvaluationExternalReviews.AnyAsync(x => x.Code == code, ct);
+
+    public Task AddExternalReviewAsync(EvaluationExternalReview review, CancellationToken ct) => db.EvaluationExternalReviews.AddAsync(review, ct).AsTask();
+
     public async Task<IReadOnlyDictionary<Guid, string>> UserNamesAsync(IEnumerable<Guid> userIds, CancellationToken ct)
     {
         var ids = userIds.Where(x => x != Guid.Empty).Distinct().ToList();

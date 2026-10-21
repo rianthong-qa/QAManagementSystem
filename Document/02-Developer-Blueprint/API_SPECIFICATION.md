@@ -1058,7 +1058,9 @@ Authorization is also checked against the current database profile for the JWT s
 | POST | `/performance/evaluations/{id}/acknowledge` | เจ้าของ | `{ comment }` — เฉพาะสถานะ Completed |
 | POST | `/performance/evaluations/{id}/reopen` | EDIT | `{ reason }` (บังคับ) |
 | GET | `/performance/templates` | EDIT | แบบประเมิน Probation/Quarterly (สร้างชุดตั้งต้นให้ถ้ายังไม่มี) |
-| PUT | `/performance/templates/{id}` | EDIT | `{ name, criteria: [{ group, name, description, weight }] }` — 1–15 เกณฑ์, น้ำหนักรวม 100 |
+| PUT | `/performance/templates/{id}` | EDIT | `{ name, criteria: [{ group, name, description, weight }], externalWeight? }` — 1–15 เกณฑ์, น้ำหนักรวม 100; `externalWeight` 0–50 (% ของคะแนนแผนกอื่นในผลรวม, ค่าเริ่มต้น 30, ไม่ส่ง = คงเดิม) copy ไปที่รอบที่สร้างหลังจากนี้ |
+| POST | `/performance/evaluations/{id}/external-reviews` | EDIT + หัวหน้าตรง | `{ reviewerName, reviewerDepartment?, note?, expiresInDays: 7/14/30/60 }` → `EvaluationExternalReviewDto` (มี `code` สำหรับลิงก์ `/?er=code`); รอบที่ปิดแล้ว `409`; สูงสุด 10 ลิงก์ที่ยังไม่ยกเลิกต่อรอบ |
+| POST | `/performance/evaluations/{id}/external-reviews/{reviewId}/revoke` | EDIT + หัวหน้าตรง | ยกเลิกลิงก์ที่ยังไม่ส่ง (ส่งแล้ว `409`) |
 
 `PUT /performance/users/{userId}/profile` สร้าง/เลื่อนรอบประเมินทดลองงานให้อัตโนมัติหลังบันทึก
 
@@ -1070,6 +1072,8 @@ Authorization is also checked against the current database profile for the JWT s
 | GET | `/performance/users/{userId}/share-links` | EDIT | ลิงก์ล่าสุด 50 รายการ `{ shareLinkId, url, from, to, includeEvaluations, includeWorkLogs, note, expiresAt, createdAt, createdByName, revokedAt, revokedByName, viewCount, lastViewedAt, status (Active/Expired/Revoked) }` |
 | POST | `/performance/users/{userId}/share-links` | EDIT | `{ from, to, expiresInDays (7/14/30/60/90), includeEvaluations, includeWorkLogs, note (≤200) }` → ลิงก์ `{PublicWebBaseUrl}/?p=<code 10 ตัว>`; เขียน AuditLog `PerformanceShareLink` (Created) |
 | POST | `/performance/share-links/{id}/revoke` | EDIT | ยกเลิกลิงก์ (ไม่ลบแถว) — AuditLog `Revoked` |
+| GET | `/shared/evaluation-reviews/{code}` | **Anonymous** (rate limit `share`) | แบบฟอร์มของหัวหน้าแผนกอื่น `ExternalReviewFormDto` { reviewerName, reviewerDepartment, note, requestedByName, employeeName, position, type, round, year, periodStart, periodEnd, templateName, expiresAt, status, submittedAt, criteria[{ evaluationScoreId, group, name, description, weight }] } — **ไม่มีคะแนนตนเอง/หัวหน้าตรง**; ส่งแล้วคืน `status: Submitted` + criteria ว่าง; `404` = ไม่มี code, `410` = ยกเลิก/หมดอายุ/การประเมินปิดแล้ว; `Cache-Control: no-store` |
+| POST | `/shared/evaluation-reviews/{code}` | **Anonymous** (rate limit `share`) | `{ scores: [{ evaluationScoreId, score: 1–5, comment? }], comment? }` ต้องครบทุกเกณฑ์ (`400`), ส่งได้ครั้งเดียว (`409`), บันทึก AuditLog `Submitted` (userId ว่าง) |
 | GET | `/shared/performance/{code}` | **Anonymous** (rate limit `share`) | `{ report: EmployeeReportDto, expiresAt, sharedAt, sharedByName, note }` + `Cache-Control: no-store`; `404` = ไม่มี code, `410` = หมดอายุ/ถูกยกเลิก/ผู้สร้างไม่ Active หรือไม่มี PERFORMANCE.EDIT แล้ว; ทุกครั้งที่เปิดสำเร็จเพิ่ม `viewCount` |
 
 ข้อมูลในลิงก์คำนวณสดทุกครั้งตามสิทธิ์ของผู้สร้าง (metric กรองตาม Project ที่ผู้สร้างเป็นสมาชิก ณ ตอนเปิด)
@@ -1128,5 +1132,6 @@ Authorization is also checked against the current database profile for the JWT s
 - `metrics` ของหน้าผลงานเพิ่ม `crmEditErr`, `crmAnswers`, `crmAvgQaHours`
 ### Performance — ผู้ประเมินคือหัวหน้าที่ระบุ (2026-10-09)
 
+- **ผู้ประเมินจากแผนกอื่น:** `PUT /performance/evaluations/{id}/manager` ที่ `complete: true` คำนวณ `overallScore = managerScore × (100 − externalWeight)% + ค่าเฉลี่ย weightedScore ของผู้ประเมินแผนกอื่นที่ส่งแล้ว × externalWeight%` (ไม่มีใครส่ง หรือ externalWeight = 0 → เท่ากับ managerScore) แล้วปิดลิงก์ที่ยังไม่ส่ง; `GET /performance/evaluations/{id}` (ผู้เห็นคะแนนหัวหน้าตรง) มี `externalWeight`, `managerScore`, `externalScore` (ระหว่างร่าง = ค่าเฉลี่ยตอนนี้), `externalReviews[]`, `canManageExternal` และ `scores[].externalAverage/externalCount`
 - `PUT /performance/evaluations/{id}/manager` และ `POST /performance/evaluations/{id}/reopen` ต้องเป็นหัวหน้าที่ระบุในข้อมูลพนักงานของผู้ถูกประเมิน (นอกจาก PERFORMANCE.EDIT) — ไม่ใช่ / ยังไม่ได้ตั้งหัวหน้า ตอบ `403` พร้อมเหตุผล; `GET /performance/evaluations/{id}` มี `managerRestriction` (null = ประเมินได้)
 - `GET /performance/users` เพิ่ม `canEvaluate`; `PUT /performance/users/{userId}/profile` ปฏิเสธ (`400`) หัวหน้าที่ไม่มี PERFORMANCE.EDIT

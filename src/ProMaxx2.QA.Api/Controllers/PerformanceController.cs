@@ -158,6 +158,15 @@ public sealed class PerformanceController(PerformanceService service, Evaluation
     public Task<ActionResult<EvaluationDetailDto>> Reopen(Guid id, ReopenEvaluationRequest request, CancellationToken ct)
         => Run(async v => await evaluations.ReopenAsync(v, id, request, ct), ct);
 
+    /// <summary>หัวหน้าตรงขอให้หัวหน้าแผนกอื่นประเมิน — สร้างลิงก์ /?er=code 1 ลิงก์ต่อผู้ประเมิน 1 คน</summary>
+    [HttpPost("evaluations/{id:guid}/external-reviews")]
+    public Task<ActionResult<EvaluationExternalReviewDto>> CreateExternalReview(Guid id, CreateExternalReviewRequest request, CancellationToken ct)
+        => Run(async v => await evaluations.CreateExternalReviewAsync(v, id, request, ct), ct);
+
+    [HttpPost("evaluations/{id:guid}/external-reviews/{reviewId:guid}/revoke")]
+    public Task<ActionResult<EvaluationExternalReviewDto>> RevokeExternalReview(Guid id, Guid reviewId, CancellationToken ct)
+        => Run(async v => await evaluations.RevokeExternalReviewAsync(v, id, reviewId, ct), ct);
+
     [HttpGet("templates")]
     public Task<ActionResult<IReadOnlyList<EvaluationTemplateDto>>> Templates(CancellationToken ct)
         => Run(async v => await evaluations.ListTemplatesAsync(v, ct), ct);

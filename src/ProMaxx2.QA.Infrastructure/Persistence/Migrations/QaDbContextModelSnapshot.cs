@@ -3248,6 +3248,16 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly?>("ExtendToDate")
                         .HasColumnType("date");
 
+                    b.Property<int>("ExternalReviewCount")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("ExternalScore")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)");
+
+                    b.Property<int>("ExternalWeight")
+                        .HasColumnType("int");
+
                     b.Property<string>("Grade")
                         .HasMaxLength(2)
                         .HasColumnType("nvarchar(2)");
@@ -3255,6 +3265,10 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<string>("Improvements")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
+
+                    b.Property<decimal?>("ManagerScore")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)");
 
                     b.Property<string>("MetricsSnapshotJson")
                         .HasColumnType("nvarchar(max)");
@@ -3335,6 +3349,111 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "Round", "Year");
 
                     b.ToTable("Evaluations", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationExternalReview", b =>
+                {
+                    b.Property<Guid>("EvaluationExternalReviewId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EvaluationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<DateTime?>("LastViewedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("ReviewerDepartment")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ReviewerName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("RevokedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<int>("ViewCount")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("WeightedScore")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)");
+
+                    b.HasKey("EvaluationExternalReviewId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("RevokedBy");
+
+                    b.HasIndex("EvaluationId", "CreatedAt");
+
+                    b.ToTable("EvaluationExternalReviews", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationExternalScore", b =>
+                {
+                    b.Property<Guid>("EvaluationExternalScoreId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("EvaluationExternalReviewId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EvaluationScoreId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("int");
+
+                    b.HasKey("EvaluationExternalScoreId");
+
+                    b.HasIndex("EvaluationScoreId");
+
+                    b.HasIndex("EvaluationExternalReviewId", "EvaluationScoreId")
+                        .IsUnique();
+
+                    b.ToTable("EvaluationExternalScores", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationNotification", b =>
@@ -3430,6 +3549,9 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ExternalWeight")
+                        .HasColumnType("int");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -5187,6 +5309,41 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationExternalReview", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Performance.Evaluation", null)
+                        .WithMany()
+                        .HasForeignKey("EvaluationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("RevokedBy")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationExternalScore", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Performance.EvaluationExternalReview", null)
+                        .WithMany("Scores")
+                        .HasForeignKey("EvaluationExternalReviewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Performance.EvaluationScore", null)
+                        .WithMany()
+                        .HasForeignKey("EvaluationScoreId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationNotification", b =>
                 {
                     b.HasOne("ProMaxx2.QA.Domain.Performance.Evaluation", null)
@@ -5530,6 +5687,11 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.Evaluation", b =>
+                {
+                    b.Navigation("Scores");
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Performance.EvaluationExternalReview", b =>
                 {
                     b.Navigation("Scores");
                 });

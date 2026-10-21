@@ -105,6 +105,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<WorkLogAttachment> WorkLogAttachments => Set<WorkLogAttachment>();
     public DbSet<EvaluationNotification> EvaluationNotifications => Set<EvaluationNotification>();
     public DbSet<PerformanceShareLink> PerformanceShareLinks => Set<PerformanceShareLink>();
+    public DbSet<EvaluationExternalReview> EvaluationExternalReviews => Set<EvaluationExternalReview>();
     public DbSet<WeeklyReportNote> WeeklyReportNotes => Set<WeeklyReportNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) => modelBuilder.ApplyConfigurationsFromAssembly(typeof(QaDbContext).Assembly);
