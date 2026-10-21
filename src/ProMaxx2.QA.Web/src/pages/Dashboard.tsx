@@ -239,6 +239,7 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
   const passedCount = criteria.filter(x => x.passed).length;
   const noDataCount = criteria.filter(x => x.noData).length;
   const remaining = Math.round((100 - data.testCaseProgress) * 10) / 10;
+  const hasCases = data.totalTestCaseCount > 0;
   return <div className="executive-dashboard">
     <section className={`card db-hero decision-${decisionKey}`} aria-label="ความพร้อมปล่อย Release">
       <div className="db-hero-scope">
@@ -260,6 +261,25 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
             <p>{decisionReason}</p>
           </div>
         </div>
+        {/* ความคืบหน้าอยู่ข้างคำตัดสิน (ตัวเลขหลักที่ผู้บริหารดูเป็นอันดับสอง) — วงแหวนสีเดียว ตัวเลขใหญ่กลางวง สีข้อความ */}
+        <div className="db-progress">
+          <div className="db-progress-ring" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={hasCases ? data.testCaseProgress : undefined} aria-label="ความคืบหน้าการทดสอบ (นับ Test Case ไม่ซ้ำ)">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle className="track" cx="60" cy="60" r="52" />
+              {hasCases && data.testCaseProgress > 0 && <circle className="value" cx="60" cy="60" r="52" pathLength={100} strokeDasharray={`${Math.min(100, data.testCaseProgress)} 100`} />}
+            </svg>
+            <span className="db-progress-value">{hasCases ? <><b>{data.testCaseProgress}<small>%</small></b><em>ทดสอบแล้ว</em></> : <b className="na">N/A</b>}</span>
+          </div>
+          <div className="db-progress-info">
+            <small>ความคืบหน้าการทดสอบ</small>
+            <span className="db-progress-basis">นับ Test Case ไม่ซ้ำ</span>
+            {hasCases ? <dl>
+              <div><dt>ทดสอบแล้ว</dt><dd>{data.testedTestCaseCount.toLocaleString()}</dd></div>
+              <div><dt>คงเหลือ</dt><dd>{(data.totalTestCaseCount - data.testedTestCaseCount).toLocaleString()}<small> · {remaining}%</small></dd></div>
+              <div><dt>ทั้งหมด</dt><dd>{data.totalTestCaseCount.toLocaleString()}</dd></div>
+            </dl> : <p>ยังไม่มี Test Case ในขอบเขตนี้</p>}
+          </div>
+        </div>
         <div className="db-criteria">
           <span className="db-criteria-head">เกณฑ์ปล่อย Release · ผ่าน {passedCount}/{criteria.length}{noDataCount ? ` · ไม่มีข้อมูล ${noDataCount}` : ""}</span>
           <ul>
@@ -270,12 +290,6 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
               <span className="sr-only">{x.noData ? "ไม่มีข้อมูล" : x.passed ? "ผ่าน" : "ไม่ผ่าน"}</span>
             </li>)}
           </ul>
-        </div>
-        <div className="db-progress">
-          <small>ความคืบหน้าการทดสอบ <span className="db-progress-basis">(นับ Test Case ไม่ซ้ำ)</span></small>
-          <b>{data.totalTestCaseCount > 0 ? `${data.testCaseProgress}%` : "N/A"}</b>
-          {data.totalTestCaseCount > 0 && <span className="db-progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.testCaseProgress} aria-label="ความคืบหน้าการทดสอบ"><span style={{ width: `${data.testCaseProgress}%` }} /></span>}
-          <span>ทดสอบแล้ว {data.testedTestCaseCount.toLocaleString()} จาก {data.totalTestCaseCount.toLocaleString()} Test Case{data.totalTestCaseCount > 0 ? ` · เหลือ ${remaining}%` : ""}</span>
         </div>
       </div>
     </section>

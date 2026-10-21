@@ -452,7 +452,7 @@
 .db-hero-scope span + span::before, .db-hero-scope b + span::before { margin-right: 14px; color: var(--line); content: "|"; }
 .db-hero-scope .db-hero-time { margin-left: auto; }
 .db-hero-scope .db-hero-time::before { display: none; }
-.db-hero-body { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 1.5fr) minmax(200px, .8fr); align-items: stretch; }
+.db-hero-body { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, auto) minmax(0, 1.5fr); align-items: stretch; }
 .db-hero-body > * { min-width: 0; padding: 18px 20px; }
 .db-hero-body > * + * { border-left: 1px solid var(--line); }
 .db-decision { display: flex; align-items: flex-start; gap: 14px; background: color-mix(in srgb, var(--tone) 6%, var(--card)); }
@@ -474,12 +474,26 @@
 .db-criteria-label small { color: var(--muted); font-size: 11px; font-weight: 400; }
 .db-criteria li b { color: var(--text); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .db-criteria li.is-fail b { color: var(--red); }
-.db-progress { display: grid; align-content: start; gap: 6px; }
-.db-progress small { color: var(--muted); font-size: 12px; }
-.db-progress > b { color: var(--text); font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.db-progress-track { display: block; height: 6px; overflow: hidden; border-radius: 999px; background: var(--line); }
-.db-progress-track span { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
-.db-progress > span:last-child { color: var(--muted); font-size: 12px; }
+/* ความคืบหน้า: วงแหวน 120px + ตัวเลขใหญ่กลางวง | ทดสอบแล้ว/คงเหลือ/ทั้งหมด */
+.db-progress { display: flex; align-items: center; gap: 18px; }
+.db-progress-ring { position: relative; flex: none; width: 120px; height: 120px; }
+.db-progress-ring svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.db-progress-ring circle { fill: none; stroke-width: 11; }
+.db-progress-ring .track { stroke: var(--line); }
+.db-progress-ring .value { stroke: var(--primary); stroke-linecap: round; transition: stroke-dasharray .4s ease; }
+.db-progress-value { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; }
+.db-progress-value b { color: var(--text); font-size: 34px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.db-progress-value b small { margin-left: 1px; font-size: 16px; font-weight: 700; }
+.db-progress-value b.na { color: var(--muted); font-size: 22px; }
+.db-progress-value em { margin-top: 4px; color: var(--muted); font-size: 11px; font-style: normal; }
+.db-progress-info { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; max-width: 340px; }
+.db-progress-info > small { color: var(--text); font-size: 13px; font-weight: 700; }
+.db-progress-info > p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.db-progress-info dl { display: grid; gap: 4px; margin: 8px 0 0; }
+.db-progress-info dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.db-progress-info dt { color: var(--muted); font-size: 12px; }
+.db-progress-info dd { margin: 0; color: var(--text); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.db-progress-info dd small { color: var(--muted); font-size: 11px; font-weight: 400; }
 
 /* ผลการทดสอบ: ตัวเลขสองฐาน + แถบซ้อน 100% + legend */
 .db-results-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
@@ -530,8 +544,9 @@
 .db-module-num.defects.has b { color: var(--text); font-weight: 700; }
 
 @media (max-width: 1280px) {
-  .db-hero-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
-  .db-progress { grid-column: 1 / -1; border-left: 0 !important; border-top: 1px solid var(--line); }
+  /* คำตัดสิน | ความคืบหน้า แถวบน, เกณฑ์เต็มแถวล่าง */
+  .db-hero-body { grid-template-columns: minmax(0, 1fr) minmax(300px, auto); }
+  .db-criteria { grid-column: 1 / -1; border-left: 0 !important; border-top: 1px solid var(--line); }
 }
 @media (max-width: 1100px) {
   .db-row.wide { grid-template-columns: minmax(0, 1fr); }
@@ -548,6 +563,10 @@
   .db-hero-body > * { padding: 14px; }
   .db-decision > .material-symbols-outlined { font-size: 36px; }
   .db-decision strong { font-size: 24px; }
+  .db-progress { gap: 14px; }
+  .db-progress-ring { width: 104px; height: 104px; }
+  .db-progress-value b { font-size: 30px; }
+  .db-progress-info { flex: 1; }
   .db-criteria ul { grid-template-columns: minmax(0, 1fr); }
   .db-criteria li:nth-child(2) { border-top: 1px solid var(--line); padding-top: 8px; }
   .db-results-figures b { font-size: 24px; }
@@ -631,7 +650,7 @@ details.db-fold[open] .db-fold-icon { transform: rotate(180deg); }
 .db-results-count { align-self: end; }
 .db-results-count > span { color: var(--text) !important; font-size: 13px !important; font-weight: 400 !important; line-height: 1.5; }
 .db-results-count > span b { font-size: 15px !important; font-weight: 700; color: var(--text) !important; }
-.db-progress-basis { color: var(--muted); font-size: 12px; font-weight: 400; }
+.db-progress-basis { color: var(--muted); font-size: 11px; font-weight: 400; }
 @media (max-width: 760px) {
   .db-results-figures { grid-template-columns: minmax(0, 1fr); }
 }
