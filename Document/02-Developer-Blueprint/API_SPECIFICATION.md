@@ -1135,3 +1135,16 @@ Authorization is also checked against the current database profile for the JWT s
 - **ผู้ประเมินจากแผนกอื่น:** `PUT /performance/evaluations/{id}/manager` ที่ `complete: true` คำนวณ `overallScore = managerScore × (100 − externalWeight)% + ค่าเฉลี่ย weightedScore ของผู้ประเมินแผนกอื่นที่ส่งแล้ว × externalWeight%` (ไม่มีใครส่ง หรือ externalWeight = 0 → เท่ากับ managerScore) แล้วปิดลิงก์ที่ยังไม่ส่ง; `GET /performance/evaluations/{id}` (ผู้เห็นคะแนนหัวหน้าตรง) มี `externalWeight`, `managerScore`, `externalScore` (ระหว่างร่าง = ค่าเฉลี่ยตอนนี้), `externalReviews[]`, `canManageExternal` และ `scores[].externalAverage/externalCount`
 - `PUT /performance/evaluations/{id}/manager` และ `POST /performance/evaluations/{id}/reopen` ต้องเป็นหัวหน้าที่ระบุในข้อมูลพนักงานของผู้ถูกประเมิน (นอกจาก PERFORMANCE.EDIT) — ไม่ใช่ / ยังไม่ได้ตั้งหัวหน้า ตอบ `403` พร้อมเหตุผล; `GET /performance/evaluations/{id}` มี `managerRestriction` (null = ประเมินได้)
 - `GET /performance/users` เพิ่ม `canEvaluate`; `PUT /performance/users/{userId}/profile` ปฏิเสธ (`400`) หัวหน้าที่ไม่มี PERFORMANCE.EDIT
+
+### Knowledge — คลังความรู้ (2026-10-21)
+
+ทุก endpoint ต้องมี `KNOWLEDGE.VIEW` (หรือ SYS_ADMIN) — สิทธิ์ข้อมูลตามสมาชิก Project (`ProjectUsers`) เท่านั้น; ความรู้กลาง (ไม่มี Project) ทุกคนเห็น; ข้อมูล CRM ต้องผ่าน policy `CrmView`
+
+- `PUT /api/v1/master-settings/ai/knowledge` (`ADMIN.USER`) — `{ embeddingProvider: None|OpenAI|Local, embeddingModel, embeddingBaseUrl, embeddingApiKey, clearEmbeddingApiKey, allowCrmDataToExternalAi }` → `AiConfigurationView` (เพิ่ม `embeddingProvider`, `embeddingModel`, `embeddingBaseUrl`, `hasEmbeddingApiKey`, `embeddingApiKeyHint`, `allowCrmDataToExternalAi`); ต้องบันทึก AI หลักก่อน (`400`)
+- `GET /api/v1/knowledge/search?q=&projectId=&sources=Defect,Article&take=20` → `[{ knowledgeDocumentId, sourceType, sourceKey, title, projectId, projectName, sourceUrl, snippet, rank, matchedChunks, indexedAt }]` — `q` อย่างน้อย 2 ตัวอักษร (ตัดที่ 200) ไม่งั้น `400`; `projectId` ที่ไม่ได้เป็นสมาชิก `403`; `take` สูงสุด 30
+- `GET /api/v1/knowledge/articles?projectId=&status=&search=` → รายการบทความ (ไม่มี `bodyMarkdown`, มี `excerpt`, `indexState`, `indexedAt`) — ฉบับร่างเห็นเฉพาะ `KNOWLEDGE.EDIT`; `projectId` = บทความของ Project นั้น + ความรู้กลาง
+- `GET /api/v1/knowledge/articles/{id}` → บทความเต็ม (`404` เมื่อไม่มีสิทธิ์ Project / เป็นฉบับร่างและไม่มีสิทธิ์แก้ไข)
+- `POST /api/v1/knowledge/articles`, `PUT /api/v1/knowledge/articles/{id}` (`KNOWLEDGE.EDIT`) — `{ title (≤300), bodyMarkdown, projectId?, tags? (≤500), status: Draft|Published }`; Project ต้อง active และเป็นสมาชิก (`400`/`403`); บันทึก Audit Log `KnowledgeArticle` และปลุก indexer
+- `DELETE /api/v1/knowledge/articles/{id}` (`KNOWLEDGE.EDIT`) — soft delete + Audit Log
+- `GET /api/v1/knowledge/status` (SYS_ADMIN) → `{ indexerEnabled, sources: [{ sourceType, indexed, pending, failed, excluded, chunks, lastIndexedAt }], failures: [{ knowledgeDocumentId, sourceType, title, error, attemptedAt }] }`
+- `POST /api/v1/knowledge/reindex` (SYS_ADMIN) → `{ documents }` — สร้าง chunk ใหม่ทุกเอกสาร + Audit Log `KnowledgeIndex`

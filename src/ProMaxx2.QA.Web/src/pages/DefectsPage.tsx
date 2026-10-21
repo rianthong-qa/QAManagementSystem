@@ -265,6 +265,19 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       setLinkedCases(Array.isArray(tcRes) ? tcRes : []);
     } catch {} finally { setDetailLoading(false); }
   };
+  // Defect ที่หน้าอื่นส่งมาให้เปิด (qa.targetDefectId หรือ #/defects?defectId= เช่น จากผลค้นหาคลังความรู้) — เปิดรายละเอียดครั้งเดียวแล้วลบทิ้ง
+  // ดึงด้วย id โดยตรงเพราะ Defect อาจไม่อยู่ในหน้ารายการ/ตัวกรองปัจจุบัน; API ตรวจสิทธิ์ Project ให้
+  const targetDefectHandled = useRef(false);
+  useEffect(() => {
+    if (targetDefectHandled.current) return;
+    targetDefectHandled.current = true;
+    let targetId = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("defectId") ?? "";
+    try { targetId = localStorage.getItem("qa.targetDefectId") || targetId; localStorage.removeItem("qa.targetDefectId"); } catch { /* storage ใช้ไม่ได้ — ใช้ค่าจาก hash */ }
+    if (!targetId) return;
+    getJson<DefectItem>(`${apiUrl}/defects/${encodeURIComponent(targetId)}`)
+      .then((item) => { void openDetail(item); })
+      .catch(() => notify("เปิด Defect ไม่ได้ — อาจถูกลบแล้วหรือคุณไม่มีสิทธิ์ใน Project นั้น", "error"));
+  });
   // ข้อความ + รูป (สูงสุด 5 รูป) ส่งเป็น multipart — endpoint นี้ยังรอ sync ไป CRM ด้วย (best-effort, ดู
   // CrmSendToCrmService.AppendCommentAsync) ถ้า Defect ผูก CRM แล้ว จึงอาจใช้เวลานานกว่าปกติเล็กน้อย; composer กันกดซ้ำให้เอง
   const submitComment = async (body: string, files: File[]): Promise<boolean> => {

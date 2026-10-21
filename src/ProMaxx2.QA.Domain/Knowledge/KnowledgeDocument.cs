@@ -52,12 +52,16 @@ public sealed class KnowledgeDocument
 
     public void MarkStale() { if (State != "Excluded") State = "Stale"; }
 
-    public void MarkIndexed(string contentHash, int chunkCount)
+    /// <summary>sourceReadAt = เวลาที่อ่านข้อมูลต้นทาง (ไม่ใช่เวลาบันทึก) — การแก้ไขที่เกิดระหว่าง index จะใหม่กว่าค่านี้และถูก index ซ้ำรอบถัดไป</summary>
+    public void MarkIndexed(string contentHash, int chunkCount, DateTime sourceReadAt)
     {
-        ContentHash = contentHash; ChunkCount = chunkCount; State = "Indexed"; IndexedAt = DateTime.UtcNow; Error = null;
+        ContentHash = contentHash; ChunkCount = chunkCount; State = "Indexed"; IndexedAt = sourceReadAt; Error = null;
     }
 
-    public void MarkFailed(string error) { State = "Failed"; Error = Cut(error, 2000); }
+    /// <summary>สร้าง chunk ใหม่ทั้งหมดแม้เนื้อหาไม่เปลี่ยน (เช่น เปลี่ยนวิธีแบ่ง chunk หรือ embedding model)</summary>
+    public void ForceReindex() { if (State == "Excluded") return; State = "Stale"; ContentHash = null; }
+
+    public void MarkFailed(string error, DateTime attemptedAt) { State = "Failed"; Error = Cut(error, 2000); IndexedAt = attemptedAt; }
 
     /// <summary>แหล่งข้อมูลถูกลบ — คง record ไว้แต่ไม่ค้น (worker ลบ chunk ทิ้ง)</summary>
     public void Exclude() { State = "Excluded"; ChunkCount = 0; }

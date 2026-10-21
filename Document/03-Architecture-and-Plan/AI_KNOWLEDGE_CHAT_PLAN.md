@@ -1,6 +1,6 @@
 # แผนระบบ AI Chat + คลังความรู้ (Knowledge Hub)
 
-> สถานะ: **Phase 0 เสร็จ (apply migration + restart API แล้ว 2026-10-21)** — Phase 1–6 ยังไม่เริ่ม (ดู Progress Log ท้ายไฟล์)
+> สถานะ: **Phase 0–1 เสร็จ (2026-10-21)** — ค้นหาความรู้จาก Defect + บทความใช้งานได้; Phase 2–6 ยังไม่เริ่ม (ดู Progress Log ท้ายไฟล์)
 > จัดทำ: 21 ตุลาคม 2026
 > ต่อยอดจาก `DEFECT_KNOWLEDGE_PLAN.md` — Phase 2–4 ของแผนนั้นย้ายมารวมในคลังความรู้กลางนี้
 
@@ -169,3 +169,31 @@ Technical debt ที่พบ:
 
 - `AddDataProtection()` ไม่ persist key ring (`PersistKeysTo*`) — ถ้า key ring หาย คีย์ AI/Embedding/CRM/Email ที่เข้ารหัสไว้ต้องกรอกใหม่ทั้งหมด
 - `SaveAsync` ของ AI หลักบังคับ API key สำหรับ opencode แต่ `GetRuntimeAsync` อนุญาตไม่มีคีย์ (ไม่สอดคล้อง)
+
+### 2026-10-21 — Phase 1 (Defect + บทความเข้าคลัง, ค้นหาแบบไม่ใช้ AI)
+
+ทำแล้ว:
+
+- `Application/Knowledge/KnowledgeSourceText` — ข้อความรูปแบบคงที่ต่อแหล่ง: Defect = `[Defect] รหัส: ชื่อ` + Project / โมดูล (path เต็ม) / Release / Build / ความรุนแรง·สถานะ·วันที่ / CRM Ticket / รายละเอียด / ขั้นตอนการทำซ้ำ / ผลที่คาดหวัง / ผลจริง / Test Case ที่ลิงก์ / คอมเมนต์ล่าสุด 20 รายการ (ActionType `Comment`, `CrmComment` — activity อื่นไม่เข้าคลัง); บทความ = `[บทความ] ชื่อ` + Project/Tag + เนื้อหา; วันที่ใช้ ค.ศ. (InvariantCulture) เพื่อให้ hash ไม่ขึ้นกับ culture ของเครื่อง
+- `KnowledgeChunkPlanner` — mask → แบ่ง chunk → ติดบรรทัด header ให้ทุก chunk
+- `KnowledgeIndexService` + `KnowledgeIndexWorker` (ทุก 5 นาที, เริ่มหลังเปิดระบบ 1 นาที, ปลุกทันทีเมื่อบันทึกบทความ/สั่ง reindex ผ่าน `KnowledgeIndexTrigger`; config `Knowledge:IndexerEnabled`, `Knowledge:IndexIntervalMinutes`, `Knowledge:IndexBatchSize`)
+  - **ตรวจการเปลี่ยนแปลงจากเวลา** (`Defect.UpdatedAt` และ `DefectActivities.CreatedAt` ล่าสุด เทียบ `IndexedAt`) แทนการ hook ทุกจุดที่แก้ Defect; `IndexedAt` = เวลาที่อ่านข้อมูลต้นทาง จึงไม่พลาดการแก้ไขระหว่าง index
+  - ContentHash (รวม `IndexVersion = "k1"`) เดิม = ไม่เขียน chunk ใหม่; Defect ถูกลบ/บทความเป็นฉบับร่างหรือถูกลบ → `Excluded` และลบ chunk
+- `SqlKnowledgeTextSearch` — `FREETEXTTABLE(..., LANGUAGE 1054)` + กรองสิทธิ์ใน SQL เดียวกัน (Project ผ่าน `OPENJSON`, Global, Crm เมื่อผ่าน policy `CrmView`) + ตัวกรอง Project/แหล่ง; Full-Text ไม่เจอ → ค้นแบบ `LIKE` สำรอง (escape `[ % _`)
+- `KnowledgeSearchService` — รวมผลต่อเอกสาร (rank สูงสุด + จำนวนช่วงที่ตรง) + snippet รอบคำค้น; **สิทธิ์ตามสมาชิก Project เท่านั้น** (ไม่มีกรณี "allowed ว่าง = เห็นหมด")
+- API `KnowledgeController` (`api/v1/knowledge`, policy `KnowledgeView`): `GET search`, `GET/POST/PUT/DELETE articles` (เขียน = `KnowledgeEdit`, ฉบับร่างเห็นเฉพาะผู้แก้ไขได้, ตรวจสิทธิ์ Project ของบทความ, Audit Log `KnowledgeArticle`), `GET status` / `POST reindex` (SYS_ADMIN, Audit Log `KnowledgeIndex`)
+- หน้า `#/knowledge` "ผู้ช่วย AI / คลังความรู้" (`pages/KnowledgePage.tsx` + `Knowledge.css`): แท็บ ค้นหาความรู้ / บทความ / สถานะคลัง (SYS_ADMIN); ผลค้นหา Defect เปิดรายละเอียดในหน้า Defect (`qa.targetDefectId` หรือ `#/defects?defectId=` — `DefectsPage` ดึงด้วย id จึงเปิดได้แม้ไม่อยู่ในตัวกรอง), บทความเปิดเป็นหน้าต่างอ่าน (`#/knowledge?articleId=`)
+
+ผลตรวจ:
+
+- Unit tests `KnowledgeIndexTests` 22 ข้อ (ข้อความ/chunk/snippet, sync-index-hash-stale-exclude, บทความ Draft/Published/scope, สถานะ, รวมผลค้นหา, scope สิทธิ์) — ทั้งชุด 671 ผ่าน
+- ฐานข้อมูลจริงหลัง restart API: worker index Defect **2,173 รายการครบในรอบแรก** (5,910 chunk, เฉลี่ย 754 / สูงสุด 999 ตัวอักษร, Failed 0); Full-Text populate ครบ 5,910
+- เรียก `KnowledgeSearchService` + `SqlKnowledgeTextSearch` ตัวจริงกับฐานข้อมูลจริง (อ่านอย่างเดียว): "พิมพ์ใบกำกับภาษี" / "บันทึกไม่ได้" ได้ผลตรงเรื่อง 11–16 ms; ไม่มีสิทธิ์ Project = 0 ผล; กรอง PMX2 = ได้ผล, กรอง/เป็นสมาชิกเฉพาะ Project อื่น = 0 ผล; ค้นรหัส Defect ได้ตัวตรงเป็นอันดับแรก; อักขระ `% [ _` ไม่ทำให้ SQL ผิด
+- UI ด้วย headless Chromium (API จำลอง) ที่ 1440 / 1024 / 768 / 390px ทุกแท็บ + หน้าต่างอ่าน/เขียนบทความ: ไม่มี horizontal scroll, ตัวอักษร ≥ 11px, ไม่มีข้อความถูกตัด, ปุ่ม/ช่องบน Mobile ≥ 40px (ยกเว้นลิงก์ชื่อเรื่องในข้อความ ซึ่งมีปุ่ม "เปิด"/"ดู" 44/40px คู่กัน)
+- ยังไม่ได้ทดสอบด้วยบัญชีผู้ใช้จริงผ่านหน้าเว็บ (สร้างบทความ → ค้นเจอ, กดผลค้นหา → เปิด Defect) — ให้ผู้ใช้ลองหนึ่งรอบ
+
+Technical debt / ข้อสังเกต:
+
+- คำค้นที่ Full-Text ไม่เจอจะสำรองด้วย `LIKE '%…%'` ทั้งตาราง (~0.4 วินาทีที่ 5,910 chunk) — โตตามจำนวน chunk; ถ้าเกิน ~50,000 chunk ให้จำกัด fallback เฉพาะคำค้นสั้น/รหัส หรือใช้ embedding (Phase 5) แทน
+- การตรวจการเปลี่ยนแปลงของ Defect โหลดรายการ Defect + เวลา activity ล่าสุดทั้งหมดทุก 5 นาที (2,183 แถว — เบา) ถ้าโตหลักแสนให้เปลี่ยนเป็นตรวจเฉพาะที่เปลี่ยนหลังรอบก่อน
+- ชื่อ/รหัส Test Case ที่เปลี่ยนภายหลังไม่ทำให้ Defect ที่ลิงก์ถูก index ใหม่ (จนกว่า Defect จะเปลี่ยนหรือสั่ง reindex)

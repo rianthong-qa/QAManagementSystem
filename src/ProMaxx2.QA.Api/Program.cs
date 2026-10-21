@@ -18,6 +18,7 @@ using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Governance;
 using ProMaxx2.QA.Application.Automation;
 using ProMaxx2.QA.Application.Performance;
+using ProMaxx2.QA.Application.Knowledge;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers(options => options.Filters.Add<ProjectAccessFilter>());
@@ -99,6 +100,12 @@ builder.Services.AddScoped<TestCycleAiService>();
 builder.Services.AddScoped<DefectAutoCreateService>();
 builder.Services.AddScoped<DefectActivityService>();
 builder.Services.AddScoped<SharedAiConfigurationService>();
+// คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md): index Defect/บทความ ทุก 5 นาที + ค้นหา Full-Text ภาษาไทย
+builder.Services.AddScoped<KnowledgeIndexService>();
+builder.Services.AddScoped<IKnowledgeTextSearch, SqlKnowledgeTextSearch>();
+builder.Services.AddScoped<KnowledgeSearchService>();
+builder.Services.AddSingleton<KnowledgeIndexTrigger>();
+builder.Services.AddHostedService<KnowledgeIndexWorker>(); // ปิดได้ด้วย Knowledge:IndexerEnabled=false
 builder.Services.AddMemoryCache(); // CRM ticket list cache (CrmApiClient) — 60 วินาทีต่อผู้ใช้+ตัวกรอง
 builder.Services.AddSingleton<CrmStaffDirectoryCache>(); // directory พนักงาน BlueID ใช้ร่วมทุกผู้ใช้ — cache 1 ชม.
 builder.Services.AddSingleton<CrmTokenService>(); // must outlive request scope to actually cache the ~24h BlueID token

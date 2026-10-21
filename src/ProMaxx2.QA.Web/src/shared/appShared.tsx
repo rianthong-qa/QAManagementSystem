@@ -25,6 +25,7 @@ export type Page =
   | "signoff"
   | "users"
   | "settings"
+  | "knowledge"
   | "system-monitor"
   | "audit";
 export type SessionUser = {
@@ -135,6 +136,7 @@ export const nav: {
       { id: "dashboard", icon: "dashboard", label: "Dashboard" },
       { id: "my-work", icon: "assignment_ind", label: "My Work" },
       { id: "performance", icon: "workspace_premium", label: "ผลงานและการประเมิน" },
+      { id: "knowledge", icon: "neurology", label: "ผู้ช่วย AI / คลังความรู้" },
       { id: "projects", icon: "account_tree", label: "Project / Module" },
       { id: "releases", icon: "inventory_2", label: "Release / Build" },
     ],

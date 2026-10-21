@@ -35,6 +35,7 @@ const TestCyclesPage = lazy(() => import("./pages/TestCyclesPage").then((m) => (
 const ExecutionWorkspacePage = lazy(() => import("./pages/ExecutionWorkspacePage").then((m) => ({ default: m.ExecutionWorkspacePage })));
 const TestSuitesPage = lazy(() => import("./pages/TestSuitesPage").then((m) => ({ default: m.TestSuitesPage })));
 const PerformancePage = lazy(() => import("./pages/PerformancePage").then((m) => ({ default: m.PerformancePage })));
+const KnowledgePage = lazy(() => import("./pages/KnowledgePage").then((m) => ({ default: m.KnowledgePage })));
 const MyWorkPage = lazy(() => import("./pages/MyWorkPage").then((m) => ({ default: m.MyWorkPage })));
 const MasterSettingsPage = lazy(() => import("./pages/MasterSettingsPage").then((m) => ({ default: m.MasterSettingsPage })));
 const SystemMonitorPage = lazy(() => import("./pages/SystemMonitorPage").then((m) => ({ default: m.SystemMonitorPage })));
@@ -118,6 +119,7 @@ const viewPermission: Record<Page, string> = {
   dashboard: "PROJECT.VIEW",
   "my-work": "QA.MYWORK.VIEW",
   performance: "PERFORMANCE.VIEW",
+  knowledge: "KNOWLEDGE.VIEW",
   projects: "PROJECT.VIEW",
   releases: "PROJECT.VIEW",
   requirements: "REQUIREMENT.VIEW",
@@ -564,6 +566,8 @@ function App() {
           ? "ตรวจสอบประวัติการเปลี่ยนแปลงและกิจกรรมในระบบ"
         : page === "performance"
           ? "ผลงานจากระบบ บันทึกงานเพิ่มเติม และติดตามช่วงทดลองงานของทีม QA"
+        : page === "knowledge"
+          ? "ค้นหาความรู้จาก Defect และบทความ พร้อมลิงก์ไปยังแหล่งที่มา"
         : page === "test-suites"
           ? "Test Suite จัดเก็บระดับ Project · เลือก Release/Build ตอนนำไปสร้าง Test Cycle"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
@@ -807,7 +811,7 @@ function App() {
           <button className="menu-btn topbar-menu" aria-label={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} title={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} onClick={() => { if (window.matchMedia("(max-width: 900px)").matches) setMenu((v) => !v); else { const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("qa.sidebar.collapsed", String(next)); } }}>
             <span aria-hidden="true">☰</span>
           </button>
-          {!["projects","users","settings","system-monitor","crm","performance"].includes(page) && <div className="context">
+          {!["projects","users","settings","system-monitor","crm","performance","knowledge"].includes(page) && <div className="context">
             {contextLoading && <span className="context-loading" role="status">กำลังเปลี่ยน Context...</span>}
             <label className="context-field"><span>Project</span><select
               value={contextProjectId}
@@ -895,7 +899,7 @@ function App() {
               <p>{description}</p>
             </div>
             <div className="actions">
-              {page !== "audit" && page !== "performance" && <label className="search">
+              {page !== "audit" && page !== "performance" && page !== "knowledge" && <label className="search">
                 ⌕
                 <input
                   value={search}
@@ -928,6 +932,8 @@ function App() {
             <MyWorkPage user={user} onOpenExecution={(cycleId) => { localStorage.setItem("qa.targetCycleId", cycleId); go("execution"); }} onNavigate={go} />
           ) : page === "performance" ? (
             <PerformancePage user={user} canManage={can("PERFORMANCE.EDIT")} />
+          ) : page === "knowledge" ? (
+            <KnowledgePage canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (

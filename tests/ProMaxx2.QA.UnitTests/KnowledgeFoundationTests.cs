@@ -153,7 +153,7 @@ public sealed class KnowledgeFoundationTests
         Assert.True(doc.ContainsCustomerData);
         Assert.Equal("Stale", doc.State);
 
-        doc.MarkIndexed("abc", 3);
+        doc.MarkIndexed("abc", 3, DateTime.UtcNow);
         Assert.Equal(("Indexed", 3), (doc.State, doc.ChunkCount));
 
         doc.Exclude();
