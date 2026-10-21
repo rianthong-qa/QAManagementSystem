@@ -148,7 +148,16 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         var result = new Dictionary<Guid, KnowledgeText?>();
         if (docs.Count == 0) return result;
         var idByDoc = docs.ToDictionary(x => x.KnowledgeDocumentId, x => Guid.TryParse(x.SourceKey, out var id) ? id : Guid.Empty);
-        var defectIds = idByDoc.Values.Where(x => x != Guid.Empty).Distinct().ToList();
+        var texts = await BuildDefectTextsByIdAsync(idByDoc.Values.Where(x => x != Guid.Empty).Distinct().ToList(), ct);
+        foreach (var (docId, defectId) in idByDoc) result[docId] = texts.GetValueOrDefault(defectId);
+        return result;
+    }
+
+    /// <summary>ข้อความความรู้ของ Defect (ยังไม่ mask) ตาม id — ใช้ทั้งตอน index และเครื่องมือ MCP get_defect; Defect ที่ถูกลบไม่อยู่ในผล</summary>
+    public async Task<Dictionary<Guid, KnowledgeText>> BuildDefectTextsByIdAsync(IReadOnlyCollection<Guid> defectIds, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, KnowledgeText>();
+        if (defectIds.Count == 0) return result;
         var defects = await db.Defects.AsNoTracking().Where(x => defectIds.Contains(x.DefectId) && !x.IsDeleted).ToDictionaryAsync(x => x.DefectId, ct);
         var projectIds = defects.Values.Select(x => x.ProjectId).Distinct().ToList();
         var projects = await db.Projects.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId)).ToDictionaryAsync(x => x.ProjectId, x => $"{x.ProjectCode} {x.ProjectName}", ct);
@@ -178,10 +187,10 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
             return names.Count == 0 ? null : string.Join(" / ", names);
         }
 
-        foreach (var (docId, defectId) in idByDoc)
+        foreach (var d in defects.Values)
         {
-            if (!defects.TryGetValue(defectId, out var d)) { result[docId] = null; continue; }
-            result[docId] = KnowledgeSourceText.ForDefect(new(
+            var defectId = d.DefectId;
+            result[defectId] = KnowledgeSourceText.ForDefect(new(
                 d.DefectCode, d.Title, d.Severity, d.Status, d.CreatedAt,
                 projects.GetValueOrDefault(d.ProjectId), ModulePath(d.ModuleId),
                 d.ReleaseId.HasValue ? releases.GetValueOrDefault(d.ReleaseId.Value) : null,

@@ -1,0 +1,29 @@
+/* หน้ายืนยันการเชื่อมต่อ OAuth (?oauth=) — หน้าเดี่ยวไม่มี sidebar, prefix oauth- */
+.oauth-consent-page { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-height: 100dvh; background: var(--bg); padding: 24px 16px; }
+.oauth-consent-card { display: grid; gap: 14px; width: min(560px, 100%); border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 28px; box-shadow: 0 8px 28px rgba(15, 23, 42, .08); }
+.oauth-consent-brand { display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--muted); }
+.oauth-logo { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(135deg, #3f73ff, var(--primary)); color: #fff; font-weight: 800; }
+.oauth-logo-client { background: color-mix(in srgb, var(--primary) 12%, var(--card)); color: var(--primary); }
+.oauth-consent-card h1 { margin: 0; color: var(--text); font-size: 20px; line-height: 1.45; text-align: center; overflow-wrap: anywhere; }
+.oauth-account { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
+.oauth-consent-page .oauth-link { display: inline; min-height: 0; border: 0; background: none; padding: 0; color: var(--primary); font: inherit; text-decoration: underline; cursor: pointer; }
+.oauth-scopes { display: grid; gap: 10px; margin: 0; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; list-style: none; font-size: 14px; line-height: 1.55; }
+.oauth-scopes li { display: flex; align-items: flex-start; gap: 10px; }
+.oauth-scopes .material-symbols-outlined { flex: none; margin-top: 1px; color: var(--muted); font-size: 20px; }
+.oauth-scopes .ok { color: var(--green); }
+.oauth-scopes .no { color: var(--red); }
+.oauth-muted { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
+.oauth-warning, .oauth-error, .oauth-done { display: flex; align-items: flex-start; gap: 8px; margin: 0; border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+.oauth-warning { border: 1px solid color-mix(in srgb, var(--yellow) 40%, var(--line)); background: color-mix(in srgb, var(--yellow) 10%, var(--card)); color: var(--warning-text); }
+.oauth-error { border-left: 3px solid var(--red); background: color-mix(in srgb, var(--red) 6%, var(--card)); color: var(--text); }
+.oauth-done { justify-content: center; background: color-mix(in srgb, var(--green) 10%, var(--card)); color: color-mix(in srgb, var(--green) 80%, var(--text)); }
+.oauth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.oauth-consent-page .oauth-actions .btn { justify-content: center; min-height: 46px; font-size: 15px; }
+.oauth-consent-page footer { max-width: 560px; color: var(--muted); font-size: 12px; text-align: center; }
+
+@media (max-width: 760px) {
+  .oauth-consent-page { justify-content: flex-start; padding-top: 32px; }
+  .oauth-consent-card { padding: 20px 16px; }
+  .oauth-consent-card h1 { font-size: 18px; }
+  .oauth-consent-page .oauth-link { display: inline-flex; align-items: center; min-height: 40px; padding: 0 4px; }
+}

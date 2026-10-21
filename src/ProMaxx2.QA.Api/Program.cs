@@ -19,6 +19,7 @@ using ProMaxx2.QA.Application.Governance;
 using ProMaxx2.QA.Application.Automation;
 using ProMaxx2.QA.Application.Performance;
 using ProMaxx2.QA.Application.Knowledge;
+using ModelContextProtocol.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers(options => options.Filters.Add<ProjectAccessFilter>());
@@ -106,6 +107,17 @@ builder.Services.AddScoped<IKnowledgeTextSearch, SqlKnowledgeTextSearch>();
 builder.Services.AddScoped<KnowledgeSearchService>();
 builder.Services.AddScoped<IAiChatClient, AiChatClient>();
 builder.Services.AddScoped<KnowledgeChatService>();
+// MCP server ให้ Claude Code / Claude Desktop ค้นคลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md Phase 2B) — stateless (ไม่ใช้ sampling/elicitation)
+builder.Services.AddScoped<PersonalAccessTokenService>();
+builder.Services.AddScoped<OAuthService>(); // OAuth 2.1 (DCR + PKCE) ให้ claude.ai Team เชื่อมต่อแบบ Login รายคน
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddMcpServer(options =>
+    {
+        options.ServerInfo = new() { Name = "promaxx2-qa-hub", Title = "ProMaxx2 QA Hub — คลังความรู้", Version = "1.0.0" };
+        options.ServerInstructions = KnowledgeMcpTools.ServerInstructions;
+    })
+    .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
+    .WithTools<KnowledgeMcpTools>();
 builder.Services.AddSingleton<KnowledgeIndexTrigger>();
 builder.Services.AddHostedService<KnowledgeIndexWorker>(); // ปิดได้ด้วย Knowledge:IndexerEnabled=false
 builder.Services.AddMemoryCache(); // CRM ticket list cache (CrmApiClient) — 60 วินาทีต่อผู้ใช้+ตัวกรอง
@@ -134,7 +146,9 @@ if (!builder.Environment.IsDevelopment() && jwtKey.Contains("development-only-ke
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer=true, ValidIssuer=jwt.Issuer, ValidateAudience=true, ValidAudience=jwt.Audience, ValidateLifetime=true, ValidateIssuerSigningKey=true, IssuerSigningKey=new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key)), ClockSkew=TimeSpan.FromSeconds(30) };
-});
+    // /mcp (Claude ผ่าน MCP) ยืนยันตัวด้วย Personal Access Token เท่านั้น — path อื่น token qak_ ไม่ใช่ JWT จึงถูกปฏิเสธตามปกติ
+    options.ForwardDefaultSelector = context => context.Request.Path.StartsWithSegments("/mcp") ? PersonalAccessTokenAuthenticationHandler.SchemeName : null;
+}).AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, PersonalAccessTokenAuthenticationHandler>(PersonalAccessTokenAuthenticationHandler.SchemeName, null);
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("AdminUser",p=>p.RequireClaim("permission","ADMIN.USER"))
     .AddPolicy("ProjectView",p=>p.RequireClaim("permission","PROJECT.VIEW"))
@@ -162,6 +176,12 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("AuditView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","AUDIT.VIEW")))
     .AddPolicy("KnowledgeView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","KNOWLEDGE.VIEW")))
     .AddPolicy("KnowledgeEdit",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","KNOWLEDGE.EDIT")))
+    // สร้าง/ยกเลิก Token เชื่อม Claude (หน้าเว็บ, JWT)
+    .AddPolicy("KnowledgeMcpManage",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","KNOWLEDGE.MCP")))
+    // endpoint /mcp — ต้องเป็น Personal Access Token scope knowledge:read และยังมีสิทธิ์อยู่ ณ ตอนเรียก
+    .AddPolicy("KnowledgeMcp",p=>p.AddAuthenticationSchemes(PersonalAccessTokenAuthenticationHandler.SchemeName).RequireAuthenticatedUser().RequireAssertion(c=>
+        c.User.HasClaim("scope",ProMaxx2.QA.Domain.Identity.PersonalAccessToken.KnowledgeReadScope)
+        && (c.User.IsInRole("SYS_ADMIN")||(c.User.HasClaim("permission","KNOWLEDGE.VIEW")&&c.User.HasClaim("permission","KNOWLEDGE.MCP")))))
     .AddPolicy("PerformanceView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","PERFORMANCE.VIEW")||c.User.HasClaim("permission","PERFORMANCE.EDIT")))
     .AddAutomationPolicies()
     // endpoint ที่ลืมใส่ [Authorize] ต้องไม่กลายเป็น public โดยปริยาย — endpoint anonymous ต้องประกาศ [AllowAnonymous] เอง
@@ -178,6 +198,13 @@ builder.Services.AddRateLimiter(options =>
     // ลิงก์แชร์ Defect (anonymous) — เปิดหน้าหนึ่งครั้งยิง 1 + จำนวนรูป (รูป Defect ≤5 + รูปคอมเมนต์ ≤5/คอมเมนต์) คำขอ
     options.AddPolicy("share", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
         _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // OAuth ของ MCP — ผู้ใช้ claude.ai ทุกคนมาจากช่วง IP ของ Anthropic (160.79.104.0/21) จึงตั้งเพดานต่อ IP ให้สูงพอ
+    options.AddPolicy("oauth", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // MCP (Claude) — จำกัดต่อ Personal Access Token
+    options.AddPolicy("knowledge-mcp", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        http.User.FindFirst("token_id")?.Value ?? ClientKey(http),
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     // ผู้ช่วย AI คลังความรู้ — จำกัดต่อผู้ใช้ (ทุกคำถามเรียก LLM)
     options.AddPolicy("knowledge-chat", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
         http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? ClientKey(http),
@@ -223,7 +250,19 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 app.MapHealthChecks("/health").AllowAnonymous();
+// MCP ปิดอยู่ใน Setting Center = ปฏิเสธทุกคำขอ (ตรวจก่อน endpoint ทำงาน)
+app.UseWhen(context => context.Request.Path.StartsWithSegments("/mcp"), mcp => mcp.Use(async (context, next) =>
+{
+    if (!await context.RequestServices.GetRequiredService<PersonalAccessTokenService>().IsMcpEnabledAsync(context.RequestAborted))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsJsonAsync(new { detail = "ผู้ดูแลระบบปิดการเชื่อมต่อจาก Claude (MCP) อยู่" });
+        return;
+    }
+    await next();
+}));
 app.MapControllers();
+app.MapMcp("/mcp").RequireAuthorization("KnowledgeMcp").RequireRateLimiting("knowledge-mcp");
 if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
     await app.Services.InitializeDatabaseAsync(builder.Configuration["Seed:AdminPassword"]);
 app.Run();

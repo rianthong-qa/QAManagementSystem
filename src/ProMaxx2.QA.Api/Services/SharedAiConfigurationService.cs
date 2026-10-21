@@ -175,7 +175,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
     private static StringContent Json(object value) => new(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json");
     private static string GuessMime(string? name) => Path.GetExtension(name)?.ToLowerInvariant() switch { ".pdf" => "application/pdf", ".txt" => "text/plain", ".csv" => "text/csv", ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp", _ => "application/octet-stream" };
 
-    public async Task<AiConfigurationView> GetViewAsync(CancellationToken ct) { var s = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(ct); if (s is not null) return ToView(s); var has = !string.IsNullOrWhiteSpace(fallbackConfiguration["OpenAI:ApiKey"]); return new("OpenAI", fallbackConfiguration["OpenAI:Model"] ?? "gpt-5-mini", "https://api.openai.com/v1", true, has, has ? "Server configuration" : null, null, "None", null, null, false, null, false); }
+    public async Task<AiConfigurationView> GetViewAsync(CancellationToken ct) { var s = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(ct); if (s is not null) return ToView(s); var has = !string.IsNullOrWhiteSpace(fallbackConfiguration["OpenAI:ApiKey"]); return new("OpenAI", fallbackConfiguration["OpenAI:Model"] ?? "gpt-5-mini", "https://api.openai.com/v1", true, has, has ? "Server configuration" : null, null, "None", null, null, false, null, false, false); }
     public async Task<AiConfigurationView> SaveAsync(string provider, string model, string? baseUrl, string? apiKey, bool isEnabled, bool clearApiKey, CancellationToken ct)
     {
         if (!Providers.Contains(provider)) throw new ArgumentException("Provider ไม่ถูกต้อง");
@@ -194,11 +194,11 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
     /// ตั้งค่าคลังความรู้: Embedding provider (None / OpenAI / Local) และการอนุญาตส่งข้อมูล CRM ให้ AI ภายนอก
     /// ต้องบันทึกการตั้งค่า AI หลักก่อน; เปลี่ยน provider = ล้างคีย์เดิม (แบบเดียวกับ SaveAsync)
     /// </summary>
-    public async Task<AiConfigurationView> SaveKnowledgeAsync(string embeddingProvider, string? embeddingModel, string? embeddingBaseUrl, string? embeddingApiKey, bool clearEmbeddingApiKey, bool allowCrmDataToExternalAi, CancellationToken ct)
+    public async Task<AiConfigurationView> SaveKnowledgeAsync(string embeddingProvider, string? embeddingModel, string? embeddingBaseUrl, string? embeddingApiKey, bool clearEmbeddingApiKey, bool allowCrmDataToExternalAi, bool mcpEnabled, CancellationToken ct)
     {
         var s = await db.AiConfigurations.OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(ct) ?? throw new ArgumentException("กรุณาบันทึกการตั้งค่า AI หลักก่อนตั้งค่าคลังความรู้");
         var provider = AiConfiguration.EmbeddingProviders.FirstOrDefault(x => string.Equals(x, embeddingProvider?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? throw new ArgumentException("Embedding provider ไม่ถูกต้อง");
-        if (provider == "None") { s.UpdateKnowledge("None", null, null, "", null, allowCrmDataToExternalAi); await db.SaveChangesAsync(ct); return ToView(s); }
+        if (provider == "None") { s.UpdateKnowledge("None", null, null, "", null, allowCrmDataToExternalAi, mcpEnabled); await db.SaveChangesAsync(ct); return ToView(s); }
         if (string.IsNullOrWhiteSpace(embeddingModel)) throw new ArgumentException("กรุณาระบุ Embedding model");
         var baseUrl = provider == "OpenAI" ? "https://api.openai.com/v1" : embeddingBaseUrl;
         if (provider == "Local" && (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))) throw new ArgumentException("กรุณาระบุ Base URL ของ Embedding Local เป็น http:// หรือ https://");
@@ -206,15 +206,15 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         var encrypted = clearEmbeddingApiKey || providerChanged ? "" : s.EncryptedEmbeddingApiKey; var hint = clearEmbeddingApiKey || providerChanged ? null : s.EmbeddingApiKeyHint;
         if (!string.IsNullOrWhiteSpace(embeddingApiKey)) { var key = embeddingApiKey.Trim(); encrypted = embeddingProtector.Protect(key); hint = key.Length > 4 ? $"••••{key[^4..]}" : "••••"; }
         if (provider == "OpenAI" && string.IsNullOrWhiteSpace(encrypted)) throw new ArgumentException("กรุณาระบุ API key สำหรับ Embedding ของ OpenAI");
-        s.UpdateKnowledge(provider, embeddingModel, baseUrl, encrypted, hint, allowCrmDataToExternalAi);
+        s.UpdateKnowledge(provider, embeddingModel, baseUrl, encrypted, hint, allowCrmDataToExternalAi, mcpEnabled);
         await db.SaveChangesAsync(ct);
         return ToView(s);
     }
 
     private static AiConfigurationView ToView(AiConfiguration s) => new(s.Provider, s.Model, s.BaseUrl, s.IsEnabled, !string.IsNullOrWhiteSpace(s.EncryptedApiKey), s.ApiKeyHint, s.UpdatedAt,
-        s.EmbeddingProvider, s.EmbeddingModel, s.EmbeddingBaseUrl, !string.IsNullOrWhiteSpace(s.EncryptedEmbeddingApiKey), s.EmbeddingApiKeyHint, s.AllowCrmDataToExternalAi);
+        s.EmbeddingProvider, s.EmbeddingModel, s.EmbeddingBaseUrl, !string.IsNullOrWhiteSpace(s.EncryptedEmbeddingApiKey), s.EmbeddingApiKeyHint, s.AllowCrmDataToExternalAi, s.McpEnabled);
 }
 
 public sealed record AiConfigurationView(string Provider, string Model, string? BaseUrl, bool IsEnabled, bool HasApiKey, string? ApiKeyHint, DateTimeOffset? UpdatedAt,
-    string EmbeddingProvider, string? EmbeddingModel, string? EmbeddingBaseUrl, bool HasEmbeddingApiKey, string? EmbeddingApiKeyHint, bool AllowCrmDataToExternalAi);
+    string EmbeddingProvider, string? EmbeddingModel, string? EmbeddingBaseUrl, bool HasEmbeddingApiKey, string? EmbeddingApiKeyHint, bool AllowCrmDataToExternalAi, bool McpEnabled);
 public sealed record AiModelView(string Id, string DisplayName);

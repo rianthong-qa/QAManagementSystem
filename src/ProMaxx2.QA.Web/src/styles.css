@@ -3553,7 +3553,9 @@ input, select, textarea { max-width: 100%; }
 /* CopyButton: ยืนยันการคัดลอกบนตัวปุ่ม แทน toast */
 .copy-button.copied, .copy-button.copied:hover { border-color: color-mix(in srgb, var(--green) 45%, var(--card)); background: color-mix(in srgb, var(--green) 12%, var(--card)); color: color-mix(in srgb, var(--green) 80%, var(--text)); }
 .copy-button.copied > .material-symbols-outlined { color: var(--green); }
-.copy-button-status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* ยึดข้อความสถานะไว้ในปุ่ม — absolute ที่ไม่กำหนดตำแหน่งจะอยู่ตำแหน่งปกติซึ่งอาจเลยขอบปุ่ม/จอ และทำให้หน้าเลื่อนแนวนอน */
+.copy-button { position: relative; }
+.copy-button-status { position: absolute; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* UI รอบ 5: ตารางแบบ card บน Mobile — ใส่ class `table-cards` ที่ <table>; data-label ของแต่ละ cell เติมอัตโนมัติจาก <th>
    (src/components/tableCardLabels.ts) ห้ามทำให้เกิด horizontal scroll ระดับหน้า */

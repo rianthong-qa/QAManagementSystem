@@ -1,0 +1,55 @@
+/* เชื่อมต่อ Claude (pages/KnowledgeMcp.tsx) — แท็บในหน้าคลังความรู้ prefix kn-mcp / kn-token */
+.kn-mcp { display: grid; gap: 14px; min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 18px; }
+.kn-mcp-head { display: flex; align-items: flex-start; gap: 12px; }
+.kn-mcp-head > div { flex: 1; min-width: 0; }
+.kn-mcp-head h3 { margin: 0; font-size: 16px; }
+.kn-mcp-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.kn-mcp-mark { display: grid; flex: none; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); }
+.kn-mcp .kn-notice { margin: 0; }
+.kn-mcp-section { border-top: 1px solid var(--line); padding-top: 14px; }
+.kn-mcp-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.kn-mcp-section-head h4 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; }
+.kn-mcp-section-head h4 small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.kn-step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 12px; font-weight: 800; }
+.kn-mcp-setup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.kn-mcp-card { display: grid; align-content: start; gap: 8px; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 14px; font-size: 13px; }
+.kn-mcp-card > b { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.kn-mcp-card p { margin: 0; color: var(--muted); }
+.kn-mcp-card ol { display: grid; gap: 6px; margin: 0; padding-left: 20px; }
+.kn-mcp-card details summary { color: var(--primary); font-size: 12px; font-weight: 700; cursor: pointer; }
+.kn-mcp-card details[open] { display: grid; gap: 8px; }
+.kn-page .kn-mcp-card > .btn, .kn-page .kn-mcp-card details .btn, .kn-page .kn-token-result .btn { justify-self: start; }
+.kn-code { margin: 0; overflow-x: auto; border-radius: 9px; background: #0f172a; padding: 10px 12px; color: #e2e8f0; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kn-mcp code { border-radius: 5px; background: color-mix(in srgb, var(--muted) 12%, var(--card)); padding: 1px 5px; font-size: 12px; overflow-wrap: anywhere; }
+.kn-page .kn-inline-copy { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; margin-left: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 2px 8px; color: var(--muted); font: inherit; font-size: 12px; vertical-align: middle; cursor: pointer; }
+.kn-page .kn-inline-copy .material-symbols-outlined { font-size: 15px; }
+.kn-mcp-warn { display: flex; align-items: flex-start; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
+.kn-mcp-warn .material-symbols-outlined { flex: none; font-size: 17px; }
+.kn-mcp-warn.is-strong { border: 1px solid color-mix(in srgb, var(--yellow) 40%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--yellow) 10%, var(--card)); padding: 10px 12px; color: var(--warning-text); font-size: 13px; }
+.kn-mcp-examples { display: grid; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+.kn-mcp-examples li { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px dashed var(--line); border-radius: 9px; padding: 8px 12px; font-size: 13px; }
+.kn-token-table td:first-child { white-space: normal; }
+.kn-token-table td:not(:first-child) { white-space: nowrap; }
+.kn-page .kn-danger-text { min-height: 34px; padding: 4px 12px; color: var(--red); font-size: 12px; }
+.modal-box.kn-token-modal { width: min(720px, 100%); max-height: 92vh; overflow-y: auto; }
+.modal-box.kn-token-modal .modal-head { align-items: flex-start; gap: 12px; }
+.modal-box.kn-token-modal .form-grid.kn-token-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0 0; }
+.kn-token-result { display: grid; gap: 10px; margin-top: 14px; }
+.kn-token-field { display: grid; gap: 6px; font-size: 13px; font-weight: 700; }
+.kn-token-field input { width: 100%; min-width: 0; height: 42px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--muted) 5%, var(--card)); padding: 8px 11px; color: var(--text); font: 13px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.kn-token-sub { margin-top: 4px; font-size: 13px; }
+
+@media (max-width: 900px) {
+  .kn-mcp-setup { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .kn-mcp { padding: 14px; }
+  .kn-mcp-head { flex-wrap: wrap; }
+  .kn-page .kn-mcp-section-head .btn, .kn-page .kn-mcp-card .btn, .kn-page .kn-danger-text { min-height: 44px; }
+  .kn-page .kn-inline-copy { min-height: 40px; }
+  .kn-mcp-examples li { flex-direction: column; align-items: stretch; }
+  .modal-box.kn-token-modal .form-grid.kn-token-form { grid-template-columns: 1fr; }
+  .modal-box.kn-token-modal .kn-token-form input, .modal-box.kn-token-modal .kn-token-form select { min-height: 44px; }
+  .modal-box.kn-token-modal .modal-head button, .kn-page .kn-token-result .btn { min-height: 44px; }
+  .modal-box.kn-token-modal .modal-head button { width: 44px; }
+}

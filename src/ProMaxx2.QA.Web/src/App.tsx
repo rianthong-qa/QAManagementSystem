@@ -23,6 +23,7 @@ import "./Automation.css";
 const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const SharedDefectPage = lazy(() => import("./pages/SharedDefectPage"));
 const SharedPerformancePage = lazy(() => import("./pages/SharedPerformancePage"));
+const OAuthConsentPage = lazy(() => import("./pages/OAuthConsentPage"));
 const SharedEvaluationReviewPage = lazy(() => import("./pages/SharedEvaluationReviewPage"));
 const DefectsPage = lazy(() => import("./pages/DefectsPage").then((m) => ({ default: m.DefectsPage })));
 const ProjectsPage = lazy(() => import("./pages/ProjectsPage").then((m) => ({ default: m.ProjectsPage })));
@@ -277,6 +278,8 @@ function App() {
   const performanceShareCode = shareParams.get("p") ?? "";
   // ลิงก์ให้หัวหน้าแผนกอื่นประเมินพนักงาน (ไม่ต้อง login): `?er=`
   const evaluationReviewCode = shareParams.get("er") ?? "";
+  // คำขอเชื่อมต่อจาก Claude (OAuth): `?oauth=` — ต้อง Login ก่อนแล้วจึงแสดงหน้ายืนยัน
+  const oauthRequestId = shareParams.get("oauth") ?? "";
   const isSharedView = Boolean(shareCode || shareToken || defectShareToken || performanceShareCode || evaluationReviewCode);
   const [page, setPage] = useState<Page>(restoredActivePage),
     [menu, setMenu] = useState(false),
@@ -768,6 +771,7 @@ function App() {
   if (evaluationReviewCode) return <div className="shared-dashboard shared-performance-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>แบบประเมินพนักงาน (สำหรับหัวหน้าแผนกอื่น)</small></div></header><main><Suspense fallback={pageLoading}><SharedEvaluationReviewPage code={evaluationReviewCode} /></Suspense></main><footer>เอกสารภายใน • เปิดจากลิงก์ที่ได้รับ • กรุณาอย่าส่งต่อ</footer></div>;
   if (performanceShareCode) return <div className="shared-dashboard shared-performance-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>สรุปผลงานพนักงาน (สำหรับ HR)</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><SharedPerformancePage code={performanceShareCode} /></Suspense></main><footer>เอกสารภายใน • เปิดจากลิงก์แชร์ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
   if (defectShareToken) return <div className="shared-dashboard shared-defect-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>รายละเอียด Defect</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><SharedDefectPage token={defectShareToken} /></Suspense></main><footer>เปิดจากลิงก์แชร์ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
+  if (oauthRequestId) return user ? <Suspense fallback={pageLoading}><OAuthConsentPage requestId={oauthRequestId} user={user} /></Suspense> : <Login onLogin={(u) => setUser(u)} />;
   if (!user) return <Login onLogin={(u) => { localStorage.removeItem("qa.activePage"); setPage("dashboard"); setUser(u); }} />;
   const can = (permission: string) =>
     user.roles.includes("SYS_ADMIN") || user.permissions.includes(permission);
@@ -933,7 +937,7 @@ function App() {
           ) : page === "performance" ? (
             <PerformancePage user={user} canManage={can("PERFORMANCE.EDIT")} />
           ) : page === "knowledge" ? (
-            <KnowledgePage canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} />
+            <KnowledgePage canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} canConnectClaude={can("KNOWLEDGE.MCP")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (

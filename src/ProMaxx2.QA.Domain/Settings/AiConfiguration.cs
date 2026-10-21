@@ -27,10 +27,12 @@ public sealed class AiConfiguration
     public string? EmbeddingApiKeyHint { get; private set; }
     /// <summary>อนุญาตส่งข้อความจาก CRM (mask แล้ว) ให้ AI ที่ไม่ใช่ Local — ค่าเริ่มต้นปิด</summary>
     public bool AllowCrmDataToExternalAi { get; private set; }
+    /// <summary>เปิดให้เชื่อมต่อคลังความรู้จาก Claude ผ่าน MCP (/mcp + Personal Access Token) — ค่าเริ่มต้นปิด</summary>
+    public bool McpEnabled { get; private set; }
 
     public static readonly string[] EmbeddingProviders = ["None", "OpenAI", "Local"];
 
-    public void UpdateKnowledge(string embeddingProvider, string? embeddingModel, string? embeddingBaseUrl, string encryptedEmbeddingApiKey, string? embeddingApiKeyHint, bool allowCrmDataToExternalAi)
+    public void UpdateKnowledge(string embeddingProvider, string? embeddingModel, string? embeddingBaseUrl, string encryptedEmbeddingApiKey, string? embeddingApiKeyHint, bool allowCrmDataToExternalAi, bool mcpEnabled)
     {
         EmbeddingProvider = EmbeddingProviders.FirstOrDefault(x => string.Equals(x, embeddingProvider?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? throw new ArgumentException("Embedding provider ไม่ถูกต้อง");
         EmbeddingModel = EmbeddingProvider == "None" || string.IsNullOrWhiteSpace(embeddingModel) ? null : embeddingModel.Trim();
@@ -39,6 +41,7 @@ public sealed class AiConfiguration
         EncryptedEmbeddingApiKey = encryptedEmbeddingApiKey;
         EmbeddingApiKeyHint = embeddingApiKeyHint;
         AllowCrmDataToExternalAi = allowCrmDataToExternalAi;
+        McpEnabled = mcpEnabled;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 

@@ -1307,3 +1307,22 @@ WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์�
 สิทธิ์ (ModuleArea `KNOWLEDGE`, seed idempotent): `KNOWLEDGE.VIEW` → ทุก Role; `KNOWLEDGE.EDIT` → SYS_ADMIN, QA_LEAD
 
 ต้องติดตั้ง Full-Text Search ใน instance (`SELECT SERVERPROPERTY('IsFullTextInstalled')` = 1 — ตรวจแล้วบน `MSSQLSERVER2022` พร้อม Thai LCID 1054)
+
+## Addendum: Personal Access Token / MCP (migration `AddPersonalAccessTokens`, 2026-10-21)
+
+| ตาราง | Key / ฟิลด์หลัก |
+|---|---|
+| `PersonalAccessTokens` | PK guid; FK `UserId` → `Users` (cascade); `Name` (100), `TokenPrefix` (12, แสดงในรายการ), `TokenHash` (SHA-256 hex 64, **unique**), `Scope` (50, `knowledge:read`), `CreatedAt`, `ExpiresAt`, `LastUsedAt`, `LastUsedIp` (64), `RevokedAt`, `RevokedBy`; index (`UserId`, `RevokedAt`) — ไม่เก็บ token จริง |
+
+`AiConfigurations.McpEnabled` (bit, default 0) — สวิตช์เปิดให้เชื่อมต่อจาก Claude
+
+สิทธิ์ `KNOWLEDGE.MCP` (ModuleArea `KNOWLEDGE`) → SYS_ADMIN, QA_LEAD, QA_TESTER
+
+## Addendum: OAuth สำหรับ MCP (migration `AddMcpOAuth`, 2026-10-22)
+
+| ตาราง | Key / ฟิลด์หลัก |
+|---|---|
+| `OAuthClients` | PK `ClientId` (64, `qac_…`); `ClientName` (100), `RedirectUris` (4000, คั่นบรรทัด), `CreatedAt`, `CreatedIp`, `LastUsedAt` — ลงทะเบียนผ่าน DCR |
+| `OAuthAuthorizations` | PK `OAuthAuthorizationId` (64, `req_…` ใช้ในลิงก์หน้ายืนยัน); FK `ClientId` (cascade); `RedirectUri`, `State`, `CodeChallenge` (PKCE S256), `Scope`, `Resource`, `Status` (Pending/Approved/Denied/Exchanged), `UserId`, `CodeHash` (unique filtered), `CreatedAt` (index), `ExpiresAt` (10 นาที), `DecidedAt`, `CodeExpiresAt` (2 นาที) |
+
+`PersonalAccessTokens` เพิ่ม `Kind` (Personal/OAuth, default Personal), `ClientId`, `RefreshTokenHash` (unique filtered), `RefreshExpiresAt`, `Resource` (audience)

@@ -208,7 +208,7 @@ public sealed class KnowledgeFoundationTests
     public async Task SaveKnowledge_RequiresMainAiConfigurationFirst()
     {
         await using var db = CreateDb();
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() => CreateService(db).SaveKnowledgeAsync("Local", "bge-m3", "http://localhost:11434/v1", null, false, false, default));
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => CreateService(db).SaveKnowledgeAsync("Local", "bge-m3", "http://localhost:11434/v1", null, false, false, false, default));
         Assert.Contains("AI หลัก", ex.Message);
     }
 
@@ -217,9 +217,9 @@ public sealed class KnowledgeFoundationTests
     {
         await using var db = await CreateDbWithAiAsync();
         var service = CreateService(db);
-        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("Local", "bge-m3", "ftp://x", null, false, false, default));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("Local", "bge-m3", "ftp://x", null, false, false, false, default));
 
-        var view = await service.SaveKnowledgeAsync("local", "bge-m3", "http://localhost:11434/v1/", null, false, true, default);
+        var view = await service.SaveKnowledgeAsync("local", "bge-m3", "http://localhost:11434/v1/", null, false, true, false, default);
         Assert.Equal(("Local", "bge-m3", "http://localhost:11434/v1", false, true), (view.EmbeddingProvider, view.EmbeddingModel, view.EmbeddingBaseUrl, view.HasEmbeddingApiKey, view.AllowCrmDataToExternalAi));
     }
 
@@ -228,19 +228,19 @@ public sealed class KnowledgeFoundationTests
     {
         await using var db = await CreateDbWithAiAsync();
         var service = CreateService(db);
-        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("OpenAI", "text-embedding-3-small", null, null, false, false, default));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("OpenAI", "text-embedding-3-small", null, null, false, false, false, default));
 
-        var saved = await service.SaveKnowledgeAsync("OpenAI", "text-embedding-3-small", "https://evil.example", "sk-embed-12345678", false, false, default);
+        var saved = await service.SaveKnowledgeAsync("OpenAI", "text-embedding-3-small", "https://evil.example", "sk-embed-12345678", false, false, false, default);
         Assert.Equal(("https://api.openai.com/v1", true, "••••5678"), (saved.EmbeddingBaseUrl, saved.HasEmbeddingApiKey, saved.EmbeddingApiKeyHint));
         var row = await db.AiConfigurations.SingleAsync();
         Assert.DoesNotContain("sk-embed", row.EncryptedEmbeddingApiKey);
         Assert.NotEqual(row.EncryptedApiKey, row.EncryptedEmbeddingApiKey);
 
         // บันทึกซ้ำโดยไม่กรอกคีย์ = ใช้คีย์เดิม
-        Assert.True((await service.SaveKnowledgeAsync("OpenAI", "text-embedding-3-large", null, null, false, false, default)).HasEmbeddingApiKey);
+        Assert.True((await service.SaveKnowledgeAsync("OpenAI", "text-embedding-3-large", null, null, false, false, false, default)).HasEmbeddingApiKey);
 
         // เปลี่ยนเป็น Local = ล้างคีย์ OpenAI
-        Assert.False((await service.SaveKnowledgeAsync("Local", "bge-m3", "http://ai:11434/v1", null, false, false, default)).HasEmbeddingApiKey);
+        Assert.False((await service.SaveKnowledgeAsync("Local", "bge-m3", "http://ai:11434/v1", null, false, false, false, default)).HasEmbeddingApiKey);
     }
 
     [Fact]
@@ -248,9 +248,9 @@ public sealed class KnowledgeFoundationTests
     {
         await using var db = await CreateDbWithAiAsync();
         var service = CreateService(db);
-        await service.SaveKnowledgeAsync("OpenAI", "text-embedding-3-small", null, "sk-embed-12345678", false, false, default);
+        await service.SaveKnowledgeAsync("OpenAI", "text-embedding-3-small", null, "sk-embed-12345678", false, false, false, default);
 
-        var view = await service.SaveKnowledgeAsync("None", "ignored", "http://x", "ignored", false, false, default);
+        var view = await service.SaveKnowledgeAsync("None", "ignored", "http://x", "ignored", false, false, false, default);
         Assert.Equal("None", view.EmbeddingProvider);
         Assert.Null(view.EmbeddingModel);
         Assert.Null(view.EmbeddingBaseUrl);
@@ -263,8 +263,8 @@ public sealed class KnowledgeFoundationTests
     {
         await using var db = await CreateDbWithAiAsync();
         var service = CreateService(db);
-        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("Anthropic", "x", null, "k", false, false, default));
-        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("Local", " ", "http://localhost:11434/v1", null, false, false, default));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("Anthropic", "x", null, "k", false, false, false, default));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("Local", " ", "http://localhost:11434/v1", null, false, false, false, default));
     }
 
     private static QaDbContext CreateDb() => new(new DbContextOptionsBuilder<QaDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);

@@ -1163,3 +1163,28 @@ Authorization is also checked against the current database profile for the JWT s
   - `stream=false` → `{ answer, sources, done }` หรือ `502` เมื่อ Provider ตอบไม่สำเร็จ
   - ไม่พบความรู้ที่เกี่ยวข้อง = ตอบข้อความ "ไม่พบข้อมูลในคลังความรู้…" โดยไม่เรียก LLM (`model = null`)
 - `POST /api/v1/knowledge/chat/messages/{id}/feedback` `{ feedback: 1 | -1 | null, note? }` — เฉพาะคำตอบของผู้ช่วยในบทสนทนาของตัวเอง
+
+### Knowledge — เชื่อมต่อ Claude ผ่าน MCP (2026-10-21)
+
+- `GET /api/v1/knowledge/mcp/info` (`KNOWLEDGE.VIEW`) → `{ enabled, canCreateToken, defaultLifetimeDays: 90, maxLifetimeDays: 365, maxActiveTokens: 10 }`
+- `GET /api/v1/knowledge/mcp/tokens` (`KNOWLEDGE.MCP`) → Token ของตัวเอง `[{ personalAccessTokenId, name, tokenPrefix, scope, createdAt, expiresAt, lastUsedAt, lastUsedIp, revokedAt, isActive }]` (ไม่มี token จริง)
+- `POST /api/v1/knowledge/mcp/tokens` (`KNOWLEDGE.MCP`) `{ name (≤100), lifetimeDays (1–365) }` → `{ token, item }` — **token แสดงครั้งเดียว**; สวิตช์ปิด = `403`, ใช้งานอยู่ครบ 10 ใบ/ชื่อหรืออายุไม่ถูกต้อง = `400`; Audit Log `PersonalAccessToken`
+- `DELETE /api/v1/knowledge/mcp/tokens/{id}` (เจ้าของ) · `GET /api/v1/knowledge/mcp/tokens/all` + `DELETE /api/v1/knowledge/mcp/tokens/all/{id}` (SYS_ADMIN)
+- **MCP endpoint `POST /mcp`** (Streamable HTTP, stateless; ไม่ใช่ `/api/v1`) — header `Authorization: Bearer qak_…` เท่านั้น (JWT ใช้ไม่ได้), ต้องมี `KNOWLEDGE.VIEW` + `KNOWLEDGE.MCP` (หรือ SYS_ADMIN); ไม่มี/ผิด/หมดอายุ/ยกเลิก = `401` (`WWW-Authenticate: Bearer realm="ProMaxx2 QA Hub"` ไม่มี OAuth metadata), ไม่มีสิทธิ์ = `403`, สวิตช์ปิด = `403`; rate limit 60/นาที/token
+  - tools (อ่านอย่างเดียวทั้งหมด): `list_projects()`, `search_knowledge(query, projectCode?, source? = defect|article, limit ≤ 10)`, `get_defect(defect = รหัสหรือ GUID)`, `get_article(articleId)`, `find_similar_defects(description, projectCode?, limit ≤ 10)` — ผลเป็นข้อความภาษาไทย (mask แล้ว, ≤ ~8,000 ตัวอักษร, มีลิงก์เว็บ); ไม่พบ/ไม่มีสิทธิ์ = tool result `isError`; ไม่คืนข้อมูล CRM; Audit Log `KnowledgeMcp`
+
+### OAuth 2.1 สำหรับ MCP (2026-10-22)
+
+ไม่อยู่ใต้ `/api/v1` (ยกเว้นการตัดสินใจในหน้าเว็บ) — base = `Mcp:PublicBaseUrl` (`https://api-promaxx2.qahub.store`); rate limit `oauth` 120/นาที/IP
+
+- `GET /.well-known/oauth-protected-resource[/mcp]` → `{ resource: "<base>/mcp", authorization_servers: ["<base>"], scopes_supported: ["knowledge:read"], bearer_methods_supported: ["header"] }`
+- `GET /.well-known/oauth-authorization-server` → `{ issuer, authorization_endpoint: "<base>/oauth/authorize", token_endpoint: "<base>/oauth/token", registration_endpoint: "<base>/oauth/register", response_types_supported: ["code"], grant_types_supported: ["authorization_code","refresh_token"], code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none"], scopes_supported, authorization_response_iss_parameter_supported: true }`
+- `POST /oauth/register` (JSON, RFC 7591) `{ client_name?, redirect_uris[1-10], grant_types?, response_types?, token_endpoint_auth_method? }` → `201 { client_id: "qac_…", client_id_issued_at, client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method: "none", scope }`; redirect ไม่อยู่ใน allowlist = `400 { error: "invalid_redirect_uri" }`
+- `GET /oauth/authorize?response_type=code&client_id&redirect_uri&code_challenge&code_challenge_method=S256&state&scope&resource` → `302` ไป `<web>/?oauth=req_…`; ข้อผิดพลาดที่ client เชื่อถือได้ → `302 redirect_uri?error=…&state&iss`; client/redirect_uri ไม่ถูกต้อง → `400` หน้า HTML (ไม่ redirect)
+- `GET /api/v1/oauth/requests/{id}` (JWT, `KNOWLEDGE.VIEW`) → `{ requestId, clientName, redirectHost, isLoopback, scope, expiresAt, mcpEnabled, canApprove }` / `404` หมดอายุ-ใช้แล้ว
+- `POST /api/v1/oauth/requests/{id}/approve` | `/deny` (JWT) → `{ redirectUrl }` (approve ต้องเปิดสวิตช์ + มี `KNOWLEDGE.MCP`, ไม่งั้น `403`)
+- `POST /oauth/token` (`application/x-www-form-urlencoded`, `Cache-Control: no-store`)
+  - `grant_type=authorization_code&client_id&code&redirect_uri&code_verifier[&resource]`
+  - `grant_type=refresh_token&client_id&refresh_token`
+  - → `{ access_token: "qao_…", token_type: "Bearer", expires_in: 3600, refresh_token: "qrt_…", scope: "knowledge:read" }`; ข้อผิดพลาด `400 { error, error_description }` (`invalid_grant`, `invalid_request`, `invalid_target`, `unsupported_grant_type`) หรือ `401 invalid_client`
+- `/mcp` ไม่มี/ผิด token → `401` + `WWW-Authenticate: Bearer realm="ProMaxx2 QA Hub", resource_metadata="<base>/.well-known/oauth-protected-resource/mcp", scope="knowledge:read"`; รับทั้ง Personal Access Token (`qak_`) และ OAuth access token (`qao_`, ตรวจ audience)

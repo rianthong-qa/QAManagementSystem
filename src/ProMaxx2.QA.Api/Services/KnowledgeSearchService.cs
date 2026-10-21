@@ -66,7 +66,8 @@ public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch 
         return new(allowed, crm, projectId, sourceTypes);
     }
 
-    public async Task<IReadOnlyList<KnowledgeSearchResultDto>> SearchAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct)
+    /// <param name="forAi">true = ผลลัพธ์จะถูกส่งให้ AI ภายนอก (เช่น Claude ผ่าน MCP) — ตัดเอกสารที่ติด ExcludeFromAi</param>
+    public async Task<IReadOnlyList<KnowledgeSearchResultDto>> SearchAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct, bool forAi = false)
     {
         take = Math.Clamp(take, 1, MaxResults);
         var hits = await textSearch.SearchAsync(query, scope, take * 4, ct);
@@ -75,7 +76,7 @@ public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch 
         var chunks = await db.KnowledgeChunks.AsNoTracking().Where(x => chunkIds.Contains(x.KnowledgeChunkId))
             .Select(x => new { x.KnowledgeChunkId, x.KnowledgeDocumentId, x.Text }).ToDictionaryAsync(x => x.KnowledgeChunkId, ct);
         var docIds = chunks.Values.Select(x => x.KnowledgeDocumentId).Distinct().ToList();
-        var docs = await db.KnowledgeDocuments.AsNoTracking().Where(x => docIds.Contains(x.KnowledgeDocumentId)).ToDictionaryAsync(x => x.KnowledgeDocumentId, ct);
+        var docs = await db.KnowledgeDocuments.AsNoTracking().Where(x => docIds.Contains(x.KnowledgeDocumentId) && (!forAi || !x.ExcludeFromAi)).ToDictionaryAsync(x => x.KnowledgeDocumentId, ct);
         var projectIds = docs.Values.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId!.Value).Distinct().ToList();
         var projects = await db.Projects.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId)).ToDictionaryAsync(x => x.ProjectId, x => x.ProjectName, ct);
 

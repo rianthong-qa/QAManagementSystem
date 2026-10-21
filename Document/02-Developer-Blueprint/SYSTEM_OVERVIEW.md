@@ -24,7 +24,7 @@
 | Database | SQL Server `localhost\MSSQLSERVER2022`, DB `ProMaxx2QA` (Windows auth) | EF Core + Migrations; `Database:ApplyMigrations=false` — apply migration ด้วยมือ |
 | Auth | JWT Bearer (Issuer `ProMaxx2.QA`, อายุ 24 ชม., Remember Me 30 วัน) | token ใน localStorage `qa.accessToken`; permission claims เช่น `PROJECT.VIEW`, `DEFECT.EDIT`, `AUTOMATION.EXECUTE` |
 | Project access | `ProjectAccessFilter` + `ProjectScopeGuard` | ผู้ใช้เห็นเฉพาะ Project ที่เป็นสมาชิก (`ProjectUsers`) — ตรวจ projectId ใน route/query, `ProjectId` ใน request body และ route id (`releaseId`, `cycleId`, `cycleCaseId`, `defectId`, `testCaseId`, `requirementId`, `buildId`) |
-| AI | OpenAI-compatible (ตั้งค่าใน Setting Center) | generate requirement / test case / test suite / automation DSL; ผู้ช่วย AI คลังความรู้ (`#/knowledge`) ใช้ Provider เดียวกันแบบ streaming (`AiChatClient`, SSE ผ่าน `api/v1/knowledge/chat`) — ข้อมูล CRM ไม่ส่งให้ Provider ภายนอกเว้นแต่เปิดสวิตช์ใน Setting Center |
+| AI | OpenAI-compatible (ตั้งค่าใน Setting Center) | generate requirement / test case / test suite / automation DSL; ผู้ช่วย AI คลังความรู้ (`#/knowledge`) ใช้ Provider เดียวกันแบบ streaming (`AiChatClient`, SSE ผ่าน `api/v1/knowledge/chat`) — ข้อมูล CRM ไม่ส่งให้ Provider ภายนอกเว้นแต่เปิดสวิตช์ใน Setting Center; **MCP server `/mcp`** (`ModelContextProtocol.AspNetCore`) ให้ Claude Code / Claude Desktop ค้นคลังความรู้ด้วย Personal Access Token (`qak_…`, scheme `PersonalAccessToken` ใช้ได้เฉพาะ `/mcp`, สิทธิ์ `KNOWLEDGE.MCP`, ปิด/เปิดใน Setting Center ค่าเริ่มต้นปิด) และ **OAuth 2.1** (DCR + PKCE, `/.well-known/oauth-*`, `/oauth/register|authorize|token`, หน้ายืนยันในเว็บ `/?oauth=`) ให้ claude.ai Team / Claude Desktop / Claude Code Login รายคน — redirect ได้เฉพาะ `https://claude.ai/api/mcp/auth_callback` และ loopback |
 | Integration | CRM (BlueSea/BlueID), Email | `CrmSyncWorker` sync สถานะทุก 2 นาที; Description ที่ส่งไป CRM (จำกัด 1000 ตัวอักษร) ต่อท้ายลิงก์อ่านอย่างเดียว `/?d=<code 8 ตัว>` (ตาราง `DefectShareLinks` Defect ละ 1 code, `DefectShareLinkService` + anonymous `GET /api/v1/shared/defects/{code}`, rate limit `share`; URL หน้าเว็บจาก config `PublicWebBaseUrl`) และอีเมลแจ้ง Dev/เจ้าของเรื่องมีปุ่ม "ดูรายละเอียด Defect และรูปภาพ" ใต้ปุ่ม CRM (`EmailTemplates.ShareButton`) |
 | Automation | Windows Agent (`agent/`) + FlaUI | รับงานจาก Hub, รัน DSL, ส่ง Evidence |
 
@@ -90,6 +90,7 @@ Internet ─► api-promaxx2.qahub.store              ─► cloudflared ─► 
 
 - **Frontend dev**: Vite port **5173**, `.env.development`: `VITE_API_URL=https://api-promaxx2.qahub.store/api/v1`
   → **แก้ backend แล้วต้อง restart API local ไม่งั้น domain สาธารณะยังเรียกของเก่า**
+- **Vite อาจเสิร์ฟไฟล์เก่าหลังแก้ (พบ 2026-10-22):** HMR ปิดอยู่ แต่ Vite ยัง cache โมดูลที่ transform แล้ว และบน Windows watcher พลาด event การเขียนไฟล์บางครั้ง (เช่น เขียนด้วย script) → ผู้ใช้กด F5 แล้วยังได้โค้ดเก่า; หลังแก้ frontend ให้ตรวจ `curl.exe -s http://localhost:5173/src/<ไฟล์> | Select-String <ข้อความใหม่>` ถ้าไม่เจอให้ touch ไฟล์ `(Get-Item <ไฟล์>).LastWriteTime = Get-Date` แล้วตรวจซ้ำ
 - **HMR/WebSocket ของ Vite ปิดเป็นค่าเริ่มต้น (2026-10-20):** ผู้ใช้จริงเปิดผ่าน dev server นี้ — ถ้าเปิด HMR ทุกครั้งที่แก้ไฟล์ใน `src/` หรือ WebSocket ผ่าน Cloudflare หลุด Vite client จะสั่ง `location.reload()` ทุก browser (หน้า Execution Workspace รีโหลดเองและผลที่กรอกหาย) — ตอนนี้แก้ frontend แล้วต้องกด F5 เอง; ถ้าต้องการ HMR ตอนพัฒนาให้รัน `$env:QA_VITE_HMR='true'; npm.cmd run dev` (ดู `vite.config.ts`) — Console ขึ้น `[vite] failed to connect to websocket` เป็นเรื่องปกติ
 - **API**: ฟังที่ `http://0.0.0.0:5038` และรันแบบ **Production** (launch profile `production`)
   - Production อ่าน connection string จาก `appsettings.Production.json` (Windows auth, ไม่มี secret)
@@ -177,7 +178,7 @@ powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1
 | `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
 | `03-Architecture-and-Plan/PERFORMANCE_EVALUATION_PLAN.md` | ผลงานและการประเมินทีม QA — เฟส 1 (ผลงานรายคน/ทดลองงาน/บันทึกงาน) และเฟส 2 (แบบประเมิน, รอบทดลองงาน 30/60/90/สรุป, รายไตรมาส, ประเมินตนเอง) และเฟส 3 (อีเมลเตือน, ไฟล์หลักฐานของบันทึกงาน, Export PDF, เทียบผลข้ามรอบ) และสรุปผลงานรายคน + ลิงก์แชร์ HR (`/?p=`) + สรุปประจำสัปดาห์ส่งผู้บริหาร implement แล้ว |
 | `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน; Phase 2–4 ย้ายไป `AI_KNOWLEDGE_CHAT_PLAN.md`) |
-| `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md` | ระบบ AI Chat + คลังความรู้ (Defect, CRM, บทความ/ไฟล์ PDF·DOCX·MD) แบบ Hybrid Full-Text ไทย + embedding บน SQL 2022 — Phase 0–2 เสร็จ (ค้นหา Defect + บทความ, แชท AI พร้อมอ้างอิง), Phase 3+ (ไฟล์, CRM, embedding) ยังไม่ทำ |
+| `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md` | ระบบ AI Chat + คลังความรู้ (Defect, CRM, บทความ/ไฟล์ PDF·DOCX·MD) แบบ Hybrid Full-Text ไทย + embedding บน SQL 2022 — Phase 0–2 + 2B เสร็จ (ค้นหา Defect + บทความ, แชท AI พร้อมอ้างอิง, MCP ให้ Claude), Phase 3+ (ไฟล์, CRM, embedding, OAuth สำหรับ claude.ai Team) ยังไม่ทำ |
 | `05-Module/` | เอกสารรายโมดูล |
 
 ## 8. สถานะงานล่าสุด (2026-09-25)

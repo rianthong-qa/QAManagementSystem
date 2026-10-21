@@ -107,7 +107,7 @@ Entity ใหม่อยู่ใน `Domain/Knowledge/` (sealed, private sette
 | 2B | **MCP Server ให้ Claude Code / Claude Desktop ค้นคลังความรู้** — Personal Access Token, endpoint `/mcp`, เครื่องมืออ่านอย่างเดียว 5 ตัว, หน้า "เชื่อมต่อ Claude" (ดูหัวข้อ "Phase 2B" ด้านล่าง) | ทีมถามความรู้ QA ได้จาก Claude ที่ใช้อยู่ |
 | 6 (ต่อยอด) | เตือน Defect คล้ายกันตอนสร้าง Defect, เพิ่ม Root Cause/Resolution ตาม Phase 1 ของ `DEFECT_KNOWLEDGE_PLAN.md` (คุณภาพความรู้จาก Defect ขึ้นกับฟิลด์นี้มาก), source Requirement/Test Case | ความรู้แม่นขึ้น |
 
-## Phase 2B — MCP Server สำหรับ Claude (วางแผน 2026-10-21)
+## Phase 2B — MCP Server สำหรับ Claude (วางแผน + ทำแล้ว 2026-10-21 — ดู Progress Log)
 
 ### เป้าหมาย
 
@@ -177,10 +177,10 @@ JWT ปัจจุบันอายุ 24 ชม. และเก็บใน 
 
 ### เรื่องที่ต้องตัดสินใจ
 
-1. ใครสร้าง token ได้: ทุกคนที่มี `KNOWLEDGE.VIEW` หรือเพิ่มสิทธิ์ใหม่ `KNOWLEDGE.MCP` ให้เฉพาะบาง Role
-2. อายุ token เริ่มต้น/สูงสุด (เสนอ 90 / 365 วัน)
+1. ~~ใครสร้าง token ได้~~ → **ตัดสินแล้ว:** สิทธิ์ใหม่ `KNOWLEDGE.MCP` ค่าเริ่มต้น SYS_ADMIN, QA_LEAD, QA_TESTER
+2. ~~อายุ token~~ → **ตัดสินแล้ว:** เริ่มต้น 90 วัน สูงสุด 365 วัน
 3. ผู้อนุมัตินโยบายข้อมูลก่อนเปิดสวิตช์ MCP
-4. แผน Claude ที่ทีมใช้ (Pro/Max/Claude Code = ใช้ token รายคนได้; claude.ai Team/Enterprise = ต้องทำ OAuth เพิ่มภายหลัง)
+4. แผน Claude ที่ทีมใช้ → **ทีมใช้ Team**: รอบนี้ทำ token รายคน (ใช้กับ Claude Code ได้ทันที เพราะตั้งค่าในเครื่องแต่ละคน); **รอบถัดไป: OAuth 2.1 (Authorization Code + PKCE) ให้ QA Hub เป็น authorization server** เพื่อให้ Owner เพิ่ม custom connector ครั้งเดียวบน claude.ai Team แล้วสมาชิกแต่ละคนกด Connect + Login QA Hub ได้สิทธิ์ของตัวเอง (ใช้เครื่องมือ MCP ชุดเดิม)
 
 ## เอกสารที่ต้องอัปเดตในงานเดียวกัน
 
@@ -297,3 +297,61 @@ Technical debt / ข้อสังเกต:
 - [ ] **ต่ออายุ/เปลี่ยน API key ใน Setting Center** แล้วทดสอบถาม-ตอบจริงผ่านหน้าเว็บ (คุณภาพคำตอบภาษาไทย, การอ้างอิง [n] ถูกแหล่ง)
 - [ ] SSE ผ่าน Cloudflare Tunnel จริง (ทดสอบไม่ได้โดยไม่มีบัญชีผู้ใช้ — มี heartbeat และ fallback `?stream=false` รองรับแล้ว)
 - [ ] ทบทวนการใช้ opencode Go กับแชทนี้: เอกสาร opencode ระบุว่า Go ออกแบบสำหรับ coding agent ("Send typical coding agent traffic") — แชทความรู้ QA ไม่ใช่ traffic แบบนั้น ควรพิจารณา Provider อื่น (AI Local / OpenAI / Anthropic) สำหรับคลังความรู้
+
+### 2026-10-21 — Phase 2B (MCP Server ให้ Claude Code / Claude Desktop)
+
+ทำแล้ว:
+
+- **Personal Access Token** — `Domain/Identity/PersonalAccessToken` (`qak_` + 256 บิตสุ่ม, เก็บ SHA-256 + prefix 12 ตัว, scope `knowledge:read`, อายุ 1–365 วัน ค่าเริ่มต้น 90, ใช้งานพร้อมกันได้ 10 ใบ/คน, บันทึกการใช้ไม่เกินนาทีละครั้ง), ตาราง `PersonalAccessTokens` (migration `20261021161641_AddPersonalAccessTokens` + คอลัมน์ `AiConfigurations.McpEnabled` + seed สิทธิ์ `KNOWLEDGE.MCP` → SYS_ADMIN, QA_LEAD, QA_TESTER)
+- `PersonalAccessTokenService` (สร้าง/ยกเลิก/ตรวจ — สิทธิ์ล่าสุดจากฐานข้อมูล cache 1 นาที, ยกเลิก = ล้าง cache ทันที, ผู้ใช้ถูกปิดบัญชี = ใช้ไม่ได้, Audit Log `PersonalAccessToken`) + authentication scheme `PersonalAccessToken`: JwtBearer `ForwardDefaultSelector` ส่งเฉพาะ path `/mcp` ไปที่ scheme นี้ (token `qak_` ใช้เรียก API อื่นไม่ได้ และ JWT ใช้กับ `/mcp` ไม่ได้), 401 = `WWW-Authenticate: Bearer realm="ProMaxx2 QA Hub"` ไม่มี resource metadata และไม่มี `/.well-known/oauth-protected-resource`
+- **MCP server** — `ModelContextProtocol.AspNetCore` **2.2.0** (ออก 2026-08-13; 2.3.0 ใหม่เกินไป), Streamable HTTP แบบ stateless ที่ `/mcp` (`https://api-promaxx2.qahub.store/mcp`), policy `KnowledgeMcp` (PAT scope `knowledge:read` + SYS_ADMIN หรือ `KNOWLEDGE.VIEW` + `KNOWLEDGE.MCP`), rate limit `knowledge-mcp` 60/นาที/token, สวิตช์ `McpEnabled` ปิด = 403 ทุกคำขอ (middleware ก่อน endpoint)
+- `KnowledgeMcpTools` 5 เครื่องมือ อ่านอย่างเดียว (`readOnlyHint=true`, `destructiveHint=false`): `list_projects`, `search_knowledge`, `get_defect`, `get_article`, `find_similar_defects` — สิทธิ์ตามสมาชิก Project, `IncludeCrm=false` เสมอ, ข้าม `ExcludeFromAi`, ข้อความผ่าน `SensitiveDataMasker`, ตัดผล ~8,000 ตัวอักษร, ลิงก์เว็บจาก `PublicWebBaseUrl`, Audit Log `KnowledgeMcp` ทุกการเรียก; `KnowledgeIndexService.BuildDefectTextsByIdAsync` แยกให้ใช้ร่วมกับ index
+- API จัดการ token `api/v1/knowledge/mcp` (`info`, `tokens` GET/POST/DELETE ของตัวเอง, `tokens/all` SYS_ADMIN)
+- หน้าเว็บ: แท็บ "เชื่อมต่อ Claude" (`pages/KnowledgeMcp.tsx` + `KnowledgeMcp.css`) — Token ของฉัน, ขั้นตอน Claude Code (`claude mcp add …` / `.mcp.json` ที่ใช้ `${QA_MCP_TOKEN}`) และ Claude Desktop (custom connector + Request header), ตัวอย่างคำถาม, Token ทั้งระบบ (SYS_ADMIN); หน้าต่างสร้าง Token แสดงครั้งเดียวพร้อมคำสั่งที่เติม Token แล้ว; Setting Center มีสวิตช์ "เปิดให้เชื่อมต่อจาก Claude (MCP)"
+- **ช่องโหว่ dependency (พบระหว่างทำ):** `System.Security.Cryptography.Pkcs 9.0.4` ที่มากับ `Microsoft.Data.SqlClient 6.1.1` ติด CVE-2026-84008 / CVE-2026-70162 (ประกาศ 2026-10-13) ทำให้ `dotnet restore` ล้มทั้ง repo (TreatWarningsAsErrors) — อ้างอิง `System.Security.Cryptography.Pkcs 10.0.13` โดยตรงใน Infrastructure
+
+ผลตรวจ:
+
+- Unit tests `KnowledgeMcpTests` 14 ข้อ — ทั้งชุด 704 ผ่าน
+- **ทดสอบโปรโตคอล MCP จริง** (server ด้วยคลาสจริง + ฐานข้อมูลในหน่วยความจำ + MCP client ของ SDK ผ่าน HTTP): ไม่มี token / token ผิด → 401 ไม่มี OAuth metadata; ไม่มี `KNOWLEDGE.MCP` → 403; `initialize` ได้ชื่อ server + instructions; `tools/list` 5 เครื่องมือ readOnly; `search_knowledge` ได้รหัส/สถานะ/ลิงก์ + mask; `get_defect` mask เบอร์โทร; Defect ที่ไม่มี → `isError`; ปิดสวิตช์ → 403 ทันที; Audit Log ครบ
+- UI ด้วย headless Chromium ที่ 1440 / 1024 / 768 / 390px: แท็บเชื่อมต่อ Claude, หน้าต่างสร้าง/แสดง Token, สวิตช์ใน Setting Center — แก้ระหว่างตรวจ: code block ยาวถูกตัด (→ wrap), วันที่ในตาราง Token ถูกบีบ, หน้าเลื่อนแนวนอนที่ 768px จาก `sr-only` ในหัวตารางและสถานะของ `CopyButton` ที่หลุดขอบ (แก้ที่ `.copy-button` กลางใน `styles.css`)
+
+ยังไม่ได้ทดสอบ / ต้องทำ:
+
+- [ ] ทดสอบจริงด้วย Claude Code ผ่าน Cloudflare: เปิดสวิตช์ใน Setting Center → สร้าง Token → `claude mcp add …` → `/mcp` เห็น 5 เครื่องมือ → ถามเรื่อง Defect
+- [ ] Claude Desktop (ถ้าบัญชีมีตัวเลือก Request headers)
+- [x] **OAuth สำหรับ claude.ai Team** — ทำแล้ว 2026-10-22 (ดูหัวข้อถัดไป)
+- [ ] ขออนุมัตินโยบายข้อมูลก่อนเปิดสวิตช์ (ข้อมูล Defect ที่ mask แล้วถูกส่งเข้า Claude ของผู้ใช้)
+
+ข้อสังเกต: SDK บันทึก `McpException` (เช่น "ไม่พบ Defect") เป็น log ระดับ error — เป็นผลปกติของการค้นไม่เจอ ไม่ใช่ความผิดพลาดของระบบ
+
+### 2026-10-22 — OAuth 2.1 ให้ claude.ai Team / Claude Desktop / Claude Code เชื่อมต่อแบบ Login รายคน
+
+อ้างอิง: https://claude.com/docs/connectors/building/authentication, https://claude.com/docs/connectors/custom/add-unlisted, https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+
+ทำแล้ว:
+
+- **API เป็น Authorization Server ของตัวเอง** (`OAuthService` + `OAuthController`, issuer = `Mcp:PublicBaseUrl` ค่าเริ่มต้น `https://api-promaxx2.qahub.store`)
+  - `GET /.well-known/oauth-protected-resource` และ `/.well-known/oauth-protected-resource/mcp` (RFC 9728: `resource = https://api-promaxx2.qahub.store/mcp`, `authorization_servers = [issuer]`)
+  - `GET /.well-known/oauth-authorization-server` (RFC 8414: S256, `token_endpoint_auth_methods_supported = ["none"]`, `registration_endpoint`, `authorization_response_iss_parameter_supported`) — **ไม่ประกาศ CIMD** (ต้องให้ server ไป fetch URL ภายนอก = เสี่ยง SSRF) Claude จึงใช้ DCR
+  - `POST /oauth/register` (DCR, RFC 7591) — **redirect_uri ต้องเป็น `https://claude.ai/api/mcp/auth_callback`** (config `Mcp:OAuth:AllowedRedirectUris`) หรือ loopback `http://localhost|127.0.0.1:<พอร์ตใดก็ได้>` (Claude Code, ปิดได้ `Mcp:OAuth:AllowLoopbackRedirects=false`); ทุก client เป็น public client — ขอวิธียืนยันแบบอื่นจะได้ `none` กลับไป (RFC 7591 §3.2.1)
+  - `GET /oauth/authorize` — บังคับ PKCE S256, `resource` ต้องเป็น URL ของ MCP (ไม่ส่ง = ใช้ค่านี้), scope `knowledge:read` (+ `offline_access` ยอมรับ); client/redirect_uri ไม่ถูกต้อง = หน้า error **ไม่ redirect**; ผ่าน = 302 ไปหน้าเว็บ `https://promaxx2.qahub.store/?oauth=req_…`
+  - หน้ายืนยันในเว็บ (`pages/OAuthConsentPage.tsx`) — ยังไม่ Login = หน้า Login ก่อน; แสดงชื่อ client, บัญชีที่ Login (+ เปลี่ยนบัญชี), สิ่งที่ Claude ทำได้/ไม่ได้, ปลายทาง; อนุญาตได้เฉพาะเมื่อเปิดสวิตช์ MCP และมี `KNOWLEDGE.VIEW` + `KNOWLEDGE.MCP` → `POST /api/v1/oauth/requests/{id}/approve|deny` (JWT) → กลับไปที่ Claude พร้อม `code`, `state`, `iss`
+  - `POST /oauth/token` (form) — `authorization_code` (code ใช้ครั้งเดียวภายใน 2 นาที, ผูก client/redirect_uri/PKCE, verifier ผิด = code ถูกเผาทิ้ง) และ `refresh_token` (**rotation**: refresh/access เดิมใช้ไม่ได้ทันที); `Cache-Control: no-store`; ข้อผิดพลาดตาม RFC 6749 (`invalid_grant`, `invalid_client`, `unsupported_grant_type`, `invalid_target`)
+- **Token** เก็บในตาราง `PersonalAccessTokens` (`Kind = OAuth`, `ClientId`, `Resource` = audience, `RefreshTokenHash`, `RefreshExpiresAt`) — access `qao_…` 1 ชม., refresh `qrt_…` 30 วัน; 1 การเชื่อมต่อต่อผู้ใช้ต่อ client (เชื่อมต่อใหม่ = ยกเลิกของเดิม); auth handler ตรวจ audience; ยกเลิกได้จากแท็บ "เชื่อมต่อ Claude" (แสดงเป็น "Login ผ่าน OAuth")
+- 401 ของ `/mcp` มี `WWW-Authenticate: Bearer realm="ProMaxx2 QA Hub", resource_metadata="…/.well-known/oauth-protected-resource/mcp", scope="knowledge:read"` — Claude Code ที่ตั้ง header Token เองจะไม่เริ่ม OAuth (ตามเอกสาร) จึงใช้ร่วมกันได้
+- Migration `20261021165311_AddMcpOAuth` (`OAuthClients`, `OAuthAuthorizations`, คอลัมน์ใหม่ใน `PersonalAccessTokens`); rate limit `oauth` 120/นาที/IP (ผู้ใช้ claude.ai ทุกคนมาจาก `160.79.104.0/21`); Audit Log `OAuth` (ลงทะเบียน client, อนุญาต/ไม่อนุญาต) + `PersonalAccessToken` (เชื่อมต่อ)
+- แท็บ "เชื่อมต่อ Claude": ขั้นตอน Owner (Organization settings → Connectors → Add → Custom → Web → OAuth → Register automatically) และสมาชิก (Customize → Connectors → Connect → Login QA Hub → อนุญาต), Claude Code แบบ Login (`claude mcp add … qa-hub <url>` แล้ว `/mcp` → Authenticate) หรือแบบ Token
+
+ผลตรวจ:
+
+- Unit tests `KnowledgeOAuthTests` 18 ข้อ (PKCE, allowlist/loopback, metadata, DCR, flow ครบ authorize→consent→token→ใช้→refresh→ยกเลิก, code ซ้ำ/verifier ผิด/client ผิด, error ไม่ redirect, ปิดสวิตช์/ไม่มีสิทธิ์/ไม่อนุญาต, เชื่อมต่อใหม่ยกเลิกของเดิม, audience) — ทั้งชุด 722 ผ่าน
+- **ทดสอบผ่าน HTTP จริงด้วย OAuth client มาตรฐานของ MCP C# SDK** (DCR + PKCE, server ด้วยคลาสจริง + ฐานข้อมูลในหน่วยความจำ): 401 + `resource_metadata` → PRM → AS metadata → DCR → authorize 302 ไปหน้ายืนยัน (client ส่ง S256 + `resource`) → อนุญาต → code → token → `tools/list` 5 เครื่องมือ + `get_defect` (mask) สำเร็จ; refresh rotation, code ซ้ำ = `invalid_grant`, access เดิมหลัง refresh = 401, token endpoint ต้องเป็น form, client ไม่รู้จัก = หน้า error ไม่ redirect — **พบและแก้:** SDK ลงทะเบียนด้วย auth method อื่นที่ไม่ใช่ `none` (เดิมปฏิเสธ → ตอนนี้ตอบ `none`)
+- UI ด้วย headless Chromium ที่ 1440 / 1024 / 768 / 390px: หน้ายืนยัน OAuth + แท็บเชื่อมต่อ Claude ที่มีการเชื่อมต่อแบบ OAuth — แก้ลิงก์ "เปลี่ยนบัญชี" บน Mobile ให้กดง่าย (40px)
+
+ยังไม่ได้ทดสอบ / ต้องทำ:
+
+- [ ] **ทดสอบกับ claude.ai Team จริง**: Owner เพิ่ม custom connector (OAuth → Register automatically) → สมาชิกกด Connect → Login → อนุญาต → ถามเรื่อง Defect
+- [ ] Claude Code แบบ Login (`/mcp` → Authenticate) — Claude Code มี client metadata แบบ CIMD (`https://claude.ai/oauth/claude-code-client-metadata`) แต่เราไม่ประกาศ CIMD จึงคาดว่าจะใช้ DCR + loopback (ยังไม่ยืนยัน)
+- [ ] ตรวจว่า Cloudflare (WAF/Bot Fight) ไม่บล็อกคำขอจาก `160.79.104.0/21` ไปที่ `/.well-known/*`, `/oauth/*`, `/mcp`
+- [ ] ลบแถว `OAuthAuthorizations` ที่หมดอายุเป็นระยะ (ตอนนี้สะสม — เล็กมาก แต่ควรมีงานล้าง) และ client ที่ไม่เคยถูกใช้
