@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Badge } from "../components/Badge";
 import { formatThaiDateTime } from "../dateTime";
 import {
@@ -110,9 +110,7 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
 
       <section className="perf-report-detail-block" aria-labelledby="perf-report-details-title">
         <h3 id="perf-report-details-title" className="sr-only">รายละเอียดผลงาน</h3>
-        <div className="perf-report-metric-groups">
-          {detailGroups.map((g, index) => <ReportMetricGroup key={g.icon} icon={g.icon} title={g.title} items={g.items} defaultOpen={index === 0 || (g.title === "บันทึกงานเพิ่มเติม" && m.workLogs + m.highlights > 0)} />)}
-        </div>
+        <MetricColumns groups={detailGroups} />
       </section>
 
       {report.weekly.length > 0 && (
@@ -218,24 +216,46 @@ function WeekBar({ category, value, max }: { category: string; value: number; ma
   );
 }
 
-function ReportMetricGroup({ icon, title, items, defaultOpen }: { icon: string; title: string; items: [string, number | string][]; defaultOpen: boolean }) {
-  const activeCount = items.filter(([, value]) => {
-    const text = String(value).trim();
-    return text !== "0" && text !== "0 / 0" && text !== "-" && text !== "ยังไม่ได้ผูก";
-  }).length;
-  const summary = activeCount > 0 ? `${activeCount} ตัวชี้วัดมีข้อมูล` : "ยังไม่มีรายการเคลื่อนไหว";
+/** จำนวนคอลัมน์ตามความกว้างจอ: > 1050px = 3, 761–1050px = 2, ≤ 760px = 1 (พิมพ์ใช้ค่าจากขนาดหน้าจอตอนกดพิมพ์) */
+function useColumnCount(): number {
+  const read = () => typeof window === "undefined" ? 3 : window.matchMedia("(max-width: 760px)").matches ? 1 : window.matchMedia("(max-width: 1050px)").matches ? 2 : 3;
+  const [count, setCount] = useState(read);
+  useEffect(() => {
+    const queries = [window.matchMedia("(max-width: 760px)"), window.matchMedia("(max-width: 1050px)")];
+    const update = () => setCount(read());
+    queries.forEach((q) => q.addEventListener("change", update));
+    return () => queries.forEach((q) => q.removeEventListener("change", update));
+  }, []);
+  return count;
+}
 
+/** วางกลุ่มตัวเลขลงคอลัมน์ที่สั้นที่สุดทีละกลุ่ม (นับจากจำนวนแถว) — การ์ดสูงไม่เท่ากันจึงไม่เหลือช่องว่าง และไม่มีคอลัมน์ว่างเมื่อกลุ่มน้อย */
+function MetricColumns({ groups }: { groups: { icon: string; title: string; items: [string, number | string][] }[] }) {
+  const count = Math.min(useColumnCount(), Math.max(1, groups.length));
+  const columns: { height: number; items: typeof groups }[] = Array.from({ length: count }, () => ({ height: 0, items: [] }));
+  for (const g of groups) {
+    const target = columns.reduce((low, c) => (c.height < low.height ? c : low), columns[0]);
+    target.items.push(g);
+    target.height += g.items.length + 2; // + หัวการ์ด
+  }
   return (
-    <details className="perf-report-metric-group" data-perf-category={icon} open={defaultOpen}>
-      <summary>
-        <span className="perf-report-metric-title"><span className="material-symbols-outlined" aria-hidden="true">{icon}</span><span><b>{title}</b><small>{summary}</small></span></span>
-        <span className="perf-report-metric-toggle"><span>{items.length} ค่า</span><span className="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
-      </summary>
+    <div className="perf-report-metric-groups" style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}>
+      {columns.map((c, i) => <div key={i} className="perf-report-metric-col">{c.items.map((g) => <ReportMetricGroup key={g.icon} icon={g.icon} title={g.title} items={g.items} />)}</div>)}
+    </div>
+  );
+}
+
+/** กลุ่มตัวเลขในสรุปผลงาน — เปิดอยู่เสมอ (เอกสารสำหรับอ่าน/พิมพ์); ค่าที่เป็นศูนย์/ไม่มีข้อมูลเป็นสีจางให้ตัวเลขที่มีค่าเด่นขึ้น */
+function ReportMetricGroup({ icon, title, items }: { icon: string; title: string; items: [string, number | string][] }) {
+  const isEmpty = (value: number | string) => ["0", "0 / 0", "-", "ยังไม่ได้ผูก", "0%"].includes(String(value).trim());
+  return (
+    <section className="perf-report-metric-group" data-perf-category={icon} aria-label={title}>
+      <h4 className="perf-report-metric-title"><span className="material-symbols-outlined" aria-hidden="true">{icon}</span>{title}</h4>
       <dl>
         {items.map(([label, value]) => (
-          <div key={label}><dt>{label}</dt><dd>{typeof value === "number" ? value.toLocaleString("th-TH") : value}</dd></div>
+          <div key={label} className={isEmpty(value) ? "is-empty" : undefined}><dt>{label}</dt><dd>{typeof value === "number" ? value.toLocaleString("th-TH") : value}</dd></div>
         ))}
       </dl>
-    </details>
+    </section>
   );
 }
