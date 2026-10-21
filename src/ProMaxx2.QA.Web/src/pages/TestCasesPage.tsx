@@ -5,7 +5,10 @@ import { notify } from "../components/dialogStore";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { formatThaiDateTime } from "../dateTime";
-import { type ModuleItem, type TestCaseItem, buildModuleTree, fmtDateTimeBE, masterOptionElements, nextBusinessCode, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
+import { type ModuleItem, type TestCaseItem, buildModuleTree, fmtDateTimeBE, masterOptionElements, nextBusinessCode, priorityTone, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
+import "./TestCasesPage.css";
+
+const tcStatusTone: Record<string, string> = { Ready: "green", Review: "yellow", Draft: "blue", Deprecated: "gray" };
 
 function contextualCode(projectCode: string, moduleCode: string, kind: string) {
   const project = projectCode.toUpperCase();
@@ -361,6 +364,9 @@ export function TestCasesPage({
     return listSort.direction==="asc"?stableComparison:-stableComparison;
   });
   const pageCount=Math.max(1,Math.ceil(totalCount/pageSize));
+  // ตัวกรองที่ผู้ใช้เลือกเพิ่ม (ไม่นับ Project ที่ตามมาจาก Context ด้านบน)
+  const filterCount=[moduleFilter,statusFilter,automationFilter,createdByFilter].filter(Boolean).length;
+  const moduleById=new Map(filterModules.map(m=>[m.moduleId,m]));
   const pagedRows=rows;
   const toggleListSort=(field:TestCaseListSort["field"])=>{setListSort(current=>({field,direction:current.field===field&&current.direction==="asc"?"desc":"asc"}));setPage(1);};
   const moduleFilterGroups=projects.filter(project=>!projectFilter||project.projectId===projectFilter).map(project=>({
@@ -372,35 +378,22 @@ export function TestCasesPage({
       <article className="card testcase-list-card">
         {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>{setError("");setReload(x=>x+1)}}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div>}
         {notice&&<div className="inline-alert success"><span>{notice}</span><button type="button" aria-label="ปิดข้อความ" onClick={()=>setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
-        <div className="testcase-toolbar">
-          <div className="testcase-toolbar-head">
-            <div className="result-count"><strong>{totalCount.toLocaleString()}</strong><span>Test Cases</span></div>
-            <div className="testcase-toolbar-actions">
-              {canEdit&&<button className="btn ai-button" onClick={openTestCaseAi}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span> AI Generate</button>}
-              {canEdit&&<button className="btn" disabled={templateDownloading||projects.length===0} onClick={downloadImportTemplate}>{templateDownloading?"กำลังดาวน์โหลด...":<><span className="material-symbols-outlined" aria-hidden="true">download</span> Template</>}</button>}
-              {canEdit&&<label className="btn import-button"><span className="material-symbols-outlined" aria-hidden="true">upload_file</span><span>{importing?"กำลังนำเข้า...":"Import"}<small>CSV/XLSX</small></span><input type="file" accept=".csv,.xlsx" disabled={importing} onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);e.target.value=""}} /></label>}
-              {canEdit&&<button className="btn primary" onClick={()=>openForm()}>+ Test Case</button>}
-            </div>
-          </div>
-          <div className="testcase-filter-section">
-            <span className="testcase-filter-label">ตัวกรอง</span>
-            <div className="testcase-filters">
-            <select value={projectFilter} onChange={e=>{setProjectFilter(e.target.value);setModuleFilter("");setPage(1)}}><option value="">ทุก Project</option>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select>
-            <select className="testcase-module-filter" value={moduleFilter} onChange={e=>{setModuleFilter(e.target.value);setPage(1)}} disabled={!moduleFilterGroups.length}><option value="">ทุก Module</option>{moduleFilterGroups.map(({project,ordered})=><optgroup key={project.projectId} label={`${project.projectCode} · ${project.projectName}`}>{renderModuleSelectOptions(ordered.map(entry=>entry.module))}</optgroup>)}</select>
-            <select value={automationFilter} onChange={e=>{setAutomationFilter(e.target.value);setPage(1)}}><option value="">ทุก Automation</option><option value="yes">Automation Candidate</option><option value="no">Manual</option></select>
-            <select aria-label="กรองผู้สร้าง" value={createdByFilter} onChange={e=>{setCreatedByFilter(e.target.value);setPage(1)}}><option value="">ผู้สร้างทั้งหมด</option>{users.map(u=><option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="">ทุกสถานะ</option>
-              <option>Draft</option>
-              <option>Review</option>
-              <option>Ready</option>
-              <option>Deprecated</option>
-            </select>
-            </div>
-          </div>
+        <div className="tcl-head">
+          <div className="tcl-title"><strong>{totalCount.toLocaleString()}</strong><span>Test Case{filterCount ? ` · กรอง ${filterCount} เงื่อนไข` : ""}</span></div>
+          {canEdit && <div className="tcl-actions">
+            <button className="btn ai-button" type="button" onClick={openTestCaseAi}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span>AI Generate</button>
+            <button className="btn" type="button" disabled={templateDownloading||projects.length===0} onClick={downloadImportTemplate} title="ดาวน์โหลดไฟล์ Template สำหรับนำเข้า">{templateDownloading?<><span className="spinner inline" aria-hidden="true" />กำลังดาวน์โหลด...</>:<><span className="material-symbols-outlined" aria-hidden="true">download</span>Template</>}</button>
+            <label className="btn tcl-import" title="นำเข้า Test Case จากไฟล์ CSV หรือ XLSX"><span className="material-symbols-outlined" aria-hidden="true">upload_file</span>{importing?"กำลังนำเข้า...":"Import"}<input type="file" accept=".csv,.xlsx" disabled={importing} onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);e.target.value=""}} /></label>
+            <button className="btn primary" type="button" onClick={()=>openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Case</button>
+          </div>}
+        </div>
+        <div className="tcl-filters" role="group" aria-label="ตัวกรอง Test Case">
+          <select aria-label="Project" value={projectFilter} onChange={e=>{setProjectFilter(e.target.value);setModuleFilter("");setPage(1)}}><option value="">ทุก Project</option>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select>
+          <select aria-label="Module" className="testcase-module-filter" value={moduleFilter} onChange={e=>{setModuleFilter(e.target.value);setPage(1)}} disabled={!moduleFilterGroups.length}><option value="">ทุก Module</option>{moduleFilterGroups.map(({project,ordered})=><optgroup key={project.projectId} label={`${project.projectCode} · ${project.projectName}`}>{renderModuleSelectOptions(ordered.map(entry=>entry.module))}</optgroup>)}</select>
+          <select aria-label="สถานะ" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">ทุกสถานะ</option><option>Draft</option><option>Review</option><option>Ready</option><option>Deprecated</option></select>
+          <select aria-label="Automation" value={automationFilter} onChange={e=>{setAutomationFilter(e.target.value);setPage(1)}}><option value="">ทุก Automation</option><option value="yes">Automation Candidate</option><option value="no">Manual</option></select>
+          <select aria-label="ผู้สร้าง" value={createdByFilter} onChange={e=>{setCreatedByFilter(e.target.value);setPage(1)}}><option value="">ผู้สร้างทั้งหมด</option>{users.map(u=><option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
+          {filterCount > 0 && <button type="button" className="btn tcl-clear" onClick={()=>{setModuleFilter("");setStatusFilter("");setAutomationFilter("");setCreatedByFilter("");setPage(1);}}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
         </div>
         {canEdit && tcSelected.size > 0 && (
           <div className="testcase-bulk-bar" role="region" aria-label="กำหนดข้อมูลกลุ่ม">
@@ -427,76 +420,49 @@ export function TestCasesPage({
             <button type="button" className="bulk-clear" disabled={tcSaving!==""} onClick={()=>setTcSelected(new Set())}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิกเลือก</button>
           </div>
         )}
-        <div className="table-wrap">
-          <table className="testcase-list-table">
+        <div className="tcl-table-wrap">
+          <table className="tcl-table">
             <thead>
               <tr>
-                <th className="tc-select-col"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={pagedRows.length>0&&pagedRows.every(x=>tcSelected.has(x.testCaseId))} disabled={!canEdit} onChange={toggleTcSelectPage}/></th>
-                <th aria-sort={listSort.field==="testCaseCode"?(listSort.direction==="asc"?"ascending":"descending"):"none"}><button type="button" className="table-sort-button" onClick={()=>toggleListSort("testCaseCode")}>Test Case ID <span className="material-symbols-outlined" aria-hidden="true">{listSort.field==="testCaseCode"?(listSort.direction==="asc"?"arrow_upward":"arrow_downward"):"unfold_more"}</span></button></th>
-                <th>Title</th>
-                <th>Priority</th>
-                <th>Type</th>
-                <th>Revision</th>
-                <th>Steps</th>
-                <th>Status</th>
-                <th aria-sort={listSort.field==="createdAt"?(listSort.direction==="asc"?"ascending":"descending"):"none"}><button type="button" className="table-sort-button" onClick={()=>toggleListSort("createdAt")}>สร้างเมื่อ <span className="material-symbols-outlined" aria-hidden="true">{listSort.field==="createdAt"?(listSort.direction==="asc"?"arrow_upward":"arrow_downward"):"unfold_more"}</span></button></th>
-                {canEdit && <th className="actions-col">จัดการ</th>}
+                <th className="tcl-col-select"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={pagedRows.length>0&&pagedRows.every(x=>tcSelected.has(x.testCaseId))} disabled={!canEdit} onChange={toggleTcSelectPage}/></th>
+                <th className="tcl-col-case" aria-sort={listSort.field==="testCaseCode"?(listSort.direction==="asc"?"ascending":"descending"):"none"}><button type="button" className="tcl-sort" onClick={()=>toggleListSort("testCaseCode")}>Test Case<span className="material-symbols-outlined" aria-hidden="true">{listSort.field==="testCaseCode"?(listSort.direction==="asc"?"arrow_upward":"arrow_downward"):"unfold_more"}</span></button></th>
+                <th className="tcl-col-module">Module</th>
+                <th className="tcl-col-priority">Priority</th>
+                <th className="tcl-col-status">สถานะ</th>
+                <th className="tcl-col-date" aria-sort={listSort.field==="createdAt"?(listSort.direction==="asc"?"ascending":"descending"):"none"}><button type="button" className="tcl-sort" onClick={()=>toggleListSort("createdAt")}>สร้างเมื่อ<span className="material-symbols-outlined" aria-hidden="true">{listSort.field==="createdAt"?(listSort.direction==="asc"?"arrow_upward":"arrow_downward"):"unfold_more"}</span></button></th>
+                {canEdit && <th className="tcl-col-actions"><span className="sr-only">จัดการ</span></th>}
               </tr>
             </thead>
             <tbody>
-              {pagedRows.map((x) => (
+              {pagedRows.map((x) => {
+                const module = moduleById.get(x.moduleId);
+                const steps = (x as any).steps?.length ?? (x as any).stepCount ?? 0;
+                return (
                 <tr key={x.testCaseId} className={tcSelected.has(x.testCaseId)?"is-selected":""}>
-                  <td className="tc-select-col" data-label="เลือก"><input type="checkbox" aria-label={`เลือก ${x.testCaseCode}`} checked={tcSelected.has(x.testCaseId)} disabled={!canEdit} onChange={()=>toggleTcSelect(x.testCaseId)}/></td>
-                  <td data-label="Test Case ID">
-                    <button className="link-button" onClick={()=>openDetail(x)}>{x.testCaseCode}</button>
+                  <td className="tcl-col-select"><input type="checkbox" aria-label={`เลือก ${x.testCaseCode}`} checked={tcSelected.has(x.testCaseId)} disabled={!canEdit} onChange={()=>toggleTcSelect(x.testCaseId)}/></td>
+                  <td className="tcl-col-case">
+                    <button type="button" className="tcl-case" onClick={()=>openDetail(x)} aria-label={`เปิด ${x.testCaseCode} ${x.title}`}>
+                      <span className="tcl-code">{x.testCaseCode}<span className="tcl-meta">{x.testType ?? "-"} · {steps} Steps{x.revisionNo > 1 ? ` · Rev. ${x.revisionNo}` : ""}{x.automationCandidate ? " · Automation" : ""}</span></span>
+                      <span className="tcl-name">{x.title}</span>
+                    </button>
                   </td>
-                  <td data-label="Title">{x.title}</td>
-                  <td data-label="Priority">
-                    <Badge
-                      tone={
-                        x.priority === "P0" || x.priority === "P1"
-                          ? "red"
-                          : "blue"
-                      }
-                    >
-                      {x.priority}
-                    </Badge>
-                  </td>
-                  <td data-label="Type">{x.testType ?? "-"}</td>
-                  <td data-label="Revision">Rev. {x.revisionNo}</td>
-                  <td data-label="Steps">{(x as any).steps?.length ?? (x as any).stepCount ?? 0}</td>
-                  <td data-label="Status">
-                    <Badge tone={x.status === "Ready" ? "green" : "yellow"}>
-                      {x.status}
-                    </Badge>
-                  </td>
-                  <td data-label="สร้างเมื่อ">{fmtDateTimeBE(x.createdAt)}</td>
+                  <td className="tcl-col-module">{module ? <span className="tcl-module" title={`${module.moduleCode} · ${module.moduleName}`}><b>{module.moduleName}</b><small>{module.moduleCode}</small></span> : <span className="tcl-muted">-</span>}</td>
+                  <td className="tcl-col-priority"><Badge tone={priorityTone(x.priority)}>{x.priority}</Badge></td>
+                  <td className="tcl-col-status"><Badge tone={tcStatusTone[x.status] ?? "gray"}>{x.status}</Badge></td>
+                  <td className="tcl-col-date" title={fmtDateTimeBE(x.createdAt)}>{fmtDateTimeBE(x.createdAt).split(" ")[0]}</td>
                   {canEdit && (
-                    <td data-label="จัดการ" className="actions-col">
-                      <div className="row-actions">
-                        <button
-                          className="table-action icon-only"
-                          title="แก้ไข"
-                          aria-label={`แก้ไข ${x.testCaseCode}`}
-                          onClick={() => openForm(x)}
-                        >
-                          <span className="material-symbols-outlined" aria-hidden="true">edit</span>
-                        </button>
-                        <button className="table-action icon-only" title="สำเนา" aria-label={`สำเนา ${x.testCaseCode}`} onClick={() => cloneCase(x)}><span aria-hidden="true">⧉</span></button>
-                        <button
-                          className="table-action danger-action icon-only"
-                          title="ลบ"
-                          aria-label={`ลบ ${x.testCaseCode}`}
-                          onClick={() => setConfirmDelete(x)}
-                        >
-                          <span className="material-symbols-outlined" aria-hidden="true">close</span>
-                        </button>
+                    <td className="tcl-col-actions">
+                      <div className="tcl-row-actions">
+                        <button type="button" title="แก้ไข" aria-label={`แก้ไข ${x.testCaseCode}`} onClick={() => openForm(x)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>
+                        <button type="button" title="สำเนา" aria-label={`สำเนา ${x.testCaseCode}`} onClick={() => cloneCase(x)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
+                        <button type="button" className="danger" title="ลบ" aria-label={`ลบ ${x.testCaseCode}`} onClick={() => setConfirmDelete(x)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
                       </div>
                     </td>
                   )}
                 </tr>
-              ))}
-              {!pagedRows.length && !loading && <tr><td colSpan={canEdit ? 10 : 9}><div className="empty"><p>ไม่พบ Test Case ตามตัวกรองที่เลือก</p></div></td></tr>}
+                );
+              })}
+              {!pagedRows.length && !loading && <tr className="tcl-empty-row"><td colSpan={canEdit ? 7 : 6}><div className="tcl-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><b>ไม่พบ Test Case ตามตัวกรองที่เลือก</b>{filterCount > 0 && <small>ลองล้างตัวกรองหรือเปลี่ยนคำค้น</small>}</div></td></tr>}
             </tbody>
           </table>
         </div>

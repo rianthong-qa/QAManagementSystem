@@ -1,3 +1,6 @@
+/* ข้อความสำหรับ screen reader เท่านั้น — ใช้ได้ทุกหน้า (เดิมมีแต่แบบผูกกับบางหน้า เช่น .performance-page .sr-only) */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 /* Global Styles */
 :root {
   --bg: #f5f7fb;
