@@ -340,7 +340,7 @@ button.crm-fact-edit .material-symbols-outlined { font-size: 16px; }
 .crm-ticket-aside .crm-link-panel { align-items: stretch; flex-direction: column; margin: 0; }
 .crm-ticket-aside .crm-link-actions { display: grid; justify-content: stretch; }
 .crm-ticket-aside .crm-link-actions .btn { justify-content: center; width: 100%; }
-.modal-box.crm-ticket-modal > .modal-actions { position: static; margin: 0; padding: 12px 22px; border-top: 1px solid var(--line); background: var(--card); }
+
 @media (max-width: 900px) { .crm-ticket-body { grid-template-columns: minmax(0, 1fr) 280px; } .crm-ticket-facts > div { grid-template-columns: 96px minmax(0, 1fr); } }
 @media (max-width: 760px) {
   .modal-box.crm-ticket-modal { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
@@ -350,8 +350,6 @@ button.crm-fact-edit .material-symbols-outlined { font-size: 16px; }
   .crm-ticket-aside, .crm-ticket-main { flex: 0 0 auto; }
   .crm-ticket-aside { order: -1; padding: 14px 16px; overflow: visible; border-left: 0; border-bottom: 1px solid var(--line); }
   .crm-ticket-main { padding: 14px 16px; overflow: visible; }
-  .modal-box.crm-ticket-modal > .modal-actions { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
-  .modal-box.crm-ticket-modal > .modal-actions > * { flex: 1 1 0; justify-content: center; }
 }
 
 /* List แยกงานที่ปิดแล้วไว้ใน <details>; Board แสดง Finish/Close เป็นคอลัมน์สุดท้าย */
@@ -627,4 +625,51 @@ summary.crm-flow-history-head:focus-visible { outline: 3px solid color-mix(in sr
   .crm-list-card .crm-filter-row { grid-template-columns: minmax(0, 1fr) 96px; padding: 12px; }
   .crm-list-card .crm-filter-row .crm-jobno-search { grid-column: 1 / -1; }
   .crm-ticket-cell .crm-job-no { white-space: normal; overflow-wrap: anywhere; }
+}
+
+/* ===== รายละเอียด Ticket รอบออกแบบใหม่ (2026-10-21) =====
+   หัว: Job No · สถานะ · อายุงาน | เรื่อง | แถบ "อยู่กับใคร" + ปุ่ม เปิดใน CRM / ปิด (ไม่มีแถบปุ่มล่าง)
+   ซ้าย: ปัญหา → อัปเดต Ticket → ประวัติ (ล่าสุดบน) | ขวา: Defect → ข้อมูลแบ่งกลุ่ม → ประวัติ Flow */
+.modal-box.crm-ticket-modal { grid-template-rows: auto minmax(0, 1fr); width: min(1180px, calc(100vw - 32px)); height: min(840px, calc(100dvh - 32px)); }
+.modal-box.crm-ticket-modal > .modal-head.crm-ticket-head { align-items: flex-start; gap: 16px; padding: 16px 22px 14px; background: var(--card); }
+.crm-ticket-head .crm-ticket-head-main { display: grid; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.crm-ticket-head .crm-ticket-head-title { gap: 6px 10px; }
+.crm-ticket-head .crm-eyebrow { flex-basis: 100%; }
+.modal-box.crm-ticket-modal .crm-ticket-head-title h2 { font-size: 20px; font-variant-numeric: tabular-nums; }
+.crm-ticket-head .crm-subject-view { align-items: center; }
+.crm-ticket-head .crm-subject-view > p { flex: 0 1 auto; margin: 0; font-size: 17px; font-weight: 700; line-height: 1.45; }
+.crm-ticket-flow .crm-flow-text { display: flex; flex-wrap: wrap; align-items: center; justify-self: start; gap: 4px 14px; padding: 7px 12px; border-radius: 10px; background: color-mix(in srgb, var(--primary-soft) 60%, var(--card)); }
+.crm-ticket-flow .crm-flow-now { font-size: 13px; }
+.crm-ticket-flow .crm-flow-route, .crm-ticket-flow .crm-flow-notes { font-size: 12px; }
+.crm-ticket-head-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.crm-ticket-head-actions .crm-source-link { gap: 6px; min-height: 40px; padding: 8px 14px; white-space: nowrap; }
+.crm-ticket-head-actions .crm-source-link .material-symbols-outlined { font-size: 18px; }
+.modal-box.crm-ticket-modal .crm-ticket-head-actions button.crm-ticket-close { display: grid; width: 40px; height: 40px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--muted); }
+.modal-box.crm-ticket-modal .crm-ticket-head-actions button.crm-ticket-close:hover { color: var(--text); background: var(--surface); }
+
+.crm-ticket-body { grid-template-columns: minmax(0, 1fr) 340px; }
+.crm-ticket-main { gap: 18px; padding: 18px 22px 22px; }
+.crm-ticket-main .crm-ticket-problem .crm-detail-description { max-height: 260px; padding: 12px 14px; background: var(--surface); border-color: transparent; font-size: 13px; line-height: 1.65; }
+.crm-ticket-aside { gap: 16px; padding: 16px 18px; background: color-mix(in srgb, var(--surface) 60%, var(--card)); }
+.crm-fact-group { display: grid; gap: 6px; min-width: 0; }
+.crm-fact-group h4 { margin: 0; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.crm-ticket-aside .crm-ticket-facts > div { grid-template-columns: 104px minmax(0, 1fr); padding: 8px 12px; }
+.crm-ticket-aside .crm-flow-history { margin-top: 0; }
+@media (max-width: 900px) {
+  .crm-ticket-body { grid-template-columns: minmax(0, 1fr) 290px; }
+  .crm-ticket-aside .crm-ticket-facts > div { grid-template-columns: 92px minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .modal-box.crm-ticket-modal { width: 100%; height: 100dvh; }
+  .modal-box.crm-ticket-modal > .modal-head.crm-ticket-head { gap: 10px; padding: 12px 14px; }
+  .modal-box.crm-ticket-modal .crm-ticket-head-title h2 { font-size: 18px; }
+  .crm-ticket-head .crm-subject-view > p { font-size: 15px; }
+  .crm-ticket-head-actions { flex-direction: column-reverse; align-items: flex-end; }
+  .crm-ticket-head-actions .crm-source-link { width: 44px; min-height: 44px; justify-content: center; padding: 0; }
+  .crm-ticket-head-actions .crm-source-link-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .modal-box.crm-ticket-modal .crm-ticket-head-actions button.crm-ticket-close { width: 44px; height: 44px; }
+  /* มือถือ: อ่านปัญหา/ตอบก่อน แล้วค่อยข้อมูล Ticket */
+  .crm-ticket-aside { order: 0; padding: 14px 16px; border-top: 1px solid var(--line); border-bottom: 0; }
+  .crm-ticket-main { padding: 14px 16px; }
+  .crm-ticket-aside .crm-ticket-facts > div { grid-template-columns: 104px minmax(0, 1fr); }
 }
