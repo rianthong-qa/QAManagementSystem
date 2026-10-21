@@ -49,7 +49,8 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                 nullable: true);
 
             // รอบที่ปิดก่อนมีผู้ประเมินแผนกอื่น: ผลรวมมาจากหัวหน้าตรงอย่างเดียว
-            migrationBuilder.Sql("UPDATE Evaluations SET ManagerScore = OverallScore WHERE OverallScore IS NOT NULL");
+            // ห่อด้วย EXEC: สคริปต์ idempotent ไม่มี GO คั่น — ถ้าไม่ห่อ SQL Server compile ทั้งก้อนก่อนคอลัมน์ ManagerScore มีอยู่จริงแล้ว error
+            migrationBuilder.Sql("EXEC(N'UPDATE [Evaluations] SET [ManagerScore] = [OverallScore] WHERE [OverallScore] IS NOT NULL')");
 
             migrationBuilder.CreateTable(
                 name: "EvaluationExternalReviews",
