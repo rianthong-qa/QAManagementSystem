@@ -690,7 +690,6 @@ button.perf-evidence-file:disabled { opacity: 0.6; cursor: not-allowed; }
 .perf-eval-ext .material-symbols-outlined { color: var(--info); font-size: 14px; }
 .perf-eval-external .perf-hint { margin: 0; }
 .perf-eval-crit .perf-eval-ext { justify-self: start; width: fit-content; }
-.perf-eval-external > h3 { flex-wrap: wrap; row-gap: 2px; }
 .perf-eval-external .perf-ext-form .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 0; }
 .perf-eval-external .perf-ext-form .form-grid .full { grid-column: 1 / -1; }
 .perf-ext-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -773,4 +772,25 @@ button.perf-evidence-file:disabled { opacity: 0.6; cursor: not-allowed; }
   .perf-xr-pick label { width: auto; }
   .perf-xr-submit { justify-content: space-between; }
   .perf-xr-submit .btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* แชร์ให้แผนกอื่นประเมิน: ปุ่มในรายการรอบ + การ์ดเด่นบนสุดของหน้าต่างประเมิน (ปรับ 2026-10-21) */
+.performance-page .perf-eval-round-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.performance-page .perf-eval-rounds .btn.perf-eval-share, .performance-page .perf-row-action .btn.perf-eval-share { gap: 4px; border-color: color-mix(in srgb, var(--primary) 30%, var(--line)); background: var(--card); color: var(--primary); }
+.perf-eval-share .material-symbols-outlined { font-size: 16px; }
+.perf-eval-modal .perf-eval-external { display: grid; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary-soft) 45%, var(--card)); scroll-margin-top: 12px; }
+.perf-ext-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.perf-ext-icon { display: grid; flex: none; width: 38px; height: 38px; place-items: center; border-radius: 11px; background: var(--primary); color: var(--card); font-size: 21px; }
+.perf-ext-title { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; }
+.perf-eval-modal .perf-ext-title h3 { margin: 0; color: var(--text); font-size: 15px; }
+.perf-ext-title small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.perf-ext-head .perf-ext-add { flex: none; gap: 6px; }
+.perf-eval-modal .perf-eval-external .perf-ext-form { background: var(--card); }
+@media (max-width: 900px) {
+  .performance-page .perf-eval-rounds .perf-eval-round-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+  .performance-page .perf-row-action .perf-eval-round-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); width: 100%; }
+}
+@media (max-width: 760px) {
+  .perf-ext-head { flex-wrap: wrap; }
+  .perf-ext-head .perf-ext-add { width: 100%; justify-content: center; min-height: 44px; }
 }

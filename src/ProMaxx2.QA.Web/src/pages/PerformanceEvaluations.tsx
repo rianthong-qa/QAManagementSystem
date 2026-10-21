@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ApiError, apiFetch, isAbortError } from "../api";
 import { Badge } from "../components/Badge";
 import { DateField } from "../components/DateField";
@@ -38,6 +38,15 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  // เปิดหน้าต่างประเมินพร้อมฟอร์ม "ขอให้หัวหน้าแผนกอื่นประเมิน" (กดจากปุ่มแชร์ในรายการ)
+  const [shareOnOpen, setShareOnOpen] = useState(false);
+  const openEvaluation = (id: string, share = false) => { setShareOnOpen(share); setSelected(id); };
+  const canShare = (x: EvaluationSummary) => canManage && x.status !== "Completed" && x.status !== "Acknowledged";
+  const shareButton = (x: EvaluationSummary) => canShare(x) && (
+    <button className="btn perf-eval-share" type="button" onClick={() => openEvaluation(x.evaluationId, true)} aria-label={`แชร์ลิงก์ให้หัวหน้าแผนกอื่นประเมิน ${roundText(x)} ${x.userName ?? ""}`} title="สร้างลิงก์ให้หัวหน้าแผนกอื่นประเมิน (ไม่ต้อง login)">
+      <span className="material-symbols-outlined" aria-hidden="true">share</span>แชร์ให้แผนกอื่น
+    </button>
+  );
   const [quarterOpen, setQuarterOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -80,7 +89,7 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
         {x.grade ? <span className="perf-grade">{x.grade}<small>{x.overallScore?.toFixed(2)}</small></span> : "-"}
         {x.recommendation && <small className="perf-sub">{recommendationLabel[x.recommendation]}</small>}
       </td>
-      <td className="perf-row-action"><button className="btn" type="button" onClick={() => setSelected(x.evaluationId)} aria-label={`เปิดการประเมิน ${roundText(x)} ${x.userName ?? ""}`}>ดูการประเมิน<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button></td>
+      <td className="perf-row-action"><span className="perf-eval-round-actions">{shareButton(x)}<button className="btn" type="button" onClick={() => openEvaluation(x.evaluationId)} aria-label={`เปิดการประเมิน ${roundText(x)} ${x.userName ?? ""}`}>ดูการประเมิน<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button></span></td>
     </tr>
   );
   // แถบขั้นตอน: รอประเมินตนเอง → รอหัวหน้า → ส่งผลแล้ว → รับทราบ + เลยกำหนด — กดเพื่อกรอง (กดซ้ำเพื่อยกเลิก)
@@ -163,7 +172,10 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
                           {x.grade ? <span className="perf-grade">{x.grade}<small>{x.overallScore?.toFixed(2)}</small></span> : <small className="perf-sub">ยังไม่มีผล</small>}
                           {x.recommendation && <small className="perf-sub">{recommendationLabel[x.recommendation]}</small>}
                         </span>
-                        <button className="btn" type="button" onClick={() => setSelected(x.evaluationId)} aria-label={`เปิดการประเมิน ${roundText(x)} ${x.userName ?? ""}`}>ดูการประเมิน<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
+                        <span className="perf-eval-round-actions">
+                          {shareButton(x)}
+                          <button className="btn" type="button" onClick={() => openEvaluation(x.evaluationId)} aria-label={`เปิดการประเมิน ${roundText(x)} ${x.userName ?? ""}`}>ดูการประเมิน<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -180,11 +192,11 @@ export function EvaluationsPanel({ canManage, userId, refreshKey, onChanged, com
               </table>
             </div>
           )}
-      {selected && <EvaluationModal id={selected} onClose={() => setSelected(null)} onChanged={onChanged} />}
+      {selected && <EvaluationModal id={selected} startShare={shareOnOpen} onClose={() => { setSelected(null); setShareOnOpen(false); }} onChanged={onChanged} />}
       {quarterOpen && <QuarterModal onClose={() => setQuarterOpen(false)} onCreated={() => { setQuarterOpen(false); onChanged(); }} />}
       {templatesOpen && <TemplatesModal onClose={() => setTemplatesOpen(false)} />}
     </section>
-    {canManage && !userId && <TeamQuarterComparison refreshKey={refreshKey} onOpen={setSelected} />}
+    {canManage && !userId && <TeamQuarterComparison refreshKey={refreshKey} onOpen={(id) => openEvaluation(id)} />}
     </>
   );
 }
@@ -276,7 +288,9 @@ function TeamQuarterComparison({ refreshKey, onOpen }: { refreshKey: number; onO
 
 type ScoreDraft = { self: number | null; selfComment: string; manager: number | null; managerComment: string };
 
-function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
+function EvaluationModal({ id, startShare = false, onClose, onChanged }: { id: string; startShare?: boolean; onClose: () => void; onChanged: () => void }) {
+  // เพิ่มค่าทุกครั้งที่ต้องการเปิดฟอร์มสร้างลิงก์แผนกอื่น + เลื่อนไปที่ส่วนนั้น (ปุ่มในรายการ / ปุ่มแถบล่าง)
+  const [shareSignal, setShareSignal] = useState(startShare ? 1 : 0);
   const [detail, setDetail] = useState<EvaluationDetail | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ScoreDraft>>({});
   const [form, setForm] = useState({ selfComment: "", strengths: "", improvements: "", nextGoals: "", recommendation: "", extendToDate: "", employeeComment: "" });
@@ -405,6 +419,7 @@ function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () =
                 <EvaluationSummaryBar detail={detail} selfAverage={selfAverage} managerPreview={detail.canManagerEdit ? combinedPreview : null} managerScored={managerScored} />
                 {detail.managerRestriction && !s.grade && <div className="inline-alert" role="note"><span><span className="material-symbols-outlined" aria-hidden="true">lock</span> {detail.managerRestriction}</span></div>}
                 {detail.reopenReason && <div className="inline-alert" role="note"><span>เปิดใหม่: {detail.reopenReason}</span></div>}
+                {detail.externalReviews && <ExternalReviewsSection detail={detail} disabled={busy} openSignal={shareSignal} onChanged={(next) => { setDetail((d) => d ? { ...d, ...next } : d); onChanged(); }} />}
 
                 <ul className="perf-eval-legend" aria-label="ความหมายของคะแนน">
                   {[1, 2, 3, 4, 5].map((n) => <li key={n}><b>{n}</b>{scaleLabel[n]}</li>)}
@@ -445,8 +460,6 @@ function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () =
                     </div>
                   </section>
                 ))}
-
-                {detail.externalReviews && <ExternalReviewsSection detail={detail} disabled={busy} onChanged={(next) => { setDetail((d) => d ? { ...d, ...next } : d); onChanged(); }} />}
 
                 <section className="perf-eval-group perf-eval-notes" aria-label="ความเห็น">
                   <h3>ความเห็น</h3>
@@ -506,6 +519,9 @@ function EvaluationModal({ id, onClose, onChanged }: { id: string; onClose: () =
           <button className="btn" type="button" disabled={busy || exporting} onClick={exportPdf} title="บันทึกผลการประเมินเป็น PDF (ข้อมูลตามที่แสดงในหน้าต่างนี้ที่บันทึกแล้ว)">
             {exporting ? <><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง PDF...</> : <><span className="material-symbols-outlined" aria-hidden="true">picture_as_pdf</span> Export PDF</>}
           </button>
+        )}
+        {detail?.canManageExternal && s?.status !== "Completed" && s?.status !== "Acknowledged" && (
+          <button className="btn" type="button" disabled={busy} onClick={() => setShareSignal((n) => n + 1)} title="สร้างลิงก์ให้หัวหน้าแผนกอื่นประเมิน (ไม่ต้อง login)"><span className="material-symbols-outlined" aria-hidden="true">share</span> แชร์ให้แผนกอื่นประเมิน</button>
         )}
         {detail?.canReopen && <button className="btn" type="button" disabled={busy} onClick={reopen}><span className="material-symbols-outlined" aria-hidden="true">lock_open</span> เปิดใหม่</button>}
         {detail?.canSelfEdit && (
@@ -875,7 +891,7 @@ const externalStatus: Record<ExternalReview["status"], { label: string; tone: st
 const externalLink = (code: string) => `${window.location.origin}/?er=${code}`;
 
 /** ผู้ประเมินจากแผนกอื่น — หัวหน้าตรงสร้างลิงก์ 1 ลิงก์ต่อ 1 คน (ไม่ต้อง login) คัดลอก/ยกเลิกได้ และเห็นผลที่ส่งแล้ว */
-function ExternalReviewsSection({ detail, disabled, onChanged }: { detail: EvaluationDetail; disabled: boolean; onChanged: (patch: Partial<EvaluationDetail>) => void }) {
+function ExternalReviewsSection({ detail, disabled, openSignal, onChanged }: { detail: EvaluationDetail; disabled: boolean; openSignal: number; onChanged: (patch: Partial<EvaluationDetail>) => void }) {
   const reviews = detail.externalReviews ?? [];
   const closed = detail.summary.status === "Completed" || detail.summary.status === "Acknowledged";
   const canCreate = detail.canManageExternal && !closed;
@@ -884,6 +900,16 @@ function ExternalReviewsSection({ detail, disabled, onChanged }: { detail: Evalu
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const submitted = reviews.filter((x) => x.status === "Submitted");
+  const pending = reviews.filter((x) => x.status === "Pending").length;
+  const sectionRef = useRef<HTMLElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!openSignal) return;
+    if (canCreate) setOpen(true);
+    // รอให้ฟอร์มแสดงก่อนแล้วเลื่อน + focus ช่องชื่อ
+    const t = window.setTimeout(() => { sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); nameRef.current?.focus({ preventScroll: true }); }, 60);
+    return () => window.clearTimeout(t);
+  }, [openSignal, canCreate]);
 
   const reload = async () => {
     const next = await apiFetch<EvaluationDetail>(`/performance/evaluations/${detail.summary.evaluationId}`);
@@ -917,11 +943,16 @@ function ExternalReviewsSection({ detail, disabled, onChanged }: { detail: Evalu
   };
 
   return (
-    <section className="perf-eval-group perf-eval-external" aria-labelledby="perf-eval-external-title">
-      <h3 id="perf-eval-external-title">ผู้ประเมินจากแผนกอื่น
-        <small>{submitted.length ? `ส่งแล้ว ${submitted.length} คน · เฉลี่ย ${detail.externalScore?.toFixed(2) ?? "-"}` : "ยังไม่มีผลจากแผนกอื่น"} · น้ำหนัก {detail.externalWeight}% ของผลรวม</small>
-      </h3>
-      {reviews.length === 0 && !open && <p className="perf-hint">ส่งลิงก์ให้หัวหน้าแผนกที่ทำงานร่วมกันประเมินได้โดยไม่ต้อง login — ให้คะแนนเกณฑ์เดียวกันกับรอบนี้ และไม่เห็นคะแนนของหัวหน้าตรงหรือของพนักงาน</p>}
+    <section ref={sectionRef} className="perf-eval-external" aria-labelledby="perf-eval-external-title">
+      <div className="perf-ext-head">
+        <span className="perf-ext-icon material-symbols-outlined" aria-hidden="true">groups</span>
+        <div className="perf-ext-title">
+          <h3 id="perf-eval-external-title">ผู้ประเมินจากแผนกอื่น</h3>
+          <small>{reviews.length === 0 ? "ส่งลิงก์ให้หัวหน้าแผนกที่ทำงานร่วมกันประเมินได้โดยไม่ต้อง login" : `ส่งแล้ว ${submitted.length} คน${pending ? ` · รอ ${pending} คน` : ""}${detail.externalScore != null ? ` · เฉลี่ย ${detail.externalScore.toFixed(2)}` : ""}`} · คิดเป็น {detail.externalWeight}% ของผลรวม</small>
+        </div>
+        {canCreate && !open && <button type="button" className="btn primary perf-ext-add" disabled={disabled} onClick={() => setOpen(true)}><span className="material-symbols-outlined" aria-hidden="true">add_link</span>สร้างลิงก์ประเมิน</button>}
+      </div>
+      {!detail.canManageExternal && !closed && detail.managerRestriction && <p className="perf-hint">สร้างลิงก์ได้เฉพาะหัวหน้าตรงของพนักงาน — {detail.managerRestriction}</p>}
       {reviews.length > 0 && (
         <ul className="perf-ext-list">
           {reviews.map((x) => (
@@ -945,10 +976,10 @@ function ExternalReviewsSection({ detail, disabled, onChanged }: { detail: Evalu
           ))}
         </ul>
       )}
-      {canCreate && (open ? (
+      {canCreate && open && (
         <div className="perf-ext-form">
           <div className="form-grid">
-            <label>ชื่อผู้ประเมิน<span className="required-mark"> *</span><input value={form.reviewerName} maxLength={100} disabled={busy} placeholder="เช่น คุณสมชาย ใจดี" onChange={(e) => setForm((f) => ({ ...f, reviewerName: e.target.value }))} /></label>
+            <label>ชื่อผู้ประเมิน<span className="required-mark"> *</span><input ref={nameRef} value={form.reviewerName} maxLength={100} disabled={busy} placeholder="เช่น คุณสมชาย ใจดี" onChange={(e) => setForm((f) => ({ ...f, reviewerName: e.target.value }))} /></label>
             <label>แผนก / ตำแหน่ง<input value={form.reviewerDepartment} maxLength={100} disabled={busy} placeholder="เช่น หัวหน้าฝ่ายพัฒนา" onChange={(e) => setForm((f) => ({ ...f, reviewerDepartment: e.target.value }))} /></label>
             <label className="full">ข้อความถึงผู้ประเมิน (ไม่บังคับ)<input value={form.note} maxLength={300} disabled={busy} placeholder="เช่น ช่วยประเมินงานที่ทำร่วมกับทีม Dev ในไตรมาสนี้" onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} /></label>
             <label>ลิงก์ใช้ได้
@@ -965,9 +996,7 @@ function ExternalReviewsSection({ detail, disabled, onChanged }: { detail: Evalu
             </button>
           </div>
         </div>
-      ) : (
-        <button type="button" className="btn perf-ext-add" disabled={disabled} onClick={() => setOpen(true)}><span className="material-symbols-outlined" aria-hidden="true">person_add</span>ขอให้หัวหน้าแผนกอื่นประเมิน</button>
-      ))}
+      )}
       {!open && error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
     </section>
   );
