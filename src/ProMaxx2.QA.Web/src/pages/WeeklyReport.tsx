@@ -5,7 +5,7 @@ import { DateField } from "../components/DateField";
 import { confirmDialog, notify } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
 import { CopyButton } from "../components/CopyButton";
-import { employmentStatusLabel, employmentStatusTone, errorText, evalStatus, fmtDate, roundText, thaiToday, workCategoryLabel, type Metrics } from "./performanceUtils";
+import { employmentStatusLabel, employmentStatusTone, errorText, fmtDate, roundText, thaiToday, workCategoryLabel, type Metrics } from "./performanceUtils";
 import "./PerformanceReport.css";
 import "./WeeklyReport.css";
 
@@ -139,6 +139,13 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
   const narrative = data?.narrative;
   const health = (editing ? draft.health : narrative?.health) || "";
   const withoutLogs = members.filter((m) => hasActivity(m) && m.workItems.length === 0);
+  const evaluationsByPerson = Object.values((data?.evaluationsDue ?? []).reduce<Record<string, { name: string; items: WeeklyReport["evaluationsDue"]; overdue: number }>>((acc, e) => {
+    const key = e.userName ?? "-";
+    const g = acc[key] ??= { name: key, items: [], overdue: 0 };
+    g.items.push(e);
+    if (e.isOverdue) g.overdue++;
+    return acc;
+  }, {})).sort((a, b) => b.overdue - a.overdue || a.name.localeCompare(b.name, "th"));
 
   return (
     <div className="perf-report perf-weekly">
@@ -233,7 +240,7 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
                 <span className="perf-weekly-kpi-note">สถานะ ณ ปัจจุบัน ไม่ใช่ย้อนหลัง</span>
               </div>
             </div>
-            <p className="perf-report-note">ค่าปกติ = ค่ากลาง (median) รายสัปดาห์ของ 4 สัปดาห์ก่อนหน้า ({fmtDate(data.typicalFrom)} – {fmtDate(data.typicalTo)}) ซึ่งไม่เพี้ยนตามสัปดาห์ที่มีการนำเข้าข้อมูลจำนวนมาก · ลูกศรบอกว่าสูง/ต่ำกว่าปกติเกิน 20% ไม่ได้บอกว่าดีหรือแย่ · นับเฉพาะ Project ที่คุณเป็นสมาชิก</p>
+            <p className="perf-report-note">ปกติ = ค่ากลางของ 4 สัปดาห์ก่อนหน้า ({fmtDate(data.typicalFrom)} – {fmtDate(data.typicalTo)}) · ลูกศร = ต่างจากปกติเกิน 20% ไม่ได้บอกว่าดีหรือแย่</p>
           </section>
 
           <DataNotes data={data} />
@@ -266,9 +273,10 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
                         ) : <span className="perf-sub">ไม่มีงานที่บันทึกในระบบ</span>}
                         <small className="perf-sub">สัปดาห์ก่อน: รันเทส {num(prev.executions)} · Defect {num(prev.defectsReported)}{prev.hasCrmAccount ? ` · CRM ${num(prev.crmTicketsHandled)}` : ""}{!m.current.hasCrmAccount ? " · ยังไม่ได้ผูกบัญชี CRM" : ""}</small>
                       </div>
-                      <div className="perf-weekly-member-section">
+                      {/* ไม่มีบันทึกงาน = ไม่แสดงส่วนนี้ ("สิ่งที่ต้องติดตาม" สรุปรายชื่อคนที่ยังไม่บันทึกไว้แล้ว) */}
+                      {m.workItems.length > 0 && <div className="perf-weekly-member-section">
                         <span className="perf-weekly-member-label">ผลงานเด่น / บันทึกงาน</span>
-                        {m.workItems.length ? (
+                        {(
                           <ul className="perf-weekly-items">
                             {m.workItems.slice(0, 4).map((w, i) => (
                               <li key={i} className={w.kind === "Highlight" ? "highlight" : ""}>
@@ -278,8 +286,8 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
                             ))}
                             {m.workItems.length > 4 && <li className="more">และอีก {m.workItems.length - 4} รายการ</li>}
                           </ul>
-                        ) : <span className="perf-sub">ยังไม่มีบันทึกงานสัปดาห์นี้</span>}
-                      </div>
+                        )}
+                      </div>}
                       {editing ? (
                         <label className="perf-weekly-note-field">
                           <span className="perf-weekly-member-label">ความเห็นหัวหน้า<span className="sr-only"> ของ {m.displayName}</span></span>
@@ -302,22 +310,23 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
               <h3 id="weekly-watch" className="perf-weekly-h"><span className="material-symbols-outlined" aria-hidden="true">visibility</span>สิ่งที่ต้องติดตาม</h3>
               <ul className="perf-weekly-watch">
                 {data.assignedOverdue > 0 && <li className="danger"><span className="material-symbols-outlined" aria-hidden="true">schedule</span><span>งานทดสอบเลยกำหนด {num(data.assignedOverdue)} เคส (จากงานค้าง {num(data.assignedPending)} เคส)</span></li>}
-                {data.evaluationsDue.map((e) => (
-                  <li key={e.evaluationId} className={e.isOverdue ? "danger" : ""}>
+                {evaluationsByPerson.map((g) => (
+                  <li key={g.name} className={g.overdue ? "danger" : ""}>
                     <span className="material-symbols-outlined" aria-hidden="true">rate_review</span>
-                    <span>ประเมิน {roundText(e)} ของ {e.userName ?? "-"} {e.isOverdue ? "เลยกำหนด" : "ครบกำหนด"} {fmtDate(e.dueDate)} <Badge tone={evalStatus[e.status]?.tone ?? "gray"}>{evalStatus[e.status]?.label ?? e.status}</Badge></span>
-                  </li>
-                ))}
-                {data.probation.map((p) => (
-                  <li key={p.userId}>
-                    <span className="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
-                    <span className="perf-weekly-probation">
-                      <span>{p.displayName} ทดลองงานวันที่ {p.probationDay} จาก {p.probationTotalDays}{p.probationEndDate ? ` · สิ้นสุด ${fmtDate(p.probationEndDate)}` : ""}</span>
-                      <span className="perf-report-track" aria-hidden="true"><span style={{ width: `${Math.min(100, (p.probationDay / p.probationTotalDays) * 100)}%` }} /></span>
+                    <span>ประเมินของ <b>{g.name}</b> {g.overdue ? `เลยกำหนด ${num(g.overdue)} รอบ` : ""}{g.overdue && g.items.length > g.overdue ? " · " : ""}{g.items.length > g.overdue ? `ครบกำหนดสัปดาห์นี้ ${num(g.items.length - g.overdue)} รอบ` : ""}
+                      <small className="perf-weekly-watch-sub">{g.items.map((e) => `${roundText(e)} (${fmtDate(e.dueDate)})`).join(" · ")}</small>
                     </span>
                   </li>
                 ))}
-                {withoutLogs.length > 0 && <li className="info"><span className="material-symbols-outlined" aria-hidden="true">edit_note</span><span>ยังไม่มีบันทึกงานสัปดาห์นี้: {withoutLogs.map((m) => m.displayName).join(", ")} — งานนอกระบบ (ประชุม ช่วยทีม ซัพพอร์ต) จะไม่ปรากฏในรายงาน</span></li>}
+                {data.probation.length > 0 && (
+                  <li>
+                    <span className="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
+                    <span>ทดลองงาน {num(data.probation.length)} คน
+                      <small className="perf-weekly-watch-sub">{data.probation.map((p) => `${p.displayName} วันที่ ${p.probationDay}/${p.probationTotalDays}${p.probationEndDate ? ` (สิ้นสุด ${fmtDate(p.probationEndDate)})` : ""}`).join(" · ")}</small>
+                    </span>
+                  </li>
+                )}
+                {withoutLogs.length > 0 && <li className="info"><span className="material-symbols-outlined" aria-hidden="true">edit_note</span><span>ยังไม่มีบันทึกงานสัปดาห์นี้ {num(withoutLogs.length)} คน<small className="perf-weekly-watch-sub">{withoutLogs.map((m) => m.displayName).join(", ")} — งานนอกระบบจะไม่ปรากฏในรายงาน</small></span></li>}
                 {data.assignedOverdue === 0 && data.evaluationsDue.length === 0 && data.probation.length === 0 && withoutLogs.length === 0 && <li className="ok"><span className="material-symbols-outlined" aria-hidden="true">check_circle</span><span>ไม่มีรายการที่ต้องติดตาม</span></li>}
               </ul>
             </section>
@@ -341,7 +350,7 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
             </div>
           )}
 
-          <p className="perf-report-note">ที่มาของตัวเลข: ข้อมูลที่บันทึกใน QA Hub (Execution, Defect, Test Case, Requirement, Automation) และ CRM Ticket ที่ QA Hub ดึงเก็บทุก 15 นาที · ใช้เป็นข้อมูลประกอบ ไม่ใช่คะแนนผลงาน เพราะงานแต่ละชิ้นยากไม่เท่ากัน · งานนอกระบบแสดงเฉพาะที่พนักงานบันทึกไว้ (ไม่รวมข้อสังเกตของหัวหน้า)</p>
+          <p className="perf-report-note">ตัวเลขจาก QA Hub และ CRM (ดึงทุก 15 นาที) เฉพาะ Project ที่คุณเป็นสมาชิก · ใช้ประกอบการพิจารณา ไม่ใช่คะแนนผลงาน</p>
         </>
       )}
     </div>

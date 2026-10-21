@@ -563,7 +563,8 @@ export function EvaluationComparison({ userId, refreshKey }: { userId: string; r
     return () => controller.abort();
   }, [userId, refreshKey]);
 
-  if (unavailable) return null;
+  // ยังไม่มีรอบที่ปิดเลย = ไม่มีอะไรให้เทียบ — ไม่แสดงการ์ดว่าง (ประวัติการประเมินด้านบนบอกสถานะรอบอยู่แล้ว)
+  if (unavailable || (data && data.rounds.length === 0)) return null;
 
   const hasBothTypes = !!data && data.rounds.some((r) => r.type === "Quarterly") && data.rounds.some((r) => r.type === "Probation");
   const rounds = (data?.rounds ?? []).filter((r) => type === "all" || !hasBothTypes || r.type === type);

@@ -132,7 +132,7 @@
 .performance-page .perf-weekly-watch li.info { --tone: var(--muted); }
 .performance-page .perf-weekly-watch li > .material-symbols-outlined { flex: none; color: var(--tone); font-size: 20px; }
 .performance-page .perf-weekly-watch .badge { margin-left: 4px; }
-.performance-page .perf-weekly-probation { display: grid; flex: 1 1 auto; gap: 6px; min-width: 0; }
+
 .performance-page .perf-weekly-plan { margin: 0; padding: 12px 14px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 60%, var(--card)); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* แถบบันทึก (โหมดแก้ไข) — ติดล่างจอเพื่อกดบันทึกได้จากทุกตำแหน่ง */
@@ -175,3 +175,6 @@
   .performance-page .perf-weekly-bottom { grid-template-columns: minmax(0, 1fr) !important; }
   .performance-page .perf-weekly :is(.perf-weekly-kpi, .perf-weekly-member, .perf-weekly-watch li, .perf-weekly-health) { break-inside: avoid; box-shadow: none !important; }
 }
+
+/* สิ่งที่ต้องติดตาม: 1 บรรทัดต่อเรื่อง + รายละเอียดตัวเล็กบรรทัดล่าง (ปรับ 2026-10-21) */
+.performance-page .perf-weekly-watch-sub { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }

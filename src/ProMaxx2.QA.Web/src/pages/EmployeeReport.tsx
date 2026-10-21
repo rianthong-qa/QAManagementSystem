@@ -109,10 +109,7 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
       )}
 
       <section className="perf-report-detail-block" aria-labelledby="perf-report-details-title">
-        <div className="perf-report-detail-head">
-          <div><span className="material-symbols-outlined" aria-hidden="true">view_quilt</span><span><b id="perf-report-details-title">รายละเอียดผลงาน</b><small>เลือกหัวข้อเพื่อเปิดดูตัวเลขเพิ่มเติม · ข้อมูลชุดเดียวกับตัวเลขด้านบน</small></span></div>
-          <span>{detailGroups.length} กลุ่มข้อมูล</span>
-        </div>
+        <h3 id="perf-report-details-title" className="sr-only">รายละเอียดผลงาน</h3>
         <div className="perf-report-metric-groups">
           {detailGroups.map((g, index) => <ReportMetricGroup key={g.icon} icon={g.icon} title={g.title} items={g.items} defaultOpen={index === 0 || (g.title === "บันทึกงานเพิ่มเติม" && m.workLogs + m.highlights > 0)} />)}
         </div>
@@ -205,8 +202,7 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
       )}
 
       <p className="perf-hint perf-report-note">
-        ตัวเลขนับจากข้อมูลในระบบ QA Hub ช่วง {fmtDate(report.from)} – {fmtDate(report.to)} ใช้เป็นหลักฐานประกอบการประเมิน ไม่ใช่คะแนน เพราะงานแต่ละชิ้นยากง่ายไม่เท่ากัน
-        · งาน CRM นับจากข้อมูลที่ QA Hub ดึงจาก CRM ทุก 15 นาที · คะแนนการประเมินแสดงเฉพาะรอบที่หัวหน้าส่งผลแล้ว (1–5 ถ่วงน้ำหนัก; เกรด A ≥ 4.5, B ≥ 3.5, C ≥ 2.5, D ≥ 1.5)
+        ตัวเลขจาก QA Hub และ CRM (ดึงทุก 15 นาที) ใช้ประกอบการประเมิน ไม่ใช่คะแนน · คะแนนประเมินแสดงเฉพาะรอบที่ส่งผลแล้ว (1–5; A ≥ 4.5, B ≥ 3.5, C ≥ 2.5, D ≥ 1.5)
       </p>
     </article>
   );

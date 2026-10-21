@@ -105,13 +105,7 @@
 .performance-page .perf-report-kpi { min-height: 104px; box-shadow: 0 4px 14px color-mix(in srgb, var(--text) 4%, transparent); }
 .performance-page .perf-report-kpi b { font-size: 25px; }
 .performance-page .perf-report-detail-block { display: grid; gap: 12px; min-width: 0; }
-.performance-page .perf-report-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
-.performance-page .perf-report-detail-head > div { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.performance-page .perf-report-detail-head > div > .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 9px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); }
-.performance-page .perf-report-detail-head > div > span:last-child { display: grid; gap: 2px; min-width: 0; }
-.performance-page .perf-report-detail-head b { font-size: 14px; }
-.performance-page .perf-report-detail-head small { color: var(--muted); font-size: 11px; }
-.performance-page .perf-report-detail-head > span { flex: none; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; }
+
 .performance-page .perf-report-metric-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; min-width: 0; }
 .performance-page .perf-report-metric-group { min-width: 0; height: fit-content; overflow: hidden; border: 1px solid color-mix(in srgb, var(--perf-accent) 22%, var(--line)); border-top: 3px solid var(--perf-accent); border-radius: 14px; background: color-mix(in srgb, var(--perf-accent) 4%, var(--card)); box-shadow: 0 4px 14px color-mix(in srgb, var(--text) 3%, transparent); }
 .performance-page .perf-report-metric-group summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 72px; padding: 12px 14px; color: var(--text); cursor: pointer; list-style: none; }
@@ -138,7 +132,6 @@
 }
 
 @media (max-width: 760px) {
-  .performance-page .perf-report-detail-head { align-items: flex-start; flex-direction: column; }
   .performance-page .perf-report-metric-groups { grid-template-columns: minmax(0, 1fr); }
   .performance-page .perf-report-metric-group summary { min-height: 68px; }
 }
