@@ -24,7 +24,7 @@
 | Database | SQL Server `localhost\MSSQLSERVER2022`, DB `ProMaxx2QA` (Windows auth) | EF Core + Migrations; `Database:ApplyMigrations=false` — apply migration ด้วยมือ |
 | Auth | JWT Bearer (Issuer `ProMaxx2.QA`, อายุ 24 ชม., Remember Me 30 วัน) | token ใน localStorage `qa.accessToken`; permission claims เช่น `PROJECT.VIEW`, `DEFECT.EDIT`, `AUTOMATION.EXECUTE` |
 | Project access | `ProjectAccessFilter` + `ProjectScopeGuard` | ผู้ใช้เห็นเฉพาะ Project ที่เป็นสมาชิก (`ProjectUsers`) — ตรวจ projectId ใน route/query, `ProjectId` ใน request body และ route id (`releaseId`, `cycleId`, `cycleCaseId`, `defectId`, `testCaseId`, `requirementId`, `buildId`) |
-| AI | OpenAI-compatible (ตั้งค่าใน Setting Center) | generate requirement / test case / test suite / automation DSL |
+| AI | OpenAI-compatible (ตั้งค่าใน Setting Center) | generate requirement / test case / test suite / automation DSL; ผู้ช่วย AI คลังความรู้ (`#/knowledge`) ใช้ Provider เดียวกันแบบ streaming (`AiChatClient`, SSE ผ่าน `api/v1/knowledge/chat`) — ข้อมูล CRM ไม่ส่งให้ Provider ภายนอกเว้นแต่เปิดสวิตช์ใน Setting Center |
 | Integration | CRM (BlueSea/BlueID), Email | `CrmSyncWorker` sync สถานะทุก 2 นาที; Description ที่ส่งไป CRM (จำกัด 1000 ตัวอักษร) ต่อท้ายลิงก์อ่านอย่างเดียว `/?d=<code 8 ตัว>` (ตาราง `DefectShareLinks` Defect ละ 1 code, `DefectShareLinkService` + anonymous `GET /api/v1/shared/defects/{code}`, rate limit `share`; URL หน้าเว็บจาก config `PublicWebBaseUrl`) และอีเมลแจ้ง Dev/เจ้าของเรื่องมีปุ่ม "ดูรายละเอียด Defect และรูปภาพ" ใต้ปุ่ม CRM (`EmailTemplates.ShareButton`) |
 | Automation | Windows Agent (`agent/`) + FlaUI | รับงานจาก Hub, รัน DSL, ส่ง Evidence |
 
@@ -177,7 +177,7 @@ powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1
 | `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
 | `03-Architecture-and-Plan/PERFORMANCE_EVALUATION_PLAN.md` | ผลงานและการประเมินทีม QA — เฟส 1 (ผลงานรายคน/ทดลองงาน/บันทึกงาน) และเฟส 2 (แบบประเมิน, รอบทดลองงาน 30/60/90/สรุป, รายไตรมาส, ประเมินตนเอง) และเฟส 3 (อีเมลเตือน, ไฟล์หลักฐานของบันทึกงาน, Export PDF, เทียบผลข้ามรอบ) และสรุปผลงานรายคน + ลิงก์แชร์ HR (`/?p=`) + สรุปประจำสัปดาห์ส่งผู้บริหาร implement แล้ว |
 | `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน; Phase 2–4 ย้ายไป `AI_KNOWLEDGE_CHAT_PLAN.md`) |
-| `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md` | ระบบ AI Chat + คลังความรู้ (Defect, CRM, บทความ/ไฟล์ PDF·DOCX·MD) แบบ Hybrid Full-Text ไทย + embedding บน SQL 2022 — Phase 0–1 เสร็จ (ค้นหา Defect + บทความ), Phase 2+ (แชท AI) ยังไม่ทำ |
+| `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md` | ระบบ AI Chat + คลังความรู้ (Defect, CRM, บทความ/ไฟล์ PDF·DOCX·MD) แบบ Hybrid Full-Text ไทย + embedding บน SQL 2022 — Phase 0–2 เสร็จ (ค้นหา Defect + บทความ, แชท AI พร้อมอ้างอิง), Phase 3+ (ไฟล์, CRM, embedding) ยังไม่ทำ |
 | `05-Module/` | เอกสารรายโมดูล |
 
 ## 8. สถานะงานล่าสุด (2026-09-25)

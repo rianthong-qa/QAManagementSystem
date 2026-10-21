@@ -93,4 +93,52 @@ public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch 
             .OrderByDescending(x => x.Rank).ThenByDescending(x => x.MatchedChunks)
             .Take(take).ToList();
     }
+
+    public const int MaxContextDocuments = 6;
+    public const int MaxChunksPerDocument = 2;
+    public const int MaxContextChars = 7000;
+
+    /// <summary>
+    /// บริบทสำหรับผู้ช่วย AI (RAG): เลข [n] ต่อ 1 เอกสาร (รวมได้ไม่เกิน 2 ช่วงที่ตรงที่สุดของเอกสารนั้น) เรียงตามความตรง
+    /// ไม่ส่งเอกสารที่ติด ExcludeFromAi และจำกัดความยาวรวม ~7,000 ตัวอักษร
+    /// </summary>
+    public async Task<IReadOnlyList<KnowledgeContextChunk>> RetrieveContextAsync(string query, KnowledgeSearchScope scope, CancellationToken ct)
+    {
+        var hits = await textSearch.SearchAsync(query, scope, 40, ct);
+        if (hits.Count == 0) return [];
+        var chunkIds = hits.Select(x => x.KnowledgeChunkId).ToList();
+        var chunks = await db.KnowledgeChunks.AsNoTracking().Where(x => chunkIds.Contains(x.KnowledgeChunkId))
+            .Select(x => new { x.KnowledgeChunkId, x.KnowledgeDocumentId, x.ChunkNo, x.Text }).ToDictionaryAsync(x => x.KnowledgeChunkId, ct);
+        var docIds = chunks.Values.Select(x => x.KnowledgeDocumentId).Distinct().ToList();
+        var docs = await db.KnowledgeDocuments.AsNoTracking().Where(x => docIds.Contains(x.KnowledgeDocumentId) && !x.ExcludeFromAi && x.State == "Indexed")
+            .ToDictionaryAsync(x => x.KnowledgeDocumentId, ct);
+        var projectIds = docs.Values.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId!.Value).Distinct().ToList();
+        var projects = await db.Projects.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId)).ToDictionaryAsync(x => x.ProjectId, x => x.ProjectName, ct);
+
+        var result = new List<KnowledgeContextChunk>();
+        var total = 0;
+        var groups = hits.Where(h => chunks.TryGetValue(h.KnowledgeChunkId, out var c) && docs.ContainsKey(c.KnowledgeDocumentId))
+            .GroupBy(h => chunks[h.KnowledgeChunkId].KnowledgeDocumentId)
+            .OrderByDescending(g => g.Max(x => x.Rank));
+        foreach (var group in groups)
+        {
+            if (result.Count >= MaxContextDocuments || total >= MaxContextChars) break;
+            var doc = docs[group.Key];
+            // ช่วงที่ตรงที่สุด แล้วเรียงตามลำดับในเอกสารเพื่อให้อ่านต่อเนื่อง; ช่วงที่สองตัด header ซ้ำออก
+            var picked = group.OrderByDescending(x => x.Rank).Take(MaxChunksPerDocument).Select(x => chunks[x.KnowledgeChunkId]).OrderBy(x => x.ChunkNo).ToList();
+            var text = string.Join("\n…\n", picked.Select((c, i) => i == 0 ? c.Text : StripHeader(c.Text)));
+            if (total > 0 && total + text.Length > MaxContextChars) text = picked[0].Text;
+            if (total > 0 && total + text.Length > MaxContextChars) break;
+            total += text.Length;
+            result.Add(new KnowledgeContextChunk(result.Count + 1, doc.KnowledgeDocumentId, doc.SourceType, doc.SourceKey, doc.Title,
+                doc.ProjectId.HasValue ? projects.GetValueOrDefault(doc.ProjectId.Value) : null, doc.SourceUrl, text));
+        }
+        return result;
+    }
+
+    private static string StripHeader(string chunkText)
+    {
+        var newline = chunkText.IndexOf('\n');
+        return newline >= 0 ? chunkText[(newline + 1)..] : chunkText;
+    }
 }

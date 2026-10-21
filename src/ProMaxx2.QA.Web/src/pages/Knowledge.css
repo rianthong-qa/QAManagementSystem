@@ -125,7 +125,7 @@
 }
 @media (max-width: 760px) {
   .kn-search, .kn-articles, .kn-status { padding: 14px; }
-  .kn-page .kn-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+  .kn-page .kn-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kn-page .kn-tabs button { justify-content: center; min-height: 44px; padding: 8px 6px; }
   .kn-tab-status { grid-column: 1 / -1; justify-content: center; margin: 0; }
   .kn-search-bar { grid-template-columns: 1fr; }

@@ -104,6 +104,8 @@ builder.Services.AddScoped<SharedAiConfigurationService>();
 builder.Services.AddScoped<KnowledgeIndexService>();
 builder.Services.AddScoped<IKnowledgeTextSearch, SqlKnowledgeTextSearch>();
 builder.Services.AddScoped<KnowledgeSearchService>();
+builder.Services.AddScoped<IAiChatClient, AiChatClient>();
+builder.Services.AddScoped<KnowledgeChatService>();
 builder.Services.AddSingleton<KnowledgeIndexTrigger>();
 builder.Services.AddHostedService<KnowledgeIndexWorker>(); // ปิดได้ด้วย Knowledge:IndexerEnabled=false
 builder.Services.AddMemoryCache(); // CRM ticket list cache (CrmApiClient) — 60 วินาทีต่อผู้ใช้+ตัวกรอง
@@ -176,6 +178,10 @@ builder.Services.AddRateLimiter(options =>
     // ลิงก์แชร์ Defect (anonymous) — เปิดหน้าหนึ่งครั้งยิง 1 + จำนวนรูป (รูป Defect ≤5 + รูปคอมเมนต์ ≤5/คอมเมนต์) คำขอ
     options.AddPolicy("share", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
         _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // ผู้ช่วย AI คลังความรู้ — จำกัดต่อผู้ใช้ (ทุกคำถามเรียก LLM)
+    options.AddPolicy("knowledge-chat", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? ClientKey(http),
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
 if (allowedOrigins == null || allowedOrigins.Length == 0)

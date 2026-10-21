@@ -6,17 +6,17 @@ import { confirmDialog, notify } from "../components/dialogStore";
 import { useDebounced } from "../components/useDebounced";
 import { formatThaiDateTime } from "../dateTime";
 import type { ProjectItem } from "../shared/types";
+import { KnowledgeChat, type Citation } from "./KnowledgeChat";
 import "./Knowledge.css";
 
-// คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md Phase 1): ค้นหา Defect + บทความ, จัดการบทความ, สถานะการ index (SYS_ADMIN)
-// แท็บแชทกับผู้ช่วย AI จะเพิ่มใน Phase 2
+// คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md): ถามผู้ช่วย AI (Phase 2), ค้นหา Defect + บทความ, จัดการบทความ, สถานะการ index (SYS_ADMIN)
 
 type SourceType = "Defect" | "CrmTicket" | "Article" | "File";
 type SearchResult = { knowledgeDocumentId: string; sourceType: SourceType; sourceKey: string; title: string; projectId?: string | null; projectName?: string | null; sourceUrl?: string | null; snippet: string; rank: number; matchedChunks: number; indexedAt?: string | null };
 type Article = { knowledgeArticleId: string; title: string; bodyMarkdown?: string | null; excerpt: string; projectId?: string | null; projectName?: string | null; tags?: string | null; status: "Draft" | "Published"; createdAt: string; createdByName?: string | null; updatedAt?: string | null; updatedByName?: string | null; indexState?: string | null; indexedAt?: string | null };
 type SourceStatus = { sourceType: SourceType; indexed: number; pending: number; failed: number; excluded: number; chunks: number; lastIndexedAt?: string | null };
 type IndexStatus = { indexerEnabled: boolean; sources: SourceStatus[]; failures: { knowledgeDocumentId: string; sourceType: SourceType; title: string; error?: string | null; attemptedAt?: string | null }[] };
-type Tab = "search" | "articles" | "status";
+type Tab = "chat" | "search" | "articles" | "status";
 type ArticleDraft = { id?: string; title: string; bodyMarkdown: string; projectId: string; tags: string; status: "Draft" | "Published" };
 
 const sourceLabel: Record<SourceType, string> = { Defect: "Defect", CrmTicket: "CRM Ticket", Article: "บทความ", File: "เอกสาร" };
@@ -29,11 +29,12 @@ const errorText = (error: unknown, fallback: string) => error instanceof Error &
 
 export function KnowledgePage({ canEdit, isSysAdmin, onOpenDefect }: { canEdit: boolean; isSysAdmin: boolean; onOpenDefect: (defectId: string) => void }) {
   const tabs = useMemo<{ id: Tab; label: string; icon: string }[]>(() => [
+    { id: "chat", label: "ถามผู้ช่วย AI", icon: "forum" },
     { id: "search", label: "ค้นหาความรู้", icon: "search" },
     { id: "articles", label: "บทความ", icon: "article" },
     ...(isSysAdmin ? [{ id: "status" as Tab, label: "สถานะคลัง", icon: "monitoring" }] : []),
   ], [isSysAdmin]);
-  const [tab, setTab] = useState<Tab>("search");
+  const [tab, setTab] = useState<Tab>(() => new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("articleId") ? "articles" : "chat");
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [viewing, setViewing] = useState<Article | null>(null);
@@ -73,6 +74,11 @@ export function KnowledgePage({ canEdit, isSysAdmin, onOpenDefect }: { canEdit: 
     else if (result.sourceType === "Article") void openArticle(result.sourceKey);
   };
 
+  const openCitation = (citation: Citation) => {
+    if (citation.sourceType === "Defect") onOpenDefect(citation.sourceKey);
+    else if (citation.sourceType === "Article") void openArticle(citation.sourceKey);
+  };
+
   const saveDraft = async (value: ArticleDraft) => {
     const body = { title: value.title.trim(), bodyMarkdown: value.bodyMarkdown, projectId: value.projectId || null, tags: value.tags.trim() || null, status: value.status };
     const saved = await apiFetch<Article>(value.id ? `/knowledge/articles/${value.id}` : "/knowledge/articles", { method: value.id ? "PUT" : "POST", json: body, fallbackMessage: "บันทึกบทความไม่สำเร็จ" });
@@ -107,6 +113,7 @@ export function KnowledgePage({ canEdit, isSysAdmin, onOpenDefect }: { canEdit: 
       {viewLoading && <span className="kn-tab-status" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังเปิดบทความ...</span>}
     </div>
     <section id={`kn-panel-${tab}`} role="tabpanel" aria-labelledby={`kn-tab-${tab}`}>
+      {tab === "chat" && <KnowledgeChat projects={projects} onOpenCitation={openCitation} />}
       {tab === "search" && <SearchPanel projects={projects} onOpen={openResult} />}
       {tab === "articles" && <ArticlesPanel projects={projects} canEdit={canEdit} version={articlesVersion} onView={(a) => void openArticle(a.knowledgeArticleId)} onCreate={() => setDraft({ ...emptyDraft })} onEdit={(a) => void editArticle(a)} onDelete={(a) => void deleteArticle(a)} />}
       {tab === "status" && isSysAdmin && <StatusPanel />}

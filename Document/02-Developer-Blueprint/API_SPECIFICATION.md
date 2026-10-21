@@ -1148,3 +1148,18 @@ Authorization is also checked against the current database profile for the JWT s
 - `DELETE /api/v1/knowledge/articles/{id}` (`KNOWLEDGE.EDIT`) — soft delete + Audit Log
 - `GET /api/v1/knowledge/status` (SYS_ADMIN) → `{ indexerEnabled, sources: [{ sourceType, indexed, pending, failed, excluded, chunks, lastIndexedAt }], failures: [{ knowledgeDocumentId, sourceType, title, error, attemptedAt }] }`
 - `POST /api/v1/knowledge/reindex` (SYS_ADMIN) → `{ documents }` — สร้าง chunk ใหม่ทุกเอกสาร + Audit Log `KnowledgeIndex`
+
+### Knowledge — ผู้ช่วย AI (2026-10-21)
+
+ต้องมี `KNOWLEDGE.VIEW`; บทสนทนาเป็นของผู้ใช้แต่ละคน (ของคนอื่น = `404`)
+
+- `GET /api/v1/knowledge/chat/sessions` → `[{ chatSessionId, title, projectId, createdAt, updatedAt }]` (ล่าสุดก่อน, สูงสุด 100)
+- `POST /api/v1/knowledge/chat/sessions` `{ projectId? }` → session ใหม่ ("บทสนทนาใหม่" — เปลี่ยนเป็นคำถามแรกเมื่อตอบเสร็จ)
+- `GET /api/v1/knowledge/chat/sessions/{id}` → `{ session, messages: [{ chatMessageId, role: user|assistant, content, citations: [{ number, knowledgeDocumentId, sourceType, sourceKey, title, projectName, sourceUrl, cited }], model, feedback, createdAt }] }`
+- `DELETE /api/v1/knowledge/chat/sessions/{id}` — soft delete
+- `POST /api/v1/knowledge/chat/sessions/{id}/messages?stream=true` `{ question (1–2000), projectId?, sources?: ["Defect","Article"] }` — rate limit 20/นาที/ผู้ใช้ (`429`)
+  - ก่อนเริ่มตอบ: `400` คำถามว่าง/ยาวเกิน, `403` ไม่มีสิทธิ์ Project, `404` ไม่พบบทสนทนา, `503` AI ยังไม่ตั้งค่า/ปิดใช้งาน
+  - `stream=true` → `text/event-stream`: `event: sources` `{ citations, crmExcluded }` → `event: delta` `{ text }` (หลายครั้ง) → `event: done` `{ userMessageId, assistantMessageId, citations (มี cited), title, model }` หรือ `event: error` `{ message }`; บรรทัด `: ping` ทุก 15 วินาที
+  - `stream=false` → `{ answer, sources, done }` หรือ `502` เมื่อ Provider ตอบไม่สำเร็จ
+  - ไม่พบความรู้ที่เกี่ยวข้อง = ตอบข้อความ "ไม่พบข้อมูลในคลังความรู้…" โดยไม่เรียก LLM (`model = null`)
+- `POST /api/v1/knowledge/chat/messages/{id}/feedback` `{ feedback: 1 | -1 | null, note? }` — เฉพาะคำตอบของผู้ช่วยในบทสนทนาของตัวเอง
