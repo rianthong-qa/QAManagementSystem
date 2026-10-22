@@ -1197,3 +1197,11 @@ Authorization is also checked against the current database profile for the JWT s
 - `DELETE /api/v1/knowledge/files/{id}` (`KNOWLEDGE.EDIT`) — soft delete + ลบไฟล์บนดิสก์
 - `POST /api/v1/knowledge/files/import-system` (SYS_ADMIN) → `{ added, updated, unchanged, failed, messages[] }` — นำเข้า `.md`/`.txt` จาก `Knowledge:SystemDocumentFolders` (ค่าเริ่มต้น `Document/ProMaxx2_MD`)
 - MCP: `search_knowledge` รับ `source: "document"`; เครื่องมือใหม่ `get_document(documentId, part = 1)` → ข้อความเอกสาร (mask) ทีละ ~7,600 ตัวอักษร + บอก `part` ถัดไป
+
+### Knowledge — CRM Ticket (Phase 4, 2026-10-22)
+
+- `GET /api/v1/knowledge/crm/{jobNo}` (`KNOWLEDGE.VIEW` + `CRM.VIEW`) → `{ jobNo, subject, status, jobType, serviceType, product, contactDate, description, answers: [{ answerNo, answerType, answeredAt, text }], fetchedAt, indexState, indexedAt }` — ข้อความ **mask แล้ว** จากคลังความรู้ (ไม่เรียก CRM สด); `404` เมื่อยังไม่ได้ดึง
+- `GET /api/v1/knowledge/status` เพิ่ม `crm: { enabled, allowExternalAi, candidates, fetched, pending, failed, lastFetchedAt }`
+- ค้นหา/แชท: `sources=CrmTicket` (ผลลัพธ์ CRM คืนเฉพาะผู้มี `CRM.VIEW`; แชทที่ใช้ Provider ภายนอกตัด CRM ออกเมื่อไม่ได้อนุญาต `allowCrmDataToExternalAi`)
+- MCP: `search_knowledge(source: "crm")` และเครื่องมือใหม่ `get_crm_ticket(jobNo)` — ใช้ได้เฉพาะผู้มี `CRM.VIEW` **และ** ผู้ดูแลเปิด "อนุญาตส่งข้อมูล CRM ให้ AI ภายนอก" (Claude เป็น AI ภายนอกเสมอ) ไม่งั้นได้ข้อความแจ้งเหตุผล
+- Config: `Knowledge:CrmFetchEnabled` (ค่าเริ่มต้น `true`), `Knowledge:CrmFetchPerRun` (ค่าเริ่มต้น 50 ใบ/รอบ, 1–500) — ใช้บัญชีกลาง `CrmMirror:AccountUsername`

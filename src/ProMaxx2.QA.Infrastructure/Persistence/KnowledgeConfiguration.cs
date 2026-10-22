@@ -88,6 +88,8 @@ public sealed class CrmTicketContentConfiguration : IEntityTypeConfiguration<Crm
         b.HasKey(x => x.JobNo);
         b.Property(x => x.JobNo).HasMaxLength(40).ValueGeneratedNever();
         b.Property(x => x.ContentHash).HasMaxLength(64).IsRequired();
+        b.Property(x => x.SubjectMasked).HasMaxLength(300);
+        b.Property(x => x.FetchError).HasMaxLength(500);
         b.HasOne<Domain.Integrations.CrmTicket>().WithOne().HasForeignKey<CrmTicketContent>(x => x.JobNo).OnDelete(DeleteBehavior.Cascade);
     }
 }

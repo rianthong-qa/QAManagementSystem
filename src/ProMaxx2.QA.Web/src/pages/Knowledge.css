@@ -83,6 +83,19 @@
 .kn-article-meta span { display: inline-flex; align-items: center; gap: 4px; }
 .kn-article-meta .material-symbols-outlined { font-size: 16px; }
 .kn-article-body { border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--muted) 4%, var(--card)); padding: 16px; color: var(--text); font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* CRM Ticket ในคลัง (ข้อความ mask แล้ว) */
+.kn-crm-note { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 14px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 7%, var(--card)); padding: 10px 12px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.kn-crm-note .material-symbols-outlined { flex: none; color: var(--primary); font-size: 18px; }
+.kn-crm-heading { margin: 16px 0 8px; color: var(--text); font-size: 14px; }
+.kn-crm-answers { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.kn-crm-answers li { border-left: 3px solid color-mix(in srgb, var(--primary) 45%, var(--line)); border-radius: 0 10px 10px 0; background: color-mix(in srgb, var(--muted) 4%, var(--card)); padding: 10px 14px; }
+.kn-crm-answers small { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; }
+.kn-crm-answers p { margin: 0; color: var(--text); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kn-crm-status { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.kn-crm-status > .material-symbols-outlined { flex: none; color: var(--primary); font-size: 22px; }
+.kn-crm-status > div { display: grid; gap: 2px; min-width: 0; }
+.kn-crm-status b { font-size: 14px; }
+.kn-crm-status span, .kn-crm-status small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .modal-box .kn-danger { margin-right: auto; border-color: color-mix(in srgb, var(--red) 35%, var(--line)); color: var(--red); }
 .modal-box.kn-editor .form-grid.kn-editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0 0; }
 .kn-editor-grid .kn-span-2 { grid-column: 1 / -1; }

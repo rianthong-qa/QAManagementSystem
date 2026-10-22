@@ -119,28 +119,51 @@ public sealed class KnowledgeFile
     }
 }
 
-/// <summary>รายละเอียดปัญหาของ CRM Ticket (mask ข้อมูลอ่อนไหวแล้ว) — ต้นฉบับไม่เก็บ ดูสดจาก CRM ได้</summary>
+/// <summary>
+/// รายละเอียดปัญหาของ CRM Ticket (mask ข้อมูลอ่อนไหวแล้ว) — ต้นฉบับไม่เก็บ ดูสดจาก CRM ได้
+/// FetchedAt = ดึงล่าสุด (ใช้ตัดสินว่าต้องดึงใหม่), ChangedAt = เนื้อหาเปลี่ยนล่าสุด (ใช้ mark Stale ในคลังความรู้), FetchError = ดึงไม่สำเร็จ (ลองใหม่ภายหลัง)
+/// </summary>
 public sealed class CrmTicketContent
 {
+    public const int MaxDescriptionChars = 20_000;
+
     private CrmTicketContent() { }
 
-    public CrmTicketContent(string jobNo, string? descriptionMasked, string contentHash)
+    public CrmTicketContent(string jobNo)
     {
         JobNo = string.IsNullOrWhiteSpace(jobNo) ? throw new ArgumentException("JobNo is required.") : jobNo.Trim();
-        Apply(descriptionMasked, contentHash);
     }
 
     public string JobNo { get; private set; } = string.Empty;
+    public string? SubjectMasked { get; private set; }
     public string? DescriptionMasked { get; private set; }
     public string ContentHash { get; private set; } = string.Empty;
     public DateTime FetchedAt { get; private set; }
+    public DateTime ChangedAt { get; private set; }
+    public string? FetchError { get; private set; }
 
-    /// <summary>คืน true เมื่อเนื้อหาเปลี่ยน (ต้อง index ใหม่)</summary>
-    public bool Apply(string? descriptionMasked, string contentHash)
+    /// <summary>บันทึกผลดึงที่สำเร็จ — คืน true เมื่อเนื้อหาเปลี่ยน (ต้องแทนคำตอบและ index ใหม่)</summary>
+    public bool Apply(string? subjectMasked, string? descriptionMasked, string contentHash, DateTime fetchedAt)
     {
         var changed = ContentHash != contentHash;
-        DescriptionMasked = descriptionMasked; ContentHash = contentHash; FetchedAt = DateTime.UtcNow;
+        SubjectMasked = Cut(subjectMasked, 300);
+        DescriptionMasked = Cut(descriptionMasked, MaxDescriptionChars);
+        ContentHash = contentHash; FetchedAt = fetchedAt; FetchError = null;
+        if (changed) ChangedAt = fetchedAt;
         return changed;
+    }
+
+    /// <summary>ดึงไม่สำเร็จ — คงเนื้อหาเดิม (ถ้ามี) และจดเหตุผล</summary>
+    public void Fail(string error, DateTime fetchedAt)
+    {
+        FetchError = Cut(error, 500); FetchedAt = fetchedAt;
+    }
+
+    private static string? Cut(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var text = value.Trim();
+        return text.Length > max ? text[..max] : text;
     }
 }
 

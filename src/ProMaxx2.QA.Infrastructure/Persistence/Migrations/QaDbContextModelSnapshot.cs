@@ -3470,6 +3470,9 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("nvarchar(40)");
 
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("ContentHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -3478,8 +3481,16 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<string>("DescriptionMasked")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("FetchError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime>("FetchedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("SubjectMasked")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.HasKey("JobNo");
 

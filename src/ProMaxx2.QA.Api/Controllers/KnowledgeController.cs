@@ -22,7 +22,7 @@ public sealed record SaveKnowledgeArticleRequest(string Title, string BodyMarkdo
 /// </summary>
 [ApiController, Route("api/v1/knowledge"), Authorize(Policy = "KnowledgeView")]
 public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService search, KnowledgeIndexService indexer, KnowledgeIndexTrigger trigger,
-    ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration, KnowledgeFileService files) : ControllerBase
+    ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration, KnowledgeFileService files, CrmKnowledgeFetcher crmKnowledge) : ControllerBase
 {
     private const string AuditEntityType = "KnowledgeArticle";
 
@@ -159,8 +159,18 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
         return Ok(await files.ImportSystemDocumentsAsync(userId, ClientIp(), ct));
     }
 
+    /// <summary>ข้อความ CRM Ticket ในคลังความรู้ (mask แล้ว) — ต้องมีสิทธิ์ CRM.VIEW; ไม่เรียก CRM สด</summary>
+    [HttpGet("crm/{jobNo}"), Authorize(Policy = "CrmView")]
+    public async Task<ActionResult<CrmKnowledgeTicketDto>> GetCrmTicket(string jobNo, CancellationToken ct)
+        => await crmKnowledge.GetAsync(jobNo, ct) is { } ticket ? Ok(ticket) : NotFound(new ProblemDetails { Detail = $"ไม่พบ Ticket {jobNo} ในคลังความรู้" });
+
     [HttpGet("status"), Authorize(Policy = "SysAdminOnly")]
-    public Task<KnowledgeStatusDto> Status(CancellationToken ct) => indexer.GetStatusAsync(configuration.GetValue("Knowledge:IndexerEnabled", true), ct);
+    public async Task<KnowledgeStatusDto> Status(CancellationToken ct)
+    {
+        var status = await indexer.GetStatusAsync(configuration.GetValue("Knowledge:IndexerEnabled", true), ct);
+        var allowExternal = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).Select(x => x.AllowCrmDataToExternalAi).FirstOrDefaultAsync(ct);
+        return status with { Crm = await crmKnowledge.GetStatusAsync(allowExternal, ct) };
+    }
 
     [HttpPost("reindex"), Authorize(Policy = "SysAdminOnly")]
     public async Task<ActionResult<object>> Reindex(CancellationToken ct)

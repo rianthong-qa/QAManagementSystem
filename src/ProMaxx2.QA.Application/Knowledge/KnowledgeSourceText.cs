@@ -15,6 +15,12 @@ public sealed record DefectKnowledgeInput(
 
 public sealed record ArticleKnowledgeInput(string Title, string? Tags, string? ProjectName, string BodyMarkdown);
 public sealed record FileKnowledgeInput(string FileName, string? Description, string? ProjectName, string Text);
+public sealed record CrmKnowledgeAnswer(DateTime? At, string Text);
+
+/// <summary>CRM Ticket (ข้อความ mask แล้วตั้งแต่ตอนดึง) — ไม่มีชื่อลูกค้า/สาขา/ผู้ติดต่อ</summary>
+public sealed record CrmKnowledgeInput(
+    string JobNo, string? Subject, string? Status, string? JobType, string? ServiceType, string? Product, DateTime? ContactDate,
+    string? Description, IReadOnlyList<CrmKnowledgeAnswer> Answers);
 
 /// <summary>ข้อความความรู้ของแหล่งหนึ่ง: Header = บรรทัดระบุตัวตน (ติดไปกับทุก chunk), Body = เนื้อหาที่ถูกแบ่ง</summary>
 public sealed record KnowledgeText(string Header, string Body)
@@ -30,6 +36,7 @@ public sealed record KnowledgeText(string Header, string Body)
 public static class KnowledgeSourceText
 {
     public const int MaxComments = 20;
+    public const int MaxCrmAnswers = 30;
     // วันที่แบบ ค.ศ. คงที่ทุกเครื่อง (culture th-TH ของ server จะได้ พ.ศ. และทำให้ hash เปลี่ยนตามเครื่อง)
 
     public static KnowledgeText ForDefect(DefectKnowledgeInput d)
@@ -72,6 +79,25 @@ public static class KnowledgeSourceText
         Line(sb, "Project", f.ProjectName ?? "ความรู้กลาง (ทุก Project)");
         Line(sb, "รายละเอียด", f.Description);
         sb.Append('\n').Append(f.Text.Trim());
+        return new(header, sb.ToString().Trim());
+    }
+
+    public static KnowledgeText ForCrmTicket(CrmKnowledgeInput c)
+    {
+        var header = $"[CRM] {c.JobNo}: {(string.IsNullOrWhiteSpace(c.Subject) ? "(ไม่มีชื่อเรื่อง)" : c.Subject.Trim())}";
+        var sb = new StringBuilder();
+        Line(sb, "ประเภทงาน", c.JobType);
+        Line(sb, "บริการ", c.ServiceType);
+        Line(sb, "สินค้า", c.Product);
+        var meta = new List<string>();
+        if (!string.IsNullOrWhiteSpace(c.Status)) meta.Add($"สถานะ: {c.Status.Trim()}");
+        if (c.ContactDate.HasValue) meta.Add($"แจ้งเมื่อ: {c.ContactDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
+        if (meta.Count > 0) sb.Append(string.Join(" | ", meta)).Append('\n');
+        Section(sb, "รายละเอียดปัญหา", c.Description);
+        // การตอบล่าสุด N รายการ เรียงตามเวลา — วิธีแก้/คำอธิบายสาเหตุมักอยู่ท้าย ๆ
+        var answers = c.Answers.Where(x => !string.IsNullOrWhiteSpace(x.Text)).OrderByDescending(x => x.At ?? DateTime.MinValue).Take(MaxCrmAnswers).OrderBy(x => x.At ?? DateTime.MinValue).ToList();
+        if (answers.Count > 0)
+            Section(sb, "การตอบ / วิธีแก้", string.Join("\n", answers.Select(x => $"- {(x.At.HasValue ? x.At.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ": " : "")}{x.Text.Trim()}")));
         return new(header, sb.ToString().Trim());
     }
 

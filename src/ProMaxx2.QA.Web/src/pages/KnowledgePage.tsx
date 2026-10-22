@@ -12,13 +12,15 @@ import { KnowledgeDocuments } from "./KnowledgeDocuments";
 import { downloadKnowledgeFile } from "./knowledgeFiles";
 import "./Knowledge.css";
 
-// คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md): ถามผู้ช่วย AI (Phase 2), ค้นหา Defect + บทความ, จัดการบทความ, สถานะการ index (SYS_ADMIN)
+// คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md): ถามผู้ช่วย AI (Phase 2), ค้นหา Defect + บทความ + เอกสาร + CRM (Phase 4), จัดการบทความ, สถานะการ index (SYS_ADMIN)
 
 type SourceType = "Defect" | "CrmTicket" | "Article" | "File";
 type SearchResult = { knowledgeDocumentId: string; sourceType: SourceType; sourceKey: string; title: string; projectId?: string | null; projectName?: string | null; sourceUrl?: string | null; snippet: string; rank: number; matchedChunks: number; indexedAt?: string | null };
 type Article = { knowledgeArticleId: string; title: string; bodyMarkdown?: string | null; excerpt: string; projectId?: string | null; projectName?: string | null; tags?: string | null; status: "Draft" | "Published"; createdAt: string; createdByName?: string | null; updatedAt?: string | null; updatedByName?: string | null; indexState?: string | null; indexedAt?: string | null };
 type SourceStatus = { sourceType: SourceType; indexed: number; pending: number; failed: number; excluded: number; chunks: number; lastIndexedAt?: string | null };
-type IndexStatus = { indexerEnabled: boolean; sources: SourceStatus[]; failures: { knowledgeDocumentId: string; sourceType: SourceType; title: string; error?: string | null; attemptedAt?: string | null }[] };
+type CrmStatus = { enabled: boolean; allowExternalAi: boolean; candidates: number; fetched: number; pending: number; failed: number; lastFetchedAt?: string | null };
+type IndexStatus = { indexerEnabled: boolean; sources: SourceStatus[]; failures: { knowledgeDocumentId: string; sourceType: SourceType; title: string; error?: string | null; attemptedAt?: string | null }[]; crm?: CrmStatus | null };
+type CrmTicketView = { jobNo: string; subject?: string | null; status?: string | null; jobType?: string | null; serviceType?: string | null; product?: string | null; contactDate?: string | null; description?: string | null; answers: { answerNo: string; answerType?: string | null; answeredAt?: string | null; text: string }[]; fetchedAt: string; indexState?: string | null; indexedAt?: string | null };
 type Tab = "chat" | "search" | "articles" | "documents" | "claude" | "status";
 type ArticleDraft = { id?: string; title: string; bodyMarkdown: string; projectId: string; tags: string; status: "Draft" | "Published" };
 
@@ -26,11 +28,12 @@ const sourceLabel: Record<SourceType, string> = { Defect: "Defect", CrmTicket: "
 const sourceTone: Record<SourceType, string> = { Defect: "red", CrmTicket: "purple", Article: "blue", File: "green" };
 const sourceIcon: Record<SourceType, string> = { Defect: "bug_report", CrmTicket: "support_agent", Article: "article", File: "description" };
 const searchSources: { value: string; label: string }[] = [{ value: "", label: "ทั้งหมด" }, { value: "Defect", label: "Defect" }, { value: "Article", label: "บทความ" }, { value: "File", label: "เอกสาร" }];
+const crmClosedStatuses = ["Close", "Closed", "Finish"];
 const indexStateInfo: Record<string, { label: string; tone: string }> = { Indexed: { label: "ค้นหาได้แล้ว", tone: "green" }, Stale: { label: "รอสร้างดัชนี", tone: "yellow" }, Failed: { label: "สร้างดัชนีไม่สำเร็จ", tone: "red" }, Excluded: { label: "ไม่อยู่ในคลัง", tone: "gray" } };
 const emptyDraft: ArticleDraft = { title: "", bodyMarkdown: "", projectId: "", tags: "", status: "Published" };
 const errorText = (error: unknown, fallback: string) => error instanceof Error && error.message ? error.message : fallback;
 
-export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDefect }: { canEdit: boolean; isSysAdmin: boolean; canConnectClaude: boolean; onOpenDefect: (defectId: string) => void }) {
+export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, canViewCrm, onOpenDefect }: { canEdit: boolean; isSysAdmin: boolean; canConnectClaude: boolean; canViewCrm: boolean; onOpenDefect: (defectId: string) => void }) {
   const tabs = useMemo<{ id: Tab; label: string; icon: string }[]>(() => [
     { id: "chat", label: "ถามผู้ช่วย AI", icon: "forum" },
     { id: "search", label: "ค้นหาความรู้", icon: "search" },
@@ -46,6 +49,7 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [viewing, setViewing] = useState<Article | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
+  const [crmView, setCrmView] = useState<CrmTicketView | null>(null);
   const [draft, setDraft] = useState<ArticleDraft | null>(null);
   const [articlesVersion, setArticlesVersion] = useState(0);
 
@@ -62,11 +66,21 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
     finally { setViewLoading(false); }
   }, []);
 
-  // ลิงก์ตรงไปยังบทความ #/knowledge?articleId= (เช่น จากผลค้นหาหรือคำตอบของผู้ช่วย AI)
+  // CRM Ticket ในคลัง = ข้อความที่ mask แล้ว (หน้า CRM เปิดได้เฉพาะ Ticket ในงานของผู้ใช้ จึงแสดงจากคลังแทน)
+  const openCrm = useCallback(async (jobNo: string) => {
+    setViewLoading(true);
+    try { setCrmView(await apiFetch<CrmTicketView>(`/knowledge/crm/${encodeURIComponent(jobNo)}`, { fallbackMessage: "เปิด CRM Ticket ไม่สำเร็จ" })); }
+    catch (error) { notify(errorText(error, "เปิด CRM Ticket ไม่สำเร็จ — อาจไม่มีสิทธิ์ CRM"), "error"); }
+    finally { setViewLoading(false); }
+  }, []);
+
+  // ลิงก์ตรง #/knowledge?articleId= หรือ ?jobNo= (เช่น จากผลค้นหา คำตอบของผู้ช่วย AI หรือ Claude)
   useEffect(() => {
-    const articleId = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("articleId");
+    const params = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
+    const articleId = params.get("articleId"), jobNo = params.get("jobNo");
     if (articleId) void openArticle(articleId);
-  }, [openArticle]);
+    else if (jobNo) void openCrm(jobNo);
+  }, [openArticle, openCrm]);
 
   const onTabKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
@@ -80,6 +94,7 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
     if (result.sourceType === "Defect") onOpenDefect(result.sourceKey);
     else if (result.sourceType === "Article") void openArticle(result.sourceKey);
     else if (result.sourceType === "File") void openFile(result.sourceKey, result.title);
+    else if (result.sourceType === "CrmTicket") void openCrm(result.sourceKey);
   };
 
   const openFile = async (fileId: string, fileName: string) => {
@@ -90,6 +105,7 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
     if (citation.sourceType === "Defect") onOpenDefect(citation.sourceKey);
     else if (citation.sourceType === "Article") void openArticle(citation.sourceKey);
     else if (citation.sourceType === "File") void openFile(citation.sourceKey, citation.title);
+    else if (citation.sourceType === "CrmTicket") void openCrm(citation.sourceKey);
   };
 
   const saveDraft = async (value: ArticleDraft) => {
@@ -123,11 +139,11 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
       {tabs.map((t) => <button key={t.id} ref={(el) => { tabRefs.current[t.id] = el; }} type="button" role="tab" id={`kn-tab-${t.id}`} aria-controls={`kn-panel-${t.id}`} aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)} onKeyDown={onTabKey}>
         <span className="material-symbols-outlined" aria-hidden="true">{t.icon}</span>{t.label}
       </button>)}
-      {viewLoading && <span className="kn-tab-status" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังเปิดบทความ...</span>}
+      {viewLoading && <span className="kn-tab-status" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังเปิด...</span>}
     </div>
     <section id={`kn-panel-${tab}`} role="tabpanel" aria-labelledby={`kn-tab-${tab}`}>
-      {tab === "chat" && <KnowledgeChat projects={projects} onOpenCitation={openCitation} />}
-      {tab === "search" && <SearchPanel projects={projects} onOpen={openResult} />}
+      {tab === "chat" && <KnowledgeChat projects={projects} canViewCrm={canViewCrm} onOpenCitation={openCitation} />}
+      {tab === "search" && <SearchPanel projects={projects} canViewCrm={canViewCrm} onOpen={openResult} />}
       {tab === "articles" && <ArticlesPanel projects={projects} canEdit={canEdit} version={articlesVersion} onView={(a) => void openArticle(a.knowledgeArticleId)} onCreate={() => setDraft({ ...emptyDraft })} onEdit={(a) => void editArticle(a)} onDelete={(a) => void deleteArticle(a)} />}
       {tab === "documents" && <KnowledgeDocuments projects={projects} canEdit={canEdit} isSysAdmin={isSysAdmin} highlightId={highlightFileId} />}
       {tab === "claude" && <KnowledgeMcp isSysAdmin={isSysAdmin} />}
@@ -155,12 +171,14 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
         <button type="button" className="btn primary" onClick={() => { void editArticle(viewing); setViewing(null); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span>แก้ไข</button>
       </div>}
     </ModalShell>}
+    {crmView && <CrmTicketModal ticket={crmView} onClose={() => setCrmView(null)} />}
     {draft && <ArticleEditor draft={draft} projects={projects} onCancel={() => setDraft(null)} onSave={saveDraft} />}
   </div>;
 }
 
 // เริ่มที่ "ทุก Project ที่มีสิทธิ์" เสมอ — หน้านี้ซ่อนตัวเลือก Project ด้านบน ถ้าใช้ Project ของ context ผู้ใช้จะไม่รู้ว่าผลถูกจำกัด
-function SearchPanel({ projects, onOpen }: { projects: ProjectItem[]; onOpen: (result: SearchResult) => void }) {
+function SearchPanel({ projects, canViewCrm, onOpen }: { projects: ProjectItem[]; canViewCrm: boolean; onOpen: (result: SearchResult) => void }) {
+  const sources = canViewCrm ? [...searchSources, { value: "CrmTicket", label: "CRM" }] : searchSources;
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("");
   const [source, setSource] = useState("");
@@ -211,11 +229,11 @@ function SearchPanel({ projects, onOpen }: { projects: ProjectItem[]; onOpen: (r
       <button type="submit" className="btn primary" disabled={loading || query.trim().length < 2}>{loading ? <><span className="spinner inline" aria-hidden="true" /> กำลังค้นหา</> : "ค้นหา"}</button>
     </form>
     <div className="kn-chips" role="group" aria-label="แหล่งความรู้">
-      {searchSources.map((s) => <button key={s.value} type="button" aria-pressed={source === s.value} className={source === s.value ? "active" : ""} onClick={() => changeFilter({ source: s.value })}>{s.label}</button>)}
+      {sources.map((s) => <button key={s.value} type="button" aria-pressed={source === s.value} className={source === s.value ? "active" : ""} onClick={() => changeFilter({ source: s.value })}>{s.label}</button>)}
     </div>
     {!submitted ? <div className="kn-empty">
       <span className="material-symbols-outlined" aria-hidden="true">travel_explore</span>
-      <b>ค้นหาจาก Defect บทความ และเอกสารในทุก Project ที่คุณมีสิทธิ์</b>
+      <b>ค้นหาจาก Defect บทความ เอกสาร{canViewCrm ? " และ CRM Ticket" : ""}ในทุก Project ที่คุณมีสิทธิ์</b>
       <span>พิมพ์อาการ ข้อความ error ชื่อเมนู หรือรหัส Defect — ระบบตัดคำภาษาไทยให้อัตโนมัติ</span>
     </div> : error ? <div className="kn-empty kn-error" role="alert">
       <span className="material-symbols-outlined" aria-hidden="true">error</span><b>{error}</b>
@@ -246,6 +264,39 @@ function SearchPanel({ projects, onOpen }: { projects: ProjectItem[]; onOpen: (r
       </ol>
     </>}
   </div>;
+}
+
+function CrmTicketModal({ ticket, onClose }: { ticket: CrmTicketView; onClose: () => void }) {
+  const closed = crmClosedStatuses.includes(ticket.status ?? "");
+  const meta = [{ icon: "category", value: ticket.jobType }, { icon: "support_agent", value: ticket.serviceType }, { icon: "inventory_2", value: ticket.product }].filter((x) => x.value);
+  return <ModalShell labelledBy="kn-crm-title" className="kn-article-view" onDismiss={onClose}>
+    <div className="modal-head">
+      <div>
+        <span className="kn-eyebrow">CRM Ticket · {ticket.jobNo}</span>
+        <h2 id="kn-crm-title">{ticket.subject || "(ไม่มีชื่อเรื่อง)"}</h2>
+        <div className="kn-badges">
+          {ticket.status && <Badge tone={closed ? "green" : "blue"}>{ticket.status}</Badge>}
+          {ticket.indexState && indexStateInfo[ticket.indexState] && <Badge tone={indexStateInfo[ticket.indexState].tone}>{indexStateInfo[ticket.indexState].label}</Badge>}
+        </div>
+      </div>
+      <button type="button" className="modal-close" aria-label="ปิด" onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+    </div>
+    <div className="kn-article-meta">
+      {meta.map((m) => <span key={m.icon}><span className="material-symbols-outlined" aria-hidden="true">{m.icon}</span>{m.value}</span>)}
+      {ticket.contactDate && <span><span className="material-symbols-outlined" aria-hidden="true">event</span>แจ้งเมื่อ {formatThaiDateTime(ticket.contactDate)}</span>}
+      <span><span className="material-symbols-outlined" aria-hidden="true">sync</span>ดึงจาก CRM {formatThaiDateTime(ticket.fetchedAt)}</span>
+    </div>
+    <p className="kn-crm-note"><span className="material-symbols-outlined" aria-hidden="true">shield_person</span>ชื่อลูกค้า สาขา พนักงาน เบอร์โทร และอีเมลถูกปิดไว้ก่อนเข้าคลังความรู้ — ข้อความเต็มดูได้ที่หน้า CRM เมื่อ Ticket อยู่ในงานของคุณ</p>
+    <h3 className="kn-crm-heading">รายละเอียดปัญหา</h3>
+    <div className="kn-article-body">{ticket.description || "ไม่มีรายละเอียด"}</div>
+    {ticket.answers.length > 0 && <>
+      <h3 className="kn-crm-heading">การตอบ ({ticket.answers.length.toLocaleString("th-TH")})</h3>
+      <ol className="kn-crm-answers">{ticket.answers.map((a) => <li key={a.answerNo}>
+        <small>{a.answeredAt ? formatThaiDateTime(a.answeredAt) : "ไม่ทราบวันที่"}</small>
+        <p>{a.text}</p>
+      </li>)}</ol>
+    </>}
+  </ModalShell>;
 }
 
 function ArticlesPanel({ projects, canEdit, version, onView, onCreate, onEdit, onDelete }: { projects: ProjectItem[]; canEdit: boolean; version: number; onView: (a: Article) => void; onCreate: () => void; onEdit: (a: Article) => void; onDelete: (a: Article) => void }) {
@@ -383,6 +434,14 @@ function StatusPanel() {
         <button type="button" className="btn" onClick={() => void reindex()} disabled={busy}><span className="material-symbols-outlined" aria-hidden="true">restart_alt</span>สร้างดัชนีใหม่ทั้งหมด</button>
       </div>
     </div>
+    {status.crm && <div className="kn-crm-status" role="note">
+      <span className="material-symbols-outlined" aria-hidden="true">support_agent</span>
+      <div>
+        <b>ข้อความ CRM Ticket</b>
+        <span>{status.crm.enabled ? `ดึงแล้ว ${status.crm.fetched.toLocaleString("th-TH")} จาก ${status.crm.candidates.toLocaleString("th-TH")} Ticket (ปิดแล้วหรือมีการตอบ) · รอดึง ${status.crm.pending.toLocaleString("th-TH")}${status.crm.failed ? ` · ไม่สำเร็จ ${status.crm.failed.toLocaleString("th-TH")}` : ""}${status.crm.lastFetchedAt ? ` · ล่าสุด ${formatThaiDateTime(status.crm.lastFetchedAt)}` : ""}` : "ปิดการดึงข้อความ CRM อยู่ (Knowledge:CrmFetchEnabled=false)"}</span>
+        <small>{status.crm.allowExternalAi ? "ผู้ดูแลอนุญาตส่งข้อมูล CRM (mask แล้ว) ให้ AI ภายนอก รวมถึง Claude" : "ไม่ส่งข้อมูล CRM ให้ AI ภายนอก — ใช้ได้กับ AI แบบ Local และการค้นหาเท่านั้น (เปลี่ยนได้ที่ Setting Center)"}</small>
+      </div>
+    </div>}
     {!status.indexerEnabled && <div className="kn-notice" role="note"><span className="material-symbols-outlined" aria-hidden="true">pause_circle</span>เอกสารใหม่และที่แก้ไขจะยังไม่ถูกค้นเจอจนกว่าจะเปิดการสร้างดัชนี</div>}
     <dl className="kn-totals">
       <div><dt>ค้นหาได้</dt><dd>{totals.indexed.toLocaleString("th-TH")}</dd><small>เอกสาร · {totals.chunks.toLocaleString("th-TH")} ช่วงข้อความ</small></div>
@@ -392,7 +451,7 @@ function StatusPanel() {
     <div className="table-wrap"><table className="table-cards kn-table">
       <thead><tr><th>แหล่งข้อมูล</th><th>ค้นหาได้</th><th>รอ</th><th>ไม่สำเร็จ</th><th>ไม่อยู่ในคลัง</th><th>ช่วงข้อความ</th><th>อัปเดตล่าสุด</th></tr></thead>
       <tbody>{status.sources.map((s) => <tr key={s.sourceType}>
-        <td><span className="kn-source"><span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[s.sourceType]}</span>{sourceLabel[s.sourceType]}{s.sourceType === "CrmTicket" && <small>เปิดใช้ใน Phase ถัดไป</small>}</span></td>
+        <td><span className="kn-source"><span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[s.sourceType]}</span>{sourceLabel[s.sourceType]}{s.sourceType === "CrmTicket" && status.crm?.enabled && <small>ดึงจาก CRM ทุก 15 นาที</small>}</span></td>
         <td>{s.indexed.toLocaleString("th-TH")}</td><td>{s.pending.toLocaleString("th-TH")}</td><td>{s.failed.toLocaleString("th-TH")}</td><td>{s.excluded.toLocaleString("th-TH")}</td><td>{s.chunks.toLocaleString("th-TH")}</td>
         <td>{s.lastIndexedAt ? formatThaiDateTime(s.lastIndexedAt) : "—"}</td>
       </tr>)}</tbody>

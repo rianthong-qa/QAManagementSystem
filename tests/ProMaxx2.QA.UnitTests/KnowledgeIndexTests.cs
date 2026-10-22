@@ -206,13 +206,15 @@ public sealed class KnowledgeIndexTests
     }
 
     [Fact]
-    public async Task Index_SkipsUnsupportedSourceTypes()
+    public async Task Index_ExcludesDocumentWhoseSourceIsGone()
     {
         await using var db = CreateDb();
+        // CRM Ticket ที่ไม่มีข้อความที่ดึงไว้แล้ว (เช่น ถูกลบจาก mirror) — ไม่เข้าคลัง
         db.KnowledgeDocuments.Add(new KnowledgeDocument("CrmTicket", "HD-1", "Crm", null, "HD-1", null));
         await db.SaveChangesAsync();
-        Assert.Equal(0, await Indexer(db).IndexPendingAsync(50, default));
-        Assert.Equal("Stale", (await db.KnowledgeDocuments.SingleAsync()).State);
+        Assert.Equal(1, await Indexer(db).IndexPendingAsync(50, default));
+        Assert.Equal("Excluded", (await db.KnowledgeDocuments.SingleAsync()).State);
+        Assert.Empty(db.KnowledgeChunks);
     }
 
     [Fact]

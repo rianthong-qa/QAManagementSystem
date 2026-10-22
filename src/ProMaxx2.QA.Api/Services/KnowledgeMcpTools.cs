@@ -12,7 +12,8 @@ namespace ProMaxx2.QA.Api.Services;
 
 /// <summary>
 /// เครื่องมือ MCP (อ่านอย่างเดียว) ให้ Claude Code / Claude Desktop ค้นคลังความรู้ QA — AI_KNOWLEDGE_CHAT_PLAN.md Phase 2B
-/// สิทธิ์ตามผู้ถือ Personal Access Token (สมาชิก Project เท่านั้น), ไม่เปิดข้อมูล CRM (Claude เป็น AI ภายนอก), ข้ามเอกสาร ExcludeFromAi,
+/// สิทธิ์ตามผู้ถือ Personal Access Token (สมาชิก Project เท่านั้น), ข้อมูล CRM เฉพาะเมื่อผู้ใช้มี CRM.VIEW และผู้ดูแลอนุญาตส่ง CRM ให้ AI ภายนอก
+/// (Claude เป็น AI ภายนอกเสมอ — Setting Center → คลังความรู้), ข้ามเอกสาร ExcludeFromAi,
 /// ข้อความผ่าน SensitiveDataMasker และตัดผลไม่เกิน ~8,000 ตัวอักษร (Claude Code เตือนเมื่อผลเกิน 10,000 token); บันทึก Audit Log ทุกครั้ง
 /// </summary>
 [McpServerToolType]
@@ -22,7 +23,7 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
     public const string AuditEntityType = "KnowledgeMcp";
 
     public const string ServerInstructions =
-        "ProMaxx2 QA Hub knowledge base (Thai). Use search_knowledge first to find Defects, knowledge articles and documents (module specs, requirements, manuals), then get_defect / get_article / get_document for details. " +
+        "ProMaxx2 QA Hub knowledge base (Thai). Use search_knowledge first to find Defects, knowledge articles, documents (module specs, requirements, manuals) and — when allowed — customer CRM tickets, then get_defect / get_article / get_document / get_crm_ticket for details. " +
         "Use find_similar_defects before reporting a new bug to check for duplicates. Always cite Defect codes and include the web links returned. " +
         "Content is masked: tokens like [EMAIL], [PHONE], [CUSTOMER] are redacted values — never guess them.";
 
@@ -40,11 +41,11 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
     }
 
     [McpServerTool(Name = "search_knowledge", Title = "ค้นคลังความรู้ QA", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Search the QA knowledge base (Defects, knowledge articles and uploaded documents such as module specs and requirements; Thai full-text). Returns titles, snippets, status and web links. Query in Thai or English, e.g. symptom, error message, menu name or Defect code.")]
+    [Description("Search the QA knowledge base (Defects, knowledge articles, uploaded documents such as module specs and requirements, and customer CRM support tickets when the administrator allows it; Thai full-text). Returns titles, snippets, status and web links. Query in Thai or English, e.g. symptom, error message, menu name or Defect code.")]
     public async Task<string> SearchKnowledge(
         [Description("Search text, e.g. 'พิมพ์ใบกำกับภาษีไม่ได้' or a Defect code")] string query,
         [Description("Optional project code from list_projects to limit results")] string? projectCode = null,
-        [Description("Optional source filter: 'defect', 'article' or 'document'")] string? source = null,
+        [Description("Optional source filter: 'defect', 'article', 'document' or 'crm'")] string? source = null,
         [Description("Max results (1-10, default 8)")] int limit = 8,
         CancellationToken cancellationToken = default)
     {
@@ -55,9 +56,11 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
             "defect" or "defects" => new[] { "Defect" },
             "article" or "articles" => new[] { "Article" },
             "document" or "documents" or "file" or "files" => new[] { "File" },
-            _ => throw new McpException("source ต้องเป็น 'defect', 'article' หรือ 'document'"),
+            "crm" or "ticket" or "tickets" or "crmticket" => new[] { "CrmTicket" },
+            _ => throw new McpException("source ต้องเป็น 'defect', 'article', 'document' หรือ 'crm'"),
         };
         var (userId, scope) = await ScopeAsync(projectCode, sources, cancellationToken);
+        if (sources is ["CrmTicket"] && !scope.IncludeCrm) throw new McpException(CrmNotAllowed);
         var results = await search.SearchAsync(q, scope, Math.Clamp(limit, 1, 10), cancellationToken, forAi: true);
         await AuditAsync(userId, "search_knowledge", $"\"{Cut(q, 80)}\" → {results.Count} รายการ", cancellationToken);
         if (results.Count == 0) return $"ไม่พบความรู้ที่ตรงกับ \"{q}\" — ลองคำที่สั้นลง คำพ้อง หรือไม่ระบุ project";
@@ -73,7 +76,7 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
             sb.Append("   ").Append(string.Join(" · ", meta)).Append('\n');
             sb.Append("   ").Append(SensitiveDataMasker.Mask(r.Snippet).ReplaceLineEndings(" ")).Append('\n');
             if (WebUrl(r.SourceUrl) is { } url) sb.Append("   ลิงก์: ").Append(url).Append('\n');
-            sb.Append("   รายละเอียด: ").Append(r.SourceType switch { "Defect" => $"get_defect(\"{d?.Code ?? r.SourceKey}\")", "File" => $"get_document(\"{r.SourceKey}\")", _ => $"get_article(\"{r.SourceKey}\")" }).Append('\n');
+            sb.Append("   รายละเอียด: ").Append(r.SourceType switch { "Defect" => $"get_defect(\"{d?.Code ?? r.SourceKey}\")", "File" => $"get_document(\"{r.SourceKey}\")", "CrmTicket" => $"get_crm_ticket(\"{r.SourceKey}\")", _ => $"get_article(\"{r.SourceKey}\")" }).Append('\n');
         }
         return Limit(sb.ToString());
     }
@@ -145,6 +148,24 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
         return $"[เอกสาร] {file.FileName} — ส่วนที่ {part}/{parts}\n{slice}\n\n{next}ลิงก์: {WebUrl(KnowledgeIndexService.FileUrl(id))}";
     }
 
+    [McpServerTool(Name = "get_crm_ticket", Title = "รายละเอียด CRM Ticket", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Get a customer support (CRM) ticket from the knowledge base: problem description and support answers/solution, with customer and staff names masked. Only available when the administrator allows CRM data for external AI.")]
+    public async Task<string> GetCrmTicket(
+        [Description("CRM Job No. from search_knowledge")] string jobNo,
+        CancellationToken cancellationToken = default)
+    {
+        var key = jobNo?.Trim() ?? "";
+        if (key.Length == 0) throw new McpException("กรุณาระบุ Job No.");
+        var (userId, scope) = await ScopeAsync(null, null, cancellationToken);
+        if (!scope.IncludeCrm) throw new McpException(CrmNotAllowed);
+        var text = (await indexer.BuildCrmTextsByJobNoAsync([key], cancellationToken)).GetValueOrDefault(key);
+        await AuditAsync(userId, "get_crm_ticket", $"{key} → {(text is null ? "ไม่พบ" : "พบ")}", cancellationToken);
+        if (text is null) throw new McpException($"ไม่พบ CRM Ticket \"{key}\" ในคลังความรู้");
+        if (await db.KnowledgeDocuments.AsNoTracking().AnyAsync(x => x.SourceType == "CrmTicket" && x.SourceKey == key && x.ExcludeFromAi, cancellationToken))
+            throw new McpException($"Ticket {key} ถูกตั้งค่าไม่ให้ส่งข้อมูลให้ AI");
+        return Limit($"{SensitiveDataMasker.Mask(text.Header)}\n{SensitiveDataMasker.Mask(text.Body)}\n\nลิงก์: {WebUrl(KnowledgeIndexService.CrmUrl(key))}");
+    }
+
     [McpServerTool(Name = "find_similar_defects", Title = "หา Defect ที่คล้ายกัน", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Find existing Defects similar to a bug description — use before reporting a new Defect to avoid duplicates. Returns codes, status, severity and links.")]
     public async Task<string> FindSimilarDefects(
@@ -178,8 +199,12 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
         var user = http.HttpContext?.User ?? throw new McpException("ไม่พบข้อมูลผู้ใช้");
         if (!Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var userId)) throw new McpException("ไม่พบข้อมูลผู้ใช้");
         var scope = await search.ScopeForAsync(user, userId, null, sources, ct);
-        // Claude เป็น AI ภายนอกเสมอ — ไม่เปิดข้อมูล CRM ผ่าน MCP
-        scope = scope with { IncludeCrm = false };
+        // Claude เป็น AI ภายนอกเสมอ — ข้อมูล CRM เฉพาะเมื่อผู้ดูแลอนุญาตส่ง CRM ให้ AI ภายนอก (และผู้ใช้มี CRM.VIEW จาก ScopeForAsync)
+        if (scope.IncludeCrm)
+        {
+            var allow = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).Select(x => x.AllowCrmDataToExternalAi).FirstOrDefaultAsync(ct);
+            if (!allow) scope = scope with { IncludeCrm = false };
+        }
         if (!string.IsNullOrWhiteSpace(projectCode))
         {
             var code = projectCode.Trim().ToUpperInvariant();
@@ -197,6 +222,8 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
         return await db.Defects.AsNoTracking().Where(x => ids.Contains(x.DefectId))
             .ToDictionaryAsync(x => x.DefectId.ToString(), x => new DefectStatus(x.DefectCode, x.Status, x.Severity), ct);
     }
+
+    private const string CrmNotAllowed = "ข้อมูล CRM ใช้กับ Claude ไม่ได้ — ต้องมีสิทธิ์ CRM.VIEW และผู้ดูแลต้องเปิด \"อนุญาตส่งข้อมูล CRM ให้ AI ภายนอก\" ใน Setting Center";
 
     private sealed record DefectStatus(string Code, string Status, string Severity);
 

@@ -16,12 +16,12 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
     /// <summary>เปลี่ยนเมื่อรูปแบบข้อความ/การแบ่ง chunk เปลี่ยน — hash จะต่างจากเดิมและทุกเอกสารถูกสร้างใหม่</summary>
     public const string IndexVersion = "k1";
 
-    /// <summary>แหล่งที่ index ได้ — CrmTicket (Phase 4) ยังไม่ถูกดึงมาประมวลผล</summary>
-    public static readonly string[] SupportedSourceTypes = ["Defect", "Article", "File"];
+    /// <summary>แหล่งที่ index ได้ (CrmTicket = ข้อความที่ CrmKnowledgeFetcher ดึงและ mask แล้ว)</summary>
+    public static readonly string[] SupportedSourceTypes = ["Defect", "Article", "File", "CrmTicket"];
 
     public async Task<int> SyncSourcesAsync(CancellationToken ct)
     {
-        var changed = await SyncDefectsAsync(ct) + await SyncArticlesAsync(ct) + await SyncFilesAsync(ct);
+        var changed = await SyncDefectsAsync(ct) + await SyncArticlesAsync(ct) + await SyncFilesAsync(ct) + await SyncCrmTicketsAsync(ct);
         if (changed > 0) await db.SaveChangesAsync(ct);
         return changed;
     }
@@ -95,6 +95,30 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         return changed;
     }
 
+    private async Task<int> SyncCrmTicketsAsync(CancellationToken ct)
+    {
+        var docs = await db.KnowledgeDocuments.Where(x => x.SourceType == "CrmTicket").ToDictionaryAsync(x => x.SourceKey, ct);
+        var tickets = await (from c in db.CrmTicketContents.AsNoTracking()
+                             join t in db.CrmTickets.AsNoTracking() on c.JobNo equals t.JobNo
+                             where c.ContentHash != ""
+                             select new { c.JobNo, c.SubjectMasked, c.ChangedAt, t.LastChangedAt, HasText = c.DescriptionMasked != null || db.CrmTicketAnswers.Any(a => a.JobNo == c.JobNo) })
+            .ToListAsync(ct);
+        var changed = 0;
+        foreach (var t in tickets)
+        {
+            var title = $"{t.JobNo}: {t.SubjectMasked ?? "(ไม่มีชื่อเรื่อง)"}";
+            // สถานะ Ticket อยู่ในข้อความความรู้ด้วย — สถานะเปลี่ยน (LastChangedAt) ก็ต้อง index ใหม่
+            var at = t.LastChangedAt > t.ChangedAt ? t.LastChangedAt : t.ChangedAt;
+            changed += Reconcile(docs.GetValueOrDefault(t.JobNo), t.HasText, at,
+                () => new KnowledgeDocument("CrmTicket", t.JobNo, "Crm", null, title, CrmUrl(t.JobNo)),
+                doc => doc.Title != Cut(title, 300),
+                doc => doc.UpdateSource("Crm", null, title, CrmUrl(t.JobNo)));
+        }
+        var existing = tickets.Select(x => x.JobNo).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var orphan in docs.Values.Where(x => x.State != "Excluded" && !existing.Contains(x.SourceKey))) { orphan.Exclude(); changed++; }
+        return changed;
+    }
+
     /// <summary>คืน 1 เมื่อเอกสารถูกสร้าง/เปลี่ยนสถานะ</summary>
     private int Reconcile(KnowledgeDocument? doc, bool active, DateTime sourceChangedAt, Func<KnowledgeDocument> create, Func<KnowledgeDocument, bool> sourceInfoChanged, Action<KnowledgeDocument> updateSource)
     {
@@ -129,6 +153,7 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         foreach (var (id, text) in await BuildDefectTextsAsync(pending.Where(x => x.SourceType == "Defect").ToList(), ct)) texts[id] = text;
         foreach (var (id, text) in await BuildArticleTextsAsync(pending.Where(x => x.SourceType == "Article").ToList(), ct)) texts[id] = text;
         foreach (var (id, text) in await BuildFileTextsAsync(pending.Where(x => x.SourceType == "File").ToList(), ct)) texts[id] = text;
+        foreach (var (id, text) in await BuildCrmTextsAsync(pending.Where(x => x.SourceType == "CrmTicket").ToList(), ct)) texts[id] = text;
 
         var pendingIds = pending.Select(x => x.KnowledgeDocumentId).ToList();
         var oldChunks = (await db.KnowledgeChunks.Where(x => pendingIds.Contains(x.KnowledgeDocumentId)).ToListAsync(ct)).ToLookup(x => x.KnowledgeDocumentId);
@@ -261,6 +286,36 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         return result;
     }
 
+    private async Task<Dictionary<Guid, KnowledgeText?>> BuildCrmTextsAsync(List<KnowledgeDocument> docs, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, KnowledgeText?>();
+        if (docs.Count == 0) return result;
+        var texts = await BuildCrmTextsByJobNoAsync(docs.Select(x => x.SourceKey).Distinct().ToList(), ct);
+        foreach (var doc in docs) result[doc.KnowledgeDocumentId] = texts.GetValueOrDefault(doc.SourceKey);
+        return result;
+    }
+
+    /// <summary>ข้อความความรู้ของ CRM Ticket (mask แล้วตั้งแต่ตอนดึง) — ใช้ทั้งตอน index และเครื่องมือ MCP get_crm_ticket</summary>
+    public async Task<Dictionary<string, KnowledgeText>> BuildCrmTextsByJobNoAsync(IReadOnlyCollection<string> jobNos, CancellationToken ct)
+    {
+        var result = new Dictionary<string, KnowledgeText>(StringComparer.OrdinalIgnoreCase);
+        if (jobNos.Count == 0) return result;
+        var rows = await (from c in db.CrmTicketContents.AsNoTracking()
+                          join t in db.CrmTickets.AsNoTracking() on c.JobNo equals t.JobNo
+                          where jobNos.Contains(c.JobNo) && c.ContentHash != ""
+                          select new { c.JobNo, c.SubjectMasked, c.DescriptionMasked, t.Status, t.JobType, t.ServiceType, t.Product, t.ContactDate }).ToListAsync(ct);
+        var keys = rows.Select(x => x.JobNo).ToList();
+        var answers = (await db.CrmTicketAnswers.AsNoTracking().Where(x => keys.Contains(x.JobNo)).Select(x => new { x.JobNo, x.AnsweredAt, x.TextMasked }).ToListAsync(ct))
+            .ToLookup(x => x.JobNo, StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+        {
+            var list = answers[r.JobNo].Select(x => new CrmKnowledgeAnswer(x.AnsweredAt, x.TextMasked ?? "")).ToList();
+            if (r.DescriptionMasked is null && list.Count == 0) continue;
+            result[r.JobNo] = KnowledgeSourceText.ForCrmTicket(new(r.JobNo, r.SubjectMasked, r.Status, r.JobType, r.ServiceType, r.Product, r.ContactDate, r.DescriptionMasked, list));
+        }
+        return result;
+    }
+
     public async Task<KnowledgeStatusDto> GetStatusAsync(bool indexerEnabled, CancellationToken ct)
     {
         var groups = await db.KnowledgeDocuments.AsNoTracking().GroupBy(x => new { x.SourceType, x.State })
@@ -280,6 +335,7 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
     public static string DefectUrl(Guid defectId) => $"#/defects?defectId={defectId}";
     public static string ArticleUrl(Guid articleId) => $"#/knowledge?articleId={articleId}";
     public static string FileUrl(Guid fileId) => $"#/knowledge?fileId={fileId}";
+    public static string CrmUrl(string jobNo) => $"#/knowledge?jobNo={Uri.EscapeDataString(jobNo)}";
 
     /// <summary>ล้างคำขอ OAuth ที่หมดอายุแล้วเกิน 1 วัน (เก็บไว้ช่วงสั้น ๆ เพื่อตรวจสอบย้อนหลัง)</summary>
     public async Task<int> PurgeExpiredOAuthRequestsAsync(CancellationToken ct)
@@ -297,7 +353,7 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
 
 public sealed record KnowledgeSourceStatusDto(string SourceType, int Indexed, int Pending, int Failed, int Excluded, int Chunks, DateTime? LastIndexedAt);
 public sealed record KnowledgeFailureDto(Guid KnowledgeDocumentId, string SourceType, string Title, string? Error, DateTime? AttemptedAt);
-public sealed record KnowledgeStatusDto(bool IndexerEnabled, IReadOnlyList<KnowledgeSourceStatusDto> Sources, IReadOnlyList<KnowledgeFailureDto> Failures);
+public sealed record KnowledgeStatusDto(bool IndexerEnabled, IReadOnlyList<KnowledgeSourceStatusDto> Sources, IReadOnlyList<KnowledgeFailureDto> Failures, KnowledgeCrmStatusDto? Crm = null);
 
 /// <summary>ปลุก KnowledgeIndexWorker ทันทีเมื่อมีการแก้บทความ/สั่ง reindex แทนการรอรอบถัดไป</summary>
 public sealed class KnowledgeIndexTrigger

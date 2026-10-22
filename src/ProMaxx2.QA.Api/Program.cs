@@ -106,6 +106,8 @@ builder.Services.AddScoped<KnowledgeIndexService>();
 builder.Services.AddScoped<IKnowledgeTextSearch, SqlKnowledgeTextSearch>();
 builder.Services.AddScoped<KnowledgeSearchService>();
 builder.Services.AddScoped<KnowledgeFileService>(); // Phase 3: เอกสาร PDF/DOCX/MD/TXT
+builder.Services.AddScoped<ICrmKnowledgeSource, CrmApiKnowledgeSource>(); // Phase 4: ดึงรายละเอียด/คำตอบ CRM ด้วยบัญชีกลาง
+builder.Services.AddScoped<CrmKnowledgeFetcher>(); // mask แล้วเก็บ CrmTicketContents/Answers — เรียกจาก CrmMirrorWorker ทุกรอบ
 builder.Services.AddScoped<IAiChatClient, AiChatClient>();
 builder.Services.AddScoped<KnowledgeChatService>();
 // MCP server ให้ Claude Code / Claude Desktop ค้นคลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md Phase 2B) — stateless (ไม่ใช้ sampling/elicitation)

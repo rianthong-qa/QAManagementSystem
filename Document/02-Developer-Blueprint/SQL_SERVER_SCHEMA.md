@@ -1330,3 +1330,7 @@ WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์�
 ## Addendum: คลังเอกสาร (migration `AddKnowledgeFileContent`, 2026-10-22)
 
 `KnowledgeFiles` เพิ่ม `ContentHash` (64, SHA-256 ของไฟล์, index — กันไฟล์ซ้ำ), `Origin` (20, Upload/Import), `ImportPath` (300, index filtered — นำเข้าเอกสารระบบซ้ำแบบ idempotent), `UpdatedAt`; ไฟล์จริงอยู่ที่ `App_Data/KnowledgeFiles/{KnowledgeFileId:N}/`
+
+## Addendum: ข้อความ CRM ในคลังความรู้ (migration `AddCrmKnowledgeContent`, 2026-10-22)
+
+`CrmTicketContents` เพิ่ม `SubjectMasked` (300), `FetchError` (500 — ดึงไม่สำเร็จ ลองใหม่หลัง 24 ชม.), `ChangedAt` (เวลาที่เนื้อหาเปลี่ยนล่าสุด — ใช้ mark Stale; ต่างจาก `FetchedAt` ที่เปลี่ยนทุกครั้งที่ดึง); `CrmTicketAnswers` เก็บเฉพาะคำตอบที่เป็นข้อความ (ไม่รวมไฟล์แนบ `P` และประวัติแก้ไข `[QA Hub] …`) หลัง mask — ข้อความต้นฉบับไม่เก็บ

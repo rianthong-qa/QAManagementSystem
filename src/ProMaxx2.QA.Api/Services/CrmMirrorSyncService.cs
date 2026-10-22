@@ -274,6 +274,15 @@ public sealed class CrmMirrorWorker(IServiceScopeFactory scopeFactory, ILogger<C
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (InvalidOperationException ex) { logger.LogInformation("CRM mirror: {Reason}", ex.Message); }
             catch (Exception ex) { logger.LogError(ex, "CRM mirror worker failed — will retry next interval"); }
+            // ข้อความ CRM เข้าคลังความรู้ (Phase 4) — หลังรอบ mirror เพื่อรู้ว่า Ticket ไหนมีการตอบ/ปิดใหม่; ล้มเหลวไม่กระทบรอบถัดไป
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var fetcher = scope.ServiceProvider.GetRequiredService<CrmKnowledgeFetcher>();
+                if (scope.ServiceProvider.GetRequiredService<CrmMirrorSyncService>().Enabled && fetcher.Enabled) await fetcher.FetchPendingAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+            catch (Exception ex) { logger.LogError(ex, "CRM knowledge fetch failed — will retry next interval"); }
             try { await Task.Delay(Interval, stoppingToken); } catch (OperationCanceledException) { return; }
         }
     }

@@ -570,7 +570,7 @@ function App() {
         : page === "performance"
           ? "ผลงานจากระบบ บันทึกงานเพิ่มเติม และติดตามช่วงทดลองงานของทีม QA"
         : page === "knowledge"
-          ? "ถามผู้ช่วย AI และค้นหาความรู้จาก Defect บทความ และเอกสาร พร้อมอ้างอิงแหล่งที่มา"
+          ? "ถามผู้ช่วย AI และค้นหาความรู้จาก Defect บทความ เอกสาร และ CRM พร้อมอ้างอิงแหล่งที่มา"
         : page === "test-suites"
           ? "Test Suite จัดเก็บระดับ Project · เลือก Release/Build ตอนนำไปสร้าง Test Cycle"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
@@ -937,7 +937,7 @@ function App() {
           ) : page === "performance" ? (
             <PerformancePage user={user} canManage={can("PERFORMANCE.EDIT")} />
           ) : page === "knowledge" ? (
-            <KnowledgePage canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} canConnectClaude={can("KNOWLEDGE.MCP")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} />
+            <KnowledgePage canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} canConnectClaude={can("KNOWLEDGE.MCP")} canViewCrm={can("CRM.VIEW")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (
