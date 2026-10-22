@@ -1,6 +1,6 @@
 # แผนระบบ AI Chat + คลังความรู้ (Knowledge Hub)
 
-> สถานะ: **Phase 0–4 + 2B (MCP/OAuth) เสร็จในโค้ด (2026-10-22)** — ค้นหาความรู้ + แชทผู้ช่วย AI (RAG) พร้อมอ้างอิง จาก Defect / บทความ / เอกสาร / CRM Ticket (mask แล้ว) และ Claude ผ่าน MCP; **ยังไม่ได้ทดสอบแชทกับ LLM จริง เพราะ API key ของ opencode ที่ตั้งค่าไว้หมดอายุ** (ดู Progress Log); Phase 5–6 ยังไม่เริ่ม
+> สถานะ: **Phase 0–5 + 2B (MCP/OAuth) เสร็จในโค้ด (2026-10-22)** — ค้นหาความรู้ + แชทผู้ช่วย AI (RAG) พร้อมอ้างอิง จาก Defect / บทความ / เอกสาร / CRM Ticket (mask แล้ว) และ Claude ผ่าน MCP; **ยังไม่ได้ทดสอบแชทกับ LLM จริง เพราะ API key ของ opencode ที่ตั้งค่าไว้หมดอายุ** (ดู Progress Log); ค้นตามความหมาย (Phase 5) พร้อมใช้เมื่อตั้ง Embedding Provider; Phase 6 ยังไม่เริ่ม
 > จัดทำ: 21 ตุลาคม 2026
 > ต่อยอดจาก `DEFECT_KNOWLEDGE_PLAN.md` — Phase 2–4 ของแผนนั้นย้ายมารวมในคลังความรู้กลางนี้
 
@@ -401,3 +401,27 @@ Technical debt / ข้อสังเกต:
 - [ ] ชื่อสถานที่/สาขาในข้อความ (เช่น "สาขาท่าเรือ") ถูก mask เฉพาะเมื่อตรงกับช่องสาขาของ Ticket — ชื่อบุคคลที่พิมพ์ในข้อความแต่ไม่อยู่ในช่องข้อมูลของ Ticket จะไม่ถูกปิด (ข้อจำกัดของ rule-based)
 - [ ] ผู้ใช้จริงที่มี/ไม่มี `CRM.VIEW` ลองค้น/ถามผ่านหน้าเว็บ และแชทกับ Provider Local (ข้อมูล CRM ส่งได้) — ยังทดสอบ LLM จริงไม่ได้จนกว่าจะต่ออายุ API key
 - [ ] Ticket ที่ถูกลบจาก CRM mirror → เอกสารคลังถูก Exclude (ทดสอบในหน่วยแล้ว ยังไม่เจอกรณีจริง)
+
+### 2026-10-22 — Phase 5 (Embedding + ค้นแบบ Hybrid)
+
+ทำแล้ว:
+
+- **Embedding** (`Api/Services/KnowledgeEmbeddingService.cs`): เรียก `POST {BaseUrl}/embeddings` แบบ OpenAI — ใช้ได้ทั้ง OpenAI และ AI Local (Ollama / LM Studio / vLLM); ค่าจาก Setting Center (`SharedAiConfigurationService.GetEmbeddingSettingsAsync` ถอดรหัสคีย์ — ไม่ขึ้นกับสวิตช์ AI หลัก)
+- `KnowledgeIndexWorker` สร้างเวกเตอร์ให้ช่วงข้อความที่ index แล้วต่อจากการ index ในเวลาที่เหลือของรอบ (batch 32 — `Knowledge:EmbeddingBatchSize`), เก็บแบบ normalize ใน `KnowledgeChunks.Embedding` (float32) + `EmbeddingModel = "Provider:Model"` — **เปลี่ยน provider/model = สร้างใหม่ทั้งหมดอัตโนมัติ**, ช่วงที่ hash เดิมคงเวกเตอร์ไว้; provider ล่ม = หยุดรอบนั้นแล้วลองใหม่ (ข้อผิดพลาดล่าสุดแสดงในสถานะคลัง); บันทึกตั้งค่าคลังความรู้ = ปลุก worker ทันที
+- **Provider ภายนอก (OpenAI) ไม่ส่ง**เอกสาร `ExcludeFromAi` และ CRM ที่ไม่ได้อนุญาต `AllowCrmDataToExternalAi` ไปสร้างเวกเตอร์ (ช่วงเหล่านั้นค้นได้ด้วยคำอย่างเดียว)
+- **ค้นตามความหมาย:** embedding ของคำถาม (cache 30 นาที) → cosine (dot ของเวกเตอร์ normalize, SIMD `Vector<float>`) กับเวกเตอร์ในหน่วยความจำของแอป (โหลดครั้งแรกแล้ว cache จนกว่าจำนวน/ช่วงล่าสุดของ model จะเปลี่ยน) → กรองสิทธิ์จาก `KnowledgeDocuments` ทุกครั้ง (กติกาเดียวกับ Full-Text) → ตัดที่ similarity ≥ `Knowledge:VectorMinScore` (ค่าเริ่มต้น 0.35)
+- **Hybrid:** `KnowledgeSearchService` รวมผล Full-Text + ความหมายด้วย **Reciprocal Rank Fusion** (k = 60, `Application/Knowledge/HybridRanker`) ทั้งหน้า "ค้นหาความรู้", บริบทของแชท และ MCP; ไม่ตั้งค่า/embedding ล่ม = ค้นด้วยคำอย่างเดียวเหมือนเดิม (ไม่ error)
+- Setting Center: ปุ่ม **"ทดสอบ Embedding"** (`POST /master-settings/ai/knowledge/test-embedding` — ใช้ค่าที่บันทึกแล้ว แสดงจำนวนมิติ/เวลา); สถานะคลัง: กล่อง "ค้นตามความหมาย" (provider · model · สร้างแล้ว x/y ช่วง + แถบความคืบหน้า + ข้อผิดพลาดล่าสุด)
+- ไม่มี migration (คอลัมน์ embedding มีตั้งแต่ Phase 0)
+
+ผลตรวจ:
+
+- Unit tests `KnowledgeEmbeddingTests` 9 ข้อ (normalize/dot, RRF, parse ตาม index/ผิดรูปแบบ, สร้างครั้งเดียว + สร้างใหม่เมื่อเปลี่ยน model, provider ภายนอกข้าม CRM/ExcludeFromAi จนอนุญาต, provider ล่มหยุด + จดข้อผิดพลาด, ค้นตามความหมายเคารพสิทธิ์ Project/CRM/แหล่ง + MinScore + cache คำถาม, hybrid เจอเอกสารที่ Full-Text ไม่เจอ + embedding ล่มไม่ error, ค่าตั้งจาก Setting Center) — ทั้งชุด 755 ผ่าน
+- `OpenAiCompatibleEmbeddingClient` กับ server จำลองผ่าน HTTP จริง: เรียงตาม index, ส่ง model/คีย์ถูก, 404 และ server ล่ม → ข้อความภาษาไทยชัดเจน; **cosine 6,000 ช่วง × 1,024 มิติ ≈ 15 ms/คำถาม, 30,000 ช่วง ≈ 10 ms** (หลัง JIT)
+- UI ด้วย headless Chromium ที่ 1440 / 1024 / 768 / 390px: กล่องสถานะ embedding (รวมข้อผิดพลาดยาว), ปุ่มทดสอบ + ผลใน Setting Center — ไม่มี horizontal scroll, ตัวอักษร ≥ 11px
+
+ยังไม่ได้ทดสอบ / ต้องทำ:
+
+- [ ] **ยังไม่ได้ทดสอบกับ model จริง** — เครื่องนี้ไม่มี Ollama/LM Studio และไม่มีคีย์ OpenAI สำหรับ embedding: ติดตั้ง Ollama + `ollama pull bge-m3` (รองรับภาษาไทย, 1,024 มิติ) แล้วเลือก AI Local `http://localhost:11434/v1` model `bge-m3` → กด "ทดสอบ Embedding" → ดูความคืบหน้าในสถานะคลัง (~6,000 ช่วง)
+- [ ] ปรับ `Knowledge:VectorMinScore` ตาม model จริง (bge-m3 มักให้คะแนนเรื่องที่ไม่เกี่ยว ~0.3–0.45) — ถ้าแชทดึงเอกสารไม่เกี่ยวมาตอบ ให้เพิ่มค่า
+- [ ] หน่วยความจำ: เวกเตอร์ทั้งหมดอยู่ใน RAM ของ API (~4 KB/ช่วงที่ 1,024 มิติ ≈ 25 MB ที่ 6,000 ช่วง) — เกิน ~200,000 ช่วงควรย้ายไป SQL Server 2025 `VECTOR` หรือ vector DB

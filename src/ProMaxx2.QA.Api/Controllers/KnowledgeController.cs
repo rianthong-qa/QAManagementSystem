@@ -22,7 +22,7 @@ public sealed record SaveKnowledgeArticleRequest(string Title, string BodyMarkdo
 /// </summary>
 [ApiController, Route("api/v1/knowledge"), Authorize(Policy = "KnowledgeView")]
 public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService search, KnowledgeIndexService indexer, KnowledgeIndexTrigger trigger,
-    ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration, KnowledgeFileService files, CrmKnowledgeFetcher crmKnowledge) : ControllerBase
+    ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration, KnowledgeFileService files, CrmKnowledgeFetcher crmKnowledge, KnowledgeEmbeddingService embedding) : ControllerBase
 {
     private const string AuditEntityType = "KnowledgeArticle";
 
@@ -169,7 +169,7 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
     {
         var status = await indexer.GetStatusAsync(configuration.GetValue("Knowledge:IndexerEnabled", true), ct);
         var allowExternal = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).Select(x => x.AllowCrmDataToExternalAi).FirstOrDefaultAsync(ct);
-        return status with { Crm = await crmKnowledge.GetStatusAsync(allowExternal, ct) };
+        return status with { Crm = await crmKnowledge.GetStatusAsync(allowExternal, ct), Embedding = await embedding.GetStatusAsync(ct) };
     }
 
     [HttpPost("reindex"), Authorize(Policy = "SysAdminOnly")]

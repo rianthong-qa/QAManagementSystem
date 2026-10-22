@@ -10,7 +10,7 @@ using ProMaxx2.QA.Api.Services;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController, Route("api/v1/master-settings"), Authorize]
-public sealed class MasterSettingsController(QaDbContext db, SharedAiConfigurationService aiConfiguration, CrmSyncSettingsService crmSyncSettings, EmailConfigurationService emailConfiguration, EmailSenderService emailSender) : ControllerBase
+public sealed class MasterSettingsController(QaDbContext db, SharedAiConfigurationService aiConfiguration, CrmSyncSettingsService crmSyncSettings, EmailConfigurationService emailConfiguration, EmailSenderService emailSender, KnowledgeEmbeddingService knowledgeEmbedding, KnowledgeIndexTrigger knowledgeTrigger) : ControllerBase
 {
     public static readonly string[] Categories =
     [
@@ -31,8 +31,21 @@ public sealed class MasterSettingsController(QaDbContext db, SharedAiConfigurati
     [HttpPut("ai/knowledge"), Authorize(Policy = "AdminUser")]
     public async Task<ActionResult<AiConfigurationView>> SaveAiKnowledgeConfiguration(SaveAiKnowledgeConfigurationRequest request, CancellationToken ct)
     {
-        try { return Ok(await aiConfiguration.SaveKnowledgeAsync(request.EmbeddingProvider, request.EmbeddingModel, request.EmbeddingBaseUrl, request.EmbeddingApiKey, request.ClearEmbeddingApiKey, request.AllowCrmDataToExternalAi, request.McpEnabled, ct)); }
+        try
+        {
+            var saved = await aiConfiguration.SaveKnowledgeAsync(request.EmbeddingProvider, request.EmbeddingModel, request.EmbeddingBaseUrl, request.EmbeddingApiKey, request.ClearEmbeddingApiKey, request.AllowCrmDataToExternalAi, request.McpEnabled, ct);
+            knowledgeTrigger.Signal(); // เปลี่ยน Embedding → เริ่มสร้างเวกเตอร์ทันที ไม่ต้องรอรอบถัดไป
+            return Ok(saved);
+        }
         catch (ArgumentException ex) { return BadRequest(Problem(ex.Message)); }
+    }
+
+    /// <summary>ทดสอบ Embedding ด้วยค่าที่บันทึกไว้ — ส่งข้อความทดสอบ 1 ข้อความ คืนจำนวนมิติและเวลาที่ใช้</summary>
+    [HttpPost("ai/knowledge/test-embedding"), Authorize(Policy = "AdminUser")]
+    public async Task<ActionResult<EmbeddingTestResult>> TestEmbedding(CancellationToken ct)
+    {
+        try { return Ok(await knowledgeEmbedding.TestAsync(ct)); }
+        catch (EmbeddingException ex) { return StatusCode(502, Problem(ex.Message)); }
     }
 
     [HttpPost("ai/models"), Authorize(Policy = "AdminUser")]

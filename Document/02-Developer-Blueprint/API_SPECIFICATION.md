@@ -1205,3 +1205,11 @@ Authorization is also checked against the current database profile for the JWT s
 - ค้นหา/แชท: `sources=CrmTicket` (ผลลัพธ์ CRM คืนเฉพาะผู้มี `CRM.VIEW`; แชทที่ใช้ Provider ภายนอกตัด CRM ออกเมื่อไม่ได้อนุญาต `allowCrmDataToExternalAi`)
 - MCP: `search_knowledge(source: "crm")` และเครื่องมือใหม่ `get_crm_ticket(jobNo)` — ใช้ได้เฉพาะผู้มี `CRM.VIEW` **และ** ผู้ดูแลเปิด "อนุญาตส่งข้อมูล CRM ให้ AI ภายนอก" (Claude เป็น AI ภายนอกเสมอ) ไม่งั้นได้ข้อความแจ้งเหตุผล
 - Config: `Knowledge:CrmFetchEnabled` (ค่าเริ่มต้น `true`), `Knowledge:CrmFetchPerRun` (ค่าเริ่มต้น 50 ใบ/รอบ, 1–500) — ใช้บัญชีกลาง `CrmMirror:AccountUsername`
+
+### Knowledge — ค้นตามความหมาย (Phase 5, 2026-10-22)
+
+- `POST /api/v1/master-settings/ai/knowledge/test-embedding` (`AdminUser`) → `{ provider, model, dimensions, elapsedMs }` — ทดสอบ Embedding ด้วยค่าที่บันทึกไว้; `502` + `detail` เมื่อ provider ใช้งานไม่ได้
+- `PUT /api/v1/master-settings/ai/knowledge` — บันทึกแล้วปลุก `KnowledgeIndexWorker` ให้เริ่มสร้างเวกเตอร์ทันที
+- `GET /api/v1/knowledge/status` เพิ่ม `embedding: { enabled, provider, model, isExternal, eligible, embedded, error, lastErrorAt, lastSuccessAt }`
+- `GET /knowledge/search`, แชท และ MCP ใช้ผลรวม Full-Text + ความหมาย (RRF) อัตโนมัติเมื่อตั้งค่า Embedding — `rank` ในผลค้นหาเป็นคะแนนเพื่อเรียงลำดับเท่านั้น (ไม่ใช่ RANK ของ Full-Text)
+- Config: `Knowledge:EmbeddingBatchSize` (32), `Knowledge:VectorMinScore` (0.35)

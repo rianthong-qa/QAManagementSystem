@@ -1334,3 +1334,7 @@ WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์�
 ## Addendum: ข้อความ CRM ในคลังความรู้ (migration `AddCrmKnowledgeContent`, 2026-10-22)
 
 `CrmTicketContents` เพิ่ม `SubjectMasked` (300), `FetchError` (500 — ดึงไม่สำเร็จ ลองใหม่หลัง 24 ชม.), `ChangedAt` (เวลาที่เนื้อหาเปลี่ยนล่าสุด — ใช้ mark Stale; ต่างจาก `FetchedAt` ที่เปลี่ยนทุกครั้งที่ดึง); `CrmTicketAnswers` เก็บเฉพาะคำตอบที่เป็นข้อความ (ไม่รวมไฟล์แนบ `P` และประวัติแก้ไข `[QA Hub] …`) หลัง mask — ข้อความต้นฉบับไม่เก็บ
+
+## Addendum: ใช้งานคอลัมน์ embedding (Phase 5, 2026-10-22 — ไม่มี migration)
+
+`KnowledgeChunks.Embedding` = float32 little-endian ที่ normalize แล้ว, `EmbeddingModel` = `"Provider:Model"` (เช่น `Local:bge-m3`), `EmbeddingDim` = จำนวนมิติ — ค้นด้วย cosine ในแอป (SQL Server 2022 ไม่มีชนิด `VECTOR`); ช่วงที่ `EmbeddingModel` ไม่ตรงกับค่าปัจจุบันจะถูกสร้างใหม่

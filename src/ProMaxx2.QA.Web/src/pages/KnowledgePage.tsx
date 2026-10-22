@@ -19,7 +19,8 @@ type SearchResult = { knowledgeDocumentId: string; sourceType: SourceType; sourc
 type Article = { knowledgeArticleId: string; title: string; bodyMarkdown?: string | null; excerpt: string; projectId?: string | null; projectName?: string | null; tags?: string | null; status: "Draft" | "Published"; createdAt: string; createdByName?: string | null; updatedAt?: string | null; updatedByName?: string | null; indexState?: string | null; indexedAt?: string | null };
 type SourceStatus = { sourceType: SourceType; indexed: number; pending: number; failed: number; excluded: number; chunks: number; lastIndexedAt?: string | null };
 type CrmStatus = { enabled: boolean; allowExternalAi: boolean; candidates: number; fetched: number; pending: number; failed: number; lastFetchedAt?: string | null };
-type IndexStatus = { indexerEnabled: boolean; sources: SourceStatus[]; failures: { knowledgeDocumentId: string; sourceType: SourceType; title: string; error?: string | null; attemptedAt?: string | null }[]; crm?: CrmStatus | null };
+type EmbeddingStatus = { enabled: boolean; provider?: string | null; model?: string | null; isExternal: boolean; eligible: number; embedded: number; error?: string | null; lastErrorAt?: string | null; lastSuccessAt?: string | null };
+type IndexStatus = { indexerEnabled: boolean; sources: SourceStatus[]; failures: { knowledgeDocumentId: string; sourceType: SourceType; title: string; error?: string | null; attemptedAt?: string | null }[]; crm?: CrmStatus | null; embedding?: EmbeddingStatus | null };
 type CrmTicketView = { jobNo: string; subject?: string | null; status?: string | null; jobType?: string | null; serviceType?: string | null; product?: string | null; contactDate?: string | null; description?: string | null; answers: { answerNo: string; answerType?: string | null; answeredAt?: string | null; text: string }[]; fetchedAt: string; indexState?: string | null; indexedAt?: string | null };
 type Tab = "chat" | "search" | "articles" | "documents" | "claude" | "status";
 type ArticleDraft = { id?: string; title: string; bodyMarkdown: string; projectId: string; tags: string; status: "Draft" | "Published" };
@@ -395,6 +396,26 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
   </ModalShell>;
 }
 
+// ค้นตามความหมาย (Phase 5): ความคืบหน้าการสร้างเวกเตอร์ของช่วงข้อความ + ข้อผิดพลาดล่าสุดของ Embedding provider
+function EmbeddingStatusBox({ status }: { status: EmbeddingStatus }) {
+  const percent = status.eligible ? Math.floor((status.embedded / status.eligible) * 100) : 0;
+  return <div className="kn-crm-status kn-embed-status" role="note">
+    <span className="material-symbols-outlined" aria-hidden="true">hub</span>
+    <div>
+      <b>ค้นตามความหมาย (Embedding)</b>
+      {status.enabled ? <>
+        <span>{status.provider} · {status.model}{status.isExternal ? " (ภายนอกองค์กร)" : ""} — สร้างเวกเตอร์แล้ว {status.embedded.toLocaleString("th-TH")} จาก {status.eligible.toLocaleString("th-TH")} ช่วงข้อความ ({percent}%)</span>
+        <span className="kn-embed-bar" aria-hidden="true"><span style={{ width: `${percent}%` }} /></span>
+        {status.error ? <small className="kn-embed-error" role="alert">ล่าสุดไม่สำเร็จ{status.lastErrorAt ? ` (${formatThaiDateTime(status.lastErrorAt)})` : ""}: {status.error}</small>
+          : <small>{status.embedded < status.eligible ? "ระบบสร้างเวกเตอร์ต่อเนื่องทุกรอบ — ระหว่างนี้ช่วงที่ยังไม่มีเวกเตอร์ค้นได้ด้วยคำ" : "ค้นด้วยคำและความหมายรวมกัน (Reciprocal Rank Fusion)"}{status.isExternal ? " · ไม่ส่งเอกสารที่ห้ามส่งให้ AI และ CRM ที่ไม่ได้อนุญาตไปสร้างเวกเตอร์" : ""}</small>}
+      </> : <>
+        <span>ยังไม่เปิด — ค้นด้วยคำ (Full-Text ภาษาไทย) อย่างเดียว</span>
+        <small>{status.error ?? "เลือก Embedding Provider (AI Local เช่น bge-m3 หรือ OpenAI) ได้ที่ Setting Center → AI Configuration → คลังความรู้"}</small>
+      </>}
+    </div>
+  </div>;
+}
+
 function StatusPanel() {
   const [status, setStatus] = useState<IndexStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -434,6 +455,7 @@ function StatusPanel() {
         <button type="button" className="btn" onClick={() => void reindex()} disabled={busy}><span className="material-symbols-outlined" aria-hidden="true">restart_alt</span>สร้างดัชนีใหม่ทั้งหมด</button>
       </div>
     </div>
+    {status.embedding && <EmbeddingStatusBox status={status.embedding} />}
     {status.crm && <div className="kn-crm-status" role="note">
       <span className="material-symbols-outlined" aria-hidden="true">support_agent</span>
       <div>

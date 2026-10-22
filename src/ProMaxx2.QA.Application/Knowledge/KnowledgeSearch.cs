@@ -14,6 +14,12 @@ public interface IKnowledgeTextSearch
     Task<IReadOnlyList<KnowledgeChunkHit>> SearchAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct);
 }
 
+/// <summary>ค้นตามความหมายด้วย embedding (Phase 5) — ไม่ได้ตั้งค่า/ใช้งานไม่ได้ = คืนรายการว่าง (ค้นด้วยคำอย่างเดียว); Rank = similarity × 1000</summary>
+public interface IKnowledgeVectorSearch
+{
+    Task<IReadOnlyList<KnowledgeChunkHit>> SearchAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct);
+}
+
 public static class KnowledgeQuery
 {
     public const int MinLength = 2;

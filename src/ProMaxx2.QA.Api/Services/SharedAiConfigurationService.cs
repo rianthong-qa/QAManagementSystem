@@ -11,7 +11,7 @@ namespace ProMaxx2.QA.Api.Services;
 public sealed record AiRuntimeConfiguration(string Provider, string ApiKey, string Model, string? BaseUrl);
 public sealed class AiNotConfiguredException(string message) : InvalidOperationException(message);
 
-public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtectionProvider protectionProvider, IConfiguration fallbackConfiguration, IHttpClientFactory clients)
+public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtectionProvider protectionProvider, IConfiguration fallbackConfiguration, IHttpClientFactory clients) : IKnowledgeEmbeddingSettings
 {
     private static readonly string[] Providers = ["OpenAI", "Google", "Anthropic", "OpenRouter", "Local", "opencode"];
     private const string OpenRouterBaseUrl = "https://openrouter.ai/api/v1";
@@ -45,6 +45,25 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         if (string.IsNullOrWhiteSpace(fallbackKey)) { IsConfigured = false; throw new AiNotConfiguredException("AI ยังไม่พร้อมใช้งาน กรุณาตั้งค่าใน Setting Center"); }
         currentModel = fallbackConfiguration["OpenAI:Model"] ?? "gpt-5-mini"; IsConfigured = true;
         return new("OpenAI", fallbackKey, currentModel, "https://api.openai.com/v1");
+    }
+
+    /// <summary>
+    /// ตั้งค่า Embedding ของคลังความรู้ (Phase 5) — Runtime = null เมื่อไม่ใช้ embedding หรืออ่านคีย์ไม่ได้ (Error บอกเหตุผล)
+    /// ไม่ขึ้นกับสวิตช์เปิด/ปิด AI หลัก (embedding ใช้ค้นหาได้แม้ปิด AI Chat)
+    /// </summary>
+    public async Task<KnowledgeEmbeddingSettings> GetEmbeddingSettingsAsync(CancellationToken ct)
+    {
+        var s = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(ct);
+        if (s is null || s.EmbeddingProvider == "None" || string.IsNullOrWhiteSpace(s.EmbeddingModel)) return new(null, s?.AllowCrmDataToExternalAi ?? false, null);
+        var key = string.Empty;
+        if (!string.IsNullOrWhiteSpace(s.EncryptedEmbeddingApiKey))
+        {
+            try { key = embeddingProtector.Unprotect(s.EncryptedEmbeddingApiKey); }
+            catch { return new(null, s.AllowCrmDataToExternalAi, "อ่าน API key ของ Embedding ที่เข้ารหัสไว้ไม่ได้ — บันทึก API key ใหม่ใน Setting Center"); }
+        }
+        var baseUrl = s.EmbeddingProvider == "OpenAI" ? "https://api.openai.com/v1" : s.EmbeddingBaseUrl;
+        if (string.IsNullOrWhiteSpace(baseUrl)) return new(null, s.AllowCrmDataToExternalAi, "ยังไม่ได้ระบุ Base URL ของ Embedding");
+        return new(new EmbeddingRuntime(s.EmbeddingProvider, s.EmbeddingModel, baseUrl.TrimEnd('/'), key), s.AllowCrmDataToExternalAi, null);
     }
 
     public async Task<string> SendStructuredAsync(object openAiPayload, CancellationToken ct)

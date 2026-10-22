@@ -54,8 +54,21 @@ public sealed class SqlKnowledgeTextSearch(QaDbContext db) : IKnowledgeTextSearc
 public sealed record KnowledgeSearchResultDto(Guid KnowledgeDocumentId, string SourceType, string SourceKey, string Title, Guid? ProjectId, string? ProjectName,
     string? SourceUrl, string Snippet, int Rank, int MatchedChunks, DateTime? IndexedAt);
 
-public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch textSearch, ProjectAccessService projectAccess, IAuthorizationService authorization)
+/// <summary>
+/// ค้นคลังความรู้: Full-Text ภาษาไทย + (ถ้าตั้งค่า Embedding) ค้นตามความหมาย รวมผลด้วย Reciprocal Rank Fusion (Phase 5)
+/// ไม่มี vectorSearch / ไม่ได้ตั้งค่า / embedding ล่ม = ค้นด้วยคำอย่างเดียวเหมือนเดิม
+/// </summary>
+public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch textSearch, ProjectAccessService projectAccess, IAuthorizationService authorization, IKnowledgeVectorSearch? vectorSearch = null)
 {
+    /// <summary>ผลค้นด้วยคำ + ตามความหมาย (เรียงตามลำดับ — DbContext เดียวกัน ห้ามรันขนาน)</summary>
+    private async Task<IReadOnlyList<KnowledgeChunkHit>> HybridHitsAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct)
+    {
+        var textHits = await textSearch.SearchAsync(query, scope, take, ct);
+        if (vectorSearch is null) return textHits;
+        var vectorHits = await vectorSearch.SearchAsync(query, scope, take, ct);
+        return HybridRanker.Fuse(textHits, vectorHits, take);
+    }
+
     public const int MaxResults = 30;
 
     /// <summary>ขอบเขตสิทธิ์ของผู้ใช้ — Project ที่เป็นสมาชิก (ไม่ยกเว้น SYS_ADMIN ตามกติกา ProjectAccessFilter) และ CRM ตาม policy CrmView</summary>
@@ -70,7 +83,7 @@ public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch 
     public async Task<IReadOnlyList<KnowledgeSearchResultDto>> SearchAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct, bool forAi = false)
     {
         take = Math.Clamp(take, 1, MaxResults);
-        var hits = await textSearch.SearchAsync(query, scope, take * 4, ct);
+        var hits = await HybridHitsAsync(query, scope, take * 4, ct);
         if (hits.Count == 0) return [];
         var chunkIds = hits.Select(x => x.KnowledgeChunkId).ToList();
         var chunks = await db.KnowledgeChunks.AsNoTracking().Where(x => chunkIds.Contains(x.KnowledgeChunkId))
@@ -105,7 +118,7 @@ public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch 
     /// </summary>
     public async Task<IReadOnlyList<KnowledgeContextChunk>> RetrieveContextAsync(string query, KnowledgeSearchScope scope, CancellationToken ct)
     {
-        var hits = await textSearch.SearchAsync(query, scope, 40, ct);
+        var hits = await HybridHitsAsync(query, scope, 40, ct);
         if (hits.Count == 0) return [];
         var chunkIds = hits.Select(x => x.KnowledgeChunkId).ToList();
         var chunks = await db.KnowledgeChunks.AsNoTracking().Where(x => chunkIds.Contains(x.KnowledgeChunkId))

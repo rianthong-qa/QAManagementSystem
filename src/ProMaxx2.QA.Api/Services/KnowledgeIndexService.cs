@@ -353,7 +353,7 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
 
 public sealed record KnowledgeSourceStatusDto(string SourceType, int Indexed, int Pending, int Failed, int Excluded, int Chunks, DateTime? LastIndexedAt);
 public sealed record KnowledgeFailureDto(Guid KnowledgeDocumentId, string SourceType, string Title, string? Error, DateTime? AttemptedAt);
-public sealed record KnowledgeStatusDto(bool IndexerEnabled, IReadOnlyList<KnowledgeSourceStatusDto> Sources, IReadOnlyList<KnowledgeFailureDto> Failures, KnowledgeCrmStatusDto? Crm = null);
+public sealed record KnowledgeStatusDto(bool IndexerEnabled, IReadOnlyList<KnowledgeSourceStatusDto> Sources, IReadOnlyList<KnowledgeFailureDto> Failures, KnowledgeCrmStatusDto? Crm = null, KnowledgeEmbeddingStatusDto? Embedding = null);
 
 /// <summary>ปลุก KnowledgeIndexWorker ทันทีเมื่อมีการแก้บทความ/สั่ง reindex แทนการรอรอบถัดไป</summary>
 public sealed class KnowledgeIndexTrigger
@@ -393,6 +393,13 @@ public sealed class KnowledgeIndexWorker(IServiceScopeFactory scopeFactory, Know
                     do { processed = await indexer.IndexPendingAsync(batch, stoppingToken); total += processed; }
                     while (processed > 0 && DateTime.UtcNow - started < TickBudget);
                     if (total > 0) logger.LogInformation("KnowledgeIndexWorker indexed {Count} documents", total);
+                    // Phase 5: embedding ของช่วงข้อความที่ยังไม่มี (ใช้เวลาที่เหลือของรอบ) — provider ล่ม = หยุดรอบนี้ ลองใหม่รอบหน้า
+                    var embedder = scope.ServiceProvider.GetRequiredService<KnowledgeEmbeddingService>();
+                    var embedded = 0;
+                    EmbedResult result;
+                    do { result = await embedder.EmbedPendingAsync(256, stoppingToken); embedded += result.Count; }
+                    while (result.Count > 0 && !result.Failed && DateTime.UtcNow - started < TickBudget);
+                    if (embedded > 0) logger.LogInformation("KnowledgeIndexWorker embedded {Count} chunks", embedded);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
                 catch (Exception ex) { logger.LogError(ex, "KnowledgeIndexWorker tick failed — will retry in {Interval}.", interval); }

@@ -105,6 +105,12 @@ builder.Services.AddScoped<SharedAiConfigurationService>();
 builder.Services.AddScoped<KnowledgeIndexService>();
 builder.Services.AddScoped<IKnowledgeTextSearch, SqlKnowledgeTextSearch>();
 builder.Services.AddScoped<KnowledgeSearchService>();
+// Phase 5: ค้นตามความหมาย (embedding เก็บใน KnowledgeChunks + cosine ในแอป) — ไม่ได้ตั้งค่า Embedding = ค้นด้วยคำอย่างเดียว
+builder.Services.AddScoped<IKnowledgeEmbeddingSettings>(sp => sp.GetRequiredService<SharedAiConfigurationService>());
+builder.Services.AddScoped<IEmbeddingClient, OpenAiCompatibleEmbeddingClient>();
+builder.Services.AddSingleton<KnowledgeEmbeddingState>();
+builder.Services.AddScoped<KnowledgeEmbeddingService>();
+builder.Services.AddScoped<IKnowledgeVectorSearch>(sp => sp.GetRequiredService<KnowledgeEmbeddingService>());
 builder.Services.AddScoped<KnowledgeFileService>(); // Phase 3: เอกสาร PDF/DOCX/MD/TXT
 builder.Services.AddScoped<ICrmKnowledgeSource, CrmApiKnowledgeSource>(); // Phase 4: ดึงรายละเอียด/คำตอบ CRM ด้วยบัญชีกลาง
 builder.Services.AddScoped<CrmKnowledgeFetcher>(); // mask แล้วเก็บ CrmTicketContents/Answers — เรียกจาก CrmMirrorWorker ทุกรอบ
