@@ -22,7 +22,7 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
     public const string AuditEntityType = "KnowledgeMcp";
 
     public const string ServerInstructions =
-        "ProMaxx2 QA Hub knowledge base (Thai). Use search_knowledge first to find Defects and knowledge articles, then get_defect / get_article for details. " +
+        "ProMaxx2 QA Hub knowledge base (Thai). Use search_knowledge first to find Defects, knowledge articles and documents (module specs, requirements, manuals), then get_defect / get_article / get_document for details. " +
         "Use find_similar_defects before reporting a new bug to check for duplicates. Always cite Defect codes and include the web links returned. " +
         "Content is masked: tokens like [EMAIL], [PHONE], [CUSTOMER] are redacted values — never guess them.";
 
@@ -40,11 +40,11 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
     }
 
     [McpServerTool(Name = "search_knowledge", Title = "ค้นคลังความรู้ QA", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Search the QA knowledge base (Defects and knowledge articles, Thai full-text). Returns titles, snippets, status and web links. Query in Thai or English, e.g. symptom, error message, menu name or Defect code.")]
+    [Description("Search the QA knowledge base (Defects, knowledge articles and uploaded documents such as module specs and requirements; Thai full-text). Returns titles, snippets, status and web links. Query in Thai or English, e.g. symptom, error message, menu name or Defect code.")]
     public async Task<string> SearchKnowledge(
         [Description("Search text, e.g. 'พิมพ์ใบกำกับภาษีไม่ได้' or a Defect code")] string query,
         [Description("Optional project code from list_projects to limit results")] string? projectCode = null,
-        [Description("Optional source filter: 'defect' or 'article'")] string? source = null,
+        [Description("Optional source filter: 'defect', 'article' or 'document'")] string? source = null,
         [Description("Max results (1-10, default 8)")] int limit = 8,
         CancellationToken cancellationToken = default)
     {
@@ -54,7 +54,8 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
             null or "" => null,
             "defect" or "defects" => new[] { "Defect" },
             "article" or "articles" => new[] { "Article" },
-            _ => throw new McpException("source ต้องเป็น 'defect' หรือ 'article'"),
+            "document" or "documents" or "file" or "files" => new[] { "File" },
+            _ => throw new McpException("source ต้องเป็น 'defect', 'article' หรือ 'document'"),
         };
         var (userId, scope) = await ScopeAsync(projectCode, sources, cancellationToken);
         var results = await search.SearchAsync(q, scope, Math.Clamp(limit, 1, 10), cancellationToken, forAi: true);
@@ -72,7 +73,7 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
             sb.Append("   ").Append(string.Join(" · ", meta)).Append('\n');
             sb.Append("   ").Append(SensitiveDataMasker.Mask(r.Snippet).ReplaceLineEndings(" ")).Append('\n');
             if (WebUrl(r.SourceUrl) is { } url) sb.Append("   ลิงก์: ").Append(url).Append('\n');
-            sb.Append("   รายละเอียด: ").Append(r.SourceType == "Defect" ? $"get_defect(\"{d?.Code ?? r.SourceKey}\")" : $"get_article(\"{r.SourceKey}\")").Append('\n');
+            sb.Append("   รายละเอียด: ").Append(r.SourceType switch { "Defect" => $"get_defect(\"{d?.Code ?? r.SourceKey}\")", "File" => $"get_document(\"{r.SourceKey}\")", _ => $"get_article(\"{r.SourceKey}\")" }).Append('\n');
         }
         return Limit(sb.ToString());
     }
@@ -118,6 +119,30 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
         var projectName = article.ProjectId.HasValue ? await db.Projects.AsNoTracking().Where(x => x.ProjectId == article.ProjectId).Select(x => x.ProjectName).FirstOrDefaultAsync(cancellationToken) : null;
         var text = KnowledgeSourceText.ForArticle(new(article.Title, article.Tags, projectName, article.BodyMarkdown));
         return Limit($"{SensitiveDataMasker.Mask(text.Header)}\n{SensitiveDataMasker.Mask(text.Body)}\n\nลิงก์: {WebUrl(KnowledgeIndexService.ArticleUrl(id))}");
+    }
+
+    [McpServerTool(Name = "get_document", Title = "อ่านเอกสารในคลังความรู้", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Get the extracted text of an uploaded document (PDF/DOCX/Markdown — e.g. module specification, requirement, manual) by its id from search_knowledge. Long documents are split into parts; use 'part' to read further.")]
+    public async Task<string> GetDocument(
+        [Description("Document id (GUID) from search_knowledge")] string documentId,
+        [Description("Part number for long documents (1 = first ~7,600 characters)")] int part = 1,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(documentId?.Trim(), out var id)) throw new McpException("document_id ต้องเป็น GUID จาก search_knowledge");
+        var (userId, scope) = await ScopeAsync(null, null, cancellationToken);
+        var file = await db.KnowledgeFiles.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.KnowledgeFileId == id && !x.IsDeleted && x.ExtractedText != null && (x.ProjectId == null || scope.AllowedProjectIds.Contains(x.ProjectId.Value)), cancellationToken);
+        await AuditAsync(userId, "get_document", $"{id} part {part} → {(file is null ? "ไม่พบ" : Cut(file.FileName, 60))}", cancellationToken);
+        if (file is null) throw new McpException("ไม่พบเอกสาร หรือคุณไม่มีสิทธิ์ใน Project ของเอกสารนี้");
+        if (await db.KnowledgeDocuments.AsNoTracking().AnyAsync(x => x.SourceType == "File" && x.SourceKey == id.ToString() && x.ExcludeFromAi, cancellationToken))
+            throw new McpException("เอกสารนี้ถูกตั้งค่าไม่ให้ส่งข้อมูลให้ AI");
+        var text = SensitiveDataMasker.Mask(file.ExtractedText!);
+        var size = MaxOutputChars - 400;
+        var parts = Math.Max(1, (int)Math.Ceiling(text.Length / (double)size));
+        if (part < 1 || part > parts) throw new McpException($"เอกสารนี้มี {parts} ส่วน — part ต้องอยู่ระหว่าง 1–{parts}");
+        var slice = text.Substring((part - 1) * size, Math.Min(size, text.Length - (part - 1) * size));
+        var next = part < parts ? $"อ่านต่อ: get_document(\"{id}\", part: {part + 1}) · " : "";
+        return $"[เอกสาร] {file.FileName} — ส่วนที่ {part}/{parts}\n{slice}\n\n{next}ลิงก์: {WebUrl(KnowledgeIndexService.FileUrl(id))}";
     }
 
     [McpServerTool(Name = "find_similar_defects", Title = "หา Defect ที่คล้ายกัน", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]

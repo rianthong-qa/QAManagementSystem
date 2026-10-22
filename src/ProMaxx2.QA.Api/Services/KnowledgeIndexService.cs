@@ -16,12 +16,12 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
     /// <summary>เปลี่ยนเมื่อรูปแบบข้อความ/การแบ่ง chunk เปลี่ยน — hash จะต่างจากเดิมและทุกเอกสารถูกสร้างใหม่</summary>
     public const string IndexVersion = "k1";
 
-    /// <summary>แหล่งที่ index ได้ใน Phase นี้ — File (Phase 3) / CrmTicket (Phase 4) ยังไม่ถูกดึงมาประมวลผล</summary>
-    public static readonly string[] SupportedSourceTypes = ["Defect", "Article"];
+    /// <summary>แหล่งที่ index ได้ — CrmTicket (Phase 4) ยังไม่ถูกดึงมาประมวลผล</summary>
+    public static readonly string[] SupportedSourceTypes = ["Defect", "Article", "File"];
 
     public async Task<int> SyncSourcesAsync(CancellationToken ct)
     {
-        var changed = await SyncDefectsAsync(ct) + await SyncArticlesAsync(ct);
+        var changed = await SyncDefectsAsync(ct) + await SyncArticlesAsync(ct) + await SyncFilesAsync(ct);
         if (changed > 0) await db.SaveChangesAsync(ct);
         return changed;
     }
@@ -74,6 +74,27 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         return changed;
     }
 
+    private async Task<int> SyncFilesAsync(CancellationToken ct)
+    {
+        var docs = await db.KnowledgeDocuments.Where(x => x.SourceType == "File").ToDictionaryAsync(x => x.SourceKey, ct);
+        var files = await db.KnowledgeFiles.AsNoTracking()
+            .Select(x => new { x.KnowledgeFileId, x.ProjectId, x.FileName, x.IsDeleted, HasText = x.ExtractedText != null, Changed = x.UpdatedAt ?? x.UploadedAt })
+            .ToListAsync(ct);
+        var changed = 0;
+        foreach (var f in files)
+        {
+            var key = f.KnowledgeFileId.ToString();
+            var scope = f.ProjectId.HasValue ? "Project" : "Global";
+            changed += Reconcile(docs.GetValueOrDefault(key), !f.IsDeleted && f.HasText, f.Changed,
+                () => new KnowledgeDocument("File", key, scope, f.ProjectId, f.FileName, FileUrl(f.KnowledgeFileId)),
+                doc => doc.ProjectId != f.ProjectId || doc.Scope != scope || doc.Title != Cut(f.FileName, 300),
+                doc => doc.UpdateSource(scope, f.ProjectId, f.FileName, FileUrl(f.KnowledgeFileId)));
+        }
+        var existing = files.Select(x => x.KnowledgeFileId.ToString()).ToHashSet();
+        foreach (var orphan in docs.Values.Where(x => x.State != "Excluded" && !existing.Contains(x.SourceKey))) { orphan.Exclude(); changed++; }
+        return changed;
+    }
+
     /// <summary>คืน 1 เมื่อเอกสารถูกสร้าง/เปลี่ยนสถานะ</summary>
     private int Reconcile(KnowledgeDocument? doc, bool active, DateTime sourceChangedAt, Func<KnowledgeDocument> create, Func<KnowledgeDocument, bool> sourceInfoChanged, Action<KnowledgeDocument> updateSource)
     {
@@ -107,6 +128,7 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         var texts = new Dictionary<Guid, KnowledgeText?>();
         foreach (var (id, text) in await BuildDefectTextsAsync(pending.Where(x => x.SourceType == "Defect").ToList(), ct)) texts[id] = text;
         foreach (var (id, text) in await BuildArticleTextsAsync(pending.Where(x => x.SourceType == "Article").ToList(), ct)) texts[id] = text;
+        foreach (var (id, text) in await BuildFileTextsAsync(pending.Where(x => x.SourceType == "File").ToList(), ct)) texts[id] = text;
 
         var pendingIds = pending.Select(x => x.KnowledgeDocumentId).ToList();
         var oldChunks = (await db.KnowledgeChunks.Where(x => pendingIds.Contains(x.KnowledgeDocumentId)).ToListAsync(ct)).ToLookup(x => x.KnowledgeDocumentId);
@@ -220,6 +242,25 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         return result;
     }
 
+    private async Task<Dictionary<Guid, KnowledgeText?>> BuildFileTextsAsync(List<KnowledgeDocument> docs, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, KnowledgeText?>();
+        if (docs.Count == 0) return result;
+        var idByDoc = docs.ToDictionary(x => x.KnowledgeDocumentId, x => Guid.TryParse(x.SourceKey, out var id) ? id : Guid.Empty);
+        var ids = idByDoc.Values.Distinct().ToList();
+        var files = await db.KnowledgeFiles.AsNoTracking().Where(x => ids.Contains(x.KnowledgeFileId) && !x.IsDeleted && x.ExtractedText != null)
+            .Select(x => new { x.KnowledgeFileId, x.FileName, x.Description, x.ProjectId, x.ExtractedText }).ToDictionaryAsync(x => x.KnowledgeFileId, ct);
+        var projectIds = files.Values.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId!.Value).Distinct().ToList();
+        var projects = await db.Projects.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId)).ToDictionaryAsync(x => x.ProjectId, x => $"{x.ProjectCode} {x.ProjectName}", ct);
+        foreach (var (docId, fileId) in idByDoc)
+        {
+            result[docId] = files.TryGetValue(fileId, out var f)
+                ? KnowledgeSourceText.ForFile(new(f.FileName, f.Description, f.ProjectId.HasValue ? projects.GetValueOrDefault(f.ProjectId.Value) : null, f.ExtractedText!))
+                : null;
+        }
+        return result;
+    }
+
     public async Task<KnowledgeStatusDto> GetStatusAsync(bool indexerEnabled, CancellationToken ct)
     {
         var groups = await db.KnowledgeDocuments.AsNoTracking().GroupBy(x => new { x.SourceType, x.State })
@@ -238,6 +279,18 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
 
     public static string DefectUrl(Guid defectId) => $"#/defects?defectId={defectId}";
     public static string ArticleUrl(Guid articleId) => $"#/knowledge?articleId={articleId}";
+    public static string FileUrl(Guid fileId) => $"#/knowledge?fileId={fileId}";
+
+    /// <summary>ล้างคำขอ OAuth ที่หมดอายุแล้วเกิน 1 วัน (เก็บไว้ช่วงสั้น ๆ เพื่อตรวจสอบย้อนหลัง)</summary>
+    public async Task<int> PurgeExpiredOAuthRequestsAsync(CancellationToken ct)
+    {
+        var cutoff = DateTime.UtcNow.AddDays(-1);
+        var expired = await db.OAuthAuthorizations.Where(x => x.ExpiresAt < cutoff).Take(1000).ToListAsync(ct);
+        if (expired.Count == 0) return 0;
+        db.OAuthAuthorizations.RemoveRange(expired);
+        await db.SaveChangesAsync(ct);
+        return expired.Count;
+    }
 
     private static string Cut(string value, int max) { var text = value.Trim(); return text.Length > max ? text[..max] : text; }
 }
@@ -277,6 +330,7 @@ public sealed class KnowledgeIndexWorker(IServiceScopeFactory scopeFactory, Know
                     using var scope = scopeFactory.CreateScope();
                     var indexer = scope.ServiceProvider.GetRequiredService<KnowledgeIndexService>();
                     await indexer.SyncSourcesAsync(stoppingToken);
+                    await indexer.PurgeExpiredOAuthRequestsAsync(stoppingToken);
                     var batch = Math.Clamp(configuration.GetValue("Knowledge:IndexBatchSize", 200), 10, 1000);
                     var started = DateTime.UtcNow;
                     int processed, total = 0;

@@ -186,8 +186,8 @@ public sealed class KnowledgeFoundationTests
     [Fact]
     public void File_AllowsOnlySupportedTypes()
     {
-        Assert.Throws<ArgumentException>(() => new KnowledgeFile("virus.exe", "application/octet-stream", 1, "p", null, null, null));
-        Assert.Equal("คู่มือ.DOCX", new KnowledgeFile("คู่มือ.DOCX", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 1, "p", null, null, null).FileName);
+        Assert.Throws<ArgumentException>(() => new KnowledgeFile("virus.exe", "application/octet-stream", 1, "p", "h", null, null, null));
+        Assert.Equal("คู่มือ.DOCX", new KnowledgeFile("คู่มือ.DOCX", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 1, "p", "h", null, null, null).FileName);
     }
 
     [Fact]

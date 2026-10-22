@@ -8,6 +8,8 @@ import { formatThaiDateTime } from "../dateTime";
 import type { ProjectItem } from "../shared/types";
 import { KnowledgeChat, type Citation } from "./KnowledgeChat";
 import { KnowledgeMcp } from "./KnowledgeMcp";
+import { KnowledgeDocuments } from "./KnowledgeDocuments";
+import { downloadKnowledgeFile } from "./knowledgeFiles";
 import "./Knowledge.css";
 
 // คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md): ถามผู้ช่วย AI (Phase 2), ค้นหา Defect + บทความ, จัดการบทความ, สถานะการ index (SYS_ADMIN)
@@ -17,13 +19,13 @@ type SearchResult = { knowledgeDocumentId: string; sourceType: SourceType; sourc
 type Article = { knowledgeArticleId: string; title: string; bodyMarkdown?: string | null; excerpt: string; projectId?: string | null; projectName?: string | null; tags?: string | null; status: "Draft" | "Published"; createdAt: string; createdByName?: string | null; updatedAt?: string | null; updatedByName?: string | null; indexState?: string | null; indexedAt?: string | null };
 type SourceStatus = { sourceType: SourceType; indexed: number; pending: number; failed: number; excluded: number; chunks: number; lastIndexedAt?: string | null };
 type IndexStatus = { indexerEnabled: boolean; sources: SourceStatus[]; failures: { knowledgeDocumentId: string; sourceType: SourceType; title: string; error?: string | null; attemptedAt?: string | null }[] };
-type Tab = "chat" | "search" | "articles" | "claude" | "status";
+type Tab = "chat" | "search" | "articles" | "documents" | "claude" | "status";
 type ArticleDraft = { id?: string; title: string; bodyMarkdown: string; projectId: string; tags: string; status: "Draft" | "Published" };
 
 const sourceLabel: Record<SourceType, string> = { Defect: "Defect", CrmTicket: "CRM Ticket", Article: "บทความ", File: "เอกสาร" };
 const sourceTone: Record<SourceType, string> = { Defect: "red", CrmTicket: "purple", Article: "blue", File: "green" };
 const sourceIcon: Record<SourceType, string> = { Defect: "bug_report", CrmTicket: "support_agent", Article: "article", File: "description" };
-const searchSources: { value: string; label: string }[] = [{ value: "", label: "ทั้งหมด" }, { value: "Defect", label: "Defect" }, { value: "Article", label: "บทความ" }];
+const searchSources: { value: string; label: string }[] = [{ value: "", label: "ทั้งหมด" }, { value: "Defect", label: "Defect" }, { value: "Article", label: "บทความ" }, { value: "File", label: "เอกสาร" }];
 const indexStateInfo: Record<string, { label: string; tone: string }> = { Indexed: { label: "ค้นหาได้แล้ว", tone: "green" }, Stale: { label: "รอสร้างดัชนี", tone: "yellow" }, Failed: { label: "สร้างดัชนีไม่สำเร็จ", tone: "red" }, Excluded: { label: "ไม่อยู่ในคลัง", tone: "gray" } };
 const emptyDraft: ArticleDraft = { title: "", bodyMarkdown: "", projectId: "", tags: "", status: "Published" };
 const errorText = (error: unknown, fallback: string) => error instanceof Error && error.message ? error.message : fallback;
@@ -33,10 +35,13 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
     { id: "chat", label: "ถามผู้ช่วย AI", icon: "forum" },
     { id: "search", label: "ค้นหาความรู้", icon: "search" },
     { id: "articles", label: "บทความ", icon: "article" },
+    { id: "documents", label: "เอกสาร", icon: "folder_open" },
     ...(canConnectClaude || isSysAdmin ? [{ id: "claude" as Tab, label: "เชื่อมต่อ Claude", icon: "hub" }] : []),
     ...(isSysAdmin ? [{ id: "status" as Tab, label: "สถานะคลัง", icon: "monitoring" }] : []),
   ], [isSysAdmin, canConnectClaude]);
-  const [tab, setTab] = useState<Tab>(() => new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("articleId") ? "articles" : "chat");
+  const hashParams = useMemo(() => new URLSearchParams(window.location.hash.split("?")[1] ?? ""), []);
+  const highlightFileId = hashParams.get("fileId");
+  const [tab, setTab] = useState<Tab>(() => hashParams.get("articleId") ? "articles" : highlightFileId ? "documents" : "chat");
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [viewing, setViewing] = useState<Article | null>(null);
@@ -74,11 +79,17 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
   const openResult = (result: SearchResult) => {
     if (result.sourceType === "Defect") onOpenDefect(result.sourceKey);
     else if (result.sourceType === "Article") void openArticle(result.sourceKey);
+    else if (result.sourceType === "File") void openFile(result.sourceKey, result.title);
+  };
+
+  const openFile = async (fileId: string, fileName: string) => {
+    try { await downloadKnowledgeFile(fileId, fileName); } catch (e) { notify(errorText(e, "เปิดเอกสารไม่สำเร็จ"), "error"); }
   };
 
   const openCitation = (citation: Citation) => {
     if (citation.sourceType === "Defect") onOpenDefect(citation.sourceKey);
     else if (citation.sourceType === "Article") void openArticle(citation.sourceKey);
+    else if (citation.sourceType === "File") void openFile(citation.sourceKey, citation.title);
   };
 
   const saveDraft = async (value: ArticleDraft) => {
@@ -118,6 +129,7 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, onOpenDef
       {tab === "chat" && <KnowledgeChat projects={projects} onOpenCitation={openCitation} />}
       {tab === "search" && <SearchPanel projects={projects} onOpen={openResult} />}
       {tab === "articles" && <ArticlesPanel projects={projects} canEdit={canEdit} version={articlesVersion} onView={(a) => void openArticle(a.knowledgeArticleId)} onCreate={() => setDraft({ ...emptyDraft })} onEdit={(a) => void editArticle(a)} onDelete={(a) => void deleteArticle(a)} />}
+      {tab === "documents" && <KnowledgeDocuments projects={projects} canEdit={canEdit} isSysAdmin={isSysAdmin} highlightId={highlightFileId} />}
       {tab === "claude" && <KnowledgeMcp isSysAdmin={isSysAdmin} />}
       {tab === "status" && isSysAdmin && <StatusPanel />}
     </section>
@@ -203,7 +215,7 @@ function SearchPanel({ projects, onOpen }: { projects: ProjectItem[]; onOpen: (r
     </div>
     {!submitted ? <div className="kn-empty">
       <span className="material-symbols-outlined" aria-hidden="true">travel_explore</span>
-      <b>ค้นหาจาก Defect และบทความความรู้ในทุก Project ที่คุณมีสิทธิ์</b>
+      <b>ค้นหาจาก Defect บทความ และเอกสารในทุก Project ที่คุณมีสิทธิ์</b>
       <span>พิมพ์อาการ ข้อความ error ชื่อเมนู หรือรหัส Defect — ระบบตัดคำภาษาไทยให้อัตโนมัติ</span>
     </div> : error ? <div className="kn-empty kn-error" role="alert">
       <span className="material-symbols-outlined" aria-hidden="true">error</span><b>{error}</b>
@@ -380,7 +392,7 @@ function StatusPanel() {
     <div className="table-wrap"><table className="table-cards kn-table">
       <thead><tr><th>แหล่งข้อมูล</th><th>ค้นหาได้</th><th>รอ</th><th>ไม่สำเร็จ</th><th>ไม่อยู่ในคลัง</th><th>ช่วงข้อความ</th><th>อัปเดตล่าสุด</th></tr></thead>
       <tbody>{status.sources.map((s) => <tr key={s.sourceType}>
-        <td><span className="kn-source"><span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[s.sourceType]}</span>{sourceLabel[s.sourceType]}{(s.sourceType === "File" || s.sourceType === "CrmTicket") && <small>เปิดใช้ใน Phase ถัดไป</small>}</span></td>
+        <td><span className="kn-source"><span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[s.sourceType]}</span>{sourceLabel[s.sourceType]}{s.sourceType === "CrmTicket" && <small>เปิดใช้ใน Phase ถัดไป</small>}</span></td>
         <td>{s.indexed.toLocaleString("th-TH")}</td><td>{s.pending.toLocaleString("th-TH")}</td><td>{s.failed.toLocaleString("th-TH")}</td><td>{s.excluded.toLocaleString("th-TH")}</td><td>{s.chunks.toLocaleString("th-TH")}</td>
         <td>{s.lastIndexedAt ? formatThaiDateTime(s.lastIndexedAt) : "—"}</td>
       </tr>)}</tbody>

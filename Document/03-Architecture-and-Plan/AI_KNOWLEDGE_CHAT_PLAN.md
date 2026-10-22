@@ -354,4 +354,27 @@ Technical debt / ข้อสังเกต:
 - [ ] **ทดสอบกับ claude.ai Team จริง**: Owner เพิ่ม custom connector (OAuth → Register automatically) → สมาชิกกด Connect → Login → อนุญาต → ถามเรื่อง Defect
 - [ ] Claude Code แบบ Login (`/mcp` → Authenticate) — Claude Code มี client metadata แบบ CIMD (`https://claude.ai/oauth/claude-code-client-metadata`) แต่เราไม่ประกาศ CIMD จึงคาดว่าจะใช้ DCR + loopback (ยังไม่ยืนยัน)
 - [ ] ตรวจว่า Cloudflare (WAF/Bot Fight) ไม่บล็อกคำขอจาก `160.79.104.0/21` ไปที่ `/.well-known/*`, `/oauth/*`, `/mcp`
-- [ ] ลบแถว `OAuthAuthorizations` ที่หมดอายุเป็นระยะ (ตอนนี้สะสม — เล็กมาก แต่ควรมีงานล้าง) และ client ที่ไม่เคยถูกใช้
+- [x] ลบแถว `OAuthAuthorizations` ที่หมดอายุเกิน 1 วัน — `KnowledgeIndexWorker` ทุกรอบ (2026-10-22); client ที่ไม่เคยถูกใช้ยังไม่ล้าง
+
+### 2026-10-22 — Phase 3 (คลังเอกสาร PDF / DOCX / MD / TXT + นำเข้าเอกสารระบบ)
+
+ทำแล้ว:
+
+- `KnowledgeFile` เพิ่ม `ContentHash` (SHA-256 ของไฟล์), `Origin` (Upload/Import), `ImportPath`, `UpdatedAt` — migration `AddKnowledgeFileContent`
+- `DocumentTextExtractor` — ตรวจชนิดจากเนื้อหา (magic bytes: `%PDF-`, zip `PK\x03\x04`, text ไม่มี NUL); **PDF = PdfPig 0.1.16** (Apache-2.0, `ContentOrderTextExtractor`; มีรหัสผ่าน/สแกนเป็นภาพ = แจ้งเหตุผล, ยังไม่รองรับ OCR) + **ซ่อมข้อความไทยจาก PDF** (สระอำที่ถูกสกัดเป็น "พยัญชนะ ␠ า" → "ำ", อักขระ PUA U+F700–F71A → อักษรไทยมาตรฐาน); **DOCX** อ่าน `word/document.xml` เอง (ย่อหน้า/แท็บ/ขึ้นบรรทัด/ตาราง, ปิด DTD) ไม่เพิ่ม dependency; **MD/TXT** UTF-8 (BOM) / UTF-16 LE / TIS-620 (Windows-874)
+- `KnowledgeFileService` — อัปโหลดครั้งละ ≤ 10 ไฟล์, ไฟล์ละ ≤ 20 MB, รวม ≤ 50 MB (Cloudflare แผนฟรี ≤ 100 MB/คำขอ); กันไฟล์ซ้ำใน Project เดียวกันด้วย hash; ไฟล์บนดิสก์ `App_Data/KnowledgeFiles/{id}/{สุ่ม}.ext` (ชื่อแสดงคงตัวอักษรไทยรวมสระ/วรรณยุกต์, ตัด path); สกัดข้อความไม่ได้ก็ยังเก็บไฟล์และแจ้งเหตุผล (ไม่เข้าคลัง); ลบ = soft delete + ลบโฟลเดอร์ไฟล์; ดาวน์โหลดตรวจสิทธิ์ Project; Audit Log `KnowledgeFile`
+- **นำเข้าเอกสารระบบ** (SYS_ADMIN, `POST /knowledge/files/import-system`): อ่าน `.md`/`.txt` จากโฟลเดอร์ใน config `Knowledge:SystemDocumentFolders` (ค่าเริ่มต้น `Document/ProMaxx2_MD` สัมพัทธ์กับ ContentRoot ของ API) เป็นความรู้กลาง — ผู้ใช้ส่ง path เองไม่ได้; ซ้ำได้: ไม่เปลี่ยน = ข้าม, เนื้อหาเปลี่ยน = อัปเดตตาม `ImportPath`
+- index: แหล่ง `File` (`[เอกสาร] ชื่อไฟล์` + Project + รายละเอียด + ข้อความ), `#/knowledge?fileId=`; ค้นหา/แชทมีตัวกรอง "เอกสาร"; MCP: `search_knowledge(source: document)` + เครื่องมือใหม่ **`get_document(documentId, part)`** แบ่งอ่านทีละ ~7,600 ตัวอักษร (mask แล้ว)
+- หน้าเว็บแท็บ "เอกสาร" (`pages/KnowledgeDocuments.tsx` + `.css`): ตาราง (ไอคอนชนิด, ชื่อ = ดาวน์โหลด, ชนิด·ขนาด·จำนวนตัวอักษร·เอกสารระบบ, เหตุผลที่สกัดไม่ได้สีแดง, Project, สถานะ, อัปเดต, ดาวน์โหลด/ลบ), หน้าต่างอัปโหลดแบบลากวาง + รายการไฟล์ + ตรวจขีดจำกัดก่อนส่ง + ผลรายไฟล์, ปุ่มนำเข้าเอกสารระบบ (SYS_ADMIN) + สรุปผล
+
+ผลตรวจ:
+
+- Unit tests `KnowledgeFileTests` 14 ข้อ (สกัด TXT/UTF-8 BOM/TIS-620, DOCX + ตาราง + ไฟล์เสีย, PDF จริงที่สร้างด้วย PdfPig + PDF ว่าง, ซ่อมสระอำ/PUA, ชื่อไฟล์, อัปโหลด/ซ้ำ/ไฟล์ปลอม/เกินจำนวน, PDF สแกนไม่เข้าคลัง, นำเข้าซ้ำ/อัปเดต, สิทธิ์ดาวน์โหลด/ลบ, index/ลบแล้ว Excluded, MCP `get_document` แบ่งส่วน/mask/สิทธิ์) — ทั้งชุด 736 ผ่าน; โปรโตคอล MCP ด้วย SDK client: 6 เครื่องมือ
+- สกัดไฟล์จริงในเครื่อง (อ่านอย่างเดียว): Markdown 21 ไฟล์ใน `Document/ProMaxx2_MD` ได้ครบ (~190,000 ตัวอักษร); DOCX รายงานภาษาไทยถูกต้องทั้งตาราง; PDF 6 หน้า 260 KB ได้ข้อความครบใน 1.5 วินาที — **พบสระอำแตก 29 จุด ("น าเสนอ") → เพิ่มตัวซ่อม ค้น "นำเสนอ" เจอแล้ว**
+- UI ด้วย headless Chromium ที่ 1440 / 1024 / 768 / 390px: แท็บเอกสาร + หน้าต่างอัปโหลด — แก้เนื้อหาหน้าต่างอัปโหลดล้นจอบนมือถือ (grid track ต้อง `minmax(0, 1fr)` เมื่อมีข้อความ nowrap) และปุ่มนำเข้าเต็มแถว
+
+ยังไม่ได้ทดสอบ / ต้องทำ:
+
+- [ ] SYS_ADMIN กด "นำเข้าเอกสารระบบ" ในแท็บเอกสาร (21 ไฟล์) แล้วลองค้น/ถามเรื่องในสเปกโมดูล
+- [ ] อัปโหลดผ่าน Cloudflare จริง (ไฟล์ใหญ่ใกล้ 20 MB)
+- [ ] OCR สำหรับ PDF สแกน (ยังไม่รองรับ — แจ้งผู้ใช้แทน)

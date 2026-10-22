@@ -14,6 +14,7 @@ public sealed record DefectKnowledgeInput(
     string? CrmTicketId, IReadOnlyList<DefectKnowledgeTestCase> TestCases, IReadOnlyList<DefectKnowledgeComment> Comments);
 
 public sealed record ArticleKnowledgeInput(string Title, string? Tags, string? ProjectName, string BodyMarkdown);
+public sealed record FileKnowledgeInput(string FileName, string? Description, string? ProjectName, string Text);
 
 /// <summary>ข้อความความรู้ของแหล่งหนึ่ง: Header = บรรทัดระบุตัวตน (ติดไปกับทุก chunk), Body = เนื้อหาที่ถูกแบ่ง</summary>
 public sealed record KnowledgeText(string Header, string Body)
@@ -61,6 +62,16 @@ public static class KnowledgeSourceText
         Line(sb, "Project", a.ProjectName ?? "ความรู้กลาง (ทุก Project)");
         Line(sb, "Tag", a.Tags);
         sb.Append('\n').Append(a.BodyMarkdown.Trim());
+        return new(header, sb.ToString().Trim());
+    }
+
+    public static KnowledgeText ForFile(FileKnowledgeInput f)
+    {
+        var header = $"[เอกสาร] {f.FileName}";
+        var sb = new StringBuilder();
+        Line(sb, "Project", f.ProjectName ?? "ความรู้กลาง (ทุก Project)");
+        Line(sb, "รายละเอียด", f.Description);
+        sb.Append('\n').Append(f.Text.Trim());
         return new(header, sb.ToString().Trim());
     }
 

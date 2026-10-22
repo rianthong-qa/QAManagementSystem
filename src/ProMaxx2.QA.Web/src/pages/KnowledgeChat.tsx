@@ -16,7 +16,7 @@ type ChatItem = { key: string; id?: number; role: "user" | "assistant"; content:
 const sessionStorageKey = "qa.knowledge.chatSession";
 const sourceLabel: Record<Citation["sourceType"], string> = { Defect: "Defect", CrmTicket: "CRM", Article: "บทความ", File: "เอกสาร" };
 const sourceIcon: Record<Citation["sourceType"], string> = { Defect: "bug_report", CrmTicket: "support_agent", Article: "article", File: "description" };
-const chatSources = [{ value: "", label: "ทุกแหล่ง" }, { value: "Defect", label: "Defect" }, { value: "Article", label: "บทความ" }];
+const chatSources = [{ value: "", label: "ทุกแหล่ง" }, { value: "Defect", label: "Defect" }, { value: "Article", label: "บทความ" }, { value: "File", label: "เอกสาร" }];
 const examples = ["ปัญหาพิมพ์ใบกำกับภาษีที่เคยพบมีอะไรบ้าง และแก้อย่างไร", "Defect ระดับ High ที่เกี่ยวกับการบันทึกเอกสารไม่ได้", "สรุปปัญหาที่พบบ่อยในโมดูลเอกสารขาย"];
 let keySeed = 0;
 const nextKey = () => `m${++keySeed}`;
@@ -258,7 +258,7 @@ export function KnowledgeChat({ projects, onOpenCitation }: { projects: ProjectI
           : items.length === 0 ? <div className="kn-chat-welcome">
             <span className="material-symbols-outlined" aria-hidden="true">neurology</span>
             <b>ถามผู้ช่วย AI จากคลังความรู้</b>
-            <p>ตอบจาก Defect และบทความใน Project ที่คุณมีสิทธิ์ พร้อมเลขอ้างอิงแหล่งที่มาทุกครั้ง</p>
+            <p>ตอบจาก Defect บทความ และเอกสารใน Project ที่คุณมีสิทธิ์ พร้อมเลขอ้างอิงแหล่งที่มาทุกครั้ง</p>
             <div className="kn-chat-examples">{examples.map((x) => <button key={x} type="button" onClick={() => void ask(x)} disabled={busy}>{x}</button>)}</div>
           </div>
           : items.map((item) => item.role === "user"

@@ -570,7 +570,7 @@ function App() {
         : page === "performance"
           ? "ผลงานจากระบบ บันทึกงานเพิ่มเติม และติดตามช่วงทดลองงานของทีม QA"
         : page === "knowledge"
-          ? "ถามผู้ช่วย AI และค้นหาความรู้จาก Defect และบทความ พร้อมอ้างอิงแหล่งที่มา"
+          ? "ถามผู้ช่วย AI และค้นหาความรู้จาก Defect บทความ และเอกสาร พร้อมอ้างอิงแหล่งที่มา"
         : page === "test-suites"
           ? "Test Suite จัดเก็บระดับ Project · เลือก Release/Build ตอนนำไปสร้าง Test Cycle"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,

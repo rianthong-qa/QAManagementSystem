@@ -118,7 +118,7 @@ export function KnowledgeMcp({ isSysAdmin }: { isSysAdmin: boolean }) {
     <section className="kn-mcp-section" aria-labelledby="kn-mcp-step3">
       <div className="kn-mcp-section-head"><h4 id="kn-mcp-step3"><span className="kn-step">3</span>ลองถาม Claude</h4></div>
       <ul className="kn-mcp-examples">{examplePrompts.map((x) => <li key={x}><span>{x}</span><CopyButton text={x} className="kn-inline-copy">คัดลอก</CopyButton></li>)}</ul>
-      <p className="kn-chat-muted">เครื่องมือที่ Claude ใช้ได้: search_knowledge, get_defect, get_article, find_similar_defects, list_projects — ทุกการเรียกบันทึกใน Audit Log</p>
+      <p className="kn-chat-muted">เครื่องมือที่ Claude ใช้ได้: search_knowledge, get_defect, get_article, get_document, find_similar_defects, list_projects — ทุกการเรียกบันทึกใน Audit Log</p>
     </section>
 
     {isSysAdmin && allTokens && <section className="kn-mcp-section" aria-labelledby="kn-mcp-all">

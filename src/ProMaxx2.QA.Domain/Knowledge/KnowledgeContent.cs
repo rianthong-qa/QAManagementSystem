@@ -48,26 +48,31 @@ public sealed class KnowledgeArticle
     }
 }
 
-/// <summary>ไฟล์เอกสารที่อัปโหลดเข้าคลังความรู้ (PDF / DOCX / MD / TXT) — ไฟล์อยู่บนดิสก์ App_Data/KnowledgeFiles, เก็บข้อความที่แยกได้ไว้ใช้สร้าง chunk</summary>
+/// <summary>
+/// ไฟล์เอกสารในคลังความรู้ (PDF / DOCX / MD / TXT) — ไฟล์จริงอยู่บนดิสก์ App_Data/KnowledgeFiles, เก็บข้อความที่สกัดได้ไว้สร้าง chunk
+/// Origin: Upload = ผู้ใช้อัปโหลด, Import = นำเข้าจากโฟลเดอร์เอกสารของระบบ (ImportPath = path สัมพัทธ์ ใช้นำเข้าซ้ำแบบ idempotent)
+/// </summary>
 public sealed class KnowledgeFile
 {
     public static readonly string[] AllowedExtensions = [".pdf", ".docx", ".md", ".txt"];
+    public const int MaxExtractedChars = 1_000_000;
 
     private KnowledgeFile() { }
 
-    public KnowledgeFile(string fileName, string contentType, long sizeBytes, string storagePath, Guid? projectId, string? description, Guid? uploadedBy)
+    public KnowledgeFile(string fileName, string contentType, long sizeBytes, string storagePath, string contentHash, Guid? projectId, string? description, Guid? uploadedBy, string? importPath = null)
     {
         var extension = Path.GetExtension(fileName ?? "").ToLowerInvariant();
         if (!AllowedExtensions.Contains(extension)) throw new ArgumentException("รองรับเฉพาะไฟล์ PDF, DOCX, MD และ TXT");
+        var name = fileName!.Trim();
         KnowledgeFileId = Guid.NewGuid();
-        FileName = fileName!.Trim();
-        ContentType = contentType;
-        SizeBytes = sizeBytes;
-        StoragePath = storagePath;
+        FileName = name.Length > 260 ? name[^260..] : name;
         ProjectId = projectId;
-        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        Description = Cut(description, 1000);
         UploadedBy = uploadedBy;
         UploadedAt = DateTime.UtcNow;
+        ImportPath = Cut(importPath, 300);
+        Origin = importPath is null ? "Upload" : "Import";
+        ContentType = contentType; SizeBytes = sizeBytes; StoragePath = storagePath; ContentHash = contentHash;
     }
 
     public Guid KnowledgeFileId { get; private set; }
@@ -75,6 +80,10 @@ public sealed class KnowledgeFile
     public string ContentType { get; private set; } = string.Empty;
     public long SizeBytes { get; private set; }
     public string StoragePath { get; private set; } = string.Empty;
+    /// <summary>SHA-256 ของไฟล์ — กันอัปโหลดซ้ำ และรู้ว่าไฟล์นำเข้าเปลี่ยนหรือไม่</summary>
+    public string ContentHash { get; private set; } = string.Empty;
+    public string Origin { get; private set; } = "Upload";
+    public string? ImportPath { get; private set; }
     public Guid? ProjectId { get; private set; }
     public string? Description { get; private set; }
     public string? ExtractedText { get; private set; }
@@ -82,9 +91,32 @@ public sealed class KnowledgeFile
     public bool IsDeleted { get; private set; }
     public DateTime UploadedAt { get; private set; }
     public Guid? UploadedBy { get; private set; }
+    public DateTime? UpdatedAt { get; private set; }
 
-    public void SetExtractedText(string? text, string? error) { ExtractedText = text; ExtractError = error; }
-    public void Delete() => IsDeleted = true;
+    public string Extension => Path.GetExtension(FileName).ToLowerInvariant();
+
+    /// <summary>ข้อความที่สกัดได้ (ตัดที่ MaxExtractedChars) หรือเหตุผลที่สกัดไม่ได้</summary>
+    public void SetExtractedText(string? text, string? error)
+    {
+        ExtractedText = string.IsNullOrWhiteSpace(text) ? null : text.Length > MaxExtractedChars ? text[..MaxExtractedChars] : text;
+        ExtractError = Cut(error, 1000);
+    }
+
+    /// <summary>ไฟล์นำเข้าที่เนื้อหาเปลี่ยน — เปลี่ยนไฟล์บนดิสก์และข้อความ (index ใหม่ผ่าน UpdatedAt)</summary>
+    public void ReplaceContent(string contentType, long sizeBytes, string storagePath, string contentHash)
+    {
+        ContentType = contentType; SizeBytes = sizeBytes; StoragePath = storagePath; ContentHash = contentHash;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Delete() { IsDeleted = true; UpdatedAt = DateTime.UtcNow; }
+
+    private static string? Cut(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var text = value.Trim();
+        return text.Length > max ? text[..max] : text;
+    }
 }
 
 /// <summary>รายละเอียดปัญหาของ CRM Ticket (mask ข้อมูลอ่อนไหวแล้ว) — ต้นฉบับไม่เก็บ ดูสดจาก CRM ได้</summary>

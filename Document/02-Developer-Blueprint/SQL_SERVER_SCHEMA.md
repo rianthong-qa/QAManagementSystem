@@ -1326,3 +1326,7 @@ WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์�
 | `OAuthAuthorizations` | PK `OAuthAuthorizationId` (64, `req_…` ใช้ในลิงก์หน้ายืนยัน); FK `ClientId` (cascade); `RedirectUri`, `State`, `CodeChallenge` (PKCE S256), `Scope`, `Resource`, `Status` (Pending/Approved/Denied/Exchanged), `UserId`, `CodeHash` (unique filtered), `CreatedAt` (index), `ExpiresAt` (10 นาที), `DecidedAt`, `CodeExpiresAt` (2 นาที) |
 
 `PersonalAccessTokens` เพิ่ม `Kind` (Personal/OAuth, default Personal), `ClientId`, `RefreshTokenHash` (unique filtered), `RefreshExpiresAt`, `Resource` (audience)
+
+## Addendum: คลังเอกสาร (migration `AddKnowledgeFileContent`, 2026-10-22)
+
+`KnowledgeFiles` เพิ่ม `ContentHash` (64, SHA-256 ของไฟล์, index — กันไฟล์ซ้ำ), `Origin` (20, Upload/Import), `ImportPath` (300, index filtered — นำเข้าเอกสารระบบซ้ำแบบ idempotent), `UpdatedAt`; ไฟล์จริงอยู่ที่ `App_Data/KnowledgeFiles/{KnowledgeFileId:N}/`

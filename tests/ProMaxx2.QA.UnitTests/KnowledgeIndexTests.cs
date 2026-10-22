@@ -209,7 +209,7 @@ public sealed class KnowledgeIndexTests
     public async Task Index_SkipsUnsupportedSourceTypes()
     {
         await using var db = CreateDb();
-        db.KnowledgeDocuments.Add(new KnowledgeDocument("File", "f1", "Global", null, "คู่มือ.pdf", null));
+        db.KnowledgeDocuments.Add(new KnowledgeDocument("CrmTicket", "HD-1", "Crm", null, "HD-1", null));
         await db.SaveChangesAsync();
         Assert.Equal(0, await Indexer(db).IndexPendingAsync(50, default));
         Assert.Equal("Stale", (await db.KnowledgeDocuments.SingleAsync()).State);

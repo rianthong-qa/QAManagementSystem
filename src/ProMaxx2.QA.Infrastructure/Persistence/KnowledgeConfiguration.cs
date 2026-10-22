@@ -70,7 +70,13 @@ public sealed class KnowledgeFileConfiguration : IEntityTypeConfiguration<Knowle
         b.Property(x => x.StoragePath).HasMaxLength(500).IsRequired();
         b.Property(x => x.Description).HasMaxLength(1000);
         b.Property(x => x.ExtractError).HasMaxLength(1000);
+        b.Property(x => x.ContentHash).HasMaxLength(64).IsRequired().HasDefaultValue("");
+        b.Property(x => x.Origin).HasMaxLength(20).IsRequired().HasDefaultValue("Upload");
+        b.Property(x => x.ImportPath).HasMaxLength(300);
         b.HasIndex(x => new { x.IsDeleted, x.ProjectId });
+        // กันไฟล์ซ้ำ / นำเข้าซ้ำ
+        b.HasIndex(x => x.ContentHash);
+        b.HasIndex(x => x.ImportPath).HasFilter("[ImportPath] IS NOT NULL");
     }
 }
 

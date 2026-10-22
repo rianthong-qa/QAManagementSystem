@@ -22,7 +22,7 @@ public sealed record SaveKnowledgeArticleRequest(string Title, string BodyMarkdo
 /// </summary>
 [ApiController, Route("api/v1/knowledge"), Authorize(Policy = "KnowledgeView")]
 public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService search, KnowledgeIndexService indexer, KnowledgeIndexTrigger trigger,
-    ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration) : ControllerBase
+    ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration, KnowledgeFileService files) : ControllerBase
 {
     private const string AuditEntityType = "KnowledgeArticle";
 
@@ -106,6 +106,57 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
         await db.SaveChangesAsync(ct);
         trigger.Signal();
         return NoContent();
+    }
+
+    // ---------- เอกสาร (Phase 3) ----------
+
+    [HttpGet("files")]
+    public async Task<ActionResult<IReadOnlyList<KnowledgeFileDto>>> ListFiles([FromQuery] Guid? projectId, [FromQuery] string? search, CancellationToken ct)
+    {
+        if (UserId() is not { } userId) return Unauthorized();
+        return Ok(await files.ListAsync(await projectAccess.GetAllowedProjectIdsAsync(userId, ct), projectId, search, ct));
+    }
+
+    /// <summary>multipart: files (1–10), projectId (ว่าง = ความรู้กลาง), description</summary>
+    [HttpPost("files"), Authorize(Policy = "KnowledgeEdit"), RequestSizeLimit(60_000_000), RequestFormLimits(MultipartBodyLengthLimit = 60_000_000)]
+    public async Task<ActionResult<IReadOnlyList<KnowledgeFileUploadResult>>> UploadFiles([FromForm] Guid? projectId, [FromForm] string? description, CancellationToken ct)
+    {
+        if (UserId() is not { } userId) return Unauthorized();
+        if (await ValidateProjectAsync(userId, projectId, ct) is { } problem) return problem;
+        var incoming = new List<IncomingKnowledgeFile>();
+        foreach (var file in Request.Form.Files)
+        {
+            if (file.Length > KnowledgeFileService.MaxFileBytes) return BadRequest(new ProblemDetails { Detail = $"ไฟล์ {file.FileName} ใหญ่เกิน 20 MB" });
+            await using var memory = new MemoryStream();
+            await file.CopyToAsync(memory, ct);
+            incoming.Add(new(file.FileName, memory.ToArray()));
+        }
+        try { return Ok(await files.UploadAsync(incoming, projectId, description, userId, ClientIp(), ct)); }
+        catch (ArgumentException ex) { return BadRequest(new ProblemDetails { Detail = ex.Message }); }
+    }
+
+    [HttpGet("files/{id:guid}/download")]
+    public async Task<IActionResult> DownloadFile(Guid id, CancellationToken ct)
+    {
+        if (UserId() is not { } userId) return Unauthorized();
+        var file = await files.OpenAsync(id, await projectAccess.GetAllowedProjectIdsAsync(userId, ct), ct);
+        if (file is null) return NotFound();
+        return PhysicalFile(file.Value.Path, file.Value.ContentType, file.Value.FileName);
+    }
+
+    [HttpDelete("files/{id:guid}"), Authorize(Policy = "KnowledgeEdit")]
+    public async Task<IActionResult> DeleteFile(Guid id, CancellationToken ct)
+    {
+        if (UserId() is not { } userId) return Unauthorized();
+        return await files.DeleteAsync(id, await projectAccess.GetAllowedProjectIdsAsync(userId, ct), userId, ClientIp(), ct) ? NoContent() : NotFound();
+    }
+
+    /// <summary>นำเข้าเอกสาร .md/.txt จากโฟลเดอร์ระบบ (config Knowledge:SystemDocumentFolders, ค่าเริ่มต้น Document/ProMaxx2_MD) เป็นความรู้กลาง</summary>
+    [HttpPost("files/import-system"), Authorize(Policy = "SysAdminOnly")]
+    public async Task<ActionResult<KnowledgeImportResult>> ImportSystemDocuments(CancellationToken ct)
+    {
+        if (UserId() is not { } userId) return Unauthorized();
+        return Ok(await files.ImportSystemDocumentsAsync(userId, ClientIp(), ct));
     }
 
     [HttpGet("status"), Authorize(Policy = "SysAdminOnly")]

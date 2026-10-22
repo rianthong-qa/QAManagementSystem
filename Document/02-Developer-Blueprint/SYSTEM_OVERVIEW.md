@@ -21,7 +21,7 @@
 |---|---|---|
 | Frontend | React 19 + TypeScript + Vite | App shell `src/ProMaxx2.QA.Web/src/App.tsx` (~1,070 บรรทัด) + หน้าละไฟล์ใน `src/pages/` (ดู §2.2) |
 | Backend | ASP.NET Core (.NET 10) Web API | Clean Architecture 4 projects |
-| Database | SQL Server `localhost\MSSQLSERVER2022`, DB `ProMaxx2QA` (Windows auth) | EF Core + Migrations; `Database:ApplyMigrations=false` — apply migration ด้วยมือ |
+| Database | SQL Server `localhost\MSSQLSERVER2022`, DB `ProMaxx2QA` (Windows auth) | EF Core + Migrations; `Database:ApplyMigrations=false` — apply migration ด้วยมือ (`dotnet ef migrations script <ก่อนหน้า> <ใหม่> --idempotent -o x.sql` แล้ว `sqlcmd ... -b -I -i x.sql` — **ต้องมี `-I`** (QUOTED_IDENTIFIER) ไม่งั้น filtered index ล้ม) |
 | Auth | JWT Bearer (Issuer `ProMaxx2.QA`, อายุ 24 ชม., Remember Me 30 วัน) | token ใน localStorage `qa.accessToken`; permission claims เช่น `PROJECT.VIEW`, `DEFECT.EDIT`, `AUTOMATION.EXECUTE` |
 | Project access | `ProjectAccessFilter` + `ProjectScopeGuard` | ผู้ใช้เห็นเฉพาะ Project ที่เป็นสมาชิก (`ProjectUsers`) — ตรวจ projectId ใน route/query, `ProjectId` ใน request body และ route id (`releaseId`, `cycleId`, `cycleCaseId`, `defectId`, `testCaseId`, `requirementId`, `buildId`) |
 | AI | OpenAI-compatible (ตั้งค่าใน Setting Center) | generate requirement / test case / test suite / automation DSL; ผู้ช่วย AI คลังความรู้ (`#/knowledge`) ใช้ Provider เดียวกันแบบ streaming (`AiChatClient`, SSE ผ่าน `api/v1/knowledge/chat`) — ข้อมูล CRM ไม่ส่งให้ Provider ภายนอกเว้นแต่เปิดสวิตช์ใน Setting Center; **MCP server `/mcp`** (`ModelContextProtocol.AspNetCore`) ให้ Claude Code / Claude Desktop ค้นคลังความรู้ด้วย Personal Access Token (`qak_…`, scheme `PersonalAccessToken` ใช้ได้เฉพาะ `/mcp`, สิทธิ์ `KNOWLEDGE.MCP`, ปิด/เปิดใน Setting Center ค่าเริ่มต้นปิด) และ **OAuth 2.1** (DCR + PKCE, `/.well-known/oauth-*`, `/oauth/register|authorize|token`, หน้ายืนยันในเว็บ `/?oauth=`) ให้ claude.ai Team / Claude Desktop / Claude Code Login รายคน — redirect ได้เฉพาะ `https://claude.ai/api/mcp/auth_callback` และ loopback |
@@ -178,7 +178,7 @@ powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1
 | `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
 | `03-Architecture-and-Plan/PERFORMANCE_EVALUATION_PLAN.md` | ผลงานและการประเมินทีม QA — เฟส 1 (ผลงานรายคน/ทดลองงาน/บันทึกงาน) และเฟส 2 (แบบประเมิน, รอบทดลองงาน 30/60/90/สรุป, รายไตรมาส, ประเมินตนเอง) และเฟส 3 (อีเมลเตือน, ไฟล์หลักฐานของบันทึกงาน, Export PDF, เทียบผลข้ามรอบ) และสรุปผลงานรายคน + ลิงก์แชร์ HR (`/?p=`) + สรุปประจำสัปดาห์ส่งผู้บริหาร implement แล้ว |
 | `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน; Phase 2–4 ย้ายไป `AI_KNOWLEDGE_CHAT_PLAN.md`) |
-| `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md` | ระบบ AI Chat + คลังความรู้ (Defect, CRM, บทความ/ไฟล์ PDF·DOCX·MD) แบบ Hybrid Full-Text ไทย + embedding บน SQL 2022 — Phase 0–2 + 2B เสร็จ (ค้นหา Defect + บทความ, แชท AI พร้อมอ้างอิง, MCP ให้ Claude), Phase 3+ (ไฟล์, CRM, embedding, OAuth สำหรับ claude.ai Team) ยังไม่ทำ |
+| `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md` | ระบบ AI Chat + คลังความรู้ (Defect, CRM, บทความ/ไฟล์ PDF·DOCX·MD) แบบ Hybrid Full-Text ไทย + embedding บน SQL 2022 — Phase 0–3 + MCP/OAuth เสร็จ (ค้นหา Defect + บทความ + เอกสาร PDF/DOCX/MD, แชท AI พร้อมอ้างอิง, MCP + OAuth ให้ Claude), Phase 4+ (CRM, embedding) ยังไม่ทำ |
 | `05-Module/` | เอกสารรายโมดูล |
 
 ## 8. สถานะงานล่าสุด (2026-09-25)

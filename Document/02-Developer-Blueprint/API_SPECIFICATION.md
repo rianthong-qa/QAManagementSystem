@@ -1188,3 +1188,12 @@ Authorization is also checked against the current database profile for the JWT s
   - `grant_type=refresh_token&client_id&refresh_token`
   - → `{ access_token: "qao_…", token_type: "Bearer", expires_in: 3600, refresh_token: "qrt_…", scope: "knowledge:read" }`; ข้อผิดพลาด `400 { error, error_description }` (`invalid_grant`, `invalid_request`, `invalid_target`, `unsupported_grant_type`) หรือ `401 invalid_client`
 - `/mcp` ไม่มี/ผิด token → `401` + `WWW-Authenticate: Bearer realm="ProMaxx2 QA Hub", resource_metadata="<base>/.well-known/oauth-protected-resource/mcp", scope="knowledge:read"`; รับทั้ง Personal Access Token (`qak_`) และ OAuth access token (`qao_`, ตรวจ audience)
+
+### Knowledge — เอกสาร (Phase 3, 2026-10-22)
+
+- `GET /api/v1/knowledge/files?projectId=&search=` (`KNOWLEDGE.VIEW`) → `[{ knowledgeFileId, fileName, extension, sizeBytes, projectId, projectName, description, origin: Upload|Import, importPath, extractedChars, extractError, uploadedAt, uploadedByName, updatedAt, indexState, indexedAt }]` (เฉพาะความรู้กลาง + Project ที่เป็นสมาชิก)
+- `POST /api/v1/knowledge/files` (`KNOWLEDGE.EDIT`, multipart: `files` 1–10, `projectId?`, `description?`; ไฟล์ละ ≤ 20 MB รวม ≤ 50 MB) → `[{ fileName, success, message, item? }]` — ผลรายไฟล์: ไม่รองรับ/เนื้อหาไม่ตรงชนิด/ซ้ำ = `success: false` ไม่บันทึก; สกัดข้อความไม่ได้ = บันทึกไฟล์แต่ `success: false` + เหตุผล
+- `GET /api/v1/knowledge/files/{id}/download` → ไฟล์ต้นฉบับ (`404` เมื่อไม่มีสิทธิ์ Project)
+- `DELETE /api/v1/knowledge/files/{id}` (`KNOWLEDGE.EDIT`) — soft delete + ลบไฟล์บนดิสก์
+- `POST /api/v1/knowledge/files/import-system` (SYS_ADMIN) → `{ added, updated, unchanged, failed, messages[] }` — นำเข้า `.md`/`.txt` จาก `Knowledge:SystemDocumentFolders` (ค่าเริ่มต้น `Document/ProMaxx2_MD`)
+- MCP: `search_knowledge` รับ `source: "document"`; เครื่องมือใหม่ `get_document(documentId, part = 1)` → ข้อความเอกสาร (mask) ทีละ ~7,600 ตัวอักษร + บอก `part` ถัดไป
