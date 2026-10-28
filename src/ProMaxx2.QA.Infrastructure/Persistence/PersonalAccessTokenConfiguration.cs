@@ -18,10 +18,14 @@ public sealed class PersonalAccessTokenConfiguration : IEntityTypeConfiguration<
         b.Property(x => x.LastUsedIp).HasMaxLength(64);
         b.Property(x => x.Kind).HasMaxLength(20).IsRequired().HasDefaultValue("Personal");
         b.Property(x => x.ClientId).HasMaxLength(64);
-        b.Property(x => x.RefreshTokenHash).HasMaxLength(64);
+        // concurrency token: refresh พร้อมกันด้วย token เดียวกัน — คำขอที่บันทึกทีหลังได้ DbUpdateConcurrencyException (ใช้ได้ครั้งเดียวจริง)
+        b.Property(x => x.RefreshTokenHash).HasMaxLength(64).IsConcurrencyToken();
+        b.Property(x => x.PreviousRefreshTokenHash).HasMaxLength(64);
         b.Property(x => x.Resource).HasMaxLength(300);
         // ค้น refresh token ตอนต่ออายุ (OAuth)
         b.HasIndex(x => x.RefreshTokenHash).IsUnique().HasFilter("[RefreshTokenHash] IS NOT NULL");
+        // ตรวจ refresh token เก่าที่ถูกนำมาใช้ซ้ำ
+        b.HasIndex(x => x.PreviousRefreshTokenHash).HasFilter("[PreviousRefreshTokenHash] IS NOT NULL");
         // ค้นจาก hash ทุกคำขอ
         b.HasIndex(x => x.TokenHash).IsUnique();
         b.HasIndex(x => new { x.UserId, x.RevokedAt });
@@ -56,7 +60,8 @@ public sealed class OAuthAuthorizationConfiguration : IEntityTypeConfiguration<O
         b.Property(x => x.CodeChallenge).HasMaxLength(128).IsRequired();
         b.Property(x => x.Scope).HasMaxLength(200).IsRequired();
         b.Property(x => x.Resource).HasMaxLength(300).IsRequired();
-        b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+        // concurrency token: แลก code พร้อมกัน 2 คำขอ — คำขอที่บันทึกทีหลังเห็น Status ไม่ใช่ Approved แล้ว (code ใช้ได้ครั้งเดียวจริง)
+        b.Property(x => x.Status).HasMaxLength(20).IsRequired().IsConcurrencyToken();
         b.Property(x => x.CodeHash).HasMaxLength(64);
         // แลก code ด้วย hash
         b.HasIndex(x => x.CodeHash).IsUnique().HasFilter("[CodeHash] IS NOT NULL");

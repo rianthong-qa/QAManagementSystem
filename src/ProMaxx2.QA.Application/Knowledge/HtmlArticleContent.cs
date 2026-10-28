@@ -7,9 +7,11 @@ namespace ProMaxx2.QA.Application.Knowledge;
 /// บทความที่นำเข้าจาก HTML (คลังความรู้ → บทความ → "นำเข้า HTML"): เก็บ HTML ไว้แสดงผลให้เหมือนไฟล์ต้นฉบับ
 /// และสกัดเป็นข้อความธรรมดา (เก็บใน BodyMarkdown) ให้การค้นหา/ผู้ช่วย AI/MCP ใช้เหมือนบทความทั่วไป
 ///
-/// ความปลอดภัย: หน้าเว็บแสดง HTML ใน iframe sandbox (ไม่มี allow-scripts / allow-same-origin) + CSP ที่ห้ามโหลดสคริปต์
-/// อยู่แล้ว — <see cref="Sanitize"/> เป็นชั้นป้องกันเพิ่ม (defense in depth) ที่ตัดสคริปต์, event handler, ลิงก์ javascript:
-/// และ element ที่ฝังเนื้อหาภายนอก ไม่ได้ออกแบบให้ปลอดภัยเมื่อแสดง HTML ตรง ๆ ในหน้าเว็บโดยไม่มี sandbox
+/// ความปลอดภัย: หน้าเว็บแสดง HTML ใน iframe sandbox ที่**ไม่มี allow-scripts** (HtmlArticleFrame.tsx) + CSP ใน srcDoc ที่ห้ามสคริปต์ทุกชนิด
+/// — สองชั้นนี้คือสิ่งที่ปกป้องจริง: สคริปต์ใน HTML ไม่รันเลย; sandbox มี allow-same-origin เพื่อให้หน้าแม่วัดความสูงเนื้อหาได้
+/// ซึ่งปลอดภัยเฉพาะเมื่อไม่มี allow-scripts (test ใน htmlArticle.test.ts ล็อกค่า sandbox ไว้)
+/// <see cref="Sanitize"/> เป็นชั้นป้องกันเพิ่ม (defense in depth) ที่ตัดสคริปต์, event handler, ลิงก์ javascript: (รวมแบบเข้ารหัส entity)
+/// และ element ที่ฝังเนื้อหาภายนอก — เป็น regex ไม่ใช่ HTML parser จึงไม่ได้ออกแบบให้ปลอดภัยเมื่อแสดง HTML ตรง ๆ โดยไม่มี sandbox
 /// </summary>
 public static partial class HtmlArticleContent
 {
@@ -22,7 +24,7 @@ public static partial class HtmlArticleContent
         s = DangerousTags().Replace(s, "");
         s = EventHandlers().Replace(s, "");
         s = SrcDocAttribute().Replace(s, "");
-        s = ScriptUrls().Replace(s, "$1=$2#");
+        s = UrlAttributes().Replace(s, NeutralizeScriptUrl);
         s = CssExpressions().Replace(s, "");
         return s.Trim();
     }
@@ -58,8 +60,39 @@ public static partial class HtmlArticleContent
     private static partial Regex EventHandlers();
     [GeneratedRegex(@"\s+srcdoc\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", RegexOptions.IgnoreCase)]
     private static partial Regex SrcDocAttribute();
-    [GeneratedRegex(@"\b(href|src|xlink:href|action|formaction|data|poster|background)\s*=\s*([""']?)\s*(?:javascript|vbscript|data\s*:\s*text/html)[^""'\s>]*", RegexOptions.IgnoreCase)]
-    private static partial Regex ScriptUrls();
+    /// <summary>ค่า URL ที่ถอด entity (&amp;#x73; ฯลฯ) และตัดช่องว่าง/อักขระควบคุมแล้วขึ้นต้นด้วย javascript:/vbscript:/data:text/html → แทนด้วย "#"</summary>
+    private static string NeutralizeScriptUrl(Match m)
+    {
+        var raw = m.Groups["dq"].Success ? m.Groups["dq"].Value : m.Groups["sq"].Success ? m.Groups["sq"].Value : m.Groups["bare"].Value;
+        var decoded = DecodeAttribute(DecodeAttribute(raw));
+        var compact = new string(decoded.Where(c => !char.IsWhiteSpace(c) && !char.IsControl(c)).ToArray()).ToLowerInvariant();
+        return compact.StartsWith("javascript:") || compact.StartsWith("vbscript:") || compact.StartsWith("data:text/html")
+            ? m.Groups["pre"].Value + "\"#\""
+            : m.Value;
+    }
+
+    /// <summary>ถอด entity แบบที่เบราว์เซอร์ถอดในค่า attribute — numeric ไม่มี ";" ก็ได้ และ &amp;colon; / &amp;Tab; / &amp;NewLine; (HTML5)
+    /// ซึ่ง WebUtility.HtmlDecode ไม่รู้จัก</summary>
+    private static string DecodeAttribute(string value)
+    {
+        var s = NumericEntity().Replace(value, m =>
+        {
+            var hex = m.Groups[1].Value.StartsWith('x') || m.Groups[1].Value.StartsWith('X');
+            var digits = hex ? m.Groups[1].Value[1..] : m.Groups[1].Value;
+            return int.TryParse(digits, hex ? System.Globalization.NumberStyles.HexNumber : System.Globalization.NumberStyles.Integer, null, out var code) && code is > 0 and <= 0x10FFFF
+                ? char.ConvertFromUtf32(code is >= 0xD800 and <= 0xDFFF ? 0xFFFD : code) : m.Value;
+        });
+        s = Html5UrlEntity().Replace(s, m => m.Groups[1].Value.Equals("colon", StringComparison.OrdinalIgnoreCase) ? ":" : " ");
+        return WebUtility.HtmlDecode(s);
+    }
+
+    [GeneratedRegex(@"&#([xX][0-9a-fA-F]{1,6}|[0-9]{1,7});?")]
+    private static partial Regex NumericEntity();
+    [GeneratedRegex(@"&(colon|tab|newline);", RegexOptions.IgnoreCase)]
+    private static partial Regex Html5UrlEntity();
+
+    [GeneratedRegex(@"(?<pre>\b(?:href|src|xlink:href|action|formaction|data|poster|background)\s*=\s*)(?:""(?<dq>[^""]*)""|'(?<sq>[^']*)'|(?<bare>[^\s>]+))", RegexOptions.IgnoreCase)]
+    private static partial Regex UrlAttributes();
     [GeneratedRegex(@"expression\s*\([^)]*\)|-moz-binding\s*:[^;""']*|behavior\s*:[^;""']*", RegexOptions.IgnoreCase)]
     private static partial Regex CssExpressions();
     [GeneratedRegex(@"<\s*(head|style|script|noscript|template|svg)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]

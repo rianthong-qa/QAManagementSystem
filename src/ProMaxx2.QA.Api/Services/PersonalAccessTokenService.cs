@@ -25,8 +25,19 @@ public sealed class PersonalAccessTokenService(QaDbContext db, IIdentityReposito
     public const string AuditEntityType = "PersonalAccessToken";
     private static readonly TimeSpan PrincipalCacheDuration = TimeSpan.FromMinutes(1);
 
-    public Task<bool> IsMcpEnabledAsync(CancellationToken ct) =>
-        db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).Select(x => x.McpEnabled).FirstOrDefaultAsync(ct);
+    private const string McpEnabledCacheKey = "pat:mcp-enabled";
+    private static readonly TimeSpan McpEnabledCacheDuration = TimeSpan.FromSeconds(30);
+
+    /// <summary>สวิตช์ "เชื่อมต่อจาก Claude (MCP)" — ถูกถามทุกคำขอ /mcp และทุกขั้น OAuth จึง cache 30 วินาที (บันทึกใน Setting Center ล้าง cache ทันทีผ่าน <see cref="ForgetMcpEnabled"/>)</summary>
+    public async Task<bool> IsMcpEnabledAsync(CancellationToken ct)
+    {
+        if (cache.TryGetValue(McpEnabledCacheKey, out bool enabled)) return enabled;
+        enabled = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).Select(x => x.McpEnabled).FirstOrDefaultAsync(ct);
+        cache.Set(McpEnabledCacheKey, enabled, McpEnabledCacheDuration);
+        return enabled;
+    }
+
+    public void ForgetMcpEnabled() => cache.Remove(McpEnabledCacheKey);
 
     public async Task<IReadOnlyList<PersonalAccessTokenDto>> ListAsync(Guid? userId, CancellationToken ct)
     {
@@ -130,7 +141,7 @@ public sealed class PersonalAccessTokenAuthenticationHandler(IOptionsMonitor<Aut
         var token = header["Bearer ".Length..].Trim();
         if (!PersonalAccessToken.LooksLikeToken(token)) return AuthenticateResult.NoResult();
         var service = Context.RequestServices.GetRequiredService<PersonalAccessTokenService>();
-        var ip = Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? Context.Connection.RemoteIpAddress?.ToString();
+        var ip = ClientIp.Resolve(Context);
         var principal = await service.AuthenticateAsync(token, ip, Scheme.Name, Context.RequestAborted);
         return principal is null ? AuthenticateResult.Fail("Token ไม่ถูกต้อง หมดอายุ หรือถูกยกเลิก") : AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
     }

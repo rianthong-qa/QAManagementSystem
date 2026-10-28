@@ -217,13 +217,16 @@ public sealed class OAuthService(QaDbContext db, IConfiguration configuration, P
             var request = await db.OAuthAuthorizations.FirstOrDefaultAsync(x => x.CodeHash == codeHash, ct);
             if (request is null || !request.TryExchange(code, client.ClientId, redirectUri, now))
                 throw new OAuthException("invalid_grant", "Authorization code is invalid, expired or already used.");
-            if (!OAuthSecrets.VerifyPkce(F("code_verifier"), request.CodeChallenge))
-            {
-                await db.SaveChangesAsync(ct); // code ถูกใช้ไปแล้วแม้ verifier ผิด (ป้องกันลองซ้ำ)
-                throw new OAuthException("invalid_grant", "PKCE verification failed.");
-            }
+            // code ถูกใช้ไปแล้วเมื่อผ่าน TryExchange — verifier/resource ผิดก็บันทึกสถานะ Exchanged ก่อนแจ้ง error (ห้ามลองซ้ำด้วย code เดิม)
             var resource = F("resource");
-            if (!string.IsNullOrEmpty(resource) && NormalizeResource(resource) != request.Resource) throw new OAuthException("invalid_target", $"resource must be {Resource}");
+            var failure = !OAuthSecrets.VerifyPkce(F("code_verifier"), request.CodeChallenge) ? new OAuthException("invalid_grant", "PKCE verification failed.")
+                : !string.IsNullOrEmpty(resource) && NormalizeResource(resource) != request.Resource ? new OAuthException("invalid_target", $"resource must be {Resource}")
+                : null;
+            if (failure is not null)
+            {
+                await SaveOnceAsync("Authorization code is invalid, expired or already used.", ct);
+                throw failure;
+            }
             var userId = request.UserId!.Value;
             // 1 การเชื่อมต่อต่อผู้ใช้ต่อ client — เชื่อมต่อใหม่ = ยกเลิกของเดิม
             var previous = await db.PersonalAccessTokens.Where(x => x.UserId == userId && x.Kind == "OAuth" && x.ClientId == client.ClientId && x.RevokedAt == null).ToListAsync(ct);
@@ -233,7 +236,8 @@ public sealed class OAuthService(QaDbContext db, IConfiguration configuration, P
             db.AuditLogs.Add(new AuditLog(userId, "Created", PersonalAccessTokenService.AuditEntityType, grant.PersonalAccessTokenId.ToString(),
                 $"เชื่อมต่อ \"{client.ClientName}\" ผ่าน OAuth ({grant.TokenPrefix}…){(previous.Count > 0 ? $" แทนการเชื่อมต่อเดิม {previous.Count} รายการ" : "")}", null, null, clientIp));
             client.MarkUsed(now);
-            await db.SaveChangesAsync(ct);
+            // Status เป็น concurrency token — คำขอแลก code เดียวกันที่บันทึกทีหลังจะล้มที่นี่ (ไม่ออก grant ซ้ำ)
+            await SaveOnceAsync("Authorization code is invalid, expired or already used.", ct);
             foreach (var old in previous) tokens.Forget(old.TokenHash);
             return Response(access, refresh, request.Scope);
         }
@@ -243,17 +247,39 @@ public sealed class OAuthService(QaDbContext db, IConfiguration configuration, P
             var refresh = F("refresh_token") ?? throw new OAuthException("invalid_request", "refresh_token is required.");
             var hash = OAuthSecrets.Hash(refresh);
             var grant = await db.PersonalAccessTokens.FirstOrDefaultAsync(x => x.RefreshTokenHash == hash && x.Kind == "OAuth", ct);
-            if (grant is null || grant.ClientId != client.ClientId || !grant.IsConnected(now)) throw new OAuthException("invalid_grant", "Refresh token is invalid, expired or revoked.");
+            if (grant is null)
+            {
+                // refresh token ที่ถูก rotate ไปแล้วถูกนำมาใช้อีก = อาจถูกขโมย → ยกเลิกการเชื่อมต่อนั้นทั้งหมด (ผู้ใช้ต้องเชื่อมต่อใหม่)
+                var reused = await db.PersonalAccessTokens.FirstOrDefaultAsync(x => x.PreviousRefreshTokenHash == hash && x.Kind == "OAuth" && x.RevokedAt == null, ct);
+                if (reused is not null && reused.ClientId == client.ClientId)
+                {
+                    reused.Revoke(null, now);
+                    db.AuditLogs.Add(new AuditLog(reused.UserId, "Revoked", PersonalAccessTokenService.AuditEntityType, reused.PersonalAccessTokenId.ToString(),
+                        $"ยกเลิกการเชื่อมต่อ \"{client.ClientName}\" อัตโนมัติ — refresh token เก่าถูกนำมาใช้ซ้ำ", null, null, clientIp));
+                    try { await db.SaveChangesAsync(ct); } catch (DbUpdateConcurrencyException) { /* rotate พร้อมกัน — ครั้งหน้าจะจับได้อีก */ }
+                    tokens.Forget(reused.TokenHash);
+                }
+                throw new OAuthException("invalid_grant", "Refresh token is invalid, expired or revoked.");
+            }
+            if (grant.ClientId != client.ClientId || !grant.IsConnected(now)) throw new OAuthException("invalid_grant", "Refresh token is invalid, expired or revoked.");
             var userActive = await db.Users.AsNoTracking().Where(x => x.UserId == grant.UserId).Select(x => x.IsActive).FirstOrDefaultAsync(ct);
             if (!userActive) throw new OAuthException("invalid_grant", "User is disabled.");
             var oldHash = grant.TokenHash;
             var (access, nextRefresh) = grant.Rotate(now);
-            await db.SaveChangesAsync(ct);
+            // RefreshTokenHash เป็น concurrency token — refresh พร้อมกันด้วย token เดียวกัน คำขอที่บันทึกทีหลังล้ม (ไม่เขียนทับคู่ token ของอีกคำขอ)
+            await SaveOnceAsync("Refresh token is invalid, expired or revoked.", ct);
             tokens.Forget(oldHash);
             return Response(access, nextRefresh, grant.Scope);
         }
 
         throw new OAuthException("unsupported_grant_type", "Supported grant types: authorization_code, refresh_token.");
+    }
+
+    /// <summary>บันทึกโดยถือว่าการชนกันของ concurrency token = code/refresh token ถูกใช้ไปแล้วโดยคำขออื่น → invalid_grant</summary>
+    private async Task SaveOnceAsync(string message, CancellationToken ct)
+    {
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { throw new OAuthException("invalid_grant", message); }
     }
 
     private static OAuthTokenResponse Response(string access, string refresh, string scope) =>

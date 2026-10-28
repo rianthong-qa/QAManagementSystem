@@ -49,6 +49,6 @@ public sealed class KnowledgeMcpController(PersonalAccessTokenService tokens, IA
         return await tokens.RevokeAsync(userId, id, asAdmin: true, ClientIp(), ct) ? NoContent() : NotFound();
     }
 
-    private string? ClientIp() => Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+    private string? ClientIp() => Services.ClientIp.Resolve(HttpContext);
     private Guid? UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;
 }

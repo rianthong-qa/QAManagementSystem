@@ -88,5 +88,5 @@ public sealed class OAuthController(OAuthService oauth) : ControllerBase
         return Ok(value);
     }
 
-    private string? ClientIp() => Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+    private string? ClientIp() => Services.ClientIp.Resolve(HttpContext);
 }

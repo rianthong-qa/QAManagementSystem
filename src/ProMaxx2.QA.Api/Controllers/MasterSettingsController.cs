@@ -22,18 +22,20 @@ public sealed class MasterSettingsController(QaDbContext db, SharedAiConfigurati
     public Task<AiConfigurationView> GetAiConfiguration(CancellationToken ct) => aiConfiguration.GetViewAsync(ct);
 
     [HttpPut("ai"), Authorize(Policy = "AdminUser")]
-    public async Task<ActionResult<AiConfigurationView>> SaveAiConfiguration(SaveAiConfigurationRequest request, CancellationToken ct)
+    public async Task<ActionResult<AiConfigurationView>> SaveAiConfiguration(SaveAiConfigurationRequest request, [FromServices] PersonalAccessTokenService tokens, CancellationToken ct)
     {
-        try { return Ok(await aiConfiguration.SaveAsync(request.Provider, request.Model, request.BaseUrl, request.ApiKey, request.IsEnabled, request.ClearApiKey, ct)); }
+        // แถว AiConfiguration ล่าสุดเป็นที่มาของสวิตช์ MCP ด้วย — ล้าง cache ให้เห็นค่าใหม่ทันที
+        try { var saved = await aiConfiguration.SaveAsync(request.Provider, request.Model, request.BaseUrl, request.ApiKey, request.IsEnabled, request.ClearApiKey, ct); tokens.ForgetMcpEnabled(); return Ok(saved); }
         catch (ArgumentException ex) { return BadRequest(Problem(ex.Message)); }
     }
 
     [HttpPut("ai/knowledge"), Authorize(Policy = "AdminUser")]
-    public async Task<ActionResult<AiConfigurationView>> SaveAiKnowledgeConfiguration(SaveAiKnowledgeConfigurationRequest request, CancellationToken ct)
+    public async Task<ActionResult<AiConfigurationView>> SaveAiKnowledgeConfiguration(SaveAiKnowledgeConfigurationRequest request, [FromServices] PersonalAccessTokenService tokens, CancellationToken ct)
     {
         try
         {
             var saved = await aiConfiguration.SaveKnowledgeAsync(request.EmbeddingProvider, request.EmbeddingModel, request.EmbeddingBaseUrl, request.EmbeddingApiKey, request.ClearEmbeddingApiKey, request.AllowCrmDataToExternalAi, request.McpEnabled, ct);
+            tokens.ForgetMcpEnabled(); // ปิด MCP แล้วต้องปฏิเสธคำขอ /mcp ทันที ไม่รอ cache หมดอายุ
             knowledgeTrigger.Signal(); // เปลี่ยน Embedding → เริ่มสร้างเวกเตอร์ทันที ไม่ต้องรอรอบถัดไป
             return Ok(saved);
         }

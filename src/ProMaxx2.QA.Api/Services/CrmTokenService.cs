@@ -186,7 +186,8 @@ public sealed class CrmTokenService
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
+        // ตรวจใบรับรอง TLS ตามปกติ — หน้านี้กรอก MerchantID/รหัสผ่าน BlueID ของผู้ใช้ (bluesea/blueid.seniorsoft.com ใช้ใบรับรองที่ถูกต้อง ตรวจแล้ว 2026-10-28)
+        var context = await browser.NewContextAsync(new BrowserNewContextOptions());
         var page = await context.NewPageAsync();
 
         string? capturedToken = null;

@@ -1186,6 +1186,7 @@ Authorization is also checked against the current database profile for the JWT s
 - `POST /oauth/token` (`application/x-www-form-urlencoded`, `Cache-Control: no-store`)
   - `grant_type=authorization_code&client_id&code&redirect_uri&code_verifier[&resource]`
   - `grant_type=refresh_token&client_id&refresh_token`
+  - ใช้ได้ครั้งเดียวจริง (2026-10-28): แลก code/refresh พร้อมกันด้วยค่าเดียวกัน สำเร็จได้คำขอเดียว ที่เหลือ `invalid_grant`; code ที่ verifier หรือ `resource` ไม่ตรงถูกเผาทิ้งทันที; **refresh token เก่า (ถูก rotate แล้ว) ถูกนำมาใช้อีก = ยกเลิกการเชื่อมต่อนั้นทั้งหมด** (OAuth 2.1 reuse detection) ผู้ใช้ต้องเชื่อมต่อใหม่จาก Claude
   - → `{ access_token: "qao_…", token_type: "Bearer", expires_in: 3600, refresh_token: "qrt_…", scope: "knowledge:read" }`; ข้อผิดพลาด `400 { error, error_description }` (`invalid_grant`, `invalid_request`, `invalid_target`, `unsupported_grant_type`) หรือ `401 invalid_client`
 - `/mcp` ไม่มี/ผิด token → `401` + `WWW-Authenticate: Bearer realm="ProMaxx2 QA Hub", resource_metadata="<base>/.well-known/oauth-protected-resource/mcp", scope="knowledge:read"`; รับทั้ง Personal Access Token (`qak_`) และ OAuth access token (`qao_`, ตรวจ audience)
 

@@ -37,6 +37,27 @@ public sealed class KnowledgeArticleHtmlShareTests
         Assert.Contains("<title>คู่มือ</title>", clean);
     }
 
+    [Theory]
+    [InlineData("<a href=\"java&#x73;cript:alert(3)\">x</a>")]
+    [InlineData("<a href='&#106;avascript:alert(3)'>x</a>")]
+    [InlineData("<a href=\"java&#09;script:alert(3)\">x</a>")]
+    [InlineData("<a href=\"&amp;#x6A;avascript:alert(3)\">x</a>")]
+    [InlineData("<a href=javascript&colon;alert(3)>x</a>")]
+    [InlineData("<form action=\" vbscript:alert(3)\"></form>")]
+    public void Sanitize_neutralizes_entity_encoded_script_urls(string html)
+    {
+        var clean = HtmlArticleContent.Sanitize(html);
+        Assert.DoesNotContain("alert(3)", clean);
+        Assert.Contains("=\"#\"", clean);
+    }
+
+    [Fact]
+    public void Sanitize_keeps_normal_links()
+    {
+        const string html = "<a href=\"https://example.com/a?x=1&amp;y=2\">a</a><a href='#top'>b</a><img src=\"data:image/png;base64,AAA\">";
+        Assert.Equal(html, HtmlArticleContent.Sanitize(html));
+    }
+
     [Fact]
     public void ToText_keeps_headings_lists_and_tables_and_drops_head_style_script()
     {

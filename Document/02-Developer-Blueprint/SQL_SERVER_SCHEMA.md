@@ -1327,6 +1327,8 @@ WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์�
 
 `PersonalAccessTokens` เพิ่ม `Kind` (Personal/OAuth, default Personal), `ClientId`, `RefreshTokenHash` (unique filtered), `RefreshExpiresAt`, `Resource` (audience)
 
+migration `AddOAuthRefreshReuseDetection` (2026-10-28): `PersonalAccessTokens.PreviousRefreshTokenHash` (64, null) + index filtered `IS NOT NULL` — refresh token ก่อน rotate ล่าสุด ถูกนำมาใช้อีก = ยกเลิกการเชื่อมต่อ; EF ใช้ `RefreshTokenHash` และ `OAuthAuthorizations.Status` เป็น concurrency token (ไม่เปลี่ยน schema) ให้ code/refresh token ใช้ได้ครั้งเดียวแม้คำขอมาพร้อมกัน
+
 ## Addendum: คลังเอกสาร (migration `AddKnowledgeFileContent`, 2026-10-22)
 
 `KnowledgeFiles` เพิ่ม `ContentHash` (64, SHA-256 ของไฟล์, index — กันไฟล์ซ้ำ), `Origin` (20, Upload/Import), `ImportPath` (300, index filtered — นำเข้าเอกสารระบบซ้ำแบบ idempotent), `UpdatedAt`; ไฟล์จริงอยู่ที่ `App_Data/KnowledgeFiles/{KnowledgeFileId:N}/`

@@ -196,8 +196,8 @@ builder.Services.AddAuthorizationBuilder()
     .AddAutomationPolicies()
     // endpoint ที่ลืมใส่ [Authorize] ต้องไม่กลายเป็น public โดยปริยาย — endpoint anonymous ต้องประกาศ [AllowAnonymous] เอง
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
-// จำกัดความถี่ endpoint anonymous ที่เดารหัสได้ — key ตาม IP จริงของ client (หลัง Cloudflare ใช้ CF-Connecting-IP)
-static string ClientKey(HttpContext http) => http.Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+// จำกัดความถี่ endpoint anonymous ที่เดารหัสได้ — key ตาม IP จริงของ client (CF-Connecting-IP เชื่อเฉพาะคำขอจาก cloudflared บน loopback — ดู ClientIp)
+static string ClientKey(HttpContext http) => ClientIp.Resolve(http) ?? "unknown";
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;

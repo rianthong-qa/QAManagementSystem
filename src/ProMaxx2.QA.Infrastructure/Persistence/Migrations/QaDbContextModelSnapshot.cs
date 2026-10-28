@@ -2762,6 +2762,7 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("Status")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
@@ -2876,10 +2877,15 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("PreviousRefreshTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTime?>("RefreshExpiresAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("RefreshTokenHash")
+                        .IsConcurrencyToken()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
@@ -2912,6 +2918,9 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("PersonalAccessTokenId");
+
+                    b.HasIndex("PreviousRefreshTokenHash")
+                        .HasFilter("[PreviousRefreshTokenHash] IS NOT NULL");
 
                     b.HasIndex("RefreshTokenHash")
                         .IsUnique()

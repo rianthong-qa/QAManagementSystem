@@ -26,6 +26,19 @@ public sealed class DefectListSortTests
     }
 
     [Theory]
+    [InlineData("severity", new[] { "Critical", "High", "Medium", "Low" })]
+    [InlineData("severity_asc", new[] { "Critical", "High", "Medium", "Low" })]
+    [InlineData("severity_desc", new[] { "Low", "Medium", "High", "Critical" })]
+    public void Sort_without_direction_uses_natural_order(string sortBy, string[] expected)
+    {
+        var project = Guid.NewGuid();
+        var defects = new[] { "Low", "Critical", "Medium", "High" }
+            .Select((severity, i) => new ProMaxx2.QA.Domain.Defects.Defect(project, null, null, null, $"D-{i}", $"t{i}", severity, "Open", null, null, null, null, null, null))
+            .AsQueryable();
+        Assert.Equal(expected, DefectListSort.Apply(defects, sortBy).Select(x => x.Severity).ToArray());
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("unknown_asc")]

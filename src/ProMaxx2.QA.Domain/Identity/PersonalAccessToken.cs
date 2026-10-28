@@ -34,6 +34,8 @@ public sealed class PersonalAccessToken
     public string Kind { get; private set; } = "Personal";
     public string? ClientId { get; private set; }
     public string? RefreshTokenHash { get; private set; }
+    /// <summary>refresh token ก่อน rotate ล่าสุด — ถูกนำมาใช้อีก = token รั่ว/ถูกขโมย → ยกเลิกการเชื่อมต่อทั้งหมด (OAuth 2.1 §4.3.1 สำหรับ public client)</summary>
+    public string? PreviousRefreshTokenHash { get; private set; }
     public DateTime? RefreshExpiresAt { get; private set; }
     /// <summary>audience ของ token (RFC 8707) — URL ของ MCP server</summary>
     public string? Resource { get; private set; }
@@ -79,6 +81,7 @@ public sealed class PersonalAccessToken
     public (string AccessToken, string RefreshToken) Rotate(DateTime now)
     {
         if (Kind != "OAuth" || !IsConnected(now)) throw new InvalidOperationException("การเชื่อมต่อนี้หมดอายุหรือถูกยกเลิกแล้ว");
+        PreviousRefreshTokenHash = RefreshTokenHash;
         return IssueOAuthPair(now);
     }
 

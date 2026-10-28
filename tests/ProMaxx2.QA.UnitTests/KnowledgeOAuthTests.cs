@@ -143,7 +143,7 @@ public sealed class KnowledgeOAuthTests
         Assert.NotEqual(issued.AccessToken, refreshed.AccessToken);
         Assert.Null(await tokens.AuthenticateAsync(issued.AccessToken, null, "PersonalAccessToken", default));
         Assert.NotNull(await tokens.AuthenticateAsync(refreshed.AccessToken, null, "PersonalAccessToken", default));
-        Assert.Equal("invalid_grant", (await Assert.ThrowsAsync<OAuthException>(() => service.TokenAsync(Form(("grant_type", "refresh_token"), ("client_id", clientId), ("refresh_token", issued.RefreshToken)), null, default))).Error);
+        // refresh token เดิมใช้ซ้ำ = ยกเลิกการเชื่อมต่อทั้งหมด — ทดสอบแยกใน Refresh_ReusedOldRefreshTokenRevokesConnection
 
         // หน้า "เชื่อมต่อ Claude" เห็นเป็น 1 การเชื่อมต่อแบบ OAuth
         var listed = Assert.Single(await tokens.ListAsync(user.UserId, default));
@@ -187,6 +187,93 @@ public sealed class KnowledgeOAuthTests
     }
 
     [Fact]
+    public async Task Token_WrongResourceConsumesCode()
+    {
+        await using var db = CreateDb();
+        var (user, principal) = await SeedAsync(db, mcp: true);
+        var service = OAuth(db);
+        var clientId = await RegisterAsync(service);
+        var (verifier, challenge) = NewPkce();
+        var code = await ApprovedCodeAsync(service, clientId, challenge, principal, user.UserId);
+        IFormCollection Exchange(string resource) => Form(("grant_type", "authorization_code"), ("client_id", clientId), ("code", code), ("redirect_uri", Callback), ("code_verifier", verifier), ("resource", resource));
+
+        Assert.Equal("invalid_target", (await Assert.ThrowsAsync<OAuthException>(() => service.TokenAsync(Exchange("https://evil.example/mcp"), null, default))).Error);
+        Assert.Equal("Exchanged", (await db.OAuthAuthorizations.AsNoTracking().SingleAsync()).Status);
+        // ลองใหม่ด้วย resource ที่ถูกก็ใช้ code เดิมไม่ได้แล้ว
+        Assert.Equal("invalid_grant", (await Assert.ThrowsAsync<OAuthException>(() => service.TokenAsync(Exchange(Resource), null, default))).Error);
+    }
+
+    [Fact]
+    public async Task Token_ConcurrentExchangeOfSameCodeOnlyOneSucceeds()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        QaDbContext Open() => new(new DbContextOptionsBuilder<QaDbContext>().UseInMemoryDatabase(dbName).Options);
+        string clientId, code;
+        await using (var setup = Open())
+        {
+            var (user, principal) = await SeedAsync(setup, mcp: true);
+            var service = OAuth(setup);
+            clientId = await RegisterAsync(service);
+            var (_, challenge) = NewPkce();
+            code = await ApprovedCodeAsync(service, clientId, challenge, principal, user.UserId);
+        }
+        // จำลองสองคำขอที่อ่านแถวเดียวกันก่อนอีกฝ่ายบันทึก: ทั้งคู่ผ่าน TryExchange ในหน่วยความจำ แต่บันทึกได้แค่คำขอแรก
+        await using var first = Open();
+        await using var second = Open();
+        var a = await first.OAuthAuthorizations.SingleAsync();
+        var b = await second.OAuthAuthorizations.SingleAsync();
+        Assert.True(a.TryExchange(code, clientId, Callback, DateTime.UtcNow));
+        Assert.True(b.TryExchange(code, clientId, Callback, DateTime.UtcNow));
+        await first.SaveChangesAsync();
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => second.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Refresh_ReusedOldRefreshTokenRevokesConnection()
+    {
+        await using var db = CreateDb();
+        var (user, principal) = await SeedAsync(db, mcp: true);
+        var tokens = Tokens(db);
+        var service = OAuth(db, tokens);
+        var clientId = await RegisterAsync(service);
+        var (verifier, challenge) = NewPkce();
+        var code = await ApprovedCodeAsync(service, clientId, challenge, principal, user.UserId);
+        var issued = await service.TokenAsync(Form(("grant_type", "authorization_code"), ("client_id", clientId), ("code", code), ("redirect_uri", Callback), ("code_verifier", verifier)), null, default);
+        IFormCollection Refresh(string token) => Form(("grant_type", "refresh_token"), ("client_id", clientId), ("refresh_token", token));
+        var refreshed = await service.TokenAsync(Refresh(issued.RefreshToken), null, default);
+
+        // refresh token เดิม (ถูก rotate ไปแล้ว) ถูกนำมาใช้อีก → ยกเลิกการเชื่อมต่อ token ชุดใหม่ก็ใช้ไม่ได้
+        Assert.Equal("invalid_grant", (await Assert.ThrowsAsync<OAuthException>(() => service.TokenAsync(Refresh(issued.RefreshToken), null, default))).Error);
+        Assert.NotNull((await db.PersonalAccessTokens.AsNoTracking().SingleAsync()).RevokedAt);
+        await Assert.ThrowsAsync<OAuthException>(() => service.TokenAsync(Refresh(refreshed.RefreshToken), null, default));
+        Assert.Null(await tokens.AuthenticateAsync(refreshed.AccessToken, null, "PersonalAccessToken", default));
+    }
+
+    [Fact]
+    public async Task Refresh_ConcurrentRotationOfSameTokenOnlyOneSucceeds()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        QaDbContext Open() => new(new DbContextOptionsBuilder<QaDbContext>().UseInMemoryDatabase(dbName).Options);
+        await using (var setup = Open())
+        {
+            var (user, principal) = await SeedAsync(setup, mcp: true);
+            var service = OAuth(setup);
+            var clientId = await RegisterAsync(service);
+            var (verifier, challenge) = NewPkce();
+            var code = await ApprovedCodeAsync(service, clientId, challenge, principal, user.UserId);
+            await service.TokenAsync(Form(("grant_type", "authorization_code"), ("client_id", clientId), ("code", code), ("redirect_uri", Callback), ("code_verifier", verifier)), null, default);
+        }
+        await using var first = Open();
+        await using var second = Open();
+        var a = await first.PersonalAccessTokens.SingleAsync();
+        var b = await second.PersonalAccessTokens.SingleAsync();
+        a.Rotate(DateTime.UtcNow);
+        b.Rotate(DateTime.UtcNow);
+        await first.SaveChangesAsync();
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => second.SaveChangesAsync());
+    }
+
+    [Fact]
     public async Task Authorize_ErrorsNeverRedirectToUntrustedUri()
     {
         await using var db = CreateDb();
@@ -213,7 +300,8 @@ public sealed class KnowledgeOAuthTests
     {
         await using var db = CreateDb();
         var (user, principal) = await SeedAsync(db, mcp: false);
-        var service = OAuth(db);
+        var tokens = Tokens(db);
+        var service = OAuth(db, tokens);
         var clientId = await RegisterAsync(service);
         var (_, challenge) = NewPkce();
         Assert.StartsWith(Callback + "?error=access_denied", (await service.AuthorizeAsync(Query(clientId, challenge), default)).RedirectUrl);
@@ -221,6 +309,7 @@ public sealed class KnowledgeOAuthTests
         var config = await db.AiConfigurations.SingleAsync();
         config.UpdateKnowledge("None", null, null, "", null, false, true);
         await db.SaveChangesAsync();
+        tokens.ForgetMcpEnabled(); // Setting Center ล้าง cache สวิตช์ MCP หลังบันทึก
         var start = await service.AuthorizeAsync(Query(clientId, challenge, state: "s"), default);
         var requestId = Uri.UnescapeDataString(start.RedirectUrl!.Split("oauth=")[1]);
         var noPermission = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()), new Claim("permission", "KNOWLEDGE.VIEW")], "jwt"));

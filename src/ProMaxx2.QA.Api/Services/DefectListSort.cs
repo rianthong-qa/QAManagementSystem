@@ -3,14 +3,16 @@ using ProMaxx2.QA.Domain.Defects;
 namespace ProMaxx2.QA.Api.Services;
 
 /// <summary>เรียงรายการ Defect ก่อนแบ่งหน้า (หัวคอลัมน์หน้า Defect) — sortBy = "&lt;field&gt;_&lt;asc|desc&gt;"
+/// ไม่ระบุทิศ (เช่น "severity") = ทิศปกติของคอลัมน์: createdAt ใหม่ → เก่า, คอลัมน์อื่นน้อย → มาก (Critical ก่อน) เหมือน key แบบไม่มีทิศของ Test Case
 /// ค่าไม่รู้จัก/ว่าง = สร้างล่าสุดก่อน (ลำดับเดิม); ค่าเท่ากันเรียงต่อด้วยวันที่สร้างล่าสุดให้แบ่งหน้าแล้วลำดับคงที่</summary>
 public static class DefectListSort
 {
     public static IQueryable<Defect> Apply(IQueryable<Defect> query, string? sortBy)
     {
         var parts = (sortBy ?? "").Split('_', 2);
-        var desc = parts.Length < 2 || !parts[1].Equals("asc", StringComparison.OrdinalIgnoreCase);
-        IOrderedQueryable<Defect> ordered = parts[0].ToLowerInvariant() switch
+        var field = parts[0].ToLowerInvariant();
+        var desc = parts.Length < 2 ? field == "createdat" : !parts[1].Equals("asc", StringComparison.OrdinalIgnoreCase);
+        IOrderedQueryable<Defect> ordered = field switch
         {
             "code" => desc ? query.OrderByDescending(x => x.DefectCode) : query.OrderBy(x => x.DefectCode),
             "title" => desc ? query.OrderByDescending(x => x.Title) : query.OrderBy(x => x.Title),

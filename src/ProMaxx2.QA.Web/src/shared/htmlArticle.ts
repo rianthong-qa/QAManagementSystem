@@ -8,6 +8,12 @@ const csp = "default-src 'none'; img-src data: blob: https: http:; style-src 'un
 // ค่าตั้งต้นแบบเอกสารทั่วไป (พื้นขาว) — วางก่อนเนื้อหาเพื่อให้สไตล์ของไฟล์ต้นฉบับทับได้
 const baseStyle = "html{background:#fff;color:#1f2933}body{margin:20px;font-family:system-ui,-apple-system,'Segoe UI',Tahoma,sans-serif;line-height:1.6;overflow-wrap:anywhere}img,video{max-width:100%;height:auto}table{border-collapse:collapse;max-width:100%}pre{white-space:pre-wrap}";
 
+/**
+ * sandbox ของ iframe บทความ — **ห้ามเพิ่ม allow-scripts**: allow-same-origin มีไว้ให้หน้าแม่อ่าน contentDocument เพื่อวัดความสูง
+ * ซึ่งปลอดภัยเฉพาะเมื่อไม่มีสคริปต์ใดรันใน iframe (ถ้ามีทั้งสองอย่าง สคริปต์ในบทความจะเข้าถึงหน้าแม่และ token ได้) — ล็อกด้วย htmlArticle.test.ts
+ */
+export const htmlArticleSandbox = "allow-same-origin allow-popups allow-popups-to-escape-sandbox";
+
 /** เอกสารเต็มสำหรับ iframe srcDoc */
 export const htmlArticleDocument = (html: string) =>
   `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><base target="_blank"><style>${baseStyle}</style></head><body>${html}</body></html>`;

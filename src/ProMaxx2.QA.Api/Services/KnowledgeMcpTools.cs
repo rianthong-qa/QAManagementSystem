@@ -254,7 +254,7 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
     private async Task AuditAsync(Guid userId, string tool, string summary, CancellationToken ct)
     {
         var prefix = http.HttpContext?.User.FindFirstValue("token_prefix");
-        var ip = http.HttpContext?.Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? http.HttpContext?.Connection.RemoteIpAddress?.ToString();
+        var ip = ClientIp.Resolve(http.HttpContext);
         db.AuditLogs.Add(new AuditLog(userId, "Called", AuditEntityType, tool, Cut($"Claude (MCP) {tool}: {summary} · token {prefix}…", 1000), null, null, ip));
         await db.SaveChangesAsync(ct);
     }

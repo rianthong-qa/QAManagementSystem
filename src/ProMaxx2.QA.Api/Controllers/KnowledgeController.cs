@@ -271,6 +271,6 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
 
     private async Task<bool> CanEditAsync() => (await authorization.AuthorizeAsync(User, "KnowledgeEdit")).Succeeded;
     private static string Snapshot(KnowledgeArticle a) => JsonSerializer.Serialize(new { a.Title, a.ProjectId, a.Tags, a.Status, a.ContentFormat, BodyLength = a.BodyMarkdown.Length, HtmlLength = a.BodyHtml?.Length });
-    private string? ClientIp() => Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+    private string? ClientIp() => Services.ClientIp.Resolve(HttpContext);
     private Guid? UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;
 }

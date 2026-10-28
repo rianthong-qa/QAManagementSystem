@@ -72,6 +72,7 @@ public sealed class KnowledgeMcpTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateAsync(user.UserId, "t", 90, null, default));
 
         await EnableMcpAsync(db);
+        service.ForgetMcpEnabled(); // Setting Center ล้าง cache สวิตช์ MCP หลังบันทึก
         for (var i = 0; i < PersonalAccessToken.MaxActivePerUser; i++) await service.CreateAsync(user.UserId, $"t{i}", 90, null, default);
         await Assert.ThrowsAsync<ArgumentException>(() => service.CreateAsync(user.UserId, "เกิน", 90, null, default));
         Assert.Equal(PersonalAccessToken.MaxActivePerUser, await db.AuditLogs.CountAsync(x => x.EntityType == "PersonalAccessToken"));
