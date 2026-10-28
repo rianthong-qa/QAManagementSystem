@@ -91,9 +91,10 @@ public sealed partial class DefectActivityService(QaDbContext db)
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task LogAsync(Guid defectId, string actionType, string message, Guid? userId, CancellationToken ct)
+    /// <summary>fromValue/toValue/buildId ใส่เมื่อเป็นการเปลี่ยนสถานะ — ใช้นับ Reopen/เวลาแก้ไข และรู้ว่าเกิดบน Build ไหน</summary>
+    public async Task LogAsync(Guid defectId, string actionType, string message, Guid? userId, CancellationToken ct, string? fromValue = null, string? toValue = null, Guid? buildId = null)
     {
-        await db.DefectActivities.AddAsync(new DefectActivity(defectId, actionType, message, userId), ct);
+        await db.DefectActivities.AddAsync(new DefectActivity(defectId, actionType, message, userId, fromValue, toValue, buildId), ct);
         await db.SaveChangesAsync(ct);
     }
 }

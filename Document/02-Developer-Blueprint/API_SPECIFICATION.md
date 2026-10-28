@@ -1215,6 +1215,16 @@ Authorization is also checked against the current database profile for the JWT s
 - `GET /knowledge/search`, แชท และ MCP ใช้ผลรวม Full-Text + ความหมาย (RRF) อัตโนมัติเมื่อตั้งค่า Embedding — `rank` ในผลค้นหาเป็นคะแนนเพื่อเรียงลำดับเท่านั้น (ไม่ใช่ RANK ของ Full-Text)
 - Config: `Knowledge:EmbeddingBatchSize` (32), `Knowledge:VectorMinScore` (0.35)
 
+### Defect — วงจรข้าม Build (2026-10-28)
+
+กฎและความหมายสถานะทั้งหมดดู `Document/03-Architecture-and-Plan/DEFECT_BUILD_LIFECYCLE.md`
+
+- `PATCH /defects/{id}/status { status, resolution?, fixedInBuildId?, verifiedInBuildId? }` และ `POST`/`PUT /defects` (`SaveDefectRequest` เพิ่ม `fixedInBuildId?`, `verifiedInBuildId?`) — ผ่านกฎ `Defect.TransitionTo`; ผิดกฎ = `400` ข้อความภาษาไทย เช่น ปิดตรงจาก Open ด้วยผล Fixed; Resolved ที่ไม่ส่ง `fixedInBuildId` = Build ล่าสุดของ Release; Build ต้องอยู่ใน Project เดียวกัน
+- `POST /defects/bulk { ids, status?, severity?, assigneeUserId?, delete?, resolution?, fixedInBuildId? }` → `{ updated, failed: [{ defectId, defectCode, error }] }` — รายการที่ผิดกฎข้ามไป รายการอื่นบันทึก
+- `DefectDto` เพิ่ม `fixedInBuildId/Number`, `verifiedInBuildId/Number`, `resolvedAt`, `closedAt`, `reopenCount`, `lastRetestAt`, `lastRetestResult`, `regressionOfDefectId/Code`
+- `POST /executions/...` (`ExecutionHistoryDto`) เพิ่ม `reopenedDefectCode` (Fail ซ้ำบน Defect ที่ Resolved → Reopen ตัวเดิม) และ `regressionOfDefectCode` (Defect ที่ Closed แล้วปัญหากลับมา → Defect ใหม่อ้างตัวเดิม)
+- CRM sync (แทนข้อ 2026-10-07): `FINISH` → Resolved + Fix Build = Build ล่าสุดของ Release; `CLOSE` ไม่ปิด Defect (บันทึก activity `CrmClosed`)
+
 ### Defect — ผลการปิด + Defect ที่อาจซ้ำ (คลังความรู้ Phase 6, 2026-10-22)
 
 - `DefectDto` เพิ่ม `resolutionType`, `rootCauseCategory`, `rootCauseNote`, `resolutionNote`, `duplicateOfDefectId`, `duplicateOfDefectCode` (รายการ Defect ไม่เติม `duplicateOfDefectCode`)

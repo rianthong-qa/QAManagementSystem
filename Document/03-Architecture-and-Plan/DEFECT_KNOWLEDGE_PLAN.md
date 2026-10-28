@@ -2,7 +2,8 @@
 
 > สถานะ: **แผน — ยังไม่เริ่มพัฒนา**
 > อัปเดต 21 ตุลาคม 2026: Phase 2–4 (Knowledge Record, Export, AI/Embeddings/RAG) ย้ายไปรวมในคลังความรู้กลาง `AI_KNOWLEDGE_CHAT_PLAN.md` — Phase 1/1B ของแผนนี้ (ฟิลด์ Root Cause/Resolution, CRM Inbox) ยังใช้ต่อ
-> อัปเดต 22 ตุลาคม 2026: ทำแล้วบางส่วนของ §4.1–4.2 — `ResolutionType`, `RootCauseCategory` (Master Option `DefectRootCause` ตามร่าง), `RootCauseNote`, `ResolutionNote`, `DuplicateOfDefectId`; บังคับกรอกเมื่อปิดจากหน้า Defect เท่านั้น (ดู `AI_KNOWLEDGE_CHAT_PLAN.md` Phase 6) — FK ไป Execution, DetectedBy, FixedInBuild, ResolvedAt/ReopenCount, Tags และ §4.3 ยังไม่ทำ
+> อัปเดต 22 ตุลาคม 2026: ทำแล้วบางส่วนของ §4.1–4.2 — `ResolutionType`, `RootCauseCategory` (Master Option `DefectRootCause` ตามร่าง), `RootCauseNote`, `ResolutionNote`, `DuplicateOfDefectId`; บังคับกรอกเมื่อปิดจากหน้า Defect เท่านั้น (ดู `AI_KNOWLEDGE_CHAT_PLAN.md` Phase 6) — FK ไป Execution, DetectedBy และ Tags ยังไม่ทำ
+> อัปเดต 28 ตุลาคม 2026: `FixedInBuildId`, `VerifiedInBuildId`, `ResolvedAt`, `ClosedAt`, `ReopenCount` และ §4.3 บางส่วน (`DefectActivity.FromValue/ToValue/BuildId` สำหรับการเปลี่ยนสถานะ) ทำแล้ว — ดู `DEFECT_BUILD_LIFECYCLE.md`
 > จัดทำ: 25 กันยายน 2026
 > ขอบเขต: Defect ที่พบจากการทดสอบ (Manual Execution, Auto-create เมื่อ Fail, Automation Failure) และ **เคสที่ CRM (BlueSea Helpdesk) ส่งมาหา QA** ทุก Project
 

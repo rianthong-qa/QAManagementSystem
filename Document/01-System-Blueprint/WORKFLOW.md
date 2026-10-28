@@ -70,6 +70,8 @@ QA ตรวจ Package/DB Migration/Module Version แล้วสร้าง 
 - Retest Pass → Closed
 - Retest Fail → Reopen
 
+> **ระบบที่ใช้จริง (2026-10-28):** ใช้ 5 สถานะ Open / In Progress / Resolved / Closed / Rejected — Resolved = "Fixed + Ready for Retest" (Dev แก้แล้ว รอ QA ตรวจซ้ำบน Fix Build), Closed = ตรวจซ้ำผ่าน, Reopen = กลับเป็น Open และนับจำนวนครั้ง; Defect เก็บ Build ที่เจอ / Fix Build / Build ที่ตรวจซ้ำผ่าน — กฎทั้งหมดและแนวปฏิบัติเมื่อได้ Build ใหม่ดู `Document/03-Architecture-and-Plan/DEFECT_BUILD_LIFECYCLE.md`
+
 P0/P1 แจ้ง QA Lead และ Developer Owner และขึ้น Release Dashboard
 
 ## 8. Developer Fix

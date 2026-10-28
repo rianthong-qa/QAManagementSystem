@@ -28,6 +28,9 @@
 .defect-resolution-candidates span { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .defect-resolution-candidates small, .defect-resolution-empty { color: var(--muted); font-size: 12px; }
 .defect-resolution-error { margin: 12px 0 0; color: var(--red); font-size: 13px; }
+/* ปิดตรงจาก Open/In Progress — บอกทางที่ถูก (Resolve + Fix Build ให้ QA ตรวจซ้ำ) */
+.defect-resolution-hint { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 16px; border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--yellow) 7%, var(--card)); padding: 10px 12px; color: var(--text); font-size: 12px; line-height: 1.6; }
+.defect-resolution-hint .material-symbols-outlined { flex: none; color: var(--warning-text); font-size: 18px; }
 .defect-resolution-missing, .defect-resolution-ready { margin-right: auto; font-size: 12px; }
 .defect-resolution-missing { color: var(--red); }
 .defect-resolution-ready { color: var(--green); }

@@ -433,8 +433,8 @@ public sealed class CrmController(
             await db.SaveChangesAsync(ct);
             var replyNote = string.IsNullOrEmpty(message) ? "" : "; เพิ่มประวัติการติดต่อ";
             await activityService.LogAsync(defect.DefectId, "CrmTicketUpdated", $"CRM Ticket #{jobNo.Trim()} updated: Status={result.Status}; Assignee={result.Assignee}{replyNote}", userId, ct);
-            // Ticket จบงานใน CRM (Finish/Close) → ปรับสถานะ Defect ที่ผูกไว้ให้ตรง (Resolved/Closed)
-            defectStatusChanged = await CrmDefectStatusSync.ApplyAndLogAsync(defect, result.Status, userId, activityService, ct);
+            // Ticket จบงานใน CRM: Finish → Defect เป็น Resolved (รอ QA ตรวจซ้ำ); Close → บันทึก activity อย่างเดียว ไม่ปิด Defect เอง
+            defectStatusChanged = await CrmDefectStatusSync.ApplyAndLogAsync(db, defect, result.Status, userId, activityService, ct);
         }
         try
         {

@@ -399,6 +399,13 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-28 — Defect: วงจรข้าม Build (Fix Build / ตรวจซ้ำ / Reopen)
+
+- หน้าต่างผลการปิด (`DefectResolutionModal`): เปลี่ยนเป็น Resolved มีช่อง "แก้ใน Build (Fix Build)" (select เต็มแถว ค่าเริ่มต้น = Fix Build เดิมหรือ Build ล่าสุดของ Release, Build ใหม่สุดก่อน + วันที่ Build); Resolved → Closed มีช่อง "ตรวจซ้ำผ่านใน Build"; ปิดตรงจาก Open/In Progress ซ่อนผล "แก้ไขแล้ว" และแสดงกล่องแนะนำ `.defect-resolution-hint` (พื้น `--yellow` 7%, ไอคอน `--warning-text`) ว่าให้ Resolve พร้อม Fix Build ก่อน
+- รายละเอียด Defect: แถบปุ่ม — Open/Rejected แสดง "In Progress", Resolved/Closed แสดง "Reopen" (`.quick-action-red`, ไอคอน `replay`, ยืนยันด้วย `confirmDialog` บอกครั้งที่ Reopen), ปุ่มปิดของ Resolved ชื่อ "ตรวจซ้ำผ่าน"; ข้อมูลเพิ่ม "เจอใน Build", "Fix Build" ("ไม่ระบุ Build" สำหรับข้อมูลเดิม), "ตรวจซ้ำผ่านใน", "Reopen n ครั้ง" (Badge แดง), "ปัญหาเดิมของ"
+- Bulk เปลี่ยนสถานะ: รายการที่ผิดกฎข้ามไป — toast สีแดงบอกจำนวนที่ข้ามและเหตุผลรายการแรก
+- Execution Workspace: toast แยก "Reopen DEF-x แล้ว" และ "สร้าง DEF-y — ปัญหาเดิมของ DEF-x กลับมา"
+
 ### 2026-10-28 — Test Suite / Test Cycle / Defect: แถบแบ่งหน้าแบบเดียวกับ Test Case
 
 - ย้ายแถบแบ่งหน้าเป็น component กลาง `ListPager` (+ hook `useUserPageSize`) และใช้ที่หน้า Test Case, Test Suite, Test Cycle, Defect: แสดงบนและล่างตาราง, กรอกจำนวนต่อหน้าเอง 1–500, จำแยกตาม User (key ต่อหน้า), เลขหน้าให้กด; หน้า Test Cycle/Defect ปิดปุ่มก่อนหน้า/ถัดไประหว่างโหลดเหมือนเดิม

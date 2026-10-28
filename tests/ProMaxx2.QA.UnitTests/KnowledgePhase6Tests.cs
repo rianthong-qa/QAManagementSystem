@@ -81,7 +81,9 @@ public sealed class KnowledgePhase6Tests
         Assert.Equal(("Resolved", "Duplicate", "PMX-DEF-0002"), (dto.Status, dto.ResolutionType, dto.DuplicateOfDefectCode));
         Assert.Contains(await db.DefectActivities.Select(x => x.ActionType).ToListAsync(), x => x == "Resolution");
 
-        // เปลี่ยนสถานะโดยไม่ส่งผลการปิด (ช่องทางอื่น) ยังทำได้ — ไม่บังคับที่ API
+        // Resolved โดยไม่ส่งผลการปิด (Bulk/CRM) ยังทำได้ แต่ปิดตรงจาก Open ต้องระบุผลที่ไม่ใช่ Fixed (DEFECT_BUILD_LIFECYCLE.md)
+        Assert.IsType<BadRequestObjectResult>((await controller.ChangeStatus(original.DefectId, new("Closed"), default)).Result);
+        Assert.IsType<OkObjectResult>((await controller.ChangeStatus(original.DefectId, new("Resolved"), default)).Result);
         Assert.IsType<OkObjectResult>((await controller.ChangeStatus(original.DefectId, new("Closed"), default)).Result);
     }
 
