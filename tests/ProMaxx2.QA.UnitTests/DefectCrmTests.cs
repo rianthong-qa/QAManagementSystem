@@ -1,0 +1,16 @@
+using ProMaxx2.QA.Domain.Defects;
+namespace ProMaxx2.QA.UnitTests;
+public sealed class DefectCrmTests
+{
+ private static Defect NewDefect()=>new(Guid.NewGuid(),null,null,null,"DEF-1","Sample bug","Medium","Open",null,null,null,null,null,null);
+ [Fact]public void New_defect_has_no_crm_link(){var d=NewDefect();Assert.Equal("None",d.CrmSyncStatus);Assert.Null(d.CrmTicketId);Assert.Null(d.CrmLastSyncedAt);}
+ [Fact]public void SetCrmTicket_links_and_stamps_sync_time(){var d=NewDefect();var now=DateTime.UtcNow;d.SetCrmTicket("BHD690831000034",now);Assert.Equal("Linked",d.CrmSyncStatus);Assert.Equal("BHD690831000034",d.CrmTicketId);Assert.Equal(now,d.CrmLastSyncedAt);}
+ [Fact]public void UnlinkCrmTicket_clears_the_crm_link_and_snapshot(){var d=NewDefect();var linkedAt=DateTime.UtcNow.AddMinutes(-1);d.SetCrmTicket("BHD690831000034",linkedAt);d.UpdateCrmSnapshot("Continue","6101",linkedAt);var updatedAt=DateTime.UtcNow;d.UnlinkCrmTicket(updatedAt,null);Assert.Equal("None",d.CrmSyncStatus);Assert.Null(d.CrmTicketId);Assert.Null(d.CrmLastSyncedAt);Assert.Null(d.CrmLastKnownStatus);Assert.Null(d.CrmLastKnownAssignto);Assert.Equal(updatedAt,d.UpdatedAt);}
+ [Fact]public void SetCrmTicket_rejects_blank_ticket_id(){var d=NewDefect();Assert.Throws<ArgumentException>(()=>d.SetCrmTicket("  ",DateTime.UtcNow));}
+ [Fact]public void SetCrmSyncFailed_marks_failed_without_a_ticket(){var d=NewDefect();var now=DateTime.UtcNow;d.SetCrmSyncFailed(now);Assert.Equal("Failed",d.CrmSyncStatus);Assert.Null(d.CrmTicketId);Assert.Equal(now,d.CrmLastSyncedAt);}
+ [Fact]public void A_failed_resend_does_not_clear_a_prior_successful_link(){var d=NewDefect();d.SetCrmTicket("BHD690831000034",DateTime.UtcNow);d.SetCrmSyncFailed(DateTime.UtcNow);Assert.Equal("Failed",d.CrmSyncStatus);Assert.Equal("BHD690831000034",d.CrmTicketId);}
+ [Fact]public void UpdateCrmSnapshot_records_status_and_assignto_without_touching_workflow_status(){var d=NewDefect();d.SetCrmTicket("BHD690831000034",DateTime.UtcNow);d.UpdateCrmSnapshot("Develop","6101");Assert.Equal("Develop",d.CrmLastKnownStatus);Assert.Equal("6101",d.CrmLastKnownAssignto);Assert.Equal("Open",d.Status);}
+ [Fact]public void UpdateCrmSnapshot_accepts_nulls(){var d=NewDefect();d.UpdateCrmSnapshot(null,null);Assert.Null(d.CrmLastKnownStatus);Assert.Null(d.CrmLastKnownAssignto);}
+ [Fact]public void UpdateCrmSnapshot_can_stamp_the_last_remote_sync_time(){var d=NewDefect();var syncedAt=DateTime.UtcNow;d.UpdateCrmSnapshot("Continue","6101",syncedAt);Assert.Equal(syncedAt,d.CrmLastSyncedAt);}
+ [Fact]public void Poller_snapshot_without_timestamp_preserves_the_last_remote_sync_time(){var d=NewDefect();var syncedAt=DateTime.UtcNow.AddMinutes(-5);d.UpdateCrmSnapshot("Continue","6101",syncedAt);d.UpdateCrmSnapshot("Finish","6101");Assert.Equal(syncedAt,d.CrmLastSyncedAt);Assert.Equal("Finish",d.CrmLastKnownStatus);}
+}

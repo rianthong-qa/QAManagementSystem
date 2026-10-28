@@ -1,0 +1,50 @@
+/* คลังเอกสาร (pages/KnowledgeDocuments.tsx) — prefix kn-docs / kn-upload */
+.kn-docs { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 18px; }
+.kn-docs-name { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.kn-docs-name > .material-symbols-outlined { flex: none; margin-top: 1px; color: var(--primary); font-size: 22px; }
+.kn-docs-name > div { display: grid; min-width: 0; }
+.kn-docs-error { color: var(--red); font-size: 12px; white-space: normal; }
+.kn-docs-table tr.is-highlight td { background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.kn-docs-import { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; border: 1px solid color-mix(in srgb, var(--green) 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--green) 8%, var(--card)); padding: 10px 12px; font-size: 13px; }
+.kn-docs-import > .material-symbols-outlined { color: var(--green); }
+.kn-docs-import > div { flex: 1; min-width: 0; }
+.kn-docs-import ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.kn-page .kn-docs-dismiss { display: inline-grid; flex: none; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; padding: 0; color: var(--muted); cursor: pointer; }
+
+.modal-box.kn-upload-modal { width: min(720px, 100%); max-height: 92vh; overflow-y: auto; }
+.modal-box.kn-upload-modal .modal-head { align-items: flex-start; gap: 12px; }
+.kn-upload-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 16px; }
+.kn-dropzone { display: grid; justify-items: center; gap: 4px; border: 2px dashed color-mix(in srgb, var(--primary) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); padding: 22px 16px; color: var(--muted); font-size: 13px; text-align: center; }
+.kn-dropzone.is-dragging { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, var(--card)); }
+.kn-dropzone > .material-symbols-outlined { color: var(--primary); font-size: 34px; }
+.kn-dropzone b { color: var(--text); font-size: 15px; }
+.modal-box.kn-upload-modal .kn-link-inline { display: inline; min-height: 0; border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.kn-upload-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.kn-upload-list li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px 6px 10px; font-size: 13px; }
+.kn-upload-list li > .material-symbols-outlined { color: var(--primary); font-size: 20px; }
+.kn-upload-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kn-upload-list small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.modal-box.kn-upload-modal .form-grid.kn-editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 0; }
+.kn-upload-note { display: flex; align-items: flex-start; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
+.kn-upload-note .material-symbols-outlined { flex: none; font-size: 17px; }
+.kn-upload-results { display: grid; gap: 8px; margin: 16px 0 0; padding: 0; list-style: none; }
+.kn-upload-results li { display: flex; align-items: flex-start; gap: 10px; border-left: 3px solid var(--green); border-radius: 8px; background: color-mix(in srgb, var(--green) 6%, var(--card)); padding: 8px 12px; font-size: 13px; }
+.kn-upload-results li.fail { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 5%, var(--card)); }
+.kn-upload-results li > .material-symbols-outlined { flex: none; color: var(--green); }
+.kn-upload-results li.fail > .material-symbols-outlined { color: var(--red); }
+.kn-upload-results li > div { display: grid; min-width: 0; }
+.kn-upload-results b { overflow-wrap: anywhere; }
+.kn-upload-results small { color: var(--muted); font-size: 12px; }
+
+@media (max-width: 760px) {
+  .kn-docs { padding: 14px; }
+  .kn-docs .kn-toolbar > .btn { flex: 1 1 100%; justify-content: center; min-height: 44px; }
+  .modal-box.kn-upload-modal .form-grid.kn-editor-grid { grid-template-columns: 1fr; }
+  .modal-box.kn-upload-modal .kn-editor-grid input, .modal-box.kn-upload-modal .kn-editor-grid select { min-height: 44px; }
+  .modal-box.kn-upload-modal .modal-head button, .modal-box.kn-upload-modal .modal-actions .btn { min-height: 44px; }
+  .modal-box.kn-upload-modal .modal-head button { width: 44px; }
+  .modal-box.kn-upload-modal .kn-link-inline { display: inline-flex; align-items: center; min-height: 40px; }
+  .kn-upload-list .table-action { min-width: 40px; min-height: 40px; }
+  .kn-page .kn-docs-dismiss { width: 40px; height: 40px; }
+  .modal-box.kn-upload-modal .modal-actions { flex-wrap: wrap; }
+}

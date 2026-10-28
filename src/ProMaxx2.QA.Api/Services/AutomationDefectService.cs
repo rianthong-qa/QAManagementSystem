@@ -142,13 +142,11 @@ public sealed class AutomationDefectService(
         db.DefectTestCaseLinks.Add(new DefectTestCaseLink(defect.DefectId, testCase.TestCaseId, userId));
         db.DefectActivities.Add(new DefectActivity(defect.DefectId, "Created", $"สร้าง Defect จาก Automation Fail {execution.AutomationCode} ({classification.FailureType})", userId));
         db.DefectActivities.Add(new DefectActivity(defect.DefectId, "TestLinked", $"เชื่อมโยง Test Case {testCase.TestCaseCode}", userId));
-        await db.SaveChangesAsync(ct);
+        // AUT-UI-001: เชื่อม execution กับ defect ใน SaveChanges เดียวกับการสร้าง defect — เดิมบันทึกแยกสองครั้ง
+        // ถ้าครั้งที่สองล้ม defect ถูกสร้างแต่ execution ไม่รู้ ทำให้กดสร้างซ้ำได้
         var execEntity = await db.AutomationExecutions.SingleOrDefaultAsync(x => x.AutomationExecutionId == executionId, ct);
-        if (execEntity is not null)
-        {
-            execEntity.LinkDefect(defect.DefectId);
-            await db.SaveChangesAsync(ct);
-        }
+        execEntity?.LinkDefect(defect.DefectId);
+        await db.SaveChangesAsync(ct);
         return new { defectCode = defect.DefectCode, defectId = defect.DefectId, classification = classification.FailureType };
     }
 

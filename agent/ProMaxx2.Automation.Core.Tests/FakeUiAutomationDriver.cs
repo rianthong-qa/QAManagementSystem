@@ -7,6 +7,8 @@ internal sealed class FakeUiAutomationDriver : IUiAutomationDriver
     public bool SetTextResult = true;
     public string? GetTextResult = "";
     public bool ExistsResult = true;
+    public bool? IsEnabledResult = true;
+    public bool WaitForWindowResult = true;
     public bool SelectComboResult = true;
     public bool ToggleResult = true;
     public bool PressKeyResult = true;
@@ -17,6 +19,18 @@ internal sealed class FakeUiAutomationDriver : IUiAutomationDriver
 
     public Task LaunchAsync(string exePath, string? arguments, TimeSpan timeout) => Task.CompletedTask;
     public Task<bool> WaitForMainWindowAsync(string processName, TimeSpan timeout) => Task.FromResult(true);
+
+    public Task<bool> WaitForWindowAsync(string titleOrAutomationId, TimeSpan timeout)
+    {
+        Calls.Add($"WaitForWindow:{titleOrAutomationId}");
+        return Task.FromResult(WaitForWindowResult);
+    }
+
+    public Task<bool?> IsEnabledAsync(string automationId, string? controlType, TimeSpan timeout)
+    {
+        Calls.Add($"IsEnabled:{automationId}");
+        return Task.FromResult(IsEnabledResult);
+    }
 
     public Task<bool> ClickAsync(string automationId, string? controlType, TimeSpan timeout)
     {

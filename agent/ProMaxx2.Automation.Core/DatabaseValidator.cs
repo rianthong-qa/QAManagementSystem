@@ -35,6 +35,9 @@ public sealed class FirebirdDbValidator : IDbValidator
     public async Task<DbValidationResult> ValidateAsync(DbValidationRequest r, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        // AUT-SEC-004: ไม่เชื่อ DSL จาก Hub — รับเฉพาะ SELECT อ่านอย่างเดียวคำสั่งเดียว
+        if (!DbAssertionSqlGuard.IsReadOnlySelect(r.Query, out var rejected))
+            return new DbValidationResult(false, "", r.Query, $"Rejected DB assertion query: {rejected} (AUT-DB-003).", 0);
         try
         {
             var cs = new FirebirdSql.Data.FirebirdClient.FbConnectionStringBuilder
@@ -49,7 +52,10 @@ public sealed class FirebirdDbValidator : IDbValidator
             }.ToString();
             using var con = new FirebirdSql.Data.FirebirdClient.FbConnection(cs);
             await con.OpenAsync(ct);
+            // AUT-SEC-004: read-only transaction (Firebird ปฏิเสธการเขียนระดับ engine) และ rollback เสมอ
+            await using var tx = await con.BeginTransactionAsync(new FirebirdSql.Data.FirebirdClient.FbTransactionOptions { TransactionBehavior = FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.Read | FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.ReadCommitted | FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.RecVersion }, ct);
             using var cmd = con.CreateCommand();
+            cmd.Transaction = tx;
             cmd.CommandText = r.Query;
             foreach (var (key, value) in r.Parameters)
             {
@@ -65,6 +71,7 @@ public sealed class FirebirdDbValidator : IDbValidator
                 else if (!string.IsNullOrWhiteSpace(r.Column)) actual = reader[r.Column];
                 else actual = reader.GetValue(0);
             }
+            await tx.RollbackAsync(ct);
             sw.Stop();
             var actualText = actual?.ToString()?.Trim() ?? "";
             return new DbValidationResult(DbAssertionComparer.Compare(actualText, r.Expected), actualText, r.Query, null, sw.ElapsedMilliseconds);
@@ -82,6 +89,9 @@ public sealed class SqlServerDbValidator : IDbValidator
     public async Task<DbValidationResult> ValidateAsync(DbValidationRequest r, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        // AUT-SEC-004: ไม่เชื่อ DSL จาก Hub — รับเฉพาะ SELECT อ่านอย่างเดียวคำสั่งเดียว
+        if (!DbAssertionSqlGuard.IsReadOnlySelect(r.Query, out var rejected))
+            return new DbValidationResult(false, "", r.Query, $"Rejected DB assertion query: {rejected} (AUT-DB-003).", 0);
         try
         {
             var cs = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
@@ -96,7 +106,10 @@ public sealed class SqlServerDbValidator : IDbValidator
             }.ToString();
             using var con = new Microsoft.Data.SqlClient.SqlConnection(cs);
             await con.OpenAsync(ct);
+            // AUT-SEC-004: SQL Server ไม่มี read-only transaction ระดับ session จึงครอบด้วย transaction แล้ว rollback เสมอ
+            await using var tx = (Microsoft.Data.SqlClient.SqlTransaction)await con.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
             using var cmd = con.CreateCommand();
+            cmd.Transaction = tx;
             cmd.CommandText = r.Query;
             foreach (var (key, value) in r.Parameters)
             {
@@ -112,6 +125,7 @@ public sealed class SqlServerDbValidator : IDbValidator
                 else if (!string.IsNullOrWhiteSpace(r.Column)) actual = reader[r.Column];
                 else actual = reader.GetValue(0);
             }
+            await tx.RollbackAsync(ct);
             sw.Stop();
             var actualText = actual?.ToString()?.Trim() ?? "";
             return new DbValidationResult(DbAssertionComparer.Compare(actualText, r.Expected), actualText, r.Query, null, sw.ElapsedMilliseconds);

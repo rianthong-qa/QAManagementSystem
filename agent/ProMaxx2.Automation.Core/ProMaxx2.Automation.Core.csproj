@@ -9,5 +9,7 @@
     <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
     <PackageReference Include="FirebirdSql.Data.FirebirdClient" Version="10.3.4" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.2" />
+    <!-- AUT-AGT-004: DPAPI สำหรับรหัสผ่านที่ set-agent-env.ps1 เข้ารหัสไว้ (เดิมได้มาแบบ transitive ผ่าน SqlClient) -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.4" />
   </ItemGroup>
 </Project>

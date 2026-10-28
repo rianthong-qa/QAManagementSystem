@@ -2,10 +2,13 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Application.Automation;
+using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.TestManagement;
 using ProMaxx2.QA.Api.Services;
+using ProMaxx2.QA.Infrastructure.Persistence;
 
 namespace ProMaxx2.QA.Api.Controllers;
 
@@ -16,10 +19,26 @@ public sealed class AutomationController(
     AutomationAiService aiService,
     AutomationDefectService defectService,
     ITestCaseRepository testCases,
-    IWebHostEnvironment environment) : ControllerBase
+    IWebHostEnvironment environment,
+    QaDbContext db) : ControllerBase
 {
-    [HttpGet("cases")] public Task<IReadOnlyList<AutomationCaseDto>> ListCases([FromQuery] Guid projectId, [FromQuery] string? search, [FromQuery] int take = 100, CancellationToken ct = default)
-        => cases.ListCasesAsync(projectId, search, take, ct);
+    [HttpGet("executions/{id:guid}/assignment-context")]
+    public async Task<ActionResult> AssignmentContext(Guid id, CancellationToken ct)
+    {
+        // AUT-SEC-003: จำกัดเฉพาะ execution ใน Project ที่ผู้ใช้เป็นสมาชิก — เดิมเปิดเผย cycle/tester ของ execution ใดก็ได้
+        var allowed = HttpContext.RequestServices.GetRequiredService<ProMaxx2.QA.Application.Common.ProjectAccessContext>().AllowedProjectIds;
+        var linked = await db.AutomationExecutions.AsNoTracking().Where(x => x.AutomationExecutionId == id && x.TestExecutionId.HasValue && allowed.Contains(x.AutomationCase.TestCase.ProjectId)).Select(x => new { x.TestExecutionId, x.Status, x.ClassifiedRecommendation, x.ErrorCode }).SingleOrDefaultAsync(ct);
+        if (linked is null || !linked.TestExecutionId.HasValue) return NotFound(new { code = "AUTOASSIGN_NO_LINKED_TEST_EXECUTION" });
+        var execution = await db.TestExecutions.AsNoTracking().Where(x => x.TestExecutionId == linked.TestExecutionId.Value).Select(x => new { x.TestCycleCaseId, x.TesterUserId, x.CycleCase.TestCycleId }).SingleOrDefaultAsync(ct);
+        return execution is null ? NotFound(new { code = "AUTOASSIGN_NO_LINKED_TEST_EXECUTION" }) : Ok(new { execution.TestCycleId, execution.TestCycleCaseId, originalTesterUserId = execution.TesterUserId, linked.Status, linked.ClassifiedRecommendation, linked.ErrorCode });
+    }
+
+    /// <summary>AUT-P2-001: real server-side page/size/filter/sort — <c>page</c>/<c>size</c> default to a single
+    /// page of 200 so existing callers that just want "up to 200 flat" (dashboard KPIs, batch-run/suite case
+    /// pickers) keep working unchanged by simply reading <c>.Rows</c> off the response.</summary>
+    [HttpGet("cases")] public Task<PagedResult<AutomationCaseDto>> ListCases([FromQuery] Guid projectId, [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? automationTarget,
+        [FromQuery] string? sortBy, [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
+        => cases.ListCasesPagedAsync(projectId, search, status, automationTarget, sortBy, page, size, ct);
 
     [HttpGet("cases/{id:guid}")] public async Task<ActionResult<AutomationCaseDto>> GetCase(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
     {
@@ -182,6 +201,16 @@ public sealed class AutomationController(
 
     [HttpGet("cases/flaky-candidates")] public Task<IReadOnlyList<FlakyCandidateDto>> FlakyCandidates([FromQuery] Guid projectId, CancellationToken ct) => cases.GetFlakyCandidatesAsync(projectId, ct);
 
+    /// <summary>ลบ Automation Case ถาวร (พ่วง Version/DSL, Execution และประวัติการรันทั้งหมดของ Case ที่เลือก) —
+    /// ไม่สามารถกู้คืนได้ จึงจำกัดสิทธิ์ไว้ที่ AutomationManage เท่ากับ Quarantine/ลบ Agent.</summary>
+    [HttpPost("cases/hard-delete"), Authorize(Policy = "AutomationManage")]
+    public async Task<IActionResult> HardDeleteCases([FromQuery] Guid projectId, HardDeleteAutomationCasesRequest request, CancellationToken ct)
+    {
+        try { await cases.HardDeleteCasesAsync(projectId, request, ct); return NoContent(); }
+        catch (EntityNotFoundException) { return NotFound(); }
+        catch (DbUpdateException) { return BadRequest(Problem("ไม่สามารถลบได้", "ยังมีข้อมูลอื่นในระบบอ้างอิง Automation Case นี้อยู่ ไม่สามารถลบถาวรได้", 400)); }
+    }
+
     [HttpPost("cases/{id:guid}/quarantine"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationCaseDto>> Quarantine(Guid id, [FromQuery] Guid projectId, QuarantineCaseRequest request, CancellationToken ct)
     {
         try { return Ok(await cases.QuarantineCaseAsync(id, projectId, request, ct)); }
@@ -207,6 +236,15 @@ public sealed class AutomationController(
         => Ok(await agentService.UpdateRetryPolicyAsync(request, UserId(), ct));
 
     [HttpGet("agents")] public Task<IReadOnlyList<AutomationAgentDto>> ListAgents(CancellationToken ct) => agentService.ListAgentsAsync(ct);
+
+    /// <summary>AUT-P2-004: utilization/queue time/runtime/failure over a window (default: last 30 days) plus a
+    /// capped recent heartbeat history.</summary>
+    [HttpGet("agents/{id:guid}/workload")] public async Task<ActionResult<AutomationAgentWorkloadDto>> GetAgentWorkload(Guid id, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
+    {
+        try { return Ok(await agentService.GetAgentWorkloadAsync(id, from, to, ct)); }
+        catch (EntityNotFoundException) { return NotFound(); }
+    }
+
     [HttpPost("agents/{id:guid}/enable"), Authorize(Policy = "AutomationManage")] public async Task<ActionResult<AutomationAgentDto>> EnableAgent(Guid id, CancellationToken ct)
     {
         try { return Ok(await agentService.SetAgentEnabledAsync(id, true, ct)); }
@@ -224,11 +262,22 @@ public sealed class AutomationController(
         catch (EntityNotFoundException) { return NotFound(); }
     }
 
-    [HttpGet("jobs")] public Task<IReadOnlyList<AutomationJobDto>> ListJobs([FromQuery] Guid? projectId, [FromQuery] Guid? buildId, [FromQuery] int take = 100, CancellationToken ct = default)
-        => agentService.ListJobsAsync(projectId, buildId, take, ct);
+    /// <summary>AUT-P2-001: see remark on <c>ListCases</c> — same "default page 1/size 200 keeps flat callers
+    /// working via .Rows" rationale.</summary>
+    [HttpGet("jobs")] public Task<PagedResult<AutomationJobDto>> ListJobs([FromQuery] Guid projectId, [FromQuery] Guid? buildId, [FromQuery] string? status, [FromQuery] string? sortBy,
+        [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
+        => agentService.ListJobsPagedAsync(projectId, buildId, status, sortBy, page, size, ct);
 
-    [HttpGet("executions")] public Task<IReadOnlyList<AutomationExecutionDto>> ListExecutions([FromQuery] Guid projectId, [FromQuery] Guid? buildId, [FromQuery] int take = 100, CancellationToken ct = default)
-        => agentService.ListExecutionsAsync(projectId, buildId, take, ct);
+    /// <summary>AUT-P2-002: adds environmentId/agentId/targetApp/failureType/from/to on top of AUT-P2-001's
+    /// buildId/status/search/sortBy/page/size.</summary>
+    [HttpGet("executions")] public Task<PagedResult<AutomationExecutionDto>> ListExecutions([FromQuery] Guid projectId, [FromQuery] Guid? buildId, [FromQuery] Guid? environmentId, [FromQuery] Guid? agentId,
+        [FromQuery] string? targetApp, [FromQuery] string? status, [FromQuery] string? failureType, [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] string? search, [FromQuery] string? sortBy,
+        [FromQuery] int page = 1, [FromQuery] int size = 200, CancellationToken ct = default)
+        => agentService.ListExecutionsPagedAsync(projectId, buildId, environmentId, agentId, targetApp, status, failureType, from, to, search, sortBy, page, size, ct);
+
+    /// <summary>AUT-P2-003: Pass/Fail/Flaky trend, bucketed by day (default)/build/release.</summary>
+    [HttpGet("executions/trend")] public Task<ExecutionTrendDto> GetExecutionTrend([FromQuery] Guid projectId, [FromQuery] string? groupBy, [FromQuery] DateTime? from, [FromQuery] DateTime? to, [FromQuery] Guid? releaseId, CancellationToken ct = default)
+        => agentService.GetExecutionTrendAsync(projectId, groupBy, from, to, releaseId, ct);
 
     [HttpGet("executions/{id:guid}")] public async Task<ActionResult<AutomationExecutionDto>> GetExecution(Guid id, [FromQuery] Guid projectId, CancellationToken ct)
     {

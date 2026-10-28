@@ -26,9 +26,10 @@ public sealed class ReleaseSignoffRepository(QaDbContext db, ProjectAccessContex
 
         var approvedRisks = await db.RiskAcceptances.AsNoTracking().CountAsync(r => r.ReleaseId == releaseId && r.Status == "Approved", ct);
 
-        var decision = ReleaseGate.Evaluate(new ReleaseGateInput(openP0, openP1, approvedRisks > 0));
+        var smokeStatus = buildId.HasValue ? await db.AutomationBuildTriggerRuns.AsNoTracking().Where(x => x.BuildId == buildId.Value && x.Policy.Pack == "Smoke").OrderByDescending(x => x.FiredAtUtc).Select(x => x.Status).FirstOrDefaultAsync(ct) ?? "NOT_RUN" : "NOT_RUN";
+        var decision = ReleaseGate.Evaluate(new ReleaseGateInput(openP0, openP1, approvedRisks > 0, smokeStatus == "Succeeded"));
         var decisionText = decision switch { ReleaseDecision.Go => "GO", ReleaseDecision.ConditionalGo => "CONDITIONAL_GO", _ => "NO_GO" };
-        return new ReleaseGateDto(openP0, openP1, coverage, regPassRate, true, approvedRisks, decisionText);
+        return new ReleaseGateDto(openP0, openP1, coverage, regPassRate, true, approvedRisks, decisionText, smokeStatus);
     }
 
     public async Task<IReadOnlyList<ReleaseSignoffDto>> ListAsync(Guid releaseId, CancellationToken ct)
@@ -40,6 +41,7 @@ public sealed class ReleaseSignoffRepository(QaDbContext db, ProjectAccessContex
     }
 
     public Task<bool> BuildBelongsToReleaseAsync(Guid releaseId, Guid buildId, CancellationToken ct) => db.Builds.AnyAsync(b => b.BuildId == buildId && b.ReleaseId == releaseId, ct);
+    public Task<bool> ExistsForBuildAndTypeAsync(Guid releaseId, Guid buildId, string signoffType, CancellationToken ct) => db.ReleaseSignoffs.AnyAsync(x => x.ReleaseId == releaseId && x.BuildId == buildId && x.SignoffType == signoffType, ct);
     public Task<string?> GetBuildNumberAsync(Guid buildId, CancellationToken ct) => db.Builds.AsNoTracking().Where(b => b.BuildId == buildId).Select(b => b.BuildNumber).FirstOrDefaultAsync(ct);
     public Task AddAsync(ReleaseSignoff entity, CancellationToken ct) => db.ReleaseSignoffs.AddAsync(entity, ct).AsTask();
     public Task SaveChangesAsync(CancellationToken ct) => db.SaveChangesAsync(ct);

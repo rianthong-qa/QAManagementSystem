@@ -1,0 +1,100 @@
+/* หน้า Defect (ออกแบบใหม่ 2026-10-22) — prefix df-, scope .df-page
+   การ์ดภาพรวมเดียว 3 ส่วน: สถานะ (แถบซ้อน + ตัวเลข + ข้อมูลประกอบ) | ความรุนแรง | Defect ตามโมดูล (กดเพื่อกรองรายการ)
+   ตามด้วยรายการแบบหน้ารายการกลาง (components/ListPage.css) */
+/* เต็มความกว้างของพื้นที่เนื้อหา — กฎเดิม .defect-page จำกัด max-width 1400px + padding 24px ซ้อนกับ padding ของ .content */
+.defect-page.df-page { max-width: none; margin: 0; padding: 0; }
+.df-page { display: grid; gap: 16px; min-width: 0; --df-open: var(--yellow); --df-inprogress: var(--info); --df-resolved: var(--green); --df-closed: color-mix(in srgb, var(--green) 55%, var(--text)); --df-rejected: color-mix(in srgb, var(--muted) 55%, var(--card)); }
+.df-page > .inline-alert { margin: 0; }
+
+.df-overview { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1.15fr); gap: 0; padding: 0; }
+.df-overview > div { min-width: 0; padding: 16px 18px; }
+.df-overview > div + div { border-left: 1px solid var(--line); }
+.df-overview h3 { display: flex; align-items: baseline; gap: 6px; margin: 0 0 10px; color: var(--text); font-size: 14px; }
+.df-overview h3 small { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+/* สถานะ */
+.df-ov-status { display: grid; align-content: start; gap: 10px; }
+.df-ov-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.df-ov-total { display: flex; align-items: baseline; gap: 8px; }
+.df-ov-total strong { font-size: 26px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.df-ov-total span { color: var(--muted); font-size: 13px; }
+.df-ov-scope { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.df-ov-scope .material-symbols-outlined { flex: none; font-size: 15px; }
+.df-ov-bar { display: flex; gap: 2px; height: 10px; overflow: hidden; border-radius: 999px; background: var(--bg); }
+.df-ov-bar > span { flex-basis: 0; min-width: 4px; }
+:is(.df-ov-bar > span, .df-dot).is-open { background: var(--df-open); }
+:is(.df-ov-bar > span, .df-dot).is-inprogress { background: var(--df-inprogress); }
+:is(.df-ov-bar > span, .df-dot).is-resolved { background: var(--df-resolved); }
+:is(.df-ov-bar > span, .df-dot).is-closed { background: var(--df-closed); }
+:is(.df-ov-bar > span, .df-dot).is-rejected { background: var(--df-rejected); }
+.df-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.df-ov-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px 12px; margin: 0; padding: 0; list-style: none; }
+.df-ov-legend li { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; }
+.df-ov-legend li > span:nth-child(2) { color: var(--muted); }
+.df-ov-legend b { margin-left: auto; font-size: 13px; font-variant-numeric: tabular-nums; }
+.df-ov-legend small { min-width: 32px; color: var(--muted); font-size: 11px; text-align: right; }
+.df-ov-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 2px 0 0; border-top: 1px dashed var(--line); padding-top: 10px; }
+.df-ov-facts > div { min-width: 0; }
+.df-ov-facts dt { color: var(--muted); font-size: 11px; }
+.df-ov-facts dd { margin: 1px 0 0; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.df-ov-facts dd.is-warning { color: var(--warning-text); }
+
+/* ความรุนแรง */
+.df-sev-row { display: grid; grid-template-columns: 62px minmax(0, 1fr) 40px 36px; align-items: center; gap: 8px; min-height: 30px; font-size: 12px; }
+.df-sev-label { color: var(--text); font-weight: 600; }
+.df-sev-track { height: 8px; overflow: hidden; border-radius: 999px; background: var(--bg); }
+.df-sev-track > span { display: block; height: 100%; border-radius: inherit; }
+.df-sev-track > .is-critical { background: var(--red); }
+.df-sev-track > .is-high { background: var(--yellow); }
+.df-sev-track > .is-medium { background: var(--info); }
+.df-sev-track > .is-low { background: color-mix(in srgb, var(--muted) 55%, var(--card)); }
+.df-sev-row b { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.df-sev-row small { color: var(--muted); font-size: 11px; text-align: right; }
+
+/* Defect ตามโมดูล */
+.df-ov-modules-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.df-page button.df-ov-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; border: 0; border-radius: 6px; background: transparent; padding: 2px 6px; color: var(--primary); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.df-page button.df-ov-link:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.df-page button.df-ov-link .material-symbols-outlined { font-size: 17px; }
+.df-ov-module-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.df-page .df-ov-module-list button { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-rows: auto auto; align-items: center; gap: 2px 8px; width: 100%; min-height: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 5px 6px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.df-page .df-ov-module-list button:hover { background: var(--bg); }
+.df-page .df-ov-module-list button.is-selected { border-color: color-mix(in srgb, var(--primary) 35%, var(--line)); background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.df-page .df-ov-module-list button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.df-rank { grid-row: 1 / span 2; color: var(--muted); font-size: 11px; font-weight: 700; text-align: center; }
+.df-module-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.df-module-name b { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; }
+.df-module-name small { color: var(--muted); font-size: 11px; }
+.df-module-count { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.df-module-track { grid-column: 2 / -1; height: 4px; overflow: hidden; border-radius: 999px; background: var(--bg); }
+.df-module-track > span { display: block; height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--primary) 70%, var(--card)); }
+.df-ov-toggle { margin-top: 4px; }
+.df-ov-empty { margin: 0; color: var(--muted); font-size: 13px; }
+
+/* รายการ: คอลัมน์ CRM + อายุที่ค้างนาน */
+.df-table .lp-col-crm { width: 124px; }
+.df-page button.df-crm-send { display: inline-flex; align-items: center; gap: 3px; min-height: 26px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; padding: 1px 9px 1px 6px; color: var(--muted); font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.df-page button.df-crm-send:hover { border-color: var(--primary); color: var(--primary); }
+.df-page button.df-crm-send .material-symbols-outlined { font-size: 15px; }
+.df-age-old { color: var(--warning-text); font-weight: 700; }
+
+@media (max-width: 1180px) {
+  /* อายุสำคัญกว่า CRM สำหรับ Defect — คงคอลัมน์อายุไว้ (ListPage ซ่อนวันที่ที่ ≤1180px) และซ่อน CRM แทน */
+  .lp-table.df-table .lp-col-date { display: table-cell; }
+  .lp-table.df-table .lp-col-crm { display: none; }
+  .df-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .df-ov-modules { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+  .df-overview > div.df-ov-modules { border-left: 0; }
+}
+@media (max-width: 760px) {
+  .df-overview { grid-template-columns: 1fr; }
+  .df-overview > div { padding: 14px; }
+  .df-overview > div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .df-ov-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .df-ov-legend { grid-template-columns: 1fr; }
+  .df-ov-legend li > span:nth-child(2) { white-space: nowrap; }
+  .df-page .df-ov-module-list button { min-height: 44px; }
+  .df-page button.df-ov-link { min-height: 40px; }
+  .lp-table.df-table .lp-col-crm { display: block; width: auto; }
+  .lp-table.df-table .lp-col-date { display: inline-flex; }
+}

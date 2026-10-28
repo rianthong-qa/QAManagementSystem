@@ -6,7 +6,7 @@ using ProMaxx2.QA.Domain.Projects;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
-/// <summary>AUT-P1-001/AUT-P1-002 persistence for <see cref="AutomationSuite"/>/<see cref="AutomationSuiteCase"/> — split into its own file as a partial of <see cref="AutomationRepository"/> to keep the (already large) main file from growing further; SaveChangesAsync is shared with <see cref="IAutomationRepository"/>'s implementation.</summary>
+/// <summary>AUT-P1-001/AUT-P1-002/AUT-P1-003 persistence for <see cref="AutomationSuite"/>/<see cref="AutomationSuiteCase"/>/<see cref="AutomationSuiteRevision"/> — split into its own file as a partial of <see cref="AutomationRepository"/> to keep the (already large) main file from growing further; SaveChangesAsync is shared with <see cref="IAutomationRepository"/>'s implementation.</summary>
 public sealed partial class AutomationRepository
 {
     public async Task<IReadOnlyList<AutomationSuiteListDto>> ListSuitesAsync(Guid projectId, string? search, bool? isActive, CancellationToken ct)
@@ -15,7 +15,7 @@ public sealed partial class AutomationRepository
         if (!string.IsNullOrWhiteSpace(search)) q = q.Where(x => x.SuiteCode.Contains(search) || x.SuiteName.Contains(search));
         if (isActive.HasValue) q = q.Where(x => x.IsActive == isActive.Value);
         return await q.OrderByDescending(x => x.CreatedAt)
-            .Select(x => new AutomationSuiteListDto(x.AutomationSuiteId, x.ProjectId, x.SuiteCode, x.SuiteName, x.Description, x.IsActive, x.CreatedAt, x.ClosedAt,
+            .Select(x => new AutomationSuiteListDto(x.AutomationSuiteId, x.ProjectId, x.SuiteCode, x.SuiteName, x.Description, x.IsActive, x.CreatedAt, x.ClosedAt, x.RevisionNo,
                 x.Cases.Count(c => !c.AutomationCase.IsDeleted), x.Cases.Count(c => !c.AutomationCase.IsDeleted && c.AutomationCase.Status == "Ready")))
             .ToListAsync(ct);
     }
@@ -23,13 +23,13 @@ public sealed partial class AutomationRepository
     public async Task<AutomationSuiteDto?> GetSuiteAsync(Guid id, Guid projectId, CancellationToken ct)
     {
         var suite = await db.AutomationSuites.AsNoTracking().Where(x => x.AutomationSuiteId == id && x.ProjectId == projectId)
-            .Select(x => new { x.AutomationSuiteId, x.ProjectId, x.SuiteCode, x.SuiteName, x.Description, x.IsActive, x.CreatedBy, x.CreatedAt, x.UpdatedAt, x.ClosedAt })
+            .Select(x => new { x.AutomationSuiteId, x.ProjectId, x.SuiteCode, x.SuiteName, x.Description, x.IsActive, x.CreatedBy, x.CreatedAt, x.UpdatedAt, x.ClosedAt, x.RevisionNo })
             .SingleOrDefaultAsync(ct);
         if (suite is null) return null;
         var cases = await db.AutomationSuiteCases.AsNoTracking().Where(x => x.AutomationSuiteId == id && !x.AutomationCase.IsDeleted).OrderBy(x => x.SortOrder)
             .Select(x => new SuiteCaseDto(x.AutomationCaseId, x.AutomationCase.AutomationCode, x.AutomationCase.TestCase.TestCaseCode, x.AutomationCase.TestCase.Title, x.AutomationCase.AutomationType, x.AutomationCase.Status, x.SortOrder, x.IsRequired))
             .ToListAsync(ct);
-        return new AutomationSuiteDto(suite.AutomationSuiteId, suite.ProjectId, suite.SuiteCode, suite.SuiteName, suite.Description, suite.IsActive, suite.CreatedBy, suite.CreatedAt, suite.UpdatedAt, suite.ClosedAt, cases);
+        return new AutomationSuiteDto(suite.AutomationSuiteId, suite.ProjectId, suite.SuiteCode, suite.SuiteName, suite.Description, suite.IsActive, suite.CreatedBy, suite.CreatedAt, suite.UpdatedAt, suite.ClosedAt, suite.RevisionNo, cases);
     }
 
     public Task<AutomationSuite?> FindSuiteAsync(Guid id, Guid projectId, CancellationToken ct)
@@ -55,13 +55,24 @@ public sealed partial class AutomationRepository
     public Task AddSuiteCaseAsync(AutomationSuiteCase entity, CancellationToken ct) => db.AutomationSuiteCases.AddAsync(entity, ct).AsTask();
 
     public Task<AutomationSuiteCase?> FindSuiteCaseAsync(Guid suiteId, Guid caseId, CancellationToken ct)
-        => db.AutomationSuiteCases.SingleOrDefaultAsync(x => x.AutomationSuiteId == suiteId && x.AutomationCaseId == caseId, ct);
+        => db.AutomationSuiteCases.Include(x => x.AutomationCase).SingleOrDefaultAsync(x => x.AutomationSuiteId == suiteId && x.AutomationCaseId == caseId, ct);
 
     public Task RemoveSuiteCaseAsync(AutomationSuiteCase entity, CancellationToken ct)
     {
         db.AutomationSuiteCases.Remove(entity);
         return Task.CompletedTask;
     }
+
+    public async Task<IReadOnlyList<string>> GetCaseCodesAsync(IReadOnlyList<Guid> caseIds, CancellationToken ct)
+        => await db.AutomationCases.AsNoTracking().Where(x => caseIds.Contains(x.AutomationCaseId)).Select(x => x.AutomationCode).ToListAsync(ct);
+
+    public Task AddRevisionAsync(AutomationSuiteRevision entity, CancellationToken ct) => db.AutomationSuiteRevisions.AddAsync(entity, ct).AsTask();
+
+    public async Task<IReadOnlyList<AutomationSuiteRevisionDto>> ListRevisionsAsync(Guid suiteId, CancellationToken ct)
+        => await db.AutomationSuiteRevisions.AsNoTracking().Where(x => x.AutomationSuiteId == suiteId).OrderByDescending(x => x.RevisionNo)
+            .Select(x => new AutomationSuiteRevisionDto(x.AutomationSuiteRevisionId, x.RevisionNo, x.ChangeType, x.Detail, x.ChangeReason, x.ChangedBy,
+                x.ChangedBy != null ? db.Users.Where(u => u.UserId == x.ChangedBy).Select(u => u.DisplayName).FirstOrDefault() : null, x.ChangedAt))
+            .ToListAsync(ct);
 }
 
 public sealed class AutomationSuiteConfiguration : IEntityTypeConfiguration<AutomationSuite>
@@ -86,5 +97,19 @@ public sealed class AutomationSuiteCaseConfiguration : IEntityTypeConfiguration<
         b.HasKey(x => new { x.AutomationSuiteId, x.AutomationCaseId });
         b.HasOne(x => x.Suite).WithMany(x => x.Cases).HasForeignKey(x => x.AutomationSuiteId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.AutomationCase).WithMany().HasForeignKey(x => x.AutomationCaseId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class AutomationSuiteRevisionConfiguration : IEntityTypeConfiguration<AutomationSuiteRevision>
+{
+    public void Configure(EntityTypeBuilder<AutomationSuiteRevision> b)
+    {
+        b.ToTable("AutomationSuiteRevisions");
+        b.HasKey(x => x.AutomationSuiteRevisionId);
+        b.Property(x => x.ChangeType).HasMaxLength(30).IsRequired();
+        b.Property(x => x.Detail).HasMaxLength(1000);
+        b.Property(x => x.ChangeReason).HasMaxLength(1000);
+        b.HasIndex(x => new { x.AutomationSuiteId, x.RevisionNo });
+        b.HasOne(x => x.Suite).WithMany(x => x.Revisions).HasForeignKey(x => x.AutomationSuiteId).OnDelete(DeleteBehavior.Cascade);
     }
 }

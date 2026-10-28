@@ -1,0 +1,42 @@
+/* ผลการปิด Defect (Root Cause / Resolution) — คลังความรู้ Phase 6 */
+.modal-box.defect-resolution-modal { width: min(720px, 100%); max-height: 92vh; overflow-y: auto; }
+.defect-resolution-modal .modal-head { align-items: flex-start; gap: 12px; }
+.defect-resolution-modal .modal-head h2 { margin: 2px 0 4px; }
+.defect-resolution-subtitle { display: block; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.defect-resolution-why { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 16px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 7%, var(--card)); padding: 10px 12px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.defect-resolution-why .material-symbols-outlined { flex: none; color: var(--primary); font-size: 18px; }
+.defect-resolution-types { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; border: 0; padding: 0; }
+.defect-resolution-types legend { margin-bottom: 8px; padding: 0; color: var(--text); font-size: 13px; font-weight: 700; }
+.modal-box.defect-resolution-modal .defect-resolution-types label { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; font-weight: 400; }
+.modal-box.defect-resolution-modal .defect-resolution-types label.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--card)); }
+/* กฎ input ของ modal ให้มุม 8px — radio ต้องกลมเอง */
+.modal-box.defect-resolution-modal .defect-resolution-types input[type="radio"] { flex: none; width: 18px; height: 18px; min-height: 0; margin: 2px 0 0; border-radius: 50%; padding: 0; accent-color: var(--primary); }
+.defect-resolution-types label > span { display: grid; gap: 2px; min-width: 0; }
+.defect-resolution-types b { color: var(--text); font-size: 13px; }
+.defect-resolution-types small { color: var(--muted); font-size: 12px; }
+.defect-resolution-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.defect-resolution-grid .full { grid-column: 1 / -1; }
+.modal-box.defect-resolution-modal .defect-resolution-grid label { display: grid; gap: 6px; min-width: 0; font-size: 13px; font-weight: 700; }
+.defect-resolution-grid label small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.defect-resolution-grid select, .defect-resolution-grid textarea, .defect-resolution-duplicate input { width: 100%; min-width: 0; font-weight: 400; }
+.defect-resolution-duplicate { display: grid; gap: 6px; min-width: 0; }
+.defect-resolution-label { font-size: 13px; font-weight: 700; }
+.defect-resolution-picked { display: flex; align-items: center; gap: 8px; }
+.defect-resolution-candidates { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.defect-resolution-candidates button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 6px 10px; color: var(--text); text-align: left; cursor: pointer; }
+.defect-resolution-candidates button:hover, .defect-resolution-candidates button:focus-visible { border-color: var(--primary); }
+.defect-resolution-candidates span { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.defect-resolution-candidates small, .defect-resolution-empty { color: var(--muted); font-size: 12px; }
+.defect-resolution-error { margin: 12px 0 0; color: var(--red); font-size: 13px; }
+.defect-resolution-missing, .defect-resolution-ready { margin-right: auto; font-size: 12px; }
+.defect-resolution-missing { color: var(--red); }
+.defect-resolution-ready { color: var(--green); }
+
+@media (max-width: 760px) {
+  .defect-resolution-types, .defect-resolution-grid { grid-template-columns: minmax(0, 1fr); }
+  .modal-box.defect-resolution-modal .modal-head .modal-close { flex: none; width: 44px; height: 44px; }
+  .modal-box.defect-resolution-modal .modal-actions { flex-wrap: wrap; }
+  .modal-box.defect-resolution-modal .modal-actions > span { flex: 1 0 100%; }
+  .modal-box.defect-resolution-modal .modal-actions .btn { flex: 1 1 auto; min-height: 44px; white-space: normal; }
+  .defect-resolution-grid select, .defect-resolution-duplicate input { min-height: 44px; }
+}

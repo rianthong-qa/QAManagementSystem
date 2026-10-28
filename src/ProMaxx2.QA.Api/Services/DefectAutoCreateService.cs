@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ProMaxx2.QA.Application.Execution;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Domain.Defects;
@@ -6,9 +7,14 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 
 namespace ProMaxx2.QA.Api.Services;
 
-public sealed class DefectAutoCreateService(QaDbContext db)
+// Skip (มี Defect เปิดอยู่แล้ว) กับ Error (ล้มเหลวจริง เช่น DB exception) ต้องแยกกันชัดเจน — ผู้เรียก
+// (ExecutionsController) ใช้ผลนี้ map เข้า ExecutionHistoryDto เพื่อแจ้งผู้ใช้ต่างข้อความกัน แทนที่จะ
+// เงียบไปเฉยๆ เหมือนเดิมที่คืนแค่ string? เดียวแล้วสองกรณีนี้แยกไม่ออกจากฝั่ง caller/UI เลย
+public sealed record DefectAutoCreateResult(string? CreatedDefectCode, string? ExistingDefectCode, string? Error);
+
+public sealed class DefectAutoCreateService(QaDbContext db, ILogger<DefectAutoCreateService> logger)
 {
-    public async Task<string?> CreateFromFailAsync(Guid cycleCaseId, CreateExecutionRequest r, Guid? testerId, CancellationToken ct)
+    public async Task<DefectAutoCreateResult> CreateFromFailAsync(Guid cycleCaseId, CreateExecutionRequest r, Guid? testerId, CancellationToken ct)
     {
         try
         {
@@ -16,12 +22,14 @@ public sealed class DefectAutoCreateService(QaDbContext db)
                 .Include(x => x.Cycle)
                 .Include(x => x.TestCase).ThenInclude(x => x.Steps)
                 .SingleOrDefaultAsync(x => x.TestCycleCaseId == cycleCaseId && !x.Cycle.IsDeleted, ct);
-            if (cycleCase is null) return null;
+            if (cycleCase is null) return new DefectAutoCreateResult(null, null, "ไม่พบข้อมูล Test Cycle Case สำหรับสร้าง Defect อัตโนมัติ");
             var tc = cycleCase.TestCase;
-            if (await db.DefectTestCaseLinks.Where(l => l.TestCaseId == tc.TestCaseId)
+            var existingDefectCode = await db.DefectTestCaseLinks.Where(l => l.TestCaseId == tc.TestCaseId)
                     .Join(db.Defects, l => l.DefectId, d => d.DefectId, (l, d) => d)
-                    .AnyAsync(d => !d.IsDeleted && !new[] { "Resolved", "Closed", "Rejected" }.Contains(d.Status), ct))
-                return null;
+                    .Where(d => !d.IsDeleted && !new[] { "Resolved", "Closed", "Rejected" }.Contains(d.Status))
+                    .Select(d => d.DefectCode)
+                    .FirstOrDefaultAsync(ct);
+            if (existingDefectCode is not null) return new DefectAutoCreateResult(null, existingDefectCode, null);
             var failedSteps = r.StepResults.Where(s => s.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase)).ToList();
             var firstFailed = failedSteps.FirstOrDefault();
             var testerName = testerId.HasValue ? await db.Users.Where(u => u.UserId == testerId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct) : null;
@@ -43,9 +51,17 @@ public sealed class DefectAutoCreateService(QaDbContext db)
             if (!string.IsNullOrWhiteSpace(ownerName)) lines.Add($"ผู้รับผิดชอบ Test Case: {ownerName}");
             if (!string.IsNullOrWhiteSpace(r.ActualResult)) lines.Add($"ผลลัพธ์จริง: {r.ActualResult}");
             if (!string.IsNullOrWhiteSpace(r.Comment)) lines.Add($"คอมเมนต์: {r.Comment}");
+            // แต่ละขั้นที่ Fail แสดงชื่อขั้น (Action ของ Test Step) เสมอ + ผลจริงถ้าผู้ทดสอบกรอก — เดิมใช้แค่ผลจริงของ step
+            // ซึ่งส่วนใหญ่ว่าง (ผู้ทดสอบกรอกผลจริงระดับ Test Case แทน) เลยกลายเป็น "- ขั้นที่ 1: -" ทุกบรรทัด
+            var stepActions = tc.Steps.Where(s => s.RevisionNo == cycleCase.TestCaseRevisionNo).GroupBy(s => s.StepNo).ToDictionary(g => g.Key, g => g.First().Action);
             if (failedSteps.Count > 0) lines.Add($"ขั้นตอนที่ Fail ({failedSteps.Count} ขั้น):");
-            foreach (var s in failedSteps) lines.Add($"- ขั้นที่ {s.StepNo}: {s.ActualResult ?? "-"}");
-            lines.Add($"เวลาที่ทดสอบ: {DateTime.UtcNow:dd/MM/yyyy HH:mm} UTC");
+            foreach (var s in failedSteps)
+            {
+                var action = stepActions.GetValueOrDefault(s.StepNo);
+                var detail = string.Join(" — ", new[] { action, string.IsNullOrWhiteSpace(s.ActualResult) ? null : $"ผลจริง: {s.ActualResult.Trim()}" }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                lines.Add($"- ขั้นที่ {s.StepNo}: {(detail.Length > 0 ? detail : "-")}");
+            }
+            lines.Add($"เวลาที่ทดสอบ: {FormatThaiTime(DateTime.UtcNow)}");
             var description = Truncate(string.Join("\n", lines), 2000);
             var stepResultsByNo = r.StepResults.GroupBy(x => x.StepNo).ToDictionary(g => g.Key, g => g.First());
             var stepsText = Truncate(string.Join("\n", tc.Steps.Where(s => s.RevisionNo == cycleCase.TestCaseRevisionNo).OrderBy(s => s.StepNo)
@@ -74,13 +90,21 @@ public sealed class DefectAutoCreateService(QaDbContext db)
             db.DefectActivities.Add(new DefectActivity(defect.DefectId, "Created", $"สร้าง Defect อัตโนมัติจากผลการทดสอบ Fail ของ {tc.TestCaseCode} (Cycle {cycleCase.Cycle.CycleCode})", testerId));
             db.DefectActivities.Add(new DefectActivity(defect.DefectId, "TestLinked", $"เชื่อมโยง Test Case {tc.TestCaseCode} ({tc.Title})", testerId));
             await db.SaveChangesAsync(ct);
-            return code;
+            return new DefectAutoCreateResult(code, null, null);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[DefectAutoCreate] สร้าง Defect อัตโนมัติไม่สำเร็จ: {ex.Message}");
-            return null;
+            logger.LogError(ex, "[DefectAutoCreate] สร้าง Defect อัตโนมัติไม่สำเร็จสำหรับ TestCycleCaseId={CycleCaseId}", cycleCaseId);
+            return new DefectAutoCreateResult(null, null, "เกิดข้อผิดพลาดขณะสร้าง Defect อัตโนมัติ กรุณาตรวจสอบกับผู้ดูแลระบบ หรือสร้าง Defect ด้วยตนเอง");
         }
     }
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
+
+    // เวลาไทย (UTC+7) ปี พ.ศ. แบบเดียวกับที่หน้าเว็บแสดง (fmtDateTimeBE) เช่น "28/08/2569 11:02 น." — ใช้ InvariantCulture
+    // แล้วบวก 543 เอง เพราะ culture ของเครื่อง server (th-TH) จะทำให้ "yyyy" เป็น พ.ศ. อยู่แล้วและบวกซ้ำ
+    public static string FormatThaiTime(DateTime utcNow)
+    {
+        var th = utcNow.AddHours(7);
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{th:dd/MM}/{th.Year + 543} {th:HH:mm} น.");
+    }
 }

@@ -3,13 +3,13 @@ namespace ProMaxx2.QA.Domain.TestManagement;
 public sealed class TestSuite
 {
     private TestSuite() { }
-    public TestSuite(Guid projectId,string code,string name,string?type,string?description,string?riskTier)
+    public TestSuite(Guid projectId,string code,string name,string?type,string?description,string?riskTier,Guid?createdBy=null)
     {
         if(projectId==Guid.Empty)throw new ArgumentException("Project is required.");
         Validate(code,name);
-        TestSuiteId=Guid.NewGuid();ProjectId=projectId;SuiteCode=code.Trim().ToUpperInvariant();SuiteName=name.Trim();SuiteType=type?.Trim();Description=description?.Trim();RiskTier=riskTier?.Trim();IsActive=true;
+        TestSuiteId=Guid.NewGuid();ProjectId=projectId;SuiteCode=code.Trim().ToUpperInvariant();SuiteName=name.Trim();SuiteType=type?.Trim();Description=description?.Trim();RiskTier=riskTier?.Trim();IsActive=true;CreatedBy=createdBy;CreatedAt=DateTime.UtcNow;
     }
-    public Guid TestSuiteId{get;private set;} public Guid ProjectId{get;private set;} public string SuiteCode{get;private set;}=string.Empty; public string SuiteName{get;private set;}=string.Empty; public string?SuiteType{get;private set;} public string?Description{get;private set;} public string?RiskTier{get;private set;} public bool IsActive{get;private set;} public ICollection<TestSuiteCase>Cases{get;private set;}=[];
+    public Guid TestSuiteId{get;private set;} public Guid ProjectId{get;private set;} public string SuiteCode{get;private set;}=string.Empty; public string SuiteName{get;private set;}=string.Empty; public string?SuiteType{get;private set;} public string?Description{get;private set;} public string?RiskTier{get;private set;} public bool IsActive{get;private set;} public Guid?CreatedBy{get;private set;} public DateTime?CreatedAt{get;private set;} public ICollection<TestSuiteCase>Cases{get;private set;}=[];
     public void Update(string name,string?type,string?description,string?riskTier,bool isActive){Validate(SuiteCode,name);SuiteName=name.Trim();SuiteType=type?.Trim();Description=description?.Trim();RiskTier=riskTier?.Trim();IsActive=isActive;}
     public void UpdateCode(string code){if(string.IsNullOrWhiteSpace(code))throw new ArgumentException("Suite code is required.");SuiteCode=code.Trim().ToUpperInvariant();}
     public void Deactivate(){IsActive=false;}

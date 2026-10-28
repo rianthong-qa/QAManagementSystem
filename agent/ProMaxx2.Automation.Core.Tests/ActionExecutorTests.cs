@@ -92,7 +92,7 @@ public sealed class ActionExecutorTests
     }
 
     [Fact]
-    public async Task Unsupported_action_falls_back_to_the_generic_ui_error_code()
+    public async Task Unsupported_action_reports_an_agent_version_error_code()
     {
         var driver = new FakeUiAutomationDriver();
         var executor = MakeExecutor();
@@ -100,7 +100,51 @@ public sealed class ActionExecutorTests
         var outcome = await executor.ExecuteAsync(Step(1, "SOME_FUTURE_ACTION"), driver, CancellationToken.None);
 
         Assert.False(outcome.Passed);
-        Assert.Equal("AUT-UI-003", outcome.ErrorCode); // "Unsupported action ..." carries no embedded AUT code
+        // AUT-AGT-002: agent เก่ากว่า Action Library ต้องไม่ถูกจัดเป็นปัญหา UI ของ AUT
+        Assert.Equal("AUT-AGENT-002", outcome.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData(true, false, true)]   // EXPECT_ENABLED on an enabled control passes
+    [InlineData(false, false, false)] // EXPECT_ENABLED on a disabled control fails
+    [InlineData(false, true, true)]   // EXPECT_DISABLED on a disabled control passes
+    [InlineData(true, true, false)]   // EXPECT_DISABLED on an enabled control fails
+    public async Task Expect_enabled_and_disabled_check_the_real_enabled_state(bool isEnabled, bool expectDisabled, bool shouldPass)
+    {
+        var driver = new FakeUiAutomationDriver { IsEnabledResult = isEnabled };
+        var outcome = await MakeExecutor().ExecuteAsync(Step(1, expectDisabled ? "EXPECT_DISABLED" : "EXPECT_ENABLED", new() { ["object"] = "Sales.SAVE" }), driver, CancellationToken.None);
+
+        Assert.Equal(shouldPass, outcome.Passed);
+    }
+
+    [Fact]
+    public async Task Expect_disabled_on_a_missing_control_fails_instead_of_passing()
+    {
+        var driver = new FakeUiAutomationDriver { IsEnabledResult = null };
+        var outcome = await MakeExecutor().ExecuteAsync(Step(1, "EXPECT_DISABLED", new() { ["object"] = "Sales.SAVE" }), driver, CancellationToken.None);
+
+        Assert.False(outcome.Passed);
+    }
+
+    [Fact]
+    public async Task Wait_screen_waits_for_the_named_screen_window()
+    {
+        var driver = new FakeUiAutomationDriver();
+        var outcome = await MakeExecutor().ExecuteAsync(Step(1, "WAIT_SCREEN", new() { ["screen"] = "SalesScreen" }), driver, CancellationToken.None);
+
+        Assert.True(outcome.Passed);
+        Assert.Contains("WaitForWindow:SalesScreen", driver.Calls);
+    }
+
+    [Fact]
+    public async Task Expect_not_visible_passes_quickly_once_the_control_is_gone()
+    {
+        var driver = new FakeUiAutomationDriver { ExistsResult = false };
+        var started = DateTime.UtcNow;
+        var outcome = await MakeExecutor().ExecuteAsync(Step(1, "EXPECT_NOT_VISIBLE", new() { ["object"] = "Sales.SAVE" }), driver, CancellationToken.None);
+
+        Assert.True(outcome.Passed);
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(2));
     }
 
     [Theory]

@@ -1,0 +1,175 @@
+/* ===== หน้ารายการแบบกลาง (prefix lp-, 2026-10-22) — ใช้ร่วมกันหน้า Test Case, Test Suite, Test Cycle, Defect และ Audit Log =====
+   การ์ดเดียว: หัว (จำนวน + ปุ่ม) → ชิปสถานะ → แถวตัวกรอง → แถบเลือกหลายรายการ (sticky) → ตาราง (table-layout: fixed ไม่เลื่อนแนวนอน) → แบ่งหน้า
+   ≤760px ตารางเป็นการ์ดต่อแถว: ช่องเลือกชิดซ้ายบน, รายการเต็มแถว, ข้อมูลประกอบเป็นชิปต่อกัน, ปุ่มจัดการชิดขวา */
+.lp-card { padding: 0; overflow: clip; } /* clip ไม่ใช่ hidden — แถบเลือกหลายรายการ (sticky) จึงเลื่อนตามหน้าได้ */
+.lp-card > .inline-alert { margin: 12px 18px 0; }
+
+/* หัวการ์ด */
+.lp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 16px 18px 12px; }
+.lp-title { display: grid; gap: 3px; min-width: 0; }
+.lp-title > div { display: flex; align-items: baseline; gap: 8px; }
+.lp-title strong { color: var(--text); font-size: 22px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.lp-title span { color: var(--muted); font-size: 13px; }
+.lp-title small { color: var(--muted); font-size: 12px; }
+.lp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.lp-actions .btn { gap: 6px; min-height: 38px; padding: 7px 14px; }
+.lp-actions .material-symbols-outlined { font-size: 18px; }
+label.btn.lp-file-btn { position: relative; cursor: pointer; }
+label.btn.lp-file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.lp-sort-mobile { display: none; }
+
+/* ชิปสถานะ + ตัวกรอง */
+.lp-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 18px 10px; }
+.lp-card .lp-chips button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 4px 12px; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.lp-card .lp-chips button:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); }
+.lp-card .lp-chips button[aria-pressed="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--card)); color: var(--primary); }
+.lp-card .lp-chips button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.lp-chips b { min-width: 20px; border-radius: 999px; background: var(--bg); padding: 0 6px; color: var(--muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+.lp-chips button[aria-pressed="true"] b { background: color-mix(in srgb, var(--primary) 14%, var(--card)); color: var(--primary); }
+.lp-chips .lp-chip-divider { width: 1px; margin: 4px 4px; background: var(--line); }
+.lp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.lp-dot.green { background: var(--green); }
+.lp-dot.yellow { background: var(--yellow); }
+.lp-dot.red { background: var(--red); }
+.lp-dot.blue { background: var(--info); }
+.lp-dot.gray { background: color-mix(in srgb, var(--muted) 55%, var(--card)); }
+.lp-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; border-bottom: 1px solid var(--line); padding: 0 18px 14px; }
+.lp-filters:has(.lp-clear) { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) auto; }
+.lp-card .lp-filters select, .lp-sort-mobile select { width: 100%; min-width: 0; height: 38px; border: 1px solid var(--line); border-radius: 9px; background-color: var(--card); padding: 6px 30px 6px 10px; color: var(--text); font: inherit; font-size: 13px; }
+.lp-card .lp-filters select:focus, .lp-sort-mobile select:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+/* ช่องค้นหาในแถวตัวกรอง (หน้าที่ไม่ใช้ช่องค้นหาที่หัวหน้า) — กว้าง 2 ช่อง */
+.lp-search { position: relative; display: block; grid-column: span 2; min-width: 0; }
+.lp-search .material-symbols-outlined { position: absolute; top: 50%; left: 10px; color: var(--muted); font-size: 18px; transform: translateY(-50%); pointer-events: none; }
+.lp-card .lp-search input { width: 100%; height: 38px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); padding: 6px 10px 6px 34px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.lp-card .lp-search input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.lp-filters .lp-clear { gap: 4px; min-height: 38px; padding: 6px 12px; white-space: nowrap; }
+.lp-filters .lp-clear .material-symbols-outlined { font-size: 17px; }
+
+/* แถบเลือกหลายรายการ: แถวเดียว (~48px) ติดใต้ topbar ขณะเลื่อน */
+.lp-card .lp-bulk { position: sticky; top: 74px; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; border-bottom: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); background: color-mix(in srgb, var(--primary) 6%, var(--card)); padding: 8px 18px; box-shadow: 0 6px 12px -10px rgba(15, 23, 42, .35); }
+.lp-bulk-count { color: var(--primary); font-size: 13px; white-space: nowrap; }
+.lp-bulk-count b { font-size: 15px; }
+.lp-bulk-hint { color: var(--muted); font-size: 12px; }
+.lp-bulk-group { display: inline-flex; align-items: center; gap: 6px; }
+.lp-bulk select { height: 32px; border: 1px solid var(--line); border-radius: 8px; background-color: var(--card); padding: 4px 28px 4px 8px; color: var(--text); font: inherit; font-size: 12px; }
+.lp-bulk .btn { gap: 4px; height: 32px; min-height: 32px; border-radius: 8px; padding: 0 10px; font-size: 12px; }
+.lp-bulk .btn .material-symbols-outlined { font-size: 16px; }
+.lp-bulk-end { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.lp-bulk .btn.lp-bulk-delete { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); background: var(--card); color: var(--red); }
+.lp-bulk .btn.lp-bulk-delete:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 8%, var(--card)); }
+button.lp-bulk-clear { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 0; color: var(--muted); cursor: pointer; }
+button.lp-bulk-clear:hover { color: var(--text); }
+button.lp-bulk-clear .material-symbols-outlined { font-size: 18px; }
+
+/* ตาราง */
+.lp-table-wrap { min-width: 0; }
+.lp-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.lp-table thead th { border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--muted) 5%, var(--card)); padding: 9px 12px; color: var(--muted); font-size: 12px; font-weight: 700; text-align: left; white-space: nowrap; }
+.lp-table tbody td { border-bottom: 1px solid var(--line); padding: 9px 12px; color: var(--text); font-size: 13px; white-space: normal; vertical-align: middle; }
+.lp-table tbody tr:last-child td { border-bottom: 0; }
+.lp-table tbody tr:hover td { background: color-mix(in srgb, var(--primary) 3%, var(--card)); }
+.lp-table tbody tr.is-selected td { background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.lp-table tbody tr.is-inactive .lp-name { color: var(--muted); }
+.lp-table .lp-col-select { width: 44px; padding-right: 0; padding-left: 16px; }
+.lp-table .lp-col-select input { width: 17px; height: 17px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.lp-table .lp-col-module { width: 19%; }
+.lp-table .lp-col-badge { width: 92px; }
+.lp-table .lp-col-num { width: 96px; }
+.lp-table .lp-col-status { width: 116px; }
+.lp-table .lp-col-date { width: 120px; }
+.lp-table .lp-col-progress { width: 150px; }
+.lp-table .lp-col-schedule { width: 140px; }
+.lp-table .lp-col-actions { width: 120px; padding-right: 14px; }
+.lp-table .lp-col-actions.lp-actions-4 { width: 156px; }
+
+/* ช่องรายการหลัก: รหัส | meta แถวบน, ชื่อ 2 บรรทัด */
+.lp-card button.lp-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; width: 100%; min-width: 0; min-height: 0; border: 0; border-radius: 6px; background: transparent; padding: 0; color: inherit; font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.lp-code { color: var(--primary); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lp-code .lp-meta { margin-left: 8px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.lp-code .lp-meta::before { margin-right: 8px; color: var(--line); content: "|"; }
+.lp-name { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 600; line-height: 1.45; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.lp-card button.lp-item:hover .lp-name { color: var(--primary); }
+.lp-card button.lp-item:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: 2px; }
+.lp-module { display: grid; gap: 1px; min-width: 0; }
+.lp-module b { overflow: hidden; color: var(--text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.lp-module small { color: var(--muted); font-size: 11px; }
+.lp-num { display: grid; gap: 1px; }
+.lp-num b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.lp-num small { color: var(--muted); font-size: 11px; }
+.lp-num .is-warning { display: inline-flex; align-items: center; gap: 3px; color: var(--warning-text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.lp-num .is-warning .material-symbols-outlined { font-size: 15px; }
+.lp-date { display: grid; gap: 1px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.lp-date small { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.lp-muted { color: var(--muted); }
+/* ความคืบหน้า: แถบ + "% n/N" — 0% เทา, ครบ 100% เขียว */
+.lp-progress { display: grid; gap: 4px; min-width: 0; }
+.lp-progress-track { display: block; height: 6px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--muted) 15%, var(--card)); }
+.lp-progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+.lp-progress.is-done .lp-progress-track > span { background: var(--green); }
+.lp-progress small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.lp-progress small b { margin-right: 2px; color: var(--text); font-size: 12px; }
+.lp-progress.is-empty small b { color: var(--muted); }
+.lp-row-actions { display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: 4px; }
+.lp-card .lp-row-actions button { display: grid; width: 32px; height: 32px; min-height: 0; place-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+.lp-card .lp-row-actions button:hover { border-color: var(--line); background: var(--card); color: var(--primary); }
+.lp-card .lp-row-actions button.danger:hover { color: var(--red); }
+.lp-row-actions .material-symbols-outlined { font-size: 18px; }
+.lp-empty { display: grid; justify-items: center; gap: 6px; padding: 40px 16px; color: var(--muted); text-align: center; }
+.lp-empty .material-symbols-outlined { font-size: 32px; }
+.lp-empty b { color: var(--text); }
+.lp-empty .btn { margin-top: 4px; }
+
+@media (max-width: 1180px) {
+  .lp-table .lp-col-date { display: none; }
+}
+@media (max-width: 1024px) {
+  .lp-table .lp-hide-md { display: none; }
+}
+@media (max-width: 900px) {
+  .lp-card .lp-bulk { top: 60px; }
+  .lp-table .lp-col-module { width: 24%; }
+}
+/* มือถือ: การ์ดต่อแถว */
+@media (max-width: 760px) {
+  .lp-head { padding: 14px; }
+  .lp-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .lp-actions .btn { justify-content: center; min-height: 44px; }
+  .lp-sort-mobile { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0 14px 10px; color: var(--muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .lp-sort-mobile select { flex: 1; height: 44px; }
+  .lp-chips { flex-wrap: nowrap; overflow-x: auto; padding: 0 14px 10px; scrollbar-width: none; }
+  .lp-chips::-webkit-scrollbar { display: none; }
+  .lp-card .lp-chips button { flex: none; min-height: 36px; }
+  .lp-filters, .lp-filters:has(.lp-clear) { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 14px 12px; }
+  .lp-card .lp-filters select, .lp-filters .lp-clear { height: 44px; min-height: 44px; }
+  .lp-filters .lp-clear { grid-column: 1 / -1; justify-content: center; }
+  .lp-search { grid-column: 1 / -1; }
+  .lp-card .lp-search input { height: 44px; }
+  .lp-card .lp-bulk { top: 54px; padding: 8px 12px; }
+  .lp-bulk-hint { order: 3; flex-basis: 100%; }
+  .lp-bulk .btn, button.lp-bulk-clear { height: 40px; min-height: 40px; }
+  button.lp-bulk-clear { width: 40px; }
+  .lp-bulk-group select { height: 40px; }
+  .lp-bulk-group .btn { width: 40px; flex: none; justify-content: center; padding: 0; }
+  .lp-bulk-group .lp-btn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .lp-table, .lp-table tbody { display: block; }
+  .lp-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .lp-table tbody tr { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; border-bottom: 1px solid var(--line); padding: 12px 14px; }
+  .lp-table.is-selectable tbody tr { padding-left: 46px; }
+  .lp-table tbody td, .lp-table .lp-col-module, .lp-table .lp-col-badge, .lp-table .lp-col-num, .lp-table .lp-col-status, .lp-table .lp-col-date, .lp-table .lp-col-progress, .lp-table .lp-col-schedule, .lp-table .lp-col-actions, .lp-table .lp-col-actions.lp-actions-4 { display: block; width: auto; border: 0; padding: 0; }
+  .lp-table tbody tr:hover td, .lp-table tbody tr.is-selected td { background: transparent; }
+  .lp-table tbody tr.is-selected { background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+  .lp-table .lp-col-select { position: absolute; top: 13px; left: 16px; width: auto; padding: 0; }
+  .lp-table .lp-col-item, .lp-table .lp-col-module { flex: 1 1 100%; min-width: 0; }
+  .lp-module { display: flex; align-items: baseline; gap: 6px; }
+  .lp-table .lp-hide-md { display: block; }
+  /* ข้อมูลตัวเลข/วันที่บนมือถือใส่ป้ายนำหน้าจาก data-label */
+  .lp-table td.lp-labeled { display: inline-flex; align-items: baseline; gap: 4px; color: var(--muted); font-size: 12px; }
+  .lp-table td.lp-labeled::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 700; }
+  .lp-num, .lp-date { display: inline-flex; align-items: baseline; gap: 4px; }
+  .lp-table .lp-col-date { display: inline-flex; }
+  .lp-table .lp-col-progress { flex: 1 1 140px; min-width: 120px; }
+  .lp-table .lp-col-actions, .lp-table .lp-col-actions.lp-actions-4 { margin-left: auto; }
+  .lp-card .lp-row-actions button { width: 40px; height: 40px; }
+  .lp-table tr.lp-empty-row td { flex: 1 1 100%; }
+  .lp-table.is-selectable tr.lp-empty-row { padding-left: 14px; }
+}

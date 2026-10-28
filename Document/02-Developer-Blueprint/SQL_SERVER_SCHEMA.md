@@ -1072,6 +1072,11 @@ INCLUDE (TestCaseCode, Title, RevisionNo);
 
 CREATE INDEX IX_TestCycleCases_Cycle_Status_Tester
 ON dbo.TestCycleCases (TestCycleId, CurrentStatus, AssignedTesterUserId);
+-- ของจริงใน DB (migration AddTestCycleCaseStatusIndex, 2026-10-20) ยังไม่มี index ข้างบน แต่มีตัวนี้แทน:
+-- รายการ Test Cycle นับเคสทั้งหมด/ที่รันแล้วต่อ Cycle — เดิมเฉลี่ย ~34,000 logical reads ต่อคำขอ เหลือ ~2,200
+CREATE INDEX IX_TestCycleCases_TestCycleId
+ON dbo.TestCycleCases (TestCycleId)
+INCLUDE (CurrentStatus);
 
 CREATE INDEX IX_TestExecutions_CycleCase_ExecutionNo
 ON dbo.TestExecutions (TestCycleCaseId, ExecutionNo);
@@ -1196,3 +1201,150 @@ GO
 - API
 - UPDATE
 - SECURITY
+
+## Addendum: Performance & Evaluation (migration `AddPerformanceEvaluation`, 2026-10-07)
+
+### EmployeeProfiles (1:1 กับ Users)
+| Column | Type | หมายเหตุ |
+|---|---|---|
+| UserId | uniqueidentifier PK, FK Users | |
+| EmployeeCode | nvarchar(50) null | |
+| Position | nvarchar(100) null | |
+| Level | nvarchar(20) null | Junior/Mid/Senior/Lead |
+| SupervisorUserId | uniqueidentifier null, FK Users | index |
+| HireDate | date null | บังคับเมื่อ Probation/Extended |
+| EmploymentStatus | nvarchar(20) | Probation/Extended/Permanent/Resigned, index |
+| ProbationEndDate | date null | ค่าเริ่มต้น HireDate + 118 วัน |
+| Notes | nvarchar(2000) null | |
+| CreatedAt/CreatedBy/UpdatedAt/UpdatedBy | | |
+
+### WorkLogEntries
+| Column | Type | หมายเหตุ |
+|---|---|---|
+| WorkLogEntryId | uniqueidentifier PK | NEWSEQUENTIALID() |
+| UserId | uniqueidentifier FK Users | index (UserId, WorkDate) |
+| WorkDate | date | |
+| Category | nvarchar(30) | Testing/Automation/Document/Support/Training/Meeting/Other |
+| Kind | nvarchar(20) | WorkLog/Highlight/Concern |
+| Title | nvarchar(200) | |
+| Description | nvarchar(4000) null | |
+| EffortHours | decimal(5,2) null | 0–24 |
+| ProjectId | uniqueidentifier null, FK Projects | |
+| ReferenceUrl | nvarchar(500) null | http/https เท่านั้น |
+| CreatedAt/CreatedBy (FK Users)/UpdatedAt/UpdatedBy | | |
+
+### Index เพิ่มบนตารางเดิม
+- `IX_TestExecutions_TesterUserId_CompletedAt` (แทน `IX_TestExecutions_TesterUserId`)
+- `IX_Defects_CreatedBy_CreatedAt`
+
+### Permission ใหม่
+`PERFORMANCE.VIEW` (QA_LEAD, QA_TESTER), `PERFORMANCE.EDIT` / `PERFORMANCE.CREATE` / `PERFORMANCE.DELETE` (SYS_ADMIN, QA_LEAD) — seed ใน migration แบบ idempotent
+
+### EvaluationTemplates / EvaluationTemplateCriteria
+- `EvaluationTemplates`: EvaluationTemplateId (PK), Type nvarchar(20) (Probation/Quarterly), Name nvarchar(200), IsActive, Created/Updated — index (Type, IsActive)
+- `EvaluationTemplateCriteria`: EvaluationTemplateCriterionId (PK), EvaluationTemplateId (FK cascade), Group nvarchar(50), Name nvarchar(200), Description nvarchar(500), Weight int, SortOrder int
+
+### Evaluations
+| Column | Type | หมายเหตุ |
+|---|---|---|
+| EvaluationId | uniqueidentifier PK | |
+| UserId | FK Users | index (UserId, Round, Year) |
+| Type / Round / Year | nvarchar(20) / nvarchar(10) / int | Round: P30/P60/P90/PFinal/Q1–Q4 |
+| PeriodStart / PeriodEnd / DueDate | date | index (Status, DueDate) |
+| TemplateName | nvarchar(200) | ชื่อแบบประเมินตอนสร้าง |
+| Status | nvarchar(20) | Open/SelfSubmitted/Completed/Acknowledged |
+| SelfComment, Strengths, Improvements, NextGoals, EmployeeComment | nvarchar(4000) null | |
+| SelfSubmittedAt, CompletedAt, AcknowledgedAt | datetime2(0) null | |
+| EvaluatorUserId | FK Users null | |
+| OverallScore / Grade | decimal(4,2) / nvarchar(2) | คำนวณตอนส่งผล |
+| Recommendation / ExtendToDate | nvarchar(20) / date | เฉพาะ PFinal |
+| MetricsSnapshotJson | nvarchar(max) | metric ณ วันที่ส่งผล |
+| ReopenReason | nvarchar(1000) | |
+
+### EvaluationScores
+EvaluationScoreId (PK), EvaluationId (FK cascade), Group, Name, Description, Weight, SortOrder (copy จากแบบประเมิน), SelfScore/ManagerScore int null (1–5), SelfComment/ManagerComment nvarchar(1000)
+
+### WorkLogAttachments (migration `AddPerformanceEvidenceAndReminders`)
+WorkLogAttachmentId (PK), WorkLogEntryId (FK `WorkLogEntries` cascade), FileName nvarchar(100), StoredFileName nvarchar(150) (`{id:N}{ext}` ใน `App_Data/PerformanceEvidence/{workLogEntryId:N}/`), SizeBytes bigint, ContentType nvarchar(50), UploadedBy (FK Users restrict, null), UploadedAt datetime2(0) — index WorkLogEntryId
+
+### EvaluationNotifications (migration `AddPerformanceEvidenceAndReminders`)
+EvaluationNotificationId (PK), EvaluationId (FK `Evaluations` cascade), Kind nvarchar(20) (`DueSoon`/`Overdue`), DueDate date (กำหนดส่ง ณ ตอนเตือน), RecipientUserId (FK Users restrict), SentAt datetime2(0) — **unique** (EvaluationId, Kind, DueDate, RecipientUserId) กันส่งอีเมลเตือนซ้ำ
+### PerformanceShareLinks (migration `AddPerformanceShareLinks`, 2026-10-09)
+PerformanceShareLinkId (PK), Code nvarchar(12) **unique**, UserId (FK Users restrict — พนักงาน), FromDate/ToDate date, IncludeEvaluations/IncludeWorkLogs bit, Note nvarchar(200) null, ExpiresAt datetime2(0) (≤ 90 วันจากสร้าง), CreatedBy (FK Users restrict), CreatedAt datetime2(0), RevokedAt datetime2(0) null, RevokedBy (FK Users restrict, null), ViewCount int, LastViewedAt datetime2(0) null — index (UserId, CreatedAt); ยกเลิกแล้วไม่ลบแถวเพื่อเก็บประวัติการแชร์
+
+### WeeklyReportNotes (migration `AddWeeklyReportNotes`, 2026-10-09)
+WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์ตามเวลาไทย), Health nvarchar(10) null (`Green`/`Yellow`/`Red`), Headline nvarchar(500) null, KeyRisk/Ask/NextWeekPlan nvarchar(2000) null, MemberNotesJson nvarchar(max) null (`{ "userId": "ข้อความ ≤300" }`), CreatedBy/UpdatedBy (FK Users restrict), CreatedAt/UpdatedAt datetime2(0) — เก็บเฉพาะข้อความที่หัวหน้าเขียน ตัวเลขคำนวณสดทุกครั้ง
+
+## Addendum: CRM Ticket mirror (migration `AddCrmTicketMirror`, 2026-10-08)
+
+- `CrmTickets` — PK `JobNo` nvarchar(40); Subject(300), Status(30), JobType(30), ServiceType(200), Product(200), AssigneeCode/OwnerCode/DeveloperCode(50), Branch(200), ContactDate/DueDate/LastReplyAt, FirstSeenAt, LastSyncedAt, LastChangedAt — index AssigneeCode, ContactDate
+- `CrmTicketEvents` — PK bigint identity; JobNo, Kind (Snapshot/Changed/Answer), OccurredAt, RecordedAt, Source (Sync/Legacy), From/To Status, From/To AssigneeCode, From/To DeveloperCode, OwnerCode, AnswerNo, ActorCode — index (JobNo, OccurredAt), OccurredAt, unique (JobNo, AnswerNo) WHERE AnswerNo IS NOT NULL
+- `CrmMirrorRuns` — ผลการดึงแต่ละรอบ (Kind, RangeFrom/To, AccountUsername, Status, counts, Error(2000), DiagnosticsJson)
+- ไม่เก็บข้อมูลลูกค้า (ชื่อ/เบอร์/อีเมล) และเนื้อหาข้อความของ Ticket
+
+## Addendum: CRM permissions (migration `SeedCrmPermissions`, 2026-10-09)
+
+- `CRM.VIEW` / `CRM.EDIT` (ModuleArea `CRM`) เคย seed เฉพาะใน `DatabaseInitializer` ซึ่งไม่ทำงานเมื่อ `Database:ApplyMigrations=false` — migration นี้ seed แบบ idempotent
+- ค่าเริ่มต้น: `CRM.VIEW` → SYS_ADMIN, QA_LEAD, QA_TESTER, DEVELOPER, PRODUCT_OWNER, RELEASE_OWNER, VIEWER; `CRM.EDIT` → SYS_ADMIN, QA_LEAD, QA_TESTER, DEVELOPER — ปรับต่อได้ในหน้า User / Role
+
+## Addendum: คลังความรู้ / AI Chat (migration `AddKnowledgeHub`, 2026-10-21)
+
+ดูแผนเต็มที่ `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md`
+
+| ตาราง | Key / ฟิลด์หลัก |
+|---|---|
+| `KnowledgeDocuments` | PK `KnowledgeDocumentId` (guid); unique (`SourceType` Defect/CrmTicket/Article/File, `SourceKey`); `Scope` Project/Crm/Global + `ProjectId?` (index คู่กัน ใช้กรองสิทธิ์); `State` Stale/Indexed/Failed/Excluded (index); `ContentHash` (SHA-256), `ExcludeFromAi`, `ContainsCustomerData`, `ChunkCount`, `IndexedAt`, `Error` |
+| `KnowledgeChunks` | PK `KnowledgeChunkId` int identity (KEY INDEX ของ Full-Text); FK `KnowledgeDocumentId` cascade; unique (`KnowledgeDocumentId`, `ChunkNo`); `Text` nvarchar(max) — **Full-Text Index LANGUAGE 1054 (Thai) ใน catalog `KnowledgeCatalog`, CHANGE_TRACKING AUTO**; `Embedding` varbinary(max) (float32 little-endian), `EmbeddingModel`, `EmbeddingDim` |
+| `KnowledgeArticles` | บทความในระบบ: `Title` (300), `BodyMarkdown`, `ProjectId?` (null = ความรู้กลาง), `Tags` (500), `Status` Draft/Published, `IsDeleted`, audit columns |
+| `KnowledgeFiles` | ไฟล์อัปโหลด PDF/DOCX/MD/TXT: `FileName` (260), `ContentType`, `SizeBytes`, `StoragePath` (`App_Data/KnowledgeFiles`), `ProjectId?`, `ExtractedText`, `ExtractError`, `IsDeleted` |
+| `CrmTicketContents` | PK/FK `JobNo` → `CrmTickets` (cascade); `DescriptionMasked`, `ContentHash`, `FetchedAt` — เก็บเฉพาะข้อความที่ mask แล้ว |
+| `CrmTicketAnswers` | PK bigint; FK `JobNo` → `CrmTickets` (cascade); unique (`JobNo`, `AnswerNo`); `AnswerType`, `TextMasked`, `AnsweredAt` |
+| `ChatSessions` | PK guid; `UserId`, `Title` (200), `ProjectId?`, `IsDeleted`; index (`UserId`, `IsDeleted`, `UpdatedAt`) |
+| `ChatMessages` | PK bigint; FK `ChatSessionId` cascade; `Role` user/assistant, `Content`, `CitationsJson`, `Model`, token usage, `Feedback` (1/-1), `FeedbackNote` |
+
+`AiConfigurations` เพิ่ม `EmbeddingProvider` (default `None`), `EmbeddingModel`, `EmbeddingBaseUrl`, `EncryptedEmbeddingApiKey` (default ''), `EmbeddingApiKeyHint`, `AllowCrmDataToExternalAi` (default 0)
+
+สิทธิ์ (ModuleArea `KNOWLEDGE`, seed idempotent): `KNOWLEDGE.VIEW` → ทุก Role; `KNOWLEDGE.EDIT` → SYS_ADMIN, QA_LEAD
+
+ต้องติดตั้ง Full-Text Search ใน instance (`SELECT SERVERPROPERTY('IsFullTextInstalled')` = 1 — ตรวจแล้วบน `MSSQLSERVER2022` พร้อม Thai LCID 1054)
+
+## Addendum: Personal Access Token / MCP (migration `AddPersonalAccessTokens`, 2026-10-21)
+
+| ตาราง | Key / ฟิลด์หลัก |
+|---|---|
+| `PersonalAccessTokens` | PK guid; FK `UserId` → `Users` (cascade); `Name` (100), `TokenPrefix` (12, แสดงในรายการ), `TokenHash` (SHA-256 hex 64, **unique**), `Scope` (50, `knowledge:read`), `CreatedAt`, `ExpiresAt`, `LastUsedAt`, `LastUsedIp` (64), `RevokedAt`, `RevokedBy`; index (`UserId`, `RevokedAt`) — ไม่เก็บ token จริง |
+
+`AiConfigurations.McpEnabled` (bit, default 0) — สวิตช์เปิดให้เชื่อมต่อจาก Claude
+
+สิทธิ์ `KNOWLEDGE.MCP` (ModuleArea `KNOWLEDGE`) → SYS_ADMIN, QA_LEAD, QA_TESTER
+
+## Addendum: OAuth สำหรับ MCP (migration `AddMcpOAuth`, 2026-10-22)
+
+| ตาราง | Key / ฟิลด์หลัก |
+|---|---|
+| `OAuthClients` | PK `ClientId` (64, `qac_…`); `ClientName` (100), `RedirectUris` (4000, คั่นบรรทัด), `CreatedAt`, `CreatedIp`, `LastUsedAt` — ลงทะเบียนผ่าน DCR |
+| `OAuthAuthorizations` | PK `OAuthAuthorizationId` (64, `req_…` ใช้ในลิงก์หน้ายืนยัน); FK `ClientId` (cascade); `RedirectUri`, `State`, `CodeChallenge` (PKCE S256), `Scope`, `Resource`, `Status` (Pending/Approved/Denied/Exchanged), `UserId`, `CodeHash` (unique filtered), `CreatedAt` (index), `ExpiresAt` (10 นาที), `DecidedAt`, `CodeExpiresAt` (2 นาที) |
+
+`PersonalAccessTokens` เพิ่ม `Kind` (Personal/OAuth, default Personal), `ClientId`, `RefreshTokenHash` (unique filtered), `RefreshExpiresAt`, `Resource` (audience)
+
+migration `AddOAuthRefreshReuseDetection` (2026-10-28): `PersonalAccessTokens.PreviousRefreshTokenHash` (64, null) + index filtered `IS NOT NULL` — refresh token ก่อน rotate ล่าสุด ถูกนำมาใช้อีก = ยกเลิกการเชื่อมต่อ; EF ใช้ `RefreshTokenHash` และ `OAuthAuthorizations.Status` เป็น concurrency token (ไม่เปลี่ยน schema) ให้ code/refresh token ใช้ได้ครั้งเดียวแม้คำขอมาพร้อมกัน
+
+## Addendum: คลังเอกสาร (migration `AddKnowledgeFileContent`, 2026-10-22)
+
+`KnowledgeFiles` เพิ่ม `ContentHash` (64, SHA-256 ของไฟล์, index — กันไฟล์ซ้ำ), `Origin` (20, Upload/Import), `ImportPath` (300, index filtered — นำเข้าเอกสารระบบซ้ำแบบ idempotent), `UpdatedAt`; ไฟล์จริงอยู่ที่ `App_Data/KnowledgeFiles/{KnowledgeFileId:N}/`
+
+## Addendum: ข้อความ CRM ในคลังความรู้ (migration `AddCrmKnowledgeContent`, 2026-10-22)
+
+`CrmTicketContents` เพิ่ม `SubjectMasked` (300), `FetchError` (500 — ดึงไม่สำเร็จ ลองใหม่หลัง 24 ชม.), `ChangedAt` (เวลาที่เนื้อหาเปลี่ยนล่าสุด — ใช้ mark Stale; ต่างจาก `FetchedAt` ที่เปลี่ยนทุกครั้งที่ดึง); `CrmTicketAnswers` เก็บเฉพาะคำตอบที่เป็นข้อความ (ไม่รวมไฟล์แนบ `P` และประวัติแก้ไข `[QA Hub] …`) หลัง mask — ข้อความต้นฉบับไม่เก็บ
+
+## Addendum: ใช้งานคอลัมน์ embedding (Phase 5, 2026-10-22 — ไม่มี migration)
+
+`KnowledgeChunks.Embedding` = float32 little-endian ที่ normalize แล้ว, `EmbeddingModel` = `"Provider:Model"` (เช่น `Local:bge-m3`), `EmbeddingDim` = จำนวนมิติ — ค้นด้วย cosine ในแอป (SQL Server 2022 ไม่มีชนิด `VECTOR`); ช่วงที่ `EmbeddingModel` ไม่ตรงกับค่าปัจจุบันจะถูกสร้างใหม่
+
+## Addendum: ผลการปิด Defect (migration `AddDefectResolution`, 2026-10-22)
+
+`Defects` เพิ่ม `ResolutionType` (20), `RootCauseCategory` (50 — `MasterOptions.Value` หมวด `DefectRootCause`), `RootCauseNote` (2000), `ResolutionNote` (2000), `DuplicateOfDefectId` (FK → `Defects`, NO ACTION, index); migration seed `MasterOptions` หมวด `DefectRootCause` 9 รายการ (ไม่ใส่ซ้ำ); `KnowledgeDocuments.SourceType` เพิ่มค่า `TestCase`
+
+## Addendum: รอบดึงข้อมูล CRM (migration `AddCrmMirrorInterval`, 2026-10-22)
+
+- `CrmSyncSettings.MirrorIntervalMinutes` `int NOT NULL DEFAULT 15` — รอบ (นาที) ที่ `CrmMirrorWorker` ดึงสำเนา CRM Ticket ทั้งทีม; โดเมนจำกัด 5–1440; แถวเดิมได้ 15 = ค่าคงที่เดิม

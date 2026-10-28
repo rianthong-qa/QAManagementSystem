@@ -45,7 +45,7 @@ public sealed class Role
     public bool IsActive { get; private set; }
     public ICollection<UserRole> UserRoles { get; private set; } = [];
     public ICollection<RolePermission> RolePermissions { get; private set; } = [];
-    public void Update(string name,string? description){if(string.IsNullOrWhiteSpace(name))throw new ArgumentException("Role name is required.");RoleName=name.Trim();Description=description?.Trim();}
+    public void Update(string name,string? description){if(string.IsNullOrWhiteSpace(name))throw new ArgumentException("Role name is required.");RoleName=name.Trim();Description=description?.Trim();} public void Deactivate(){if(RoleCode=="SYS_ADMIN")throw new InvalidOperationException("SYS_ADMIN cannot be deleted.");IsActive=false;}
 }
 
 public sealed class Permission

@@ -70,7 +70,7 @@ public sealed class AutomationSuiteTests
         var service = AutomationTestFixtures.SuiteService(db, baseline.Project.ProjectId);
         var created = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "To Close", null), null, CancellationToken.None);
 
-        var closed = await service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None);
+        var closed = await service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None);
 
         Assert.False(closed.IsActive);
         Assert.NotNull(closed.ClosedAt);
@@ -83,10 +83,10 @@ public sealed class AutomationSuiteTests
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SuiteService(db, baseline.Project.ProjectId);
         var created = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "To Close", null), null, CancellationToken.None);
-        await service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None);
+        await service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None));
+            service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None));
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class AutomationSuiteTests
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SuiteService(db, baseline.Project.ProjectId);
         var created = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "To Close", null), null, CancellationToken.None);
-        await service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None);
+        await service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.UpdateAsync(created.AutomationSuiteId, baseline.Project.ProjectId, new UpdateAutomationSuiteRequest("New Name", null), null, CancellationToken.None));
@@ -109,9 +109,9 @@ public sealed class AutomationSuiteTests
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var service = AutomationTestFixtures.SuiteService(db, baseline.Project.ProjectId);
         var created = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "To Reopen", null), null, CancellationToken.None);
-        await service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None);
+        await service.CloseAsync(created.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None);
 
-        var reopened = await service.ReopenAsync(created.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None);
+        var reopened = await service.ReopenAsync(created.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None);
 
         Assert.True(reopened.IsActive);
         Assert.Null(reopened.ClosedAt);
@@ -126,7 +126,7 @@ public sealed class AutomationSuiteTests
         var created = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "Open", null), null, CancellationToken.None);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.ReopenAsync(created.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None));
+            service.ReopenAsync(created.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None));
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public sealed class AutomationSuiteTests
         var service = AutomationTestFixtures.SuiteService(db, baseline.Project.ProjectId);
         var open = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "Nightly Regression", null), null, CancellationToken.None);
         var closed = await service.CreateAsync(baseline.Project.ProjectId, new CreateAutomationSuiteRequest(null, "Old Smoke", null), null, CancellationToken.None);
-        await service.CloseAsync(closed.AutomationSuiteId, baseline.Project.ProjectId, null, CancellationToken.None);
+        await service.CloseAsync(closed.AutomationSuiteId, baseline.Project.ProjectId, new SuiteLifecycleRequest(), null, CancellationToken.None);
 
         var activeOnly = await service.ListAsync(baseline.Project.ProjectId, null, true, CancellationToken.None);
         var bySearch = await service.ListAsync(baseline.Project.ProjectId, "Nightly", null, CancellationToken.None);

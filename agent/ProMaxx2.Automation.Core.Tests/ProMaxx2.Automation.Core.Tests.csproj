@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ProMaxx2.Automation.Core\ProMaxx2.Automation.Core.csproj" />
+    <ProjectReference Include="..\ProMaxx2.Automation.Hub\ProMaxx2.Automation.Hub.csproj" />
   </ItemGroup>
 
 </Project>
