@@ -37,6 +37,18 @@ public sealed class DefectConfiguration : IEntityTypeConfiguration<Defect>
         b.Property(x => x.ResolutionNote).HasMaxLength(2000);
         b.HasOne<Defect>().WithMany().HasForeignKey(x => x.DuplicateOfDefectId).OnDelete(DeleteBehavior.NoAction);
         b.HasIndex(x => x.DuplicateOfDefectId);
+        // วงจรข้าม Build: แก้ใน Build ไหน / ตรวจซ้ำผ่านใน Build ไหน / Defect เดิมที่ปัญหากลับมา (DEFECT_BUILD_LIFECYCLE.md)
+        b.HasOne<Build>().WithMany().HasForeignKey(x => x.FixedInBuildId).OnDelete(DeleteBehavior.NoAction);
+        b.HasOne<Build>().WithMany().HasForeignKey(x => x.VerifiedInBuildId).OnDelete(DeleteBehavior.NoAction);
+        b.HasOne<Defect>().WithMany().HasForeignKey(x => x.RegressionOfDefectId).OnDelete(DeleteBehavior.NoAction);
+        b.HasIndex(x => x.FixedInBuildId);
+        b.HasIndex(x => x.RegressionOfDefectId);
+        b.Property(x => x.ResolvedAt).HasPrecision(0);
+        b.Property(x => x.ClosedAt).HasPrecision(0);
+        b.Property(x => x.LastRetestAt).HasPrecision(0);
+        b.Property(x => x.LastRetestResult).HasMaxLength(10);
+        // Defect ค้าง/คิวตรวจซ้ำของ Build ใหม่ กรองตาม Release + สถานะ
+        b.HasIndex(x => new { x.ReleaseId, x.Status });
         b.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Release>().WithMany().HasForeignKey(x => x.ReleaseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Build>().WithMany().HasForeignKey(x => x.BuildId).OnDelete(DeleteBehavior.Restrict);
@@ -74,7 +86,10 @@ public sealed class DefectActivityConfiguration : IEntityTypeConfiguration<Defec
         b.Property(x => x.ActionType).HasMaxLength(30).IsRequired();
         b.Property(x => x.Message).HasMaxLength(4000).IsRequired();
         b.Property(x => x.CreatedAt).HasPrecision(0);
+        b.Property(x => x.FromValue).HasMaxLength(50);
+        b.Property(x => x.ToValue).HasMaxLength(50);
         b.HasOne<Defect>().WithMany().HasForeignKey(x => x.DefectId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<Build>().WithMany().HasForeignKey(x => x.BuildId).OnDelete(DeleteBehavior.NoAction);
         b.HasIndex(x => x.DefectId);
         b.HasIndex(x => x.ActorUserId);
         b.HasIndex(x => new { x.CreatedAt, x.DefectActivityId });

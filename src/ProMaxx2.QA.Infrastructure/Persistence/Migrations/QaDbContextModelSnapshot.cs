@@ -1598,6 +1598,10 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("BuildId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasPrecision(0)
                         .HasColumnType("datetime2(0)");
@@ -1648,8 +1652,19 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<Guid?>("FixedInBuildId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastRetestAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<string>("LastRetestResult")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<Guid?>("ModuleId")
                         .HasColumnType("uniqueidentifier");
@@ -1657,8 +1672,14 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("RegressionOfDefectId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("ReleaseId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ReopenCount")
+                        .HasColumnType("int");
 
                     b.Property<string>("ResolutionNote")
                         .HasMaxLength(2000)
@@ -1667,6 +1688,10 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<string>("ResolutionType")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
 
                     b.Property<string>("RootCauseCategory")
                         .HasMaxLength(50)
@@ -1701,20 +1726,29 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("UpdatedBy")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("VerifiedInBuildId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("DefectId");
 
                     b.HasIndex("BuildId");
 
                     b.HasIndex("DuplicateOfDefectId");
 
+                    b.HasIndex("FixedInBuildId");
+
                     b.HasIndex("ModuleId");
 
-                    b.HasIndex("ReleaseId");
+                    b.HasIndex("RegressionOfDefectId");
+
+                    b.HasIndex("VerifiedInBuildId");
 
                     b.HasIndex("CreatedBy", "CreatedAt");
 
                     b.HasIndex("ProjectId", "DefectCode")
                         .IsUnique();
+
+                    b.HasIndex("ReleaseId", "Status");
 
                     b.HasIndex("ProjectId", "IsDeleted", "CreatedAt");
 
@@ -1736,6 +1770,9 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("ActorUserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("BuildId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasPrecision(0)
                         .HasColumnType("datetime2(0)");
@@ -1743,14 +1780,24 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("DefectId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("FromValue")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<string>("Message")
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
 
+                    b.Property<string>("ToValue")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.HasKey("DefectActivityId");
 
                     b.HasIndex("ActorUserId");
+
+                    b.HasIndex("BuildId");
 
                     b.HasIndex("DefectId");
 
@@ -5658,6 +5705,11 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasForeignKey("DuplicateOfDefectId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.HasOne("ProMaxx2.QA.Domain.Releases.Build", null)
+                        .WithMany()
+                        .HasForeignKey("FixedInBuildId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("ProMaxx2.QA.Domain.Projects.ProductModule", null)
                         .WithMany()
                         .HasForeignKey("ModuleId")
@@ -5669,14 +5721,29 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("ProMaxx2.QA.Domain.Defects.Defect", null)
+                        .WithMany()
+                        .HasForeignKey("RegressionOfDefectId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("ProMaxx2.QA.Domain.Releases.Release", null)
                         .WithMany()
                         .HasForeignKey("ReleaseId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Releases.Build", null)
+                        .WithMany()
+                        .HasForeignKey("VerifiedInBuildId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Defects.DefectActivity", b =>
                 {
+                    b.HasOne("ProMaxx2.QA.Domain.Releases.Build", null)
+                        .WithMany()
+                        .HasForeignKey("BuildId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("ProMaxx2.QA.Domain.Defects.Defect", null)
                         .WithMany()
                         .HasForeignKey("DefectId")

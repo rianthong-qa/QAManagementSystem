@@ -45,3 +45,6 @@ export const defectResolutionTypes: { value: string; label: string; hint: string
 ];
 export const defectResolutionLabel = (value?: string | null) => defectResolutionTypes.find((x) => x.value === value)?.label ?? value ?? "";
 export type DefectResolution = { resolutionType: string; rootCauseCategory: string | null; rootCauseNote: string | null; resolutionNote: string | null; duplicateOfDefectId: string | null };
+/** ผลจากหน้าต่างผลการปิด = ผลการปิด + Build (Fix Build ตอน Resolved, Build ที่ตรวจซ้ำผ่านตอน Resolved → Closed) — Build ส่งแยกจาก resolution */
+export type DefectResolutionChoice = DefectResolution & { fixedInBuildId?: string | null; verifiedInBuildId?: string | null };
+export const splitResolutionChoice = ({ fixedInBuildId, verifiedInBuildId, ...resolution }: DefectResolutionChoice) => ({ resolution, fixedInBuildId: fixedInBuildId ?? null, verifiedInBuildId: verifiedInBuildId ?? null });

@@ -4,24 +4,38 @@ import { ModalShell } from "./ModalShell";
 import { Badge } from "./Badge";
 import { useDebounced } from "./useDebounced";
 import type { MasterOption } from "../shared/appShared";
-import { defectResolutionTypes, type DefectResolution } from "../shared/defects";
+import { defectResolutionTypes, type DefectResolutionChoice } from "../shared/defects";
+import { formatThaiDateTime } from "../dateTime";
 import "./DefectResolutionModal.css";
 
 type DuplicateCandidate = { defectId: string; defectCode: string; title: string; status: string };
+type BuildOption = { buildId: string; buildNumber: string; buildDate?: string | null; isActive: boolean };
 
 /**
  * ผลการปิด Defect (Root Cause / Resolution) — เปิดเมื่อเปลี่ยนเป็น Resolved/Closed/Rejected จากหน้า Defect หรือกดแก้ผลการปิดในรายละเอียด
  * ข้อมูลนี้เข้าคลังความรู้ ("สาเหตุ / วิธีแก้") ให้ผู้ช่วย AI และการเตือน Defect ซ้ำใช้ — targetStatus = null คือแก้ผลอย่างเดียว ไม่เปลี่ยนสถานะ
+ * วงจรข้าม Build (DEFECT_BUILD_LIFECYCLE.md): เป็น Resolved = เลือก Fix Build (ค่าเริ่มต้น Build ล่าสุดของ Release); Resolved → Closed = เลือก Build ที่ตรวจซ้ำผ่าน;
+ * ปิดตรงจาก Open/In Progress ใช้ผล "แก้ไขแล้ว" ไม่ได้ (ต้อง Resolve ให้ QA ตรวจซ้ำก่อน)
  */
-export function DefectResolutionModal({ defect, targetStatus, rootCauses, initial, onCancel, onConfirm }: {
+export function DefectResolutionModal({ defect, targetStatus, currentStatus, releaseId, fixedInBuildId, rootCauses, initial, onCancel, onConfirm }: {
   defect: { defectId?: string; defectCode?: string; title: string; projectId: string };
   targetStatus: string | null;
+  currentStatus?: string | null;
+  releaseId?: string | null;
+  fixedInBuildId?: string | null;
   rootCauses: MasterOption[];
   initial?: { resolutionType?: string | null; rootCauseCategory?: string | null; rootCauseNote?: string | null; resolutionNote?: string | null; duplicateOfDefectId?: string | null; duplicateOfDefectCode?: string | null } | null;
   onCancel: () => void;
-  onConfirm: (value: DefectResolution) => Promise<void>;
+  onConfirm: (value: DefectResolutionChoice) => Promise<void>;
 }) {
-  const [type, setType] = useState(initial?.resolutionType ?? (targetStatus === "Rejected" ? "ByDesign" : "Fixed"));
+  const directClose = targetStatus === "Closed" && currentStatus !== "Resolved";
+  const buildMode = targetStatus === "Resolved" && currentStatus !== "Resolved" ? "fix" : targetStatus === "Closed" && currentStatus === "Resolved" ? "verify" : null;
+  const types = directClose ? defectResolutionTypes.filter((t) => t.value !== "Fixed") : defectResolutionTypes;
+  const initialType = initial?.resolutionType && types.some((t) => t.value === initial.resolutionType) ? initial.resolutionType : targetStatus === "Rejected" ? "ByDesign" : directClose ? "WontFix" : "Fixed";
+  const [type, setType] = useState(initialType);
+  const [builds, setBuilds] = useState<BuildOption[]>([]);
+  // "" = ให้ระบบเลือก: Resolved → Build ล่าสุดของ Release, ตรวจซ้ำ → Fix Build (ลำดับ Build ตัดสินฝั่ง server ที่เดียว)
+  const [buildId, setBuildId] = useState("");
   const [rootCause, setRootCause] = useState(initial?.rootCauseCategory ?? "");
   const [rootCauseNote, setRootCauseNote] = useState(initial?.rootCauseNote ?? "");
   const [resolutionNote, setResolutionNote] = useState(initial?.resolutionNote ?? "");
@@ -42,12 +56,29 @@ export function DefectResolutionModal({ defect, targetStatus, rootCauses, initia
     return () => controller.abort();
   }, [debouncedQuery, type, defect.projectId, defect.defectId]);
 
+  // Build ของ Release ที่ Defect อยู่ — ใหม่สุดก่อน; ค่าเริ่มต้น = Fix Build เดิม หรือ Build ล่าสุด
+  useEffect(() => {
+    if (!buildMode || !releaseId) { setBuilds([]); return; }
+    const controller = new AbortController();
+    getJson<BuildOption[]>(`${apiUrl}/releases/${releaseId}/builds`, controller.signal)
+      .then((rows) => {
+        const active = (rows ?? []).filter((b) => b.isActive).sort((a, b) => (b.buildDate ?? "").localeCompare(a.buildDate ?? ""));
+        setBuilds(active);
+        setBuildId((current) => active.some((b) => b.buildId === current) ? current : "");
+      })
+      .catch((e) => { if (!isAbortError(e)) setBuilds([]); });
+    return () => controller.abort();
+  }, [buildMode, releaseId]);
+
   const missing = [type === "Fixed" && !rootCause && "หมวดสาเหตุ", type === "Duplicate" && !duplicate && "Defect ต้นฉบับ"].filter(Boolean) as string[];
   const confirm = async () => {
     if (missing.length) return;
     setSaving(true); setError("");
     try {
-      await onConfirm({ resolutionType: type, rootCauseCategory: rootCause || null, rootCauseNote: rootCauseNote.trim() || null, resolutionNote: resolutionNote.trim() || null, duplicateOfDefectId: type === "Duplicate" ? duplicate?.id ?? null : null });
+      await onConfirm({
+        resolutionType: type, rootCauseCategory: rootCause || null, rootCauseNote: rootCauseNote.trim() || null, resolutionNote: resolutionNote.trim() || null, duplicateOfDefectId: type === "Duplicate" ? duplicate?.id ?? null : null,
+        fixedInBuildId: buildMode === "fix" ? buildId || null : undefined, verifiedInBuildId: buildMode === "verify" ? buildId || null : undefined,
+      });
     } catch (e) { setError(e instanceof Error ? e.message : "บันทึกผลการปิดไม่สำเร็จ"); }
     finally { setSaving(false); }
   };
@@ -64,12 +95,19 @@ export function DefectResolutionModal({ defect, targetStatus, rootCauses, initia
     <p className="defect-resolution-why"><span className="material-symbols-outlined" aria-hidden="true">neurology</span>สาเหตุและวิธีแก้จะเข้าคลังความรู้ ช่วยให้ทีมและผู้ช่วย AI ตอบปัญหาเดิมได้เร็วขึ้น และเตือน Defect ซ้ำได้แม่นขึ้น</p>
     <fieldset className="defect-resolution-types">
       <legend>ผลการปิด <span className="required">*</span></legend>
-      {defectResolutionTypes.map((t) => <label key={t.value} className={type === t.value ? "active" : ""}>
+      {types.map((t) => <label key={t.value} className={type === t.value ? "active" : ""}>
         <input type="radio" name="defect-resolution-type" value={t.value} checked={type === t.value} onChange={() => setType(t.value)} />
         <span><b>{t.label}</b><small>{t.hint}</small></span>
       </label>)}
     </fieldset>
+    {directClose && <p className="defect-resolution-hint"><span className="material-symbols-outlined" aria-hidden="true">info</span>ถ้า Dev แก้แล้ว ให้เปลี่ยนเป็น Resolved พร้อม Fix Build เพื่อให้ QA ตรวจซ้ำบน Build นั้นก่อนปิด</p>}
     <div className="defect-resolution-grid">
+      {buildMode && <label className="full"><span className="defect-resolution-label">{buildMode === "fix" ? "แก้ใน Build (Fix Build)" : "ตรวจซ้ำผ่านใน Build"} <small>{buildMode === "fix" ? "QA จะตรวจซ้ำบน Build นี้หรือ Build ที่ใหม่กว่า" : "Build ที่ QA ทดสอบแล้วผ่าน"}</small></span>
+        <select value={buildId} onChange={(e) => setBuildId(e.target.value)}>
+          <option value="">{!releaseId ? "Defect นี้ไม่ได้ผูก Release" : !builds.length ? "Release นี้ยังไม่มี Build" : buildMode === "fix" ? "Build ล่าสุดของ Release (ระบบเลือก)" : fixedInBuildId && builds.some((b) => b.buildId === fixedInBuildId) ? "Fix Build ของ Defect นี้" : "ไม่ระบุ Build"}</option>
+          {builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.buildDate ? ` · ${formatThaiDateTime(b.buildDate, { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}</option>)}
+        </select>
+      </label>}
       <label><span className="defect-resolution-label">หมวดสาเหตุ {type === "Fixed" ? <span className="required">*</span> : <small>(ไม่บังคับ)</small>}</span>
         <select value={rootCause} onChange={(e) => setRootCause(e.target.value)}>
           <option value="">{type === "Fixed" ? "เลือกหมวดสาเหตุ" : "ไม่ระบุ"}</option>

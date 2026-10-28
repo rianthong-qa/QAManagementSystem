@@ -8,8 +8,13 @@ public sealed class DefectActivity
     public string Message { get; private set; } = "";
     public Guid? ActorUserId { get; private set; }
     public DateTime CreatedAt { get; private set; }
+    /// <summary>ค่าก่อน/หลัง (เช่นสถานะ) — ใช้นับ Reopen และเวลาแก้ไขได้แม่นยำ (DEFECT_KNOWLEDGE_PLAN §4.3); activity เก่ามีแค่ Message</summary>
+    public string? FromValue { get; private set; }
+    public string? ToValue { get; private set; }
+    /// <summary>Build ที่เกี่ยวข้องกับเหตุการณ์ (Fix Build ตอน Resolved, Build ที่ตรวจซ้ำ, Build ที่ Fail ซ้ำ)</summary>
+    public Guid? BuildId { get; private set; }
     private DefectActivity() { }
-    public DefectActivity(Guid defectId, string actionType, string message, Guid? actorUserId)
+    public DefectActivity(Guid defectId, string actionType, string message, Guid? actorUserId, string? fromValue = null, string? toValue = null, Guid? buildId = null)
     {
         DefectActivityId = Guid.NewGuid();
         DefectId = defectId;
@@ -17,6 +22,9 @@ public sealed class DefectActivity
         Message = message;
         ActorUserId = actorUserId;
         CreatedAt = DateTime.UtcNow;
+        FromValue = fromValue;
+        ToValue = toValue;
+        BuildId = buildId;
     }
 }
 

@@ -481,8 +481,12 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       // query ซ้ำได้ทีหลัง เลยต้องแจ้งผู้ใช้ตรงนี้ทันที ไม่งั้นข้อมูลนี้จะหายไปเงียบๆ — ต้องแยก 3 กรณีให้
       // ชัดว่า auto-create สำเร็จ / ข้ามเพราะมี Defect เปิดอยู่แล้ว / ล้มเหลวจริง ไม่ให้ผู้ใช้เข้าใจว่า
       // ระบบไม่ทำงานทั้งที่ตั้งใจข้ามให้ (เช่น สร้าง Defect รายสเต็ปไว้ก่อนหน้าแล้ว)
-      const result: { createdDefectCode?: string; existingDefectCode?: string; defectAutoCreateError?: string } = await response.json();
-      if (result.createdDefectCode) notify(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ เนื่องจากผลเป็น Fail`, "success");
+      const result: { createdDefectCode?: string; existingDefectCode?: string; existingDefectStatus?: string; defectAutoCreateError?: string; reopenedDefectCode?: string; regressionOfDefectCode?: string } = await response.json();
+      // Fail ซ้ำบน Defect ที่ Dev แก้แล้ว (Resolved) = Reopen ตัวเดิม; บน Defect ที่ปิดแล้ว = สร้างใหม่อ้างตัวเดิม (DEFECT_BUILD_LIFECYCLE.md)
+      if (result.reopenedDefectCode) notify(`Reopen ${result.reopenedDefectCode} แล้ว — Defect ที่ Dev แก้ไว้ยัง Fail บน Build นี้`, "success");
+      else if (result.createdDefectCode && result.regressionOfDefectCode) notify(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ — ปัญหาเดิมของ ${result.regressionOfDefectCode} ที่ปิดไปแล้วกลับมาอีก`, "success");
+      else if (result.createdDefectCode) notify(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ เนื่องจากผลเป็น Fail`, "success");
+      else if (result.existingDefectCode && result.existingDefectStatus === "Resolved") notify(`ไม่ได้ Reopen ${result.existingDefectCode} — Dev แก้ไว้ใน Build ที่ใหม่กว่า Build ของ Cycle นี้ ให้ตรวจซ้ำบน Fix Build`, "error");
       else if (result.existingDefectCode) notify(`ไม่ได้สร้าง Defect ใหม่ให้อัตโนมัติ เนื่องจากมี Defect ${result.existingDefectCode} ที่ยังเปิดอยู่ผูกกับ Test Case นี้อยู่แล้ว`, "error");
       else if (result.defectAutoCreateError) notify(`คำเตือน: ${result.defectAutoCreateError}`, "error");
       setReload((x) => x + 1);

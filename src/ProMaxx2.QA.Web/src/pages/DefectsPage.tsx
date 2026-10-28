@@ -13,7 +13,7 @@ import { ListPager } from "../components/ListPager";
 import { useUserPageSize } from "../components/usePageSize";
 import "./DefectsPage.css";
 import { Badge } from "../components/Badge";
-import { defectAgeDays, defectClosingStatuses, defectResolutionLabel, parseReproSteps, type DefectResolution } from "../shared/defects";
+import { defectAgeDays, defectClosingStatuses, defectResolutionLabel, parseReproSteps, splitResolutionChoice, type DefectResolutionChoice } from "../shared/defects";
 import { DefectResolutionModal } from "../components/DefectResolutionModal";
 import { useDebounced } from "../components/useDebounced";
 import { ReproSteps } from "../components/ReproSteps";
@@ -232,12 +232,13 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     setFormAssigneeUserId(item?.assigneeUserId ?? "");
     setFormOpen(true);
   };
-  const saveForm = async (resolution?: DefectResolution) => {
+  const saveForm = async (choice?: DefectResolutionChoice) => {
     // เปลี่ยนเป็นสถานะปิดจากฟอร์ม = ต้องบันทึกผลการปิดก่อน (แก้ Defect ที่ปิดอยู่แล้วไม่ถามซ้ำ)
-    if (!resolution && defectClosingStatuses.includes(formStatus) && (!editing || !defectClosingStatuses.includes(editing.status))) { setResolving({ item: editing, status: formStatus, mode: "form" }); return; }
+    if (!choice && defectClosingStatuses.includes(formStatus) && (!editing || !defectClosingStatuses.includes(editing.status))) { setResolving({ item: editing, status: formStatus, mode: "form" }); return; }
+    const picked = choice ? splitResolutionChoice(choice) : null;
     setSaving(true); setError("");
     try {
-      const body = { moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: formStepsToReproduce || null, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null, resolution: resolution ?? null };
+      const body = { moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: formStepsToReproduce || null, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null, resolution: picked?.resolution ?? null, fixedInBuildId: picked?.fixedInBuildId ?? null, verifiedInBuildId: picked?.verifiedInBuildId ?? null };
       const response = await fetch(editing ? `${apiUrl}/defects/${editing.defectId}` : `${apiUrl}/defects`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
       if (!response.ok) throw new Error(await readError(response, "บันทึก Defect ไม่สำเร็จ"));
       setFormOpen(false);
@@ -253,18 +254,22 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const quickStatus = async (item: DefectItem, status: string) => {
     // Resolved / Closed / Rejected ต้องระบุผลการปิด (ใช้หน้าต่างผลการปิดแทนกล่องยืนยันเดิม)
     if (defectClosingStatuses.includes(status)) { setResolving({ item, status, mode: "quick" }); return; }
+    // กลับเป็น Open/In Progress จาก Resolved/Closed = Reopen (นับจำนวนครั้ง ล้างผลการปิดเดิม)
+    const reopen = item.status === "Resolved" || item.status === "Closed";
+    if (reopen && !await confirmDialog({ title: `Reopen ${item.defectCode}`, message: `ปัญหายังอยู่หลังแก้ใช่หรือไม่? Defect จะกลับเป็น ${status}, นับเป็น Reopen ครั้งที่ ${(item.reopenCount ?? 0) + 1} และล้างผลการปิดเดิม (ประวัติยังอยู่ใน Activity)`, confirmLabel: "Reopen" })) return;
     const response = await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status }) });
-    if (response.ok) { setNotice(`เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1); }
-    else notify(`เปลี่ยนสถานะ ${item.defectCode} ไม่สำเร็จ`, "error");
+    if (response.ok) { setNotice(reopen ? `Reopen ${item.defectCode} แล้ว` : `เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1); }
+    else notify(await readError(response, `เปลี่ยนสถานะ ${item.defectCode} ไม่สำเร็จ`), "error");
   };
-  const confirmResolution = async (value: DefectResolution) => {
+  const confirmResolution = async (value: DefectResolutionChoice) => {
     if (!resolving) return;
     const { item, status, mode } = resolving;
     if (mode === "form") { setResolving(null); await saveForm(value); return; }
     if (!item) return;
+    const { resolution, fixedInBuildId, verifiedInBuildId } = splitResolutionChoice(value);
     const response = status
-      ? await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status, resolution: value }) })
-      : await fetch(`${apiUrl}/defects/${item.defectId}/resolution`, { method: "PUT", headers, body: JSON.stringify(value) });
+      ? await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status, resolution, fixedInBuildId, verifiedInBuildId }) })
+      : await fetch(`${apiUrl}/defects/${item.defectId}/resolution`, { method: "PUT", headers, body: JSON.stringify(resolution) });
     if (!response.ok) throw new Error(await readError(response, "บันทึกผลการปิดไม่สำเร็จ"));
     const updated = await response.json() as DefectItem;
     setResolving(null);
@@ -359,8 +364,13 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     if (canEdit === false || !selectedIds.length) return;
     if (!await confirmDialog({ title: "เปลี่ยนสถานะหลายรายการ", message: `เปลี่ยนสถานะ Defect ${selectedIds.length} รายการเป็น ${status} ใช่หรือไม่?`, confirmLabel: `เปลี่ยนเป็น ${status}` })) return;
     const response = await fetch(`${apiUrl}/defects/bulk`, { method: "POST", headers, body: JSON.stringify({ ids: selectedIds, status }) });
-    if (!response.ok) notify(`เปลี่ยนสถานะ ${selectedIds.length} รายการไม่สำเร็จ`, "error");
-    if (response.ok) { setNotice(`เปลี่ยนสถานะ ${selectedIds.length} รายการ`); setSelectedIds([]); setReload(x => x + 1); }
+    if (!response.ok) { notify(await readError(response, `เปลี่ยนสถานะ ${selectedIds.length} รายการไม่สำเร็จ`), "error"); return; }
+    // รายการที่ผิดกฎวงจร Defect (เช่น ปิดตรงจาก Open โดยไม่มีผลการปิด) ข้ามไป — รายการอื่นบันทึกแล้ว
+    const result = await response.json() as { updated: number; failed?: { defectCode: string; error: string }[] };
+    const failed = result.failed ?? [];
+    setNotice(`เปลี่ยนสถานะเป็น ${status} แล้ว ${result.updated} รายการ`);
+    if (failed.length) notify(`ข้าม ${failed.length} รายการ: ${failed[0].defectCode} — ${failed[0].error}${failed.length > 1 ? ` (และอีก ${failed.length - 1} รายการ)` : ""}`, "error");
+    setSelectedIds([]); setReload(x => x + 1);
   };
   const exportCsv = () => {
     const rows = [["Defect ID", "Title", "Severity", "Status", "CRM", "Module", "Created", "Assignee"], ...items.map(x => [x.defectCode, x.title, x.severity, x.status, defectCrmSyncLabels[x.crmSyncStatus ?? "None"] ?? "ยังไม่ส่ง", modules.find(m => m.moduleId === x.moduleId)?.moduleName ?? "", formatThaiDateTime(x.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" }), x.assigneeName ?? ""])];
@@ -610,7 +620,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       </ModalShell>}
     {resolving && projectId && <DefectResolutionModal
       defect={{ defectId: resolving.item?.defectId, defectCode: resolving.item?.defectCode, title: resolving.item?.title ?? formTitle, projectId: resolving.item?.projectId ?? projectId }}
-      targetStatus={resolving.status} rootCauses={rootCauses} initial={resolving.item}
+      targetStatus={resolving.status} currentStatus={resolving.item?.status ?? "Open"} releaseId={resolving.item?.releaseId ?? releaseId ?? null} fixedInBuildId={resolving.item?.fixedInBuildId ?? null}
+      rootCauses={rootCauses} initial={resolving.item}
       onCancel={() => setResolving(null)} onConfirm={confirmResolution} />}
     {detail && (() => {
       const steps = detail.stepsToReproduce ? parseReproSteps(detail.stepsToReproduce) : null;
@@ -640,14 +651,17 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
             {/* ปุ่มดำเนินการอยู่ใต้หัวตลอด (เดิมอยู่กลางหน้า ต้องเลื่อนหา) — คำอธิบายย้ายจากไอคอน ⓘ ข้างปุ่มไปเป็น tooltip ของปุ่มเอง */}
             {canEdit !== false && (
               <div className="defect-detail-toolbar" role="toolbar" aria-label="การดำเนินการกับ Defect">
-                {detail.status !== "In Progress" && detail.status !== "Closed" && (
+                {(detail.status === "Open" || detail.status === "Rejected") && (
                   <button className="btn quick-action-blue" title="เปลี่ยนสถานะ Defect นี้เป็น In Progress" onClick={() => { quickStatus(detail, "In Progress"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span> In Progress</button>
                 )}
-                {detail.status !== "Resolved" && detail.status !== "Closed" && (
+                {(detail.status === "Resolved" || detail.status === "Closed") && (
+                  <button className="btn quick-action-red" title="ปัญหายังอยู่หลังแก้ — เปิด Defect นี้กลับเป็น Open (นับจำนวนครั้ง Reopen)" onClick={() => { quickStatus(detail, "Open"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">replay</span> Reopen</button>
+                )}
+                {(detail.status === "Open" || detail.status === "In Progress") && (
                   <button className="btn quick-action-green" title="เปลี่ยนสถานะ Defect นี้เป็น Resolved" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">check</span> Resolve</button>
                 )}
                 {detail.status !== "Closed" && (
-                  <button className="btn quick-action-purple" title="เปลี่ยนสถานะ Defect นี้เป็น Closed" onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}><span aria-hidden="true">⏹</span> Closed</button>
+                  <button className="btn quick-action-purple" title={detail.status === "Resolved" ? "QA ตรวจซ้ำบน Build แล้วผ่าน — ปิด Defect" : "ปิด Defect ที่ไม่ต้องแก้ (ซ้ำ, ทำซ้ำไม่ได้, ตามที่ออกแบบ, ไม่แก้, เลื่อน)"} onClick={() => { quickStatus(detail, "Closed"); setDetail(null); }}><span aria-hidden="true">⏹</span> {detail.status === "Resolved" ? "ตรวจซ้ำผ่าน" : "Closed"}</button>
                 )}
                 <button className="btn" title="เปิดฟอร์มแก้ไขรายละเอียด Defect นี้ (หัวข้อ, Severity, คำอธิบาย, ผู้รับผิดชอบ ฯลฯ)" onClick={() => { openForm(detail); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>
                 {detail.crmSyncStatus !== "Linked" && (
@@ -666,6 +680,11 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                   <div><dt>Module</dt><dd>{moduleName}</dd></div>
                   <div><dt>Assignee</dt><dd>{detail.assigneeName ?? "ไม่ระบุ"}</dd></div>
                   <div><dt>Age</dt><dd>{defectAgeDays(detail.createdAt)} วัน</dd></div>
+                  <div><dt>เจอใน Build</dt><dd>{detail.buildNumber ?? "ไม่ระบุ"}</dd></div>
+                  {(detail.fixedInBuildId || detail.status === "Resolved" || detail.status === "Closed") && <div><dt>Fix Build</dt><dd>{detail.fixedInBuildNumber ?? "ไม่ระบุ Build"}</dd></div>}
+                  {detail.verifiedInBuildNumber && <div><dt>ตรวจซ้ำผ่านใน</dt><dd>{detail.verifiedInBuildNumber}</dd></div>}
+                  {(detail.reopenCount ?? 0) > 0 && <div><dt>Reopen</dt><dd><Badge tone="red">{detail.reopenCount} ครั้ง</Badge></dd></div>}
+                  {detail.regressionOfDefectCode && <div><dt>ปัญหาเดิมของ</dt><dd>{detail.regressionOfDefectCode}</dd></div>}
                   <div><dt>Created</dt><dd>{fmtAgo(detail.createdAt)} <small>{formatThaiDateTime(detail.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small></dd></div>
                   {detail.crmSyncStatus === "Linked" && detail.crmTicketId && <div><dt>CRM Ticket</dt><dd><a href={`https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo=${encodeURIComponent(detail.crmTicketId)}&JobType=HD`} target="_blank" rel="noreferrer" title={`เปิด Ticket #${detail.crmTicketId} ใน CRM`}>#{detail.crmTicketId}</a></dd></div>}
                   {detail.crmSyncStatus === "Failed" && <div><dt>CRM</dt><dd><Badge tone="red">ส่งไม่สำเร็จ</Badge></dd></div>}

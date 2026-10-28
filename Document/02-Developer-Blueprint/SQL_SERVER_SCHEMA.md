@@ -1348,3 +1348,9 @@ migration `AddOAuthRefreshReuseDetection` (2026-10-28): `PersonalAccessTokens.Pr
 ## Addendum: รอบดึงข้อมูล CRM (migration `AddCrmMirrorInterval`, 2026-10-22)
 
 - `CrmSyncSettings.MirrorIntervalMinutes` `int NOT NULL DEFAULT 15` — รอบ (นาที) ที่ `CrmMirrorWorker` ดึงสำเนา CRM Ticket ทั้งทีม; โดเมนจำกัด 5–1440; แถวเดิมได้ 15 = ค่าคงที่เดิม
+
+## Addendum: วงจร Defect ข้าม Build (migration `AddDefectBuildLifecycle`, 2026-10-28)
+
+- `Defects` เพิ่ม `FixedInBuildId`, `VerifiedInBuildId` (FK → `Builds`, NO ACTION), `RegressionOfDefectId` (FK → `Defects`), `ResolvedAt`, `ClosedAt`, `LastRetestAt` (datetime2(0)), `LastRetestResult` (nvarchar(10) Pass/Fail), `ReopenCount` (int not null default 0); index `FixedInBuildId`, `VerifiedInBuildId`, `RegressionOfDefectId`, (`ReleaseId`, `Status`) แทน index `ReleaseId` เดิม
+- `DefectActivities` เพิ่ม `FromValue`, `ToValue` (nvarchar(50)), `BuildId` (FK → `Builds`) — activity การเปลี่ยนสถานะ/Reopen แบบมีโครงสร้าง
+- ข้อมูลเดิม: `ResolvedAt`/`ClosedAt` เติมจาก activity เปลี่ยนสถานะล่าสุด (ไม่มี = `UpdatedAt`/`CreatedAt`), Fix/Verified Build ปล่อยว่าง — กฎดู `Document/03-Architecture-and-Plan/DEFECT_BUILD_LIFECYCLE.md`
