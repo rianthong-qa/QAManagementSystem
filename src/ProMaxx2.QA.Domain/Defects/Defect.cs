@@ -21,7 +21,7 @@ public sealed class Defect
     // Open/In Progress = Dev ยังไม่ได้แก้, Resolved = Dev แก้แล้วรอ QA ตรวจซ้ำบน Fix Build, Closed = QA ตรวจซ้ำผ่าน (หรือปิดด้วยผลที่ไม่ใช่ Fixed), Rejected = ไม่ใช่ Defect
     // ReleaseId/BuildId = เจอใน Build ไหน (ตั้งตอนสร้างเท่านั้น); FixedInBuildId = แก้ใน Build ไหน; VerifiedInBuildId = ตรวจซ้ำผ่านใน Build ไหน
     public static readonly string[] Statuses=["Open","In Progress","Resolved","Closed","Rejected"];
-    public static readonly string[] UnresolvedStatuses=["Open","In Progress"];
+    public static readonly string[] UnresolvedStatuses=DefectStatusGroups.Unresolved;
     public Guid? FixedInBuildId{get;private set;} public Guid? VerifiedInBuildId{get;private set;} public DateTime? ResolvedAt{get;private set;} public DateTime? ClosedAt{get;private set;} public int ReopenCount{get;private set;}
     public DateTime? LastRetestAt{get;private set;} public string? LastRetestResult{get;private set;}
     /// <summary>ปิดเพราะแก้แล้ว (Fixed หรือ QA ตรวจซ้ำผ่าน) — ปัญหาเดียวกันกลับมาจึงนับเป็น regression; ปิดด้วยผลอื่น (Won't Fix ฯลฯ) ไม่ใช่</summary>

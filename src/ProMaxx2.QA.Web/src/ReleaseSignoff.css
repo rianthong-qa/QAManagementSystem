@@ -41,3 +41,11 @@
 @media(max-width:1000px){.signoff-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.gate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.gate-grid{grid-template-columns:1fr}.signoff-cards{grid-template-columns:1fr}.signoff-toolbar{flex-direction:column;align-items:stretch}.signoff-toolbar .signoff-selects{display:grid;grid-template-columns:1fr}.signoff-toolbar select{width:100%;min-width:0}.signoff-toolbar .btn{width:100%}}
+/* Defect ของ Release ใน Release Gate (DEFECT_BUILD_LIFECYCLE.md เฟส 4) — เส้นซ้ายบอกผล + ข้อความใน cell (ไม่สื่อด้วยสีอย่างเดียว) */
+.defect-gate{display:grid;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.defect-gate-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.defect-gate-head h4{margin:0;font-size:14px}
+.defect-gate .gate-cell.is-pass::before{background:var(--green)}
+.defect-gate .gate-cell.is-warn::before{background:var(--yellow)}
+.defect-gate .gate-cell.is-fail::before{background:var(--red)}
+.defect-gate-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}

@@ -748,9 +748,19 @@ Response:
   "criticalRegression": 98.0,
   "updateTestPassed": true,
   "approvedRisks": 2,
-  "recommendedDecision": "GO"
+  "recommendedDecision": "GO",
+  "defectGateEnabled": false,
+  "openCriticalDefects": 0,
+  "openHighDefects": 3,
+  "unverifiedResolvedDefects": 5,
+  "defectBlockersWithoutRisk": 6,
+  "defectBlockersWithRisk": 2
 }
 ```
+
+ฟิลด์ `*Defects` / `defectBlockers*` (เพิ่ม 2026-10-28, DEFECT_BUILD_LIFECYCLE.md §4.1) นับ Defect ของ Release เสมอ แต่มีผลกับ `recommendedDecision` เฉพาะเมื่อ `defectGateEnabled` (config `Defects:GateEnabled`): Critical ที่ยัง Open / In Progress = `NO_GO`; High ที่ยังไม่ได้แก้หรือ Resolved ที่ยังไม่ตรวจซ้ำที่ไม่มี Risk Acceptance (Approved, ผูก `defectId`) = `NO_GO`; มีครบ = `CONDITIONAL_GO`
+
+`GET /releases/{releaseId}/test-summary` เพิ่ม `knownIssues: [{ source: "Defect" | "Build", reference, title, severity?, reason, defectId? }]` — Defect ที่ปิดด้วย Deferred / Won't Fix หรือยังไม่จบแต่มี Risk Acceptance ที่อนุมัติแล้ว (สูงสุด 200) ต่อท้ายด้วย Known Issues ของ Build ที่ใช้งาน
 
 ---
 

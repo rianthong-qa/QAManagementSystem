@@ -1,6 +1,6 @@
 # วงจร Defect ข้าม Build / Version
 
-> สถานะ: เฟส 1–3 ทำแล้ว (2026-10-28) · เฟส 4–5 ยังไม่ทำ
+> สถานะ: เฟส 1–4 ทำแล้ว (2026-10-28) · เฟส 5 (เคลียร์ backlog) เป็นงานของทีม
 > ใช้คู่กับ `Document/01-System-Blueprint/WORKFLOW.md` §7–§9 และ `DEFECT_KNOWLEDGE_PLAN.md` §4.1/§4.3
 
 ## 1. ปัญหาที่แก้
@@ -82,7 +82,34 @@ Defect เก็บ Build ไว้ 3 แบบ:
 5. รัน Cycle ตามแผนหรือ Regression ของ Build นี้ (Clone Cycle เดิมไป Build ใหม่) ระบบจะ Reopen หรือสร้าง Defect ให้ตามกฎข้อ 3
 6. ทบทวนแท็บ **ค้างจาก Build ก่อน** กับ Dev (หรือหน้า Defect เลือก Build ที่ topbar แล้วกดชิป "ยังไม่ปิด ณ Build นี้ (รวมของค้าง)"): Critical / High ทุกรายการต้องมีผู้รับผิดชอบและ Build เป้าหมาย
 7. ก่อน Mark RC / Sign-off ต้องไม่เหลือ Resolved ที่ยังไม่ตรวจซ้ำ และ High ที่เหลือต้องมี Risk Acceptance
-8. สร้าง Test Summary (เฟส 4 จะดึง Known Issues จาก Defect อัตโนมัติ)
+   - หน้า **Release Sign-off** มีส่วน "Defect ของ Release" แสดง Critical ค้าง / High ค้าง / Resolved รอตรวจซ้ำ / ยังไม่มี Risk Acceptance
+   - Risk Acceptance ต้อง**ผูกกับ Defect** (เลือก Defect ตอนสร้าง) จึงนับว่าครอบคลุม Defect นั้น
+8. สร้าง Test Summary — กด "สร้างข้อความสรุปใหม่" แล้ว Known Issues จะดึง Defect ที่ปิดด้วย Deferred / Won't Fix, Defect ที่มี Risk Acceptance และ Known Issues ของ Build ให้อัตโนมัติ (แก้ข้อความต่อได้)
+
+## 4.1 นิยามกลุ่มสถานะและ Release Gate (เฟส 4)
+
+`DefectStatusGroups` (Domain) เป็นนิยามเดียวที่ Dashboard, Test Summary, Regression, สถิติหน้า Defect และ Release Gate ใช้ร่วมกัน:
+
+| กลุ่ม | สถานะ | ใช้ที่ |
+|---|---|---|
+| Unresolved | Open, In Progress | "ค้าง" ที่ Dev ยังไม่ได้แก้ (อายุ Defect ค้าง, ไม่มีผู้รับผิดชอบ) |
+| AwaitingVerification | Resolved | รอ QA ตรวจซ้ำ |
+| Done | Closed, Rejected | จบแล้ว — อัตราปิด (Closure) = Done ÷ ทั้งหมด |
+| NotDone | Unresolved + AwaitingVerification | "Open Defects" ของ Dashboard / Test Summary / Regression |
+
+ผลที่เปลี่ยนจากเดิม: Dashboard และ Test Summary นับ Resolved เป็น Defect ที่ยังเปิด (เดิมนับเป็นปิดแล้ว) และอัตราปิดในหน้า Defect ไม่นับ Resolved
+
+**Release Gate (`ReleaseGate.Evaluate` + `DefectGateCounts`):**
+
+| เงื่อนไข (Defect ของ Release ที่ยังไม่ลบ) | ผล |
+|---|---|
+| Critical ที่ยัง Open / In Progress | NO-GO (Risk Acceptance ปลดไม่ได้) |
+| High ที่ยัง Open / In Progress หรือ Resolved ที่ยังไม่ตรวจซ้ำ (ทุก Severity) **ที่ไม่มี** Risk Acceptance สถานะ Approved ผูกกับ Defect นั้น | NO-GO |
+| ข้างบนทุกรายการมี Risk Acceptance แล้ว | CONDITIONAL GO |
+
+- กฎเดิม (Smoke, P0, P1 Blocker) ยังตัดสินก่อนเหมือนเดิม
+- เปิดใช้ด้วย config `Defects:GateEnabled` (ค่าเริ่มต้น `false` ใน `appsettings.json`, อ่านแบบ live ไม่ต้อง restart) — ระหว่างปิด API ยังส่งตัวเลข Defect มาแสดงในหน้า Release Sign-off เพื่อติดตาม แต่ไม่มีผลกับคำแนะนำ
+- เปิดเมื่อจบเฟส 5 เท่านั้น ไม่งั้น Release ปัจจุบันจะเป็น NO-GO ทันที
 
 ## 5. แผนที่เหลือ
 
@@ -91,7 +118,7 @@ Defect เก็บ Build ไว้ 3 แบบ:
 | 1 | ฟิลด์ Fix / Verified Build, ResolvedAt / ClosedAt, ReopenCount, RegressionOf, activity from/to/build (migration `AddDefectBuildLifecycle`) | ✅ 2026-10-28 |
 | 2 | กฎเปลี่ยนสถานะ, CRM FINISH / CLOSE, Reopen ตอน Fail ซ้ำ, ช่อง Fix / Verified Build ในหน้าต่างผลการปิด, ปุ่ม Reopen / ตรวจซ้ำผ่าน | ✅ 2026-10-28 |
 | 3 | `GET /builds/{id}/defect-carryover`, ตัวกรอง `buildMode=openAsOf`, `POST /defects/{id}/retest`, `POST /builds/{id}/retest-cycle`, ส่วน "Defect ของ Build นี้" ในรายละเอียด Build | ✅ 2026-10-28 |
-| 4 | `DefectStatusGroups` นิยามเดียวทั้งระบบ, Release Gate นับ Defect (เปิดด้วย `Defects:GateEnabled`), Known Issues จาก Defect | ยังไม่ทำ |
+| 4 | `DefectStatusGroups` นิยามเดียวทั้งระบบ, Release Gate นับ Defect (เปิดด้วย `Defects:GateEnabled`), Known Issues จาก Defect | ✅ 2026-10-28 (Gate ยังปิดอยู่) |
 | 5 | เคลียร์ backlog: triage Open 1,635 รายการ, ตั้ง Fix Build + ตรวจซ้ำ Resolved 319 รายการ แล้วจึงเปิด Gate | งานของทีม |
 
 ### Progress Log
@@ -113,3 +140,12 @@ Defect เก็บ Build ไว้ 3 แบบ:
   - `DefectBuilds.ReleaseOrderAsync` ลำดับ Build ใน Release (BuildDate แล้ววันที่ลงทะเบียน)
   - หน้าเว็บ: `BuildDefectsPanel` ในหน้าต่างรายละเอียด Build, ชิป "เจอใน Build นี้ / ยังไม่ปิด ณ Build นี้" ในหน้า Defect เมื่อเลือก Build
   - ทดสอบ: `BuildDefectCarryoverTests` (จัดกลุ่มตามลำดับ Build, สิทธิ์ Project, openAsOf, retest ผ่าน/ไม่ผ่าน, Retest Cycle, แปลง SQL)
+- **2026-10-28 — เฟส 4 (branch `feat/defect-release-gate`):**
+  - Domain `DefectStatusGroups` (Unresolved / AwaitingVerification / Done / NotDone / KnownIssueResolutions) — `Defect.UnresolvedStatuses` ชี้มาที่นี่
+  - ใช้ใน `DashboardRepository` (Open Defects, Severity, Module = NotDone), `RegressionImpactAnalyzer`, สถิติ `DefectsController` (Closure = Done) และหน้า Test Summary (`isDefectDone` ใน `shared/defects.ts`)
+  - `ReleaseGate`: `DefectGateCounts.From` + `ReleaseGateInput.Defects` (null = ปิด); `ReleaseSignoffRepository` นับ Defect ของ Release + Risk Acceptance ที่ Approved และผูก `DefectId`; `DefectGateOptions` (`Defects:GateEnabled`, `IOptionsMonitor`)
+  - `GET /releases/{id}/release-gate` เพิ่ม `defectGateEnabled`, `openCriticalDefects`, `openHighDefects`, `unverifiedResolvedDefects`, `defectBlockersWithoutRisk`, `defectBlockersWithRisk`
+  - `GET /releases/{id}/test-summary` เพิ่ม `knownIssues[]` จาก `KnownIssueRepository` (Defect ปิดด้วย Deferred / Won't Fix, Defect ที่ยังไม่จบแต่มี Risk Approved — สูงสุด 200 รายการ เรียง Severity แล้วรหัส — ต่อท้ายด้วย Known Issues ของ Build ที่ใช้งาน)
+  - หน้าเว็บ: ส่วน "Defect ของ Release" ใน Release Gate Panel; Test Summary สร้างข้อความ Known Issues จาก `knownIssues` (15 รายการแรก + จำนวนที่เหลือ)
+  - ทดสอบ: `DefectReleaseGateTests` (กลุ่มสถานะครบ, จัดประเภท Blocker, ตาราง Gate เปิด/ปิด, กฎเดิมมาก่อน, ตัวเลขจาก repository, Known Issues, แปลง SQL)
+  - **ช่องว่างที่พบ:** หน้า Risk Acceptance โหลดตัวเลือก Defect แค่ 100 รายการแรกของ Release — Release ที่มี Defect หลักพันเลือก Defect ส่วนใหญ่ไม่ได้ ต้องเปลี่ยนเป็นช่องค้นหา Defect ก่อนเปิด Gate

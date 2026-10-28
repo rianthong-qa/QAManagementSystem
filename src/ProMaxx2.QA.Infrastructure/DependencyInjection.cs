@@ -23,6 +23,7 @@ public static class DependencyInjection
     {
         services.AddDbContext<QaDbContext>(o=>o.UseSqlServer(configuration.GetConnectionString("QaDatabase"), sql=>sql.MigrationsAssembly(typeof(QaDbContext).Assembly.FullName)));
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.Section));
+        services.Configure<DefectGateOptions>(configuration.GetSection(DefectGateOptions.Section));
         services.AddScoped<IIdentityRepository,IdentityRepository>(); services.AddSingleton<IPasswordService,PasswordService>(); services.AddScoped<ITokenService,TokenService>();
         services.AddScoped<IProjectRepository,ProjectRepository>();
         services.AddScoped<IReleaseRepository,ReleaseRepository>();
@@ -38,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<IEvaluationRepository,EvaluationRepository>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IReleaseSignoffRepository,ReleaseSignoffRepository>();
+        services.AddScoped<IKnownIssueRepository,KnownIssueRepository>();
         services.AddScoped<IAutomationRepository,AutomationRepository>();
         services.AddScoped<IAutomationSuiteRepository>(sp => (AutomationRepository)sp.GetRequiredService<IAutomationRepository>());
         services.AddScoped<IAutomationScheduleRepository>(sp => (AutomationRepository)sp.GetRequiredService<IAutomationRepository>());

@@ -1,11 +1,13 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Governance;
+using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Domain.Governance;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
-public sealed class ReleaseSignoffRepository(QaDbContext db, ProjectAccessContext projectCtx) : IReleaseSignoffRepository
+public sealed class ReleaseSignoffRepository(QaDbContext db, ProjectAccessContext projectCtx, IOptionsMonitor<DefectGateOptions> defectGate) : IReleaseSignoffRepository
 {
     public async Task<ReleaseGateDto> GetGateAsync(Guid releaseId, Guid? buildId, CancellationToken ct)
     {
@@ -27,9 +29,20 @@ public sealed class ReleaseSignoffRepository(QaDbContext db, ProjectAccessContex
         var approvedRisks = await db.RiskAcceptances.AsNoTracking().CountAsync(r => r.ReleaseId == releaseId && r.Status == "Approved", ct);
 
         var smokeStatus = buildId.HasValue ? await db.AutomationBuildTriggerRuns.AsNoTracking().Where(x => x.BuildId == buildId.Value && x.Policy.Pack == "Smoke").OrderByDescending(x => x.FiredAtUtc).Select(x => x.Status).FirstOrDefaultAsync(ct) ?? "NOT_RUN" : "NOT_RUN";
-        var decision = ReleaseGate.Evaluate(new ReleaseGateInput(openP0, openP1, approvedRisks > 0, smokeStatus == "Succeeded"));
+        var defects = await DefectCountsAsync(releaseId, ct);
+        var gateEnabled = defectGate.CurrentValue.GateEnabled;
+        var decision = ReleaseGate.Evaluate(new ReleaseGateInput(openP0, openP1, approvedRisks > 0, smokeStatus == "Succeeded", gateEnabled ? defects : null));
         var decisionText = decision switch { ReleaseDecision.Go => "GO", ReleaseDecision.ConditionalGo => "CONDITIONAL_GO", _ => "NO_GO" };
-        return new ReleaseGateDto(openP0, openP1, coverage, regPassRate, true, approvedRisks, decisionText, smokeStatus);
+        return new ReleaseGateDto(openP0, openP1, coverage, regPassRate, true, approvedRisks, decisionText, smokeStatus,
+            gateEnabled, defects.OpenCritical, defects.OpenHigh, defects.UnverifiedResolved, defects.BlockersWithoutRisk, defects.BlockersWithRisk);
+    }
+
+    /// <summary>Defect ที่ยังไม่จบของ Release + Risk Acceptance ที่อนุมัติแล้วและผูกกับ Defect นั้น</summary>
+    private async Task<DefectGateCounts> DefectCountsAsync(Guid releaseId, CancellationToken ct)
+    {
+        var rows = await db.Defects.AsNoTracking().Where(d => d.ReleaseId == releaseId && !d.IsDeleted && DefectStatusGroups.NotDone.Contains(d.Status)).Select(d => new { d.DefectId, d.Severity, d.Status }).ToListAsync(ct);
+        var accepted = (await db.RiskAcceptances.AsNoTracking().Where(r => r.ReleaseId == releaseId && !r.IsDeleted && r.Status == "Approved" && r.DefectId != null).Select(r => r.DefectId!.Value).ToListAsync(ct)).ToHashSet();
+        return DefectGateCounts.From(rows.Select(d => (d.Severity, d.Status, accepted.Contains(d.DefectId))));
     }
 
     public async Task<IReadOnlyList<ReleaseSignoffDto>> ListAsync(Guid releaseId, CancellationToken ct)

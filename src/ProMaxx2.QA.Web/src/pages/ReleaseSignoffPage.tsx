@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModalShell } from "../components/ModalShell";
+import { Badge } from "../components/Badge";
 import { apiUrl } from "../api";
 import { formatThaiDateTime } from "../dateTime";
 import type { ReleaseItem, BuildItem } from "../shared/types";
 import "../ReleaseSignoff.css";
 
-type ReleaseGateData = { openP0: number; p1Blockers: number; requirementCoverage: number; regressionPassRate: number; updateTestPassed: boolean; approvedRisks: number; recommendedDecision: string; smokeStatus?: string };
+type ReleaseGateData = { openP0: number; p1Blockers: number; requirementCoverage: number; regressionPassRate: number; updateTestPassed: boolean; approvedRisks: number; recommendedDecision: string; smokeStatus?: string;
+  defectGateEnabled?: boolean; openCriticalDefects?: number; openHighDefects?: number; unverifiedResolvedDefects?: number; defectBlockersWithoutRisk?: number; defectBlockersWithRisk?: number };
 type SignoffItem = { releaseSignoffId: string; releaseId: string; buildId: string; buildNumber: string; signoffType: string; decision: string; comment?: string | null; signoffBy?: string | null; createdAt: string };
 
 const signoffRoles = ["QA", "DEVELOPMENT", "PRODUCT_OWNER", "RELEASE_OWNER"] as const;
@@ -67,6 +69,7 @@ export function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, can
             <div className="gate-grid"><div className="gate-cell"><small>Smoke</small><b>{smokeLabel(gate?.smokeStatus)}</b><span>{gate?.smokeStatus ?? "NOT_RUN"}</span></div>
               {gateLabels.map((g) => <div className="gate-cell" key={g.key}><small>{g.label}</small><b>{typeof gate?.[g.key] === "boolean" ? (gate?.[g.key] ? "Pass" : "Fail") : String(gate?.[g.key] ?? "–")}</b><span>{gate ? g.hint(gate) : "…"}</span></div>)}
             </div>
+            {gate && <DefectGate gate={gate} />}
             {gate && <div className="ts-progress" style={{ marginTop: 12 }}><div className="ts-progress-row"><span>P0 ยังไม่ผ่าน/ถูกบล็อก</span><b>{gate.openP0}</b></div><div className="ts-progress-row"><span>P1 Blocker</span><b>{gate.p1Blockers}</b></div><div className="ts-progress-row"><span>Update Test Passed</span><b>{gate.updateTestPassed ? "Passed" : "Not passed"}</b></div></div>}
           </section>
           <section className="card signoff-final-card"><div className="test-summary-head"><div><h3 style={{ margin: 0 }}>Final Decision</h3><small style={{ color: "var(--muted)" }}>สถานะรวมของ Release จาก Gate และผู้อนุมัติ</small></div>{gate && <span className={`signoff-decision ${decisionClass(gate.recommendedDecision)}`}>{gate.recommendedDecision.replaceAll("_", " ")}</span>}</div></section>
@@ -79,5 +82,24 @@ export function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, can
       )}
       {modalOpen && <ModalShell labelledBy="signoff-form-title" className="risk-modal" onDismiss={() => { if (!saving) setModalOpen(false); }}><div className="modal-head"><div><h2 id="signoff-form-title">สร้าง Release Sign-off</h2><small>{builds.find((b) => b.buildId === buildId)?.buildNumber ?? ""}</small></div><button aria-label="ปิดแบบฟอร์ม" disabled={saving} onClick={() => setModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div><div className="form-grid"><label className="full">Sign-off Role<select value={signoffType} onChange={(e) => setSignoffType(e.target.value)}><option value="QA">QA</option><option value="DEVELOPMENT">Development</option><option value="PRODUCT_OWNER">Product</option><option value="RELEASE_OWNER">Release Owner</option></select></label><label className="full">Decision<select value={decision} onChange={(e) => setDecision(e.target.value)}>{["GO", "CONDITIONAL_GO", "NO_GO"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select></label><label className="full">Comment{commentRequired && <span className="required-mark"> *</span>}<textarea rows={3} value={comment} maxLength={2000} onChange={(e) => setComment(e.target.value)} placeholder={commentRequired ? "จำเป็นสำหรับ NO GO / CONDITIONAL GO — ระบุเหตุผลหรือเงื่อนไข" : "เหตุผล/เงื่อนไขประกอบการตัดสินใจ"} /></label></div>{formError && <div className="inline-alert error" role="alert"><span>{formError}</span></div>}<div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setModalOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={saving} onClick={submit}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> ยืนยัน Sign-off</>}</button></div></ModalShell>}
     </article>
+  );
+}
+
+/** Defect ของ Release ใน Release Gate (DEFECT_BUILD_LIFECYCLE.md เฟส 4) — นับเสมอ แต่มีผลกับคำแนะนำเฉพาะเมื่อเปิด Defects:GateEnabled */
+function DefectGate({ gate }: { gate: ReleaseGateData }) {
+  const critical = gate.openCriticalDefects ?? 0, high = gate.openHighDefects ?? 0, unverified = gate.unverifiedResolvedDefects ?? 0;
+  const withoutRisk = gate.defectBlockersWithoutRisk ?? 0, withRisk = gate.defectBlockersWithRisk ?? 0;
+  const cells = [
+    { label: "Critical ค้าง", value: critical, hint: critical ? "Open / In Progress — ต้องแก้ก่อนปล่อย (Risk ปลดไม่ได้)" : "ไม่มีค้าง", tone: critical ? "is-fail" : "is-pass" },
+    { label: "High ค้าง", value: high, hint: high ? "ต้องมี Risk Acceptance ของ Defect นั้น" : "ไม่มีค้าง", tone: high ? "is-warn" : "is-pass" },
+    { label: "Resolved รอตรวจซ้ำ", value: unverified, hint: unverified ? "ตรวจซ้ำให้ครบ หรือทำ Risk Acceptance" : "ตรวจซ้ำครบแล้ว", tone: unverified ? "is-warn" : "is-pass" },
+    { label: "ยังไม่มี Risk Acceptance", value: withoutRisk, hint: `High ค้าง + Resolved ที่ยังไม่มี Risk · มีแล้ว ${withRisk.toLocaleString()}`, tone: withoutRisk ? "is-fail" : "is-pass" },
+  ];
+  return (
+    <div className="defect-gate">
+      <div className="defect-gate-head"><h4>Defect ของ Release</h4><Badge tone={gate.defectGateEnabled ? "blue" : "gray"}>{gate.defectGateEnabled ? "นับใน Gate" : "ยังไม่นับใน Gate"}</Badge></div>
+      <div className="gate-grid">{cells.map((c) => <div key={c.label} className={`gate-cell ${c.tone}`}><small>{c.label}</small><b>{c.value.toLocaleString()}</b><span>{c.hint}</span></div>)}</div>
+      {!gate.defectGateEnabled && <p className="defect-gate-note">แสดงเพื่อติดตาม — จะมีผลกับคำแนะนำ GO / NO-GO เมื่อผู้ดูแลระบบเปิด <code>Defects:GateEnabled</code> หลังเคลียร์ Defect ค้าง</p>}
+    </div>
   );
 }

@@ -399,6 +399,11 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-28 — Release Sign-off / Test Summary: Defect ใน Release Gate และ Known Issues
+
+- Release Gate Panel มีส่วน "Defect ของ Release" ใต้ `gate-grid` เดิม (`.defect-gate`, เส้นคั่นบน `--line`): หัวข้อ + Badge "นับใน Gate" (blue) / "ยังไม่นับใน Gate" (gray), 4 `gate-cell` (Critical ค้าง / High ค้าง / Resolved รอตรวจซ้ำ / ยังไม่มี Risk Acceptance) — เส้นซ้ายบอกผลด้วย `is-pass` (`--green`) / `is-warn` (`--yellow`) / `is-fail` (`--red`) และมีข้อความอธิบายใน cell เสมอ (ไม่สื่อด้วยสีอย่างเดียว); ระหว่างปิด Gate มีหมายเหตุ muted 12px ใต้ grid; Mobile ใช้ breakpoint เดิมของ `gate-grid` (2 คอลัมน์ ≤900px, 1 คอลัมน์ ≤560px)
+- Test Summary: ข้อความ Known Issues ที่สร้างอัตโนมัติ = บรรทัดสรุปเดิม + รายการ `• รหัส [Severity] ชื่อ — เหตุผล` / `• Build n: ข้อความ` (15 รายการแรก + "และอีก N รายการ"); Top Defect ใช้นิยามเดียวกับ API (`isDefectDone`) จึงรวม Resolved ที่รอตรวจซ้ำ
+
 ### 2026-10-28 — Release / Build: ส่วน "Defect ของ Build นี้"
 
 - หน้าต่างรายละเอียด Build มีส่วน "Defect ของ Build นี้" (`BuildDefectsPanel`, prefix `bdp-`) ต่อจากข้อมูล Build: แท็บ 3 ปุ่มเท่ากัน (`role="tab"`, ตัวเลข 20px + ชื่อกลุ่ม, ที่เลือกพื้น primary 7% + เส้นล่าง 3px) เรียงตามลำดับงาน **รอตรวจซ้ำ → ค้างจาก Build ก่อน → เจอใน Build นี้** → คำอธิบายกลุ่ม + Badge นับตาม Severity → (แท็บรอตรวจซ้ำ) แถบสร้าง Retest Cycle: select Environment + ปุ่ม primary "สร้าง Retest Cycle" (แสดงเมื่อมีสิทธิ์ `EXECUTION.RUN` และ Build ยังใช้งาน ไม่งั้นแสดงเหตุผล) → รายการ (รหัส primary, ชื่อ ellipsis + `title`, Badge Severity/สถานะ/Reopen) สูงสุด 320px เลื่อนในตัว; มี loading / error + ลองใหม่ / empty; สร้างแล้วปิดหน้าต่างและพาไป Execution Workspace (`qa.targetCycleId`); ≤760px แท็บเรียงแนวตั้ง 48px, รายการเป็นบรรทัดซ้อน, ปุ่ม 44px เต็มแถว
