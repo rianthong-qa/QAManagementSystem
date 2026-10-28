@@ -90,17 +90,33 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         return AiJsonParser.Extract(raw);
     }
 
-    public async Task<IReadOnlyList<AiModelView>> ListModelsAsync(string provider, string? baseUrl, string? apiKey, CancellationToken ct)
+    /// <summary>คีย์จากฟอร์ม หรือคีย์ที่บันทึกไว้เมื่อเว้นว่างและเป็น Provider เดียวกับที่บันทึก</summary>
+    private async Task<string> ResolveFormKeyAsync(string provider, string? apiKey, CancellationToken ct)
     {
         if (!Providers.Contains(provider)) throw new ArgumentException("Provider ไม่ถูกต้อง");
         var key = apiKey?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            var setting = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(ct);
-            if (setting?.Provider == provider && !string.IsNullOrWhiteSpace(setting.EncryptedApiKey))
-                try { key = protector.Unprotect(setting.EncryptedApiKey); } catch { throw new AiNotConfiguredException("ไม่สามารถอ่าน API key ที่บันทึกไว้ได้"); }
-            else if (provider == "OpenAI") key = fallbackConfiguration["OpenAI:ApiKey"] ?? "";
-        }
+        if (!string.IsNullOrWhiteSpace(key)) return key;
+        var setting = await db.AiConfigurations.AsNoTracking().OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(ct);
+        if (setting?.Provider == provider && !string.IsNullOrWhiteSpace(setting.EncryptedApiKey))
+            try { return protector.Unprotect(setting.EncryptedApiKey); } catch { throw new AiNotConfiguredException("ไม่สามารถอ่าน API key ที่บันทึกไว้ได้ กรุณากรอก API key ใหม่"); }
+        return provider == "OpenAI" ? fallbackConfiguration["OpenAI:ApiKey"] ?? "" : "";
+    }
+
+    /// <summary>
+    /// runtime จากค่าในฟอร์ม Setting Center (ยังไม่บันทึก) สำหรับปุ่ม "ทดสอบการเชื่อมต่อ" — เงื่อนไขคีย์/Base URL ตรงกับ <see cref="GetRuntimeAsync"/>
+    /// </summary>
+    public async Task<AiRuntimeConfiguration> ResolveFormRuntimeAsync(string provider, string model, string? baseUrl, string? apiKey, CancellationToken ct)
+    {
+        var key = await ResolveFormKeyAsync(provider, apiKey, ct);
+        if (string.IsNullOrWhiteSpace(model)) throw new ArgumentException("กรุณาระบุ Model");
+        if (provider != "Local" && provider != "opencode" && string.IsNullOrWhiteSpace(key)) throw new AiNotConfiguredException($"กรุณากรอก API key ของ {provider}");
+        var url = provider switch { "OpenAI" => "https://api.openai.com/v1", "Google" => "https://generativelanguage.googleapis.com", "Anthropic" => "https://api.anthropic.com", "OpenRouter" => RequireLocalUrl(string.IsNullOrWhiteSpace(baseUrl) ? OpenRouterBaseUrl : baseUrl), _ => RequireLocalUrl(baseUrl) };
+        return new(provider, key, model.Trim(), url);
+    }
+
+    public async Task<IReadOnlyList<AiModelView>> ListModelsAsync(string provider, string? baseUrl, string? apiKey, CancellationToken ct)
+    {
+        var key = await ResolveFormKeyAsync(provider, apiKey, ct);
         if (provider != "Local" && provider != "OpenRouter" && provider != "opencode" && string.IsNullOrWhiteSpace(key)) throw new AiNotConfiguredException($"กรุณากรอก API key ของ {provider} เพื่อโหลด Model");
         var url = provider switch { "OpenAI" => "https://api.openai.com/v1/models", "Google" => "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", "Anthropic" => "https://api.anthropic.com/v1/models?limit=1000", "OpenRouter" => $"{RequireLocalUrl(baseUrl ?? OpenRouterBaseUrl)}/models", _ => $"{RequireLocalUrl(baseUrl)}/models" };
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -118,7 +134,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
             .DistinctBy(x => x.Id).OrderBy(x => x.Id).ToList();
     }
 
-    private static string RequireLocalUrl(string? baseUrl) { if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) throw new ArgumentException("กรุณาระบุ Base URL ของ AI Local"); return baseUrl!.TrimEnd('/'); }
+    private static string RequireLocalUrl(string? baseUrl) { if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) throw new ArgumentException("กรุณาระบุ Base URL เป็น http:// หรือ https://"); return baseUrl!.TrimEnd('/'); }
 
     // Some providers/gateways respond 200 OK with a non-JSON body (plain text error, HTML page, etc.)
     // when misconfigured (wrong Base URL, missing/invalid API key). Surface that as a clear, catchable
@@ -203,7 +219,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         var s = await db.AiConfigurations.OrderByDescending(x => x.UpdatedAt).FirstOrDefaultAsync(ct); var providerChanged = s is not null && s.Provider != provider;
         var encrypted = clearApiKey || providerChanged ? "" : s?.EncryptedApiKey ?? ""; var hint = clearApiKey || providerChanged ? null : s?.ApiKeyHint;
         if (!string.IsNullOrWhiteSpace(apiKey)) { var key = apiKey.Trim(); encrypted = protector.Protect(key); hint = key.Length > 4 ? $"••••{key[^4..]}" : "••••"; }
-        if (isEnabled && provider != "Local" && string.IsNullOrWhiteSpace(encrypted) && !(provider == "OpenAI" && !string.IsNullOrWhiteSpace(fallbackConfiguration["OpenAI:ApiKey"]))) throw new ArgumentException($"กรุณาระบุ API key สำหรับ {provider}");
+        if (isEnabled && provider != "Local" && provider != "opencode" && string.IsNullOrWhiteSpace(encrypted) && !(provider == "OpenAI" && !string.IsNullOrWhiteSpace(fallbackConfiguration["OpenAI:ApiKey"]))) throw new ArgumentException($"กรุณาระบุ API key สำหรับ {provider}");
         var normalizedBaseUrl = provider switch { "OpenAI" => "https://api.openai.com/v1", "Google" => "https://generativelanguage.googleapis.com", "Anthropic" => "https://api.anthropic.com", "OpenRouter" => string.IsNullOrWhiteSpace(baseUrl) ? OpenRouterBaseUrl : baseUrl, _ => baseUrl };
         if (s is null) { s = new(provider, model, normalizedBaseUrl, encrypted, hint, isEnabled); db.AiConfigurations.Add(s); } else s.Update(provider, model, normalizedBaseUrl, encrypted, hint, isEnabled); await db.SaveChangesAsync(ct);
         return ToView(s);

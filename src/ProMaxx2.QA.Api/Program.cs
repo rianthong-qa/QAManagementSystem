@@ -139,6 +139,7 @@ builder.Services.AddScoped<CrmTicketDetailService>();
 builder.Services.AddScoped<CrmFlowTrackingService>();
 builder.Services.AddScoped<CrmSendToCrmService>();
 builder.Services.AddScoped<DefectShareLinkService>();
+builder.Services.AddScoped<KnowledgeArticleShareService>(); // ลิงก์แชร์บทความความรู้ `/?ka=`
 builder.Services.AddScoped<DefectImageStorage>();
 builder.Services.AddScoped<EmailConfigurationService>();
 builder.Services.AddScoped<EmailSenderService>();

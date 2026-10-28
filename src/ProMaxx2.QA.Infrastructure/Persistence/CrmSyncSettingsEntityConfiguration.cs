@@ -12,5 +12,7 @@ public sealed class CrmSyncSettingsEntityConfiguration : IEntityTypeConfiguratio
         b.HasKey(x => x.CrmSyncSettingsId);
         b.Property(x => x.CrmSyncSettingsId).HasDefaultValueSql("NEWSEQUENTIALID()");
         b.Property(x => x.UpdatedAt).HasPrecision(0);
+        // แถวเดิมได้ 15 นาทีเท่าค่าคงที่เดิมของ CrmMirrorWorker
+        b.Property(x => x.MirrorIntervalMinutes).HasDefaultValue(CrmSyncSettings.DefaultMirrorIntervalMinutes);
     }
 }

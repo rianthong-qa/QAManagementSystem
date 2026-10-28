@@ -1,0 +1,211 @@
+/* Setting Center (ออกแบบใหม่ 2026-10-22) — selector ทั้งหมด scope ด้วย .ms-page
+   ซ้าย: เมนูหมวดแบ่ง 3 กลุ่ม (บริการ AI / การเชื่อมต่อ / ข้อมูลหลัก) พร้อมสถานะย่อ | ขวา: การ์ดหมวดที่เลือก */
+.ms-page { display: grid; grid-template-columns: minmax(240px, 272px) minmax(0, 1fr); align-items: start; gap: 20px; min-width: 0; }
+.ms-page .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.ms-page .btn .material-symbols-outlined { font-size: 18px; }
+.ms-page code { border-radius: 6px; background: var(--bg); padding: 1px 6px; color: var(--text); font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+
+/* เมนูหมวด */
+.ms-nav { position: sticky; top: 84px; display: grid; gap: 2px; max-height: calc(100dvh - 110px); overflow-y: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 10px; }
+.ms-nav-group { margin: 12px 8px 4px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .03em; }
+.ms-nav-group:first-child { margin-top: 2px; }
+.ms-page .ms-nav-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 10px; width: 100%; min-height: 50px; border: 1px solid transparent; border-radius: 10px; background: transparent; padding: 7px 9px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.ms-page .ms-nav-item:hover { background: var(--bg); }
+.ms-page .ms-nav-item:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: 0; }
+.ms-page .ms-nav-item.active { border-color: color-mix(in srgb, var(--primary) 30%, var(--line)); background: color-mix(in srgb, var(--primary) 7%, var(--card)); box-shadow: inset 3px 0 0 var(--primary); }
+.ms-nav-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); font-size: 19px; }
+.ms-nav-item.active .ms-nav-icon { background: var(--primary); color: var(--card); }
+.ms-nav-text { display: grid; gap: 1px; min-width: 0; }
+.ms-nav-text b { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.ms-nav-text small { display: flex; align-items: center; gap: 5px; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.ms-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.ms-dot.ok { background: var(--green); }
+.ms-dot.warn { background: var(--yellow); }
+
+/* การ์ดหมวด */
+.ms-main { display: grid; gap: 14px; min-width: 0; }
+.ms-card { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 20px 22px; }
+.ms-head { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: start; gap: 14px; margin: -2px 0 18px; }
+.ms-head-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); font-size: 22px; }
+.ms-head-text h2 { margin: 0; font-size: 18px; line-height: 1.35; }
+.ms-head-text p { margin: 3px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.ms-head-aside { display: flex; align-items: center; gap: 8px; }
+.ms-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 240px; color: var(--muted); font-size: 13px; }
+.ms-alert { display: flex; align-items: center; gap: 10px; border: 1px solid color-mix(in srgb, var(--red) 30%, var(--card)); border-radius: 12px; background: color-mix(in srgb, var(--red) 7%, var(--card)); padding: 10px 12px; color: var(--red); font-size: 13px; }
+.ms-alert > span:nth-child(2) { flex: 1; min-width: 0; }
+
+/* บล็อกย่อยในการ์ด */
+.ms-block { min-width: 0; border-top: 1px solid var(--line); padding: 16px 0; }
+.ms-head + .ms-block { border-top: 0; padding-top: 0; }
+.ms-block-head { margin-bottom: 12px; }
+.ms-block-head.has-action { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ms-block-head h3 { margin: 0; font-size: 14px; font-weight: 700; }
+.ms-block-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+/* ช่องกรอก */
+.ms-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); align-items: start; gap: 12px; }
+.ms-fields-3 { grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1.3fr); }
+.ms-fields-smtp { grid-template-columns: minmax(0, 1fr) 140px; }
+.ms-field { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.ms-field small { font-size: 12px; font-weight: 400; }
+.ms-field > small { color: var(--muted); }
+.ms-page .ms-field input, .ms-page .ms-field select { width: 100%; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 9px; background-color: var(--card); padding: 8px 11px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.ms-page .ms-field select { padding-right: 32px; }
+.ms-page .ms-field input:focus, .ms-page .ms-field select:focus { border-color: var(--primary); outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.ms-page .ms-field select:disabled { background-color: var(--bg); color: var(--muted); cursor: default; }
+.ms-label-row { display: flex; min-height: 18px; align-items: center; justify-content: space-between; gap: 8px; }
+.ms-label-row a, .ms-page .ms-link-button { display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent; padding: 0; color: var(--primary); font: inherit; font-size: 12px; font-weight: 700; text-decoration: none; cursor: pointer; }
+.ms-label-row a .material-symbols-outlined { font-size: 14px; }
+.ms-label-row a:hover, .ms-page .ms-link-button:hover:not(:disabled) { text-decoration: underline; }
+.ms-page .ms-link-button:disabled { color: var(--muted); cursor: wait; }
+.ms-error { color: var(--red); font-size: 12px; line-height: 1.4; }
+.ms-page .ms-field .ms-error { color: var(--red); }
+
+/* checkbox พร้อมคำอธิบาย */
+.ms-switches { display: grid; gap: 8px; }
+.ms-check { display: flex; align-items: flex-start; gap: 10px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; cursor: pointer; }
+.ms-check:has(input:checked) { border-color: color-mix(in srgb, var(--primary) 35%, var(--line)); background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
+.ms-check input { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--primary); }
+.ms-check > span { display: grid; gap: 2px; min-width: 0; }
+.ms-check b { color: var(--text); font-size: 13px; font-weight: 600; }
+.ms-check small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+/* แถวปุ่ม: ข้อความสถานะชิดซ้าย ปุ่มชิดขวา */
+.ms-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 10px; margin-top: 14px; }
+.ms-actions > small { margin-right: auto; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.ms-actions > small.ms-error { color: var(--red); }
+.ms-result { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 0; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.ms-result .material-symbols-outlined { flex: none; font-size: 18px; }
+.ms-result.ok { background: color-mix(in srgb, var(--green) 10%, var(--card)); color: var(--green); }
+.ms-result.error { background: color-mix(in srgb, var(--red) 8%, var(--card)); color: var(--red); }
+
+/* AI Provider: 3 ขั้นตอน */
+.ms-current { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px; border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--card)); border-radius: 10px; background: color-mix(in srgb, var(--primary) 6%, var(--card)); padding: 10px 12px; color: var(--text); font-size: 13px; }
+.ms-current > .material-symbols-outlined { color: var(--primary); font-size: 20px; }
+.ms-current b { overflow-wrap: anywhere; }
+.ms-steps { display: grid; gap: 20px; }
+.ms-step { min-width: 0; margin: 0; border: 0; padding: 0; }
+.ms-step legend { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 0; color: var(--text); font-size: 14px; font-weight: 700; }
+.ms-step-no { display: inline-grid; flex: none; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: var(--primary); color: var(--card); font-size: 12px; font-weight: 700; }
+.ms-providers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ms-provider { display: flex; min-width: 0; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.ms-provider:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); }
+.ms-provider.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--card)); box-shadow: 0 0 0 1px var(--primary) inset; }
+.ms-provider:has(input:focus-visible) { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
+.ms-provider input { flex: none; width: 18px; height: 18px; margin: 1px 0 0; border-radius: 50%; accent-color: var(--primary); }
+.ms-provider-text { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.ms-provider-text b { color: var(--text); font-size: 13px; }
+.ms-provider-text small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.ms-pill { display: inline-flex; flex: none; align-items: center; border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--card)); border-radius: 999px; background: color-mix(in srgb, var(--primary) 8%, var(--card)); padding: 2px 9px; color: var(--primary); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.ms-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+.ms-page .ms-chips button { display: inline-flex; min-height: 28px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 3px 10px; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.ms-page .ms-chips button:hover { border-color: var(--primary); }
+.ms-page .ms-chips button[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: var(--card); }
+.ms-step .ms-check { margin-bottom: 0; }
+
+/* Email: ฟอร์มหลัก | แผงข้าง (หมายเหตุ + ทดสอบส่ง) */
+.ms-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); align-items: start; gap: 20px; }
+.ms-split-main { min-width: 0; }
+.ms-split-main > .ms-check { margin-top: 4px; }
+.ms-split-side { display: grid; gap: 12px; min-width: 0; }
+.ms-note { display: flex; align-items: flex-start; gap: 10px; border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--card)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 5%, var(--card)); padding: 12px; }
+.ms-note > .material-symbols-outlined { flex: none; color: var(--primary); font-size: 20px; }
+.ms-note b { color: var(--text); font-size: 13px; }
+.ms-note p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.ms-side-box { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 14px; }
+.ms-side-box h3 { margin: 0; font-size: 14px; }
+.ms-side-box > p { margin: -6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.ms-side-box .ms-result { margin: 0; }
+
+/* CRM: รอบ Poll */
+.ms-poll { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
+.ms-poll .ms-field { width: 180px; }
+.ms-poll > small { align-self: center; color: var(--muted); font-size: 12px; }
+.ms-poll > small.ms-error { color: var(--red); }
+.ms-poll .btn { height: 40px; }
+
+/* ข้อมูลหลัก: การ์ดกลุ่ม + รายการ */
+.ms-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; gap: 14px; }
+/* หมวดที่มีกลุ่มเดียว (Release, Defect) ไม่ยืดเต็มการ์ด — ปุ่มในแถวจะอยู่ไกลชื่อเกินไป */
+.ms-groups:has(> .ms-group:only-child) { grid-template-columns: minmax(0, 720px); }
+.ms-group { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 14px 14px 8px; }
+.ms-group-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.ms-group-head h3 { margin: 0; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.ms-group-head small { color: var(--muted); font-size: 12px; }
+.ms-page .btn.ms-add { flex: none; min-height: 34px; padding: 6px 12px; border-color: color-mix(in srgb, var(--primary) 30%, var(--line)); background: color-mix(in srgb, var(--primary) 6%, var(--card)); color: var(--primary); font-size: 12px; }
+.ms-page .btn.ms-add:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, var(--card)); }
+.ms-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.ms-row { display: flex; align-items: center; gap: 10px; min-height: 52px; border-top: 1px solid var(--line); padding: 7px 0; }
+.ms-list .ms-row:first-child { border-top: 0; }
+.ms-row-order { display: grid; flex: none; place-items: center; min-width: 30px; height: 26px; border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ms-row-icon { flex: none; color: var(--muted); font-size: 20px; }
+.ms-row-text { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.ms-row-text b { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.ms-row-text small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.ms-row.is-inactive .ms-row-text b { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 50%, transparent); }
+.ms-row-actions { display: flex; flex: none; gap: 2px; }
+.ms-page .ms-icon-btn { display: inline-grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+.ms-page .ms-icon-btn .material-symbols-outlined { font-size: 19px; }
+.ms-page .ms-icon-btn:hover { background: var(--bg); color: var(--primary); }
+.ms-page .ms-icon-btn.is-on { color: var(--primary); }
+.ms-page .ms-icon-btn.danger:hover { background: color-mix(in srgb, var(--red) 8%, var(--card)); color: var(--red); }
+.ms-page .ms-icon-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.ms-inactive-note { display: none; }
+.ms-empty { margin: 0; padding: 18px 8px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* ฟอร์มเพิ่ม/แก้ไขแบบ inline */
+.ms-inline-form, .ms-form-panel { display: grid; gap: 10px; margin: 8px 0 10px; border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); padding: 12px; }
+.ms-form-panel { margin: 0 0 14px; }
+.ms-inline-title { margin: 0; color: var(--primary); font-size: 12px; font-weight: 700; }
+.ms-inline-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 76px; gap: 8px; }
+.ms-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ms-inline-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ms-inline-actions .btn { min-height: 36px; padding: 7px 14px; }
+
+@media (max-width: 1280px) {
+  .ms-fields-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ms-split { grid-template-columns: 1fr; }
+}
+@media (max-width: 1100px) {
+  .ms-providers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ms-actions > small { flex-basis: 100%; }
+  .ms-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* ≤900px: เมนูเป็นแถบเลื่อนแนวนอนเหนือเนื้อหา (ซ่อนหัวกลุ่มและสถานะย่อ) */
+@media (max-width: 900px) {
+  /* minmax(0, 1fr) — 1fr เฉย ๆ จะยืดตามความกว้างของแถบเมนูที่ไม่ตัดบรรทัด จนทั้งหน้าเลื่อนแนวนอน */
+  .ms-page { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .ms-nav { position: static; min-width: 0; display: flex; max-height: none; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 6px; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .ms-nav::-webkit-scrollbar { display: none; }
+  .ms-nav-group { display: none; }
+  .ms-page .ms-nav-item { display: inline-flex; flex: none; width: auto; min-height: 44px; padding: 6px 12px 6px 6px; scroll-snap-align: start; }
+  .ms-nav-icon { width: 30px; height: 30px; font-size: 17px; }
+  .ms-nav-text small { display: none; }
+}
+@media (max-width: 760px) {
+  .ms-card { padding: 16px; }
+  .ms-head { grid-template-columns: 36px minmax(0, 1fr); gap: 10px; }
+  .ms-head-icon { width: 36px; height: 36px; font-size: 20px; }
+  .ms-head-aside { grid-column: 1 / -1; }
+  .ms-head-aside .btn { width: 100%; min-height: 44px; }
+  .ms-fields, .ms-fields-3, .ms-fields-smtp, .ms-form-grid, .ms-inline-fields { grid-template-columns: 1fr; }
+  .ms-providers { grid-template-columns: 1fr; gap: 8px; }
+  .ms-page .ms-field input, .ms-page .ms-field select { height: 44px; }
+  .ms-page .ms-chips button { min-height: 36px; }
+  .ms-actions { flex-direction: column; align-items: stretch; }
+  .ms-actions > small { margin-right: 0; }
+  .ms-actions .btn, .ms-side-box .btn, .ms-poll .btn { width: 100%; min-height: 44px; }
+  .ms-poll { flex-direction: column; align-items: stretch; }
+  .ms-poll .ms-field { width: 100%; }
+  .ms-poll > small { align-self: flex-start; }
+  .ms-block-head.has-action { flex-direction: column; align-items: stretch; }
+  .ms-page .btn.ms-add { min-height: 40px; }
+  .ms-groups { grid-template-columns: 1fr; }
+  .ms-page .ms-icon-btn { width: 40px; height: 40px; }
+  .ms-row { gap: 8px; }
+  .ms-row .badge { display: none; } /* ≤760px ย้ายคำว่า "ปิดใช้งาน" ไปบรรทัดรองแทน Badge เพื่อให้ชื่อมีที่ */
+  .ms-inactive-note { display: inline; }
+  .ms-inline-actions .btn { flex: 1; min-height: 44px; }
+  .ms-alert { flex-wrap: wrap; }
+  .ms-alert .btn { width: 100%; min-height: 44px; }
+}

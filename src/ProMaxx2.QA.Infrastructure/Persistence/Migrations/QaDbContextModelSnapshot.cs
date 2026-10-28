@@ -1641,6 +1641,9 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<Guid?>("DuplicateOfDefectId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("ExpectedResult")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
@@ -1656,6 +1659,22 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid?>("ReleaseId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("ResolutionType")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("RootCauseCategory")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("RootCauseNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<string>("Severity")
                         .IsRequired()
@@ -1685,6 +1704,8 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasKey("DefectId");
 
                     b.HasIndex("BuildId");
+
+                    b.HasIndex("DuplicateOfDefectId");
 
                     b.HasIndex("ModuleId");
 
@@ -3184,6 +3205,11 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
 
+                    b.Property<int>("MirrorIntervalMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(15);
+
                     b.Property<int>("PollIntervalMinutes")
                         .HasColumnType("int");
 
@@ -3502,9 +3528,19 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("KnowledgeArticleId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("BodyHtml")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("BodyMarkdown")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ContentFormat")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("Markdown");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -3543,6 +3579,45 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.HasIndex("IsDeleted", "ProjectId");
 
                     b.ToTable("KnowledgeArticles", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeArticleShareLink", b =>
+                {
+                    b.Property<Guid>("KnowledgeArticleShareLinkId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("KnowledgeArticleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("RevokedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("KnowledgeArticleShareLinkId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("KnowledgeArticleId")
+                        .IsUnique()
+                        .HasFilter("[RevokedAt] IS NULL");
+
+                    b.ToTable("KnowledgeArticleShareLinks", (string)null);
                 });
 
             modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeChunk", b =>
@@ -5568,6 +5643,11 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("BuildId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Defects.Defect", null)
+                        .WithMany()
+                        .HasForeignKey("DuplicateOfDefectId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("ProMaxx2.QA.Domain.Projects.ProductModule", null)
                         .WithMany()

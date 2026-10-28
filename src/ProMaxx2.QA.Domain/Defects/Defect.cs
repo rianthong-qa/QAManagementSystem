@@ -33,6 +33,22 @@ public sealed class Defect
     public void UpdateCrmSnapshot(string? status,string? assignto,DateTime? syncedAt=null){CrmLastKnownStatus=status;CrmLastKnownAssignto=assignto;if(syncedAt.HasValue)CrmLastSyncedAt=syncedAt.Value;}
     // Phase 2 poller — เลื่อน marker ไปข้างหน้าหลังประมวลผลคอมเมนต์ใหม่จาก CRM แล้ว (หรือตั้ง baseline ตอน poll ครั้งแรก)
     public void UpdateCrmLastSeenAnswerNo(string? answerNo){CrmLastSeenAnswerNo=answerNo;}
+    // ผลการปิด Defect (DEFECT_KNOWLEDGE_PLAN.md §4.1 / AI_KNOWLEDGE_CHAT_PLAN.md Phase 6) — ความรู้ "สาเหตุ/วิธีแก้" สำหรับคลังความรู้และเตือน Defect ซ้ำ
+    // หน้า Defect บังคับกรอกตอนปิด (Resolved/Closed/Rejected); ช่องทางอื่น (Bulk, CRM Sync, Automation) ปิดได้โดยไม่มีค่า
+    public static readonly string[] ResolutionTypes=["Fixed","Duplicate","CannotReproduce","ByDesign","WontFix","Deferred"];
+    public static readonly string[] ClosingStatuses=["Resolved","Closed","Rejected"];
+    public string? ResolutionType{get;private set;} public string? RootCauseCategory{get;private set;} public string? RootCauseNote{get;private set;} public string? ResolutionNote{get;private set;} public Guid? DuplicateOfDefectId{get;private set;}
+    /// <summary>Fixed ต้องมีหมวดสาเหตุ, Duplicate ต้องระบุ Defect ต้นฉบับ (ไม่ใช่ตัวเอง); หมวดสาเหตุตรวจกับ Master Option ที่ชั้น API</summary>
+    public void SetResolution(string resolutionType,string? rootCauseCategory,string? rootCauseNote,string? resolutionNote,Guid? duplicateOfDefectId,Guid? updatedBy)
+    {
+        var type=ResolutionTypes.SingleOrDefault(x=>x.Equals(resolutionType?.Trim(),StringComparison.OrdinalIgnoreCase))??throw new ArgumentException("Invalid resolution type.");
+        var category=string.IsNullOrWhiteSpace(rootCauseCategory)?null:rootCauseCategory.Trim();
+        if(type=="Fixed"&&category is null)throw new ArgumentException("Root cause category is required when the defect is fixed.");
+        if(type=="Duplicate"&&(duplicateOfDefectId is null||duplicateOfDefectId==DefectId))throw new ArgumentException("Duplicate requires the original defect.");
+        ResolutionType=type;RootCauseCategory=category?.Length>50?category[..50]:category;RootCauseNote=Cut(rootCauseNote,2000);ResolutionNote=Cut(resolutionNote,2000);DuplicateOfDefectId=type=="Duplicate"?duplicateOfDefectId:null;
+        UpdatedAt=DateTime.UtcNow;UpdatedBy=updatedBy;
+    }
+    private static string? Cut(string? value,int max){if(string.IsNullOrWhiteSpace(value))return null;var text=value.Trim();return text.Length>max?text[..max]:text;}
     private static string NormalizeSeverity(string value)=>new[]{"Critical","High","Medium","Low"}.SingleOrDefault(x=>x.Equals(value,StringComparison.OrdinalIgnoreCase))??throw new ArgumentException("Invalid defect severity.");
     private static string NormalizeStatus(string value)=>new[]{"Open","In Progress","Resolved","Closed","Rejected"}.SingleOrDefault(x=>x.Equals(value,StringComparison.OrdinalIgnoreCase))??throw new ArgumentException("Invalid defect status.");
 }

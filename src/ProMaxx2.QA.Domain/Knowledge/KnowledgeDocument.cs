@@ -7,7 +7,7 @@ namespace ProMaxx2.QA.Domain.Knowledge;
 /// </summary>
 public sealed class KnowledgeDocument
 {
-    public static readonly string[] SourceTypes = ["Defect", "CrmTicket", "Article", "File"];
+    public static readonly string[] SourceTypes = ["Defect", "CrmTicket", "Article", "File", "TestCase"];
     public static readonly string[] Scopes = ["Project", "Crm", "Global"];
     public static readonly string[] States = ["Stale", "Indexed", "Failed", "Excluded"];
 

@@ -62,6 +62,36 @@ type ExecutionCase = {
     stepResults?: { stepNo: number; status: string; actualResult?: string | null }[];
   }[];
 };
+// โหลด Cycle ที่ InProgress ทีละหน้า (server จำกัด size สูงสุด 500) จนครบ total — ใช้ทั้งตอนโหลดรายการและตอนรีเฟรช %
+const cyclePageSize = 500;
+async function loadInProgressCycles(moduleId: string): Promise<TestCycleItem[]> {
+  const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
+  const query = `?status=InProgress&size=${cyclePageSize}${moduleId ? `&moduleId=${moduleId}` : ""}`;
+  const loadPage = async (page: number, acc: TestCycleItem[]): Promise<TestCycleItem[]> => {
+    const r = await fetch(`${apiUrl}/test-cycles${query}&page=${page}`, { headers: h });
+    if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
+    const data: unknown = await r.json();
+    if (Array.isArray(data)) return data as TestCycleItem[];
+    const items = (data as { items?: { total?: number; rows?: TestCycleItem[] } })?.items;
+    const rows = [...acc, ...(items?.rows ?? [])];
+    return (items?.rows?.length ?? 0) === cyclePageSize && rows.length < (items?.total ?? 0) ? loadPage(page + 1, rows) : rows;
+  };
+  return loadPage(1, []);
+}
+// อัปเดตเฉพาะตัวเลขความคืบหน้าของ Cycle ที่มีอยู่แล้ว (ไม่เพิ่ม/ลบรายการ ไม่เปลี่ยน Cycle ที่เลือก) — คืน array เดิมถ้าไม่มีอะไรเปลี่ยน
+// เพื่อไม่ให้ effect ที่ขึ้นกับ cycles ทำงานซ้ำโดยไม่จำเป็น; สูตรเดียวกับ server: (ไม่ใช่ NotRun) / ทั้งหมด ปัด 2 ตำแหน่ง
+type CycleProgress = { executedCount: number; caseCount: number };
+const progressPercentOf = ({ executedCount, caseCount }: CycleProgress) => caseCount ? Math.round(executedCount * 10000 / caseCount) / 100 : 0;
+function mergeCycleProgress(current: TestCycleItem[], updates: Map<string, CycleProgress>): TestCycleItem[] {
+  let changed = false;
+  const next = current.map((c) => {
+    const u = updates.get(c.testCycleId);
+    if (!u || (u.executedCount === c.executedCount && u.caseCount === c.caseCount)) return c;
+    changed = true;
+    return { ...c, executedCount: u.executedCount, caseCount: u.caseCount, progressPercent: progressPercentOf(u) };
+  });
+  return changed ? next : current;
+}
 type ExecutionWorkspace = {
   testCycleId: string;
   cycleCode: string;
@@ -120,27 +150,17 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
   };
+  const lastProgressRefresh = useRef(0), progressRefreshing = useRef(false);
+  // Project ของ Cycle เป็น string คงที่ — effect โหลด Module ไม่ต้องทำงานซ้ำเมื่อแค่ % ของ Cycle เปลี่ยน
+  const cycleProjectKey = useMemo(() => [...new Set(cycles.map((x) => x.projectId))].sort().join(","), [cycles]);
   useEffect(() => {
-    const h = {
-      Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
-    };
     // ขอเฉพาะ InProgress จาก server — เดิมขอ 100 Cycle ล่าสุดทุกสถานะแล้วกรองในหน้าเว็บ ทำให้ Cycle ที่ InProgress แต่เก่ากว่า
     // 100 รายการล่าสุดไม่โผล่ใน dropdown เลย (ตรวจ 2026-10-20: PMX2 มี InProgress 191 รายการ หายไป 91)
     // server จำกัด size สูงสุด 500 — ขอทีละหน้าจนครบ total ไม่งั้น Cycle เกิน 500 รายการจะหายเงียบ ๆ อีก
-    const pageSize = 500;
-    const query = `?status=InProgress&size=${pageSize}${cycleModuleFilter ? `&moduleId=${cycleModuleFilter}` : ""}`;
     setCyclesLoaded(false);
     setCycleLoadError("");
-    const loadPage = async (page: number, acc: TestCycleItem[]): Promise<TestCycleItem[]> => {
-      const r = await fetch(`${apiUrl}/test-cycles${query}&page=${page}`, { headers: h });
-      if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
-      const data: unknown = await r.json();
-      if (Array.isArray(data)) return data as TestCycleItem[];
-      const items = (data as { items?: { total?: number; rows?: TestCycleItem[] } })?.items;
-      const rows = [...acc, ...(items?.rows ?? [])];
-      return (items?.rows?.length ?? 0) === pageSize && rows.length < (items?.total ?? 0) ? loadPage(page + 1, rows) : rows;
-    };
-    loadPage(1, [])
+    lastProgressRefresh.current = Date.now();
+    loadInProgressCycles(cycleModuleFilter)
       .then((data: TestCycleItem[]) => {
         // Only offer cycles that are actively being executed — Draft hasn't started yet, and
         // Completed/Closed/Cancelled have no more work to do, so none of them belong in this dropdown.
@@ -160,6 +180,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         setCycleId("");
         setCycleLoadError(e instanceof Error ? e.message : "โหลด Test Cycle ไม่สำเร็จ");
       });
+    // % ของ Cycle อัปเดตแยกด้วย mergeCycleProgress (หลังโหลด workspace และตอนเปิด dropdown)
     // ไม่ผูกกับ reload — บันทึก/ลบผลไม่ได้เปลี่ยนรายการ Cycle แต่ถ้าโหลดใหม่ cycles จะเป็น array ใหม่ ทำให้โหลด Module
     // ของทุก Project ซ้ำและ effect เลือก Cycle ทำงานอีกรอบ ดูเหมือนหน้ารีโหลดเองทุกครั้งที่กดบันทึก
   }, [cycleModuleFilter, myCyclesOnly]);
@@ -169,7 +190,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     // for the selected module; otherwise the selected result would empty the
     // source used to build the Module dropdown and disable it.
     if (cycleModuleFilter) return;
-    const projectIds = contextProjectId ? [contextProjectId] : [...new Set(cycles.map((x) => x.projectId))];
+    const projectIds = contextProjectId ? [contextProjectId] : cycleProjectKey.split(",").filter(Boolean);
     if (!projectIds.length) { setCycleModules([]); return; }
     Promise.all(projectIds.map((id) => fetch(`${apiUrl}/projects/${id}/modules`, { headers: h }).then((r) => r.ok ? r.json() : [])))
       .then((groups: ModuleItem[][]) => {
@@ -177,7 +198,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         groups.flat().filter((m) => m.isActive).forEach((m) => { if (!seen.has(m.moduleId)) seen.set(m.moduleId, m); });
         setCycleModules([...seen.values()].sort((a, b) => a.moduleCode.localeCompare(b.moduleCode)));
       });
-  }, [contextProjectId, cycles, cycleModuleFilter]);
+  }, [contextProjectId, cycleProjectKey, cycleModuleFilter]);
   // Cycle ที่ workspace ปัจจุบันเป็นของ — ใช้แยก "เปลี่ยน Cycle" (แสดงสถานะกำลังโหลด) ออกจาก
   // "reload หลังบันทึกผล" (refetch เงียบๆ คง Test Case ที่เลือกและตำแหน่ง scroll ไว้)
   // เปลี่ยน Cycle แล้วไม่ล้างหน้าจอ: คงข้อมูล Cycle เดิมไว้ (หรี่ลง) จนข้อมูลใหม่มาครบแล้วสลับทีเดียว — เดิมล้างเป็น spinner
@@ -207,6 +228,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       .then((data: ExecutionWorkspace | null) => {
         if (controller.signal.aborted) return;
         setWorkspace(data);
+        // % ใน dropdown ของ Cycle นี้ให้ตรงกับข้อมูลที่เพิ่งโหลด (รวมหลังบันทึกผล ซึ่งโหลด workspace ใหม่ผ่าน reload)
+        if (data) setCycles((current) => mergeCycleProgress(current, new Map([[cycleId, { caseCount: data.cases.length, executedCount: data.cases.filter((x) => x.currentStatus !== "NotRun").length }]])));
         setSelectedId((current) =>
           data?.cases.some((x) => x.testCycleCaseId === current)
             ? current
@@ -349,6 +372,16 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     (!contextReleaseId || x.releaseId === contextReleaseId) &&
     (!contextBuildId || x.buildId === contextBuildId)
   ), [cycles, contextProjectId, contextReleaseId, contextBuildId]);
+  // เปิด dropdown = ดึง % ล่าสุดของทุก Cycle แบบเงียบ ๆ (รวมผลที่คนอื่นบันทึก) — เว้นอย่างน้อย 15 วินาทีต่อรอบและไม่ซ้อนกัน
+  const refreshCycleProgress = () => {
+    if (progressRefreshing.current || Date.now() - lastProgressRefresh.current < 15_000) return;
+    progressRefreshing.current = true;
+    lastProgressRefresh.current = Date.now();
+    loadInProgressCycles(cycleModuleFilter)
+      .then((rows) => setCycles((current) => mergeCycleProgress(current, new Map(rows.map((x) => [x.testCycleId, { executedCount: x.executedCount, caseCount: x.caseCount }])))))
+      .catch(() => { /* ไม่สำเร็จ = คงตัวเลขเดิม เปิดครั้งหน้าค่อยลองใหม่ */ })
+      .finally(() => { progressRefreshing.current = false; });
+  };
   const workspaceSwitching = workspaceLoading && !!workspace;
   // Cycle ที่เปิดทันทีจาก qa.execution.lastCycleId/qa.targetCycleId ก่อนรายการ Cycle มา — ยังไม่รู้ว่าอยู่ใน context ปัจจุบันและยัง InProgress
   // จึงให้ดูได้แต่ยังบันทึก/ใช้ปุ่มลัดไม่ได้ จนรายการยืนยัน (ถ้าไม่อยู่ในรายการ effect ด้านล่างจะเปลี่ยน Cycle ให้)
@@ -654,7 +687,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
           {/* ไม่ห่อด้วย <label> — ในแผงมีช่องค้นหา การคลิกใน label จะไปกดปุ่มเปิด/ปิดซ้ำ */}
           <div className="execution-cycle-field">
             <span className="execution-field-label" aria-hidden="true">Test Cycle{workspaceSwitching && <span className="execution-switching"><span className="spinner inline" /> กำลังโหลด</span>}</span>
-            <CyclePicker cycles={filteredCycles} value={cycleId} onChange={setCycleId} disabled={!cyclesLoaded && !filteredCycles.length} />
+            <CyclePicker cycles={filteredCycles} value={cycleId} onChange={setCycleId} onOpen={refreshCycleProgress} disabled={!cyclesLoaded && !filteredCycles.length} />
           </div>
           <label className="execution-module-field">
             <span className="execution-field-label">Module</span>

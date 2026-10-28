@@ -15,7 +15,7 @@ public sealed class MasterSettingsController(QaDbContext db, SharedAiConfigurati
     public static readonly string[] Categories =
     [
         "ReleaseType", "TestCasePriority", "TestCaseType",
-        "TestSuiteType", "TestSuiteRiskTier", "TestCycleType"
+        "TestSuiteType", "TestSuiteRiskTier", "TestCycleType", "DefectRootCause"
     ];
 
     [HttpGet("ai"), Authorize(Policy = "AdminUser")]
@@ -46,6 +46,32 @@ public sealed class MasterSettingsController(QaDbContext db, SharedAiConfigurati
     {
         try { return Ok(await knowledgeEmbedding.TestAsync(ct)); }
         catch (EmbeddingException ex) { return StatusCode(502, Problem(ex.Message)); }
+    }
+
+    /// <summary>
+    /// ทดสอบ Provider/Model จากค่าในฟอร์ม (ยังไม่ต้องบันทึก; เว้นคีย์ว่าง = ใช้คีย์ที่บันทึกไว้ของ Provider เดียวกัน)
+    /// ส่งคำถามสั้น 1 ข้อผ่าน <see cref="IAiChatClient"/> ตัวเดียวกับผู้ช่วย AI — คืนคำตอบย่อและเวลาที่ใช้
+    /// </summary>
+    [HttpPost("ai/test"), Authorize(Policy = "AdminUser")]
+    public async Task<ActionResult<AiConnectionTestResult>> TestAiConnection(TestAiConnectionRequest request, [FromServices] IAiChatClient chat, CancellationToken ct)
+    {
+        try
+        {
+            var runtime = await aiConfiguration.ResolveFormRuntimeAsync(request.Provider, request.Model, request.BaseUrl, request.ApiKey, ct);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(60));
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var reply = new System.Text.StringBuilder();
+            await foreach (var delta in chat.StreamAsync(runtime, "You are a connection test. Reply with exactly: OK", [new("user", "ตอบคำว่า OK")], $"settings-test-{Guid.NewGuid():N}", timeout.Token))
+                if (reply.Append(delta).Length >= 200) break;
+            var text = reply.ToString().Trim();
+            return Ok(new AiConnectionTestResult(runtime.Provider, runtime.Model, watch.ElapsedMilliseconds, text.Length > 200 ? text[..200] + "..." : text));
+        }
+        catch (ArgumentException ex) { return BadRequest(Problem(ex.Message)); }
+        catch (AiNotConfiguredException ex) { return BadRequest(Problem(ex.Message)); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return StatusCode(504, Problem("Provider ไม่ตอบภายใน 60 วินาที")); }
+        catch (HttpRequestException ex) { return StatusCode(502, Problem($"เชื่อมต่อ Provider ไม่ได้: {ex.Message}")); }
+        catch (InvalidOperationException ex) { return StatusCode(502, Problem(ex.Message)); }
     }
 
     [HttpPost("ai/models"), Authorize(Policy = "AdminUser")]
@@ -148,7 +174,7 @@ public sealed class MasterSettingsController(QaDbContext db, SharedAiConfigurati
     [HttpPut("crm-sync"), Authorize(Policy = "AdminUser")]
     public async Task<ActionResult<CrmSyncSettingsView>> SaveCrmSyncSettings(SaveCrmSyncSettingsRequest request, CancellationToken ct)
     {
-        try { return Ok(await crmSyncSettings.SaveAsync(request.PollIntervalMinutes, ct)); }
+        try { return Ok(await crmSyncSettings.SaveAsync(request.PollIntervalMinutes, request.MirrorIntervalMinutes, ct)); }
         catch (ArgumentException ex) { return BadRequest(Problem(ex.Message)); }
     }
 
@@ -222,7 +248,9 @@ public sealed record SaveEnvironmentSettingRequest(Guid ProjectId, string Enviro
 public sealed record SaveAiConfigurationRequest(string Provider, string Model, string? BaseUrl, string? ApiKey, bool IsEnabled = true, bool ClearApiKey = false);
 public sealed record SaveAiKnowledgeConfigurationRequest(string EmbeddingProvider, string? EmbeddingModel, string? EmbeddingBaseUrl, string? EmbeddingApiKey, bool ClearEmbeddingApiKey = false, bool AllowCrmDataToExternalAi = false, bool McpEnabled = false);
 public sealed record ListAiModelsRequest(string Provider, string? BaseUrl, string? ApiKey);
-public sealed record SaveCrmSyncSettingsRequest(int PollIntervalMinutes);
+public sealed record TestAiConnectionRequest(string Provider, string Model, string? BaseUrl, string? ApiKey);
+public sealed record AiConnectionTestResult(string Provider, string Model, long ElapsedMs, string Reply);
+public sealed record SaveCrmSyncSettingsRequest(int? PollIntervalMinutes, int? MirrorIntervalMinutes);
 public sealed record CrmProjectMappingDto(Guid CrmProjectMappingId, Guid ProjectId, string CrmProductId, string? CrmVersionId);
 public sealed record SaveCrmProjectMappingRequest(Guid ProjectId, string CrmProductId, string? CrmVersionId);
 public sealed record SaveEmailConfigurationRequest(string SmtpHost, int SmtpPort, string SenderEmail, string? SenderDisplayName, string? Password, bool IsEnabled = true, bool ClearPassword = false);

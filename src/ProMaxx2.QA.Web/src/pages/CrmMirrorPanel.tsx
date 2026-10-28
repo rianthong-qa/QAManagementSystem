@@ -3,9 +3,10 @@ import { apiFetch, isAbortError } from "../api";
 import { Badge } from "../components/Badge";
 import { notify } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
+import { CrmMirrorIntervalEditor } from "../components/CrmMirrorIntervalEditor";
 
 type MirrorRun = { crmMirrorRunId: string; kind: string; rangeFrom: string; rangeTo: string; status: string; startedAt: string; completedAt?: string | null; ticketCount: number; newTickets: number; changedTickets: number; newAnswers: number; error?: string | null };
-type MirrorStatus = { enabled: boolean; accountUsername: string; tickets: number; events: number; lastSucceededAt?: string | null; runs: MirrorRun[] };
+type MirrorStatus = { enabled: boolean; accountUsername: string; tickets: number; events: number; lastSucceededAt?: string | null; runs: MirrorRun[]; intervalMinutes?: number };
 
 const runTone: Record<string, string> = { Succeeded: "green", Failed: "red", Skipped: "yellow", Running: "blue" };
 const runLabel: Record<string, string> = { Succeeded: "สำเร็จ", Failed: "ไม่สำเร็จ", Skipped: "ข้าม", Running: "กำลังดึง" };
@@ -54,7 +55,8 @@ export function CrmMirrorPanel() {
             <div><dt>Ticket ที่เก็บไว้</dt><dd>{data.tickets.toLocaleString("th-TH")}</dd></div>
             <div><dt>เหตุการณ์ที่บันทึก</dt><dd>{data.events.toLocaleString("th-TH")}</dd></div>
           </dl>
-          <p className="crm-mirror-note">ดึงอัตโนมัติทุก 15 นาที (Ticket ที่ติดต่อใน 90 วันล่าสุด) และรอบใหญ่ย้อนหลัง 1 ปีวันละครั้ง — เก็บเฉพาะสถานะ/ผู้รับผิดชอบ/วันที่ ไม่เก็บข้อมูลลูกค้าและเนื้อหาข้อความ</p>
+          <CrmMirrorIntervalEditor minutes={data.intervalMinutes ?? 15} prefix="ดึงอัตโนมัติทุก" onSaved={(minutes) => setData((current) => current && { ...current, intervalMinutes: minutes })} />
+          <p className="crm-mirror-note">ดึง Ticket ที่ติดต่อใน 90 วันล่าสุดตามรอบด้านบน และรอบใหญ่ย้อนหลัง 1 ปีวันละครั้ง — เก็บเฉพาะสถานะ/ผู้รับผิดชอบ/วันที่ ไม่เก็บข้อมูลลูกค้าและเนื้อหาข้อความ</p>
           <div className="crm-mirror-actions">
             <button type="button" className="btn primary" disabled={busy} onClick={() => sync(false)}>{busy ? <><span className="spinner inline" aria-hidden="true" /> กำลังดึง...</> : <><span className="material-symbols-outlined" aria-hidden="true">sync</span> ดึงข้อมูลตอนนี้</>}</button>
             <button type="button" className="btn" disabled={busy} onClick={() => sync(true)}><span className="material-symbols-outlined" aria-hidden="true">history</span> ดึงย้อนหลัง 1 ปี</button>

@@ -350,7 +350,7 @@ export function WeeklyReportView({ refreshKey }: { refreshKey: number }) {
             </div>
           )}
 
-          <p className="perf-report-note">ตัวเลขจาก QA Hub และ CRM (ดึงทุก 15 นาที) เฉพาะ Project ที่คุณเป็นสมาชิก · ใช้ประกอบการพิจารณา ไม่ใช่คะแนนผลงาน</p>
+          <p className="perf-report-note">ตัวเลขจาก QA Hub และ CRM (ดึงจาก CRM อัตโนมัติ) เฉพาะ Project ที่คุณเป็นสมาชิก · ใช้ประกอบการพิจารณา ไม่ใช่คะแนนผลงาน</p>
         </>
       )}
     </div>

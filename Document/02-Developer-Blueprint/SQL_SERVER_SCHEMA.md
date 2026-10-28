@@ -1338,3 +1338,11 @@ WeeklyReportNoteId (PK), WeekStart date **unique** (วันจันทร์�
 ## Addendum: ใช้งานคอลัมน์ embedding (Phase 5, 2026-10-22 — ไม่มี migration)
 
 `KnowledgeChunks.Embedding` = float32 little-endian ที่ normalize แล้ว, `EmbeddingModel` = `"Provider:Model"` (เช่น `Local:bge-m3`), `EmbeddingDim` = จำนวนมิติ — ค้นด้วย cosine ในแอป (SQL Server 2022 ไม่มีชนิด `VECTOR`); ช่วงที่ `EmbeddingModel` ไม่ตรงกับค่าปัจจุบันจะถูกสร้างใหม่
+
+## Addendum: ผลการปิด Defect (migration `AddDefectResolution`, 2026-10-22)
+
+`Defects` เพิ่ม `ResolutionType` (20), `RootCauseCategory` (50 — `MasterOptions.Value` หมวด `DefectRootCause`), `RootCauseNote` (2000), `ResolutionNote` (2000), `DuplicateOfDefectId` (FK → `Defects`, NO ACTION, index); migration seed `MasterOptions` หมวด `DefectRootCause` 9 รายการ (ไม่ใส่ซ้ำ); `KnowledgeDocuments.SourceType` เพิ่มค่า `TestCase`
+
+## Addendum: รอบดึงข้อมูล CRM (migration `AddCrmMirrorInterval`, 2026-10-22)
+
+- `CrmSyncSettings.MirrorIntervalMinutes` `int NOT NULL DEFAULT 15` — รอบ (นาที) ที่ `CrmMirrorWorker` ดึงสำเนา CRM Ticket ทั้งทีม; โดเมนจำกัด 5–1440; แถวเดิมได้ 15 = ค่าคงที่เดิม

@@ -238,7 +238,7 @@ function TeamView({ range, refreshKey, onOpen }: { range: { from: string; to: st
         <Kpi icon="play_circle" label="Execution" value={totals.executions} meta={`Pass rate ${passRate(totals)} · เฉลี่ย ${perHead(totals.executions)} / คน`} note={top((m) => m.executions)} />
         <Kpi icon="bug_report" label="Defect ที่แจ้ง" value={totals.defects} meta={`Critical/High ${totals.severe.toLocaleString("th-TH")} · เฉลี่ย ${perHead(totals.defects)} / คน`} note={top((m) => m.defectsReported)} />
         <Kpi icon="fact_check" label="Test Case ที่สร้าง" value={totals.testCases} meta={`แก้ไข ${totals.revisions.toLocaleString("th-TH")} ครั้ง · เฉลี่ย ${perHead(totals.testCases)} / คน`} note={top((m) => m.testCasesCreated)} />
-        <Kpi icon="support_agent" label="CRM Ticket ที่ดูแล" value={totals.crm} meta={`ส่งต่อ Dev ${totals.crmToDev.toLocaleString("th-TH")} · ข้อมูลดึงทุก 15 นาที`} note={top((m) => m.crmTicketsHandled)} />
+        <Kpi icon="support_agent" label="CRM Ticket ที่ดูแล" value={totals.crm} meta={`ส่งต่อ Dev ${totals.crmToDev.toLocaleString("th-TH")} · ข้อมูลดึงจาก CRM อัตโนมัติ`} note={top((m) => m.crmTicketsHandled)} />
       </section>
 
       <section className="content-card perf-attention" aria-label="สิ่งที่ต้องติดตาม">
@@ -493,7 +493,7 @@ function MemberView({ userId, currentUserId, canManage, range, refreshKey, onSel
             <div className="perf-metric-groups">
               {metricGroups(m).map((g) => <MetricGroup key={g.icon} icon={g.icon} title={g.title} items={g.items} />)}
             </div>
-            <p className="perf-hint">งาน CRM ดึงจาก CRM ทุก 15 นาที และต้องผูกบัญชี CRM ก่อนจึงจะนับให้พนักงานได้</p>
+            <p className="perf-hint">งาน CRM ดึงจาก CRM อัตโนมัติ และต้องผูกบัญชี CRM ก่อนจึงจะนับให้พนักงานได้</p>
           </section>
 
           <WeeklyTrend points={data.weekly} />

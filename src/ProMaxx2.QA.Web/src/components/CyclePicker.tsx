@@ -5,10 +5,12 @@ import "./CyclePicker.css";
 /** ช่องเลือก Test Cycle แบบค้นหาได้ (แทน <select> ที่มีหลายร้อยรายการเรียงยาว) — จัดกลุ่มตาม Module แรกของ Cycle,
  * ในกลุ่มเรียงรหัสใหม่ → เก่า, แต่ละรายการแสดงรหัส/ชื่อ/Release·Build·Environment และความคืบหน้า
  * คีย์บอร์ด: พิมพ์เพื่อค้นหา, ↑/↓ เลื่อน, Enter เลือก, Esc ปิด (ARIA combobox + listbox) */
-export function CyclePicker({ cycles, value, onChange, placeholder = "เลือก Test Cycle", label = "Test Cycle", disabled }: {
+export function CyclePicker({ cycles, value, onChange, onOpen, placeholder = "เลือก Test Cycle", label = "Test Cycle", disabled }: {
   cycles: TestCycleItem[];
   value: string;
   onChange: (cycleId: string) => void;
+  /** เรียกทุกครั้งที่เปิดแผง — ผู้เรียกใช้รีเฟรชความคืบหน้าของรายการ */
+  onOpen?: () => void;
   placeholder?: string;
   /** ชื่อของช่องสำหรับ screen reader — ปุ่มอ่านเป็น "label: ค่าที่เลือก" */
   label?: string;
@@ -46,6 +48,7 @@ export function CyclePicker({ cycles, value, onChange, placeholder = "เลื�
     if (disabled) return;
     setOpen(true);
     setQuery("");
+    onOpen?.();
   };
 
   // เปิดแล้วชี้รายการที่เลือกอยู่ (หรือรายการแรก) และ focus ช่องค้นหา; คลิกนอกแผงเพื่อปิด

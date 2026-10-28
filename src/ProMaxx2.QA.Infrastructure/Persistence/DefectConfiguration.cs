@@ -30,6 +30,13 @@ public sealed class DefectConfiguration : IEntityTypeConfiguration<Defect>
         b.Property(x => x.CrmLastKnownStatus).HasMaxLength(50);
         b.Property(x => x.CrmLastKnownAssignto).HasMaxLength(20);
         b.Property(x => x.CrmLastSeenAnswerNo).HasMaxLength(20);
+        // ผลการปิด (Phase 6 คลังความรู้) — RootCauseCategory = MasterOption.Value หมวด DefectRootCause
+        b.Property(x => x.ResolutionType).HasMaxLength(20);
+        b.Property(x => x.RootCauseCategory).HasMaxLength(50);
+        b.Property(x => x.RootCauseNote).HasMaxLength(2000);
+        b.Property(x => x.ResolutionNote).HasMaxLength(2000);
+        b.HasOne<Defect>().WithMany().HasForeignKey(x => x.DuplicateOfDefectId).OnDelete(DeleteBehavior.NoAction);
+        b.HasIndex(x => x.DuplicateOfDefectId);
         b.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Release>().WithMany().HasForeignKey(x => x.ReleaseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Build>().WithMany().HasForeignKey(x => x.BuildId).OnDelete(DeleteBehavior.Restrict);

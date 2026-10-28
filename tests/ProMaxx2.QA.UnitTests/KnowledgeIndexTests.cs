@@ -110,20 +110,21 @@ public sealed class KnowledgeIndexTests
         var seed = await SeedDefectAsync(db);
         var indexer = Indexer(db);
 
-        Assert.Equal(1, await indexer.SyncSourcesAsync(default));
-        Assert.Equal(1, await indexer.IndexPendingAsync(50, default));
+        // Defect + Test Case ที่ลิงก์ (Test Case เป็นแหล่งความรู้ตั้งแต่ Phase 6)
+        Assert.Equal(2, await indexer.SyncSourcesAsync(default));
+        Assert.Equal(2, await indexer.IndexPendingAsync(50, default));
 
-        var doc = await db.KnowledgeDocuments.SingleAsync();
+        var doc = await db.KnowledgeDocuments.SingleAsync(x => x.SourceType == "Defect");
         Assert.Equal(("Defect", "Project", seed.Project.ProjectId, "Indexed"), (doc.SourceType, doc.Scope, doc.ProjectId, doc.State));
         Assert.Equal($"#/defects?defectId={seed.Defect.DefectId}", doc.SourceUrl);
-        var text = string.Join("\n", await db.KnowledgeChunks.Select(x => x.Text).ToListAsync());
+        var text = string.Join("\n", await db.KnowledgeChunks.Where(x => x.KnowledgeDocumentId == doc.KnowledgeDocumentId).Select(x => x.Text).ToListAsync());
         Assert.Contains("โมดูล: ขาย / ใบกำกับภาษี", text);
         Assert.Contains("Release: REL-01 (1.0)", text);
         Assert.Contains("Build: 10.0.228", text);
         Assert.Contains("TC-0001 พิมพ์ใบกำกับ", text);
         Assert.Contains("ลองเปลี่ยน printer แล้วหาย [PHONE]", text);
         Assert.DoesNotContain("Defect details updated", text); // activity ที่ไม่ใช่คอมเมนต์ไม่เข้าคลัง
-        Assert.Equal(doc.ChunkCount, await db.KnowledgeChunks.CountAsync());
+        Assert.Equal(doc.ChunkCount, await db.KnowledgeChunks.CountAsync(x => x.KnowledgeDocumentId == doc.KnowledgeDocumentId));
     }
 
     [Fact]
@@ -148,7 +149,7 @@ public sealed class KnowledgeIndexTests
         db.DefectActivities.Add(new DefectActivity(seed.Defect.DefectId, "Comment", "สาเหตุคือ driver เก่า", null));
         await db.SaveChangesAsync();
         Assert.Equal(1, await indexer.SyncSourcesAsync(default));
-        Assert.Equal("Stale", (await db.KnowledgeDocuments.SingleAsync()).State);
+        Assert.Equal("Stale", (await db.KnowledgeDocuments.SingleAsync(x => x.SourceType == "Defect")).State);
         await indexer.IndexPendingAsync(50, default);
         Assert.Contains(await db.KnowledgeChunks.Select(x => x.Text).ToListAsync(), t => t.Contains("สาเหตุคือ driver เก่า"));
     }
@@ -168,8 +169,9 @@ public sealed class KnowledgeIndexTests
         await indexer.SyncSourcesAsync(default);
         await indexer.IndexPendingAsync(50, default);
 
-        Assert.Equal("Excluded", (await db.KnowledgeDocuments.SingleAsync()).State);
-        Assert.Empty(await db.KnowledgeChunks.ToListAsync());
+        var excluded = await db.KnowledgeDocuments.SingleAsync(x => x.SourceType == "Defect");
+        Assert.Equal("Excluded", excluded.State);
+        Assert.Empty(await db.KnowledgeChunks.Where(x => x.KnowledgeDocumentId == excluded.KnowledgeDocumentId).ToListAsync());
         Assert.NotEqual(Guid.Empty, seed.Defect.DefectId);
     }
 
@@ -244,7 +246,8 @@ public sealed class KnowledgeIndexTests
         var indexer = Indexer(db);
         await indexer.SyncSourcesAsync(default);
         await indexer.IndexPendingAsync(50, default);
-        var chunkIds = await db.KnowledgeChunks.Select(x => x.KnowledgeChunkId).ToListAsync();
+        var defectDoc = await db.KnowledgeDocuments.SingleAsync(x => x.SourceType == "Defect");
+        var chunkIds = await db.KnowledgeChunks.Where(x => x.KnowledgeDocumentId == defectDoc.KnowledgeDocumentId).Select(x => x.KnowledgeChunkId).ToListAsync();
         var fake = new FakeTextSearch(chunkIds.Select((id, i) => new KnowledgeChunkHit(id, 100 - i)).Append(new KnowledgeChunkHit(999_999, 500)).ToList());
         var service = new KnowledgeSearchService(db, fake, new ProjectAccessService(db), new AllowAllAuthorization(false));
 

@@ -253,7 +253,10 @@ public sealed class CrmMirrorSyncService(QaDbContext db, CrmApiClient crm, IConf
 public sealed class CrmMirrorWorker(IServiceScopeFactory scopeFactory, ILogger<CrmMirrorWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(3);
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(15);
+    // รอบดึงตั้งได้ที่หน้าสถานะคลังความรู้/Setting Center (CrmSyncSettings.MirrorIntervalMinutes) — ระหว่างรอตรวจค่าใหม่ทุก 1 นาที
+    // ลดรอบลงแล้วถึงกำหนดทันทีไม่ต้องรอครบรอบเก่า; นับจากรอบก่อนจบเหมือนเดิม
+    private static readonly TimeSpan CheckEvery = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan FallbackInterval = TimeSpan.FromMinutes(ProMaxx2.QA.Domain.Integrations.CrmSyncSettings.DefaultMirrorIntervalMinutes);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -283,7 +286,25 @@ public sealed class CrmMirrorWorker(IServiceScopeFactory scopeFactory, ILogger<C
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (Exception ex) { logger.LogError(ex, "CRM knowledge fetch failed — will retry next interval"); }
-            try { await Task.Delay(Interval, stoppingToken); } catch (OperationCanceledException) { return; }
+            var finishedAt = DateTime.UtcNow;
+            while (true)
+            {
+                try { await Task.Delay(CheckEvery, stoppingToken); } catch (OperationCanceledException) { return; }
+                TimeSpan interval;
+                try { interval = await ReadIntervalAsync(stoppingToken); } catch (OperationCanceledException) { return; }
+                if (DateTime.UtcNow - finishedAt >= interval) break;
+            }
         }
+    }
+
+    private async Task<TimeSpan> ReadIntervalAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            return await scope.ServiceProvider.GetRequiredService<CrmSyncSettingsService>().GetMirrorIntervalAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { logger.LogWarning(ex, "อ่านรอบดึง CRM ไม่สำเร็จ — ใช้ค่าเริ่มต้น {Interval}", FallbackInterval); return FallbackInterval; }
     }
 }

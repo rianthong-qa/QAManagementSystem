@@ -1,6 +1,6 @@
 # แผนระบบ AI Chat + คลังความรู้ (Knowledge Hub)
 
-> สถานะ: **Phase 0–5 + 2B (MCP/OAuth) เสร็จในโค้ด (2026-10-22)** — ค้นหาความรู้ + แชทผู้ช่วย AI (RAG) พร้อมอ้างอิง จาก Defect / บทความ / เอกสาร / CRM Ticket (mask แล้ว) และ Claude ผ่าน MCP; **ยังไม่ได้ทดสอบแชทกับ LLM จริง เพราะ API key ของ opencode ที่ตั้งค่าไว้หมดอายุ** (ดู Progress Log); ค้นตามความหมาย (Phase 5) พร้อมใช้เมื่อตั้ง Embedding Provider; Phase 6 ยังไม่เริ่ม
+> สถานะ: **Phase 0–6 + 2B (MCP/OAuth) เสร็จในโค้ด (2026-10-22)** — ค้นหาความรู้ + แชทผู้ช่วย AI (RAG) พร้อมอ้างอิง จาก Defect / บทความ / เอกสาร / CRM Ticket (mask แล้ว) และ Claude ผ่าน MCP; **ยังไม่ได้ทดสอบแชทกับ LLM จริง เพราะ API key ของ opencode ที่ตั้งค่าไว้หมดอายุ** (ดู Progress Log); ค้นตามความหมาย (Phase 5) พร้อมใช้เมื่อตั้ง Embedding Provider; Phase 6 (ผลการปิด Defect, เตือน Defect ซ้ำ, Test Case เข้าคลัง) เสร็จ — Requirement ยังไม่เข้าคลัง
 > จัดทำ: 21 ตุลาคม 2026
 > ต่อยอดจาก `DEFECT_KNOWLEDGE_PLAN.md` — Phase 2–4 ของแผนนั้นย้ายมารวมในคลังความรู้กลางนี้
 
@@ -425,3 +425,59 @@ Technical debt / ข้อสังเกต:
 - [ ] **ยังไม่ได้ทดสอบกับ model จริง** — เครื่องนี้ไม่มี Ollama/LM Studio และไม่มีคีย์ OpenAI สำหรับ embedding: ติดตั้ง Ollama + `ollama pull bge-m3` (รองรับภาษาไทย, 1,024 มิติ) แล้วเลือก AI Local `http://localhost:11434/v1` model `bge-m3` → กด "ทดสอบ Embedding" → ดูความคืบหน้าในสถานะคลัง (~6,000 ช่วง)
 - [ ] ปรับ `Knowledge:VectorMinScore` ตาม model จริง (bge-m3 มักให้คะแนนเรื่องที่ไม่เกี่ยว ~0.3–0.45) — ถ้าแชทดึงเอกสารไม่เกี่ยวมาตอบ ให้เพิ่มค่า
 - [ ] หน่วยความจำ: เวกเตอร์ทั้งหมดอยู่ใน RAM ของ API (~4 KB/ช่วงที่ 1,024 มิติ ≈ 25 MB ที่ 6,000 ช่วง) — เกิน ~200,000 ช่วงควรย้ายไป SQL Server 2025 `VECTOR` หรือ vector DB
+
+### 2026-10-22 — Phase 6 (ผลการปิด Defect, เตือน Defect ซ้ำ, Test Case เข้าคลัง)
+
+ผู้ใช้ตัดสินใจ: **บังคับกรอกผลการปิดเฉพาะหน้า Defect** (ช่องทางอื่น — เปลี่ยนหลายรายการ, CRM Sync, Automation — ปิดได้ตามเดิม) และใช้**หมวดสาเหตุตามร่างใน `DEFECT_KNOWLEDGE_PLAN.md` §4.1**
+
+ทำแล้ว:
+
+- `Defect` เพิ่ม `ResolutionType` (Fixed / Duplicate / CannotReproduce / ByDesign / WontFix / Deferred), `RootCauseCategory` (Master Option หมวด `DefectRootCause` — seed 9 หมวด แก้ได้ใน Setting Center → Defect), `RootCauseNote`, `ResolutionNote`, `DuplicateOfDefectId` (FK ตัวเอง) — migration `AddDefectResolution`; `SetResolution` ตรวจ: Fixed ต้องมีหมวดสาเหตุ, Duplicate ต้องระบุ Defect ต้นฉบับ (ไม่ใช่ตัวเอง)
+- API: `PATCH /defects/{id}/status` และ `PUT /defects/{id}` รับ `resolution` (ไม่บังคับ — ตรวจหมวดกับ Master Option ที่เปิดใช้ และ Defect ต้นฉบับต้องอยู่ Project เดียวกัน), `PUT /defects/{id}/resolution` แก้ผลภายหลัง, Activity `Resolution`; `GET /defects/similar?projectId=&text=&excludeId=` ค้นคลังความรู้ (Full-Text + ความหมายถ้าตั้งค่า) เฉพาะ Defect ใน Project นั้น สูงสุด 5 รายการ
+- หน้า Defect: เปลี่ยนเป็น Resolved / Closed / Rejected จากปุ่มในตาราง/รายละเอียดหรือฟอร์ม → **หน้าต่างผลการปิด** (การ์ดเลือกผล 6 แบบ + หมวดสาเหตุ + ค้นเลือก Defect ต้นฉบับ + สาเหตุ/วิธีแก้) แทนกล่องยืนยันเดิม; รายละเอียด Defect มีส่วน "ผลการปิด" + ปุ่มบันทึก/แก้ไขผลการปิด (Defect ที่ปิดจากช่องทางอื่นแสดง "ยังไม่ระบุ"); ฟอร์มสร้าง Defect **เตือน "อาจซ้ำกับ Defect ที่มีอยู่"** ใต้ข้อมูลทั่วไป (ค้นจากหัวข้อ + รายละเอียด หน่วง 0.6 วินาที, ลิงก์เปิดแท็บใหม่, ไม่บล็อกการบันทึก)
+- คลังความรู้ Defect: เพิ่ม "ผลการปิด / หมวดสาเหตุ (ชื่อแสดงจาก Master Option) / สาเหตุ / วิธีแก้ / ซ้ำกับ" — ใส่เฉพาะเมื่อมีค่า จึง**ไม่ทำให้ hash ของ Defect เดิมเปลี่ยน** (ไม่ต้อง index ใหม่ทั้งคลัง)
+- **แหล่ง Test Case** (Scope Project): `[Test Case] รหัส: ชื่อ` + Project / โมดูล (path) / Priority·ประเภท·สถานะ / วัตถุประสงค์ / เงื่อนไขก่อนทดสอบ / ขั้นตอนฉบับปัจจุบัน (Revision ล่าสุด: การกระทำ + ข้อมูล → ผลที่คาดหวัง) / Defect ที่ลิงก์ล่าสุด 10 รายการ; index ใหม่เมื่อแก้ Test Case หรือมีการลิงก์ Defect; ลิงก์ `#/test-cases?testCaseId=` (หน้า Test Case เปิดรายละเอียดจากลิงก์นี้ได้แล้ว); ค้นหา/แชทมีตัวกรอง "Test Case"; MCP `search_knowledge(source: testcase)` + เครื่องมือใหม่ **`get_test_case`** (รวม 8 เครื่องมือ)
+- Setting Center: หมวด "Defect" → หมวดสาเหตุ (Root Cause)
+
+ผลตรวจ:
+
+- Unit tests `KnowledgePhase6Tests` 8 ข้อ (กติกา SetResolution, ข้อความ Defect ไม่เปลี่ยน hash เมื่อไม่มีผล, controller ตรวจหมวด/ปิดใช้/Defect ต้นฉบับข้าม Project + Activity + ปิดโดยไม่มีผลได้, similar เฉพาะ Project + ตัดตัวเอง + สิทธิ์, index ใช้ชื่อหมวด, Test Case ขั้นตอนฉบับล่าสุด + Defect ที่ลิงก์ + ลบแล้ว Excluded, MCP get_test_case สิทธิ์/mask) + ปรับ `KnowledgeIndexTests` ที่ seed Test Case ลิงก์ — ทั้งชุด 762 ผ่าน; โปรโตคอล MCP: 8 เครื่องมือ
+- **ข้อมูลจริง:** apply migration แล้ว (หมวดสาเหตุ 9 รายการ ภาษาไทยถูกต้อง); index Test Case ครบ **6,551 รายการ (8,169 ช่วงข้อความ)** ภายในรอบแรกหลัง restart — คลังรวม 14,636 ช่วง, Full-Text ไทย 2–3 ms
+- UI ด้วย headless Chromium ที่ 1440 / 1024 / 768 / 390px: ฟอร์มสร้าง + เตือน Defect ซ้ำ, หน้าต่างผลการปิด (ปุ่มบันทึกปิดจนกว่าเลือกหมวดเมื่อ Fixed), เลือก Defect ต้นฉบับ, ผลการปิดในรายละเอียด — แก้ระหว่างตรวจ: กล่องเตือนอยู่ไกลจากช่องหัวข้อ (ย้ายขึ้นใต้ข้อมูลทั่วไป), ป้าย "หมวดสาเหตุ *" แตกบรรทัดและปุ่มบันทึกล้นจอบนมือถือ, ชื่อ Defect ที่อาจซ้ำตัดสั้นเกิน (แสดง 2 บรรทัด)
+
+ยังไม่ได้ทำ / ข้อจำกัด:
+
+- [ ] **Requirement ยังไม่เข้าคลัง** — ข้อมูลจริงมี 1 รายการ และหน้า Requirement ยังไม่มีลิงก์ตรง; เพิ่มเมื่อมีการใช้งานจริง
+- [ ] ปุ่มย้อนกลับ/คัดลอกรหัส/ช่องคอมเมนต์ในรายละเอียด Defect บนมือถือเล็กกว่า 40px (มีอยู่เดิม ไม่ได้แก้ในงานนี้)
+- [ ] ฟิลด์อื่นใน `DEFECT_KNOWLEDGE_PLAN.md` §4.1 (FK ไป Execution/Cycle, DetectedBy, FixedInBuild, ResolvedAt/ReopenCount, Tags) และ Activity แบบมีโครงสร้าง §4.3 ยังไม่ทำ
+
+### 2026-10-22 — Setting Center: ตั้งค่า AI ให้ใช้ง่ายขึ้น (ผู้ช่วย AI ใช้ Claude ได้ทันที)
+
+ที่มา: ผู้ใช้เห็นป้าย `opencode/beam-free` ใต้คำตอบและเข้าใจว่าผู้ช่วย AI "ไม่จับ Claude" — ที่จริงหน้าแชทใช้ Provider/Model ตาม Setting Center (ขณะนั้นตั้งเป็น opencode · beam-free) ส่วน MCP คือให้ Claude มาค้นคลังของเรา คนละทิศทาง
+
+ทำแล้ว:
+
+- AI Configuration เป็น 3 ขั้นตอน: การ์ดเลือก Provider (บอกว่าต้องใช้คีย์ไหม, ป้าย "ใช้อยู่") → ตั้งค่า (Base URL เฉพาะ Provider ที่ใช้, ลิงก์ "ขอ API key", Model + ชิป Model แนะนำ, โหลดรายการจาก Provider) → ทดสอบแล้วบันทึก; แถบ "ใช้อยู่ตอนนี้: Provider · Model" + ป้าย "มีการแก้ไขที่ยังไม่บันทึก"
+- ปุ่ม **"ทดสอบการเชื่อมต่อ"** ใช้ค่าในฟอร์มก่อนบันทึก (`POST /master-settings/ai/test`) — ลองคีย์/Model ใหม่ได้โดยไม่กระทบผู้ใช้ที่ใช้ค่าเดิมอยู่
+- กลับไปเลือก Provider ที่บันทึกไว้ = คืน Model/Base URL/คีย์เดิม (เดิมเปลี่ยนไปมาแล้วต้องกรอกคีย์ใหม่)
+- Model แนะนำของ Anthropic เป็น `claude-sonnet-5-5` / `claude-opus-5-5` / `claude-haiku-5-5` (เดิม `claude-sonnet-5` ใช้ไม่ได้จริง)
+- แก้บั๊ก: บันทึก opencode โดยไม่มีคีย์ → API 400 ทั้งที่หน้าเว็บอนุญาต; ป้ายพร้อมใช้งานคิดจากค่าที่บันทึกแล้ว ไม่ใช่ค่าที่กำลังแก้
+
+ผลตรวจ:
+
+- Unit tests `AiConfigurationFormTests` 3 ข้อ (ทั้งชุด 765 ผ่าน), `npm run build` / `lint` ผ่าน, API restart แล้ว route ใหม่ตอบ 401 เมื่อไม่ login
+- UI ด้วย headless Chrome (API จำลอง) ที่ 1440 / 1024 / 768 / 390px: เลือก Claude → กรอกคีย์ → ทดสอบ → กลับ opencode ได้ค่าเดิม; ไม่มี horizontal scroll, ตัวอักษร ≥ 11px — พบและแก้เมนูหมวด Setting Center ที่ยัง sticky ทับเนื้อหาเมื่อจอ ≤1100px
+
+ยังไม่ได้ทำ:
+
+- [ ] ยังไม่ได้ทดสอบกับ Anthropic API จริง (ต้องมี API key ขององค์กร) — ผู้ดูแลกด "ทดสอบการเชื่อมต่อ" หลังใส่คีย์
+
+### 2026-10-22 — หน้าผู้ช่วย AI: แชทเต็มหน้าจอ
+
+ทำแล้ว (frontend อย่างเดียว ไม่เปลี่ยน API):
+
+- เปิดหน้า `#/knowledge` แล้วเห็นแชทเต็มพื้นที่จอทันที (ซ่อนหัวหน้าเพจ, ความสูงพอดีจอ) + ปุ่มขยายเต็มจอทั้งหน้าต่าง (Esc ออก)
+- หน้าว่างแบบช่องถามกลางจอ + การ์ดคำถามแนะนำ 4 ใบ, กล่องพิมพ์ใหม่ (เลือกแหล่ง/Project ในกล่อง, ปุ่มส่งวงกลม), ซ่อน/แสดงรายการบทสนทนา, รายการจัดกลุ่มตามวัน
+- มือถือ: แท็บของหน้าเป็นแถวเดียวเลื่อนแนวนอน
+
+ผลตรวจ: `npm run build` / `lint` / `tsc -p tsconfig.app.json` ผ่าน; headless Chrome (API จำลอง) 1440 / 1024 / 768 / 390px — รายละเอียดใน Change Log ของ `UI_DESIGN_SYSTEM.md`

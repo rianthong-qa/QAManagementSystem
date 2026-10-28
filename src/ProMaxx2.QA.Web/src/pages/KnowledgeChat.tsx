@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { ApiError, apiFetch, apiUrl, authHeaders, getJson, isAbortError } from "../api";
 import { CopyButton } from "../components/CopyButton";
 import { confirmDialog, notify } from "../components/dialogStore";
@@ -8,21 +8,37 @@ import "./KnowledgeChat.css";
 
 // ผู้ช่วย AI คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md Phase 2) — คำตอบมาเป็น Server-Sent Events: sources → delta… → done | error
 
-export type Citation = { number: number; knowledgeDocumentId: string; sourceType: "Defect" | "CrmTicket" | "Article" | "File"; sourceKey: string; title: string; projectName?: string | null; sourceUrl?: string | null; cited: boolean };
+export type Citation = { number: number; knowledgeDocumentId: string; sourceType: "Defect" | "CrmTicket" | "Article" | "File" | "TestCase"; sourceKey: string; title: string; projectName?: string | null; sourceUrl?: string | null; cited: boolean };
 type Session = { chatSessionId: string; title: string; projectId?: string | null; createdAt: string; updatedAt: string };
 type ServerMessage = { chatMessageId: number; role: "user" | "assistant"; content: string; citations: Citation[]; model?: string | null; feedback?: number | null; createdAt: string };
 type ChatItem = { key: string; id?: number; role: "user" | "assistant"; content: string; citations: Citation[]; model?: string | null; feedback?: number | null; status: "done" | "streaming" | "error" | "stopped"; error?: string; crmExcluded?: boolean; question?: string };
 
 const sessionStorageKey = "qa.knowledge.chatSession";
-const sourceLabel: Record<Citation["sourceType"], string> = { Defect: "Defect", CrmTicket: "CRM", Article: "บทความ", File: "เอกสาร" };
-const sourceIcon: Record<Citation["sourceType"], string> = { Defect: "bug_report", CrmTicket: "support_agent", Article: "article", File: "description" };
-const baseSources = [{ value: "", label: "ทุกแหล่ง" }, { value: "Defect", label: "Defect" }, { value: "Article", label: "บทความ" }, { value: "File", label: "เอกสาร" }];
+const sourceLabel: Record<Citation["sourceType"], string> = { Defect: "Defect", CrmTicket: "CRM", Article: "บทความ", File: "เอกสาร", TestCase: "Test Case" };
+const sourceIcon: Record<Citation["sourceType"], string> = { Defect: "bug_report", CrmTicket: "support_agent", Article: "article", File: "description", TestCase: "fact_check" };
+const baseSources = [{ value: "", label: "ทุกแหล่ง" }, { value: "Defect", label: "Defect" }, { value: "Article", label: "บทความ" }, { value: "File", label: "เอกสาร" }, { value: "TestCase", label: "Test Case" }];
 const crmSource = { value: "CrmTicket", label: "CRM" };
-const examples = ["ปัญหาพิมพ์ใบกำกับภาษีที่เคยพบมีอะไรบ้าง และแก้อย่างไร", "Defect ระดับ High ที่เกี่ยวกับการบันทึกเอกสารไม่ได้", "สรุปปัญหาที่พบบ่อยในโมดูลเอกสารขาย"];
+const suggestions = [
+  { icon: "build", label: "หาวิธีแก้ปัญหา", question: "ปัญหาพิมพ์ใบกำกับภาษีที่เคยพบมีอะไรบ้าง และแก้อย่างไร" },
+  { icon: "bug_report", label: "ค้น Defect ที่เคยพบ", question: "Defect ระดับ High ที่เกี่ยวกับการบันทึกเอกสารไม่ได้" },
+  { icon: "fact_check", label: "หา Test Case ที่เกี่ยวข้อง", question: "Test Case ที่ทดสอบการพิมพ์ใบกำกับภาษีมีอะไรบ้าง" },
+  { icon: "summarize", label: "สรุปปัญหาที่พบบ่อย", question: "สรุปปัญหาที่พบบ่อยในโมดูลเอกสารขาย" },
+];
+const collapsedStorageKey = "qa.knowledge.sessionsCollapsed";
 let keySeed = 0;
 const nextKey = () => `m${++keySeed}`;
 const readStored = () => { try { return localStorage.getItem(sessionStorageKey) ?? ""; } catch { return ""; } };
 const store = (id: string) => { try { if (id) localStorage.setItem(sessionStorageKey, id); else localStorage.removeItem(sessionStorageKey); } catch { /* storage ใช้ไม่ได้ */ } };
+const readCollapsed = () => { try { return localStorage.getItem(collapsedStorageKey) === "1"; } catch { return false; } };
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+/** จัดกลุ่มบทสนทนาตามวันที่อัปเดตล่าสุด (รายการเรียงใหม่ → เก่าอยู่แล้ว) */
+function groupSessions(list: Session[]) {
+  const today = startOfDay(new Date()), day = 86_400_000;
+  const label = (iso: string) => { const t = startOfDay(new Date(iso)); return t >= today ? "วันนี้" : t >= today - day ? "เมื่อวาน" : t >= today - 7 * day ? "7 วันที่ผ่านมา" : "ก่อนหน้านั้น"; };
+  const groups: { label: string; items: Session[] }[] = [];
+  for (const s of list) { const l = label(s.updatedAt); const last = groups[groups.length - 1]; if (last?.label === l) last.items.push(s); else groups.push({ label: l, items: [s] }); }
+  return groups;
+}
 const toItem = (m: ServerMessage): ChatItem => ({ key: `s${m.chatMessageId}`, id: m.chatMessageId, role: m.role, content: m.content, citations: m.citations ?? [], model: m.model, feedback: m.feedback, status: "done" });
 
 /** อ่าน SSE จาก fetch (EventSource ส่ง Authorization header ไม่ได้) */
@@ -115,6 +131,9 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
   const [projectId, setProjectId] = useState("");
   const [busy, setBusy] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
+  const [sessionsCollapsed, setSessionsCollapsed] = useState(readCollapsed);
+  const [focusMode, setFocusMode] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [liveStatus, setLiveStatus] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -149,6 +168,31 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
 
   // เลื่อนตามคำตอบเฉพาะเมื่อผู้ใช้อยู่ล่างสุด (ไม่ดึงจอกลับถ้ากำลังเลื่อนอ่านข้างบน)
   useEffect(() => { const log = logRef.current; if (log && stickToBottom.current) log.scrollTop = log.scrollHeight; }, [items]);
+  // แชทเต็มพื้นที่ที่เหลือของหน้าจอ: วัดตำแหน่งบนของกล่อง (ตอน main เลื่อนอยู่บนสุด) แล้วให้ CSS คำนวณความสูงจาก --kn-chat-top
+  useLayoutEffect(() => {
+    const fit = () => {
+      const el = rootRef.current;
+      if (!el) return;
+      const scroller = el.closest("main");
+      el.style.setProperty("--kn-chat-top", `${Math.round(el.getBoundingClientRect().top + (scroller?.scrollTop ?? 0))}px`);
+    };
+    fit();
+    // วัดใหม่เมื่อของด้านบนเปลี่ยนขนาด (ฟอนต์ Kanit โหลดเสร็จทีหลัง → แท็บสูงเปลี่ยน, หมุนจอ) — ค่าเดิมไม่ trigger render ซ้ำ
+    const observer = new ResizeObserver(fit);
+    const content = rootRef.current?.closest(".content");
+    if (content) observer.observe(content);
+    void document.fonts?.ready.then(fit);
+    window.addEventListener("resize", fit);
+    return () => { observer.disconnect(); window.removeEventListener("resize", fit); };
+  }, []);
+  // โหมดเต็มจอ: Esc ออก (ยกเว้นมีหน้าต่างอื่นเปิดทับอยู่ เช่นเปิดแหล่งอ้างอิง — Esc ของหน้าต่างนั้นต้องปิดหน้าต่างก่อน)
+  useEffect(() => {
+    if (!focusMode) return;
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape" && !document.querySelector("[role='dialog']")) setFocusMode(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [focusMode]);
+  const toggleCollapsed = () => setSessionsCollapsed((value) => { try { localStorage.setItem(collapsedStorageKey, value ? "0" : "1"); } catch { /* storage ใช้ไม่ได้ */ } return !value; });
   const onLogScroll = () => { const log = logRef.current; if (log) stickToBottom.current = log.scrollHeight - log.scrollTop - log.clientHeight < 80; };
 
   const newChat = () => { abortRef.current?.abort(); setActiveId(""); store(""); setItems([]); setShowSessions(false); setTimeout(() => inputRef.current?.focus(), 0); };
@@ -234,54 +278,64 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
   const submit = (event: FormEvent) => { event.preventDefault(); void ask(question); };
   const activeSession = sessions.find((s) => s.chatSessionId === activeId);
 
-  return <div className={`kn-chat${showSessions ? " sessions-open" : ""}`}>
+  const empty = !loadingSession && items.length === 0;
+  const composer = <form className="kn-chat-composer" onSubmit={submit}>
+    <div className="kn-composer-box">
+      <textarea ref={inputRef} value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={onKeyDown} rows={empty ? 2 : 1} maxLength={2000} placeholder="ถามเกี่ยวกับปัญหา วิธีแก้ Defect หรือ Test Case ที่เคยพบ..." aria-label="คำถามถึงผู้ช่วย AI" />
+      <div className="kn-composer-tools">
+        <label className="kn-composer-select"><span className="material-symbols-outlined" aria-hidden="true">filter_list</span><select value={source} onChange={(e) => setSource(e.target.value)} aria-label="แหล่งความรู้ที่ใช้ตอบ">{chatSources.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
+        <label className="kn-composer-select"><span className="material-symbols-outlined" aria-hidden="true">folder</span><select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project ที่ใช้ตอบ"><option value="">ทุก Project ที่มีสิทธิ์</option>{projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.projectName}</option>)}</select></label>
+        {busy
+          ? <button type="button" className="kn-send is-stop" onClick={() => abortRef.current?.abort()} aria-label="หยุดการตอบ" title="หยุด"><span className="material-symbols-outlined" aria-hidden="true">stop</span></button>
+          : <button type="submit" className="kn-send" disabled={!question.trim()} aria-label="ส่งคำถาม" title="ส่ง (Enter)"><span className="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>}
+      </div>
+    </div>
+    <small className="kn-chat-hint">Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่ · AI อาจสรุปผิดได้ ตรวจสอบจากแหล่งอ้างอิงก่อนนำไปใช้</small>
+  </form>;
+
+  return <div ref={rootRef} className={`kn-chat${showSessions ? " sessions-open" : ""}${sessionsCollapsed ? " sessions-collapsed" : ""}${focusMode ? " is-focus" : ""}`}>
     <aside className="kn-chat-sessions" aria-label="บทสนทนา">
       <div className="kn-chat-sessions-head">
-        <b>บทสนทนา</b>
-        <button type="button" className="btn primary" onClick={newChat}><span className="material-symbols-outlined" aria-hidden="true">add</span>ใหม่</button>
+        <button type="button" className="kn-chat-new-chat" onClick={newChat}><span className="material-symbols-outlined" aria-hidden="true">edit_square</span>บทสนทนาใหม่</button>
+        <button type="button" className="kn-icon-button kn-chat-collapse" onClick={toggleCollapsed} aria-label="ซ่อนรายการบทสนทนา" title="ซ่อนรายการบทสนทนา"><span className="material-symbols-outlined" aria-hidden="true">left_panel_close</span></button>
       </div>
       {sessionsLoading ? <p className="kn-chat-muted" role="status">กำลังโหลด...</p>
         : sessions.length === 0 ? <p className="kn-chat-muted">ยังไม่มีบทสนทนา — เริ่มถามได้เลย</p>
-        : <ul>{sessions.map((s) => <li key={s.chatSessionId} className={s.chatSessionId === activeId ? "active" : ""}>
-          <button type="button" className="kn-chat-session" aria-current={s.chatSessionId === activeId ? "true" : undefined} onClick={() => void openSession(s.chatSessionId)}>
-            <span>{s.title}</span><small>{formatThaiDateTime(s.updatedAt)}</small>
-          </button>
-          <button type="button" className="kn-chat-session-delete" aria-label={`ลบบทสนทนา ${s.title}`} title="ลบ" onClick={() => void deleteSession(s)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
-        </li>)}</ul>}
+        : <div className="kn-chat-session-list">{groupSessions(sessions).map((g) => <section key={g.label} aria-label={g.label}>
+          <h3>{g.label}</h3>
+          <ul>{g.items.map((s) => <li key={s.chatSessionId} className={s.chatSessionId === activeId ? "active" : ""}>
+            <button type="button" className="kn-chat-session" aria-current={s.chatSessionId === activeId ? "true" : undefined} onClick={() => void openSession(s.chatSessionId)} title={`${s.title} · ${formatThaiDateTime(s.updatedAt)}`}>
+              <span>{s.title}</span>
+            </button>
+            <button type="button" className="kn-chat-session-delete" aria-label={`ลบบทสนทนา ${s.title}`} title="ลบ" onClick={() => void deleteSession(s)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
+          </li>)}</ul>
+        </section>)}</div>}
     </aside>
     {showSessions && <button type="button" className="kn-chat-backdrop" aria-label="ปิดรายการบทสนทนา" onClick={() => setShowSessions(false)} />}
-    <section className="kn-chat-main" aria-label="แชทกับผู้ช่วย AI">
+    <section className={`kn-chat-main${empty ? " is-empty" : ""}`} aria-label="แชทกับผู้ช่วย AI">
       <div className="kn-chat-bar">
-        <button type="button" className="btn kn-chat-sessions-toggle" onClick={() => setShowSessions(true)} aria-expanded={showSessions}><span className="material-symbols-outlined" aria-hidden="true">forum</span>บทสนทนา ({sessions.length})</button>
+        <button type="button" className="kn-icon-button kn-chat-sessions-toggle" onClick={() => setShowSessions(true)} aria-expanded={showSessions} aria-label={`บทสนทนา (${sessions.length})`} title="บทสนทนา"><span className="material-symbols-outlined" aria-hidden="true">menu</span></button>
+        {sessionsCollapsed && <button type="button" className="kn-icon-button kn-chat-expand" onClick={toggleCollapsed} aria-label="แสดงรายการบทสนทนา" title="แสดงรายการบทสนทนา"><span className="material-symbols-outlined" aria-hidden="true">left_panel_open</span></button>}
         <b className="kn-chat-title">{activeSession?.title ?? "บทสนทนาใหม่"}</b>
-        {activeId && <button type="button" className="btn kn-chat-new" onClick={newChat}><span className="material-symbols-outlined" aria-hidden="true">add_comment</span>ใหม่</button>}
+        {(activeId || sessionsCollapsed) && <button type="button" className="kn-icon-button kn-chat-new" onClick={newChat} aria-label="บทสนทนาใหม่" title="บทสนทนาใหม่"><span className="material-symbols-outlined" aria-hidden="true">edit_square</span></button>}
+        <button type="button" className="kn-icon-button kn-chat-focus" onClick={() => setFocusMode((x) => !x)} aria-pressed={focusMode} aria-label={focusMode ? "ออกจากโหมดเต็มจอ" : "ขยายเต็มจอ"} title={focusMode ? "ออกจากโหมดเต็มจอ (Esc)" : "ขยายเต็มจอ"}><span className="material-symbols-outlined" aria-hidden="true">{focusMode ? "close_fullscreen" : "open_in_full"}</span></button>
       </div>
       <div className="kn-chat-log" ref={logRef} onScroll={onLogScroll} aria-busy={loadingSession}>
         {loadingSession ? <div className="kn-empty" role="status"><span className="spinner" aria-hidden="true" /><span>กำลังเปิดบทสนทนา...</span></div>
-          : items.length === 0 ? <div className="kn-chat-welcome">
-            <span className="material-symbols-outlined" aria-hidden="true">neurology</span>
-            <b>ถามผู้ช่วย AI จากคลังความรู้</b>
-            <p>ตอบจาก Defect บทความ เอกสาร{canViewCrm ? " และ CRM Ticket" : ""}ใน Project ที่คุณมีสิทธิ์ พร้อมเลขอ้างอิงแหล่งที่มาทุกครั้ง</p>
-            <div className="kn-chat-examples">{examples.map((x) => <button key={x} type="button" onClick={() => void ask(x)} disabled={busy}>{x}</button>)}</div>
+          : empty ? <div className="kn-chat-welcome">
+            <span className="kn-chat-welcome-icon material-symbols-outlined" aria-hidden="true">neurology</span>
+            <h2>วันนี้ให้ช่วยค้นเรื่องอะไรดี?</h2>
+            <p>ผู้ช่วย AI ตอบจาก Defect, Test Case, บทความ, เอกสาร{canViewCrm ? " และ CRM Ticket" : ""} ใน Project ที่คุณมีสิทธิ์ พร้อมเลขอ้างอิงแหล่งที่มาทุกครั้ง</p>
           </div>
-          : items.map((item) => item.role === "user"
+          : <div className="kn-chat-thread">{items.map((item) => item.role === "user"
             ? <div key={item.key} className="kn-msg kn-msg-user"><div className="kn-bubble">{item.content}</div></div>
-            : <AssistantMessage key={item.key} item={item} onCite={(n) => { const c = item.citations.find((x) => x.number === n); if (c) onOpenCitation(c); }} onOpen={onOpenCitation} onFeedback={(v) => void feedback(item, v)} onRetry={() => retry(item)} />)}
+            : <AssistantMessage key={item.key} item={item} onCite={(n) => { const c = item.citations.find((x) => x.number === n); if (c) onOpenCitation(c); }} onOpen={onOpenCitation} onFeedback={(v) => void feedback(item, v)} onRetry={() => retry(item)} />)}</div>}
       </div>
       <p className="sr-only" role="status" aria-live="polite">{liveStatus}</p>
-      <form className="kn-chat-composer" onSubmit={submit}>
-        <div className="kn-chat-filters">
-          <div className="kn-chips" role="group" aria-label="แหล่งความรู้ที่ใช้ตอบ">{chatSources.map((s) => <button key={s.value} type="button" aria-pressed={source === s.value} className={source === s.value ? "active" : ""} onClick={() => setSource(s.value)}>{s.label}</button>)}</div>
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project ที่ใช้ตอบ"><option value="">ทุก Project ที่มีสิทธิ์</option>{projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.projectName}</option>)}</select>
-        </div>
-        <div className="kn-chat-input">
-          <textarea ref={inputRef} value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={onKeyDown} rows={1} maxLength={2000} placeholder="ถามเกี่ยวกับปัญหา วิธีแก้ หรือ Defect ที่เคยพบ..." aria-label="คำถามถึงผู้ช่วย AI" />
-          {busy
-            ? <button type="button" className="btn kn-chat-stop" onClick={() => abortRef.current?.abort()}><span className="material-symbols-outlined" aria-hidden="true">stop_circle</span>หยุด</button>
-            : <button type="submit" className="btn primary" disabled={!question.trim()}><span className="material-symbols-outlined" aria-hidden="true">send</span>ส่ง</button>}
-        </div>
-        <small className="kn-chat-hint">Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่ · AI อาจสรุปผิดได้ ตรวจสอบจากแหล่งอ้างอิงก่อนนำไปใช้</small>
-      </form>
+      {composer}
+      {empty && <div className="kn-chat-suggestions" role="group" aria-label="ตัวอย่างคำถาม">{suggestions.map((x) => <button key={x.question} type="button" onClick={() => void ask(x.question)} disabled={busy}>
+        <span className="material-symbols-outlined" aria-hidden="true">{x.icon}</span><span><b>{x.label}</b><small>{x.question}</small></span>
+      </button>)}</div>}
     </section>
   </div>;
 }

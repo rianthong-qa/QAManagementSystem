@@ -11,11 +11,18 @@ public sealed record DefectKnowledgeInput(
     string DefectCode, string Title, string Severity, string Status, DateTime CreatedAt,
     string? ProjectName, string? ModulePath, string? Release, string? Build,
     string? Description, string? StepsToReproduce, string? ExpectedResult, string? ActualResult,
-    string? CrmTicketId, IReadOnlyList<DefectKnowledgeTestCase> TestCases, IReadOnlyList<DefectKnowledgeComment> Comments);
+    string? CrmTicketId, IReadOnlyList<DefectKnowledgeTestCase> TestCases, IReadOnlyList<DefectKnowledgeComment> Comments,
+    string? ResolutionType = null, string? RootCause = null, string? RootCauseNote = null, string? ResolutionNote = null, string? DuplicateOf = null);
 
 public sealed record ArticleKnowledgeInput(string Title, string? Tags, string? ProjectName, string BodyMarkdown);
 public sealed record FileKnowledgeInput(string FileName, string? Description, string? ProjectName, string Text);
 public sealed record CrmKnowledgeAnswer(DateTime? At, string Text);
+public sealed record TestCaseKnowledgeStep(int No, string Action, string? TestData, string ExpectedResult);
+
+/// <summary>Test Case ฉบับปัจจุบัน (Revision ล่าสุด) + Defect ที่ลิงก์ — ใช้ตอบ "ทดสอบเรื่องนี้อย่างไร / Test Case ไหนเคยเจอปัญหา"</summary>
+public sealed record TestCaseKnowledgeInput(
+    string Code, string Title, string? ProjectName, string? ModulePath, string Priority, string? TestType, string Status,
+    string? Objective, string? Preconditions, IReadOnlyList<TestCaseKnowledgeStep> Steps, IReadOnlyList<string> LinkedDefects);
 
 /// <summary>CRM Ticket (ข้อความ mask แล้วตั้งแต่ตอนดึง) — ไม่มีชื่อลูกค้า/สาขา/ผู้ติดต่อ</summary>
 public sealed record CrmKnowledgeInput(
@@ -53,6 +60,12 @@ public static class KnowledgeSourceText
         Section(sb, "ขั้นตอนการทำซ้ำ", d.StepsToReproduce);
         Section(sb, "ผลที่คาดหวัง", d.ExpectedResult);
         Section(sb, "ผลที่เกิดขึ้นจริง", d.ActualResult);
+        // ผลการปิด (Phase 6) — ใส่เฉพาะเมื่อมี เพื่อไม่ให้ hash ของ Defect ที่ยังไม่ระบุเปลี่ยน
+        if (!string.IsNullOrWhiteSpace(d.ResolutionType))
+            sb.Append("\nผลการปิด: ").Append(ResolutionLabel(d.ResolutionType)).Append(string.IsNullOrWhiteSpace(d.DuplicateOf) ? "" : $" (ซ้ำกับ {d.DuplicateOf})").Append('\n');
+        Line(sb, "หมวดสาเหตุ", d.RootCause);
+        Section(sb, "สาเหตุ", d.RootCauseNote);
+        Section(sb, "วิธีแก้", d.ResolutionNote);
         if (d.TestCases.Count > 0)
             Section(sb, "Test Case ที่เกี่ยวข้อง", string.Join("\n", d.TestCases.OrderBy(x => x.Code, StringComparer.OrdinalIgnoreCase).Select(x => $"- {x.Code} {x.Title}")));
         // คอมเมนต์ล่าสุด N รายการ เรียงตามเวลา (การสนทนาเรื่องสาเหตุ/วิธีแก้มักอยู่ท้าย ๆ)
@@ -100,6 +113,31 @@ public static class KnowledgeSourceText
             Section(sb, "การตอบ / วิธีแก้", string.Join("\n", answers.Select(x => $"- {(x.At.HasValue ? x.At.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ": " : "")}{x.Text.Trim()}")));
         return new(header, sb.ToString().Trim());
     }
+
+    public const int MaxLinkedDefects = 10;
+
+    public static KnowledgeText ForTestCase(TestCaseKnowledgeInput t)
+    {
+        var header = $"[Test Case] {t.Code}: {t.Title}";
+        var sb = new StringBuilder();
+        Line(sb, "Project", t.ProjectName);
+        Line(sb, "โมดูล", t.ModulePath);
+        sb.Append("Priority: ").Append(t.Priority).Append(" | ประเภท: ").Append(string.IsNullOrWhiteSpace(t.TestType) ? "-" : t.TestType.Trim()).Append(" | สถานะ: ").Append(t.Status).Append('\n');
+        Section(sb, "วัตถุประสงค์", t.Objective);
+        Section(sb, "เงื่อนไขก่อนทดสอบ", t.Preconditions);
+        if (t.Steps.Count > 0)
+            Section(sb, "ขั้นตอน", string.Join("\n", t.Steps.OrderBy(x => x.No).Select(x =>
+                $"{x.No}. {x.Action.Trim()}{(string.IsNullOrWhiteSpace(x.TestData) ? "" : $" (ข้อมูล: {x.TestData.Trim()})")} → ผลที่คาดหวัง: {x.ExpectedResult.Trim()}")));
+        if (t.LinkedDefects.Count > 0)
+            Section(sb, "Defect ที่เคยพบจาก Test Case นี้", string.Join("\n", t.LinkedDefects.Take(MaxLinkedDefects).Select(x => $"- {x}")));
+        return new(header, sb.ToString().Trim());
+    }
+
+    public static string ResolutionLabel(string resolutionType) => resolutionType switch
+    {
+        "Fixed" => "แก้ไขแล้ว", "Duplicate" => "ซ้ำกับ Defect อื่น", "CannotReproduce" => "ทำซ้ำไม่ได้", "ByDesign" => "ทำงานตามที่ออกแบบ",
+        "WontFix" => "ไม่แก้ไข", "Deferred" => "เลื่อนไปแก้ภายหลัง", _ => resolutionType,
+    };
 
     private static void Line(StringBuilder sb, string label, string? value)
     {

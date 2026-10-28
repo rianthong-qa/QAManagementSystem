@@ -32,3 +32,16 @@ export function defectAgeDays(createdAt: string): number {
   const d = toUtcDate(createdAt); // เติม Z ให้ก่อน — เหตุผลเดียวกับ fmtAgo ด้านบน
   return d ? Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000)) : 0;
 }
+
+// ผลการปิด Defect (คลังความรู้ Phase 6) — ต้องตรงกับ Defect.ResolutionTypes ฝั่ง API; หน้า Defect บังคับเลือกเมื่อเปลี่ยนเป็นสถานะปิด
+export const defectClosingStatuses = ["Resolved", "Closed", "Rejected"];
+export const defectResolutionTypes: { value: string; label: string; hint: string }[] = [
+  { value: "Fixed", label: "แก้ไขแล้ว", hint: "แก้โค้ด/ข้อมูล/ค่าตั้งแล้ว — ต้องเลือกหมวดสาเหตุ" },
+  { value: "Duplicate", label: "ซ้ำกับ Defect อื่น", hint: "ระบุ Defect ต้นฉบับ" },
+  { value: "CannotReproduce", label: "ทำซ้ำไม่ได้", hint: "ทำตามขั้นตอนแล้วไม่เกิดปัญหา" },
+  { value: "ByDesign", label: "ทำงานตามที่ออกแบบ", hint: "ไม่ใช่ข้อผิดพลาด" },
+  { value: "WontFix", label: "ไม่แก้ไข", hint: "ตัดสินใจไม่แก้ (ผลกระทบต่ำ/ไม่คุ้ม)" },
+  { value: "Deferred", label: "เลื่อนไปแก้ภายหลัง", hint: "ยกไป Release ถัดไป" },
+];
+export const defectResolutionLabel = (value?: string | null) => defectResolutionTypes.find((x) => x.value === value)?.label ?? value ?? "";
+export type DefectResolution = { resolutionType: string; rootCauseCategory: string | null; rootCauseNote: string | null; resolutionNote: string | null; duplicateOfDefectId: string | null };

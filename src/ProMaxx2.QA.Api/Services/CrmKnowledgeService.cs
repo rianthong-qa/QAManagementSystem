@@ -124,7 +124,7 @@ public static partial class CrmKnowledgeParser
 public sealed record CrmKnowledgeAnswerDto(string AnswerNo, string? AnswerType, DateTime? AnsweredAt, string Text);
 public sealed record CrmKnowledgeTicketDto(string JobNo, string? Subject, string? Status, string? JobType, string? ServiceType, string? Product, DateTime? ContactDate,
     string? Description, IReadOnlyList<CrmKnowledgeAnswerDto> Answers, DateTime FetchedAt, string? IndexState, DateTime? IndexedAt);
-public sealed record KnowledgeCrmStatusDto(bool Enabled, bool AllowExternalAi, int Candidates, int Fetched, int Pending, int Failed, DateTime? LastFetchedAt);
+public sealed record KnowledgeCrmStatusDto(bool Enabled, bool AllowExternalAi, int Candidates, int Fetched, int Pending, int Failed, DateTime? LastFetchedAt, int MirrorIntervalMinutes);
 
 /// <summary>
 /// ดึงรายละเอียด + คำตอบของ CRM Ticket มาเก็บ (mask แล้ว) เพื่อเข้าคลังความรู้ — AI_KNOWLEDGE_CHAT_PLAN.md Phase 4
@@ -269,7 +269,8 @@ public sealed class CrmKnowledgeFetcher(QaDbContext db, ICrmKnowledgeSource sour
         var failed = await db.CrmTicketContents.AsNoTracking().CountAsync(x => x.FetchError != null, ct);
         var pending = await Candidates(db, now).CountAsync(ct);
         var last = await db.CrmTicketContents.AsNoTracking().MaxAsync(x => (DateTime?)x.FetchedAt, ct);
-        return new(Enabled, allowExternalAi, candidates, fetched, pending, failed, last);
+        var interval = await db.CrmSyncSettings.AsNoTracking().Select(x => (int?)x.MirrorIntervalMinutes).SingleOrDefaultAsync(ct) ?? Domain.Integrations.CrmSyncSettings.DefaultMirrorIntervalMinutes;
+        return new(Enabled, allowExternalAi, candidates, fetched, pending, failed, last, interval);
     }
 
     private static string? Cut(string? value, int max)

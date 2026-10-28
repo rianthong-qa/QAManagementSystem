@@ -1,20 +1,35 @@
-/* ถามผู้ช่วย AI (pages/KnowledgeChat.tsx) — อยู่ในแท็บแรกของ .kn-page, prefix kn-chat / kn-msg */
-.kn-chat { position: relative; display: grid; grid-template-columns: 260px minmax(0, 1fr); height: clamp(520px, calc(100dvh - 250px), 1100px); min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+/* ถามผู้ช่วย AI (pages/KnowledgeChat.tsx) — อยู่ในแท็บแรกของ .kn-page, prefix kn-chat / kn-msg / kn-composer
+   ความสูง = พื้นที่ที่เหลือของหน้าจอ: --kn-chat-top วัดจาก JS (ตำแหน่งบนของกล่อง) — ไม่ต้องเลื่อนทั้งหน้า เลื่อนเฉพาะ log */
+.kn-chat { --kn-side: 272px; position: relative; display: grid; grid-template-columns: var(--kn-side) minmax(0, 1fr); height: max(480px, calc(100dvh - var(--kn-chat-top, 220px) - 16px)); min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 2px 10px rgba(15, 23, 42, .04); }
+.kn-chat.sessions-collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+.kn-chat.sessions-collapsed .kn-chat-sessions { visibility: hidden; }
+/* โหมดเต็มจอ: ทับทั้งหน้าต่าง (ต่ำกว่า modal z-index 100 เพื่อเปิดแหล่งอ้างอิงทับได้) */
+.kn-chat.is-focus { position: fixed; inset: 0; z-index: 90; height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }
+/* หน้าแชทซ่อนหัวหน้าเพจ (ชื่อ + คำอธิบาย) และลดขอบล่าง เพื่อให้แชทได้พื้นที่มากที่สุด — แท็บของหน้าบอกตำแหน่งแทน */
+.content:has(.kn-page.is-chat) > .page-head { display: none; }
+.content:has(.kn-page.is-chat) { padding-bottom: 16px; }
+.kn-page.is-chat { gap: 12px; }
 
 /* รายการบทสนทนา */
-.kn-chat-sessions { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--muted) 4%, var(--card)); }
-.kn-chat-sessions-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding: 12px; }
-.kn-chat-sessions-head b { font-size: 14px; }
-.kn-page .kn-chat-sessions-head .btn { min-height: 34px; padding: 6px 10px; font-size: 12px; }
-.kn-chat-sessions ul { flex: 1; min-height: 0; margin: 0; overflow-y: auto; padding: 6px; list-style: none; }
-.kn-chat-sessions li { display: flex; align-items: stretch; border-radius: 9px; }
-.kn-chat-sessions li:hover, .kn-chat-sessions li.active { background: color-mix(in srgb, var(--primary) 8%, var(--card)); }
-.kn-page .kn-chat-session { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; border: 0; background: none; padding: 9px 10px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
-.kn-chat-session span { display: -webkit-box; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.kn-chat-sessions li.active .kn-chat-session span { color: var(--primary); font-weight: 700; }
-.kn-chat-session small { color: var(--muted); font-size: 11px; }
+.kn-chat-sessions { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--muted) 5%, var(--card)); }
+.kn-chat-sessions-head { display: flex; align-items: center; gap: 6px; padding: 12px 10px 8px; }
+.kn-page .kn-chat-new-chat { display: inline-flex; flex: 1; align-items: center; justify-content: flex-start; gap: 8px; min-width: 0; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 8px 12px; color: var(--text); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.kn-page .kn-chat-new-chat:hover { border-color: var(--primary); color: var(--primary); }
+.kn-page .kn-chat-new-chat .material-symbols-outlined { font-size: 19px; color: var(--primary); }
+.kn-page .kn-icon-button { display: inline-grid; flex: none; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 9px; background: none; padding: 0; color: var(--muted); cursor: pointer; }
+.kn-page .kn-icon-button:hover { background: color-mix(in srgb, var(--primary) 8%, var(--card)); color: var(--text); }
+.kn-page .kn-icon-button[aria-pressed="true"] { color: var(--primary); }
+.kn-icon-button .material-symbols-outlined { font-size: 21px; }
+.kn-chat-session-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 8px 12px; }
+.kn-chat-session-list h3 { margin: 12px 8px 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.kn-chat-session-list ul { margin: 0; padding: 0; list-style: none; }
+.kn-chat-session-list li { display: flex; align-items: stretch; border-radius: 9px; }
+.kn-chat-session-list li:hover, .kn-chat-session-list li.active { background: color-mix(in srgb, var(--primary) 9%, var(--card)); }
+.kn-page .kn-chat-session { display: block; flex: 1; min-width: 0; border: 0; background: none; padding: 8px 10px; color: var(--text); font: inherit; text-align: left; white-space: nowrap; cursor: pointer; }
+.kn-chat-session span { display: block; overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; }
+.kn-chat-session-list li.active .kn-chat-session span { color: var(--primary); font-weight: 700; }
 .kn-page .kn-chat-session-delete { display: inline-grid; flex: none; place-items: center; width: 32px; border: 0; border-radius: 8px; background: none; padding: 0; color: var(--muted); cursor: pointer; opacity: 0; }
-.kn-chat-sessions li:hover .kn-chat-session-delete, .kn-chat-sessions li.active .kn-chat-session-delete, .kn-page .kn-chat-session-delete:focus-visible { opacity: 1; }
+.kn-chat-session-list li:hover .kn-chat-session-delete, .kn-chat-session-list li.active .kn-chat-session-delete, .kn-page .kn-chat-session-delete:focus-visible { opacity: 1; }
 .kn-page .kn-chat-session-delete:hover { color: var(--red); }
 .kn-chat-session-delete .material-symbols-outlined { font-size: 18px; }
 .kn-chat-muted { margin: 0; padding: 4px 12px; color: var(--muted); font-size: 12px; }
@@ -22,19 +37,29 @@
 
 /* พื้นที่แชท */
 .kn-chat-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.kn-chat-bar { display: flex; align-items: center; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--line); padding: 8px 16px; }
-.kn-chat-title { flex: 1; min-width: 0; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.kn-chat-bar { display: flex; align-items: center; gap: 4px; min-height: 52px; border-bottom: 1px solid var(--line); padding: 8px 10px 8px 16px; }
+.kn-chat-title { flex: 1; min-width: 0; overflow: hidden; margin-left: 4px; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .kn-page .kn-chat-sessions-toggle { display: none; }
-.kn-page .kn-chat-bar .btn { min-height: 36px; padding: 6px 12px; font-size: 12px; }
-.kn-chat-log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px; overscroll-behavior: contain; }
+.kn-chat-log { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 20px 12px; overscroll-behavior: contain; }
+.kn-chat-thread { max-width: 860px; margin: 0 auto; }
 
-.kn-chat-welcome { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 620px; margin: 6vh auto 0; text-align: center; }
-.kn-chat-welcome > .material-symbols-outlined { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); font-size: 32px; }
-.kn-chat-welcome b { font-size: 17px; }
-.kn-chat-welcome p { margin: 0; color: var(--muted); font-size: 13px; }
-.kn-chat-examples { display: grid; gap: 8px; width: 100%; margin-top: 10px; }
-.kn-page .kn-chat-examples button { display: block; width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 10px 14px; color: var(--text); font: inherit; font-size: 13px; text-align: left; white-space: normal; cursor: pointer; }
-.kn-page .kn-chat-examples button:hover { border-color: var(--primary); color: var(--primary); }
+/* หน้าว่าง: หัวข้อ + ช่องถาม + การ์ดคำถามแนะนำ อยู่กลางจอ */
+.kn-chat-main.is-empty { justify-content: center; overflow-y: auto; }
+.kn-chat-main.is-empty .kn-chat-bar { position: absolute; top: 0; right: 0; left: var(--kn-side); border-bottom: 0; background: transparent; }
+.kn-chat.sessions-collapsed .kn-chat-main.is-empty .kn-chat-bar { left: 0; }
+.kn-chat-main.is-empty .kn-chat-bar .kn-chat-title { visibility: hidden; }
+.kn-chat-main.is-empty .kn-chat-log { flex: none; overflow: visible; padding: 56px 20px 0; }
+.kn-chat-welcome { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 640px; margin: 0 auto; text-align: center; }
+.kn-chat-welcome-icon { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 18px; background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 55%, #8b5cf6)); color: #fff; font-size: 34px; box-shadow: 0 8px 22px color-mix(in srgb, var(--primary) 28%, transparent); }
+.kn-chat-welcome h2 { margin: 6px 0 0; color: var(--text); font-size: 24px; font-weight: 800; }
+.kn-chat-welcome p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.kn-chat-suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: min(760px, 100% - 40px); margin: 6px auto 24px; }
+.kn-page .kn-chat-suggestions button { display: flex; align-items: flex-start; gap: 10px; min-width: 0; min-height: 64px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px 14px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.kn-page .kn-chat-suggestions button:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.kn-chat-suggestions .material-symbols-outlined { flex: none; color: var(--primary); font-size: 22px; }
+.kn-chat-suggestions button > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.kn-chat-suggestions b { font-size: 13px; }
+.kn-chat-suggestions small { color: var(--muted); font-size: 12px; line-height: 1.45; }
 
 /* ข้อความ */
 .kn-msg { display: flex; gap: 10px; margin-bottom: 18px; }
@@ -84,37 +109,57 @@
 .kn-msg-actions .material-symbols-outlined { font-size: 17px; }
 .kn-msg-actions .kn-chat-muted { padding: 0 4px; }
 
-/* ช่องพิมพ์คำถาม */
-.kn-chat-composer { border-top: 1px solid var(--line); padding: 10px 16px 12px; }
-.kn-chat-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.kn-page .kn-chat-filters .kn-chips { margin: 0; }
-.kn-page .kn-chat-filters select { width: 220px; height: 34px; font-size: 12px; }
-.kn-chat-input { display: flex; align-items: flex-end; gap: 8px; }
-.kn-page .kn-chat-input textarea { flex: 1; min-width: 0; min-height: 44px; max-height: 160px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 11px 14px; color: var(--text); font: inherit; font-size: 14px; font-weight: 400; line-height: 1.5; resize: none; field-sizing: content; }
-.kn-page .kn-chat-input textarea:focus { border-color: var(--primary); outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
-.kn-page .kn-chat-input .btn { min-height: 44px; }
-.kn-page .kn-chat-stop { border-color: color-mix(in srgb, var(--red) 35%, var(--line)); color: var(--red); }
-.kn-chat-hint { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+/* ช่องพิมพ์คำถาม: กล่องเดียว (textarea บน + แถวเครื่องมือ: แหล่ง | Project | ปุ่มส่งวงกลม) */
+.kn-chat-composer { width: 100%; max-width: 900px; margin: 0 auto; padding: 8px 20px 12px; }
+.kn-chat-main.is-empty .kn-chat-composer { max-width: 800px; padding-top: 22px; }
+/* หน้าว่าง: ช่องถามสูงขึ้น (~4 บรรทัด) ให้เห็นเป็นช่องหลักของหน้า — field-sizing: content ทำให้ rows ไม่มีผล จึงกำหนด min-height; เริ่มคุยแล้วกลับเป็นช่องเตี้ยติดล่าง */
+.kn-chat-main.is-empty .kn-composer-box { padding: 14px 12px 10px 18px; }
+.kn-page .kn-chat-main.is-empty .kn-composer-box textarea { min-height: 104px; }
+.kn-composer-box { border: 1px solid var(--line); border-radius: 18px; background: var(--card); padding: 10px 10px 8px 14px; box-shadow: 0 4px 16px rgba(15, 23, 42, .06); transition: border-color .15s ease, box-shadow .15s ease; }
+.kn-composer-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent), 0 4px 16px rgba(15, 23, 42, .06); }
+.kn-page .kn-composer-box textarea { display: block; width: 100%; min-height: 26px; max-height: 200px; border: 0; background: transparent; padding: 4px 0; color: var(--text); font: inherit; font-size: 15px; font-weight: 400; line-height: 1.55; resize: none; field-sizing: content; outline: 0; box-shadow: none; }
+.kn-composer-tools { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.kn-composer-select { position: relative; display: inline-flex; align-items: center; min-width: 0; }
+.kn-composer-select .material-symbols-outlined { position: absolute; left: 9px; color: var(--muted); font-size: 17px; pointer-events: none; }
+.kn-page .kn-composer-select select { max-width: 220px; height: 34px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--muted) 5%, var(--card)); padding: 4px 28px 4px 30px; color: var(--text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; }
+.kn-page .kn-send { display: inline-grid; flex: none; place-items: center; width: 38px; height: 38px; margin-left: auto; border: 0; border-radius: 50%; background: var(--primary); padding: 0; color: #fff; cursor: pointer; }
+.kn-page .kn-send:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 85%, #000); }
+.kn-page .kn-send:disabled { background: color-mix(in srgb, var(--muted) 25%, var(--card)); color: var(--card); cursor: not-allowed; }
+.kn-page .kn-send.is-stop { background: var(--text); }
+.kn-send .material-symbols-outlined { font-size: 22px; }
+.kn-chat-hint { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; text-align: center; }
 
 @media (max-width: 900px) {
-  .kn-chat { grid-template-columns: minmax(0, 1fr); }
-  .kn-chat-sessions { position: absolute; inset: 0 auto 0 0; z-index: 3; width: min(300px, 86%); box-shadow: 8px 0 24px rgba(15, 23, 42, .12); transform: translateX(-105%); visibility: hidden; transition: transform .2s ease, visibility .2s; }
+  .kn-chat, .kn-chat.sessions-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .kn-chat-sessions, .kn-chat.sessions-collapsed .kn-chat-sessions { position: absolute; inset: 0 auto 0 0; z-index: 3; width: min(300px, 86%); box-shadow: 8px 0 24px rgba(15, 23, 42, .12); transform: translateX(-105%); visibility: hidden; transition: transform .2s ease, visibility .2s; }
   .kn-chat.sessions-open .kn-chat-sessions { transform: translateX(0); visibility: visible; }
   .kn-chat.sessions-open .kn-chat-backdrop { position: absolute; inset: 0; z-index: 2; display: block; border: 0; background: rgba(15, 23, 42, .25); }
-  .kn-page .kn-chat-sessions-toggle { display: inline-flex; }
-  .kn-chat-title { display: none; }
-  .kn-page .kn-chat-new { margin-left: auto; }
+  .kn-page .kn-chat-sessions-toggle { display: inline-grid; }
+  .kn-page .kn-chat-collapse, .kn-page .kn-chat-expand { display: none; }
+  .kn-chat-main.is-empty .kn-chat-bar, .kn-chat.sessions-collapsed .kn-chat-main.is-empty .kn-chat-bar { left: 0; }
+  .kn-page .kn-chat-new { display: inline-grid; }
 }
 @media (max-width: 760px) {
-  .kn-chat { height: clamp(480px, calc(100dvh - 220px), 900px); border-radius: 12px; }
-  .kn-chat-log { padding: 14px 12px; }
-  .kn-chat-composer { padding: 8px 10px 10px; }
+  .kn-chat { height: max(440px, calc(100dvh - var(--kn-chat-top, 200px) - 12px)); border-radius: 12px; }
+  .content:has(.kn-page.is-chat) { padding-bottom: 12px; }
+  .kn-chat-log { padding: 14px 12px 8px; }
+  .kn-chat-main.is-empty .kn-chat-log { padding: 52px 14px 0; }
+  .kn-chat-welcome h2 { font-size: 20px; }
+  .kn-chat-welcome p { font-size: 13px; }
+  .kn-chat-composer, .kn-chat-main.is-empty .kn-chat-composer { padding: 6px 10px 10px; }
+  .kn-chat-main.is-empty .kn-chat-composer { padding-top: 16px; }
+  .kn-chat-main.is-empty .kn-composer-box { padding: 12px 10px 8px 14px; }
+  .kn-page .kn-chat-main.is-empty .kn-composer-box textarea { min-height: 84px; }
+  .kn-composer-box { border-radius: 16px; padding: 8px 8px 8px 12px; }
+  .kn-page .kn-composer-select select { max-width: 150px; height: 40px; }
+  .kn-page .kn-send { width: 44px; height: 44px; }
+  .kn-page .kn-icon-button { width: 44px; height: 44px; }
+  .kn-chat-suggestions { grid-template-columns: 1fr; width: calc(100% - 20px); gap: 8px; }
+  .kn-page .kn-chat-suggestions button { min-height: 56px; padding: 10px 12px; }
   .kn-bubble { max-width: 90%; }
   .kn-msg-avatar { display: none; }
-  .kn-chat-filters { flex-wrap: nowrap; overflow-x: auto; }
-  .kn-page .kn-chat-filters .kn-chips { flex-wrap: nowrap; }
-  .kn-page .kn-chat-filters select { flex: 0 0 170px; width: 170px; height: 40px; }
-  .kn-page .kn-chat-bar .btn, .kn-page .kn-chat-sessions-head .btn { min-height: 40px; }
+  .kn-page .kn-chat-new-chat { min-height: 44px; }
+  .kn-page .kn-chat-session { padding-block: 12px; }
   .kn-page .kn-chat-session-delete { width: 40px; opacity: 1; }
   .kn-page .kn-msg-actions button, .kn-page .kn-msg-actions .kn-copy { min-height: 40px; padding: 6px 10px; }
   .kn-page .kn-sources li button { min-height: 44px; grid-template-columns: auto minmax(0, 1fr); }
@@ -123,4 +168,7 @@
   .kn-source-title { white-space: normal; }
   .kn-page .kn-msg-error .btn { min-height: 40px; }
   .kn-chat-hint { display: none; }
+}
+@media (max-width: 420px) {
+  .kn-page .kn-composer-select select { max-width: 118px; }
 }

@@ -202,7 +202,7 @@ export function EmployeeReportView({ report, actions, banner }: { report: Employ
       )}
 
       <p className="perf-hint perf-report-note">
-        ตัวเลขจาก QA Hub และ CRM (ดึงทุก 15 นาที) ใช้ประกอบการประเมิน ไม่ใช่คะแนน · คะแนนประเมินแสดงเฉพาะรอบที่ส่งผลแล้ว (1–5; A ≥ 4.5, B ≥ 3.5, C ≥ 2.5, D ≥ 1.5)
+        ตัวเลขจาก QA Hub และ CRM (ดึงจาก CRM อัตโนมัติ) ใช้ประกอบการประเมิน ไม่ใช่คะแนน · คะแนนประเมินแสดงเฉพาะรอบที่ส่งผลแล้ว (1–5; A ≥ 4.5, B ≥ 3.5, C ≥ 2.5, D ≥ 1.5)
       </p>
     </article>
   );

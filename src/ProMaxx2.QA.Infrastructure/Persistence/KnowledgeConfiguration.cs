@@ -54,7 +54,26 @@ public sealed class KnowledgeArticleConfiguration : IEntityTypeConfiguration<Kno
         b.Property(x => x.BodyMarkdown).IsRequired();
         b.Property(x => x.Tags).HasMaxLength(500);
         b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+        // บทความเดิมทั้งหมดเป็น Markdown; BodyHtml (nvarchar(max)) มีค่าเฉพาะบทความที่นำเข้าจาก HTML
+        b.Property(x => x.ContentFormat).HasMaxLength(10).IsRequired().HasDefaultValue("Markdown");
+        b.Property(x => x.BodyHtml);
         b.HasIndex(x => new { x.IsDeleted, x.ProjectId });
+    }
+}
+
+public sealed class KnowledgeArticleShareLinkConfiguration : IEntityTypeConfiguration<KnowledgeArticleShareLink>
+{
+    public void Configure(EntityTypeBuilder<KnowledgeArticleShareLink> b)
+    {
+        b.ToTable("KnowledgeArticleShareLinks");
+        b.HasKey(x => x.KnowledgeArticleShareLinkId);
+        b.Property(x => x.KnowledgeArticleShareLinkId).ValueGeneratedNever();
+        b.Property(x => x.Code).HasMaxLength(12).IsRequired();
+        b.HasIndex(x => x.Code).IsUnique();
+        // บทความละ 1 ลิงก์ที่ยังใช้งานอยู่ — กันสร้างซ้อนเมื่อกดแชร์พร้อมกัน (filtered index: apply ด้วย sqlcmd -I)
+        b.HasIndex(x => x.KnowledgeArticleId).IsUnique().HasFilter("[RevokedAt] IS NULL");
+        b.Property(x => x.CreatedAt).HasPrecision(0);
+        b.Property(x => x.RevokedAt).HasPrecision(0);
     }
 }
 

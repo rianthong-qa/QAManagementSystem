@@ -17,11 +17,11 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
     public const string IndexVersion = "k1";
 
     /// <summary>แหล่งที่ index ได้ (CrmTicket = ข้อความที่ CrmKnowledgeFetcher ดึงและ mask แล้ว)</summary>
-    public static readonly string[] SupportedSourceTypes = ["Defect", "Article", "File", "CrmTicket"];
+    public static readonly string[] SupportedSourceTypes = ["Defect", "Article", "File", "CrmTicket", "TestCase"];
 
     public async Task<int> SyncSourcesAsync(CancellationToken ct)
     {
-        var changed = await SyncDefectsAsync(ct) + await SyncArticlesAsync(ct) + await SyncFilesAsync(ct) + await SyncCrmTicketsAsync(ct);
+        var changed = await SyncDefectsAsync(ct) + await SyncArticlesAsync(ct) + await SyncFilesAsync(ct) + await SyncCrmTicketsAsync(ct) + await SyncTestCasesAsync(ct);
         if (changed > 0) await db.SaveChangesAsync(ct);
         return changed;
     }
@@ -119,6 +119,31 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         return changed;
     }
 
+    private async Task<int> SyncTestCasesAsync(CancellationToken ct)
+    {
+        var docs = await db.KnowledgeDocuments.Where(x => x.SourceType == "TestCase").ToDictionaryAsync(x => x.SourceKey, ct);
+        var cases = await db.TestCases.AsNoTracking()
+            .Select(x => new { x.TestCaseId, x.ProjectId, x.TestCaseCode, x.Title, x.IsDeleted, Changed = x.UpdatedAt ?? x.CreatedAt })
+            .ToListAsync(ct);
+        // ลิงก์ Defect ใหม่ไม่เปลี่ยน TestCase.UpdatedAt — ใช้เวลาลิงก์ล่าสุดด้วย
+        var lastLink = await db.DefectTestCaseLinks.AsNoTracking().GroupBy(x => x.TestCaseId)
+            .Select(g => new { TestCaseId = g.Key, At = g.Max(x => x.CreatedAt) }).ToDictionaryAsync(x => x.TestCaseId, x => x.At, ct);
+        var changed = 0;
+        foreach (var t in cases)
+        {
+            var key = t.TestCaseId.ToString();
+            var title = $"{t.TestCaseCode}: {t.Title}";
+            var at = lastLink.TryGetValue(t.TestCaseId, out var linkAt) && linkAt > t.Changed ? linkAt : t.Changed;
+            changed += Reconcile(docs.GetValueOrDefault(key), !t.IsDeleted, at,
+                () => new KnowledgeDocument("TestCase", key, "Project", t.ProjectId, title, TestCaseUrl(t.TestCaseId)),
+                doc => doc.ProjectId != t.ProjectId || doc.Title != Cut(title, 300),
+                doc => doc.UpdateSource("Project", t.ProjectId, title, TestCaseUrl(t.TestCaseId)));
+        }
+        var existing = cases.Select(x => x.TestCaseId.ToString()).ToHashSet();
+        foreach (var orphan in docs.Values.Where(x => x.State != "Excluded" && !existing.Contains(x.SourceKey))) { orphan.Exclude(); changed++; }
+        return changed;
+    }
+
     /// <summary>คืน 1 เมื่อเอกสารถูกสร้าง/เปลี่ยนสถานะ</summary>
     private int Reconcile(KnowledgeDocument? doc, bool active, DateTime sourceChangedAt, Func<KnowledgeDocument> create, Func<KnowledgeDocument, bool> sourceInfoChanged, Action<KnowledgeDocument> updateSource)
     {
@@ -154,6 +179,12 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         foreach (var (id, text) in await BuildArticleTextsAsync(pending.Where(x => x.SourceType == "Article").ToList(), ct)) texts[id] = text;
         foreach (var (id, text) in await BuildFileTextsAsync(pending.Where(x => x.SourceType == "File").ToList(), ct)) texts[id] = text;
         foreach (var (id, text) in await BuildCrmTextsAsync(pending.Where(x => x.SourceType == "CrmTicket").ToList(), ct)) texts[id] = text;
+        var testCaseDocs = pending.Where(x => x.SourceType == "TestCase").ToList();
+        if (testCaseDocs.Count > 0)
+        {
+            var byId = await BuildTestCaseTextsByIdAsync(testCaseDocs.Select(x => Guid.TryParse(x.SourceKey, out var id) ? id : Guid.Empty).Where(x => x != Guid.Empty).Distinct().ToList(), ct);
+            foreach (var doc in testCaseDocs) texts[doc.KnowledgeDocumentId] = Guid.TryParse(doc.SourceKey, out var id) ? byId.GetValueOrDefault(id) : null;
+        }
 
         var pendingIds = pending.Select(x => x.KnowledgeDocumentId).ToList();
         var oldChunks = (await db.KnowledgeChunks.Where(x => pendingIds.Contains(x.KnowledgeDocumentId)).ToListAsync(ct)).ToLookup(x => x.KnowledgeDocumentId);
@@ -208,8 +239,7 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         var defects = await db.Defects.AsNoTracking().Where(x => defectIds.Contains(x.DefectId) && !x.IsDeleted).ToDictionaryAsync(x => x.DefectId, ct);
         var projectIds = defects.Values.Select(x => x.ProjectId).Distinct().ToList();
         var projects = await db.Projects.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId)).ToDictionaryAsync(x => x.ProjectId, x => $"{x.ProjectCode} {x.ProjectName}", ct);
-        var modules = await db.Modules.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId))
-            .Select(x => new { x.ModuleId, x.ParentModuleId, x.ModuleCode, x.ModuleName }).ToDictionaryAsync(x => x.ModuleId, ct);
+        var modulePath = await ModulePathsAsync(projectIds, ct);
         var releaseIds = defects.Values.Where(x => x.ReleaseId.HasValue).Select(x => x.ReleaseId!.Value).Distinct().ToList();
         var releases = await db.Releases.AsNoTracking().Where(x => releaseIds.Contains(x.ReleaseId)).ToDictionaryAsync(x => x.ReleaseId, x => $"{x.ReleaseCode} ({x.Version})", ct);
         var buildIds = defects.Values.Where(x => x.BuildId.HasValue).Select(x => x.BuildId!.Value).Distinct().ToList();
@@ -217,11 +247,41 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
         var comments = (await db.DefectActivities.AsNoTracking()
             .Where(x => defectIds.Contains(x.DefectId) && (x.ActionType == "Comment" || x.ActionType == "CrmComment"))
             .Select(x => new { x.DefectId, x.CreatedAt, x.Message }).ToListAsync(ct)).ToLookup(x => x.DefectId);
+        var rootCauses = await RootCauseNamesAsync(ct);
+        var duplicateIds = defects.Values.Where(x => x.DuplicateOfDefectId.HasValue).Select(x => x.DuplicateOfDefectId!.Value).Distinct().ToList();
+        var duplicateCodes = await db.Defects.AsNoTracking().Where(x => duplicateIds.Contains(x.DefectId)).ToDictionaryAsync(x => x.DefectId, x => x.DefectCode, ct);
         var testCases = (await db.DefectTestCaseLinks.AsNoTracking().Where(x => defectIds.Contains(x.DefectId))
             .Join(db.TestCases.Where(t => !t.IsDeleted), l => l.TestCaseId, t => t.TestCaseId, (l, t) => new { l.DefectId, t.TestCaseCode, t.Title })
             .ToListAsync(ct)).ToLookup(x => x.DefectId);
 
-        string? ModulePath(Guid? moduleId)
+        foreach (var d in defects.Values)
+        {
+            var defectId = d.DefectId;
+            result[defectId] = KnowledgeSourceText.ForDefect(new(
+                d.DefectCode, d.Title, d.Severity, d.Status, d.CreatedAt,
+                projects.GetValueOrDefault(d.ProjectId), modulePath(d.ModuleId),
+                d.ReleaseId.HasValue ? releases.GetValueOrDefault(d.ReleaseId.Value) : null,
+                d.BuildId.HasValue ? builds.GetValueOrDefault(d.BuildId.Value) : null,
+                d.Description, d.StepsToReproduce, d.ExpectedResult, d.ActualResult, d.CrmTicketId,
+                testCases[defectId].Select(x => new DefectKnowledgeTestCase(x.TestCaseCode, x.Title)).ToList(),
+                comments[defectId].Select(x => new DefectKnowledgeComment(x.CreatedAt, x.Message)).ToList(),
+                d.ResolutionType, d.RootCauseCategory is null ? null : rootCauses.GetValueOrDefault(d.RootCauseCategory, d.RootCauseCategory), d.RootCauseNote, d.ResolutionNote,
+                d.DuplicateOfDefectId.HasValue ? duplicateCodes.GetValueOrDefault(d.DuplicateOfDefectId.Value) : null));
+        }
+        return result;
+    }
+
+    /// <summary>ชื่อแสดงของหมวดสาเหตุ (Master Option DefectRootCause) — รวมที่ปิดใช้แล้ว เพื่อให้ Defect เก่ายังอ่านได้</summary>
+    private async Task<Dictionary<string, string>> RootCauseNamesAsync(CancellationToken ct) =>
+        (await db.MasterOptions.AsNoTracking().Where(x => x.Category == "DefectRootCause").Select(x => new { x.Value, x.DisplayName }).ToListAsync(ct))
+            .DistinctBy(x => x.Value).ToDictionary(x => x.Value, x => x.DisplayName);
+
+    /// <summary>ชื่อโมดูลแบบ path เต็ม (แม่ / ลูก) ของ Project ที่ระบุ</summary>
+    private async Task<Func<Guid?, string?>> ModulePathsAsync(IReadOnlyCollection<Guid> projectIds, CancellationToken ct)
+    {
+        var modules = await db.Modules.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId))
+            .Select(x => new { x.ModuleId, x.ParentModuleId, x.ModuleName }).ToDictionaryAsync(x => x.ModuleId, ct);
+        return moduleId =>
         {
             if (!moduleId.HasValue) return null;
             var names = new List<string>();
@@ -232,19 +292,33 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
                 current = m.ParentModuleId;
             }
             return names.Count == 0 ? null : string.Join(" / ", names);
-        }
+        };
+    }
 
-        foreach (var d in defects.Values)
+    /// <summary>ข้อความความรู้ของ Test Case (Revision ปัจจุบัน + Defect ที่ลิงก์) ตาม id — ใช้ทั้งตอน index และ MCP get_test_case; ที่ถูกลบไม่อยู่ในผล</summary>
+    public async Task<Dictionary<Guid, KnowledgeText>> BuildTestCaseTextsByIdAsync(IReadOnlyCollection<Guid> testCaseIds, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, KnowledgeText>();
+        if (testCaseIds.Count == 0) return result;
+        var cases = await db.TestCases.AsNoTracking().Where(x => testCaseIds.Contains(x.TestCaseId) && !x.IsDeleted)
+            .Select(x => new { x.TestCaseId, x.ProjectId, x.ModuleId, x.TestCaseCode, x.Title, x.Priority, x.TestType, x.Status, x.Objective, x.Preconditions, x.RevisionNo })
+            .ToListAsync(ct);
+        if (cases.Count == 0) return result;
+        var ids = cases.Select(x => x.TestCaseId).ToList();
+        var projectIds = cases.Select(x => x.ProjectId).Distinct().ToList();
+        var projects = await db.Projects.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId)).ToDictionaryAsync(x => x.ProjectId, x => $"{x.ProjectCode} {x.ProjectName}", ct);
+        var modulePath = await ModulePathsAsync(projectIds, ct);
+        var steps = (await db.TestSteps.AsNoTracking().Where(x => ids.Contains(x.TestCaseId))
+            .Select(x => new { x.TestCaseId, x.RevisionNo, x.StepNo, x.Action, x.TestDataText, x.ExpectedResult }).ToListAsync(ct)).ToLookup(x => x.TestCaseId);
+        var defects = (await db.DefectTestCaseLinks.AsNoTracking().Where(x => ids.Contains(x.TestCaseId))
+            .Join(db.Defects.Where(d => !d.IsDeleted), l => l.DefectId, d => d.DefectId, (l, d) => new { l.TestCaseId, d.DefectCode, d.Title, d.Status, d.CreatedAt })
+            .ToListAsync(ct)).ToLookup(x => x.TestCaseId);
+        foreach (var t in cases)
         {
-            var defectId = d.DefectId;
-            result[defectId] = KnowledgeSourceText.ForDefect(new(
-                d.DefectCode, d.Title, d.Severity, d.Status, d.CreatedAt,
-                projects.GetValueOrDefault(d.ProjectId), ModulePath(d.ModuleId),
-                d.ReleaseId.HasValue ? releases.GetValueOrDefault(d.ReleaseId.Value) : null,
-                d.BuildId.HasValue ? builds.GetValueOrDefault(d.BuildId.Value) : null,
-                d.Description, d.StepsToReproduce, d.ExpectedResult, d.ActualResult, d.CrmTicketId,
-                testCases[defectId].Select(x => new DefectKnowledgeTestCase(x.TestCaseCode, x.Title)).ToList(),
-                comments[defectId].Select(x => new DefectKnowledgeComment(x.CreatedAt, x.Message)).ToList()));
+            result[t.TestCaseId] = KnowledgeSourceText.ForTestCase(new(
+                t.TestCaseCode, t.Title, projects.GetValueOrDefault(t.ProjectId), modulePath(t.ModuleId), t.Priority, t.TestType, t.Status, t.Objective, t.Preconditions,
+                steps[t.TestCaseId].Where(x => x.RevisionNo == t.RevisionNo).Select(x => new TestCaseKnowledgeStep(x.StepNo, x.Action, x.TestDataText, x.ExpectedResult)).ToList(),
+                defects[t.TestCaseId].OrderByDescending(x => x.CreatedAt).Select(x => $"{x.DefectCode} {x.Title} ({x.Status})").ToList()));
         }
         return result;
     }
@@ -335,6 +409,7 @@ public sealed class KnowledgeIndexService(QaDbContext db, ILogger<KnowledgeIndex
     public static string DefectUrl(Guid defectId) => $"#/defects?defectId={defectId}";
     public static string ArticleUrl(Guid articleId) => $"#/knowledge?articleId={articleId}";
     public static string FileUrl(Guid fileId) => $"#/knowledge?fileId={fileId}";
+    public static string TestCaseUrl(Guid testCaseId) => $"#/test-cases?testCaseId={testCaseId}";
     public static string CrmUrl(string jobNo) => $"#/knowledge?jobNo={Uri.EscapeDataString(jobNo)}";
 
     /// <summary>ล้างคำขอ OAuth ที่หมดอายุแล้วเกิน 1 วัน (เก็บไว้ช่วงสั้น ๆ เพื่อตรวจสอบย้อนหลัง)</summary>

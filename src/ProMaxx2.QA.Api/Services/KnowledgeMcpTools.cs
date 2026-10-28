@@ -23,7 +23,7 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
     public const string AuditEntityType = "KnowledgeMcp";
 
     public const string ServerInstructions =
-        "ProMaxx2 QA Hub knowledge base (Thai). Use search_knowledge first to find Defects, knowledge articles, documents (module specs, requirements, manuals) and — when allowed — customer CRM tickets, then get_defect / get_article / get_document / get_crm_ticket for details. " +
+        "ProMaxx2 QA Hub knowledge base (Thai). Use search_knowledge first to find Defects, knowledge articles, documents (module specs, requirements, manuals), test cases (steps and expected results) and — when allowed — customer CRM tickets, then get_defect / get_article / get_document / get_test_case / get_crm_ticket for details. " +
         "Use find_similar_defects before reporting a new bug to check for duplicates. Always cite Defect codes and include the web links returned. " +
         "Content is masked: tokens like [EMAIL], [PHONE], [CUSTOMER] are redacted values — never guess them.";
 
@@ -41,11 +41,11 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
     }
 
     [McpServerTool(Name = "search_knowledge", Title = "ค้นคลังความรู้ QA", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Search the QA knowledge base (Defects, knowledge articles, uploaded documents such as module specs and requirements, and customer CRM support tickets when the administrator allows it; Thai full-text). Returns titles, snippets, status and web links. Query in Thai or English, e.g. symptom, error message, menu name or Defect code.")]
+    [Description("Search the QA knowledge base (Defects, knowledge articles, test cases, uploaded documents such as module specs and requirements, and customer CRM support tickets when the administrator allows it; Thai full-text). Returns titles, snippets, status and web links. Query in Thai or English, e.g. symptom, error message, menu name or Defect code.")]
     public async Task<string> SearchKnowledge(
         [Description("Search text, e.g. 'พิมพ์ใบกำกับภาษีไม่ได้' or a Defect code")] string query,
         [Description("Optional project code from list_projects to limit results")] string? projectCode = null,
-        [Description("Optional source filter: 'defect', 'article', 'document' or 'crm'")] string? source = null,
+        [Description("Optional source filter: 'defect', 'article', 'document', 'testcase' or 'crm'")] string? source = null,
         [Description("Max results (1-10, default 8)")] int limit = 8,
         CancellationToken cancellationToken = default)
     {
@@ -57,7 +57,8 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
             "article" or "articles" => new[] { "Article" },
             "document" or "documents" or "file" or "files" => new[] { "File" },
             "crm" or "ticket" or "tickets" or "crmticket" => new[] { "CrmTicket" },
-            _ => throw new McpException("source ต้องเป็น 'defect', 'article', 'document' หรือ 'crm'"),
+            "testcase" or "testcases" or "test_case" or "test-case" or "tc" => new[] { "TestCase" },
+            _ => throw new McpException("source ต้องเป็น 'defect', 'article', 'document', 'testcase' หรือ 'crm'"),
         };
         var (userId, scope) = await ScopeAsync(projectCode, sources, cancellationToken);
         if (sources is ["CrmTicket"] && !scope.IncludeCrm) throw new McpException(CrmNotAllowed);
@@ -76,7 +77,7 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
             sb.Append("   ").Append(string.Join(" · ", meta)).Append('\n');
             sb.Append("   ").Append(SensitiveDataMasker.Mask(r.Snippet).ReplaceLineEndings(" ")).Append('\n');
             if (WebUrl(r.SourceUrl) is { } url) sb.Append("   ลิงก์: ").Append(url).Append('\n');
-            sb.Append("   รายละเอียด: ").Append(r.SourceType switch { "Defect" => $"get_defect(\"{d?.Code ?? r.SourceKey}\")", "File" => $"get_document(\"{r.SourceKey}\")", "CrmTicket" => $"get_crm_ticket(\"{r.SourceKey}\")", _ => $"get_article(\"{r.SourceKey}\")" }).Append('\n');
+            sb.Append("   รายละเอียด: ").Append(r.SourceType switch { "Defect" => $"get_defect(\"{d?.Code ?? r.SourceKey}\")", "File" => $"get_document(\"{r.SourceKey}\")", "CrmTicket" => $"get_crm_ticket(\"{r.SourceKey}\")", "TestCase" => $"get_test_case(\"{r.SourceKey}\")", _ => $"get_article(\"{r.SourceKey}\")" }).Append('\n');
         }
         return Limit(sb.ToString());
     }
@@ -146,6 +147,29 @@ public sealed class KnowledgeMcpTools(IHttpContextAccessor http, QaDbContext db,
         var slice = text.Substring((part - 1) * size, Math.Min(size, text.Length - (part - 1) * size));
         var next = part < parts ? $"อ่านต่อ: get_document(\"{id}\", part: {part + 1}) · " : "";
         return $"[เอกสาร] {file.FileName} — ส่วนที่ {part}/{parts}\n{slice}\n\n{next}ลิงก์: {WebUrl(KnowledgeIndexService.FileUrl(id))}";
+    }
+
+    [McpServerTool(Name = "get_test_case", Title = "รายละเอียด Test Case", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Get a test case: module, priority, objective, preconditions, current steps with test data and expected results, and Defects found by it.")]
+    public async Task<string> GetTestCase(
+        [Description("Test case code (e.g. PMX2-MOD-039-TC-099) or id (GUID) from search_knowledge")] string testCase,
+        CancellationToken cancellationToken = default)
+    {
+        var key = testCase?.Trim() ?? "";
+        if (key.Length == 0) throw new McpException("กรุณาระบุรหัส Test Case");
+        var (userId, scope) = await ScopeAsync(null, null, cancellationToken);
+        var code = key.ToUpperInvariant();
+        Guid? byId = Guid.TryParse(key, out var parsed) ? parsed : null;
+        var found = await db.TestCases.AsNoTracking()
+            .Where(x => !x.IsDeleted && scope.AllowedProjectIds.Contains(x.ProjectId) && (byId.HasValue ? x.TestCaseId == byId.Value : x.TestCaseCode == code))
+            .Select(x => new { x.TestCaseId, x.TestCaseCode }).FirstOrDefaultAsync(cancellationToken);
+        await AuditAsync(userId, "get_test_case", $"{key} → {(found is null ? "ไม่พบ" : found.TestCaseCode)}", cancellationToken);
+        if (found is null) throw new McpException($"ไม่พบ Test Case \"{key}\" ใน Project ที่คุณเป็นสมาชิก");
+        if (await db.KnowledgeDocuments.AsNoTracking().AnyAsync(x => x.SourceType == "TestCase" && x.SourceKey == found.TestCaseId.ToString() && x.ExcludeFromAi, cancellationToken))
+            throw new McpException($"Test Case {found.TestCaseCode} ถูกตั้งค่าไม่ให้ส่งข้อมูลให้ AI");
+        var text = (await indexer.BuildTestCaseTextsByIdAsync([found.TestCaseId], cancellationToken)).GetValueOrDefault(found.TestCaseId)
+            ?? throw new McpException($"ไม่พบ Test Case \"{key}\"");
+        return Limit(SensitiveDataMasker.Mask(text.Header) + "\n" + SensitiveDataMasker.Mask(text.Body) + "\n\nลิงก์: " + WebUrl(KnowledgeIndexService.TestCaseUrl(found.TestCaseId)));
     }
 
     [McpServerTool(Name = "get_crm_ticket", Title = "รายละเอียด CRM Ticket", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]

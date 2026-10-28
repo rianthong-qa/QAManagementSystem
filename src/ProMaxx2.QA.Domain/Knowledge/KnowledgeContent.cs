@@ -4,20 +4,24 @@ namespace ProMaxx2.QA.Domain.Knowledge;
 public sealed class KnowledgeArticle
 {
     public static readonly string[] Statuses = ["Draft", "Published"];
+    /// <summary>Markdown = เขียนในระบบ; Html = นำเข้าจาก HTML — BodyHtml คือ HTML ที่ทำความสะอาดแล้วไว้แสดงผล ส่วน BodyMarkdown เก็บข้อความที่สกัดได้สำหรับค้นหา/AI</summary>
+    public static readonly string[] ContentFormats = ["Markdown", "Html"];
 
     private KnowledgeArticle() { }
 
-    public KnowledgeArticle(string title, string bodyMarkdown, Guid? projectId, string? tags, string status, Guid? createdBy)
+    public KnowledgeArticle(string title, string bodyMarkdown, Guid? projectId, string? tags, string status, Guid? createdBy, string? bodyHtml = null)
     {
         KnowledgeArticleId = Guid.NewGuid();
         CreatedBy = createdBy;
         CreatedAt = DateTime.UtcNow;
-        Apply(title, bodyMarkdown, projectId, tags, status);
+        Apply(title, bodyMarkdown, projectId, tags, status, bodyHtml);
     }
 
     public Guid KnowledgeArticleId { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public string BodyMarkdown { get; private set; } = string.Empty;
+    public string ContentFormat { get; private set; } = "Markdown";
+    public string? BodyHtml { get; private set; }
     public Guid? ProjectId { get; private set; }
     public string? Tags { get; private set; }
     public string Status { get; private set; } = "Draft";
@@ -27,20 +31,25 @@ public sealed class KnowledgeArticle
     public DateTime? UpdatedAt { get; private set; }
     public Guid? UpdatedBy { get; private set; }
 
-    public void Update(string title, string bodyMarkdown, Guid? projectId, string? tags, string status, Guid? updatedBy)
+    public void Update(string title, string bodyMarkdown, Guid? projectId, string? tags, string status, Guid? updatedBy, string? bodyHtml = null)
     {
-        Apply(title, bodyMarkdown, projectId, tags, status);
+        Apply(title, bodyMarkdown, projectId, tags, status, bodyHtml);
         UpdatedAt = DateTime.UtcNow;
         UpdatedBy = updatedBy;
     }
 
     public void Delete(Guid? deletedBy) { IsDeleted = true; UpdatedAt = DateTime.UtcNow; UpdatedBy = deletedBy; }
 
-    private void Apply(string title, string bodyMarkdown, Guid? projectId, string? tags, string status)
+    // bodyHtml มีค่า = บทความ HTML (bodyMarkdown คือข้อความที่สกัดจาก HTML แล้ว); null = บทความ Markdown และล้าง HTML เดิม
+    private void Apply(string title, string bodyMarkdown, Guid? projectId, string? tags, string status, string? bodyHtml)
     {
         Title = string.IsNullOrWhiteSpace(title) ? throw new ArgumentException("กรุณาระบุหัวข้อบทความ") : title.Trim();
         if (Title.Length > 300) throw new ArgumentException("หัวข้อบทความยาวได้ไม่เกิน 300 ตัวอักษร");
-        BodyMarkdown = string.IsNullOrWhiteSpace(bodyMarkdown) ? throw new ArgumentException("กรุณาระบุเนื้อหาบทความ") : bodyMarkdown.Trim();
+        BodyMarkdown = string.IsNullOrWhiteSpace(bodyMarkdown)
+            ? throw new ArgumentException(bodyHtml is null ? "กรุณาระบุเนื้อหาบทความ" : "ไม่พบข้อความในไฟล์ HTML")
+            : bodyMarkdown.Trim();
+        BodyHtml = string.IsNullOrWhiteSpace(bodyHtml) ? null : bodyHtml.Trim();
+        ContentFormat = BodyHtml is null ? "Markdown" : "Html";
         ProjectId = projectId;
         Tags = string.IsNullOrWhiteSpace(tags) ? null : tags.Trim();
         if (Tags?.Length > 500) throw new ArgumentException("Tag ยาวได้ไม่เกิน 500 ตัวอักษร");

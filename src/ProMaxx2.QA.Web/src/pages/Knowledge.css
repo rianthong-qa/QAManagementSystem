@@ -44,6 +44,7 @@
 .kn-result-icon.tone-blue { background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); }
 .kn-result-icon.tone-green { background: color-mix(in srgb, var(--green) 11%, var(--card)); color: var(--green); }
 .kn-result-icon.tone-purple { background: #ede9fe; color: #6d28d9; }
+.kn-result-icon.tone-yellow { background: color-mix(in srgb, var(--yellow) 14%, var(--card)); color: var(--warning-text); }
 .kn-result-main { min-width: 0; }
 .kn-result-head { display: flex; align-items: flex-start; gap: 8px; }
 .kn-result-head .badge { flex: none; margin-top: 1px; }
@@ -110,6 +111,41 @@
 .modal-box.kn-editor .kn-status-field label { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
 .modal-box.kn-editor .kn-status-field input[type="radio"] { width: 18px; height: 18px; min-height: 0; flex: none; border-radius: 50%; padding: 0; accent-color: var(--primary); }
 .kn-form-error { margin: 12px 0 0; color: var(--red); font-size: 13px; }
+/* ช่องเนื้อหาบทความสำหรับผู้เริ่มเขียน: (1) แบบฟอร์ม → (2) พิมพ์ทับข้อความแนะนำ › ในกล่องที่มีแถบจัดรูปแบบ → คำเตือน/เคล็ดลับ */
+.kn-body-field { display: grid; gap: 10px; min-width: 0; }
+.kn-body-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.modal-box.kn-editor .kn-body-head label { display: inline; color: var(--text); font-size: 13px; font-weight: 700; }
+.kn-body-head small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.kn-templates { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--primary) 3%, var(--card)); padding: 12px; }
+.kn-templates > p, .kn-step-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; color: var(--text); font-size: 13px; font-weight: 700; }
+.kn-templates > p small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.kn-step-no { display: inline-grid; flex: none; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--primary); color: var(--card); font-size: 11px; font-weight: 700; }
+.kn-template-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.modal-box.kn-editor .kn-template { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 56px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 8px 12px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.modal-box.kn-editor .kn-template:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.modal-box.kn-editor .kn-template:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.kn-template > .material-symbols-outlined { display: grid; flex: none; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); font-size: 19px; }
+.kn-template > span:last-child { display: grid; gap: 1px; min-width: 0; }
+.kn-template b { font-size: 13px; font-weight: 600; }
+.kn-template small { color: var(--muted); font-size: 12px; }
+.kn-body-box { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.kn-body-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.kn-format-bar { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); background: var(--bg); padding: 6px; }
+.modal-box.kn-editor .kn-format-bar button { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 4px 10px 4px 6px; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.modal-box.kn-editor .kn-format-bar button:hover { border-color: var(--line); background: var(--card); color: var(--primary); }
+.modal-box.kn-editor .kn-format-bar button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.kn-format-bar .material-symbols-outlined { font-size: 18px; }
+.modal-box.kn-editor .kn-body-box .kn-body-input { display: block; border: 0; border-radius: 0; box-shadow: none; padding: 12px 14px; font-size: 14px; }
+.modal-box.kn-editor .kn-body-box .kn-body-input:focus { outline: 0; box-shadow: none; }
+.kn-body-help { display: grid; gap: 8px; }
+.kn-body-help > p { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.kn-body-help > p .material-symbols-outlined { font-size: 16px; }
+.kn-body-help > p.kn-hint-left { color: var(--warning-text); font-weight: 600; }
+.modal-box.kn-editor .kn-link-button { display: inline; border: 0; background: transparent; padding: 0 2px; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.kn-tips { border-radius: 10px; background: var(--bg); padding: 8px 12px; font-size: 12px; }
+.kn-tips summary { color: var(--primary); font-weight: 700; cursor: pointer; }
+.kn-tips ul { display: grid; gap: 4px; margin: 8px 0 2px; padding-left: 18px; color: var(--muted); line-height: 1.6; }
+.kn-tips b { color: var(--text); font-weight: 600; }
 .kn-missing, .kn-ready { margin-right: auto; font-size: 12px; }
 .kn-missing { color: var(--red); }
 .kn-ready { color: var(--green); }
@@ -130,6 +166,7 @@
 .kn-source { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 700; }
 .kn-source .material-symbols-outlined { font-size: 18px; color: var(--muted); }
 .kn-source small { width: 100%; color: var(--muted); font-size: 11px; font-weight: 400; }
+.kn-source-sub { width: 100%; font-weight: 400; }
 .kn-failures { margin-top: 16px; }
 .kn-failures h4 { margin: 0 0 8px; font-size: 14px; }
 .kn-failures ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -143,9 +180,11 @@
 }
 @media (max-width: 760px) {
   .kn-search, .kn-articles, .kn-status { padding: 14px; }
-  .kn-page .kn-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kn-page .kn-tabs button { justify-content: center; min-height: 44px; padding: 8px 6px; }
-  .kn-tab-status { grid-column: 1 / -1; justify-content: center; margin: 0; }
+  /* แท็บเป็นแถวเดียวเลื่อนแนวนอนในตัว (เดิม grid 2×3 กินความสูง ~150px ทำให้แชทเหลือพื้นที่น้อย) */
+  .kn-page .kn-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .kn-page .kn-tabs::-webkit-scrollbar { display: none; }
+  .kn-page .kn-tabs button { flex: none; min-height: 44px; padding: 8px 12px; white-space: nowrap; }
+  .kn-tab-status { flex: none; margin: 0; }
   .kn-search-bar { grid-template-columns: 1fr; }
   .kn-search-bar select { grid-row: auto; }
   .kn-page .kn-chips button { min-height: 40px; }
@@ -164,6 +203,10 @@
   .kn-status-actions .btn { min-height: 44px; justify-content: center; }
   .modal-box.kn-editor .modal-actions, .modal-box.kn-article-view .modal-actions { flex-wrap: wrap; }
   .kn-missing, .kn-ready { flex-basis: 100%; }
+  .kn-template-list { grid-template-columns: 1fr; }
+  .modal-box.kn-editor .kn-template { min-height: 48px; }
+  .modal-box.kn-editor .kn-format-bar button { min-height: 40px; }
+  .modal-box.kn-editor .kn-link-button { min-height: 32px; }
 }
 @media (max-width: 520px) {
   .kn-totals { gap: 8px; }

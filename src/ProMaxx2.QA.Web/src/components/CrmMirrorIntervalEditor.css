@@ -1,0 +1,24 @@
+/* รอบดึงข้อมูล CRM (CrmMirrorIntervalEditor) — ใช้ในตารางสถานะคลังความรู้และ Setting Center → CRM */
+.crm-interval { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.crm-interval > .material-symbols-outlined { font-size: 16px; }
+.crm-interval b { color: var(--text); font-weight: 600; }
+button.crm-interval-edit { display: inline-flex; align-items: center; gap: 3px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--primary) 6%, var(--card)); padding: 2px 10px 2px 7px; color: var(--primary); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+button.crm-interval-edit:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, var(--card)); }
+button.crm-interval-edit:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+button.crm-interval-edit .material-symbols-outlined { font-size: 14px; }
+.crm-interval-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 400; }
+.crm-interval-form select, .crm-interval-form input { height: 34px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background-color: var(--card); padding: 4px 10px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.crm-interval-form select { padding-right: 30px; }
+.crm-interval-form input { width: 96px; }
+.crm-interval-form :is(select, input):focus { border-color: var(--primary); outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.crm-interval-form input[aria-invalid="true"] { border-color: var(--red); }
+.crm-interval-form .btn { min-height: 34px; padding: 4px 12px; font-size: 12px; }
+.crm-interval-form small { flex-basis: 100%; color: var(--muted); font-size: 12px; }
+.crm-interval-form small.is-error { color: var(--red); }
+@media (max-width: 760px) {
+  button.crm-interval-edit { min-height: 36px; padding: 4px 12px 4px 9px; }
+  .crm-interval-form select { flex: 1 1 100%; }
+  .crm-interval-form select, .crm-interval-form input, .crm-interval-form .btn { height: 44px; min-height: 44px; }
+  .crm-interval-form input { flex: 1 1 100%; width: auto; }
+  .crm-interval-form .btn { flex: 1; justify-content: center; }
+}

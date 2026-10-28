@@ -93,6 +93,7 @@ public static partial class KnowledgePrompt
     {
         "Defect" => "Defect",
         "CrmTicket" => "CRM Ticket",
+        "TestCase" => "Test Case",
         "Article" => "บทความ",
         "File" => "เอกสาร",
         _ => sourceType,

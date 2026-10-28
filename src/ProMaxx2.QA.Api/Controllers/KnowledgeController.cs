@@ -13,8 +13,11 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 namespace ProMaxx2.QA.Api.Controllers;
 
 public sealed record KnowledgeArticleDto(Guid KnowledgeArticleId, string Title, string? BodyMarkdown, string Excerpt, Guid? ProjectId, string? ProjectName, string? Tags, string Status,
-    DateTime CreatedAt, string? CreatedByName, DateTime? UpdatedAt, string? UpdatedByName, string? IndexState, DateTime? IndexedAt);
-public sealed record SaveKnowledgeArticleRequest(string Title, string BodyMarkdown, Guid? ProjectId, string? Tags, string Status = "Draft");
+    DateTime CreatedAt, string? CreatedByName, DateTime? UpdatedAt, string? UpdatedByName, string? IndexState, DateTime? IndexedAt,
+    string ContentFormat = "Markdown", string? BodyHtml = null, string? ShareUrl = null);
+/// <summary>BodyHtml มีค่า = บทความนำเข้าจาก HTML (ระบบทำความสะอาด HTML และสกัดข้อความเอง — BodyMarkdown ไม่ถูกใช้)</summary>
+public sealed record SaveKnowledgeArticleRequest(string Title, string? BodyMarkdown, Guid? ProjectId, string? Tags, string Status = "Draft", string? BodyHtml = null);
+public sealed record KnowledgeArticleShareDto(string Url);
 
 /// <summary>
 /// คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md): ค้นหา, บทความ, สถานะการ index
@@ -22,7 +25,8 @@ public sealed record SaveKnowledgeArticleRequest(string Title, string BodyMarkdo
 /// </summary>
 [ApiController, Route("api/v1/knowledge"), Authorize(Policy = "KnowledgeView")]
 public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService search, KnowledgeIndexService indexer, KnowledgeIndexTrigger trigger,
-    ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration, KnowledgeFileService files, CrmKnowledgeFetcher crmKnowledge, KnowledgeEmbeddingService embedding) : ControllerBase
+    ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration, KnowledgeFileService files, CrmKnowledgeFetcher crmKnowledge, KnowledgeEmbeddingService embedding,
+    KnowledgeArticleShareService shares) : ControllerBase
 {
     private const string AuditEntityType = "KnowledgeArticle";
 
@@ -68,8 +72,9 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
     {
         if (UserId() is not { } userId) return Unauthorized();
         if (await ValidateProjectAsync(userId, request.ProjectId, ct) is { } problem) return problem;
+        if (PrepareBody(request) is not { } body) return BadRequest(new ProblemDetails { Detail = $"ไฟล์ HTML ใหญ่เกินไป (สูงสุด {HtmlArticleContent.MaxLength / 1_000_000} ล้านตัวอักษร)" });
         KnowledgeArticle article;
-        try { article = new KnowledgeArticle(request.Title, request.BodyMarkdown, request.ProjectId, request.Tags, request.Status, userId); }
+        try { article = new KnowledgeArticle(request.Title, body.Text, request.ProjectId, request.Tags, request.Status, userId, body.Html); }
         catch (ArgumentException ex) { return BadRequest(new ProblemDetails { Detail = ex.Message }); }
         db.KnowledgeArticles.Add(article);
         db.AuditLogs.Add(new AuditLog(userId, "Created", AuditEntityType, article.KnowledgeArticleId.ToString(), $"สร้างบทความความรู้ \"{article.Title}\" ({article.Status})", null, Snapshot(article), ClientIp()));
@@ -86,8 +91,9 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
         if (visible is null) return NotFound();
         if (await ValidateProjectAsync(userId, request.ProjectId, ct) is { } problem) return problem;
         var article = await db.KnowledgeArticles.SingleAsync(x => x.KnowledgeArticleId == id, ct);
+        if (PrepareBody(request) is not { } body) return BadRequest(new ProblemDetails { Detail = $"ไฟล์ HTML ใหญ่เกินไป (สูงสุด {HtmlArticleContent.MaxLength / 1_000_000} ล้านตัวอักษร)" });
         var before = Snapshot(article);
-        try { article.Update(request.Title, request.BodyMarkdown, request.ProjectId, request.Tags, request.Status, userId); }
+        try { article.Update(request.Title, body.Text, request.ProjectId, request.Tags, request.Status, userId, body.Html); }
         catch (ArgumentException ex) { return BadRequest(new ProblemDetails { Detail = ex.Message }); }
         db.AuditLogs.Add(new AuditLog(userId, "Updated", AuditEntityType, id.ToString(), $"แก้ไขบทความความรู้ \"{article.Title}\" ({article.Status})", before, Snapshot(article), ClientIp()));
         await db.SaveChangesAsync(ct);
@@ -105,6 +111,38 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
         db.AuditLogs.Add(new AuditLog(userId, "Deleted", AuditEntityType, id.ToString(), $"ลบบทความความรู้ \"{article.Title}\"", Snapshot(article), null, ClientIp()));
         await db.SaveChangesAsync(ct);
         trigger.Signal();
+        return NoContent();
+    }
+
+    /// <summary>สร้าง (หรือคืน) ลิงก์สาธารณะให้คนนอกอ่านบทความได้โดยไม่ต้อง Login — แชร์ได้เฉพาะบทความที่เผยแพร่แล้ว</summary>
+    [HttpPost("articles/{id:guid}/share"), Authorize(Policy = "KnowledgeEdit")]
+    public async Task<ActionResult<KnowledgeArticleShareDto>> ShareArticle(Guid id, CancellationToken ct)
+    {
+        if (UserId() is not { } userId) return Unauthorized();
+        var article = await FindVisibleArticleAsync(id, ct);
+        if (article is null) return NotFound();
+        if (article.Status != "Published") return BadRequest(new ProblemDetails { Detail = "แชร์ได้เฉพาะบทความที่เผยแพร่แล้ว" });
+        var (code, created) = await shares.GetOrCreateAsync(id, userId, ct);
+        if (created)
+        {
+            db.AuditLogs.Add(new AuditLog(userId, "Updated", AuditEntityType, id.ToString(), $"สร้างลิงก์แชร์สาธารณะของบทความ \"{article.Title}\"", null, null, ClientIp()));
+            await db.SaveChangesAsync(ct);
+        }
+        return Ok(new KnowledgeArticleShareDto(shares.UrlFor(code)));
+    }
+
+    /// <summary>ยกเลิกลิงก์แชร์ — ลิงก์เดิมเปิดไม่ได้ทันที (แชร์ใหม่จะได้ลิงก์ใหม่)</summary>
+    [HttpDelete("articles/{id:guid}/share"), Authorize(Policy = "KnowledgeEdit")]
+    public async Task<IActionResult> RevokeArticleShare(Guid id, CancellationToken ct)
+    {
+        if (UserId() is not { } userId) return Unauthorized();
+        var article = await FindVisibleArticleAsync(id, ct);
+        if (article is null) return NotFound();
+        if (await shares.RevokeAsync(id, userId, ct))
+        {
+            db.AuditLogs.Add(new AuditLog(userId, "Updated", AuditEntityType, id.ToString(), $"ยกเลิกลิงก์แชร์สาธารณะของบทความ \"{article.Title}\"", null, null, ClientIp()));
+            await db.SaveChangesAsync(ct);
+        }
         return NoContent();
     }
 
@@ -208,6 +246,7 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
         var keys = articles.Select(x => x.KnowledgeArticleId.ToString()).ToList();
         var docs = await db.KnowledgeDocuments.AsNoTracking().Where(x => x.SourceType == "Article" && keys.Contains(x.SourceKey))
             .ToDictionaryAsync(x => x.SourceKey, x => new { x.State, x.IndexedAt }, ct);
+        var shareCodes = await shares.GetActiveCodesAsync(articles.Select(x => x.KnowledgeArticleId).ToList(), ct);
         return articles.Select(a =>
         {
             var doc = docs.GetValueOrDefault(a.KnowledgeArticleId.ToString());
@@ -216,12 +255,22 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
                 a.ProjectId, a.ProjectId.HasValue ? projects.GetValueOrDefault(a.ProjectId.Value) : null, a.Tags, a.Status,
                 a.CreatedAt, a.CreatedBy.HasValue ? users.GetValueOrDefault(a.CreatedBy.Value) : null,
                 a.UpdatedAt, a.UpdatedBy.HasValue ? users.GetValueOrDefault(a.UpdatedBy.Value) : null,
-                doc?.State, doc?.IndexedAt);
+                doc?.State, doc?.IndexedAt, a.ContentFormat, includeBody ? a.BodyHtml : null,
+                a.Status == "Published" && shareCodes.TryGetValue(a.KnowledgeArticleId, out var code) ? shares.UrlFor(code) : null);
         }).ToList();
     }
 
+    /// <summary>เนื้อหาที่จะบันทึก — บทความ HTML: ทำความสะอาด HTML และสกัดข้อความไว้ค้นหา; null เมื่อ HTML ใหญ่เกิน</summary>
+    private static (string Text, string? Html)? PrepareBody(SaveKnowledgeArticleRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.BodyHtml)) return (request.BodyMarkdown ?? "", null);
+        if (request.BodyHtml.Length > HtmlArticleContent.MaxLength) return null;
+        var html = HtmlArticleContent.Sanitize(request.BodyHtml);
+        return (HtmlArticleContent.ToText(html), html);
+    }
+
     private async Task<bool> CanEditAsync() => (await authorization.AuthorizeAsync(User, "KnowledgeEdit")).Succeeded;
-    private static string Snapshot(KnowledgeArticle a) => JsonSerializer.Serialize(new { a.Title, a.ProjectId, a.Tags, a.Status, BodyLength = a.BodyMarkdown.Length });
+    private static string Snapshot(KnowledgeArticle a) => JsonSerializer.Serialize(new { a.Title, a.ProjectId, a.Tags, a.Status, a.ContentFormat, BodyLength = a.BodyMarkdown.Length, HtmlLength = a.BodyHtml?.Length });
     private string? ClientIp() => Request.Headers["CF-Connecting-IP"].FirstOrDefault() ?? HttpContext.Connection.RemoteIpAddress?.ToString();
     private Guid? UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;
 }

@@ -1213,3 +1213,31 @@ Authorization is also checked against the current database profile for the JWT s
 - `GET /api/v1/knowledge/status` เพิ่ม `embedding: { enabled, provider, model, isExternal, eligible, embedded, error, lastErrorAt, lastSuccessAt }`
 - `GET /knowledge/search`, แชท และ MCP ใช้ผลรวม Full-Text + ความหมาย (RRF) อัตโนมัติเมื่อตั้งค่า Embedding — `rank` ในผลค้นหาเป็นคะแนนเพื่อเรียงลำดับเท่านั้น (ไม่ใช่ RANK ของ Full-Text)
 - Config: `Knowledge:EmbeddingBatchSize` (32), `Knowledge:VectorMinScore` (0.35)
+
+### Defect — ผลการปิด + Defect ที่อาจซ้ำ (คลังความรู้ Phase 6, 2026-10-22)
+
+- `DefectDto` เพิ่ม `resolutionType`, `rootCauseCategory`, `rootCauseNote`, `resolutionNote`, `duplicateOfDefectId`, `duplicateOfDefectCode` (รายการ Defect ไม่เติม `duplicateOfDefectCode`)
+- `PATCH /api/v1/defects/{id}/status` → `{ status, resolution? }`, `PUT /api/v1/defects/{id}` และ `POST /api/v1/defects` รับ `resolution?` = `{ resolutionType: Fixed|Duplicate|CannotReproduce|ByDesign|WontFix|Deferred, rootCauseCategory?, rootCauseNote?, resolutionNote?, duplicateOfDefectId? }` — `400` (ข้อความไทย) เมื่อ Fixed ไม่มีหมวด, หมวดไม่อยู่ใน Master Option `DefectRootCause` ที่เปิดใช้, Duplicate ไม่มี/ข้าม Project; API **ไม่บังคับ** ส่ง resolution (หน้า Defect บังคับเอง)
+- `PUT /api/v1/defects/{id}/resolution` (`DefectEdit`) — แก้ผลการปิดโดยไม่เปลี่ยนสถานะ, บันทึก Activity `Resolution`
+- `GET /api/v1/defects/similar?projectId=&text=&excludeId=` (`DefectView`) → `[{ defectId, defectCode, title, status, severity, resolutionType, snippet }]` ≤ 5 รายการ (ค้นคลังความรู้เฉพาะ Defect ใน Project นั้น)
+- Master Option หมวดใหม่ `DefectRootCause`
+- คลังความรู้: แหล่ง `TestCase` (`sources=TestCase`); MCP: `search_knowledge(source: "testcase")` + เครื่องมือ `get_test_case(testCase)` (รหัสหรือ id)
+
+### Setting Center — ทดสอบการเชื่อมต่อ AI (2026-10-22)
+
+- `POST /api/v1/master-settings/ai/test` (`AdminUser`) body `{ provider, model, baseUrl?, apiKey? }` → `{ provider, model, elapsedMs, reply }` — ทดสอบด้วย**ค่าในฟอร์ม (ยังไม่ต้องบันทึก)**: เว้น `apiKey` = ใช้คีย์ที่บันทึกไว้เมื่อเป็น Provider เดียวกัน; ส่งคำถามสั้น 1 ข้อผ่าน `IAiChatClient` ตัวเดียวกับผู้ช่วย AI (`reply` ตัดที่ 200 ตัวอักษร); `400` เมื่อขาด Model/คีย์/Base URL ไม่ถูกต้อง, `502` เมื่อ Provider ตอบ error, `504` เมื่อไม่ตอบใน 60 วินาที
+- `PUT /api/v1/master-settings/ai`: Provider `opencode` บันทึกได้โดยไม่มี API key แล้ว (เดิมหน้าเว็บอนุญาตแต่ API ตอบ 400)
+
+### 2026-10-22 — รอบดึงข้อมูล CRM ตั้งได้ (migration `AddCrmMirrorInterval`)
+
+- `GET /api/v1/master-settings/crm-sync` (`AdminUser`) → `{ pollIntervalMinutes, mirrorIntervalMinutes, updatedAt }` — `mirrorIntervalMinutes` = รอบของ `CrmMirrorWorker` (ค่าเริ่มต้น 15)
+- `PUT /api/v1/master-settings/crm-sync` (`AdminUser`) body `{ pollIntervalMinutes?, mirrorIntervalMinutes? }` — ส่งเฉพาะค่าที่ต้องการเปลี่ยน (`null`/ไม่ส่ง = คงค่าเดิม); `pollIntervalMinutes` 1–60, `mirrorIntervalMinutes` 5–1440 นอกช่วง = 400
+- `GET /api/v1/knowledge/status` → `crm` เพิ่ม `mirrorIntervalMinutes`; `GET /api/v1/crm/mirror/status` เพิ่ม `intervalMinutes`
+
+### 2026-10-22 — เรียงรายการ Test Cycle ฝั่ง server
+
+- `GET /api/v1/test-cycles` เพิ่ม query `sortBy=<field>_<asc|desc>` — field: `code`, `name`, `progress` (ไม่ใช่ NotRun / ทั้งหมด), `cases`, `status` (ลำดับงาน Draft → InProgress → Completed → Closed → Cancelled), `startDate`, `createdAt`; ไม่ส่ง/ค่าไม่รู้จัก = `createdAt_desc` (ลำดับเดิม) และค่าเท่ากันเรียงต่อด้วย `CycleCode` desc — เรียงก่อนแบ่งหน้า; ผู้เรียกเดิม (Execution Workspace ฯลฯ) ไม่ต้องแก้
+
+### 2026-10-22 — เรียงรายการ Defect ฝั่ง server
+
+- `GET /api/v1/defects` เพิ่ม query `sortBy=<field>_<asc|desc>` — field: `code`, `title`, `severity` (Critical → High → Medium → Low), `status` (Open → In Progress → Resolved → Closed → Rejected), `createdAt`; ไม่ส่ง/ค่าไม่รู้จัก = `createdAt_desc` (ลำดับเดิม), ค่าเท่ากันเรียงต่อด้วย `CreatedAt` desc (`DefectListSort`)
