@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Application.Regression;
 using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Releases;
+using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
 namespace ProMaxx2.QA.Api.Services;
@@ -60,7 +61,7 @@ public static class RegressionImpactAnalyzer
         var executed = cycleCases.Count(x => x != "NotRun");
         var passed = cycleCases.Count(x => x == "Pass");
         var failed = cycleCases.Count(x => x is "Fail" or "Blocked");
-        var openDefects = await db.Defects.CountAsync(x => x.ReleaseId == release.ReleaseId && !x.IsDeleted && x.Status != "Closed" && x.Status != "Rejected", ct);
+        var openDefects = await db.Defects.CountAsync(x => x.ReleaseId == release.ReleaseId && !x.IsDeleted && !DefectStatusGroups.Done.Contains(x.Status), ct);
         var progress = cycleCases.Count == 0 ? 0 : Math.Round(executed * 100m / cycleCases.Count, 1);
         var passRate = executed == 0 ? 0 : Math.Round(passed * 100m / executed, 1);
         var overall = cycleCases.Count == 0 ? "Not Started" : failed > 0 || openDefects > 0 ? "At Risk" : progress < 100 ? "In Progress" : "Passed";

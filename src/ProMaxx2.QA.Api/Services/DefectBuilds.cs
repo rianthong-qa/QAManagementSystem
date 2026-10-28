@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
 namespace ProMaxx2.QA.Api.Services;
@@ -15,6 +16,26 @@ public static class DefectBuilds
             : db.Builds.AsNoTracking().Where(b => b.ReleaseId == releaseId && b.IsActive)
                 .OrderByDescending(b => b.BuildDate ?? b.CreatedAt).ThenByDescending(b => b.CreatedAt)
                 .Select(b => (Guid?)b.BuildId).FirstOrDefaultAsync(ct);
+
+    /// <summary>Build ทุกตัวใน Release ของ build นี้ เรียงเก่า → ใหม่ (ลำดับเดียวกับ LatestActiveBuildIdAsync) — null เมื่อไม่พบ Build</summary>
+    public static async Task<ReleaseBuildOrder?> ReleaseOrderAsync(QaDbContext db, Guid buildId, CancellationToken ct)
+    {
+        var build = await db.Builds.AsNoTracking().Where(b => b.BuildId == buildId)
+            .Join(db.Releases.AsNoTracking(), b => b.ReleaseId, r => r.ReleaseId, (b, r) => new { b.BuildId, b.BuildNumber, b.ReleaseId, r.ProjectId, r.ReleaseCode })
+            .SingleOrDefaultAsync(ct);
+        if (build is null) return null;
+        var ordered = await db.Builds.AsNoTracking().Where(b => b.ReleaseId == build.ReleaseId)
+            .OrderBy(b => b.BuildDate ?? b.CreatedAt).ThenBy(b => b.CreatedAt).Select(b => b.BuildId).ToListAsync(ct);
+        var index = ordered.IndexOf(buildId);
+        return new(build.BuildId, build.BuildNumber, build.ReleaseId, build.ReleaseCode, build.ProjectId, ordered.Take(index).ToList(), ordered.Take(index + 1).ToList());
+    }
+
+    /// <summary>คิวตรวจซ้ำของ Build: Resolved ที่ Fix Build คือ Build นี้หรือก่อนหน้า หรือไม่ระบุ — ส่วน "Defect ของ Build" และ Retest Cycle ใช้กฎนี้ที่เดียว</summary>
+    public static IQueryable<Defect> RetestQueue(IQueryable<Defect> releaseDefects, ReleaseBuildOrder order)
+    {
+        var upTo = order.UpTo;
+        return releaseDefects.Where(d => DefectStatusGroups.AwaitingVerification.Contains(d.Status) && (!d.FixedInBuildId.HasValue || upTo.Contains(d.FixedInBuildId.Value)));
+    }
 
     /// <summary>Build อยู่ใน Project เดียวกับ Defect — กันการเลือก Fix/Verified Build ข้าม Project</summary>
     public static Task<bool> BelongsToProjectAsync(QaDbContext db, Guid buildId, Guid projectId, CancellationToken ct) =>
@@ -35,3 +56,6 @@ public static class DefectBuilds
         return build.Order != reference.Order ? build.Order > reference.Order : build.CreatedAt >= reference.CreatedAt;
     }
 }
+
+/// <summary>Earlier = Build ก่อนหน้าใน Release (ไม่รวมตัวเอง), UpTo = Build ก่อนหน้า + ตัวเอง</summary>
+public sealed record ReleaseBuildOrder(Guid BuildId, string BuildNumber, Guid ReleaseId, string ReleaseCode, Guid ProjectId, IReadOnlyList<Guid> Earlier, IReadOnlyList<Guid> UpTo);

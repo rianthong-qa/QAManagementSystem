@@ -7,6 +7,7 @@ import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { type SessionUser, masterOptionElements, nextBusinessCode, useMasterOptions } from "../shared/appShared";
 import { DateField } from "../components/DateField";
+import { BuildDefectsPanel } from "../components/BuildDefectsPanel";
 import "./ReleasesPage.css";
 
 // ความหมายสถานะ Release/Build (ReleaseStatuses/BuildStatuses ใน Release.cs) — รูปแบบเดียวกับ
@@ -32,7 +33,7 @@ const releaseLabel = (status: string) => releaseStatusInfo.find((x) => x.value =
 const buildLabel = (status: string) => buildStatusInfo.find((x) => x.value === status)?.label ?? status;
 /** สีป้ายสถานะ Build ตาม UI_DESIGN_SYSTEM §6 — เดิมหน้ารายการเป็นสีเขียวเสมอ (Failed/Blocked ก็เขียว) และหน้า detail ใช้ Ready = เขียว นอกนั้นเหลือง */
 const buildStatusTone = (status?: string) => status === "Ready" || status === "Passed" ? "green" : status === "Failed" ? "red" : status === "Blocked" ? "yellow" : status === "Testing" ? "blue" : "gray";
-export function ReleasesPage({ search, contextProjectId }: { search: string; refresh?: number; contextProjectId?: string }) {
+export function ReleasesPage({ search, contextProjectId, canRunExecution = false, onOpenExecution }: { search: string; refresh?: number; contextProjectId?: string; canRunExecution?: boolean; onOpenExecution?: (cycleId: string) => void }) {
   const masterOptions = useMasterOptions(), releaseTypes = masterOptions("ReleaseType");
   let canEdit = false;
   try {
@@ -562,6 +563,7 @@ export function ReleasesPage({ search, contextProjectId }: { search: string; ref
                 <div><dt>Build Date</dt><dd>{shortDate(b.buildDate) || "ไม่ระบุ"}</dd></div>
                 <div><dt>Commit Reference</dt><dd>{b.commitReference ? <code>{b.commitReference}</code> : "-"}</dd></div>
               </dl>
+              <BuildDefectsPanel buildId={b.buildId} projectId={release?.projectId} isActive={b.isActive !== false} canRunExecution={canRunExecution} onOpenCycle={onOpenExecution ? (cycleId) => { setBuildDetail(null); onOpenExecution(cycleId); } : undefined} />
               <section className="rb-detail-section">
                 <h3>Change Notes</h3>
                 <p className={b.changeNotes ? "rb-detail-text" : "rb-detail-text empty"}>{b.changeNotes || "ไม่มี Change Notes"}</p>

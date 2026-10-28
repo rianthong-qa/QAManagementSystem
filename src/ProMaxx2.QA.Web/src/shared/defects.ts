@@ -33,6 +33,10 @@ export function defectAgeDays(createdAt: string): number {
   return d ? Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000)) : 0;
 }
 
+// กลุ่มสถานะเดียวทั้งระบบ — ต้องตรงกับ DefectStatusGroups ฝั่ง API (DEFECT_BUILD_LIFECYCLE.md เฟส 4): Resolved = รอตรวจซ้ำ ยังไม่นับว่าจบ
+export const defectStatusGroups = { unresolved: ["Open", "In Progress"], awaitingVerification: ["Resolved"], done: ["Closed", "Rejected"] };
+export const isDefectDone = (status: string) => defectStatusGroups.done.includes(status);
+
 // ผลการปิด Defect (คลังความรู้ Phase 6) — ต้องตรงกับ Defect.ResolutionTypes ฝั่ง API; หน้า Defect บังคับเลือกเมื่อเปลี่ยนเป็นสถานะปิด
 export const defectClosingStatuses = ["Resolved", "Closed", "Rejected"];
 export const defectResolutionTypes: { value: string; label: string; hint: string }[] = [

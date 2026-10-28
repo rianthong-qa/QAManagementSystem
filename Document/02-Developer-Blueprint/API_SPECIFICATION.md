@@ -748,9 +748,19 @@ Response:
   "criticalRegression": 98.0,
   "updateTestPassed": true,
   "approvedRisks": 2,
-  "recommendedDecision": "GO"
+  "recommendedDecision": "GO",
+  "defectGateEnabled": false,
+  "openCriticalDefects": 0,
+  "openHighDefects": 3,
+  "unverifiedResolvedDefects": 5,
+  "defectBlockersWithoutRisk": 6,
+  "defectBlockersWithRisk": 2
 }
 ```
+
+ฟิลด์ `*Defects` / `defectBlockers*` (เพิ่ม 2026-10-28, DEFECT_BUILD_LIFECYCLE.md §4.1) นับ Defect ของ Release เสมอ แต่มีผลกับ `recommendedDecision` เฉพาะเมื่อ `defectGateEnabled` (config `Defects:GateEnabled`): Critical ที่ยัง Open / In Progress = `NO_GO`; High ที่ยังไม่ได้แก้หรือ Resolved ที่ยังไม่ตรวจซ้ำที่ไม่มี Risk Acceptance (Approved, ผูก `defectId`) = `NO_GO`; มีครบ = `CONDITIONAL_GO`
+
+`GET /releases/{releaseId}/test-summary` เพิ่ม `knownIssues: [{ source: "Defect" | "Build", reference, title, severity?, reason, defectId? }]` — Defect ที่ปิดด้วย Deferred / Won't Fix หรือยังไม่จบแต่มี Risk Acceptance ที่อนุมัติแล้ว (สูงสุด 200) ต่อท้ายด้วย Known Issues ของ Build ที่ใช้งาน
 
 ---
 
@@ -1223,6 +1233,7 @@ Authorization is also checked against the current database profile for the JWT s
 - `POST /defects/bulk { ids, status?, severity?, assigneeUserId?, delete?, resolution?, fixedInBuildId? }` → `{ updated, failed: [{ defectId, defectCode, error }] }` — รายการที่ผิดกฎข้ามไป รายการอื่นบันทึก; ส่ง `resolution`/`fixedInBuildId` โดยไม่มี `status` = `400`
 - `DefectDto` เพิ่ม `fixedInBuildId/Number`, `verifiedInBuildId/Number`, `resolvedAt`, `closedAt`, `reopenCount`, `lastRetestAt`, `lastRetestResult`, `regressionOfDefectId/Code`
 - `POST /executions/...` (`ExecutionHistoryDto`) เพิ่ม `existingDefectStatus` (สถานะของ Defect ที่ใช้ตัวเดิม — `Resolved` = Build ของ Cycle เก่ากว่า Fix Build), `reopenedDefectCode` (Fail ซ้ำบน Defect ที่ Resolved → Reopen ตัวเดิม) และ `regressionOfDefectCode` (Defect ที่ Closed แล้วปัญหากลับมา → Defect ใหม่อ้างตัวเดิม)
+- **เฟส 3:** `GET /builds/{buildId}/defect-carryover` (สิทธิ์ `DefectView`) → `{ buildId, buildNumber, releaseId, releaseCode, foundHere, carriedOver, retestQueue }` แต่ละกลุ่ม `{ total, bySeverity, items[≤100]: { defectId, defectCode, title, severity, status, foundInBuildId, fixedInBuildId, reopenCount, assigneeUserId, createdAt } }`; `POST /builds/{buildId}/retest-cycle { environmentId, cycleName? }` (สิทธิ์ `ExecutionRun`) → `{ testCycleId, cycleCode, cycleName, caseCount }` — `400` เมื่อ Build ปิดใช้งาน/Release ปิดแล้ว/คิวไม่มี Test Case ผูก; `POST /defects/{id}/retest { buildId, passed, note? }` (Defect ต้องเป็น Resolved; Build ต้องอยู่ใน Release เดียวกับ Defect, ใช้งานอยู่ และเป็น Fix Build หรือใหม่กว่า — ไม่งั้น `400`); Retest Cycle ที่สร้างมีสถานะ `InProgress`; `GET /defects/stats` รับ `buildMode=openAsOf` เหมือนรายการ; `GET /defects?buildId=&buildMode=openAsOf`
 - CRM sync (แทนข้อ 2026-10-07): `FINISH` → Resolved + Fix Build = Build ล่าสุดของ Release; `CLOSE` ไม่ปิด Defect (บันทึก activity `CrmClosed`)
 
 ### Defect — ผลการปิด + Defect ที่อาจซ้ำ (คลังความรู้ Phase 6, 2026-10-22)

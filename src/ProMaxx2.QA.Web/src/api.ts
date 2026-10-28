@@ -51,8 +51,12 @@ export async function apiFetch<T = unknown>(path: string, options: ApiOptions = 
     body: form ?? (json !== undefined ? JSON.stringify(json) : undefined),
   });
   if (!response.ok) {
-    const problem = await response.json().catch(() => null) as { detail?: string; title?: string; code?: string } | null;
-    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? `${fallbackMessage} (${response.status})`, problem?.code);
+    // ProblemDetails (JSON) หรือข้อความธรรมดาจาก BadRequest("...") — ข้อความธรรมดาใช้เมื่อสั้นและไม่ใช่หน้า HTML
+    const text = await response.text().catch(() => "");
+    let problem: { detail?: string; title?: string; code?: string } | string | null = null;
+    try { problem = text ? JSON.parse(text) : null; } catch { problem = text.trim() && text.length <= 500 && !text.trimStart().startsWith("<") ? text.trim() : null; }
+    const detail = typeof problem === "string" ? problem : problem?.detail ?? problem?.title;
+    throw new ApiError(response.status, detail || `${fallbackMessage} (${response.status})`, typeof problem === "string" ? undefined : problem?.code);
   }
   if (response.status === 204) return undefined as T;
   const text = await response.text();
