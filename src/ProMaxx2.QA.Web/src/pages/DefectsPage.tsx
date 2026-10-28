@@ -91,6 +91,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [severityFilter, setSeverityFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  // เลือก Build ที่ topbar: foundIn = Defect ที่เจอใน Build นี้, openAsOf = ยังไม่ปิด ณ Build นี้ (รวมที่ค้างจาก Build ก่อนของ Release เดียวกัน)
+  const [buildMode, setBuildMode] = useState<"foundIn" | "openAsOf">("foundIn");
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [modules, setModules] = useState<ModuleItem[]>([]);
   const [users, setUsers] = useState<UserLookup[]>([]);
@@ -154,7 +156,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     const requestVersion = ++defectRequestVersion.current;
     if (!projectId) { setItems([]); setTotalCount(0); setLoading(false); return; }
     setLoading(true); setError("");
-    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(search && { search }), ...(moduleFilter && moduleFilter !== "unassigned" && { moduleId: moduleFilter }), ...(moduleFilter === "unassigned" && { unassignedModule: "true" }), ...(severityFilter && { severity: severityFilter }), ...(priorityFilter && { priority: priorityFilter }), ...(statusFilter && { status: statusFilter }), ...(assigneeFilter && { assigneeUserId: assigneeFilter }), page: String(page), size: String(pageSize) });
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(buildId && buildMode === "openAsOf" && { buildMode }), ...(search && { search }), ...(moduleFilter && moduleFilter !== "unassigned" && { moduleId: moduleFilter }), ...(moduleFilter === "unassigned" && { unassignedModule: "true" }), ...(severityFilter && { severity: severityFilter }), ...(priorityFilter && { priority: priorityFilter }), ...(statusFilter && { status: statusFilter }), ...(assigneeFilter && { assigneeUserId: assigneeFilter }), page: String(page), size: String(pageSize) });
     q.set("sortBy", listSortBy);
     fetch(`${apiUrl}/defects?${q}`, { headers }).then(async r => {
       if (!r.ok) throw new Error("โหลด Defect ไม่สำเร็จ");
@@ -171,7 +173,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       setItems(rows as DefectItem[]);
       setTotalCount(Number.isFinite(total) ? total : rows.length);
     }).catch(e => { if (requestVersion === defectRequestVersion.current) setError(e instanceof Error ? e.message : "โหลด Defect ไม่สำเร็จ"); }).finally(() => { if (requestVersion === defectRequestVersion.current) setLoading(false); });
-  }, [projectId, releaseId, buildId, search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter, listSortBy, page, pageSize, headers, reload]);
+  }, [projectId, releaseId, buildId, buildMode, search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter, listSortBy, page, pageSize, headers, reload]);
   useEffect(load, [load]);
   // การ์ดสรุปด้านบน — ขอบเขตตาม Project/Release/Build ที่เลือก (ไม่ผูกกับตัวกรองของตารางด้านล่าง) เพื่อให้เห็น
   // ภาพรวมทั้งหมดของบริบทนั้นเสมอ ไม่ว่าจะกรอง/ค้นหาตารางด้วยอะไรอยู่
@@ -481,6 +483,10 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       <label className="lp-sort-mobile">เรียงตาม<select value={`${listSort.key}:${listSort.dir}`} onChange={(e) => { const [key, dir] = e.target.value.split(":"); setListSort({ key: key as DefectSortKey, dir: dir as "asc" | "desc" }); }}>
         {defectSortOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select></label>
+      {buildId && <div className="lp-chips df-build-mode" role="group" aria-label="Defect ของ Build ที่เลือก">
+        <button type="button" aria-pressed={buildMode === "foundIn"} onClick={() => { setBuildMode("foundIn"); setPage(1); }} title="Defect ที่แจ้งบน Build นี้ทุกสถานะ">เจอใน Build นี้</button>
+        <button type="button" aria-pressed={buildMode === "openAsOf"} onClick={() => { setBuildMode("openAsOf"); setPage(1); }} title="ยังไม่ปิด (Open / In Progress / Resolved) ที่เจอใน Build นี้หรือ Build ก่อนหน้าของ Release เดียวกัน — ตัวเลขในชิปสถานะยังนับเฉพาะที่เจอใน Build นี้">ยังไม่ปิด ณ Build นี้ (รวมของค้าง)</button>
+      </div>}
       <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
         <button type="button" aria-pressed={statusFilter === ""} onClick={() => setStatusFilter("")}>ทุกสถานะ <b>{summaryStats.total.toLocaleString()}</b></button>
         {defectStatusParts.map((p) => <button key={p.key} type="button" aria-pressed={statusFilter === p.value} onClick={() => setStatusFilter((current) => current === p.value ? "" : p.value)}><span className={`df-dot is-${p.key}`} aria-hidden="true" />{p.value} <b>{p.count.toLocaleString()}</b></button>)}

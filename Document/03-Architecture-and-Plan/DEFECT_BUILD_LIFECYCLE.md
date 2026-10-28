@@ -1,6 +1,6 @@
 # วงจร Defect ข้าม Build / Version
 
-> สถานะ: เฟส 1–2 ทำแล้ว (2026-10-28) · เฟส 3–5 ยังไม่ทำ
+> สถานะ: เฟส 1–3 ทำแล้ว (2026-10-28) · เฟส 4–5 ยังไม่ทำ
 > ใช้คู่กับ `Document/01-System-Blueprint/WORKFLOW.md` §7–§9 และ `DEFECT_KNOWLEDGE_PLAN.md` §4.1/§4.3
 
 ## 1. ปัญหาที่แก้
@@ -75,12 +75,12 @@ Defect เก็บ Build ไว้ 3 แบบ:
 
 1. Dev หรือ Release Owner **ลงทะเบียน Build ในหน้า Release / Build ทุกครั้ง** พร้อม Change Notes (ไม่แจ้งแค่ในแชท) เพราะ Fix Build และคิวตรวจซ้ำอ้าง Build ในระบบ
 2. QA รัน Smoke แล้วตั้งสถานะ Build เป็น Testing (ผ่าน) หรือ Blocked (ไม่ผ่าน)
-3. ดู Defect ที่เป็น **Resolved** ของ Release นี้ ซึ่งคือคิวตรวจซ้ำ (เฟส 3 จะมีแท็บ "Defect ของ Build นี้" + ปุ่มสร้าง Retest Cycle)
+3. เปิด **Release / Build → กดเลข Build → ส่วน "Defect ของ Build นี้"** ดูแท็บ **รอตรวจซ้ำ** (Resolved ที่ Fix Build คือ Build นี้หรือก่อนหน้า หรือไม่ระบุ) แล้วกด **"สร้าง Retest Cycle"** (เลือก Environment) — ระบบสร้าง Cycle ประเภท Regression จาก Test Case ที่ผูกกับ Defect ในคิว แล้วพาไป Execution Workspace; Defect ที่ไม่ผูก Test Case ตรวจซ้ำจากหน้า Defect
 4. ตรวจซ้ำ Critical / High ก่อน
    - ผ่าน → กด "ตรวจซ้ำผ่าน" แล้วเลือก Build ที่ทดสอบ
    - ไม่ผ่าน → กด "Reopen" แล้วแนบหลักฐานในคอมเมนต์
 5. รัน Cycle ตามแผนหรือ Regression ของ Build นี้ (Clone Cycle เดิมไป Build ใหม่) ระบบจะ Reopen หรือสร้าง Defect ให้ตามกฎข้อ 3
-6. ทบทวน Defect ที่ยังไม่แก้ซึ่งค้างจาก Build ก่อนกับ Dev: Critical / High ทุกรายการต้องมีผู้รับผิดชอบและ Build เป้าหมาย
+6. ทบทวนแท็บ **ค้างจาก Build ก่อน** กับ Dev (หรือหน้า Defect เลือก Build ที่ topbar แล้วกดชิป "ยังไม่ปิด ณ Build นี้ (รวมของค้าง)"): Critical / High ทุกรายการต้องมีผู้รับผิดชอบและ Build เป้าหมาย
 7. ก่อน Mark RC / Sign-off ต้องไม่เหลือ Resolved ที่ยังไม่ตรวจซ้ำ และ High ที่เหลือต้องมี Risk Acceptance
 8. สร้าง Test Summary (เฟส 4 จะดึง Known Issues จาก Defect อัตโนมัติ)
 
@@ -90,7 +90,7 @@ Defect เก็บ Build ไว้ 3 แบบ:
 |---|---|---|
 | 1 | ฟิลด์ Fix / Verified Build, ResolvedAt / ClosedAt, ReopenCount, RegressionOf, activity from/to/build (migration `AddDefectBuildLifecycle`) | ✅ 2026-10-28 |
 | 2 | กฎเปลี่ยนสถานะ, CRM FINISH / CLOSE, Reopen ตอน Fail ซ้ำ, ช่อง Fix / Verified Build ในหน้าต่างผลการปิด, ปุ่ม Reopen / ตรวจซ้ำผ่าน | ✅ 2026-10-28 |
-| 3 | `GET /builds/{id}/defect-carryover`, ตัวกรอง `buildMode=openAsOf`, `POST /defects/{id}/retest`, `POST /builds/{id}/retest-cycle`, แท็บ "Defect ของ Build นี้" | ยังไม่ทำ |
+| 3 | `GET /builds/{id}/defect-carryover`, ตัวกรอง `buildMode=openAsOf`, `POST /defects/{id}/retest`, `POST /builds/{id}/retest-cycle`, ส่วน "Defect ของ Build นี้" ในรายละเอียด Build | ✅ 2026-10-28 |
 | 4 | `DefectStatusGroups` นิยามเดียวทั้งระบบ, Release Gate นับ Defect (เปิดด้วย `Defects:GateEnabled`), Known Issues จาก Defect | ยังไม่ทำ |
 | 5 | เคลียร์ backlog: triage Open 1,635 รายการ, ตั้ง Fix Build + ตรวจซ้ำ Resolved 319 รายการ แล้วจึงเปิด Gate | งานของทีม |
 
@@ -106,3 +106,10 @@ Defect เก็บ Build ไว้ 3 แบบ:
   - หน้าเว็บ: ช่อง Fix / Verified Build ในหน้าต่างผลการปิด, ปุ่ม Reopen / ตรวจซ้ำผ่าน, Build 3 แบบ + Reopen ในรายละเอียด, ข้อความ Reopen ใน Execution Workspace
   - ทดสอบ: `DefectLifecycleTests` (transition table, Fix / Verified Build, Reopen, Retest, CRM, auto-create 4 กรณี)
 - **2026-10-28 — แก้ตาม `/code-review` (PR #4):** Resolve รอบใหม่ตั้ง Fix Build ใหม่เสมอ; regression เฉพาะ Defect ที่ปิดเพราะแก้แล้ว; `LastRetestResult` บันทึกจากการออกจาก Resolved; Bulk ส่งผลการปิด/Fix Build โดยไม่มีสถานะ = 400 และบันทึก activity Resolution; หน้าต่างผลการปิดใช้ "ระบบเลือก" เป็นค่าเริ่มต้น (ลำดับ Build ตัดสินฝั่ง server ที่เดียว, ไม่ส่ง Build ที่ปิดใช้งาน); ซ่อนปุ่ม Resolve ของ Rejected; ข้อความ Execution Workspace แยกกรณี Defect รอตรวจซ้ำบน Build ที่ใหม่กว่า; activity CRM บอกตามจริงเมื่อไม่มี Fix Build; รายการ Defect ดึงเลข Build ครั้งเดียวต่อหน้า
+- **2026-10-28 — เฟส 3 (branch `feat/defect-build-carryover`):**
+  - `BuildDefectsController`: `GET /builds/{buildId}/defect-carryover` (3 กลุ่ม + นับตาม Severity, 100 รายการแรกต่อกลุ่ม เรียงรุนแรงสุด/ค้างนานสุดก่อน) และ `POST /builds/{buildId}/retest-cycle` (สิทธิ์ `EXECUTION.RUN`, Cycle ประเภท Regression รหัส `{Project}-CYC-n` จาก Test Case ที่ผูกกับคิวตรวจซ้ำ)
+  - `POST /defects/{id}/retest { buildId, passed, note? }` สำหรับเครื่องมือ/Automation (หน้าเว็บใช้ปุ่ม "ตรวจซ้ำผ่าน" / "Reopen" เดิมซึ่งบันทึกผลตรวจซ้ำแบบเดียวกัน)
+  - `GET /defects?buildId=&buildMode=openAsOf` — Defect ที่ยังไม่ปิดซึ่งเจอใน Build นี้หรือก่อนหน้า
+  - `DefectBuilds.ReleaseOrderAsync` ลำดับ Build ใน Release (BuildDate แล้ววันที่ลงทะเบียน)
+  - หน้าเว็บ: `BuildDefectsPanel` ในหน้าต่างรายละเอียด Build, ชิป "เจอใน Build นี้ / ยังไม่ปิด ณ Build นี้" ในหน้า Defect เมื่อเลือก Build
+  - ทดสอบ: `BuildDefectCarryoverTests` (จัดกลุ่มตามลำดับ Build, สิทธิ์ Project, openAsOf, retest ผ่าน/ไม่ผ่าน, Retest Cycle, แปลง SQL)

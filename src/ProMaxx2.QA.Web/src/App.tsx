@@ -941,7 +941,7 @@ function App() {
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (
-            <ReleasesPage search={search} refresh={refresh} contextProjectId={contextProjectId} />
+            <ReleasesPage search={search} refresh={refresh} contextProjectId={contextProjectId} onOpenExecution={(cycleId) => { localStorage.setItem("qa.targetCycleId", cycleId); go("execution"); }} />
           ) : page === "requirements" ? (
             <RequirementsPage search={search} refresh={refresh} canEdit={can("REQUIREMENT.EDIT")} contextProjectId={contextProjectId} />
           ) : page === "test-cases" ? (

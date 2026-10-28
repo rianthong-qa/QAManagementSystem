@@ -399,6 +399,11 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-28 — Release / Build: ส่วน "Defect ของ Build นี้"
+
+- หน้าต่างรายละเอียด Build มีส่วน "Defect ของ Build นี้" (`BuildDefectsPanel`, prefix `bdp-`) ต่อจากข้อมูล Build: แท็บ 3 ปุ่มเท่ากัน (`role="tab"`, ตัวเลข 20px + ชื่อกลุ่ม, ที่เลือกพื้น primary 7% + เส้นล่าง 3px) เรียงตามลำดับงาน **รอตรวจซ้ำ → ค้างจาก Build ก่อน → เจอใน Build นี้** → คำอธิบายกลุ่ม + Badge นับตาม Severity → (แท็บรอตรวจซ้ำ) แถบสร้าง Retest Cycle: select Environment + ปุ่ม primary "สร้าง Retest Cycle" (แสดงเมื่อมีสิทธิ์ `EXECUTION.RUN` และ Build ยังใช้งาน ไม่งั้นแสดงเหตุผล) → รายการ (รหัส primary, ชื่อ ellipsis + `title`, Badge Severity/สถานะ/Reopen) สูงสุด 320px เลื่อนในตัว; มี loading / error + ลองใหม่ / empty; สร้างแล้วปิดหน้าต่างและพาไป Execution Workspace (`qa.targetCycleId`); ≤760px แท็บเรียงแนวตั้ง 48px, รายการเป็นบรรทัดซ้อน, ปุ่ม 44px เต็มแถว
+- หน้า Defect: เมื่อเลือก Build ที่ topbar มีแถวชิป "เจอใน Build นี้" / "ยังไม่ปิด ณ Build นี้ (รวมของค้าง)" (`aria-pressed`) เหนือชิปสถานะ — ตัวเลขในชิปสถานะยังนับเฉพาะที่เจอใน Build นี้ (บอกใน `title`)
+
 ### 2026-10-28 — Defect: วงจรข้าม Build (Fix Build / ตรวจซ้ำ / Reopen)
 
 - หน้าต่างผลการปิด (`DefectResolutionModal`): เปลี่ยนเป็น Resolved มีช่อง "แก้ใน Build (Fix Build)" (select เต็มแถว ค่าเริ่มต้น = Fix Build เดิมหรือ Build ล่าสุดของ Release, Build ใหม่สุดก่อน + วันที่ Build); Resolved → Closed มีช่อง "ตรวจซ้ำผ่านใน Build"; ปิดตรงจาก Open/In Progress ซ่อนผล "แก้ไขแล้ว" และแสดงกล่องแนะนำ `.defect-resolution-hint` (พื้น `--yellow` 7%, ไอคอน `--warning-text`) ว่าให้ Resolve พร้อม Fix Build ก่อน
