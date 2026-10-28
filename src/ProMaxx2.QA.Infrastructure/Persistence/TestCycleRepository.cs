@@ -30,7 +30,32 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         new List<SuiteModuleDto>(), x.CreatedBy, db.Users.Where(u => u.UserId == x.CreatedBy).Select(u => u.DisplayName).FirstOrDefault(), x.CreatedAt,
         x.CopiedFromTestCycleId, db.TestCycles.Where(c => c.TestCycleId == x.CopiedFromTestCycleId).Select(c => c.CycleCode).FirstOrDefault()));
 
-    public async Task<TestCycleListResultDto> ListAsync(Guid? projectId, Guid? releaseId, Guid? buildId, Guid? moduleId, string? search, string? status, string? cycleType, Guid? createdBy, int page, int size, CancellationToken ct)
+    // เรียงทั้งรายการก่อนแบ่งหน้า (หัวคอลัมน์หน้า Test Cycle) — sortBy = "<field>_<asc|desc>", ค่าไม่รู้จัก/ว่าง = สร้างล่าสุดก่อน (ลำดับเดิม)
+    // ค่าเท่ากันเรียงต่อด้วย CycleCode ให้แบ่งหน้าแล้วลำดับคงที่; ความคืบหน้าใช้สูตรเดียวกับ ProgressPercent ใน Project
+    public static IQueryable<TestCycle> Sort(IQueryable<TestCycle> query, string? sortBy)
+    {
+        var parts = (sortBy ?? "").Split('_', 2);
+        var desc = parts.Length < 2 || !parts[1].Equals("asc", StringComparison.OrdinalIgnoreCase);
+        IOrderedQueryable<TestCycle> ordered = parts[0].ToLowerInvariant() switch
+        {
+            "code" => desc ? query.OrderByDescending(x => x.CycleCode) : query.OrderBy(x => x.CycleCode),
+            "name" => desc ? query.OrderByDescending(x => x.CycleName) : query.OrderBy(x => x.CycleName),
+            "progress" => desc
+                ? query.OrderByDescending(x => x.Cases.Count == 0 ? 0 : x.Cases.Count(c => c.CurrentStatus != "NotRun") * 100m / x.Cases.Count)
+                : query.OrderBy(x => x.Cases.Count == 0 ? 0 : x.Cases.Count(c => c.CurrentStatus != "NotRun") * 100m / x.Cases.Count),
+            "cases" => desc ? query.OrderByDescending(x => x.Cases.Count) : query.OrderBy(x => x.Cases.Count),
+            // ตามลำดับงาน Draft → InProgress → Completed → Closed → Cancelled (ไม่ใช่ตัวอักษร)
+            "status" => desc
+                ? query.OrderByDescending(x => x.Status == "Draft" ? 0 : x.Status == "InProgress" ? 1 : x.Status == "Completed" ? 2 : x.Status == "Closed" ? 3 : 4)
+                : query.OrderBy(x => x.Status == "Draft" ? 0 : x.Status == "InProgress" ? 1 : x.Status == "Completed" ? 2 : x.Status == "Closed" ? 3 : 4),
+            "startdate" => desc ? query.OrderByDescending(x => x.StartDate) : query.OrderBy(x => x.StartDate),
+            "createdat" => desc ? query.OrderByDescending(x => x.CreatedAt) : query.OrderBy(x => x.CreatedAt),
+            _ => query.OrderByDescending(x => x.CreatedAt),
+        };
+        return ordered.ThenByDescending(x => x.CycleCode);
+    }
+
+    public async Task<TestCycleListResultDto> ListAsync(Guid? projectId, Guid? releaseId, Guid? buildId, Guid? moduleId, string? search, string? status, string? cycleType, Guid? createdBy, string? sortBy, int page, int size, CancellationToken ct)
     {
         var query = db.TestCycles.AsNoTracking().Where(x => !x.IsDeleted);
         if (projectId.HasValue) query = query.Where(x => x.ProjectId == projectId);
@@ -55,9 +80,9 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         var executedCases = caseCounts?.Executed ?? 0;
         var totalCases = caseCounts?.Total ?? 0;
         var pageNumber = Math.Max(1, page);
-        // สูงสุด 500 — Execution Workspace ขอ Cycle ที่ InProgress ทั้งหมดในคำขอเดียว (PMX2 มี 191 รายการ)
-        var pageSize = Math.Clamp(size, 10, 500);
-        var items = await Project(query.OrderByDescending(x => x.CreatedAt).Skip((pageNumber - 1) * pageSize).Take(pageSize)).ToListAsync(ct);
+        // สูงสุด 500 — Execution Workspace ขอ Cycle ที่ InProgress ทั้งหมดในคำขอเดียว (PMX2 มี 191 รายการ); ต่ำสุด 1 — หน้า Test Cycle กรอกจำนวนต่อหน้าเองได้
+        var pageSize = Math.Clamp(size, 1, 500);
+        var items = await Project(Sort(query, sortBy).Skip((pageNumber - 1) * pageSize).Take(pageSize)).ToListAsync(ct);
         var cycleIds = items.Select(x => x.TestCycleId).ToList();
         var moduleLinks = await db.TestCycleCases.AsNoTracking().Where(x => cycleIds.Contains(x.TestCycleId)).Select(x => new { x.TestCycleId, x.TestCase.ModuleId }).Distinct().ToListAsync(ct);
         var moduleIds = moduleLinks.Select(x => x.ModuleId).Distinct().ToList();

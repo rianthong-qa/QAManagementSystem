@@ -6,7 +6,10 @@ import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { formatThaiDateTime } from "../dateTime";
 import { type ModuleItem, type TestCaseItem, buildModuleTree, fmtDateTimeBE, masterOptionElements, nextBusinessCode, priorityTone, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
-import "./TestCasesPage.css";
+import "../components/ListPage.css";
+import { SortHeader } from "../components/SortHeader";
+import { ListPager } from "../components/ListPager";
+import { useUserPageSize } from "../components/usePageSize";
 
 const tcStatusTone: Record<string, string> = { Ready: "green", Review: "yellow", Draft: "blue", Deprecated: "gray" };
 
@@ -55,7 +58,7 @@ export function TestCasesPage({
     [automationFilter,setAutomationFilter]=useState(""),
     [createdByFilter,setCreatedByFilter]=useState(""),
     [users,setUsers]=useState<UserLookup[]>([]),[ownerUserId,setOwnerUserId]=useState(""),
-    [error,setError]=useState(""),[notice,setNotice]=useState(""),[page,setPage]=useState(1),[pageSize,setPageSize]=useState(30),
+    [error,setError]=useState(""),[notice,setNotice]=useState(""),[page,setPage]=useState(1),[pageSize,setPageSize]=useUserPageSize("qa.testCases.pageSize"),
     [listSort,setListSort]=useState<TestCaseListSort>(()=>{try{const saved=JSON.parse(localStorage.getItem("qa.testCases.listSort")??"");return(saved?.field==="testCaseCode"||saved?.field==="createdAt")&&(saved?.direction==="asc"||saved?.direction==="desc")?saved:{field:"createdAt",direction:"desc"};}catch{return{field:"createdAt",direction:"desc"};}}),
     [detail,setDetail]=useState<TestCaseItem|null>(null),[detailRequirements,setDetailRequirements]=useState<TestCaseRequirement[]>([]),
     [revisions,setRevisions]=useState<TestCaseRevision[]>([]),[confirmDelete,setConfirmDelete]=useState<TestCaseItem|null>(null),
@@ -320,7 +323,8 @@ export function TestCasesPage({
   // ปุ่ม "ดูรายละเอียด" บน Test Case ที่เชื่อมโยงกับ Defect ฝาก id ไว้ผ่าน localStorage แล้วพามาที่นี่ — เปิด
   // detail modal ให้ทันทีด้วย openDetail เดิม (stub เฉพาะ testCaseId พอ เพราะ openDetail ดึงข้อมูลเต็มมา merge ทับอยู่แล้ว)
   useEffect(() => {
-    const target = localStorage.getItem("qa.targetTestCaseId");
+    // หรือลิงก์ตรง #/test-cases?testCaseId= (จากคลังความรู้ / Claude ผ่าน MCP)
+    const target = localStorage.getItem("qa.targetTestCaseId") ?? new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("testCaseId");
     if (!target) return;
     localStorage.removeItem("qa.targetTestCaseId");
     void openDetail({ testCaseId: target } as unknown as TestCaseItem);
@@ -368,37 +372,42 @@ export function TestCasesPage({
   const filterCount=[moduleFilter,statusFilter,automationFilter,createdByFilter].filter(Boolean).length;
   const moduleById=new Map(filterModules.map(m=>[m.moduleId,m]));
   const pagedRows=rows;
-  const toggleListSort=(field:TestCaseListSort["field"])=>{setListSort(current=>({field,direction:current.field===field&&current.direction==="asc"?"desc":"asc"}));setPage(1);};
+  const pager=(position:"top"|"bottom")=><ListPager position={position} page={page} pageCount={pageCount} totalCount={totalCount} pageSize={pageSize} onPage={setPage} onPageSize={size=>{setPageSize(size);setPage(1)}} />;
   const moduleFilterGroups=projects.filter(project=>!projectFilter||project.projectId===projectFilter).map(project=>({
     project,
     ordered:buildModuleTree(filterModules.filter(module=>module.projectId===project.projectId)),
   })).filter(group=>group.ordered.length);
   return (
     <>
-      <article className="card testcase-list-card">
+      <article className="card lp-card">
         {error&&<div className="inline-alert error"><span>{error}</span><button onClick={()=>{setError("");setReload(x=>x+1)}}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div>}
         {notice&&<div className="inline-alert success"><span>{notice}</span><button type="button" aria-label="ปิดข้อความ" onClick={()=>setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
-        <div className="tcl-head">
-          <div className="tcl-title"><strong>{totalCount.toLocaleString()}</strong><span>Test Case{filterCount ? ` · กรอง ${filterCount} เงื่อนไข` : ""}</span></div>
-          {canEdit && <div className="tcl-actions">
+        <div className="lp-head">
+          <div className="lp-title"><div><strong>{totalCount.toLocaleString()}</strong><span>Test Case{filterCount ? ` · กรอง ${filterCount} เงื่อนไข` : ""}</span></div></div>
+          {canEdit && <div className="lp-actions">
             <button className="btn ai-button" type="button" onClick={openTestCaseAi}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span>AI Generate</button>
             <button className="btn" type="button" disabled={templateDownloading||projects.length===0} onClick={downloadImportTemplate} title="ดาวน์โหลดไฟล์ Template สำหรับนำเข้า">{templateDownloading?<><span className="spinner inline" aria-hidden="true" />กำลังดาวน์โหลด...</>:<><span className="material-symbols-outlined" aria-hidden="true">download</span>Template</>}</button>
-            <label className="btn tcl-import" title="นำเข้า Test Case จากไฟล์ CSV หรือ XLSX"><span className="material-symbols-outlined" aria-hidden="true">upload_file</span>{importing?"กำลังนำเข้า...":"Import"}<input type="file" accept=".csv,.xlsx" disabled={importing} onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);e.target.value=""}} /></label>
+            <label className="btn lp-file-btn" title="นำเข้า Test Case จากไฟล์ CSV หรือ XLSX"><span className="material-symbols-outlined" aria-hidden="true">upload_file</span>{importing?"กำลังนำเข้า...":"Import"}<input type="file" accept=".csv,.xlsx" disabled={importing} onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);e.target.value=""}} /></label>
             <button className="btn primary" type="button" onClick={()=>openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Case</button>
           </div>}
         </div>
-        <div className="tcl-filters" role="group" aria-label="ตัวกรอง Test Case">
+        <label className="lp-sort-mobile">เรียงตาม<select value={`${listSort.field}:${listSort.direction}`} onChange={e=>{const [field,direction]=e.target.value.split(":");setListSort({field:field as TestCaseListSort["field"],direction:direction as TestCaseListSort["direction"]});setPage(1);}}>
+          <option value="createdAt:desc">สร้างล่าสุดก่อน</option><option value="createdAt:asc">สร้างเก่าสุดก่อน</option><option value="testCaseCode:asc">รหัส Test Case น้อย → มาก</option><option value="testCaseCode:desc">รหัส Test Case มาก → น้อย</option>
+        </select></label>
+        <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
+          {["", "Draft", "Review", "Ready", "Deprecated"].map((value) => <button key={value || "all"} type="button" aria-pressed={statusFilter === value} onClick={() => { setStatusFilter(value); setPage(1); }}>{value && <span className={`lp-dot ${tcStatusTone[value] ?? "gray"}`} aria-hidden="true" />}{value || "ทุกสถานะ"}</button>)}
+        </div>
+        <div className="lp-filters" role="group" aria-label="ตัวกรอง Test Case">
           <select aria-label="Project" value={projectFilter} onChange={e=>{setProjectFilter(e.target.value);setModuleFilter("");setPage(1)}}><option value="">ทุก Project</option>{projects.map(x=><option key={x.projectId} value={x.projectId}>{x.projectName}</option>)}</select>
           <select aria-label="Module" className="testcase-module-filter" value={moduleFilter} onChange={e=>{setModuleFilter(e.target.value);setPage(1)}} disabled={!moduleFilterGroups.length}><option value="">ทุก Module</option>{moduleFilterGroups.map(({project,ordered})=><optgroup key={project.projectId} label={`${project.projectCode} · ${project.projectName}`}>{renderModuleSelectOptions(ordered.map(entry=>entry.module))}</optgroup>)}</select>
-          <select aria-label="สถานะ" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}><option value="">ทุกสถานะ</option><option>Draft</option><option>Review</option><option>Ready</option><option>Deprecated</option></select>
           <select aria-label="Automation" value={automationFilter} onChange={e=>{setAutomationFilter(e.target.value);setPage(1)}}><option value="">ทุก Automation</option><option value="yes">Automation Candidate</option><option value="no">Manual</option></select>
           <select aria-label="ผู้สร้าง" value={createdByFilter} onChange={e=>{setCreatedByFilter(e.target.value);setPage(1)}}><option value="">ผู้สร้างทั้งหมด</option>{users.map(u=><option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
-          {filterCount > 0 && <button type="button" className="btn tcl-clear" onClick={()=>{setModuleFilter("");setStatusFilter("");setAutomationFilter("");setCreatedByFilter("");setPage(1);}}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
+          {filterCount > 0 && <button type="button" className="btn lp-clear" onClick={()=>{setModuleFilter("");setStatusFilter("");setAutomationFilter("");setCreatedByFilter("");setPage(1);}}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
         </div>
         {canEdit && tcSelected.size > 0 && (
-          <div className="testcase-bulk-bar tcl-bulk" role="region" aria-label="กำหนดข้อมูลกลุ่ม">
-            <span className="tcl-bulk-count"><b>{tcSelected.size.toLocaleString()}</b> เลือกแล้ว</span>
-            <span className="tcl-bulk-group">
+          <div className="lp-bulk" role="region" aria-label="กำหนดข้อมูลกลุ่ม">
+            <span className="lp-bulk-count"><b>{tcSelected.size.toLocaleString()}</b> เลือกแล้ว</span>
+            <span className="lp-bulk-group">
               <select aria-label="สถานะที่จะกำหนด" value={tcBulkStatus} onChange={e=>setTcBulkStatus(e.target.value)}>
                 <option value="">สถานะ...</option>
                 <option>Draft</option>
@@ -406,33 +415,34 @@ export function TestCasesPage({
                 <option>Ready</option>
                 <option>Deprecated</option>
               </select>
-              <button type="button" className="btn primary" disabled={tcSaving!==""||!tcBulkStatus} onClick={applyTcBulkStatus} aria-label="กำหนดสถานะให้รายการที่เลือก">{tcSaving==="bulk"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">check</span>}<span className="tcl-btn-text">กำหนดสถานะ</span></button>
+              <button type="button" className="btn primary" disabled={tcSaving!==""||!tcBulkStatus} onClick={applyTcBulkStatus} aria-label="กำหนดสถานะให้รายการที่เลือก">{tcSaving==="bulk"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">check</span>}<span className="lp-btn-text">กำหนดสถานะ</span></button>
             </span>
-            <span className="tcl-bulk-group">
+            <span className="lp-bulk-group">
               <select aria-label="Automation Candidate ที่จะกำหนด" value={tcBulkAutomation} onChange={e=>setTcBulkAutomation(e.target.value)}>
                 <option value="">Automation...</option>
                 <option value="yes">เป็น Candidate</option>
                 <option value="no">Manual</option>
               </select>
-              <button type="button" className="btn primary" disabled={tcSaving!==""||tcBulkAutomation===""} onClick={applyTcBulkAutomation} aria-label="กำหนด Automation Candidate ให้รายการที่เลือก">{tcSaving==="bulk"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">check</span>}<span className="tcl-btn-text">กำหนด</span></button>
+              <button type="button" className="btn primary" disabled={tcSaving!==""||tcBulkAutomation===""} onClick={applyTcBulkAutomation} aria-label="กำหนด Automation Candidate ให้รายการที่เลือก">{tcSaving==="bulk"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">check</span>}<span className="lp-btn-text">กำหนด</span></button>
             </span>
-            <span className="tcl-bulk-end">
-              <button type="button" className="btn tcl-bulk-delete" disabled={tcSaving!==""} onClick={()=>setConfirmBulkDelete(true)}>{tcSaving==="bulk-delete"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">delete</span>}ลบที่เลือก</button>
-              <button type="button" className="tcl-bulk-clear" disabled={tcSaving!==""} onClick={()=>setTcSelected(new Set())} aria-label="ยกเลิกการเลือกทั้งหมด" title="ยกเลิกการเลือก"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+            <span className="lp-bulk-end">
+              <button type="button" className="btn lp-bulk-delete" disabled={tcSaving!==""} onClick={()=>setConfirmBulkDelete(true)}>{tcSaving==="bulk-delete"?<span className="spinner inline" aria-hidden="true" />:<span className="material-symbols-outlined" aria-hidden="true">delete</span>}ลบที่เลือก</button>
+              <button type="button" className="lp-bulk-clear" disabled={tcSaving!==""} onClick={()=>setTcSelected(new Set())} aria-label="ยกเลิกการเลือกทั้งหมด" title="ยกเลิกการเลือก"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
             </span>
           </div>
         )}
-        <div className="tcl-table-wrap">
-          <table className="tcl-table">
+        {pager("top")}
+        <div className="lp-table-wrap">
+          <table className={`lp-table${canEdit ? " is-selectable" : ""}`}>
             <thead>
               <tr>
-                <th className="tcl-col-select"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={pagedRows.length>0&&pagedRows.every(x=>tcSelected.has(x.testCaseId))} disabled={!canEdit} onChange={toggleTcSelectPage}/></th>
-                <th className="tcl-col-case" aria-sort={listSort.field==="testCaseCode"?(listSort.direction==="asc"?"ascending":"descending"):"none"}><button type="button" className="tcl-sort" onClick={()=>toggleListSort("testCaseCode")}>Test Case<span className="material-symbols-outlined" aria-hidden="true">{listSort.field==="testCaseCode"?(listSort.direction==="asc"?"arrow_upward":"arrow_downward"):"unfold_more"}</span></button></th>
-                <th className="tcl-col-module">Module</th>
-                <th className="tcl-col-priority">Priority</th>
-                <th className="tcl-col-status">สถานะ</th>
-                <th className="tcl-col-date" aria-sort={listSort.field==="createdAt"?(listSort.direction==="asc"?"ascending":"descending"):"none"}><button type="button" className="tcl-sort" onClick={()=>toggleListSort("createdAt")}>สร้างเมื่อ<span className="material-symbols-outlined" aria-hidden="true">{listSort.field==="createdAt"?(listSort.direction==="asc"?"arrow_upward":"arrow_downward"):"unfold_more"}</span></button></th>
-                {canEdit && <th className="tcl-col-actions"><span className="sr-only">จัดการ</span></th>}
+                <th className="lp-col-select"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={pagedRows.length>0&&pagedRows.every(x=>tcSelected.has(x.testCaseId))} disabled={!canEdit} onChange={toggleTcSelectPage}/></th>
+                <SortHeader label="Test Case" sortKey="testCaseCode" sort={{ key: listSort.field, dir: listSort.direction }} onSort={(next) => { setListSort({ field: next.key, direction: next.dir }); setPage(1); }} className="lp-col-item" />
+                <th className="lp-col-module">Module</th>
+                <th className="lp-col-badge">Priority</th>
+                <th className="lp-col-status">สถานะ</th>
+                <SortHeader label="สร้างเมื่อ" sortKey="createdAt" sort={{ key: listSort.field, dir: listSort.direction }} onSort={(next) => { setListSort({ field: next.key, direction: next.dir }); setPage(1); }} className="lp-col-date" defaultDir="desc" />
+                {canEdit && <th className="lp-col-actions"><span className="sr-only">จัดการ</span></th>}
               </tr>
             </thead>
             <tbody>
@@ -441,20 +451,20 @@ export function TestCasesPage({
                 const steps = (x as any).steps?.length ?? (x as any).stepCount ?? 0;
                 return (
                 <tr key={x.testCaseId} className={tcSelected.has(x.testCaseId)?"is-selected":""}>
-                  <td className="tcl-col-select"><input type="checkbox" aria-label={`เลือก ${x.testCaseCode}`} checked={tcSelected.has(x.testCaseId)} disabled={!canEdit} onChange={()=>toggleTcSelect(x.testCaseId)}/></td>
-                  <td className="tcl-col-case">
-                    <button type="button" className="tcl-case" onClick={()=>openDetail(x)} aria-label={`เปิด ${x.testCaseCode} ${x.title}`}>
-                      <span className="tcl-code">{x.testCaseCode}<span className="tcl-meta">{x.testType ?? "-"} · {steps} Steps{x.revisionNo > 1 ? ` · Rev. ${x.revisionNo}` : ""}{x.automationCandidate ? " · Automation" : ""}</span></span>
-                      <span className="tcl-name">{x.title}</span>
+                  <td className="lp-col-select"><input type="checkbox" aria-label={`เลือก ${x.testCaseCode}`} checked={tcSelected.has(x.testCaseId)} disabled={!canEdit} onChange={()=>toggleTcSelect(x.testCaseId)}/></td>
+                  <td className="lp-col-item">
+                    <button type="button" className="lp-item" onClick={()=>openDetail(x)} aria-label={`เปิด ${x.testCaseCode} ${x.title}`}>
+                      <span className="lp-code">{x.testCaseCode}<span className="lp-meta">{x.testType ?? "-"} · {steps} Steps{x.revisionNo > 1 ? ` · Rev. ${x.revisionNo}` : ""}{x.automationCandidate ? " · Automation" : ""}</span></span>
+                      <span className="lp-name">{x.title}</span>
                     </button>
                   </td>
-                  <td className="tcl-col-module">{module ? <span className="tcl-module" title={`${module.moduleCode} · ${module.moduleName}`}><b>{module.moduleName}</b><small>{module.moduleCode}</small></span> : <span className="tcl-muted">-</span>}</td>
-                  <td className="tcl-col-priority"><Badge tone={priorityTone(x.priority)}>{x.priority}</Badge></td>
-                  <td className="tcl-col-status"><Badge tone={tcStatusTone[x.status] ?? "gray"}>{x.status}</Badge></td>
-                  <td className="tcl-col-date" title={fmtDateTimeBE(x.createdAt)}>{fmtDateTimeBE(x.createdAt).split(" ")[0]}</td>
+                  <td className="lp-col-module">{module ? <span className="lp-module" title={`${module.moduleCode} · ${module.moduleName}`}><b>{module.moduleName}</b><small>{module.moduleCode}</small></span> : <span className="lp-muted">-</span>}</td>
+                  <td className="lp-col-badge"><Badge tone={priorityTone(x.priority)}>{x.priority}</Badge></td>
+                  <td className="lp-col-status"><Badge tone={tcStatusTone[x.status] ?? "gray"}>{x.status}</Badge></td>
+                  <td className="lp-col-date" title={fmtDateTimeBE(x.createdAt)}><span className="lp-date">{fmtDateTimeBE(x.createdAt).split(" ")[0]}</span></td>
                   {canEdit && (
-                    <td className="tcl-col-actions">
-                      <div className="tcl-row-actions">
+                    <td className="lp-col-actions">
+                      <div className="lp-row-actions">
                         <button type="button" title="แก้ไข" aria-label={`แก้ไข ${x.testCaseCode}`} onClick={() => openForm(x)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>
                         <button type="button" title="สำเนา" aria-label={`สำเนา ${x.testCaseCode}`} onClick={() => cloneCase(x)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
                         <button type="button" className="danger" title="ลบ" aria-label={`ลบ ${x.testCaseCode}`} onClick={() => setConfirmDelete(x)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
@@ -464,11 +474,11 @@ export function TestCasesPage({
                 </tr>
                 );
               })}
-              {!pagedRows.length && !loading && <tr className="tcl-empty-row"><td colSpan={canEdit ? 7 : 6}><div className="tcl-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><b>ไม่พบ Test Case ตามตัวกรองที่เลือก</b>{filterCount > 0 && <small>ลองล้างตัวกรองหรือเปลี่ยนคำค้น</small>}</div></td></tr>}
+              {!pagedRows.length && !loading && <tr className="lp-empty-row"><td colSpan={canEdit ? 7 : 6}><div className="lp-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><b>ไม่พบ Test Case ตามตัวกรองที่เลือก</b>{filterCount > 0 && <small>ลองล้างตัวกรองหรือเปลี่ยนคำค้น</small>}</div></td></tr>}
             </tbody>
           </table>
         </div>
-        <div className="pagination suite-pagination"><label>แสดง<select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value));setPage(1)}}><option value="30">30</option><option value="50">50</option><option value="100">100</option><option value="150">150</option></select> รายการ</label><span>หน้า {Math.min(page,pageCount)} / {pageCount} · ทั้งหมด {totalCount.toLocaleString()} รายการ</span><button className="btn" disabled={page<=1} onClick={()=>setPage(x=>x-1)}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span> ก่อนหน้า</button><button className="btn" disabled={page>=pageCount} onClick={()=>setPage(x=>x+1)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button></div>
+        {pager("bottom")}
       </article>
       {testCaseAiModal&&<ModalShell labelledBy="testcase-ai-title" dirty={caseAiDrafts.length > 0} className="requirement-ai-modal" boxStyle={{position:"relative"}} onDismiss={() => {if(!testCaseAiGenerating)setTestCaseAiModal(false)}}>{testCaseAiGenerating&&<div className="ai-loading-overlay"><div className="ai-spinner"/>{caseAiDrafts.length?<p>กำลังบันทึก Test Cases...</p>:<p>AI กำลังออกแบบ Test Case...</p>}<small>{caseAiDrafts.length?"กรุณารอสักครู่ อย่าปิดหน้าต่างนี้":"รอสักครู่ ระบบกำลังสร้าง Test Steps และ Expected Results"}</small></div>}
         <div className="modal-head"><div><h2 id="testcase-ai-title">AI Generate Test Case</h2><small>{caseAiDrafts.length?`พบ ${caseAiDrafts.length} Test Cases ที่ AI สร้าง — ตรวจสอบและบันทึก`:"สร้าง Draft พร้อม Test Steps จากคำอธิบายและไฟล์อ้างอิง"}</small></div><button aria-label="ปิดหน้าต่าง AI Generate" disabled={testCaseAiGenerating} onClick={()=>setTestCaseAiModal(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>

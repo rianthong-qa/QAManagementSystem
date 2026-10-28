@@ -1,5 +1,12 @@
 /* ข้อความสำหรับ screen reader เท่านั้น — ใช้ได้ทุกหน้า (เดิมมีแต่แบบผูกกับบางหน้า เช่น .performance-page .sr-only) */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* หัวคอลัมน์กดเรียงข้อมูล (components/SortHeader.tsx) — ปุ่มเต็มหัวคอลัมน์, ไอคอน ↑/↓ = ทิศที่เรียงอยู่, ⇅ จาง = ยังไม่ได้ใช้เรียง */
+button.th-sort { display: inline-flex; align-items: center; gap: 3px; min-height: 0; margin: -4px -6px; border: 0; border-radius: 6px; background: transparent; padding: 4px 6px; color: inherit; font: inherit; letter-spacing: inherit; white-space: nowrap; cursor: pointer; }
+button.th-sort:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); color: var(--text); }
+button.th-sort:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+button.th-sort .material-symbols-outlined { font-size: 15px; opacity: .45; }
+button.th-sort.is-active { color: var(--primary); }
+button.th-sort.is-active .material-symbols-outlined { opacity: 1; }
 
 /* Global Styles */
 :root {
@@ -48,24 +55,14 @@ h4 { margin: 0; color: var(--text); font-size: 13px; font-weight: 700; }
 .result-count span { color: var(--muted); font-size: 12px; }
 /* Wrap two-or-more .result-count blocks (e.g. "N Test Cycles" + "N Test Case ทั้งหมด")
    with a thin divider between them so they read as related-but-distinct stats. */
-.result-count-row { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
-.result-count-row .result-count + .result-count { padding-left: 18px; border-left: 1px solid var(--line); }
 
 /* Status-count chips (e.g. Test Cycle list) — click to filter, count badge shows how many
    would match with every other active filter applied except status itself. */
-.cycle-toolbar-row { justify-content: space-between; align-items: center; flex-wrap: wrap; }
 .cycle-status-chips { display: flex; flex-wrap: wrap; gap: 12px; }
-.cycle-filters-right { display: flex; flex-wrap: wrap; gap: 8px; }
 .status-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
 .status-chip:hover { border-color: #cbd5e1; }
 .status-chip.active { border-color: var(--primary); background: #eef3ff; color: var(--primary); }
 .status-chip b { font-weight: 800; }
-.status-chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.status-chip-dot-draft { background: #94a3b8; }
-.status-chip-dot-inprogress { background: var(--info); }
-.status-chip-dot-completed, .status-chip-dot-closed { background: #16a34a; }
-.status-chip-dot-cancelled { background: #dc2626; }
-.status-chip-dot-warning { background: #d97706; }
 .cell-sub-warning { display: flex; align-items: center; gap: 3px; color: #b45309; font-weight: 700; }
 
 /* .nav-group icon sizing — shared sidebar nav, not Execution Workspace-specific; kept here on purpose */
@@ -402,166 +399,16 @@ body {
 }
 
 /* Defect summary contains six compact metrics (Total/Open/In Progress/Resolved/Closed/Rejected) and stays on one desktop row. */
-.defect-summary-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-}
-
-@media (max-width: 1100px) {
-  .defect-summary-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 800px) {
-  .defect-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 480px) {
-  .defect-summary-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* Small "x% ของทั้งหมด" caption under a Defect summary KPI tile — sits below the status label without competing with it. */
-.defect-kpi-pct {
-  color: var(--muted);
-  margin-top: 2px;
-}
 
 /* Second row of the Defect summary: severity breakdown chart-card next to a couple of highlight facts. */
-.defect-summary-insights {
-  display: grid;
-  grid-template-columns: 1.6fr 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
-}
 
-.defect-detail-stats.defect-summary-facts {
-  grid-template-columns: 1fr;
-  align-content: flex-start;
-}
-
-.defect-module-ranking-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-.defect-module-ranking-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
-.defect-module-ranking-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; flex: 0 0 auto; }
-.defect-module-ranking-actions > span { color: var(--muted); font-size: 12px; }
 /* จำนวนคอลัมน์/ระยะห่างกำหนดใน block "Defect workspace visual hierarchy" ด้านล่าง (1 คอลัมน์) */
-.defect-module-ranking-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.defect-module-ranking-list li { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.defect-module-rank { display: grid; place-items: center; flex: 0 0 30px; height: 30px; border-radius: 9px; background: #eef3ff; color: var(--primary); font-size: 12px; font-weight: 800; }
-.defect-module-ranking-list li:first-child .defect-module-rank { background: var(--primary); color: #fff; }
-.defect-module-ranking-body { flex: 1; min-width: 0; min-height: 44px; padding: 6px 8px; border: 0; border-radius: 9px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.defect-module-ranking-body:hover { background: #f5f8ff; }
-.defect-module-ranking-body.is-selected { background: #eef3ff; }
-.defect-module-ranking-body:focus-visible { outline: 3px solid rgba(36,87,214,.3); outline-offset: 2px; }
 #defect-list-results { scroll-margin-top: 80px; }
 #defect-list-results:focus { outline: none; }
-.defect-module-ranking-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 13px; }
-.defect-module-ranking-label > span { min-width: 0; overflow-wrap: anywhere; }
-.defect-module-ranking-label b { color: var(--primary); margin-right: 8px; }
-.defect-module-ranking-label strong { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
-.defect-module-ranking-label small { color: var(--muted); font-size: 11px; font-weight: 500; }
-.defect-module-ranking-track { display: block; height: 8px; overflow: hidden; border-radius: 99px; background: #edf1f7; }
-.defect-module-ranking-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), #6d8ff0); }
-.defect-module-ranking-list li:first-child .defect-module-ranking-track span { background: linear-gradient(90deg, #1947bd, var(--primary)); }
-
-@media (max-width: 600px) {
-  .defect-module-ranking-head { flex-wrap: wrap; }
-  .defect-module-ranking-actions { width: 100%; justify-content: space-between; }
-  .defect-module-ranking-label { align-items: flex-start; }
-}
-
-@media (max-width: 900px) {
-  .defect-summary-insights {
-    grid-template-columns: 1fr;
-  }
-  .defect-detail-stats.defect-summary-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 
 /* Defect workspace refresh: a clear reading path from context, to health, to queue. */
-.defect-page.defect-page-modern { max-width: none; padding: 0; gap: 16px; }
-.defect-page-intro { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; border: 1px solid #dbe5fb; border-radius: 16px; background: linear-gradient(110deg, #f7f9ff 0%, #fff 70%); box-shadow: 0 5px 18px rgba(36,87,214,.05); }
-.defect-page-intro-copy { min-width: 0; }
-.defect-page-eyebrow { display: block; margin-bottom: 5px; color: var(--primary); font-size: 11px; font-weight: 800; letter-spacing: .09em; }
-.defect-page-intro h2 { margin: 0; color: var(--text); font-size: 20px; line-height: 1.25; }
-.defect-page-intro p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
-.defect-page-context { display: inline-flex; align-items: center; gap: 7px; max-width: 44%; padding: 9px 12px; border: 1px solid #d7e2fa; border-radius: 999px; background: #fff; color: #3f5d9b; font-size: 11px; font-weight: 700; line-height: 1.35; }
-.defect-page-context .material-symbols-outlined { flex: 0 0 auto; font-size: 16px; }
-.defect-page-context span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.defect-page-modern .defect-summary-grid { margin-bottom: 0; }
-.defect-kpi { min-height: 126px; justify-content: center; position: relative; overflow: hidden; border-radius: 15px; box-shadow: 0 2px 10px rgba(16,24,40,.04); }
-.defect-kpi::after { position: absolute; right: -18px; bottom: -24px; width: 84px; height: 84px; border-radius: 50%; background: #f4f7ff; content: ''; }
-.defect-kpi > span { position: relative; z-index: 1; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .02em; }
-.defect-kpi strong { position: relative; z-index: 1; margin: 4px 0 2px; font-size: 27px; line-height: 1; }
-.defect-kpi small { position: relative; z-index: 1; }
-.defect-kpi-total { border-color: #cad8fb; background: linear-gradient(145deg, #edf3ff, #fff); }
-.defect-kpi-total::after { background: #dce7ff; }
-.defect-kpi-total strong { color: var(--primary); }
-.defect-summary-insights { margin-bottom: 0; }
-.defect-summary-severity, .defect-summary-facts .defect-detail-stat { box-shadow: 0 2px 10px rgba(16,24,40,.03); }
-.defect-module-ranking { margin-bottom: 0; padding: 20px; border-radius: 16px; }
-.defect-module-ranking-head { margin-bottom: 14px; }
-.defect-module-ranking-head h3 { margin-bottom: 0; font-size: 17px; }
-.defect-module-ranking-list { grid-template-columns: 1fr; gap: 4px; }
-.defect-module-ranking-list li { padding: 3px 0; }
-.defect-module-ranking-body { padding: 8px 10px; }
-.defect-module-ranking-list li:first-child .defect-module-ranking-body { background: #f3f7ff; }
-.defect-ranking-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; margin-top: 12px; padding: 5px 10px; border: 1px solid #cfdbf7; border-radius: 9px; background: #f7f9ff; color: var(--primary); font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
-.defect-ranking-toggle:hover { background: #edf3ff; }
-.defect-ranking-toggle:focus-visible, .defect-clear-filters:focus-visible { outline: 3px solid rgba(36,87,214,.2); outline-offset: 2px; }
-.defect-ranking-toggle .material-symbols-outlined { font-size: 17px; }
-.defect-list-card { margin-bottom: 0; padding: 20px; border-radius: 16px; }
-.defect-list-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-.defect-list-head h3 { margin: 0; font-size: 18px; }
-.defect-list-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.defect-list-head-meta { display: flex; align-items: baseline; gap: 6px; flex: 0 0 auto; padding: 8px 11px; border: 1px solid var(--line); border-radius: 10px; background: #fafbfc; color: var(--muted); font-size: 11px; }
-.defect-list-head-meta strong { color: var(--text); font-size: 18px; }
-.defect-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid #e3e9f5; border-radius: 11px; background: #f8faff; }
-.defect-filter-bar-title { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.defect-filter-bar-title > .material-symbols-outlined { color: var(--primary); font-size: 19px; }
-.defect-filter-bar-title div { display: grid; gap: 1px; min-width: 0; }
-.defect-filter-bar-title b { color: var(--text); font-size: 12px; }
-.defect-filter-bar-title small { color: var(--muted); font-size: 11px; }
-.defect-clear-filters { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; border: 0; background: transparent; color: var(--primary); font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
-.defect-clear-filters:hover { color: #173e9e; }
-.defect-clear-filters .material-symbols-outlined { font-size: 16px; }
-.defect-table-tools { align-items: flex-end; gap: 12px; margin-bottom: 16px; }
-.defect-table-tools > div:first-child { display: grid; flex: 1 1 560px; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
-.defect-table-tools > div:last-child { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.defect-table-tools select { width: 100%; min-width: 0; background: #fff; }
-.defect-list-card .table-wrap { border-radius: 12px; }
-.defect-list-table thead th { background: #f8fafc; color: var(--muted); font-size: 11px; letter-spacing: .03em; }
-.defect-list-table tbody tr { transition: background .12s ease; }
-.defect-list-table tbody tr:hover { background: #f8faff; }
-.defect-list-table td { vertical-align: middle; }
-.defect-list-table th:nth-child(2), .defect-list-table td:nth-child(2) { width: 132px; min-width: 132px; white-space: nowrap; }
-.defect-list-table td:nth-child(2) { font-weight: 700; }
-.defect-list-table th:nth-child(3), .defect-list-table td:nth-child(3) { width: 460px; min-width: 360px; max-width: 460px; }
-.defect-list-table .defect-title-text { display: block; width: 100%; max-width: none; min-width: 0; overflow-wrap: anywhere; font-weight: 600; line-height: 1.5; white-space: normal; }
-.defect-list-table .cell-sub { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
-.defect-list-card .pagination { margin-top: 14px; }
-.defect-list-card .suite-pagination { margin-top: 0; }
-
-@media (max-width: 760px) {
-  .defect-page-intro { align-items: flex-start; flex-direction: column; padding: 16px; }
-  .defect-page-context { max-width: 100%; width: 100%; }
-  .defect-list-card, .defect-module-ranking { padding: 16px; }
-  .defect-list-head { flex-direction: column; gap: 10px; }
-  .defect-list-head-meta { width: 100%; justify-content: space-between; }
-  .defect-filter-bar { align-items: flex-start; flex-direction: column; }
-  .defect-clear-filters { padding: 4px 0; }
-  .defect-table-tools { align-items: stretch; flex-direction: column; }
-  .defect-table-tools > div:first-child, .defect-table-tools > div:last-child { width: 100%; flex-basis: auto; }
-  .defect-table-tools > div:first-child { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .defect-table-tools > div:last-child { justify-content: flex-start; }
-  .defect-table-tools select { min-width: 0; flex: 1 1 150px; }
-  .defect-list-table th:nth-child(2), .defect-list-table td:nth-child(2) { width: 120px; min-width: 120px; }
-  .defect-list-table th:nth-child(3), .defect-list-table td:nth-child(3) { width: 340px; min-width: 300px; max-width: 340px; }
-}
 
 /* ===== MAIN APP ===== */
 .app {
@@ -709,8 +556,6 @@ main {
   min-width: 0;
   overflow-y: auto;
 }
-.progress-cell{grid-template-columns:180px auto;width:240px;min-width:240px}
-.progress-cell>span{display:block;width:180px;min-width:180px;max-width:180px}
 .app.menu-closed { grid-template-columns: 278px 1fr; }
 .app.sidebar-is-collapsed { grid-template-columns: 72px 1fr; }
 .app.menu-closed .sidebar { transform: none; }
@@ -724,7 +569,6 @@ main {
 .sidebar.collapsed .nav-group button[data-tooltip]:hover::after, .sidebar.collapsed .nav-group button[data-tooltip]:focus-visible::after { opacity: 1; transform: translateY(-50%) translateX(0); }
 .sidebar.collapsed .brand .logo { width: 42px; }
 .qa-topbar .topbar-menu { display: grid; flex: 0 0 40px; width: 40px; height: 40px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--text); font-size: 17px; cursor: pointer; }
-.progress-cell{display:grid;grid-template-columns:minmax(90px,1fr) auto;align-items:center;gap:8px;min-width:130px}.progress-cell>span{height:8px;overflow:hidden;border-radius:999px;background:#e9eef5}.progress-cell>span>i{display:block;height:100%;border-radius:inherit;background:var(--info);transition:width .3s ease}.progress-cell.is-complete>span>i{background:#16a34a}.progress-cell.is-low>span>i{background:#f59e0b}.progress-cell.is-empty>span>i{background:#94a3b8}.progress-cell small{font-size:11px;font-weight:700;color:#475569;white-space:nowrap}
 
 .topbar {
   height: 68px;
@@ -2701,8 +2545,6 @@ input[type="radio"] {
 .revision-list p { margin: 0 0 5px; color: #344054; font-size: 11px; }
 .revision-list time, .revision-list small { color: var(--muted); font-size: 11px; }
 .cycle-modal { width: min(900px, calc(100vw - 32px)); max-width: 900px; }
-.modal-box.cycle-modal:not(.cycle-detail-modal) { width: min(1200px, calc(100vw - 32px)) !important; max-width: 1200px !important; }
-.modal-box.cycle-modal:not(.cycle-detail-modal) .modal-head { margin-bottom: 16px; }
 /* minmax(0, 1fr) — ให้ 2 คอลัมน์กว้างเท่ากันเสมอ; 1fr เฉย ๆ ยอมให้ select ที่มีตัวเลือกยาว (ชื่อ Test Suite) ดันคอลัมน์ซ้ายกว้างขึ้น */
 .cycle-form-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 22px; align-items: start; }
 .cycle-form-columns .modal-section,
@@ -2713,92 +2555,14 @@ input[type="radio"] {
 .cycle-form-columns textarea { width: 100%; min-width: 0; max-width: 100%; }
 .cycle-form-columns .modal-section { margin-bottom: 0; }
 .cycle-form-columns .modal-section:last-child { padding-left: 22px; border-left: 1px solid var(--line); }
-.cycle-detail-modal { width: min(1080px, calc(100vw - 32px)) !important; max-width: 1080px !important; max-height: calc(100dvh - 32px); padding: 0 22px 20px; overflow-x: hidden; }
-.cycle-detail-modal .modal-head > div { min-width: 0; }
-.cycle-detail-modal .modal-head h2 { margin-top: 2px; color: var(--primary); letter-spacing: .02em; }
-.cycle-detail-modal .modal-head small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 .cycle-detail-eyebrow { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .16em; }
-.cycle-detail-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border: 1px solid #dbe4fb; border-radius: 14px; background: linear-gradient(135deg,#f8faff 0%,#eef3ff 100%); padding: 16px; }
-.cycle-detail-hero h3 { margin: 0; color: var(--text); font-size: 18px; line-height: 1.45; }
-.cycle-detail-hero p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
-.cycle-detail-hero p span { margin: 0 5px; color: #9db2e8; }
-.cycle-detail-badges { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.cycle-detail-badges .badge span { margin-right: 3px; }
-.cycle-detail-badge-icon { font-size: 15px; line-height: 1; font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
 /* แถว breadcrumb บนสุดของ Test Cycle detail — แทนที่ eyebrow "TEST CYCLE" เดิมที่แปะติดกับ h2 ให้ขึ้นมา
    เป็นแถวของตัวเอง เพื่อเปิดที่ให้ h2/ไอคอน/badge ย้ายลงมาอยู่แถวถัดไปแทน (ดูรูป Test Cycle detail spec) */
-.cycle-detail-crumb-head { position: sticky; z-index: 3; top: 0; margin: 0 -22px 18px; border-bottom: 1px solid #edf0f5; background: rgba(255,255,255,.96); padding: 12px 22px; backdrop-filter: blur(8px); }
-.cycle-detail-crumb { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; font-weight: 600; }
-.cycle-detail-crumb i { color: #98a2b3; font-style: normal; font-size: 18px; }
-.cycle-detail-crumb-head > button .material-symbols-outlined { font-size: 21px; line-height: 1; }
-.cycle-detail-title-row { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-/* .suite-detail-hero-icon ให้ทรงกรอบ gradient มาแล้ว แค่ปรับขนาดให้เล็กลงนิดหน่อยสำหรับ header นี้ —
-   ใช้ selector element+class (span.cycle-detail-title-icon) เพื่อให้ specificity สูงกว่า .suite-detail-hero-icon
-   เสมอไม่ว่าลำดับ CSS ในไฟล์จะเป็นอย่างไร (กัน .suite-detail-hero-icon ทับค่านี้ในภายหลัง) */
-span.cycle-detail-title-icon { width: 56px; height: 56px; font-size: 22px; }
-.cycle-detail-title-text { flex: 1; min-width: 0; }
-.cycle-detail-title-text h2 { margin: 0; color: var(--text); font-size: 23px; font-weight: 800; letter-spacing: 0; }
-.cycle-detail-title-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 7px; color: var(--muted); font-size: 13px; }
-.cycle-detail-id-pill { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); padding: 3px 10px; color: var(--muted); font-size: 11px; font-weight: 700; }
-.cycle-detail-title-badges { flex: 0 0 auto; align-items: center; margin-left: auto; }
-.cycle-detail-hero-text { display: flex; align-items: center; gap: 14px; }
-.cycle-detail-hero-icon { display: grid; flex: 0 0 auto; width: 44px; height: 44px; place-items: center; border-radius: 50%; background: #fff; box-shadow: 0 3px 10px rgba(36,87,214,.16); color: var(--primary); font-size: 19px; }
-.cycle-detail-progress-count { color: var(--primary); font-size: 12px; font-weight: 700; white-space: nowrap; }
-.cycle-detail-progress { display: grid; grid-template-columns: 148px minmax(0,1fr); align-items: center; gap: 24px; border: 1px solid #dfe5ef; border-radius: 16px; background: linear-gradient(135deg,#fff 0%,#fbfcff 100%); padding: 20px; box-shadow: 0 8px 24px rgba(16,24,40,.04); }
-.cycle-detail-progress-ring { position: relative; flex: 0 0 auto; width: 128px; height: 128px; }
-.cycle-detail-progress-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.cycle-detail-progress-ring-inner { position: relative; display: grid; width: 100%; height: 100%; place-items: center; text-align: center; }
-.cycle-detail-progress-ring-inner strong { color: var(--text); font-size: 26px; font-weight: 800; line-height: 1.1; }
-.cycle-detail-progress-ring-inner small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
-.cycle-detail-progress-side { flex: 1; min-width: 0; }
-.cycle-detail-progress-track { height: 10px; overflow: hidden; border-radius: 999px; background: #e9eef8; }
-.cycle-detail-progress-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,var(--primary),#4f7cf0); box-shadow: 0 0 10px rgba(36,87,214,.22); }
-.cycle-detail-progress-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 16px; }
-.cycle-detail-progress-stat { display: flex; min-width: 0; align-items: center; gap: 10px; border: 1px solid #e8ecf3; border-radius: 12px; background: #fff; padding: 11px 12px; }
-.cycle-detail-progress-stat-icon { display: grid; flex: 0 0 auto; width: 34px; height: 34px; place-items: center; border-radius: 50%; font-size: 14px; }
-.cycle-detail-progress-stat-icon.material-symbols-outlined { font-size: 19px; font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
-.cycle-detail-progress-stat-icon.blue { background: #eaf0ff; color: var(--primary); }
-.cycle-detail-progress-stat-icon.orange { background: #fff4e5; color: #c9711b; }
-.cycle-detail-progress-stat-icon.green { background: #e6f9f0; color: #168b58; }
-.cycle-detail-progress-stat b { display: block; color: var(--text); font-size: 16px; line-height: 1.2; }
-.cycle-detail-progress-stat small { color: var(--muted); font-size: 11px; }
 .cycle-detail-section { margin-top: 14px; }
 .cycle-detail-section > h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 8px; color: #344054; font-size: 15px; }
-.cycle-detail-section-icon { color: var(--primary); font-size: 19px; line-height: 1; font-variation-settings: 'FILL' 0, 'wght' 550, 'GRAD' 0, 'opsz' 20; }
-.cycle-list-table .cycle-select-col { width: 42px; min-width: 42px; vertical-align: middle; padding-left: 14px; text-align: left; }
-.cycle-list-table .cycle-select-col input { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; margin: 0; }
-.cycle-list-table tbody tr.is-selected { background: #eef4ff; }
-.cycle-list-table tbody tr.is-selected:hover td { background: #e6efff; }
-.cycle-detail-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin: 0; }
-.cycle-detail-grid > div { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; padding: 13px 14px; }
-.cycle-detail-grid > .wide { grid-column: span 3; }
-.cycle-detail-grid dt { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.cycle-detail-grid dt span { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #eaf0ff; color: var(--primary); font-size: 13px; }
-.cycle-detail-grid dt span.material-symbols-outlined { font-size: 17px; font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
-.cycle-detail-grid dt span.purple { background: #f3eefa; color: #7c4fd1; }
-.cycle-detail-grid dt span.orange { background: #fff4e5; color: #c9711b; }
-.cycle-detail-grid dd { overflow-wrap: anywhere; margin: 0; color: var(--text); font-size: 15px; font-weight: 700; line-height: 1.45; }
 /* กำหนดการ — Start/End Date เป็นการ์ดแยกจากกันคนละใบ เชื่อมด้วยเส้นประ+หัวลูกศรตรงกลาง (ไม่ใช่การ์ดใบ
    เดียวครอบทั้งคู่แบบเดิม) border/background เลยย้ายจาก container หลักไปอยู่ที่การ์ดย่อยแต่ละใบแทน */
-.cycle-detail-timeline { display: grid; grid-template-columns: minmax(0,1fr) 56px minmax(0,1fr); align-items: center; gap: 10px; }
-.cycle-detail-timeline > div { display: grid; grid-template-columns: 28px 1fr; gap: 1px 9px; align-items: center; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; padding: 12px 13px; }
-.cycle-detail-timeline > div > span { grid-row: 1 / 3; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: #eaf0ff; color: var(--primary); font-size: 13px; }
-.cycle-detail-timeline > div > span.material-symbols-outlined { font-size: 17px; font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
-.cycle-detail-timeline small { color: var(--muted); font-size: 11px; }
-.cycle-detail-timeline b { font-size: 13px; }
-.cycle-detail-timeline i { position: relative; display: block; height: 2px; background: repeating-linear-gradient(90deg,#b8c8ed 0 5px,transparent 5px 9px); }
-.cycle-detail-timeline i::after { content: "arrow_forward"; position: absolute; top: 50%; right: -7px; transform: translateY(-50%); color: #7692d2; font-family: "Material Symbols Outlined"; font-size: 18px; font-weight: 400; line-height: 1; }
-.cycle-detail-notes { display: flex; gap: 10px; margin-top: 14px; border: 1px solid #f0d48b; border-radius: 11px; background: #fff9e9; padding: 11px 12px; }
-.cycle-detail-notes > div { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 50%; background: #e5a900; color: #fff; font-size: 16px; font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
-.cycle-detail-modal .modal-actions .material-symbols-outlined { font-size: 18px; line-height: 1; }
-.cycle-list-table .table-action .material-symbols-outlined,
-.filter-toolbar .btn .material-symbols-outlined,
-.testcase-bulk-bar .material-symbols-outlined,
-.pagination .material-symbols-outlined,
-.inline-alert button .material-symbols-outlined { font-size: 18px; line-height: 1; }
-.cycle-detail-notes > span { min-width: 0; }
-.cycle-detail-notes b { color: #6f5200; font-size: 11px; }
-.cycle-detail-notes p { margin: 3px 0 0; color: #5e4b18; font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
+.filter-toolbar .btn .material-symbols-outlined, .testcase-bulk-bar .material-symbols-outlined, .pagination .material-symbols-outlined, .inline-alert button .material-symbols-outlined { font-size: 18px; line-height: 1; }
 
 /* Meta form (order:1) is a narrow left-hand sidebar that scrolls independently; the cases panel
    (order:2) takes the rest of the width and the full modal height — the bigger modal (above) is what
@@ -2829,10 +2593,6 @@ span.cycle-detail-title-icon { width: 56px; height: 56px; font-size: 22px; }
 td.actions-col .row-actions { justify-content: center; }
 .table-action.icon-only { display: inline-grid; width: 30px; height: 30px; padding: 0; place-items: center; border-radius: 8px; font-size: 13px; line-height: 1; }
 .table-action.icon-only span { pointer-events: none; }
-.defect-list-table { min-width: 1180px; }
-.defect-list-table .actions-col { min-width: 170px; white-space: nowrap; }
-.defect-list-table td.actions-col .row-actions { flex-wrap: nowrap; }
-.defect-list-table td.actions-col .table-action.icon-only { flex: 0 0 30px; }
 .suite-case-toolbar { display: grid; grid-template-columns: 1.6fr repeat(3, 1fr) auto; gap: 8px; margin-top: 12px; align-items: center; }
 .suite-case-toolbar input,.suite-case-toolbar select { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 8px 10px; font: inherit; font-weight: 400; }
 .suite-case-search { position: relative; }
@@ -2936,33 +2696,6 @@ td.actions-col .row-actions { justify-content: center; }
 .suite-info-card-label span { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 7px; background: #eaf0ff; color: var(--primary); font-size: 11px; }
 .suite-info-card-label span.material-symbols-outlined { font-size: 16px; font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
 .suite-info-card b { overflow-wrap: anywhere; color: var(--text); font-size: 14px; font-weight: 700; }
-.cycle-detail-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
-.cycle-detail-section-head h3 { display: flex; align-items: center; gap: 7px; margin: 0; color: #344054; font-size: 15px; }
-.cycle-detail-cases-state { display: flex; align-items: center; gap: 8px; min-height: 58px; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; background: #fbfcfe; color: var(--muted); font-size: 12px; }
-.cycle-detail-cases-state.is-error { border-color: #f0c7c7; background: #fff8f8; color: #a52f2f; }
-.cycle-detail-cases-state .btn { margin-left: auto; }
-.cycle-detail-case-summary { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 10px; }
-.cycle-detail-case-summary-item { display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 9px; border-radius: 999px; background: #eef2f7; color: var(--muted); font-size: 11px; font-weight: 700; }
-.cycle-detail-case-summary-item b { color: #344054; font-size: 12px; }
-.cycle-detail-case-summary-item.is-pass { background: #eaf8f1; color: #16804f; }
-.cycle-detail-case-summary-item.is-fail { background: #fdecec; color: #c03939; }
-.cycle-detail-case-summary-item.is-blocked { background: #fff1c7; color: var(--warning-text); }
-.cycle-detail-case-summary-item.is-inprogress { background: #e8efff; color: var(--primary); }
-.cycle-detail-case-list { display: grid; gap: 6px; max-height: 340px; overflow: auto; padding: 2px 4px 2px 0; }
-.cycle-detail-case-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-width: 0; padding: 10px 11px; border: 1px solid #e3eaf5; border-radius: 10px; background: #fff; }
-.cycle-detail-case-order { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; background: #eef4ff; color: var(--primary); font-size: 11px; font-weight: 800; }
-.cycle-detail-case-main { display: grid; gap: 3px; min-width: 0; }
-.cycle-detail-case-main > div { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.cycle-detail-case-main > div > b { color: var(--primary); font-size: 11px; }
-.cycle-detail-case-main > div > .badge { font-size: 11px; }
-.cycle-detail-case-main strong { color: var(--text); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
-.cycle-detail-case-main small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.cycle-detail-case-main .cycle-detail-case-expected { display: -webkit-box; overflow: hidden; color: #475467; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.cycle-detail-case-expected b { color: #344054; font-weight: 800; }
-.cycle-detail-case-main .cycle-detail-case-actual { display: -webkit-box; overflow: hidden; color: var(--primary); line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.cycle-detail-case-actual b { color: #1d4ed8; font-weight: 800; }
-.cycle-detail-case-row > .badge { flex: 0 0 auto; white-space: nowrap; }
-.cycle-detail-section-head .link-button { font-size: 11px; font-weight: 700; white-space: nowrap; }
 .suite-detail .btn .material-symbols-outlined { font-size: 18px; line-height: 1; }
 .inline-create { display: flex; gap: 8px; border: 1px solid #f5d78e; border-radius: 9px; background: #fff8e7; padding: 10px; }
 .inline-create input { flex: 1; min-width: 0; }
@@ -2996,22 +2729,6 @@ td.actions-col .row-actions { justify-content: center; }
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
   }
   .modal-box > .modal-actions .btn { flex: 1; min-width: 0; }
-  .cycle-detail-hero { flex-direction: column; padding: 13px; }
-  .cycle-detail-hero h3 { font-size: 16px; }
-  .cycle-detail-badges { justify-content: flex-start; }
-  .cycle-detail-title-row { flex-wrap: wrap; }
-  .cycle-detail-title-badges { flex: 1 0 100%; justify-content: flex-start; margin-left: 0; padding-top: 8px; }
-  .cycle-detail-modal { padding: 0 16px 16px !important; }
-  .cycle-detail-modal .cycle-detail-crumb-head { margin: 0 -16px 14px; padding: 13px 16px 10px; }
-  .cycle-detail-progress { grid-template-columns: 1fr; align-items: stretch; gap: 16px; padding: 16px; text-align: center; }
-  .cycle-detail-progress-ring { margin: 0 auto; }
-  .cycle-detail-progress-stats { grid-template-columns: repeat(3,minmax(0,1fr)); }
-  .cycle-detail-progress-stat { flex-direction: column; padding: 10px 6px; }
-  .cycle-detail-grid { grid-template-columns: 1fr; }
-  .cycle-detail-grid > .wide { grid-column: 1; }
-  .cycle-detail-timeline { grid-template-columns: 1fr; gap: 8px; }
-  .cycle-detail-timeline i { width: 2px; height: 16px; margin-left: 13px; background: repeating-linear-gradient(180deg,#b8c8ed 0 5px,transparent 5px 9px); }
-  .cycle-detail-timeline i::after { content: "arrow_downward"; top: auto; bottom: -8px; right: auto; left: 50%; transform: translateX(-50%); }
   .form-grid-2col { grid-template-columns: 1fr; }
   .cycle-form-columns { grid-template-columns: minmax(0, 1fr); row-gap: 16px; }
   .cycle-form-columns .modal-section:last-child { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); padding-top: 16px; }
@@ -3021,12 +2738,6 @@ td.actions-col .row-actions { justify-content: center; }
   .filter-toolbar-row { flex-direction: column; align-items: stretch; }
   .filter-toolbar-row select, .filter-toolbar-top .btn { width: 100%; }
   .suite-case-toolbar { grid-template-columns: 1fr; }
-  .suite-table thead { display: none; }
-  .suite-table,.suite-table tbody,.suite-table tr,.suite-table td { display: block; width: 100%; }
-  .suite-table tr { margin-bottom: 10px; border: 1px solid var(--line); border-radius: 11px; padding: 10px; }
-  .suite-table td { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border: 0; padding: 6px 0; white-space: normal; text-align: right; }
-  .suite-table td::before { flex: 0 0 82px; color: var(--muted); content: attr(data-label); font-size: 11px; font-weight: 700; text-align: left; }
-  .suite-table .row-actions { justify-content: flex-end; flex-wrap: wrap; }
   .suite-case { align-items: flex-start; flex-wrap: wrap; }
   .inline-create { align-items: stretch; flex-direction: column; }
   .requirement-page-card { padding: 0; }
@@ -3051,13 +2762,6 @@ td.actions-col .row-actions { justify-content: center; }
   .requirement-status-information summary { grid-template-columns: auto minmax(0, 1fr); }
   .requirement-status-information summary em { grid-column: 2; }
   .requirement-status-list { grid-template-columns: 1fr; }
-}
-
-@media (max-width: 480px) {
-  .cycle-detail-section-head { align-items: flex-start; flex-direction: column; }
-  .cycle-detail-progress-count { white-space: normal; }
-  .cycle-detail-progress-stats { grid-template-columns: 1fr; }
-  .cycle-detail-progress-stat { flex-direction: row; padding: 11px 12px; text-align: left; }
 }
 
 /* Keep entered form values visually light and consistent. */
@@ -3096,30 +2800,9 @@ textarea::placeholder {
 .monitor-footer { color: var(--muted); font-size: 11px; text-align: right; }
 .system-monitor-page .empty .btn { margin-top: 10px; }
 /* ===== SETTING CENTER =====
-   Left nav picks one category (AI / Release / Test Case / Test Suite /
-   Test Cycle / Environment); the right panel shows only that category's
-   content — replaces the old "everything as collapsible accordion cards"
-   layout, which buried Environment inside the Test Cycle card. */
-.master-settings-page { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 20px; align-items: start; }
-.settings-nav { position: sticky; top: 20px; display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 14px; background: #fff; padding: 10px; box-shadow: 0 2px 8px rgba(15,23,42,.03); }
-.settings-nav button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-radius: 10px; background: transparent; padding: 10px 11px; color: var(--text); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; transition: background .15s ease; }
-.settings-nav button:hover { background: var(--bg); }
-.settings-nav button.active { background: #eaf0ff; color: var(--primary); }
-.settings-nav-icon { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: #eaf0ff; color: var(--primary); font-size: 11px; font-weight: 800; transition: background .15s ease, color .15s ease; }
-.settings-nav button.active .settings-nav-icon { background: var(--primary); color: #fff; }
-.settings-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-nav .count-pill { flex: 0 0 auto; }
-.settings-panel-card { min-width: 0; border: 1px solid #e7eaf0; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px rgba(15,23,42,.03); padding: 22px; }
-.settings-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-.settings-panel-head h2 { margin: 0 0 3px; font-size: 18px; }
-.settings-panel-head p { margin: 0; color: var(--muted); font-size: 12px; }
-.settings-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-.master-ai-body { padding: 0; }
-.master-ai-note { display: flex; gap: 8px; margin-bottom: 14px; border: 1px solid #cfe0ff; border-radius: 10px; background: #f4f8ff; padding: 11px 13px; color: var(--muted); font-size: 12px; }
-.master-ai-note b { flex: 0 0 auto; color: var(--primary); }
+   หน้า Setting Center ย้ายไป pages/MasterSettingsPage.css (scope .ms-page) — ที่เหลือคือ .master-ai-form/.master-ai-toggle/.master-ai-hint
+   ซึ่งหน้าต่าง "บัญชี CRM ของฉัน" ใน App.tsx ยังใช้ */
 .master-ai-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
-.master-ai-provider-label { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
-.master-ai-provider-badge { display: inline-flex; align-items: center; border: 1px solid #b5c7f8; background: #eef3ff; color: var(--primary); border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 800; }
 .master-ai-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .master-ai-hint { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .master-ai-form label:not(.master-ai-toggle) { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -3129,77 +2812,13 @@ textarea::placeholder {
 .master-ai-form select { width: 100%; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: 8px 32px 8px 11px; color: var(--text); font: inherit; font-weight: 400; }
 .master-ai-form select:focus { border-color: var(--primary); outline: 0; box-shadow: 0 0 0 3px rgba(36, 87, 214, .12); }
 .master-ai-form label small { color: var(--muted); font-weight: 400; }
-.master-model-label { display: flex; min-height: 18px; align-items: center; justify-content: space-between; gap: 8px; }
-.master-model-label button { border: 0; background: transparent; padding: 0; color: var(--primary); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
-.master-model-label button:disabled { color: var(--muted); cursor: wait; }
 .master-ai-form .master-model-error { margin-top: 2px; color: var(--red); font-size: 11px; line-height: 1.35; }
 .master-ai-toggle { display: flex; min-height: 40px; align-items: center; gap: 8px; color: var(--text); font-size: 12px; font-weight: 600; }
 .master-ai-toggle input { width: 18px; height: 18px; accent-color: var(--primary); }
-@media (max-width: 1100px) { .master-settings-page { grid-template-columns: 1fr; } .master-ai-form { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 760px) { .master-ai-form { grid-template-columns: 1fr; } .master-ai-actions { grid-column: 1; flex-direction: column; align-items: stretch; } .master-ai-form label:not(.master-ai-toggle) { grid-column: 1; } .master-ai-form .btn { width: 100%; } .master-ai-note { flex-direction: column; } }
-.master-setting-form { display: grid; grid-template-columns: 1.2fr 1fr 1fr 110px auto; gap: 10px; align-items: end; }
-.master-setting-form label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
-.master-setting-form input, .master-setting-form select { width: 100%; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 9px; background: #fff; padding: 9px 11px; font: inherit; }
-.master-setting-actions { display: flex; gap: 7px; }
-.master-setting-actions .btn { height: 40px; }
-.master-subgroup { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; padding: 15px 16px; }
-.master-subgroup-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.master-subgroup-head h4 { margin: 0; color: #344054; font-size: 12px; }
-.master-subgroup-head > div { display: flex; align-items: center; gap: 7px; }
-.master-subgroup-head span { display: inline-flex; min-width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 99px; background: #f2f4f7; color: var(--muted); font-size: 11px; font-weight: 800; }
-.master-add-button { border: 1px solid #cdd9fa; border-radius: 7px; background: #eef3ff; padding: 5px 9px; color: var(--primary); font-size: 11px; font-weight: 800; cursor: pointer; }
-.master-add-button:hover { border-color: var(--primary); background: #e3ebff; }
-.master-inline-editor { display: grid; grid-template-columns: 1fr 1fr 80px auto; gap: 7px; align-items: end; margin: 9px 0 6px; border: 1px solid #cdd9fa; border-radius: 10px; background: #f8faff; padding: 10px; }
-.master-inline-editor label { display: flex; min-width: 0; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
-.master-inline-editor input { width: 100%; min-width: 0; height: 36px; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 8px 9px; font: inherit; }
-.master-inline-editor .btn { height: 36px; padding: 7px 10px; font-size: 11px; white-space: nowrap; }
-.master-setting-list { display: flex; flex-direction: column; }
-.master-setting-list > div { display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); padding: 10px 2px; }
-.master-setting-list > div:last-child { border-bottom: 0; }
-.master-setting-list > div.inactive { opacity: .55; }
-.master-setting-list > div > span { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
-.master-setting-list b { font-size: 12px; }
-.master-setting-list small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.master-ai-note { margin-bottom: 12px; padding-block: 9px; }
 .master-ai-form { grid-template-columns: 130px 180px minmax(260px, 1fr) auto auto; }
-.master-setting-list > div { padding-block: 9px; }
-.environment-form { grid-template-columns: 1fr 1fr 1.3fr auto; margin-bottom: 8px; }
-@media (max-width: 1100px) { .master-inline-editor { grid-template-columns: 1fr 1fr; } .master-inline-editor .master-setting-actions { grid-column: 1 / -1; justify-content: flex-end; } }
-@media (max-width: 900px) { .master-setting-form { grid-template-columns: 1fr 1fr; } .master-setting-actions { grid-column: 1 / -1; justify-content: flex-end; } }
-@media (max-width: 760px) {
-  .master-settings-page { grid-template-columns: 1fr; }
-  .settings-nav { position: static; flex-direction: row; overflow-x: auto; }
-  .settings-nav button { flex: 0 0 auto; }
-  .settings-nav-label { white-space: nowrap; }
-  .settings-panel-card { padding: 16px; }
-  .settings-groups { grid-template-columns: 1fr; }
-  .master-setting-form, .environment-form, .master-inline-editor { grid-template-columns: 1fr; }
-  .master-setting-actions, .master-inline-editor .master-setting-actions { grid-column: 1; }
-  .master-setting-actions .btn { flex: 1; }
-  .master-setting-list > div { align-items: flex-start; flex-wrap: wrap; }
-  .master-setting-list > div > span { flex-basis: 100%; }
-}
 @media (max-width: 1100px) { .master-ai-form { grid-template-columns: 1fr 1fr; } .master-ai-form label:nth-child(3) { grid-column: 1 / -1; } }
 @media (max-width: 760px) { .master-ai-form { grid-template-columns: 1fr; } .master-ai-form label:nth-child(3) { grid-column: 1; } }
-/* คลังความรู้ (AI Chat) ใต้ฟอร์ม AI หลัก — selector 2 class เพื่อชนะ grid 5 คอลัมน์ของ .master-ai-form จึงต้องประกาศ breakpoint เอง */
-.master-knowledge { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 18px; }
-.master-knowledge-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.master-knowledge-head h3 { margin: 0; color: var(--text); font-size: 15px; font-weight: 800; }
-.master-knowledge-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
-.master-ai-form.master-knowledge-form { grid-template-columns: 200px minmax(200px, 1fr) minmax(240px, 1.3fr); align-items: start; }
-.master-knowledge-form .master-ai-toggle { grid-column: 1 / -1; align-items: flex-start; }
-.master-knowledge-form .master-ai-toggle input { flex: 0 0 auto; margin-top: 2px; }
-.master-knowledge-form label small { font-size: 12px; }
-.master-knowledge-form .master-ai-toggle small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 400; }
-/* แถวปุ่ม: ข้อความสถานะชิดซ้าย, ปุ่มทดสอบ + บันทึกชิดขวา */
-.master-knowledge-form .master-ai-actions { justify-content: flex-end; }
-.master-knowledge-form .master-ai-actions > small { margin-right: auto; }
-.master-embedding-test { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 0; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
-.master-embedding-test .material-symbols-outlined { flex: none; font-size: 18px; }
-.master-embedding-test.ok { background: color-mix(in srgb, var(--green) 10%, var(--card)); color: var(--green); }
-.master-embedding-test.error { background: color-mix(in srgb, var(--red) 8%, var(--card)); color: var(--red); }
-@media (max-width: 1100px) { .master-ai-form.master-knowledge-form { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 760px) { .master-ai-form.master-knowledge-form { grid-template-columns: 1fr; } .master-knowledge-head { flex-direction: column; } }
 @media (max-width: 760px) { .monitor-summary { grid-template-columns: 1fr; } .monitor-service { grid-template-columns: auto minmax(0, 1fr) auto; } .monitor-service > .row-actions { grid-column: 2 / -1; justify-content: flex-end; } .monitor-service > .row-actions .btn { flex: 1; } .monitor-section-head { align-items: flex-start; } }
 
 /* ===== DASHBOARD MODULE OVERVIEW ===== */
@@ -3224,39 +2843,6 @@ textarea::placeholder {
 
 /* ===== DEFECT MANAGEMENT ===== */
 .defect-page { display: flex; flex-direction: column; gap: 16px; padding: 24px; max-width: 1400px; margin: 0 auto; }
-.defect-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
-.defect-toolbar select, .defect-toolbar input { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 10px 14px; font: inherit; font-size: 13px; }
-.defect-toolbar select:focus, .defect-toolbar input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(36,87,214,.1); }
-.defect-toolbar .search-box { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
-.defect-toolbar .search-box:focus-within { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 3px rgba(36,87,214,.08); }
-.defect-toolbar .search-box input { border: 0; background: transparent; padding: 10px 0; outline: none; }
-.defect-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-.defect-summary-card { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
-.defect-summary-card .icon { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 16px; flex-shrink: 0; }
-.defect-summary-card .icon.red { background: #fdecec; color: var(--red); }
-.defect-summary-card .icon.orange { background: #fff4e5; color: var(--yellow); }
-.defect-summary-card .icon.blue { background: #eef3ff; color: var(--primary); }
-.defect-summary-card .icon.green { background: #e6f9f0; color: var(--green); }
-.defect-summary-card .icon.gray { background: #f2f4f7; color: var(--muted); }
-.defect-summary-card b { display: block; font-size: 20px; font-weight: 800; color: var(--text); }
-.defect-summary-card small { font-size: 11px; color: var(--muted); }
-.defect-table-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.03); }
-.defect-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.defect-table th { background: #f9fafb; padding: 12px 14px; text-align: left; font-weight: 700; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 2px solid var(--line); white-space: nowrap; }
-.defect-table td { padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--text); vertical-align: middle; }
-.defect-table tr:last-child td { border-bottom: 0; }
-.defect-table tbody tr { transition: background .15s; }
-.defect-table tbody tr:hover { background: #f9fafb; }
-.defect-table .severity-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.defect-table .severity-badge.critical { background: #fdecec; color: var(--red); }
-.defect-table .severity-badge.high { background: #fff4e5; color: #b45309; }
-.defect-table .severity-badge.medium { background: #fffbeb; color: #92400e; }
-.defect-table .severity-badge.low { background: #f2f4f7; color: var(--muted); }
-.defect-table .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.defect-table .status-badge.open { background: #fdecec; color: var(--red); }
-.defect-table .status-badge.in-progress { background: #eef3ff; color: var(--primary); }
-.defect-table .status-badge.resolved { background: #e6f9f0; color: var(--green); }
-.defect-table .status-badge.closed { background: #f2f4f7; color: var(--muted); }
 /* รายละเอียด Defect (2026-10-20): จัดการได้ในหน้าจอเดียว — หัว + แถบปุ่มดำเนินการอยู่กับที่, Desktop แบ่งซ้าย (ข้อมูล Defect
    เลื่อนเฉพาะฝั่ง) / ขวา (แท็บ Comments | Activities + ช่องเขียนคอมเมนต์ติดล่าง); ≤900px เรียงคอลัมน์เดียวเลื่อนทั้ง modal */
 .modal-box.defect-detail { display: flex; flex-direction: column; width: min(1320px, calc(100vw - 32px)) !important; max-width: 1320px !important; height: calc(100dvh - 48px); max-height: calc(100dvh - 48px); padding: 0; overflow: hidden; }
@@ -3315,30 +2901,36 @@ textarea::placeholder {
   .defect-detail-delete { margin-left: 0; }
   .defect-detail-composer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 }
-.defect-title-text { font-weight: 400; }
 .defect-form-modal { width: min(1200px, calc(100vw - 32px)) !important; max-width: 1200px !important; }
+/* เตือน Defect ที่อาจซ้ำในฟอร์มสร้าง + ผลการปิดในรายละเอียด (คลังความรู้ Phase 6) */
+.defect-similar { margin: 4px 0 12px; border: 1px solid color-mix(in srgb, var(--yellow) 45%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--yellow) 8%, var(--card)); padding: 12px 14px; }
+.defect-similar h3 { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--warning-text); font-size: 14px; }
+.defect-similar h3 .material-symbols-outlined { font-size: 18px; }
+.defect-similar p { margin: 4px 0 8px; color: var(--muted); font-size: 12px; }
+.defect-similar ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.defect-similar li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; border-radius: 8px; background: var(--card); padding: 6px 10px; }
+.defect-similar a { display: flex; align-items: baseline; gap: 8px; min-width: 0; min-height: 28px; color: var(--text); text-decoration: none; }
+.defect-similar a:hover b, .defect-similar a:focus-visible b { text-decoration: underline; }
+.defect-similar a b { flex: none; color: var(--primary); font-size: 13px; }
+.defect-similar a span { display: -webkit-box; overflow: hidden; font-size: 13px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.defect-similar li small { color: var(--muted); font-size: 12px; }
+.defect-resolution-view { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin: 0 0 10px; }
+.defect-resolution-view div { min-width: 0; }
+.defect-resolution-view .full { grid-column: 1 / -1; }
+.defect-resolution-view dt { color: var(--muted); font-size: 12px; }
+.defect-resolution-view dd { margin: 2px 0 0; color: var(--text); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .defect-similar li { grid-template-columns: minmax(0, 1fr) auto; }
+  .defect-similar li small { grid-column: 1 / -1; }
+  .defect-similar a { min-height: 40px; align-items: center; }
+  .defect-resolution-view { grid-template-columns: minmax(0, 1fr); }
+  .defect-resolution-edit { width: 100%; min-height: 44px; }
+}
 .defect-copy-btn { display: inline-grid; width: 22px; height: 22px; margin-left: 8px; place-items: center; border: 0; border-radius: 6px; background: #eef3ff; color: var(--primary); font-size: 11px; cursor: pointer; vertical-align: middle; }
 .defect-copy-btn:hover { background: #e0e9ff; }
 /* คอลัมน์ CRM ในตาราง Defect list — ถ้ายังไม่เคยส่งไป CRM (สถานะ None) ให้ badge กดได้ทันทีเพื่อเปิด
    dialog เลือกผู้รับผิดชอบแล้วส่งไป CRM เลย ไม่ต้องเปิด detail modal ก่อน (ปุ่มล้วนๆ ไม่มีกรอบ/พื้นหลัง
    ของตัวเอง ให้ badge ข้างในเป็นตัวรับผิดชอบหน้าตาแทน) */
-.crm-badge-btn { border: 0; background: none; padding: 0; cursor: pointer; font: inherit; }
-.crm-badge-btn .badge { transition: box-shadow .12s ease; }
-.crm-badge-btn:hover .badge, .crm-badge-btn:focus-visible .badge { box-shadow: 0 0 0 2px var(--primary-soft); }
-.defect-detail-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
-.defect-detail-stat { display: flex; align-items: center; gap: 9px; min-width: 0; border: 1px solid var(--line); border-radius: 11px; background: #fff; padding: 10px; }
-.defect-detail-stat-icon { display: grid; width: 30px; height: 30px; flex: 0 0 30px; place-items: center; border-radius: 9px; font-size: 13px; }
-.defect-detail-stat-icon.orange { background: #fff4e5; color: var(--yellow); }
-.defect-detail-stat-icon.green { background: #e6f9f0; color: var(--green); }
-.defect-detail-stat-icon.blue { background: #eef3ff; color: var(--primary); }
-.defect-detail-stat-icon.purple { background: #f3eefa; color: #7c4dc4; }
-.defect-detail-stat-icon.gray { background: #f2f4f7; color: var(--muted); }
-.defect-detail-stat > div { min-width: 0; }
-.defect-detail-stat small { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
-.defect-detail-stat b { display: block; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
-.defect-detail-stat a { display: block; overflow: hidden; color: var(--primary); font-size: 14px; font-weight: 700; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
-.defect-detail-stat a:hover { text-decoration: underline; }
-.defect-detail-stat-sub { margin-top: 1px; font-weight: 400; }
 .defect-detail-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; }
 /* input/textarea ในหน้าสร้าง/แก้ไข Defect ที่วางอยู่ใต้ h3 ของ .cycle-detail-section โดยตรง (ไม่ผ่าน
    label) ให้หน้าตาเหมือน .defect-detail-text แต่แก้ไขได้ — ค่าตัวเลขอ้างอิงจาก input มาตรฐานที่ใช้
@@ -3388,14 +2980,13 @@ textarea.defect-form-field { resize: vertical; line-height: 1.6; }
 .defect-activity-row small { color: var(--muted); font-size: 12px; }
 /* รูปย่อของ activity "แนบรูปภาพ" ใช้สไตล์ .defect-comment-thumbs (DefectComments.css) — เว้นระยะจากบรรทัดผู้ทำ/เวลา */
 .defect-activity-thumbs { margin-top: 8px; }
-@media (max-width: 760px) { .defect-detail-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .defect-detail-split { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {  .defect-detail-split { grid-template-columns: 1fr; } }
 .defect-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .defect-form > label { min-width: 0; display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--text); }
 .defect-form > label.full { grid-column: 1 / -1; }
 .defect-form input, .defect-form select, .defect-form textarea { min-width: 0; width: 100%; padding: 9px 11px; font-size: 13px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .defect-form input:focus, .defect-form select:focus, .defect-form textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(36,87,214,.1); }
-@media (max-width: 900px) { .defect-summary { grid-template-columns: repeat(2, 1fr); } .defect-form { grid-template-columns: 1fr; } }
-@media (max-width: 600px) { .defect-summary { grid-template-columns: 1fr; } .defect-toolbar { flex-direction: column; align-items: stretch; } }
+@media (max-width: 900px) {  .defect-form { grid-template-columns: 1fr; } }
 
 /* ===== MOBILE APP SHELL — keep last so it wins over legacy styles ===== */
 @media (max-width: 900px) {
@@ -3518,21 +3109,11 @@ input, select, textarea { max-width: 100%; }
 .clone-mode-option small { color: var(--muted); line-height: 1.45; }
 .clone-target-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; padding: 10px 12px; border: 1px solid #cfe0ff; border-radius: 10px; background: #f4f8ff; color: #284b89; font-size: 11px; line-height: 1.55; }
 .clone-target-note .material-symbols-outlined { flex: 0 0 auto; font-size: 18px; }
-.cycle-detail-lineage { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 11px 12px; border: 1px solid #d9e2f5; border-radius: 11px; background: #f7f9fe; color: var(--primary); }
-.cycle-detail-lineage > span:last-child { display: grid; gap: 3px; min-width: 0; }
-.cycle-detail-lineage b { font-size: 11px; }
-.cycle-detail-lineage small { color: var(--muted); overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .clone-source-summary { grid-template-columns: 1fr; gap: 10px; }
   .cycle-clone-modal .cycle-form-columns { row-gap: 14px; }
   .cycle-clone-modal .modal-actions { position: sticky; bottom: 0; z-index: 2; margin: 16px -16px -16px; padding: 12px 16px; background: rgba(255,255,255,.96); border-top: 1px solid var(--line); }
   .cycle-clone-modal .modal-actions .btn { flex: 1; min-width: 0; }
-}
-@media (max-width: 760px) {
-  .cycle-detail-case-row { grid-template-columns: 30px minmax(0, 1fr); align-items: start; }
-  .cycle-detail-case-row > .badge { grid-column: 2; justify-self: start; }
-  .cycle-detail-cases-state { align-items: flex-start; flex-wrap: wrap; }
-  .cycle-detail-cases-state .btn { margin-left: 0; }
 }
 
 /* ป้ายสถานะที่ไม่รู้จัก/ไม่มีข้อมูล (เช่น Build status ใหม่) — สีเทาจาก token --muted */

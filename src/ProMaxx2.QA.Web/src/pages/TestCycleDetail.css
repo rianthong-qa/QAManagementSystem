@@ -1,0 +1,137 @@
+/* รายละเอียด Test Cycle (ออกแบบใหม่ 2026-10-22) — prefix cyd-, scope .modal-box.cyd
+   workspace หน้าจอเดียว: หัว + แถบปุ่มอยู่กับที่ | ซ้าย = ความคืบหน้า + รายการ Test Case (เลื่อนในตัว) | ขวา 300–360px = ข้อมูล/กำหนดการ/Notes */
+.modal-box.cyd { --cyd-pass: var(--green); --cyd-fail: var(--red); --cyd-blocked: var(--yellow); --cyd-skipped: color-mix(in srgb, var(--muted) 70%, var(--card)); --cyd-inprogress: var(--info); --cyd-notrun: color-mix(in srgb, var(--muted) 22%, var(--card));
+  display: flex; flex-direction: column; width: min(1240px, calc(100vw - 32px)); max-width: none; height: calc(100dvh - 48px); max-height: calc(100dvh - 48px); overflow: hidden; padding: 0; }
+.modal-box.cyd .btn { display: inline-flex; align-items: center; gap: 6px; }
+.modal-box.cyd .btn .material-symbols-outlined { font-size: 18px; }
+
+/* หัว */
+.cyd-head { display: flex; flex: none; align-items: flex-start; gap: 14px; border-bottom: 1px solid var(--line); padding: 16px 20px 14px; }
+.cyd-head-text { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.cyd-eyebrow { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .03em; }
+.cyd-head h2 { margin: 0; color: var(--primary); font-size: 20px; line-height: 1.35; }
+.cyd-head p { margin: 0; overflow-wrap: anywhere; color: var(--text); font-size: 14px; font-weight: 600; }
+.cyd-badges { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding-top: 4px; }
+.cyd-badge-icon { margin-right: 2px; font-size: 14px; vertical-align: -2px; }
+.modal-box.cyd .cyd-close { display: grid; flex: none; width: 38px; height: 38px; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 0; color: var(--muted); cursor: pointer; }
+.modal-box.cyd .cyd-close:hover { background: var(--bg); color: var(--text); }
+.cyd-toolbar { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--muted) 3%, var(--card)); padding: 10px 20px; }
+.cyd-toolbar .btn { min-height: 36px; }
+
+/* เนื้อหา 2 ฝั่ง */
+.cyd-body { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); min-height: 0; }
+.cyd-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; padding: 14px 20px 16px; }
+.cyd-main h3, .cyd-side h3 { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; }
+.cyd-main h3 .material-symbols-outlined, .cyd-side h3 .material-symbols-outlined { color: var(--primary); font-size: 19px; }
+
+/* ความคืบหน้า: แถบซ้อนตามสถานะ + ชิปกรอง */
+.cyd-progress { display: grid; flex: none; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.cyd-progress-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.cyd-progress-head p { margin: 0; color: var(--muted); font-size: 13px; }
+.cyd-progress-head p b { margin-right: 4px; color: var(--text); font-size: 20px; }
+.cyd-bar { display: flex; gap: 2px; height: 10px; overflow: hidden; border-radius: 999px; background: var(--cyd-notrun); }
+.cyd-bar > span { flex-basis: 0; min-width: 4px; }
+.cyd-bar > span[style*="flex-grow: 0"] { display: none; }
+:is(.cyd-bar > span, .cyd-dot).is-pass { background: var(--cyd-pass); }
+:is(.cyd-bar > span, .cyd-dot).is-fail { background: var(--cyd-fail); }
+:is(.cyd-bar > span, .cyd-dot).is-blocked { background: var(--cyd-blocked); }
+:is(.cyd-bar > span, .cyd-dot).is-skipped { background: var(--cyd-skipped); }
+:is(.cyd-bar > span, .cyd-dot).is-inprogress { background: var(--cyd-inprogress); }
+:is(.cyd-bar > span, .cyd-dot).is-notrun { background: var(--cyd-notrun); }
+.cyd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.modal-box.cyd .cyd-chips button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 3px 11px; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.modal-box.cyd .cyd-chips button:hover { border-color: var(--primary); }
+.modal-box.cyd .cyd-chips button[aria-pressed="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--card)); color: var(--primary); }
+.modal-box.cyd .cyd-chips button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.cyd-chips b { font-variant-numeric: tabular-nums; }
+.cyd-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.cyd-dot.is-notrun { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 45%, transparent); }
+
+/* รายการ Test Case */
+.cyd-cases { display: flex; flex: 1; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.cyd-cases-head { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; border-bottom: 1px solid var(--line); padding: 10px 12px; }
+.cyd-count { min-width: 22px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); padding: 1px 8px; color: var(--primary); font-size: 12px; text-align: center; }
+.cyd-search { position: relative; display: block; width: min(280px, 100%); }
+.cyd-search .material-symbols-outlined { position: absolute; top: 50%; left: 10px; color: var(--muted); font-size: 18px; transform: translateY(-50%); pointer-events: none; }
+.modal-box.cyd .cyd-search input { width: 100%; height: 36px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 6px 10px 6px 34px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.modal-box.cyd .cyd-search input:focus { border-color: var(--primary); outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.cyd-case-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 10px 8px; }
+.cyd-case { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: start; gap: 10px; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; padding: 10px 6px 10px 8px; }
+.cyd-case:last-child { border-bottom: 0; }
+.cyd-case.is-fail { border-left-color: var(--cyd-fail); background: color-mix(in srgb, var(--red) 3%, var(--card)); }
+.cyd-case.is-blocked { border-left-color: var(--cyd-blocked); background: color-mix(in srgb, var(--yellow) 4%, var(--card)); }
+.cyd-case-no { display: grid; width: 28px; height: 26px; place-items: center; border-radius: 8px; background: var(--bg); color: var(--muted); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cyd-case-main { display: grid; gap: 2px; min-width: 0; }
+.cyd-case-code { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cyd-case-code b { color: var(--primary); font-size: 13px; }
+.cyd-case-main > p { margin: 0; overflow-wrap: anywhere; color: var(--text); font-size: 13px; line-height: 1.5; }
+.cyd-case-main > small { color: var(--muted); font-size: 12px; }
+.cyd-case-results { display: grid; gap: 2px; margin: 4px 0 0; }
+.cyd-case-results > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px; font-size: 12px; }
+.cyd-case-results dt { color: var(--muted); font-weight: 700; }
+.cyd-case-results dd { overflow: hidden; margin: 0; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.cyd-case-results .is-actual dd { color: var(--red); }
+.cyd-case > .badge { margin-top: 2px; }
+.cyd-state { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 36px 12px; color: var(--muted); font-size: 13px; text-align: center; }
+.cyd-state.is-error { color: var(--red); }
+
+/* ฝั่งขวา */
+.cyd-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; min-height: 0; overflow-y: auto; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--muted) 3%, var(--card)); padding: 14px 16px 16px; }
+.cyd-side section { display: grid; gap: 8px; }
+.cyd-info { display: grid; gap: 8px; margin: 0; }
+.cyd-info > div { display: grid; gap: 1px; }
+.cyd-info dt { color: var(--muted); font-size: 12px; }
+.cyd-info dd { margin: 0; overflow-wrap: anywhere; color: var(--text); font-size: 13px; font-weight: 600; }
+.cyd-info dd small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.cyd-schedule { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 10px 12px; }
+.cyd-schedule > div { display: grid; gap: 1px; min-width: 0; }
+.cyd-schedule small { color: var(--muted); font-size: 12px; }
+.cyd-schedule b { font-size: 13px; }
+.cyd-schedule > .material-symbols-outlined { color: var(--muted); font-size: 18px; }
+.cyd-days { margin: 0; color: var(--muted); font-size: 12px; font-weight: 600; }
+.cyd-days.is-near { color: var(--warning-text); }
+.cyd-days.is-late { color: var(--red); }
+.cyd-notes { margin: 0; color: var(--text); font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cyd-notes.is-empty { color: var(--muted); }
+.cyd-side section.cyd-lineage { display: flex; align-items: flex-start; gap: 8px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 6%, var(--card)); padding: 10px 12px; }
+.cyd-lineage > .material-symbols-outlined { color: var(--primary); font-size: 18px; }
+.cyd-lineage > span { display: grid; gap: 1px; font-size: 13px; }
+.cyd-lineage small { color: var(--muted); font-size: 12px; }
+.cyd-status-help { border-top: 1px solid var(--line); padding-top: 12px; font-size: 12px; }
+.cyd-status-help summary { display: flex; align-items: center; gap: 6px; color: var(--primary); font-weight: 700; cursor: pointer; }
+.cyd-status-help summary .material-symbols-outlined { font-size: 17px; }
+.cyd-status-help p { margin: 8px 0; color: var(--text); line-height: 1.6; }
+.cyd-status-help ul { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.cyd-status-help li { display: grid; gap: 1px; border-radius: 8px; padding: 6px 8px; color: var(--muted); line-height: 1.5; }
+.cyd-status-help li b { color: var(--text); }
+.cyd-status-help li.is-current { background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+
+@media (max-width: 1100px) {
+  .cyd-body { grid-template-columns: minmax(0, 1fr) 300px; }
+}
+/* ≤900px คอลัมน์เดียว เลื่อนทั้งกล่อง หัว sticky */
+@media (max-width: 900px) {
+  .modal-box.cyd { height: auto; overflow-y: auto; }
+  .cyd-head { position: sticky; top: 0; z-index: 3; background: var(--card); }
+  .cyd-body { display: block; }
+  .cyd-main { padding: 14px 16px; }
+  .cyd-cases { flex: none; }
+  .cyd-case-list { overflow: visible; }
+  .cyd-side { overflow: visible; border-top: 1px solid var(--line); border-left: 0; padding: 14px 16px 18px; }
+  .cyd-toolbar { padding-right: 16px; padding-left: 16px; }
+}
+@media (max-width: 760px) {
+  .modal-box.cyd { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .cyd-head { flex-wrap: wrap; gap: 8px 10px; padding: 12px 16px 10px; }
+  .cyd-head-text { flex: 1 1 0; }
+  .cyd-badges { order: 3; flex-basis: 100%; justify-content: flex-start; padding-top: 0; }
+  .modal-box.cyd .cyd-close { width: 44px; height: 44px; }
+  .cyd-toolbar .btn { flex: 1 1 140px; justify-content: center; min-height: 44px; }
+  .modal-box.cyd .cyd-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .modal-box.cyd .cyd-chips button { flex: none; min-height: 36px; }
+  .cyd-search { width: 100%; }
+  .modal-box.cyd .cyd-search input { height: 44px; }
+  .cyd-case { grid-template-columns: 28px minmax(0, 1fr); }
+  .cyd-case > .badge { grid-column: 2; justify-self: start; margin-top: 0; }
+  .cyd-case-results dd { white-space: normal; }
+}

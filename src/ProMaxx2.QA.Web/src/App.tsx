@@ -16,7 +16,6 @@ import "./MyWork.css";
 import "./Dashboard.css";
 import "./DashboardExecutive.css";
 import "./Rtm.css";
-import "./Regression.css";
 import "./Automation.css";
 // ทุกหน้าโหลดแยก chunk เมื่อเปิดหน้าเท่านั้น (React.lazy) — App.tsx เหลือเฉพาะ shell, context selector, routing และ Login
 // หน้าใหม่ให้สร้างใน src/pages/ แล้วเพิ่ม lazy import ที่นี่; ของที่หลายหน้าใช้ร่วมอยู่ใน src/shared/
@@ -570,7 +569,7 @@ function App() {
         : page === "performance"
           ? "ผลงานจากระบบ บันทึกงานเพิ่มเติม และติดตามช่วงทดลองงานของทีม QA"
         : page === "knowledge"
-          ? "ถามผู้ช่วย AI และค้นหาความรู้จาก Defect บทความ เอกสาร และ CRM พร้อมอ้างอิงแหล่งที่มา"
+          ? "ถามผู้ช่วย AI และค้นหาความรู้จาก Defect, Test Case, บทความ, เอกสาร และ CRM พร้อมอ้างอิงแหล่งที่มา"
         : page === "test-suites"
           ? "Test Suite จัดเก็บระดับ Project · เลือก Release/Build ตอนนำไปสร้าง Test Cycle"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
@@ -903,7 +902,8 @@ function App() {
               <p>{description}</p>
             </div>
             <div className="actions">
-              {page !== "audit" && page !== "performance" && page !== "knowledge" && <label className="search">
+              {/* หน้า Defect มีช่องค้นหาในแถวตัวกรองของรายการเอง */}
+              {page !== "audit" && page !== "performance" && page !== "knowledge" && page !== "defects" && <label className="search">
                 ⌕
                 <input
                   value={search}
@@ -937,7 +937,7 @@ function App() {
           ) : page === "performance" ? (
             <PerformancePage user={user} canManage={can("PERFORMANCE.EDIT")} />
           ) : page === "knowledge" ? (
-            <KnowledgePage canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} canConnectClaude={can("KNOWLEDGE.MCP")} canViewCrm={can("CRM.VIEW")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} />
+            <KnowledgePage canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} canConnectClaude={can("KNOWLEDGE.MCP")} canViewCrm={can("CRM.VIEW")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} onOpenTestCase={openTestCase} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (
@@ -961,7 +961,7 @@ function App() {
           ) : page === "system-monitor" ? (
             <SystemMonitorPage />
           ) : page === "defects" ? (
-            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} search={search} onClearSearch={() => setSearch("")} canEdit={can("DEFECT.EDIT")} canExport={can("REPORT.EXPORT")} onOpenTestCase={openTestCase} />
+            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} search={search} onSearchChange={setSearch} onClearSearch={() => setSearch("")} canEdit={can("DEFECT.EDIT")} canExport={can("REPORT.EXPORT")} onOpenTestCase={openTestCase} />
           ) : page === "summary" ? (
             <Suspense fallback={pageLoading}><TestSummaryPage projects={contextProjects} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canExport={can("REPORT.EXPORT")} onOpenRisks={() => setPage("risks")} onOpenSignoff={() => setPage("signoff")} /></Suspense>
           ) : page === "risks" ? (
@@ -973,7 +973,7 @@ function App() {
           ) : page === "execution" ? (
             <ExecutionWorkspacePage contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} />
           ) : page === "test-cycles" ? (
-            <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} />
+            <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} />
           ) : (
             <TestSuitesPage search={search} onClearSearch={() => setSearch("")} canEdit={can("TESTCASE.EDIT")} contextProjectId={contextProjectId} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} canCreateCycle={can("EXECUTION.RUN")} onOpenCycleList={() => go("test-cycles")} />
           )}

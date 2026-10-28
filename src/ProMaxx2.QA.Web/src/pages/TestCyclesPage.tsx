@@ -5,10 +5,32 @@ import { useDebounced } from "../components/useDebounced";
 import { notify, confirmDialog } from "../components/dialogStore";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
+import "./TestCycleDetail.css";
+import "../components/ListPage.css";
+import { ListPager } from "../components/ListPager";
+import { useUserPageSize } from "../components/usePageSize";
+import { SortHeader, type SortState } from "../components/SortHeader";
 import { formatThaiDateTime } from "../dateTime";
 import { type ModuleItem, type TestCycleItem, type TestSuiteItem, currentUserId, masterOptionElements, nextBusinessCode, okJsonOrEmpty, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
 
 const cycleStatusOptions = ["Draft", "InProgress", "Completed", "Closed", "Cancelled"];
+const cycleStatusDot: Record<string, string> = { Draft: "gray", InProgress: "blue", Completed: "green", Closed: "green", Cancelled: "red" };
+// เรียงรายการด้วยหัวคอลัมน์ — เรียงฝั่ง server (sortBy) เพราะรายการแบ่งหน้าที่ server; จำไว้ต่อเครื่อง ค่าเริ่มต้น = สร้างล่าสุดก่อน (ลำดับเดิม)
+type CycleSortKey = "code" | "progress" | "status" | "startDate" | "createdAt";
+const cycleSortStorageKey = "qa.testCycles.listSort";
+const defaultCycleSort: SortState<CycleSortKey> = { key: "createdAt", dir: "desc" };
+const readCycleSort = (): SortState<CycleSortKey> => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(cycleSortStorageKey) ?? "null") as SortState<CycleSortKey> | null;
+    return saved && ["code", "progress", "status", "startDate", "createdAt"].includes(saved.key) && (saved.dir === "asc" || saved.dir === "desc") ? saved : defaultCycleSort;
+  } catch { return defaultCycleSort; }
+};
+const cycleSortOptions: { value: string; label: string }[] = [
+  { value: "createdAt:desc", label: "สร้างล่าสุดก่อน" }, { value: "createdAt:asc", label: "สร้างเก่าสุดก่อน" },
+  { value: "code:asc", label: "รหัส Cycle น้อย → มาก" }, { value: "code:desc", label: "รหัส Cycle มาก → น้อย" },
+  { value: "progress:desc", label: "ความคืบหน้ามากสุดก่อน" }, { value: "progress:asc", label: "ความคืบหน้าน้อยสุดก่อน" },
+  { value: "status:asc", label: "สถานะ (Draft → Cancelled)" }, { value: "startDate:desc", label: "เริ่มทดสอบล่าสุดก่อน" },
+];
 // ไอคอนประกอบ Badge สถานะ/ประเภทใน Test Cycle detail modal — สถานะเป็น enum ตายตัว (cycleStatusOptions
 // ด้านบน) เลย map ตรงๆ ได้ครบทุกค่า ส่วนประเภท (cycleType) มาจาก Master Setting ("TestCycleType") ที่แอดมิน
 // เพิ่มค่าใหม่ได้เอง เลยต้องมี fallback ไอคอน generic ไว้เผื่อค่าที่ไม่ได้ map ไว้ล่วงหน้า
@@ -60,7 +82,7 @@ type TestCycleCaseSummary = {
   actualResult?: string | null;
 };
 type GeneratedTestCycleDraft = { cycleName: string; cycleType: string; startDate?: string; endDate?: string; notes?: string; selectionSummary: string };
-export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextReleaseId, contextBuildId }: { search: string; canEdit: boolean; canExport: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
+export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextReleaseId, contextBuildId, onOpenExecution }: { search: string; canEdit: boolean; canExport: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string; onOpenExecution?: (cycleId: string) => void }) {
   const masterOptions = useMasterOptions(), cycleTypes = masterOptions("TestCycleType");
   const [items, setItems] = useState<TestCycleItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
@@ -81,7 +103,7 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
     [totalCount, setTotalCount] = useState(0),
     [caseSummary, setCaseSummary] = useState({ totalCases: 0, executedCases: 0 }),
     [page, setPage] = useState(1),
-    [pageSize, setPageSize] = useState(30),
+    [pageSize, setPageSize] = useUserPageSize("qa.testCycles.pageSize"),
     [listModuleFilter, setListModuleFilter] = useState(""),
     [listCycleTypeFilter, setListCycleTypeFilter] = useState(""),
     [listCreatedByFilter, setListCreatedByFilter] = useState(currentUserId),
@@ -106,6 +128,8 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
     [cloneSaving, setCloneSaving] = useState(false),
     [cloneError, setCloneError] = useState("");
   const [detailCases, setDetailCases] = useState<TestCycleCaseSummary[]>([]),
+    [detailCaseSearch, setDetailCaseSearch] = useState(""),
+    [detailCaseFilter, setDetailCaseFilter] = useState(""),
     [detailCasesLoading, setDetailCasesLoading] = useState(false),
     [detailCasesError, setDetailCasesError] = useState("");
   const [projectId, setProjectId] = useState(""),
@@ -231,6 +255,9 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
     });
   }, [reload]);
   const debouncedSearch = useDebounced(search.trim());
+  const [listSort, setListSortState] = useState<SortState<CycleSortKey>>(readCycleSort);
+  const setListSort = (next: SortState<CycleSortKey>) => { setListSortState(next); try { localStorage.setItem(cycleSortStorageKey, JSON.stringify(next)); } catch { /* ไม่จำก็ได้ */ } };
+  const listSortBy = `${listSort.key}_${listSort.dir}`;
   useEffect(() => {
     const ctrl = new AbortController();
     const query = new URLSearchParams({ page: String(page), size: String(pageSize) });
@@ -242,6 +269,7 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
     if (listCreatedByFilter) query.set("createdBy", listCreatedByFilter);
     if (listStatusFilter) query.set("status", listStatusFilter);
     if (debouncedSearch) query.set("search", debouncedSearch);
+    query.set("sortBy", listSortBy);
     setLoading(true);
     setError("");
     // AbortController: ผลของคำขอเก่า (ตัวกรอง/หน้าก่อนหน้า) ต้องไม่มาทับผลของคำขอล่าสุด
@@ -265,8 +293,8 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
       .catch(reason => { if (isAbortError(reason)) return; setItems([]); setTotalCount(0); setCaseSummary({ totalCases: 0, executedCases: 0 }); setStatusCounts({}); setError(reason instanceof Error ? reason.message : "โหลด Test Cycle ไม่สำเร็จ"); })
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
     return () => ctrl.abort();
-  }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, debouncedSearch, page, pageSize, reload]);
-  useEffect(() => { setPage(1); }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, debouncedSearch]);
+  }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, debouncedSearch, listSortBy, page, pageSize, reload]);
+  useEffect(() => { setPage(1); }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, debouncedSearch, listSortBy]);
   useEffect(() => { setCycleSelected(new Set()); }, [items]);
   useEffect(() => {
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
@@ -415,7 +443,7 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
     setForm(true);
   };
   openFormRef.current = openForm;
-  const openDetail = (cycle: TestCycleItem) => { setDetail(cycle); loadDetailCases(cycle.testCycleId); };
+  const openDetail = (cycle: TestCycleItem) => { setDetail(cycle); setDetailCaseSearch(""); setDetailCaseFilter(""); loadDetailCases(cycle.testCycleId); };
   const openClone = (cycle: TestCycleItem) => {
     const targetReleases = releases.filter((x) => x.projectId === cycle.projectId);
     const targetRelease = targetReleases.find((x) => x.releaseId === cycle.releaseId) ?? targetReleases[0];
@@ -698,7 +726,9 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
         if (listModuleFilter) query.set("moduleId", listModuleFilter);
         if (listCycleTypeFilter) query.set("cycleType", listCycleTypeFilter);
         if (listStatusFilter) query.set("status", listStatusFilter);
+        if (listCreatedByFilter) query.set("createdBy", listCreatedByFilter);
         if (search.trim()) query.set("search", search.trim());
+        query.set("sortBy", listSortBy);
         const response = await fetch(`${apiUrl}/test-cycles?${query}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
         if (!response.ok) throw new Error(`ส่งออก Test Cycle ไม่สำเร็จ (${response.status})`);
         const data = await response.json();
@@ -725,170 +755,112 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
       .includes(search.toLowerCase()),
   );
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  // ตัวกรองที่ผู้ใช้เลือกเพิ่ม (ไม่นับ Project/Release/Build ที่มาจาก Context ด้านบน)
+  const listFilterCount = [listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter].filter(Boolean).length;
   const detailCaseStatusCounts = detailCases.reduce<Record<string, number>>((counts, item) => { counts[item.currentStatus] = (counts[item.currentStatus] ?? 0) + 1; return counts; }, {});
   return (
     <>
-      <article className="card">
+      <article className="card lp-card">
         {error && <div className="inline-alert error" role="alert"><span>{error}</span><button onClick={() => { setError(""); setReload(value => value + 1); }}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div>}
         {notice && <div className="inline-alert success" role="status"><span>{notice}</span><button aria-label="ปิดข้อความ" onClick={() => setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
-        <div className="filter-toolbar">
-          <div className="filter-toolbar-top">
-            <div className="result-count-row">
-              <div className="result-count"><strong>{totalCount.toLocaleString()}</strong><span>Test Cycles</span></div>
-              <div className="result-count"><strong>{caseSummary.totalCases.toLocaleString()}</strong><span>Test Case ทั้งหมด</span></div>
-            </div>
-            <div>
-              {canExport && <button className="btn" disabled={exporting || loading || totalCount === 0} onClick={exportCsv}>{exporting ? <><span className="spinner inline" aria-hidden="true" /> กำลัง Export...</> : <><span className="material-symbols-outlined" aria-hidden="true">download</span> Export CSV</>}</button>}
-              {canEdit && (
-              <>
-              <button className="btn ai-button" onClick={openCycleAi}>
-                <span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span> AI Generate
-              </button>
-              <button className="btn primary" onClick={() => openForm()}>
-                <span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Test Cycle
-              </button>
-              </>
-              )}
-            </div>
+        <div className="lp-head">
+          <div className="lp-title">
+            <div><strong>{totalCount.toLocaleString()}</strong><span>Test Cycle{listFilterCount ? ` · กรอง ${listFilterCount} เงื่อนไข` : ""}</span></div>
+            <small>Test Case ในรอบทั้งหมด {caseSummary.totalCases.toLocaleString()} · ทดสอบแล้ว {caseSummary.executedCases.toLocaleString()}</small>
           </div>
-          <div className="filter-toolbar-row cycle-toolbar-row">
-            <div className="cycle-status-chips" role="group" aria-label="กรองตามสถานะ">
-              <button type="button" className={"status-chip" + (listStatusFilter === "" ? " active" : "")} onClick={() => setListStatusFilter("")}>
-                ทั้งหมด <b>{cycleStatusOptions.reduce((s, x) => s + (statusCounts[x] ?? 0), 0).toLocaleString()}</b>
-              </button>
-              {cycleStatusOptions.map(status => (
-                <button key={status} type="button" className={"status-chip" + (listStatusFilter === status ? " active" : "")} onClick={() => setListStatusFilter(current => current === status ? "" : status)}>
-                  <i className={`status-chip-dot status-chip-dot-${status.toLowerCase()}`} aria-hidden="true" />
-                  {status} <b>{(statusCounts[status] ?? 0).toLocaleString()}</b>
-                </button>
-              ))}
-            </div>
-            <div className="cycle-filters-right">
-              <select className="testcase-module-filter" aria-label="กรอง Module" value={listModuleFilter} onChange={e => setListModuleFilter(e.target.value)} disabled={!listModules.length}>
-                <option value="">ทุก Module</option>
-                {renderModuleSelectOptions(listModules)}
-              </select>
-              <select aria-label="กรอง Type" value={listCycleTypeFilter} onChange={e => setListCycleTypeFilter(e.target.value)}>
-                <option value="">ทุก Type</option>
-                {cycleTypes.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}
-              </select>
-              <select aria-label="กรองผู้สร้าง" value={listCreatedByFilter} onChange={e => setListCreatedByFilter(e.target.value)}>
-                <option value="">ผู้สร้างทั้งหมด</option>
-                {users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}
-              </select>
-            </div>
-          </div>
+          {(canExport || canEdit) && <div className="lp-actions">
+            {canExport && <button className="btn" type="button" disabled={exporting || loading || totalCount === 0} onClick={exportCsv}>{exporting ? <><span className="spinner inline" aria-hidden="true" />กำลัง Export...</> : <><span className="material-symbols-outlined" aria-hidden="true">download</span>Export</>}</button>}
+            {canEdit && <button className="btn ai-button" type="button" onClick={openCycleAi}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span>AI Generate</button>}
+            {canEdit && <button className="btn primary" type="button" onClick={() => openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Cycle</button>}
+          </div>}
+        </div>
+        <label className="lp-sort-mobile">เรียงตาม<select value={`${listSort.key}:${listSort.dir}`} onChange={(e) => { const [key, dir] = e.target.value.split(":"); setListSort({ key: key as CycleSortKey, dir: dir as "asc" | "desc" }); }}>
+          {!cycleSortOptions.some((o) => o.value === `${listSort.key}:${listSort.dir}`) && <option value={`${listSort.key}:${listSort.dir}`}>ตามหัวคอลัมน์ที่เลือกไว้</option>}
+          {cycleSortOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select></label>
+        <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
+          <button type="button" aria-pressed={listStatusFilter === ""} onClick={() => setListStatusFilter("")}>ทั้งหมด <b>{cycleStatusOptions.reduce((s, x) => s + (statusCounts[x] ?? 0), 0).toLocaleString()}</b></button>
+          {cycleStatusOptions.map(status => (
+            <button key={status} type="button" aria-pressed={listStatusFilter === status} onClick={() => setListStatusFilter(current => current === status ? "" : status)}>
+              <span className={`lp-dot ${cycleStatusDot[status] ?? "gray"}`} aria-hidden="true" />{status} <b>{(statusCounts[status] ?? 0).toLocaleString()}</b>
+            </button>
+          ))}
+        </div>
+        <div className="lp-filters" role="group" aria-label="ตัวกรอง Test Cycle">
+          <select className="testcase-module-filter" aria-label="Module" value={listModuleFilter} onChange={e => setListModuleFilter(e.target.value)} disabled={!listModules.length}>
+            <option value="">ทุก Module</option>
+            {renderModuleSelectOptions(listModules)}
+          </select>
+          <select aria-label="Type" value={listCycleTypeFilter} onChange={e => setListCycleTypeFilter(e.target.value)}>
+            <option value="">ทุก Type</option>
+            {cycleTypes.map(x => <option key={x.value} value={x.value}>{x.displayName}</option>)}
+          </select>
+          <select aria-label="ผู้สร้าง" value={listCreatedByFilter} onChange={e => setListCreatedByFilter(e.target.value)}>
+            <option value="">ผู้สร้างทั้งหมด</option>
+            {users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}
+          </select>
+          {listFilterCount > 0 && <button type="button" className="btn lp-clear" onClick={() => { setListModuleFilter(""); setListCycleTypeFilter(""); setListCreatedByFilter(""); setListStatusFilter(""); }}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
         </div>
         {canEdit && cycleSelected.size > 0 && (
-          <div className="testcase-bulk-bar" role="region" aria-label="กำหนดสถานะแบบกลุ่ม">
-            <span className="bulk-count">{cycleSelected.size} เลือกแล้ว</span>
-            <label className="bulk-status">กำหนดสถานะ
-              <select value={cycleBulkStatus} onChange={(e) => setCycleBulkStatus(e.target.value)}>
-                <option value="">เลือกสถานะ...</option>
-                <option>Draft</option>
-                <option>InProgress</option>
-                <option>Completed</option>
-                <option>Closed</option>
-                <option>Cancelled</option>
+          <div className="lp-bulk" role="region" aria-label="กำหนดสถานะแบบกลุ่ม">
+            <span className="lp-bulk-count"><b>{cycleSelected.size.toLocaleString()}</b> เลือกแล้ว</span>
+            <span className="lp-bulk-group">
+              <select aria-label="สถานะที่จะกำหนด" value={cycleBulkStatus} onChange={(e) => setCycleBulkStatus(e.target.value)}>
+                <option value="">สถานะ...</option>
+                {cycleStatusOptions.map((status) => <option key={status}>{status}</option>)}
               </select>
-            </label>
-            <button type="button" className="btn primary" disabled={cycleBulkSaving || !cycleBulkStatus} onClick={applyCycleBulkStatus}>{cycleBulkSaving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> กำหนดสถานะ</>}</button>
-            <button type="button" className="bulk-clear" disabled={cycleBulkSaving} onClick={() => setCycleSelected(new Set())}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิกเลือก</button>
+              <button type="button" className="btn primary" disabled={cycleBulkSaving || !cycleBulkStatus} onClick={applyCycleBulkStatus} aria-label="กำหนดสถานะให้รายการที่เลือก">{cycleBulkSaving ? <span className="spinner inline" aria-hidden="true" /> : <span className="material-symbols-outlined" aria-hidden="true">check</span>}<span className="lp-btn-text">กำหนดสถานะ</span></button>
+            </span>
+            <span className="lp-bulk-end">
+              <button type="button" className="lp-bulk-clear" disabled={cycleBulkSaving} onClick={() => setCycleSelected(new Set())} aria-label="ยกเลิกการเลือกทั้งหมด" title="ยกเลิกการเลือก"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+            </span>
           </div>
         )}
-        <div className="table-wrap">
-          <table className="cycle-list-table table-cards">
+        <ListPager position="top" page={page} pageCount={pageCount} totalCount={totalCount} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />
+        <div className="lp-table-wrap">
+          <table className={`lp-table${canEdit ? " is-selectable" : ""}`}>
             <thead>
               <tr>
-                {canEdit && <th className="cycle-select-col"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={rows.length > 0 && rows.every((x) => cycleSelected.has(x.testCycleId))} onChange={toggleCycleSelectPage} /></th>}
-                <th>Cycle Code</th>
-                <th>Name</th>
-                <th>Release / Build / Environment</th>
-                <th>Progress</th>
-                <th>Status</th>
-                {canEdit && <th className="actions-col">จัดการ</th>}
+                {canEdit && <th className="lp-col-select"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={rows.length > 0 && rows.every((x) => cycleSelected.has(x.testCycleId))} onChange={toggleCycleSelectPage} /></th>}
+                <SortHeader label="Test Cycle" sortKey="code" sort={listSort} onSort={setListSort} className="lp-col-item" />
+                <th className="lp-col-module">Release / Build</th>
+                <SortHeader label="ความคืบหน้า" sortKey="progress" sort={listSort} onSort={setListSort} className="lp-col-progress" defaultDir="desc" />
+                <SortHeader label="สถานะ" sortKey="status" sort={listSort} onSort={setListSort} className="lp-col-status" />
+                <SortHeader label="กำหนดการ" sortKey="startDate" sort={listSort} onSort={setListSort} className="lp-col-date lp-col-schedule" defaultDir="desc" />
+                {canEdit && <th className="lp-col-actions lp-actions-4"><span className="sr-only">จัดการ</span></th>}
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td className="empty-cell" colSpan={canEdit ? 7 : 5}><div className="empty-state"><div className="spinner" /><b>กำลังโหลด Test Cycle...</b></div></td></tr>}
-              {!loading && !error && rows.length === 0 && <tr><td className="empty-cell" colSpan={canEdit ? 7 : 5}><div className="empty-state"><span className="material-symbols-outlined" aria-hidden="true">event_busy</span><b>ไม่พบ Test Cycle</b><small>ลองเปลี่ยน Project, Release, Build หรือคำค้นหา</small></div></td></tr>}
+              {loading && !rows.length && <tr className="lp-empty-row"><td colSpan={canEdit ? 7 : 5}><div className="lp-empty" role="status"><span className="spinner" aria-hidden="true" /><b>กำลังโหลด Test Cycle...</b></div></td></tr>}
+              {!loading && !error && rows.length === 0 && <tr className="lp-empty-row"><td colSpan={canEdit ? 7 : 5}><div className="lp-empty"><span className="material-symbols-outlined" aria-hidden="true">event_busy</span><b>ไม่พบ Test Cycle ตามตัวกรองที่เลือก</b><small>ลองเปลี่ยนสถานะ ตัวกรอง หรือ Project/Release/Build ที่ด้านบน</small></div></td></tr>}
               {rows.map((x) => {
+                const percent = Math.min(100, Math.max(0, x.progressPercent));
+                const schedule = [x.startDate, x.endDate].map((d) => d ? formatThaiDateTime(d, { day: "numeric", month: "short" }) : "?").join(" – ");
                 return (
-                <tr key={x.testCycleId} className={cycleSelected.has(x.testCycleId) ? "is-selected" : ""}>
-                  {canEdit && <td className="cycle-select-col"><input type="checkbox" aria-label={`เลือก ${x.cycleCode}`} checked={cycleSelected.has(x.testCycleId)} onChange={() => toggleCycleSelect(x.testCycleId)} /></td>}
-                  <td>
-                    <button className="link-button" onClick={() => openDetail(x)}>{x.cycleCode}</button>
-                    {x.cycleType && <small className="cell-sub">{x.cycleType}</small>}
+                <tr key={x.testCycleId} className={[cycleSelected.has(x.testCycleId) && "is-selected", (x.status === "Cancelled") && "is-inactive"].filter(Boolean).join(" ") || undefined}>
+                  {canEdit && <td className="lp-col-select"><input type="checkbox" aria-label={`เลือก ${x.cycleCode}`} checked={cycleSelected.has(x.testCycleId)} onChange={() => toggleCycleSelect(x.testCycleId)} /></td>}
+                  <td className="lp-col-item">
+                    <button type="button" className="lp-item" onClick={() => openDetail(x)} aria-label={`เปิด ${x.cycleCode} ${x.cycleName}`}>
+                      <span className="lp-code">{x.cycleCode}<span className="lp-meta">{[x.cycleType, x.modules?.[0]?.moduleName].filter(Boolean).join(" · ") || "-"}</span></span>
+                      <span className="lp-name">{x.cycleName}</span>
+                    </button>
                   </td>
-                  <td>{x.cycleName}</td>
-                  <td>
-                    {x.releaseCode}
-                    <small className="cell-sub">Build {x.buildNumber} · {x.environmentName}</small>
+                  <td className="lp-col-module"><span className="lp-module" title={`${x.releaseCode} · Build ${x.buildNumber} · ${x.environmentName}`}><b>{x.releaseCode || "-"}</b><small>Build {x.buildNumber || "-"} · {x.environmentName || "-"}</small></span></td>
+                  <td className="lp-col-progress">
+                    <span className={`lp-progress${percent >= 100 ? " is-done" : percent > 0 ? "" : " is-empty"}`} role="img" aria-label={`ทดสอบแล้ว ${x.executedCount} จาก ${x.caseCount} (${percent}%)`}>
+                      <span className="lp-progress-track"><span style={{ width: `${percent}%` }} /></span>
+                      <small><b>{percent}%</b> {x.executedCount.toLocaleString()}/{x.caseCount.toLocaleString()}</small>
+                    </span>
                   </td>
-                  <td>
-                    <div className={`progress-cell ${x.progressPercent >= 100 ? "is-complete" : x.progressPercent >= 50 ? "is-progress" : x.progressPercent > 0 ? "is-low" : "is-empty"}`}>
-                      <span>
-                        <i style={{ width: `${x.progressPercent}%` }} />
-                      </span>
-                      <small>
-                        {x.executedCount}/{x.caseCount} · {x.progressPercent}%
-                      </small>
-                    </div>
-                  </td>
-                  <td>
-                    <Badge
-                      tone={
-                        x.status === "Closed" || x.status === "Completed"
-                          ? "green"
-                          : x.status === "Cancelled"
-                            ? "red"
-                            : "yellow"
-                      }
-                    >
-                      {x.status}
-                    </Badge>
-                  </td>
-                  {canEdit && <td className="actions-col">
-                    <div className="row-actions">
-                      <button className="table-action icon-only" title="Clone เป็น Test Cycle ใหม่" aria-label={`Clone ${x.cycleCode} เป็น Test Cycle ใหม่`} onClick={() => openClone(x)}>
-                        <span className="material-symbols-outlined" aria-hidden="true">content_copy</span>
-                      </button>
-                      <button
-                        className="table-action icon-only"
-                        title="แก้ไข"
-                        aria-label={`แก้ไข ${x.cycleCode}`}
-                        onClick={() => openForm(x)}
-                      >
-                        <span className="material-symbols-outlined" aria-hidden="true">edit</span>
-                      </button>
-                      {x.status === "Draft" && (
-                        <button
-                          className="table-action icon-only"
-                          title="เริ่ม"
-                          aria-label={`เริ่ม ${x.cycleCode}`}
-                          onClick={() => changeStatus(x, "InProgress")}
-                        >
-                          <span className="material-symbols-outlined" aria-hidden="true">play_arrow</span>
-                        </button>
-                      )}
-                      {x.status === "InProgress" && (
-                        <button
-                          className="table-action icon-only"
-                          title="ปิด Cycle"
-                          aria-label={`ปิด Cycle ${x.cycleCode}`}
-                          onClick={() => changeStatus(x, "Closed")}
-                        >
-                          <span className="material-symbols-outlined" aria-hidden="true">stop_circle</span>
-                        </button>
-                      )}
-                      <button
-                        className="table-action danger-action icon-only"
-                        title="ลบ"
-                        aria-label={`ลบ ${x.cycleCode}`}
-                        onClick={() => remove(x)}
-                      >
-                        <span className="material-symbols-outlined" aria-hidden="true">delete</span>
-                      </button>
+                  <td className="lp-col-status"><Badge tone={x.status === "Closed" || x.status === "Completed" ? "green" : x.status === "Cancelled" ? "red" : x.status === "Draft" ? "gray" : "blue"}>{x.status}</Badge></td>
+                  <td className="lp-col-date lp-col-schedule"><span className="lp-date">{x.startDate || x.endDate ? schedule : "ไม่ระบุวันที่"}{x.createdByName && <small>{x.createdByName}</small>}</span></td>
+                  {canEdit && <td className="lp-col-actions lp-actions-4">
+                    <div className="lp-row-actions">
+                      {x.status === "Draft" && <button type="button" title="เริ่มทดสอบ" aria-label={`เริ่ม ${x.cycleCode}`} onClick={() => changeStatus(x, "InProgress")}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span></button>}
+                      {x.status === "InProgress" && <button type="button" title="ปิด Cycle" aria-label={`ปิด Cycle ${x.cycleCode}`} onClick={() => changeStatus(x, "Closed")}><span className="material-symbols-outlined" aria-hidden="true">stop_circle</span></button>}
+                      <button type="button" title="แก้ไข" aria-label={`แก้ไข ${x.cycleCode}`} onClick={() => openForm(x)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>
+                      <button type="button" title="Clone เป็น Test Cycle ใหม่" aria-label={`Clone ${x.cycleCode} เป็น Test Cycle ใหม่`} onClick={() => openClone(x)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
+                      <button type="button" className="danger" title="ลบ" aria-label={`ลบ ${x.cycleCode}`} onClick={() => remove(x)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
                     </div>
                   </td>}
                 </tr>
@@ -896,122 +868,124 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
             </tbody>
           </table>
         </div>
-        <div className="pagination suite-pagination">
-          <label>แสดง<select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}><option value="30">30</option><option value="50">50</option><option value="100">100</option><option value="150">150</option></select> รายการ</label>
-          <span>หน้า {Math.min(page, pageCount)} / {pageCount} · ทั้งหมด {totalCount.toLocaleString()} รายการ</span>
-          <button className="btn" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span> ก่อนหน้า</button>
-          <button className="btn" disabled={loading || page >= pageCount} onClick={() => setPage(value => value + 1)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
-        </div>
+        <ListPager position="bottom" page={page} pageCount={pageCount} totalCount={totalCount} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />
       </article>
-      {detail && (
-        <ModalShell labelledBy="cycle-detail-title" className="cycle-modal cycle-detail-modal" onDismiss={() => setDetail(null)}>
-            <div className="modal-head cycle-detail-crumb-head">
-              <div className="cycle-detail-crumb"><span>Test Cycle</span><i className="material-symbols-outlined" aria-hidden="true">chevron_right</i><span>รายละเอียด</span></div>
-              <button aria-label="ปิดรายละเอียด Test Cycle" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+      {detail && (() => {
+        // รายละเอียด Test Cycle (ออกแบบใหม่ 2026-10-22): workspace หน้าจอเดียวแบบเดียวกับรายละเอียด Test Suite/Defect —
+        // หัว + แถบปุ่มอยู่กับที่ | ซ้าย = ความคืบหน้า (แถบสีตามสถานะ + ชิปกรอง) และรายการ Test Case เลื่อนในตัว | ขวา = ข้อมูล/กำหนดการ/Notes
+        const percent = Math.min(100, Math.max(0, detail.progressPercent));
+        const projectName = projects.find(project => project.projectId === detail.projectId)?.projectName ?? "-";
+        const statusMeta = cycleStatusInfo.find((x) => x.value === detail.status);
+        const caseStatusOrder = ["Pass", "Fail", "Blocked", "Skipped", "InProgress", "NotRun"];
+        const presentStatuses = caseStatusOrder.filter((status) => detailCaseStatusCounts[status]);
+        const caseNo = new Map(detailCases.map((x, i) => [x.testCycleCaseId, i + 1]));
+        const caseQuery = detailCaseSearch.trim().toLowerCase();
+        const visibleCases = detailCases.filter((x) => (!detailCaseFilter || x.currentStatus === detailCaseFilter)
+          && (!caseQuery || [x.testCaseCode, x.title, x.moduleCode, x.moduleName].filter(Boolean).join(" ").toLowerCase().includes(caseQuery)));
+        const fullDate = (value?: string) => value ? formatThaiDateTime(value, { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ";
+        // วันคงเหลือนับเฉพาะ Cycle ที่ยังทดสอบอยู่ (วันที่เก็บแบบ date-only จึงเทียบกับเที่ยงคืนของวันนี้)
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const daysLeft = detail.endDate && detail.status === "InProgress" ? Math.round((new Date(`${detail.endDate.slice(0, 10)}T00:00:00`).getTime() - today.getTime()) / 86_400_000) : null;
+        const closeDetail = () => setDetail(null);
+        return (
+        <ModalShell labelledBy="cyd-title" className="cyd" onDismiss={closeDetail}>
+          <header className="cyd-head">
+            <div className="cyd-head-text">
+              <span className="cyd-eyebrow">TEST CYCLE · {projectName}</span>
+              <h2 id="cyd-title">{detail.cycleCode}</h2>
+              <p>{detail.cycleName}</p>
             </div>
-            <div className="cycle-detail-title-row">
-              <span className="suite-detail-hero-icon cycle-detail-title-icon material-symbols-outlined" aria-hidden="true">assignment</span>
-              <div className="cycle-detail-title-text">
-                <h2 id="cycle-detail-title">{detail.cycleCode}</h2>
-                <div className="cycle-detail-title-meta">
-                  <span>{projects.find(project => project.projectId === detail.projectId)?.projectName ?? "-"}</span>
-                  <span className="cycle-detail-id-pill">Test Cycle ID</span>
-                </div>
-              </div>
-              <div className="cycle-detail-badges cycle-detail-title-badges">
-                <Badge tone={detail.status === "Completed" || detail.status === "Closed" ? "green" : detail.status === "Cancelled" ? "red" : "yellow"}><span className="material-symbols-outlined cycle-detail-badge-icon" aria-hidden="true">{cycleStatusIcons[detail.status] ?? "play_circle"}</span> {detail.status}</Badge>
-                {detail.cycleType && <Badge tone="blue"><span className="material-symbols-outlined cycle-detail-badge-icon" aria-hidden="true">{cycleTypeIcons[detail.cycleType] ?? "label"}</span> {detail.cycleType}</Badge>}
-              </div>
+            <div className="cyd-badges">
+              <Badge tone={detail.status === "Completed" || detail.status === "Closed" ? "green" : detail.status === "Cancelled" ? "red" : "yellow"}><span className="material-symbols-outlined cyd-badge-icon" aria-hidden="true">{cycleStatusIcons[detail.status] ?? "play_circle"}</span> {detail.status}{statusMeta ? ` · ${statusMeta.label}` : ""}</Badge>
+              {detail.cycleType && <Badge tone="blue"><span className="material-symbols-outlined cyd-badge-icon" aria-hidden="true">{cycleTypeIcons[detail.cycleType] ?? "label"}</span> {detail.cycleType}</Badge>}
             </div>
-            <details className="requirement-status-information full">
-              <summary>
-                <span className="information-icon" aria-hidden="true">i</span>
-                <span><b>{detail.status} · {cycleStatusInfo.find((x) => x.value === detail.status)?.label}</b><small>{cycleStatusInfo.find((x) => x.value === detail.status)?.meaning}</small></span>
-                <em>ดูความหมายทั้งหมด</em>
-              </summary>
-              <div className="requirement-status-list">
-                {cycleStatusInfo.map((item) => <article key={item.value} className={detail.status === item.value ? "active" : ""}>
-                  <div><b>{item.value}</b><span>{item.label}</span></div>
-                  <p>{item.meaning}</p>
-                  <small><strong>ผลต่อการใช้งาน:</strong> {item.impact}</small>
-                </article>)}
-              </div>
-            </details>
-            <section className="cycle-detail-hero">
-              <div className="cycle-detail-hero-text">
-                <span className="cycle-detail-hero-icon material-symbols-outlined" aria-hidden="true">desktop_windows</span>
-                <div><h3>{detail.cycleName}</h3><p>{detail.releaseCode} <span aria-hidden="true">•</span> Build {detail.buildNumber}</p></div>
-              </div>
-            </section>
-            <section className="cycle-detail-section" aria-label={`ดำเนินการแล้ว ${Math.min(100, Math.max(0, detail.progressPercent))}%`}>
-              <div className="cycle-detail-section-head"><h3><span className="material-symbols-outlined cycle-detail-section-icon" aria-hidden="true">monitoring</span>ความคืบหน้าการทดสอบ</h3><span className="cycle-detail-progress-count">{detail.executedCount.toLocaleString()} จาก {detail.caseCount.toLocaleString()} Test Cases</span></div>
-              <div className="cycle-detail-progress">
-                {/* วงแหวน % ใช้ SVG stroke-dasharray/dashoffset ล้วนๆ (ไม่ใช้ CSS conic-gradient) เพราะ
-                    geometry ของ SVG circle ตายตัวแน่นอน ไม่ขึ้นกับการคำนวณ flex/grid ของ parent เหมือน
-                    div+conic-gradient ที่เคยพังกลายเป็นแท่งสี่เหลี่ยมยาวเต็มความกว้างในบางเบราว์เซอร์/เครื่อง */}
-                <div className="cycle-detail-progress-ring">
-                  <svg viewBox="0 0 128 128" width="128" height="128" aria-hidden="true">
-                    <circle cx="64" cy="64" r="54" fill="none" stroke="#e9eef8" strokeWidth="12" />
-                    <circle cx="64" cy="64" r="54" fill="none" stroke="#2457d6" strokeWidth="12" strokeLinecap="round"
-                      strokeDasharray={2 * Math.PI * 54}
-                      strokeDashoffset={2 * Math.PI * 54 * (1 - Math.min(100, Math.max(0, detail.progressPercent)) / 100)}
-                      transform="rotate(-90 64 64)" />
-                  </svg>
-                  <div className="cycle-detail-progress-ring-inner">
-                    <strong>{Math.min(100, Math.max(0, detail.progressPercent))}%</strong>
-                    <small>{detail.progressPercent >= 100 ? "เสร็จสมบูรณ์" : detail.progressPercent <= 0 ? "ยังไม่เริ่ม" : "กำลังดำเนินการ"}</small>
-                  </div>
+            <button type="button" className="cyd-close" aria-label="ปิดรายละเอียด Test Cycle" onClick={closeDetail}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+          </header>
+          {(canEdit || (onOpenExecution && detail.status === "InProgress")) && <div className="cyd-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Cycle">
+            {onOpenExecution && detail.status === "InProgress" && <button type="button" className="btn primary" onClick={() => { closeDetail(); onOpenExecution(detail.testCycleId); }}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Execution Workspace</button>}
+            {canEdit && <button type="button" className={`btn${onOpenExecution && detail.status === "InProgress" ? "" : " primary"}`} onClick={() => { const cycle = detail; closeDetail(); openForm(cycle); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
+            {canEdit && <button type="button" className="btn" onClick={() => openClone(detail)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone เป็น Cycle ใหม่</button>}
+          </div>}
+          <div className="cyd-body">
+            <div className="cyd-main">
+              <section className="cyd-progress" aria-labelledby="cyd-progress-title">
+                <div className="cyd-progress-head">
+                  <h3 id="cyd-progress-title"><span className="material-symbols-outlined" aria-hidden="true">monitoring</span> ความคืบหน้า</h3>
+                  <p><b>{percent}%</b> ทดสอบแล้ว {detail.executedCount.toLocaleString()} จาก {detail.caseCount.toLocaleString()} Test Case</p>
                 </div>
-                <div className="cycle-detail-progress-side">
-                  <div className="cycle-detail-progress-track"><span style={{ width: `${Math.min(100, Math.max(0, detail.progressPercent))}%` }} /></div>
-                  <div className="cycle-detail-progress-stats">
-                    <div className="cycle-detail-progress-stat"><span className="cycle-detail-progress-stat-icon blue material-symbols-outlined" aria-hidden="true">task_alt</span><div><b>{detail.executedCount.toLocaleString()}</b><small>ดำเนินการแล้ว</small></div></div>
-                    <div className="cycle-detail-progress-stat"><span className="cycle-detail-progress-stat-icon orange material-symbols-outlined" aria-hidden="true">pending_actions</span><div><b>{Math.max(0, detail.caseCount - detail.executedCount).toLocaleString()}</b><small>ค้างอยู่</small></div></div>
-                    <div className="cycle-detail-progress-stat"><span className="cycle-detail-progress-stat-icon green material-symbols-outlined" aria-hidden="true">flag</span><div><b>{detail.caseCount.toLocaleString()}</b><small>ทั้งหมด</small></div></div>
-                  </div>
+                {detailCases.length > 0
+                  ? <div className="cyd-bar" role="img" aria-label={presentStatuses.map((status) => `${cycleCaseStatusLabels[status] ?? status} ${detailCaseStatusCounts[status]}`).join(", ")}>{presentStatuses.map((status) => <span key={status} className={`is-${status.toLowerCase()}`} style={{ flexGrow: detailCaseStatusCounts[status] }} title={`${cycleCaseStatusLabels[status] ?? status} ${detailCaseStatusCounts[status]}`} />)}</div>
+                  : <div className="cyd-bar" role="img" aria-label={`ทดสอบแล้ว ${percent}%`}><span className="is-pass" style={{ flexGrow: percent }} /><span className="is-notrun" style={{ flexGrow: 100 - percent }} /></div>}
+                {detailCases.length > 0 && <div className="cyd-chips" role="group" aria-label="กรอง Test Case ตามสถานะ">
+                  <button type="button" aria-pressed={!detailCaseFilter} onClick={() => setDetailCaseFilter("")}>ทั้งหมด <b>{detailCases.length.toLocaleString()}</b></button>
+                  {presentStatuses.map((status) => <button key={status} type="button" aria-pressed={detailCaseFilter === status} onClick={() => setDetailCaseFilter((current) => current === status ? "" : status)}><span className={`cyd-dot is-${status.toLowerCase()}`} aria-hidden="true" />{cycleCaseStatusLabels[status] ?? status} <b>{detailCaseStatusCounts[status].toLocaleString()}</b></button>)}
+                </div>}
+              </section>
+              <section className="cyd-cases" aria-labelledby="cyd-cases-title">
+                <div className="cyd-cases-head">
+                  <h3 id="cyd-cases-title"><span className="material-symbols-outlined" aria-hidden="true">checklist</span> Test Cases <span className="cyd-count">{visibleCases.length === detailCases.length ? (detailCases.length || detail.caseCount).toLocaleString() : `${visibleCases.length.toLocaleString()} / ${detailCases.length.toLocaleString()}`}</span></h3>
+                  {detailCases.length > 0 && <label className="cyd-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input value={detailCaseSearch} onChange={(e) => setDetailCaseSearch(e.target.value)} aria-label="ค้นหา Test Case ใน Cycle" placeholder="ค้นหา Code / ชื่อ / Module" /></label>}
                 </div>
-              </div>
-            </section>
-            <section className="cycle-detail-section cycle-detail-cases" aria-labelledby="cycle-detail-cases-title">
-              <div className="cycle-detail-section-head"><h3 id="cycle-detail-cases-title"><span className="material-symbols-outlined cycle-detail-section-icon" aria-hidden="true">checklist</span>Test Cases ใน Cycle</h3><span className="cycle-detail-progress-count">{detailCases.length || detail.caseCount} รายการ</span></div>
-              {detailCasesLoading ? <div className="cycle-detail-cases-state" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังโหลด Test Case...</div> : detailCasesError ? <div className="cycle-detail-cases-state is-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span><span>{detailCasesError}</span><button type="button" className="btn" onClick={() => loadDetailCases(detail.testCycleId)}>ลองใหม่</button></div> : !detailCases.length ? <div className="cycle-detail-cases-state"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span>ยังไม่มี Test Case ใน Cycle นี้</div> : <>
-                <div className="cycle-detail-case-summary" aria-label="สรุปสถานะ Test Case">{Object.entries(detailCaseStatusCounts).map(([status, count]) => <span key={status} className={`cycle-detail-case-summary-item is-${status.toLowerCase()}`}><b>{count.toLocaleString()}</b>{cycleCaseStatusLabels[status] ?? status}</span>)}</div>
-                <div className="cycle-detail-case-list">{detailCases.map((testCase, index) => <article key={testCase.testCycleCaseId} className="cycle-detail-case-row">
-                  <span className="cycle-detail-case-order">{String(index + 1).padStart(2, "0")}</span>
-                  <div className="cycle-detail-case-main"><div><b>{testCase.testCaseCode}</b><Badge tone={testCase.priority === "P0" || testCase.priority === "P1" ? "red" : "blue"}>{testCase.priority}</Badge></div><strong>{testCase.title}</strong><small>{[testCase.moduleCode, testCase.moduleName].filter(Boolean).join(" · ") || "ไม่ระบุ Module"}</small><small className="cycle-detail-case-expected" title={testCase.expectedResult || "ไม่ระบุ Expected Result"}><b>Expected Result (Step แรก):</b> {testCase.expectedResult || "ไม่ระบุ"}</small><small className="cycle-detail-case-actual" title={testCase.actualResult || "ยังไม่มี Actual Result"}><b>Actual Result (ผลล่าสุด):</b> {testCase.actualResult || "ยังไม่มีผลการรัน"}</small></div>
-                  <Badge tone={cycleCaseStatusTones[testCase.currentStatus] ?? "blue"}>{cycleCaseStatusLabels[testCase.currentStatus] ?? testCase.currentStatus}</Badge>
-                </article>)}</div>
-              </>}
-            </section>
-            <section className="cycle-detail-section">
-              <h3><span className="material-symbols-outlined cycle-detail-section-icon" aria-hidden="true">dataset</span>ข้อมูลการทดสอบ</h3>
-              <dl className="cycle-detail-grid">
-                <div><dt><span className="purple material-symbols-outlined" aria-hidden="true">inventory_2</span> Release</dt><dd>{detail.releaseCode || "-"}</dd></div>
-                <div><dt><span className="blue material-symbols-outlined" aria-hidden="true">deployed_code</span> Build</dt><dd>{detail.buildNumber || "-"}</dd></div>
-                <div><dt><span className="blue material-symbols-outlined" aria-hidden="true">desktop_windows</span> Environment</dt><dd>{detail.environmentName || "-"}</dd></div>
-                <div><dt><span className="orange material-symbols-outlined" aria-hidden="true">person</span> สร้างโดย</dt><dd>{detail.createdByName || "-"}</dd></div>
-                <div><dt><span className="purple material-symbols-outlined" aria-hidden="true">calendar_today</span> สร้างเมื่อ</dt><dd>{formatThaiDateTime(detail.createdAt, { day: "numeric", month: "short", year: "numeric" })}</dd></div>
-                <div><dt><span className="blue material-symbols-outlined" aria-hidden="true">folder_copy</span> Test Suite</dt><dd>{detail.suiteName || "ไม่ระบุ Suite"}</dd></div>
-                <div className="wide"><dt><span className="purple material-symbols-outlined" aria-hidden="true">account_tree</span> Module</dt><dd>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</dd></div>
-              </dl>
-            </section>
-            <section className="cycle-detail-section">
-              <h3><span className="material-symbols-outlined cycle-detail-section-icon" aria-hidden="true">date_range</span>กำหนดการ</h3>
-              <div className="cycle-detail-timeline">
-                <div><span className="material-symbols-outlined" aria-hidden="true">event_available</span><small>Start Date</small><b>{detail.startDate ? formatThaiDateTime(detail.startDate, { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ"}</b></div>
-                <i aria-hidden="true" />
-                <div><span className="material-symbols-outlined" aria-hidden="true">event</span><small>End Date</small><b>{detail.endDate ? formatThaiDateTime(detail.endDate, { day: "numeric", month: "short", year: "numeric" }) : "ไม่ระบุ"}</b></div>
-              </div>
-            </section>
-            <section className="cycle-detail-notes"><div className="material-symbols-outlined" aria-hidden="true">info</div><span><b>Notes</b><p>{detail.notes || "ไม่มี Notes สำหรับ Test Cycle นี้"}</p></span></section>
-            {detail.copiedFromTestCycleId && <section className="cycle-detail-lineage"><span className="material-symbols-outlined" aria-hidden="true">account_tree</span><span><b>สร้างจาก Cycle เดิม</b><small>{detail.copiedFromCycleCode || detail.copiedFromTestCycleId}</small></span></section>}
-            <div className="modal-actions">
-              <button className="btn" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิด</button>
-              {canEdit && <button className="btn" onClick={() => openClone(detail)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone เป็น Cycle ใหม่</button>}
-              {canEdit && <button className="btn primary" onClick={() => { const cycle = detail; setDetail(null); openForm(cycle); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
+                <div className="cyd-case-list">
+                  {detailCasesLoading ? <div className="cyd-state" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังโหลด Test Case...</div>
+                    : detailCasesError ? <div className="cyd-state is-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span><span>{detailCasesError}</span><button type="button" className="btn" onClick={() => loadDetailCases(detail.testCycleId)}>ลองใหม่</button></div>
+                    : !detailCases.length ? <div className="cyd-state"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span>ยังไม่มี Test Case ใน Cycle นี้</div>
+                    : !visibleCases.length ? <div className="cyd-state"><span className="material-symbols-outlined" aria-hidden="true">search_off</span>ไม่พบ Test Case ที่ตรงกับคำค้นหรือตัวกรอง</div>
+                    : visibleCases.map((testCase) => {
+                      const failed = testCase.currentStatus === "Fail" || testCase.currentStatus === "Blocked";
+                      return <article key={testCase.testCycleCaseId} className={`cyd-case is-${testCase.currentStatus.toLowerCase()}`}>
+                        <span className="cyd-case-no">{caseNo.get(testCase.testCycleCaseId)}</span>
+                        <div className="cyd-case-main">
+                          <div className="cyd-case-code"><b>{testCase.testCaseCode}</b><Badge tone={testCase.priority === "P0" || testCase.priority === "P1" ? "red" : "blue"}>{testCase.priority}</Badge></div>
+                          <p>{testCase.title}</p>
+                          <small>{[testCase.moduleCode, testCase.moduleName].filter(Boolean).join(" · ") || "ไม่ระบุ Module"}</small>
+                          {/* ผลจริงแสดงเมื่อมี; ผลที่คาดหวัง (Step แรก) แสดงคู่กันเฉพาะเคส Fail/Blocked ให้เทียบได้ทันที */}
+                          {(testCase.actualResult || failed) && <dl className="cyd-case-results">
+                            {failed && <div><dt>คาดหวัง</dt><dd title={testCase.expectedResult || undefined}>{testCase.expectedResult || "ไม่ระบุ"}</dd></div>}
+                            <div className={failed ? "is-actual" : undefined}><dt>ผลล่าสุด</dt><dd title={testCase.actualResult || undefined}>{testCase.actualResult || "ยังไม่มีผลการรัน"}</dd></div>
+                          </dl>}
+                        </div>
+                        <Badge tone={cycleCaseStatusTones[testCase.currentStatus] ?? "blue"}>{cycleCaseStatusLabels[testCase.currentStatus] ?? testCase.currentStatus}</Badge>
+                      </article>;
+                    })}
+                </div>
+              </section>
             </div>
-          </ModalShell>
-      )}
+            <aside className="cyd-side" aria-label="ข้อมูล Test Cycle">
+              <section>
+                <h3><span className="material-symbols-outlined" aria-hidden="true">dataset</span> ข้อมูลการทดสอบ</h3>
+                <dl className="cyd-info">
+                  <div><dt>Release · Build</dt><dd>{detail.releaseCode || "-"} · Build {detail.buildNumber || "-"}</dd></div>
+                  <div><dt>Environment</dt><dd>{detail.environmentName || "-"}</dd></div>
+                  <div><dt>Test Suite</dt><dd>{detail.suiteName || "ไม่ระบุ Suite"}</dd></div>
+                  <div><dt>Module</dt><dd>{detail.modules?.length ? detail.modules.map(m => m.moduleName).join(", ") : "-"}</dd></div>
+                  <div><dt>สร้างโดย</dt><dd>{detail.createdByName || "-"} <small>{detail.createdAt ? fullDate(detail.createdAt) : ""}</small></dd></div>
+                </dl>
+              </section>
+              <section>
+                <h3><span className="material-symbols-outlined" aria-hidden="true">date_range</span> กำหนดการ</h3>
+                <div className="cyd-schedule">
+                  <div><small>เริ่ม</small><b>{fullDate(detail.startDate)}</b></div>
+                  <span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+                  <div><small>สิ้นสุด</small><b>{fullDate(detail.endDate)}</b></div>
+                </div>
+                {daysLeft !== null && <p className={`cyd-days${daysLeft < 0 ? " is-late" : daysLeft <= 2 ? " is-near" : ""}`}>{daysLeft < 0 ? `เลยกำหนด ${Math.abs(daysLeft)} วัน` : daysLeft === 0 ? "ครบกำหนดวันนี้" : `เหลือ ${daysLeft} วัน`}</p>}
+              </section>
+              <section>
+                <h3><span className="material-symbols-outlined" aria-hidden="true">sticky_note_2</span> Notes</h3>
+                <p className={`cyd-notes${detail.notes ? "" : " is-empty"}`}>{detail.notes || "ไม่มี Notes สำหรับ Test Cycle นี้"}</p>
+              </section>
+              {detail.copiedFromTestCycleId && <section className="cyd-lineage"><span className="material-symbols-outlined" aria-hidden="true">account_tree</span><span><b>สร้างจาก Cycle เดิม</b><small>{detail.copiedFromCycleCode || detail.copiedFromTestCycleId}</small></span></section>}
+              <details className="cyd-status-help">
+                <summary><span className="material-symbols-outlined" aria-hidden="true">help</span> ความหมายสถานะ {detail.status}</summary>
+                {statusMeta && <p><b>{statusMeta.label}:</b> {statusMeta.meaning}</p>}
+                <ul>{cycleStatusInfo.map((item) => <li key={item.value} className={item.value === detail.status ? "is-current" : undefined}><b>{item.value} · {item.label}</b><span>{item.impact}</span></li>)}</ul>
+              </details>
+            </aside>
+          </div>
+        </ModalShell>
+        );
+      })()}
       {cycleAiModal && (
         <ModalShell labelledBy="cycle-ai-title" dirty={cycleAiDrafts.length > 0} className="requirement-ai-modal suite-ai-modal cycle-ai-modal" boxStyle={{ position: "relative" }} onDismiss={() => { if (!cycleAiGenerating) setCycleAiModal(false); }}>
             {cycleAiGenerating && (

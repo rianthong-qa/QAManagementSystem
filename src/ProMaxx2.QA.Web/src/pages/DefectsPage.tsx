@@ -1,17 +1,28 @@
 import { toUtcDate, formatThaiDateTime } from "../dateTime";
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import type { DefectItem, UserLookup } from "../shared/types";
-import { apiUrl, authHeaders, getJson } from "../api";
+import { apiUrl, authHeaders, getJson, isAbortError } from "../api";
 import { DefectCommentComposer, DefectCommentList } from "../components/DefectComments";
 import { type DefectComment, type DefectCommentAttachment, toLightboxImages, useAuthedAttachmentUrls } from "../components/defectCommentUtils";
 import { ImageLightbox } from "../components/ImageLightbox";
 import { confirmDialog, notify } from "../components/dialogStore";
 import { exportDefectModulePdf } from "../DefectModulePdf";
+import { SortHeader, type SortState } from "../components/SortHeader";
+import "../components/ListPage.css";
+import { ListPager } from "../components/ListPager";
+import { useUserPageSize } from "../components/usePageSize";
+import "./DefectsPage.css";
 import { Badge } from "../components/Badge";
-import { defectAgeDays, parseReproSteps } from "../shared/defects";
+import { defectAgeDays, defectClosingStatuses, defectResolutionLabel, parseReproSteps, type DefectResolution } from "../shared/defects";
+import { DefectResolutionModal } from "../components/DefectResolutionModal";
+import { useDebounced } from "../components/useDebounced";
 import { ReproSteps } from "../components/ReproSteps";
 import { ModalShell } from "../components/ModalShell";
-import { type ModuleItem, copyText, defectStatusTones, renderModuleSelectOptions } from "../shared/appShared";
+import { type ModuleItem, copyText, defectStatusTones, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
+
+type SimilarDefect = { defectId: string; defectCode: string; title: string; status: string; severity: string; resolutionType?: string | null; snippet: string };
+// BadRequest ของ API บางจุดส่งข้อความล้วน (ไม่ใช่ ProblemDetails) — อ่านได้ทั้งสองแบบ
+const readError = async (response: Response, fallback: string) => { const text = await response.text().catch(() => ""); try { const p = JSON.parse(text); return typeof p === "string" ? p : p?.detail ?? p?.title ?? fallback; } catch { return text.trim() || fallback; } };
 
 type DefectActivityItem = { activityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string; performedByUserId?: string | null; performedAt?: string; attachments?: DefectCommentAttachment[] };
 type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority?: string; status?: string; linkedAt?: string };
@@ -20,6 +31,22 @@ const defectStatuses = ["Open", "In Progress", "Resolved", "Closed", "Rejected"]
 type DefectModuleCount = { moduleId: string | null; moduleCode: string | null; moduleName: string; count: number };
 const emptyDefectStats = { total: 0, open: 0, inProgress: 0, resolved: 0, closed: 0, rejected: 0, critical: 0, high: 0, medium: 0, low: 0, oldestOpenAgeDays: 0, unassignedActive: 0, closureRate: 0, modules: [] as DefectModuleCount[] };
 const defectPct = (count: number, total: number): number => total > 0 ? Math.round((count / total) * 100) : 0;
+// เรียงรายการด้วยหัวคอลัมน์ — ฝั่ง server (sortBy) เพราะแบ่งหน้าที่ server; จำไว้ต่อเครื่อง ค่าเริ่มต้น = สร้างล่าสุดก่อน (ลำดับเดิม)
+type DefectSortKey = "code" | "severity" | "status" | "createdAt";
+const defectSortStorageKey = "qa.defects.listSort";
+const defaultDefectSort: SortState<DefectSortKey> = { key: "createdAt", dir: "desc" };
+const readDefectSort = (): SortState<DefectSortKey> => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(defectSortStorageKey) ?? "null") as SortState<DefectSortKey> | null;
+    return saved && ["code", "severity", "status", "createdAt"].includes(saved.key) && (saved.dir === "asc" || saved.dir === "desc") ? saved : defaultDefectSort;
+  } catch { return defaultDefectSort; }
+};
+const defectSortOptions: { value: string; label: string }[] = [
+  { value: "createdAt:desc", label: "ใหม่ล่าสุดก่อน" }, { value: "createdAt:asc", label: "ค้างนานที่สุดก่อน" },
+  { value: "severity:asc", label: "รุนแรงที่สุดก่อน (Critical)" }, { value: "status:asc", label: "สถานะ (Open → Rejected)" },
+  { value: "code:desc", label: "รหัส Defect มาก → น้อย" }, { value: "code:asc", label: "รหัส Defect น้อย → มาก" },
+];
+const moduleRankingLimit = 6;
 const defectSeverityTones: Record<string, string> = { Critical: "red", High: "yellow", Medium: "blue", Low: "green" };
 // สถานะการส่งเคสไป CRM (BlueSea Helpdesk) — ใช้แสดงคอลัมน์ CRM ในตาราง Defect list เพื่อให้เห็นได้ทันที
 // ว่ารายการไหนส่งไปแล้วบ้าง โดยไม่ต้องเปิด detail ทีละรายการ (เดิมมีแสดงแค่ใน detail modal เท่านั้น)
@@ -47,12 +74,15 @@ function fmtAgo(iso?: string | null): string {
   return `${Math.floor(mo / 12)} ปีที่แล้ว`;
 }
 
-export function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel, buildLabel, search, onClearSearch, canEdit, canExport, onOpenTestCase }: { projectId?: string; releaseId?: string; buildId?: string; projectName?: string; releaseLabel?: string; buildLabel?: string; search: string; onClearSearch?: () => void; canEdit?: boolean; canExport?: boolean; onOpenTestCase?: (testCaseId: string) => void }) {
+export function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel, buildLabel, search, onSearchChange, onClearSearch, canEdit, canExport, onOpenTestCase }: { projectId?: string; releaseId?: string; buildId?: string; projectName?: string; releaseLabel?: string; buildLabel?: string; search: string; onSearchChange?: (value: string) => void; onClearSearch?: () => void; canEdit?: boolean; canExport?: boolean; onOpenTestCase?: (testCaseId: string) => void }) {
   const [items, setItems] = useState<DefectItem[]>([]);
+  const [listSort, setListSortState] = useState<SortState<DefectSortKey>>(readDefectSort);
+  const setListSort = (next: SortState<DefectSortKey>) => { setListSortState(next); setPage(1); try { localStorage.setItem(defectSortStorageKey, JSON.stringify(next)); } catch { /* ไม่จำก็ได้ */ } };
+  const listSortBy = `${listSort.key}_${listSort.dir}`;
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(30);
+  const [pageSize, setPageSize] = useUserPageSize("qa.defects.pageSize");
   // Module ที่หน้าอื่นส่งมา (qa.targetModuleId เช่นจาก Dashboard) ใช้เป็นตัวกรองเริ่มต้นครั้งเดียวแล้วลบทิ้ง
   const [moduleFilter, setModuleFilter] = useState(() => {
     try { const target = localStorage.getItem("qa.targetModuleId") ?? ""; localStorage.removeItem("qa.targetModuleId"); return target; } catch { return ""; }
@@ -84,6 +114,11 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [formTitle, setFormTitle] = useState("");
   const [formSeverity, setFormSeverity] = useState("Medium");
   const [formStatus, setFormStatus] = useState("Open");
+  // ผลการปิด (Phase 6): mode quick = ปุ่มเปลี่ยนสถานะ, form = บันทึกฟอร์มที่เลือกสถานะปิด, status null = แก้ผลอย่างเดียว
+  const [resolving, setResolving] = useState<{ item: DefectItem | null; status: string | null; mode: "quick" | "form" | "edit" } | null>(null);
+  const masterOptions = useMasterOptions();
+  const rootCauses = masterOptions("DefectRootCause");
+  const rootCauseName = (value: string) => rootCauses.find((x) => x.value === value)?.displayName ?? value;
   const [formModuleId, setFormModuleId] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formStepsToReproduce, setFormStepsToReproduce] = useState("");
@@ -120,6 +155,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     if (!projectId) { setItems([]); setTotalCount(0); setLoading(false); return; }
     setLoading(true); setError("");
     const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(search && { search }), ...(moduleFilter && moduleFilter !== "unassigned" && { moduleId: moduleFilter }), ...(moduleFilter === "unassigned" && { unassignedModule: "true" }), ...(severityFilter && { severity: severityFilter }), ...(priorityFilter && { priority: priorityFilter }), ...(statusFilter && { status: statusFilter }), ...(assigneeFilter && { assigneeUserId: assigneeFilter }), page: String(page), size: String(pageSize) });
+    q.set("sortBy", listSortBy);
     fetch(`${apiUrl}/defects?${q}`, { headers }).then(async r => {
       if (!r.ok) throw new Error("โหลด Defect ไม่สำเร็จ");
       const json = await r.json();
@@ -135,7 +171,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       setItems(rows as DefectItem[]);
       setTotalCount(Number.isFinite(total) ? total : rows.length);
     }).catch(e => { if (requestVersion === defectRequestVersion.current) setError(e instanceof Error ? e.message : "โหลด Defect ไม่สำเร็จ"); }).finally(() => { if (requestVersion === defectRequestVersion.current) setLoading(false); });
-  }, [projectId, releaseId, buildId, search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter, page, pageSize, headers, reload]);
+  }, [projectId, releaseId, buildId, search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter, listSortBy, page, pageSize, headers, reload]);
   useEffect(load, [load]);
   // การ์ดสรุปด้านบน — ขอบเขตตาม Project/Release/Build ที่เลือก (ไม่ผูกกับตัวกรองของตารางด้านล่าง) เพื่อให้เห็น
   // ภาพรวมทั้งหมดของบริบทนั้นเสมอ ไม่ว่าจะกรอง/ค้นหาตารางด้วยอะไรอยู่
@@ -196,12 +232,14 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     setFormAssigneeUserId(item?.assigneeUserId ?? "");
     setFormOpen(true);
   };
-  const saveForm = async () => {
+  const saveForm = async (resolution?: DefectResolution) => {
+    // เปลี่ยนเป็นสถานะปิดจากฟอร์ม = ต้องบันทึกผลการปิดก่อน (แก้ Defect ที่ปิดอยู่แล้วไม่ถามซ้ำ)
+    if (!resolution && defectClosingStatuses.includes(formStatus) && (!editing || !defectClosingStatuses.includes(editing.status))) { setResolving({ item: editing, status: formStatus, mode: "form" }); return; }
     setSaving(true); setError("");
     try {
-      const body = { moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: formStepsToReproduce || null, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null };
+      const body = { moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: formStepsToReproduce || null, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null, resolution: resolution ?? null };
       const response = await fetch(editing ? `${apiUrl}/defects/${editing.defectId}` : `${apiUrl}/defects`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
-      if (!response.ok) { const p = await response.json().catch(() => null); throw new Error(p?.detail ?? "บันทึก Defect ไม่สำเร็จ"); }
+      if (!response.ok) throw new Error(await readError(response, "บันทึก Defect ไม่สำเร็จ"));
       setFormOpen(false);
       setNotice(editing ? "แก้ไข Defect แล้ว" : "สร้าง Defect แล้ว");
       setReload(x => x + 1);
@@ -213,11 +251,38 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     if (response.ok) { setNotice(`ลบ ${item.defectCode} แล้ว`); setReload(x => x + 1); }
   };
   const quickStatus = async (item: DefectItem, status: string) => {
-    if (status === "Closed" && !await confirmDialog({ title: "ปิด Defect", message: `ปิด ${item.defectCode} ใช่หรือไม่?\nDefect ที่ปิดแล้วจะไม่อยู่ในรายการที่ต้องติดตาม`, confirmLabel: "ปิด Defect" })) return;
+    // Resolved / Closed / Rejected ต้องระบุผลการปิด (ใช้หน้าต่างผลการปิดแทนกล่องยืนยันเดิม)
+    if (defectClosingStatuses.includes(status)) { setResolving({ item, status, mode: "quick" }); return; }
     const response = await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status }) });
     if (response.ok) { setNotice(`เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1); }
     else notify(`เปลี่ยนสถานะ ${item.defectCode} ไม่สำเร็จ`, "error");
   };
+  const confirmResolution = async (value: DefectResolution) => {
+    if (!resolving) return;
+    const { item, status, mode } = resolving;
+    if (mode === "form") { setResolving(null); await saveForm(value); return; }
+    if (!item) return;
+    const response = status
+      ? await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status, resolution: value }) })
+      : await fetch(`${apiUrl}/defects/${item.defectId}/resolution`, { method: "PUT", headers, body: JSON.stringify(value) });
+    if (!response.ok) throw new Error(await readError(response, "บันทึกผลการปิดไม่สำเร็จ"));
+    const updated = await response.json() as DefectItem;
+    setResolving(null);
+    setNotice(status ? `เปลี่ยนสถานะ ${item.defectCode} เป็น ${status} และบันทึกผลการปิดแล้ว` : `บันทึกผลการปิด ${item.defectCode} แล้ว`);
+    setReload(x => x + 1);
+    if (mode === "edit") setDetail({ ...item, ...updated });
+  };
+  // เตือน Defect ที่อาจซ้ำตอนสร้าง (ค้นคลังความรู้ของ Project นี้) — ไม่บล็อกการบันทึก
+  const [similar, setSimilar] = useState<SimilarDefect[]>([]);
+  const similarText = useDebounced(formOpen && !editing ? `${formTitle} ${formDescription}`.trim() : "", 600);
+  useEffect(() => {
+    if (!projectId || similarText.length < 6) { setSimilar([]); return; }
+    const controller = new AbortController();
+    getJson<SimilarDefect[]>(`${apiUrl}/defects/similar?${new URLSearchParams({ projectId, text: similarText.slice(0, 300) })}`, controller.signal)
+      .then((rows) => setSimilar(Array.isArray(rows) ? rows : []))
+      .catch((e) => { if (!isAbortError(e)) setSimilar([]); });
+    return () => controller.abort();
+  }, [similarText, projectId]);
   const openCrmDialog = async (mode: "send" | "reassign", item: DefectItem) => {
     setCrmMode(mode); setCrmTargetItem(item);
     setCrmAssignTo(""); setCrmDialogOpen(true); setCrmDevUsersLoading(true); setCrmDevUsersError("");
@@ -327,160 +392,158 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     setAssigneeFilter("");
     setPage(1);
   };
-  const visibleModuleRanking = showAllModules ? summaryStats.modules : summaryStats.modules.slice(0, 8);
+  const visibleModuleRanking = showAllModules ? summaryStats.modules : summaryStats.modules.slice(0, moduleRankingLimit);
+  // สถานะของภาพรวม + ชิปกรองรายการ (จำนวนเป็นของทั้งขอบเขต Project/Release/Build ไม่ขึ้นกับตัวกรองอื่น)
+  const defectStatusParts = [
+    { key: "open", value: "Open", label: "Open", count: summaryStats.open },
+    { key: "inprogress", value: "In Progress", label: "In Progress", count: summaryStats.inProgress },
+    { key: "resolved", value: "Resolved", label: "Resolved", count: summaryStats.resolved },
+    { key: "closed", value: "Closed", label: "Closed", count: summaryStats.closed },
+    { key: "rejected", value: "Rejected", label: "Rejected", count: summaryStats.rejected },
+  ];
   const defectContextLabel = [projectName, releaseLabel, buildLabel].filter(Boolean).join(" · ") || "ยังไม่ได้เลือก Project / Release / Build";
   if (loading && !items.length) return <article className="card empty"><div className="spinner" /><p>กำลังโหลด Defect...</p></article>;
-  return <div className="defect-page defect-page-modern">
+  return <div className="defect-page df-page">
     {error && <div className="inline-alert error"><span>{error}</span><button type="button" aria-label="ปิดข้อความ" onClick={() => setError("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
     {notice && <div className="inline-alert success"><span>{notice}</span><button type="button" aria-label="ปิดข้อความ" onClick={() => setNotice("")}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>}
-    <section className="defect-page-intro" aria-labelledby="defect-workspace-title">
-      <div className="defect-page-intro-copy">
-        <span className="defect-page-eyebrow">DEFECT WORKSPACE</span>
-        <h2 id="defect-workspace-title">ภาพรวมและรายการ Defect</h2>
-        <p>เริ่มจากดูสถานะรวม แล้วเลือกโมดูลเพื่อเปิดรายการที่ต้องติดตามได้ทันที</p>
+    {/* ภาพรวมการ์ดเดียว (แทน intro + KPI 6 ใบ + กราฟความรุนแรง + ข้อมูลประกอบ + อันดับโมดูล) — ขอบเขต Project/Release/Build เท่านั้น ไม่ผูกตัวกรองตาราง */}
+    <section className="card df-overview" aria-label="ภาพรวม Defect">
+      <div className="df-ov-status">
+        <div className="df-ov-head">
+          <div className="df-ov-total"><strong>{summaryStats.total.toLocaleString()}</strong><span>Defect ทั้งหมด</span></div>
+          <small className="df-ov-scope" title={defectContextLabel}><span className="material-symbols-outlined" aria-hidden="true">filter_alt</span>{defectContextLabel}</small>
+        </div>
+        <div className="df-ov-bar" role="img" aria-label={defectStatusParts.map((p) => `${p.label} ${p.count}`).join(", ")}>
+          {summaryStats.total > 0 ? defectStatusParts.filter((p) => p.count).map((p) => <span key={p.key} className={`is-${p.key}`} style={{ flexGrow: p.count }} title={`${p.label} ${p.count.toLocaleString()} (${defectPct(p.count, summaryStats.total)}%)`} />) : null}
+        </div>
+        <ul className="df-ov-legend">
+          {defectStatusParts.map((p) => <li key={p.key}><span className={`df-dot is-${p.key}`} aria-hidden="true" /><span>{p.label}</span><b>{p.count.toLocaleString()}</b><small>{defectPct(p.count, summaryStats.total)}%</small></li>)}
+        </ul>
+        <dl className="df-ov-facts">
+          <div><dt>อัตราปิด (Closure)</dt><dd>{summaryStats.closureRate}%</dd></div>
+          <div title="อายุของ Open/In Progress ที่นานที่สุด"><dt>ค้างนานที่สุด</dt><dd className={summaryStats.oldestOpenAgeDays > 30 ? "is-warning" : undefined}>{summaryStats.oldestOpenAgeDays.toLocaleString()} วัน</dd></div>
+          <div title="Open/In Progress ที่ยังไม่มีผู้รับผิดชอบ"><dt>ยังไม่มอบหมาย</dt><dd className={summaryStats.unassignedActive > 0 ? "is-warning" : undefined}>{summaryStats.unassignedActive.toLocaleString()}</dd></div>
+        </dl>
       </div>
-      <div className="defect-page-context" aria-label="ขอบเขตข้อมูลที่กำลังดู">
-        <span className="material-symbols-outlined" aria-hidden="true">filter_alt</span>
-        <span>{defectContextLabel}</span>
+      <div className="df-ov-severity">
+        <h3>ความรุนแรง (Severity)</h3>
+        {([["Critical", summaryStats.critical, "critical"], ["High", summaryStats.high, "high"], ["Medium", summaryStats.medium, "medium"], ["Low", summaryStats.low, "low"]] as [string, number, string][]).map(([label, count, key]) => <div key={key} className="df-sev-row">
+          <span className="df-sev-label">{label}</span>
+          <span className="df-sev-track" aria-hidden="true"><span className={`is-${key}`} style={{ width: `${Math.max(defectPct(count, summaryStats.total), count > 0 ? 3 : 0)}%` }} /></span>
+          <b>{count.toLocaleString()}</b>
+          <small>{defectPct(count, summaryStats.total)}%</small>
+        </div>)}
+      </div>
+      <div className="df-ov-modules">
+        <div className="df-ov-modules-head">
+          <h3>Defect ตามโมดูล <small>{summaryStats.modules.length.toLocaleString()} กลุ่ม</small></h3>
+          {canExport !== false && <button type="button" className="df-ov-link" disabled={!statsLoaded || exportingModulePdf} onClick={downloadModulePdf}>{exportingModulePdf ? <><span className="spinner inline" aria-hidden="true" />กำลังสร้าง...</> : <><span className="material-symbols-outlined" aria-hidden="true">picture_as_pdf</span>PDF</>}</button>}
+        </div>
+        {statsError ? <div className="inline-alert error" role="alert"><span>{statsError}</span><button type="button" onClick={() => setStatsReload(value => value + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div> : summaryStats.modules.length > 0 ? <>
+          <ol className="df-ov-module-list">
+            {visibleModuleRanking.map((module, index) => {
+              const value = module.moduleId ?? "unassigned";
+              return <li key={value}>
+                <button type="button" className={moduleFilter === value ? "is-selected" : undefined} aria-pressed={moduleFilter === value} title="กดเพื่อกรองรายการด้านล่างตามโมดูลนี้" aria-label={`ดู Defect ของ ${module.moduleCode ? `${module.moduleCode} ` : ""}${module.moduleName} ${module.count} รายการ`} onClick={() => openModuleDefects(module.moduleId)}>
+                  <span className="df-rank">{index + 1}</span>
+                  <span className="df-module-name"><b>{module.moduleName}</b>{module.moduleCode && <small>{module.moduleCode}</small>}</span>
+                  <span className="df-module-count">{module.count.toLocaleString()}</span>
+                  <span className="df-module-track" aria-hidden="true"><span style={{ width: `${(module.count / Math.max(1, summaryStats.modules[0].count)) * 100}%` }} /></span>
+                </button>
+              </li>;
+            })}
+          </ol>
+          {summaryStats.modules.length > moduleRankingLimit && <button type="button" className="df-ov-link df-ov-toggle" onClick={() => setShowAllModules(value => !value)}>
+            <span className="material-symbols-outlined" aria-hidden="true">{showAllModules ? "expand_less" : "expand_more"}</span>
+            {showAllModules ? "แสดงเฉพาะอันดับต้น ๆ" : `แสดงทั้งหมด ${summaryStats.modules.length} กลุ่ม`}
+          </button>}
+        </> : <p className="df-ov-empty">ยังไม่มี Defect ในขอบเขตที่เลือก</p>}
       </div>
     </section>
-    <div className="kpi-grid defect-summary-grid">
-      <article className="card kpi defect-kpi defect-kpi-total"><span>Total</span><strong>{summaryStats.total}</strong><small>Defects ทั้งหมด</small></article>
-      <article className="card kpi defect-kpi"><span>Open</span><strong>{summaryStats.open}</strong><small className="yellow">ต้องแก้ไข</small><small className="defect-kpi-pct">{defectPct(summaryStats.open, summaryStats.total)}% ของทั้งหมด</small></article>
-      <article className="card kpi defect-kpi"><span>In Progress</span><strong>{summaryStats.inProgress}</strong><small className="blue">กำลังแก้ไข</small><small className="defect-kpi-pct">{defectPct(summaryStats.inProgress, summaryStats.total)}% ของทั้งหมด</small></article>
-      <article className="card kpi defect-kpi"><span>Resolved</span><strong>{summaryStats.resolved}</strong><small className="green">แก้ไขแล้ว</small><small className="defect-kpi-pct">{defectPct(summaryStats.resolved, summaryStats.total)}% ของทั้งหมด</small></article>
-      <article className="card kpi defect-kpi"><span>Closed</span><strong>{summaryStats.closed}</strong><small className="green">ปิดงานแล้ว</small><small className="defect-kpi-pct">{defectPct(summaryStats.closed, summaryStats.total)}% ของทั้งหมด</small></article>
-      <article className="card kpi defect-kpi"><span>Rejected</span><strong>{summaryStats.rejected}</strong><small className="gray">ปฏิเสธ</small><small className="defect-kpi-pct">{defectPct(summaryStats.rejected, summaryStats.total)}% ของทั้งหมด</small></article>
-    </div>
-    <div className="defect-summary-insights">
-      <article className="card chart-card defect-summary-severity">
-        <div className="chart-card-head">
-          <h3>สัดส่วนตามความรุนแรง (Severity)</h3>
-          <span>ทั้งหมด {summaryStats.total.toLocaleString()} รายการ</span>
-        </div>
-        <div className="chart-bars">
-          {([["Critical", summaryStats.critical, "#dc2626"], ["High", summaryStats.high, "#f59e0b"], ["Medium", summaryStats.medium, "#2563eb"], ["Low", summaryStats.low, "#94a3b8"]] as [string, number, string][]).map(([label, count, color]) => <div key={label} className="bar-row">
-            <div className="bar-label">{label}</div>
-            <div className="bar-track"><div className="bar-fill" style={{ width: `${Math.max(defectPct(count, summaryStats.total), count > 0 ? 8 : 0)}%`, background: `linear-gradient(90deg, ${color}cc, ${color})` }} /></div>
-            <strong className="severity-count">{count.toLocaleString()}</strong>
-            <span className="severity-pct">{defectPct(count, summaryStats.total)}%</span>
-          </div>)}
-        </div>
-        {summaryStats.total === 0 && <p className="chart-empty">ยังไม่มีข้อมูล Defect</p>}
-        <div className="defect-closure-note"><span>Defect Closure Rate</span><b>{summaryStats.closureRate}%</b><small>{(summaryStats.resolved + summaryStats.closed).toLocaleString()} Resolved / Closed จากทั้งหมด {summaryStats.total.toLocaleString()} รายการ</small></div>
-      </article>
-      <div className="defect-detail-stats defect-summary-facts">
-        <div className="defect-detail-stat"><span className="defect-detail-stat-icon purple" aria-hidden="true">◔</span><div><small>ค้างนานที่สุด</small><b>{summaryStats.oldestOpenAgeDays.toLocaleString()} วัน</b><small className="defect-detail-stat-sub">อายุของ Open/In Progress ที่นานที่สุด</small></div></div>
-        <div className="defect-detail-stat"><span className="defect-detail-stat-icon gray" aria-hidden="true">U</span><div><small>ยังไม่มอบหมาย</small><b>{summaryStats.unassignedActive.toLocaleString()} รายการ</b><small className="defect-detail-stat-sub">Open/In Progress ที่ยังไม่มีผู้รับผิดชอบ</small></div></div>
-      </div>
-    </div>
-    <section className="card defect-module-ranking" aria-labelledby="defect-module-ranking-title">
-      <div className="defect-module-ranking-head">
-        <div>
-          <h3 id="defect-module-ranking-title">Defect ตามโมดูล</h3>
-          <p>เรียงตามจำนวนที่พบมากที่สุด · รวมทุกสถานะใน Project / Release / Build ที่เลือก</p>
-        </div>
-        <div className="defect-module-ranking-actions">
-          <span>{summaryStats.modules.length.toLocaleString()} กลุ่ม</span>
-          {canExport !== false && <button type="button" className="btn" disabled={!statsLoaded || exportingModulePdf} onClick={downloadModulePdf}>{exportingModulePdf ? <><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง PDF...</> : <><span className="material-symbols-outlined" aria-hidden="true">picture_as_pdf</span> ส่งออก PDF A4</>}</button>}
+    <article className="card lp-card" id="defect-list-results" tabIndex={-1} aria-label="รายการ Defect">
+      <div className="lp-head">
+        <div className="lp-title"><div><strong>{totalCount.toLocaleString()}</strong><span>Defect{activeDefectFilterCount ? ` · กรอง ${activeDefectFilterCount} เงื่อนไข` : ""}</span></div></div>
+        <div className="lp-actions">
+          <button className="btn" type="button" disabled={!items.length} onClick={exportCsv}><span className="material-symbols-outlined" aria-hidden="true">download</span>Export</button>
+          {canEdit !== false && <button className="btn primary" type="button" disabled={!projectId} onClick={() => openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span>Defect</button>}
         </div>
       </div>
-      {statsError ? <div className="inline-alert error" role="alert"><span>{statsError}</span><button type="button" onClick={() => setStatsReload(value => value + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div> : summaryStats.modules.length > 0 ? <>
-        <ol className="defect-module-ranking-list">
-        {visibleModuleRanking.map((module, index) => <li key={module.moduleId ?? "unassigned"}>
-          <span className="defect-module-rank">{index + 1}</span>
-          <button type="button" className={`defect-module-ranking-body${moduleFilter === (module.moduleId ?? "unassigned") ? " is-selected" : ""}`} aria-pressed={moduleFilter === (module.moduleId ?? "unassigned")} aria-label={`ดู Defect ของ ${module.moduleCode ? `${module.moduleCode} ` : ""}${module.moduleName} ${module.count} รายการ`} onClick={() => openModuleDefects(module.moduleId)}>
-            <span className="defect-module-ranking-label">
-              <span>{module.moduleCode && <b>{module.moduleCode}</b>}{module.moduleName}</span>
-              <strong>{module.count.toLocaleString()} <small>Defect</small></strong>
-            </span>
-            <span className="defect-module-ranking-track" aria-hidden="true"><span style={{ width: `${(module.count / Math.max(1, summaryStats.modules[0].count)) * 100}%` }} /></span>
-          </button>
-        </li>)}
-        </ol>
-        {summaryStats.modules.length > 8 && <button type="button" className="defect-ranking-toggle" onClick={() => setShowAllModules(value => !value)}>
-          <span className="material-symbols-outlined" aria-hidden="true">{showAllModules ? "expand_less" : "expand_more"}</span>
-          {showAllModules ? "แสดงเฉพาะอันดับต้น ๆ" : `แสดงทั้งหมด ${summaryStats.modules.length} กลุ่ม`}
-        </button>}
-      </> : <p className="chart-empty">ยังไม่มี Defect ในขอบเขตที่เลือก</p>}
-    </section>
-    <article className="card defect-list-card" id="defect-list-results" tabIndex={-1} aria-label="รายการ Defect">
-      <div className="defect-list-head">
-        <div>
-          <span className="defect-page-eyebrow">DEFECT QUEUE</span>
-          <h3>รายการ Defect</h3>
-          <p>ตรวจสอบรายละเอียด เปลี่ยนสถานะ และส่งต่อให้ทีมที่เกี่ยวข้องจากรายการเดียว</p>
-        </div>
-        <div className="defect-list-head-meta">
-          <strong>{totalCount.toLocaleString()}</strong>
-          <span>รายการในผลลัพธ์</span>
-        </div>
+      <label className="lp-sort-mobile">เรียงตาม<select value={`${listSort.key}:${listSort.dir}`} onChange={(e) => { const [key, dir] = e.target.value.split(":"); setListSort({ key: key as DefectSortKey, dir: dir as "asc" | "desc" }); }}>
+        {defectSortOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select></label>
+      <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
+        <button type="button" aria-pressed={statusFilter === ""} onClick={() => setStatusFilter("")}>ทุกสถานะ <b>{summaryStats.total.toLocaleString()}</b></button>
+        {defectStatusParts.map((p) => <button key={p.key} type="button" aria-pressed={statusFilter === p.value} onClick={() => setStatusFilter((current) => current === p.value ? "" : p.value)}><span className={`df-dot is-${p.key}`} aria-hidden="true" />{p.value} <b>{p.count.toLocaleString()}</b></button>)}
       </div>
-      <div className="defect-filter-bar">
-        <div className="defect-filter-bar-title">
-          <span className="material-symbols-outlined" aria-hidden="true">tune</span>
-          <div><b>ตัวกรองรายการ</b><small>{activeDefectFilterCount ? `ใช้ตัวกรองอยู่ ${activeDefectFilterCount} รายการ` : "เลือกตัวกรองเพื่อโฟกัสงานที่ต้องติดตาม"}</small></div>
-        </div>
-        {activeDefectFilterCount > 0 && <button type="button" className="defect-clear-filters" onClick={clearDefectFilters}><span className="material-symbols-outlined" aria-hidden="true">restart_alt</span> ล้างตัวกรอง</button>}
+      <div className="lp-filters" role="group" aria-label="ตัวกรอง Defect">
+        {onSearchChange && <label className="lp-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input type="search" value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder="ค้นหารหัส / ชื่อ Defect" aria-label="ค้นหา Defect" /></label>}
+        <select aria-label="Module" className="testcase-module-filter" value={moduleFilter} onChange={e => setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}{summaryStats.modules.some(x => x.moduleId === null) && <option value="unassigned">ไม่ระบุโมดูล</option>}</select>
+        <select aria-label="Severity" value={severityFilter} onChange={e => setSeverityFilter(e.target.value)}><option value="">ทุก Severity</option>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select>
+        <select aria-label="Priority ของ Test Case ที่เชื่อมโยง" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{["P0", "P1", "P2", "P3"].map(priority => <option key={priority}>{priority}</option>)}</select>
+        <select aria-label="ผู้รับผิดชอบ" value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option value="">ทุกผู้รับผิดชอบ</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
+        {activeDefectFilterCount > 0 && <button type="button" className="btn lp-clear" onClick={clearDefectFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
       </div>
-      <div className="table-tools defect-table-tools">
-        <div>
-          <select aria-label="กรองตาม Module" value={moduleFilter} onChange={e => setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}{summaryStats.modules.some(x => x.moduleId === null) && <option value="unassigned">ไม่ระบุโมดูล</option>}{moduleFilter && moduleFilter !== "unassigned" && !modules.some(x => x.moduleId === moduleFilter) && <option value={moduleFilter}>{summaryStats.modules.find(x => x.moduleId === moduleFilter)?.moduleName ?? "โมดูลที่ถูกลบ"}</option>}</select>
-          <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value)}><option value="">ทุก Severity</option>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select>
-          <select aria-label="กรองตาม Priority" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{["P0", "P1", "P2", "P3"].map(priority => <option key={priority}>{priority}</option>)}</select>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="">ทุก Status</option>{defectStatuses.map(s => <option key={s}>{s}</option>)}</select>
-          <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option value="">ทุก Assignee</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
+      {canEdit !== false && selectedIds.length > 0 && (
+        <div className="lp-bulk" role="region" aria-label="Defect ที่เลือก">
+          <span className="lp-bulk-count"><b>{selectedIds.length.toLocaleString()}</b> เลือกแล้ว</span>
+          <span className="lp-bulk-group">
+            <button type="button" className="btn" onClick={() => bulkStatus("Resolved")}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span>Resolve</button>
+            <button type="button" className="btn" onClick={() => bulkStatus("Closed")}><span className="material-symbols-outlined" aria-hidden="true">lock</span>Close</button>
+          </span>
+          <span className="lp-bulk-end">
+            <button type="button" className="lp-bulk-clear" onClick={() => setSelectedIds([])} aria-label="ยกเลิกการเลือกทั้งหมด" title="ยกเลิกการเลือก"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+          </span>
         </div>
-        <div>
-          {canEdit !== false && selectedIds.length > 0 && <>
-            <button className="btn" onClick={() => bulkStatus("Resolved")}><span className="material-symbols-outlined" aria-hidden="true">check</span> Resolve ({selectedIds.length})</button>
-            <button className="btn" onClick={() => bulkStatus("Closed")}><span aria-hidden="true">⏹</span> Close ({selectedIds.length})</button>
-          </>}
-          <button className="btn" onClick={exportCsv}><span className="material-symbols-outlined" aria-hidden="true">download</span> Export</button>
-          {canEdit !== false && <button className="btn primary" disabled={!projectId} onClick={() => openForm()}>+ Defect</button>}
-        </div>
-      </div>
-      <div className="table-wrap">
-        <table className="defect-list-table table-cards">
+      )}
+      <ListPager position="top" page={page} pageCount={pageCount} totalCount={totalCount} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />
+      <div className="lp-table-wrap">
+        <table className={`lp-table df-table${canEdit !== false ? " is-selectable" : ""}`}>
           <thead><tr>
-            <th><input type="checkbox" checked={selectedIds.length === items.length && items.length > 0} onChange={toggleSelectAll} /></th>
-            <th>Defect ID</th><th>Title</th><th>Severity</th><th>Status</th><th>CRM</th><th>Module</th><th>Age</th><th>Created</th><th className="actions-col">จัดการ</th>
+            {canEdit !== false && <th className="lp-col-select"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={selectedIds.length === items.length && items.length > 0} onChange={toggleSelectAll} /></th>}
+            <SortHeader label="Defect" sortKey="code" sort={listSort} onSort={setListSort} className="lp-col-item" />
+            <th className="lp-col-module">Module</th>
+            <SortHeader label="Severity" sortKey="severity" sort={listSort} onSort={setListSort} className="lp-col-badge" />
+            <SortHeader label="สถานะ" sortKey="status" sort={listSort} onSort={setListSort} className="lp-col-status" />
+            <th className="lp-col-crm lp-hide-md">CRM</th>
+            <SortHeader label="อายุ" sortKey="createdAt" sort={listSort} onSort={setListSort} className="lp-col-date" defaultDir="asc" />
+            <th className="lp-col-actions lp-actions-4"><span className="sr-only">จัดการ</span></th>
           </tr></thead>
           <tbody>
-            {items.map(x => <tr key={x.defectId}>
-              <td><input type="checkbox" checked={selectedIds.includes(x.defectId)} onChange={() => setSelectedIds(prev => prev.includes(x.defectId) ? prev.filter(id => id !== x.defectId) : [...prev, x.defectId])} /></td>
-              <td><button className="link-button" onClick={() => openDetail(x)}>{x.defectCode}</button></td>
-              <td><span className="defect-title-text" title={x.title}>{x.title}</span>{(x.releaseCode || x.buildNumber) && <small className="cell-sub">{x.releaseCode || "Release ไม่ระบุ"}{x.buildNumber ? ` · Build ${x.buildNumber}` : ""}</small>}</td>
-              <td><Badge tone={defectSeverityTones[x.severity] ?? "blue"}>{x.severity}</Badge></td>
-              <td><Badge tone={defectStatusTones[x.status] ?? "gray"}>{x.status}</Badge></td>
-              <td>
-                {canEdit !== false && (x.crmSyncStatus ?? "None") === "None"
-                  ? <button className="crm-badge-btn" title={`ส่ง ${x.defectCode} ไป CRM`} aria-label={`ส่ง ${x.defectCode} ไป CRM`} onClick={() => openCrmDialog("send", x)}><Badge tone="gray"><span aria-hidden="true">⇪</span> ส่งไป CRM</Badge></button>
-                  : <Badge tone={defectCrmSyncTones[x.crmSyncStatus ?? "None"] ?? "gray"}>{defectCrmSyncLabels[x.crmSyncStatus ?? "None"] ?? "ยังไม่ส่ง"}</Badge>}
-              </td>
-              <td>{modules.find(m => m.moduleId === x.moduleId)?.moduleName ?? "-"}</td>
-              <td>{defectAgeDays(x.createdAt)} วัน</td>
-              <td>{fmtAgo(x.createdAt)}</td>
-              <td className="actions-col"><div className="row-actions">
-                <button className="table-action icon-only" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.defectCode}`} onClick={() => openDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">info</span></button>
-                {canEdit !== false && <>
-                  <button className="table-action icon-only" title="แก้ไข" aria-label={`แก้ไข ${x.defectCode}`} onClick={() => openForm(x)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>
-                  {x.status === "Open" && <button className="table-action icon-only" title="เริ่มดำเนินการ" aria-label={`เริ่มดำเนินการ ${x.defectCode}`} onClick={() => quickStatus(x, "In Progress")}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span></button>}
-                  {x.status === "In Progress" && <button className="table-action icon-only" title="Resolve" aria-label={`Resolve ${x.defectCode}`} onClick={() => quickStatus(x, "Resolved")}><span className="material-symbols-outlined" aria-hidden="true">check</span></button>}
-                  <button className="table-action danger-action icon-only" title="ลบ" aria-label={`ลบ ${x.defectCode}`} onClick={() => removeDefect(x)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
-                </>}
-              </div></td>
-            </tr>)}
-            {!loading && !items.length && <tr><td colSpan={10} className="muted-row">ยังไม่มี Defect ในขอบเขตที่เลือก</td></tr>}
+            {items.map(x => {
+              const module = modules.find(m => m.moduleId === x.moduleId);
+              const crmStatus = x.crmSyncStatus ?? "None";
+              return <tr key={x.defectId} className={selectedIds.includes(x.defectId) ? "is-selected" : undefined}>
+                {canEdit !== false && <td className="lp-col-select"><input type="checkbox" aria-label={`เลือก ${x.defectCode}`} checked={selectedIds.includes(x.defectId)} onChange={() => setSelectedIds(prev => prev.includes(x.defectId) ? prev.filter(id => id !== x.defectId) : [...prev, x.defectId])} /></td>}
+                <td className="lp-col-item">
+                  <button type="button" className="lp-item" onClick={() => openDetail(x)} aria-label={`เปิด ${x.defectCode} ${x.title}`}>
+                    <span className="lp-code">{x.defectCode}{(x.releaseCode || x.buildNumber || x.assigneeName) && <span className="lp-meta">{[x.releaseCode, x.buildNumber && `Build ${x.buildNumber}`, x.assigneeName && `ผู้รับผิดชอบ ${x.assigneeName}`].filter(Boolean).join(" · ")}</span>}</span>
+                    <span className="lp-name">{x.title}</span>
+                  </button>
+                </td>
+                <td className="lp-col-module">{module ? <span className="lp-module" title={`${module.moduleCode} · ${module.moduleName}`}><b>{module.moduleName}</b><small>{module.moduleCode}</small></span> : <span className="lp-muted">ไม่ระบุโมดูล</span>}</td>
+                <td className="lp-col-badge"><Badge tone={defectSeverityTones[x.severity] ?? "blue"}>{x.severity}</Badge></td>
+                <td className="lp-col-status"><Badge tone={defectStatusTones[x.status] ?? "gray"}>{x.status}</Badge></td>
+                <td className="lp-col-crm lp-hide-md">
+                  {canEdit !== false && crmStatus === "None"
+                    ? <button type="button" className="df-crm-send" title={`ส่ง ${x.defectCode} ไป CRM`} aria-label={`ส่ง ${x.defectCode} ไป CRM`} onClick={() => openCrmDialog("send", x)}><span className="material-symbols-outlined" aria-hidden="true">upload</span>ส่งไป CRM</button>
+                    : <Badge tone={defectCrmSyncTones[crmStatus] ?? "gray"}>{defectCrmSyncLabels[crmStatus] ?? "ยังไม่ส่ง"}</Badge>}
+                </td>
+                <td className="lp-col-date" title={`สร้าง ${fmtAgo(x.createdAt)}`}><span className="lp-date"><span className={defectAgeDays(x.createdAt) > 30 && !["Resolved", "Closed", "Rejected"].includes(x.status) ? "df-age-old" : undefined}>{defectAgeDays(x.createdAt)} วัน</span><small>{fmtAgo(x.createdAt)}</small></span></td>
+                <td className="lp-col-actions lp-actions-4"><div className="lp-row-actions">
+                  {canEdit !== false && x.status === "Open" && <button type="button" title="เริ่มดำเนินการ" aria-label={`เริ่มดำเนินการ ${x.defectCode}`} onClick={() => quickStatus(x, "In Progress")}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span></button>}
+                  {canEdit !== false && x.status === "In Progress" && <button type="button" title="Resolve" aria-label={`Resolve ${x.defectCode}`} onClick={() => quickStatus(x, "Resolved")}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span></button>}
+                  {canEdit !== false
+                    ? <button type="button" title="แก้ไข" aria-label={`แก้ไข ${x.defectCode}`} onClick={() => openForm(x)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>
+                    : <button type="button" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.defectCode}`} onClick={() => openDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">info</span></button>}
+                  {canEdit !== false && <button type="button" className="danger" title="ลบ" aria-label={`ลบ ${x.defectCode}`} onClick={() => removeDefect(x)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>}
+                </div></td>
+              </tr>;
+            })}
+            {!loading && !items.length && <tr className="lp-empty-row"><td colSpan={canEdit !== false ? 8 : 7}><div className="lp-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><b>{activeDefectFilterCount ? "ไม่พบ Defect ตามตัวกรองที่เลือก" : "ยังไม่มี Defect ในขอบเขตที่เลือก"}</b>{activeDefectFilterCount > 0 && <button type="button" className="btn" onClick={clearDefectFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span> ล้างตัวกรอง</button>}</div></td></tr>}
           </tbody>
-          </table>
-        </div>
-        <div className="pagination suite-pagination">
-          <label>แสดง<select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}><option value="30">30</option><option value="50">50</option><option value="100">100</option><option value="150">150</option></select> รายการ</label>
-          <span>หน้า {Math.min(page, pageCount)} / {pageCount} · ทั้งหมด {totalCount.toLocaleString()} รายการ</span>
-          <button className="btn" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span> ก่อนหน้า</button>
-          <button className="btn" disabled={loading || page >= pageCount} onClick={() => setPage(value => value + 1)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
-        </div>
+        </table>
+      </div>
+      <ListPager position="bottom" page={page} pageCount={pageCount} totalCount={totalCount} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />
     </article>
     {/* หน้าสร้าง/แก้ไข Defect ปรับให้ใช้ภาษาภาพเดียวกับหน้ารายละเอียด Defect (defect-detail ด้านล่าง) —
         eyebrow เหนือหัวข้อ, ส่วนต่างๆ ใช้ .cycle-detail-section (ไอคอน+h3) แทน label เดี่ยวๆ, และ
@@ -510,6 +573,15 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
             </div>
           </div>
         </section>
+        {!editing && similar.length > 0 && <section className="defect-similar" aria-label="Defect ที่อาจซ้ำ">
+          <h3><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> อาจซ้ำกับ Defect ที่มีอยู่ ({similar.length})</h3>
+          <p>ตรวจก่อนสร้าง — ถ้าเป็นปัญหาเดียวกัน ให้คอมเมนต์ใน Defect เดิมแทนการสร้างใหม่</p>
+          <ul>{similar.map(s => <li key={s.defectId}>
+            <a href={`#/defects?defectId=${s.defectId}`} target="_blank" rel="noreferrer" title={`${s.defectCode} ${s.title} — เปิดในแท็บใหม่`}><b>{s.defectCode}</b><span>{s.title}</span></a>
+            <Badge tone={defectStatusTones[s.status] ?? "gray"}>{s.status}</Badge>
+            {s.resolutionType && <small>{defectResolutionLabel(s.resolutionType)}</small>}
+          </li>)}</ul>
+        </section>}
         <div className="defect-detail-split">
           <section className="cycle-detail-section">
             <h3><span className="material-symbols-outlined" aria-hidden="true">description</span> Description</h3>
@@ -533,9 +605,13 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
         {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
         <div className="modal-actions">
           <button className="btn" onClick={() => setFormOpen(false)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button>
-          <button className="btn primary" disabled={saving || !formTitle.trim()} onClick={saveForm}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}</button>
+          <button className="btn primary" disabled={saving || !formTitle.trim()} onClick={() => void saveForm()}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span> บันทึก</>}</button>
         </div>
       </ModalShell>}
+    {resolving && projectId && <DefectResolutionModal
+      defect={{ defectId: resolving.item?.defectId, defectCode: resolving.item?.defectCode, title: resolving.item?.title ?? formTitle, projectId: resolving.item?.projectId ?? projectId }}
+      targetStatus={resolving.status} rootCauses={rootCauses} initial={resolving.item}
+      onCancel={() => setResolving(null)} onConfirm={confirmResolution} />}
     {detail && (() => {
       const steps = detail.stepsToReproduce ? parseReproSteps(detail.stepsToReproduce) : null;
       const moduleName = modules.find(m => m.moduleId === detail.moduleId)?.moduleName ?? "-";
@@ -615,6 +691,16 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                     {detail.actualResult && <section className="cycle-detail-section"><h3>Actual Result</h3><p className="defect-detail-text">{detail.actualResult}</p></section>}
                   </div>
                 )}
+                {(detail.resolutionType || defectClosingStatuses.includes(detail.status)) && <section className="cycle-detail-section defect-resolution-section">
+                  <h3><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> ผลการปิด</h3>
+                  {detail.resolutionType ? <dl className="defect-resolution-view">
+                    <div><dt>ผล</dt><dd>{defectResolutionLabel(detail.resolutionType)}{detail.duplicateOfDefectCode ? ` · ซ้ำกับ ${detail.duplicateOfDefectCode}` : ""}</dd></div>
+                    {detail.rootCauseCategory && <div><dt>หมวดสาเหตุ</dt><dd>{rootCauseName(detail.rootCauseCategory)}</dd></div>}
+                    {detail.rootCauseNote && <div className="full"><dt>สาเหตุ</dt><dd>{detail.rootCauseNote}</dd></div>}
+                    {detail.resolutionNote && <div className="full"><dt>วิธีแก้</dt><dd>{detail.resolutionNote}</dd></div>}
+                  </dl> : <p className="muted-text">ยังไม่ระบุสาเหตุและวิธีแก้ (ปิดจากช่องทางอื่น เช่น เปลี่ยนสถานะหลายรายการ) — บันทึกไว้เพื่อให้คลังความรู้และการเตือน Defect ซ้ำแม่นขึ้น</p>}
+                  {canEdit !== false && <button type="button" className="btn defect-resolution-edit" onClick={() => { const item = detail; setDetail(null); setResolving({ item, status: null, mode: "edit" }); }}><span className="material-symbols-outlined" aria-hidden="true">edit_note</span>{detail.resolutionType ? "แก้ไขผลการปิด" : "บันทึกผลการปิด"}</button>}
+                </section>}
                 <section className="cycle-detail-section">
                   <h3>Linked Test Cases ({linkedCases.length})</h3>
                   <div className="defect-linked-cases">
