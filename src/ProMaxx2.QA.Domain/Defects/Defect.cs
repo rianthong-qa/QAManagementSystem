@@ -24,6 +24,8 @@ public sealed class Defect
     public static readonly string[] UnresolvedStatuses=["Open","In Progress"];
     public Guid? FixedInBuildId{get;private set;} public Guid? VerifiedInBuildId{get;private set;} public DateTime? ResolvedAt{get;private set;} public DateTime? ClosedAt{get;private set;} public int ReopenCount{get;private set;}
     public DateTime? LastRetestAt{get;private set;} public string? LastRetestResult{get;private set;}
+    /// <summary>ปิดเพราะแก้แล้ว (Fixed หรือ QA ตรวจซ้ำผ่าน) — ปัญหาเดียวกันกลับมาจึงนับเป็น regression; ปิดด้วยผลอื่น (Won't Fix ฯลฯ) ไม่ใช่</summary>
+    public static bool WasFixed(string? resolutionType,Guid? verifiedInBuildId)=>resolutionType=="Fixed"||verifiedInBuildId.HasValue;
     /// <summary>Defect เดิมที่ปิดไปแล้วแต่ปัญหากลับมาอีก (regression) — สร้าง Defect ใหม่ที่อ้างตัวเดิมแทนการเปิดตัวที่ปิดแล้ว</summary>
     public Guid? RegressionOfDefectId{get;private set;}
 
@@ -57,6 +59,8 @@ public sealed class Defect
         }
         if(TransitionError(from,target,ResolutionType) is {} error)throw new DefectTransitionException(error);
         var now=DateTime.UtcNow;
+        // ออกจาก Resolved = ผลตรวจซ้ำ: Closed = ผ่าน, กลับไปยังไม่แก้ = ไม่ผ่าน (Rejected ไม่นับเป็นการตรวจซ้ำ)
+        if(from=="Resolved"&&target!="Rejected"){LastRetestAt=now;LastRetestResult=target=="Closed"?"Pass":"Fail";}
         if(UnresolvedStatuses.Contains(target))
         {
             // เปิดกลับมา = ยังไม่ได้แก้ — ล้างผลการปิดเดิม ไม่ให้คลังความรู้/ผู้ช่วย AI/MCP ตอบว่า "แก้แล้ว" จากรอบก่อน (ผลการปิดเก่ายังอยู่ใน Activity)
@@ -65,7 +69,8 @@ public sealed class Defect
             ResolutionType=null;RootCauseCategory=null;RootCauseNote=null;ResolutionNote=null;DuplicateOfDefectId=null;
             ResolvedAt=null;ClosedAt=null;VerifiedInBuildId=null;
         }
-        else if(target=="Resolved"){ResolvedAt=now;ClosedAt=null;VerifiedInBuildId=null;if(fixedInBuildId is {} fix)FixedInBuildId=fix;}
+        // Resolve รอบใหม่ (รวมหลัง Reopen) ตั้ง Fix Build ใหม่เสมอ — ค่ารอบก่อนอยู่ใน activity แล้ว ไม่ค้างไว้ให้ตัดสิน Reopen ผิด Build
+        else if(target=="Resolved"){ResolvedAt=now;ClosedAt=null;VerifiedInBuildId=null;FixedInBuildId=fixedInBuildId;}
         else if(target=="Closed"){ClosedAt=now;ResolvedAt??=now;VerifiedInBuildId=verifiedInBuildId??(from=="Resolved"?FixedInBuildId:null);}
         else ClosedAt=now; // Rejected
         Status=target;UpdatedAt=now;UpdatedBy=updatedBy;
@@ -76,7 +81,6 @@ public sealed class Defect
     {
         if(Status!="Resolved")throw new DefectTransitionException("ตรวจซ้ำได้เฉพาะ Defect ที่เป็น Resolved (Dev แก้แล้ว รอ QA ตรวจ)");
         TransitionTo(passed?"Closed":"Open",null,passed?buildId:null,updatedBy);
-        LastRetestAt=UpdatedAt;LastRetestResult=passed?"Pass":"Fail";
     }
 
     public void MarkRegressionOf(Guid originalDefectId){if(originalDefectId==DefectId)throw new ArgumentException("Defect cannot be a regression of itself.");RegressionOfDefectId=originalDefectId;}

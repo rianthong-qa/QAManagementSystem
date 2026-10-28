@@ -70,6 +70,26 @@ public sealed class DefectLifecycleTests
     }
 
     [Fact]
+    public void Resolving_again_after_reopen_replaces_fix_build_and_records_retest_results()
+    {
+        var defect = NewDefect();
+        defect.TransitionTo("Resolved", FixBuild, null, null);
+        defect.TransitionTo("Open", null, null, null);
+        Assert.Equal(("Fail", FixBuild), (defect.LastRetestResult, defect.FixedInBuildId));
+
+        defect.TransitionTo("Resolved", RetestBuild, null, null);
+        Assert.Equal(RetestBuild, defect.FixedInBuildId);
+        defect.TransitionTo("Closed", null, null, null);
+        Assert.Equal(("Pass", RetestBuild), (defect.LastRetestResult, defect.VerifiedInBuildId));
+
+        var crmResolved = NewDefect();
+        crmResolved.TransitionTo("Resolved", FixBuild, null, null);
+        crmResolved.TransitionTo("Open", null, null, null);
+        crmResolved.TransitionTo("Resolved", null, null, null); // ไม่มี Build ใหม่ = ไม่ระบุ ไม่ค้าง Fix Build รอบก่อน
+        Assert.Null(crmResolved.FixedInBuildId);
+    }
+
+    [Fact]
     public void Direct_close_with_fixed_resolution_is_rejected_without_changing_status()
     {
         var defect = NewDefect();
@@ -148,7 +168,7 @@ public sealed class DefectLifecycleTests
 
         var result = await AutoCreate(db).CreateFromFailAsync(cycleCaseId, FailRequest(), null, default);
 
-        Assert.Equal(defect.DefectCode, result.ExistingDefectCode);
+        Assert.Equal((defect.DefectCode, "Resolved"), (result.ExistingDefectCode, result.ExistingDefectStatus));
         Assert.Equal("Resolved", (await db.Defects.AsNoTracking().SingleAsync()).Status);
     }
 
@@ -166,6 +186,20 @@ public sealed class DefectLifecycleTests
         var created = await db.Defects.AsNoTracking().SingleAsync(d => d.DefectCode == result.CreatedDefectCode);
         Assert.Equal(original.DefectId, created.RegressionOfDefectId);
         Assert.Equal("Closed", (await db.Defects.AsNoTracking().SingleAsync(d => d.DefectId == original.DefectId)).Status);
+    }
+
+    [Fact]
+    public async Task Fail_after_closed_as_wontfix_creates_plain_defect_not_regression()
+    {
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var (baseline, cycleCaseId) = await SeedCycleAsync(db, baselineBuildIsLater: true);
+        await LinkDefectAsync(db, baseline, d => { d.SetResolution("WontFix", null, null, null, null, null); d.TransitionTo("Closed", null, null, null); });
+
+        var result = await AutoCreate(db).CreateFromFailAsync(cycleCaseId, FailRequest(), null, default);
+
+        Assert.NotNull(result.CreatedDefectCode);
+        Assert.Null(result.RegressionOfDefectCode);
+        Assert.Null((await db.Defects.AsNoTracking().SingleAsync(d => d.DefectCode == result.CreatedDefectCode)).RegressionOfDefectId);
     }
 
     [Fact]

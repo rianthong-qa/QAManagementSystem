@@ -657,7 +657,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                 {(detail.status === "Resolved" || detail.status === "Closed") && (
                   <button className="btn quick-action-red" title="ปัญหายังอยู่หลังแก้ — เปิด Defect นี้กลับเป็น Open (นับจำนวนครั้ง Reopen)" onClick={() => { quickStatus(detail, "Open"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">replay</span> Reopen</button>
                 )}
-                {detail.status !== "Resolved" && detail.status !== "Closed" && (
+                {(detail.status === "Open" || detail.status === "In Progress") && (
                   <button className="btn quick-action-green" title="เปลี่ยนสถานะ Defect นี้เป็น Resolved" onClick={() => { quickStatus(detail, "Resolved"); setDetail(null); }}><span className="material-symbols-outlined" aria-hidden="true">check</span> Resolve</button>
                 )}
                 {detail.status !== "Closed" && (

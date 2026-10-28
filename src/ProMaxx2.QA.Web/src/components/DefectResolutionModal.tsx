@@ -34,7 +34,8 @@ export function DefectResolutionModal({ defect, targetStatus, currentStatus, rel
   const initialType = initial?.resolutionType && types.some((t) => t.value === initial.resolutionType) ? initial.resolutionType : targetStatus === "Rejected" ? "ByDesign" : directClose ? "WontFix" : "Fixed";
   const [type, setType] = useState(initialType);
   const [builds, setBuilds] = useState<BuildOption[]>([]);
-  const [buildId, setBuildId] = useState(fixedInBuildId ?? "");
+  // "" = ให้ระบบเลือก: Resolved → Build ล่าสุดของ Release, ตรวจซ้ำ → Fix Build (ลำดับ Build ตัดสินฝั่ง server ที่เดียว)
+  const [buildId, setBuildId] = useState("");
   const [rootCause, setRootCause] = useState(initial?.rootCauseCategory ?? "");
   const [rootCauseNote, setRootCauseNote] = useState(initial?.rootCauseNote ?? "");
   const [resolutionNote, setResolutionNote] = useState(initial?.resolutionNote ?? "");
@@ -63,7 +64,7 @@ export function DefectResolutionModal({ defect, targetStatus, currentStatus, rel
       .then((rows) => {
         const active = (rows ?? []).filter((b) => b.isActive).sort((a, b) => (b.buildDate ?? "").localeCompare(a.buildDate ?? ""));
         setBuilds(active);
-        setBuildId((current) => current || active[0]?.buildId || "");
+        setBuildId((current) => active.some((b) => b.buildId === current) ? current : "");
       })
       .catch((e) => { if (!isAbortError(e)) setBuilds([]); });
     return () => controller.abort();
@@ -103,7 +104,7 @@ export function DefectResolutionModal({ defect, targetStatus, currentStatus, rel
     <div className="defect-resolution-grid">
       {buildMode && <label className="full"><span className="defect-resolution-label">{buildMode === "fix" ? "แก้ใน Build (Fix Build)" : "ตรวจซ้ำผ่านใน Build"} <small>{buildMode === "fix" ? "QA จะตรวจซ้ำบน Build นี้หรือ Build ที่ใหม่กว่า" : "Build ที่ QA ทดสอบแล้วผ่าน"}</small></span>
         <select value={buildId} onChange={(e) => setBuildId(e.target.value)}>
-          <option value="">{releaseId ? (builds.length ? "ไม่ระบุ Build" : "Release นี้ยังไม่มี Build") : "Defect นี้ไม่ได้ผูก Release"}</option>
+          <option value="">{!releaseId ? "Defect นี้ไม่ได้ผูก Release" : !builds.length ? "Release นี้ยังไม่มี Build" : buildMode === "fix" ? "Build ล่าสุดของ Release (ระบบเลือก)" : fixedInBuildId && builds.some((b) => b.buildId === fixedInBuildId) ? "Fix Build ของ Defect นี้" : "ไม่ระบุ Build"}</option>
           {builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.buildDate ? ` · ${formatThaiDateTime(b.buildDate, { day: "2-digit", month: "2-digit", year: "numeric" })}` : ""}</option>)}
         </select>
       </label>}

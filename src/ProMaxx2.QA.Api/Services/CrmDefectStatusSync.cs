@@ -36,7 +36,7 @@ public static class CrmDefectStatusSync
         var changed = Apply(defect, crmStatus, latestBuildId, actorUserId);
         if (changed is not null)
             await activity.LogAsync(defect.DefectId, "StatusChanged",
-                $"Status changed from {old} to {changed} (ตาม CRM Ticket #{defect.CrmTicketId} สถานะ {crmStatus?.Trim()} — Fix Build ตั้งอัตโนมัติเป็น Build ล่าสุดของ Release, QA แก้ได้ตอนตรวจซ้ำ)",
+                $"Status changed from {old} to {changed} (ตาม CRM Ticket #{defect.CrmTicketId} สถานะ {crmStatus?.Trim()} — {(latestBuildId is null ? "ไม่ระบุ Fix Build เพราะ Defect ไม่ได้ผูก Release หรือ Release ยังไม่มี Build" : "Fix Build ตั้งอัตโนมัติเป็น Build ล่าสุดของ Release, QA แก้ได้ตอนตรวจซ้ำ")})",
                 actorUserId, ct, old, changed, defect.FixedInBuildId);
         else if (IsCrmClose(crmStatus) && defect.Status is not ("Closed" or "Rejected"))
             await activity.LogAsync(defect.DefectId, "CrmClosed",

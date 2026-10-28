@@ -12,7 +12,8 @@ namespace ProMaxx2.QA.Api.Services;
 // เงียบไปเฉยๆ เหมือนเดิมที่คืนแค่ string? เดียวแล้วสองกรณีนี้แยกไม่ออกจากฝั่ง caller/UI เลย
 // ReopenedDefectCode = Defect ที่ Resolved แล้ว Fail ซ้ำบน Build เดิมหรือหลัง Fix Build → เปิดตัวเดิมกลับ (Reopen) แทนการสร้างใหม่;
 // RegressionOfDefectCode = Defect ที่ Closed แล้วปัญหากลับมา → สร้าง Defect ใหม่ที่อ้างตัวเดิม (DEFECT_BUILD_LIFECYCLE.md)
-public sealed record DefectAutoCreateResult(string? CreatedDefectCode, string? ExistingDefectCode, string? Error, string? ReopenedDefectCode = null, string? RegressionOfDefectCode = null);
+// ExistingDefectStatus = สถานะของ Defect ที่ใช้ตัวเดิม (Open/In Progress = ยังไม่แก้, Resolved = รอตรวจซ้ำบน Build ที่ใหม่กว่า)
+public sealed record DefectAutoCreateResult(string? CreatedDefectCode, string? ExistingDefectCode, string? Error, string? ReopenedDefectCode = null, string? RegressionOfDefectCode = null, string? ExistingDefectStatus = null);
 
 public sealed class DefectAutoCreateService(QaDbContext db, ILogger<DefectAutoCreateService> logger)
 {
@@ -29,18 +30,18 @@ public sealed class DefectAutoCreateService(QaDbContext db, ILogger<DefectAutoCr
             var linked = await db.DefectTestCaseLinks.Where(l => l.TestCaseId == tc.TestCaseId)
                     .Join(db.Defects, l => l.DefectId, d => d.DefectId, (l, d) => d)
                     .Where(d => !d.IsDeleted)
-                    .Select(d => new { d.DefectId, d.DefectCode, d.Status, d.FixedInBuildId, Changed = d.UpdatedAt ?? d.CreatedAt })
+                    .Select(d => new { d.DefectId, d.DefectCode, d.Status, d.FixedInBuildId, d.ResolutionType, d.VerifiedInBuildId, Changed = d.UpdatedAt ?? d.CreatedAt })
                     .ToListAsync(ct);
             // ยังไม่ได้แก้ (Open/In Progress) — ใช้ตัวเดิม ไม่สร้างซ้ำ
             var unresolved = linked.FirstOrDefault(d => Defect.UnresolvedStatuses.Contains(d.Status));
-            if (unresolved is not null) return new DefectAutoCreateResult(null, unresolved.DefectCode, null);
+            if (unresolved is not null) return new DefectAutoCreateResult(null, unresolved.DefectCode, null, ExistingDefectStatus: unresolved.Status);
             // Dev แก้แล้วรอตรวจซ้ำ (Resolved) แต่ Fail อีก: Build นี้มีการแก้แล้ว (ตรงหรือหลัง Fix Build) = แก้ไม่ผ่าน → Reopen ตัวเดิม
             // Fail บน Build ที่เก่ากว่า Fix Build = ยังไม่มีการแก้ใน Build นี้ → ไม่ Reopen และไม่สร้างซ้ำ
             var resolved = linked.Where(d => d.Status == "Resolved").OrderByDescending(d => d.Changed).FirstOrDefault();
             if (resolved is not null)
             {
                 if (!await DefectBuilds.IsSameOrLaterAsync(db, cycleCase.Cycle.BuildId, resolved.FixedInBuildId, ct))
-                    return new DefectAutoCreateResult(null, resolved.DefectCode, null);
+                    return new DefectAutoCreateResult(null, resolved.DefectCode, null, ExistingDefectStatus: "Resolved");
                 var reopen = await db.Defects.SingleAsync(d => d.DefectId == resolved.DefectId, ct);
                 reopen.TransitionTo("Open", null, null, testerId);
                 db.DefectActivities.Add(new DefectActivity(reopen.DefectId, "Reopened",
@@ -49,7 +50,8 @@ public sealed class DefectAutoCreateService(QaDbContext db, ILogger<DefectAutoCr
                 return new DefectAutoCreateResult(null, null, null, reopen.DefectCode);
             }
             // ปิดไปแล้ว (Closed) แต่ปัญหากลับมา = regression → สร้างใหม่ที่อ้างตัวเดิม (ไม่เปิด Defect ที่ปิดในรอบก่อน ประวัติ Release เดิมไม่เปลี่ยน)
-            var closed = linked.Where(d => d.Status == "Closed").OrderByDescending(d => d.Changed).FirstOrDefault();
+            // ปิดด้วยผลอื่น (Won't Fix, By Design ฯลฯ) ไม่เคยแก้ — Fail ใหม่เป็น Defect ใหม่ธรรมดา ไม่ใช่ regression
+            var closed = linked.Where(d => d.Status == "Closed" && Defect.WasFixed(d.ResolutionType, d.VerifiedInBuildId)).OrderByDescending(d => d.Changed).FirstOrDefault();
             var failedSteps = r.StepResults.Where(s => s.Status.Equals("Fail", StringComparison.OrdinalIgnoreCase)).ToList();
             var firstFailed = failedSteps.FirstOrDefault();
             var testerName = testerId.HasValue ? await db.Users.Where(u => u.UserId == testerId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct) : null;

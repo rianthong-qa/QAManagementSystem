@@ -48,8 +48,8 @@ Defect เก็บ Build ไว้ 3 แบบ:
 | จาก → ไป | เงื่อนไข / ผล |
 |---|---|
 | Open ↔ In Progress | ทำได้อิสระ |
-| Open / In Progress → Resolved | บันทึก `FixedInBuildId` (ไม่ระบุ = Build ล่าสุดของ Release) และ `ResolvedAt` |
-| Resolved → Closed | บันทึก `VerifiedInBuildId` (ไม่ระบุ = Fix Build) และ `ClosedAt` |
+| Open / In Progress → Resolved | บันทึก `FixedInBuildId` (ไม่ระบุ = Build ล่าสุดของ Release — Resolve รอบใหม่หลัง Reopen ตั้งใหม่เสมอ ไม่ใช้ Fix Build รอบก่อน) และ `ResolvedAt` |
+| Resolved → Closed | บันทึก `VerifiedInBuildId` (ไม่ระบุ = Fix Build), `ClosedAt` และผลตรวจซ้ำ `LastRetestResult = Pass` (Resolved → Open/In Progress = `Fail`) |
 | Open / In Progress / Rejected → Closed | ต้องมีผลการปิดที่**ไม่ใช่** "แก้ไขแล้ว" (Duplicate / Cannot Reproduce / By Design / Won't Fix / Deferred) |
 | Resolved / Closed → Open / In Progress | **Reopen:** `ReopenCount` +1, ล้าง Verified Build และผลการปิด แต่เก็บ Fix Build ไว้เป็นประวัติ |
 | ทุกสถานะ → Rejected | ทำได้ ยกเว้นจาก Closed (ต้อง Reopen ก่อน) |
@@ -68,7 +68,8 @@ Defect เก็บ Build ไว้ 3 แบบ:
 | Open / In Progress | ใช้ตัวเดิม ไม่สร้างใหม่ |
 | Resolved และ Build ที่ Fail อยู่ตรงหรือหลัง Fix Build (เทียบ `BuildDate`) หรือไม่มี Fix Build | **Reopen ตัวเดิม** |
 | Resolved แต่ Build ที่ Fail เก่ากว่า Fix Build | ไม่ Reopen เพราะ Build นี้ยังไม่มีการแก้ |
-| Closed | **สร้าง Defect ใหม่ที่อ้างตัวเดิม** (`RegressionOfDefectId`) ไม่เปิด Defect ที่ปิดในรอบก่อน |
+| Closed ที่ปิดเพราะแก้แล้ว (ผล Fixed หรือมี Verified Build) | **สร้าง Defect ใหม่ที่อ้างตัวเดิม** (`RegressionOfDefectId`) ไม่เปิด Defect ที่ปิดในรอบก่อน |
+| Closed ด้วยผลอื่น (Won't Fix, By Design ฯลฯ) หรือ Rejected | สร้าง Defect ใหม่ธรรมดา (ไม่นับเป็น regression) |
 
 ## 4. แนวปฏิบัติของทีม QA เมื่อได้ Build ใหม่ (SOP)
 
@@ -104,3 +105,4 @@ Defect เก็บ Build ไว้ 3 แบบ:
   - `DefectAutoCreateService` (Reopen / regression)
   - หน้าเว็บ: ช่อง Fix / Verified Build ในหน้าต่างผลการปิด, ปุ่ม Reopen / ตรวจซ้ำผ่าน, Build 3 แบบ + Reopen ในรายละเอียด, ข้อความ Reopen ใน Execution Workspace
   - ทดสอบ: `DefectLifecycleTests` (transition table, Fix / Verified Build, Reopen, Retest, CRM, auto-create 4 กรณี)
+- **2026-10-28 — แก้ตาม `/code-review` (PR #4):** Resolve รอบใหม่ตั้ง Fix Build ใหม่เสมอ; regression เฉพาะ Defect ที่ปิดเพราะแก้แล้ว; `LastRetestResult` บันทึกจากการออกจาก Resolved; Bulk ส่งผลการปิด/Fix Build โดยไม่มีสถานะ = 400 และบันทึก activity Resolution; หน้าต่างผลการปิดใช้ "ระบบเลือก" เป็นค่าเริ่มต้น (ลำดับ Build ตัดสินฝั่ง server ที่เดียว, ไม่ส่ง Build ที่ปิดใช้งาน); ซ่อนปุ่ม Resolve ของ Rejected; ข้อความ Execution Workspace แยกกรณี Defect รอตรวจซ้ำบน Build ที่ใหม่กว่า; activity CRM บอกตามจริงเมื่อไม่มี Fix Build; รายการ Defect ดึงเลข Build ครั้งเดียวต่อหน้า
