@@ -16,6 +16,9 @@ type TestSummaryNarrative = { knownIssues: string; remainingRisks: string; qaRec
 /** Known Issue จาก API (Defect ที่ปิดด้วย Deferred / Won't Fix หรือมี Risk Acceptance + Known Issues ของ Build) */
 type KnownIssue = { source: "Defect" | "Build"; reference: string; title: string; severity?: string | null; reason: string };
 const knownIssueLimit = 15;
+const knownIssueLine = (x: KnownIssue) => x.source === "Build" ? `• Build ${x.reference}: ${x.title}` : `• ${x.reference}${x.severity ? ` [${x.severity}]` : ""} ${x.title} — ${x.reason}`;
+/** Known Issue ที่ยังไม่อยู่ในข้อความที่บันทึกไว้ — Defect เทียบด้วยรหัส, Build เทียบทั้งบรรทัด */
+const missingKnownIssues = (text: string, known: KnownIssue[]) => known.filter((x) => !text.includes(x.source === "Build" ? knownIssueLine(x) : x.reference));
 type TestSummarySnapshot = { date: string; passRate: number; executionProgress: number; openP0: number; openDefects: number };
 
 export function TestSummaryPage({ projects, projectId: contextProjectId, releaseId: contextReleaseId, canExport, onOpenSignoff, onOpenRisks }: { projects: ProjectItem[]; projectId?: string; releaseId?: string; buildId?: string; canExport: boolean; onOpenSignoff?: () => void; onOpenRisks?: () => void }) {
@@ -55,7 +58,7 @@ export function TestSummaryPage({ projects, projectId: contextProjectId, release
   const derive = (s: TestSummaryData | null, known: KnownIssue[] = []): TestSummaryNarrative => {
     if (!s) return { knownIssues: "", remainingRisks: "", qaRecommendation: "" };
     const counts = [`P0 ที่ยังไม่ผ่าน/ถูกบล็อก: ${s.openP0}`, `P1 ที่ยังไม่ผ่าน/ถูกบล็อก: ${s.openP1}`, `ข้อบกพร่องที่ยังเปิด: ${s.openDefects} (วิกฤต ${s.criticalDefects} / สูง ${s.highDefects})`].filter((x) => !x.endsWith(": 0")).join(" · ") || "ไม่มีข้อบกพร่องหรือเคสค้างที่ต้องติดตาม";
-    const knownLines = known.slice(0, knownIssueLimit).map((x) => x.source === "Build" ? `• Build ${x.reference}: ${x.title}` : `• ${x.reference}${x.severity ? ` [${x.severity}]` : ""} ${x.title} — ${x.reason}`);
+    const knownLines = known.slice(0, knownIssueLimit).map(knownIssueLine);
     if (known.length > knownIssueLimit) knownLines.push(`• และอีก ${(known.length - knownIssueLimit).toLocaleString()} รายการ (ดูที่หน้า Defect / Risk Acceptance)`);
     const issues = knownLines.length ? `${counts}\n${knownLines.join("\n")}` : counts;
     const risks: string[] = [];
@@ -110,7 +113,12 @@ export function TestSummaryPage({ projects, projectId: contextProjectId, release
         try { localStorage.setItem(historyKey, JSON.stringify(nextHistory)); } catch { /* ignore */ }
       }
       const persisted = (() => { try { return JSON.parse(localStorage.getItem(`qa.testSummaryNarrative.${releaseId}`) ?? "null"); } catch { return null; } })() as TestSummaryNarrative | null;
-      setNarrative(regenerate || !persisted ? derive(data?.summary ?? null, known) : { ...persisted, ...(persisted.knownIssues || persisted.remainingRisks || persisted.qaRecommendation ? {} : derive(data?.summary ?? null, known)) });
+      if (regenerate || !persisted || !(persisted.knownIssues || persisted.remainingRisks || persisted.qaRecommendation)) setNarrative(derive(data?.summary ?? null, known));
+      else {
+        // ข้อความที่บันทึกไว้ (อาจแก้เอง) ไม่ทับ — เติมเฉพาะ Known Issue ใหม่ที่เกิดหลังบันทึก เช่น Defect ที่เพิ่งปิดด้วย Deferred
+        const added = missingKnownIssues(persisted.knownIssues, known).slice(0, knownIssueLimit).map(knownIssueLine);
+        setNarrative(added.length ? { ...persisted, knownIssues: [persisted.knownIssues, ...added].filter(Boolean).join("\n") } : persisted);
+      }
       setNarrativeReleaseId(releaseId);
     } catch (e) { setError(e instanceof Error ? e.message : "โหลด Test Summary ไม่สำเร็จ"); } finally { setLoading(false); }
   }, [projectId, releaseId, getJson]);

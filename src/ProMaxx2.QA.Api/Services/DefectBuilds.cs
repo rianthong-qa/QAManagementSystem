@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Infrastructure.Persistence;
 
 namespace ProMaxx2.QA.Api.Services;
@@ -27,6 +28,13 @@ public static class DefectBuilds
             .OrderBy(b => b.BuildDate ?? b.CreatedAt).ThenBy(b => b.CreatedAt).Select(b => b.BuildId).ToListAsync(ct);
         var index = ordered.IndexOf(buildId);
         return new(build.BuildId, build.BuildNumber, build.ReleaseId, build.ReleaseCode, build.ProjectId, ordered.Take(index).ToList(), ordered.Take(index + 1).ToList());
+    }
+
+    /// <summary>คิวตรวจซ้ำของ Build: Resolved ที่ Fix Build คือ Build นี้หรือก่อนหน้า หรือไม่ระบุ — ส่วน "Defect ของ Build" และ Retest Cycle ใช้กฎนี้ที่เดียว</summary>
+    public static IQueryable<Defect> RetestQueue(IQueryable<Defect> releaseDefects, ReleaseBuildOrder order)
+    {
+        var upTo = order.UpTo;
+        return releaseDefects.Where(d => DefectStatusGroups.AwaitingVerification.Contains(d.Status) && (!d.FixedInBuildId.HasValue || upTo.Contains(d.FixedInBuildId.Value)));
     }
 
     /// <summary>Build อยู่ใน Project เดียวกับ Defect — กันการเลือก Fix/Verified Build ข้าม Project</summary>

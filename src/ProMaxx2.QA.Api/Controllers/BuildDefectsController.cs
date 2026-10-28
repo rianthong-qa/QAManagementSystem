@@ -26,12 +26,28 @@ public sealed class BuildDefectsController(QaDbContext db, ProjectAccessContext 
     {
         var order = await DefectBuilds.ReleaseOrderAsync(db, buildId, ct);
         if (order is null || !CanAccess(order.ProjectId)) return NotFound();
-        var release = db.Defects.AsNoTracking().Where(d => !d.IsDeleted && d.ReleaseId == order.ReleaseId);
-        var foundHere = release.Where(d => d.BuildId == buildId);
-        var carriedOver = release.Where(d => Defect.UnresolvedStatuses.Contains(d.Status) && d.BuildId.HasValue && order.Earlier.Contains(d.BuildId.Value));
-        var retestQueue = release.Where(d => d.Status == "Resolved" && (!d.FixedInBuildId.HasValue || order.UpTo.Contains(d.FixedInBuildId.Value)));
+        var rows = await CarryoverQuery(db, order).ToListAsync(ct);
         return Ok(new BuildDefectCarryoverDto(order.BuildId, order.BuildNumber, order.ReleaseId, order.ReleaseCode,
-            await GroupAsync(foundHere, ct), await GroupAsync(carriedOver, ct), await GroupAsync(retestQueue, ct)));
+            Group(rows.Where(x => x.FoundHere)), Group(rows.Where(x => x.CarriedOver)), Group(rows.Where(x => x.InRetestQueue))));
+    }
+
+    /// <summary>
+    /// Defect ของ Release ที่อยู่อย่างน้อย 1 กลุ่ม พร้อมธงกลุ่ม — query เดียว (ไม่ใช่ 2 query ต่อกลุ่ม):
+    /// เจอใน Build นี้ (ทุกสถานะ) / ยังไม่แก้และเจอใน Build ก่อนหน้า / คิวตรวจซ้ำ (DefectBuilds.RetestQueue)
+    /// </summary>
+    public static IQueryable<CarryoverRow> CarryoverQuery(QaDbContext db, ReleaseBuildOrder order)
+    {
+        var buildId = order.BuildId;
+        var earlier = order.Earlier;
+        var release = db.Defects.AsNoTracking().Where(d => !d.IsDeleted && d.ReleaseId == order.ReleaseId);
+        var queue = DefectBuilds.RetestQueue(release, order).Select(d => d.DefectId);
+        return release
+            .Where(d => d.BuildId == buildId || DefectStatusGroups.NotDone.Contains(d.Status))
+            .Select(d => new CarryoverRow(
+                new BuildDefectItemDto(d.DefectId, d.DefectCode, d.Title, d.Severity, d.Status, d.BuildId, d.FixedInBuildId, d.ReopenCount, d.AssigneeUserId, d.CreatedAt),
+                d.BuildId == buildId,
+                DefectStatusGroups.Unresolved.Contains(d.Status) && d.BuildId.HasValue && earlier.Contains(d.BuildId.Value),
+                queue.Contains(d.DefectId)));
     }
 
     /// <summary>
@@ -46,7 +62,7 @@ public sealed class BuildDefectsController(QaDbContext db, ProjectAccessContext 
         if (!await db.Builds.AnyAsync(b => b.BuildId == buildId && b.IsActive, ct)) return BadRequest("Build นี้ถูกปิดใช้งานแล้ว");
         if (await db.Releases.AnyAsync(x => x.ReleaseId == order.ReleaseId && (x.Status == "Released" || x.Status == "Cancelled"), ct)) return BadRequest("Release นี้ปิดแล้ว สร้าง Test Cycle ไม่ได้");
         if (!await db.TestEnvironments.AnyAsync(x => x.TestEnvironmentId == r.EnvironmentId && x.ProjectId == order.ProjectId && x.IsActive, ct)) return BadRequest("ไม่พบ Environment ที่ใช้งานได้ใน Project นี้");
-        var queue = db.Defects.Where(d => !d.IsDeleted && d.ReleaseId == order.ReleaseId && d.Status == "Resolved" && (!d.FixedInBuildId.HasValue || order.UpTo.Contains(d.FixedInBuildId.Value)));
+        var queue = DefectBuilds.RetestQueue(db.Defects.Where(d => !d.IsDeleted && d.ReleaseId == order.ReleaseId), order);
         var cases = await db.DefectTestCaseLinks.Where(l => queue.Any(d => d.DefectId == l.DefectId))
             .Join(db.TestCases.Where(t => !t.IsDeleted), l => l.TestCaseId, t => t.TestCaseId, (l, t) => new { t.TestCaseId, t.TestCaseCode, t.RevisionNo, t.Priority })
             .Distinct().ToListAsync(ct);
@@ -58,6 +74,7 @@ public sealed class BuildDefectsController(QaDbContext db, ProjectAccessContext 
         var userId = UserId();
         var cycle = new TestCycle(order.ProjectId, order.ReleaseId, buildId, r.EnvironmentId, null, code, name.Length > 200 ? name[..200] : name, "Regression", DateTime.UtcNow.Date, null, userId,
             $"ตรวจซ้ำ Defect ที่ Resolved ({cases.Count} Test Case) — สร้างจากหน้า Defect ของ Build", userId);
+        cycle.ChangeStatus("InProgress"); // เปิดใช้ทันที — Execution Workspace แสดงเฉพาะ Cycle ที่ InProgress และหน้า Build พาไปรันต่อเลย
         foreach (var (item, index) in cases.OrderBy(x => x.Priority).ThenBy(x => x.TestCaseCode).Select((x, i) => (x, i)))
             cycle.Cases.Add(new TestCycleCase(cycle.TestCycleId, item.TestCaseId, item.RevisionNo, item.Priority, index + 1));
         db.TestCycles.Add(cycle);
@@ -66,22 +83,19 @@ public sealed class BuildDefectsController(QaDbContext db, ProjectAccessContext 
         return Ok(new RetestCycleResultDto(cycle.TestCycleId, code, name, cases.Count));
     }
 
-    private static async Task<BuildDefectGroupDto> GroupAsync(IQueryable<Defect> query, CancellationToken ct)
+    private static BuildDefectGroupDto Group(IEnumerable<CarryoverRow> rows)
     {
-        var bySeverity = await query.GroupBy(d => d.Severity).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+        var items = rows.Select(x => x.Item).ToList();
         // รุนแรงสุดก่อน แล้วเก่าสุดก่อน (ค้างนานสุด)
-        var items = await query
-            .OrderBy(d => d.Severity == "Critical" ? 0 : d.Severity == "High" ? 1 : d.Severity == "Medium" ? 2 : 3).ThenBy(d => d.CreatedAt)
-            .Take(ItemsPerGroup)
-            .Select(d => new BuildDefectItemDto(d.DefectId, d.DefectCode, d.Title, d.Severity, d.Status, d.BuildId, d.FixedInBuildId, d.ReopenCount, d.AssigneeUserId, d.CreatedAt))
-            .ToListAsync(ct);
-        return new(bySeverity.Values.Sum(), bySeverity, items);
+        var top = items.OrderBy(d => d.Severity switch { "Critical" => 0, "High" => 1, "Medium" => 2, _ => 3 }).ThenBy(d => d.CreatedAt).Take(ItemsPerGroup).ToList();
+        return new(items.Count, items.GroupBy(d => d.Severity).ToDictionary(g => g.Key, g => g.Count()), top);
     }
 
     private bool CanAccess(Guid projectId) => projectCtx.AllowedProjectIds.Length == 0 || projectCtx.AllowedProjectIds.Contains(projectId);
     private Guid? UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;
 }
 
+public sealed record CarryoverRow(BuildDefectItemDto Item, bool FoundHere, bool CarriedOver, bool InRetestQueue);
 public sealed record BuildDefectItemDto(Guid DefectId, string DefectCode, string Title, string Severity, string Status, Guid? FoundInBuildId, Guid? FixedInBuildId, int ReopenCount, Guid? AssigneeUserId, DateTime CreatedAt);
 public sealed record BuildDefectGroupDto(int Total, IReadOnlyDictionary<string, int> BySeverity, IReadOnlyList<BuildDefectItemDto> Items);
 /// <summary>FoundHere = เจอใน Build นี้ (ทุกสถานะ), CarriedOver = ยังไม่แก้และเจอใน Build ก่อนหน้า, RetestQueue = Resolved ที่ต้องตรวจซ้ำบน Build นี้</summary>

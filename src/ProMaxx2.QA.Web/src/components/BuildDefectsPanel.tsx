@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { apiUrl, getJson, isAbortError } from "../api";
+import { apiFetch, apiUrl, ApiError, getJson, isAbortError } from "../api";
 import { Badge } from "./Badge";
 import { notify } from "./dialogStore";
-import { defectStatusTones, type SessionUser } from "../shared/appShared";
+import { defectStatusTones } from "../shared/appShared";
 import "./BuildDefectsPanel.css";
 
 type Item = { defectId: string; defectCode: string; title: string; severity: string; status: string; reopenCount: number };
@@ -20,13 +20,8 @@ const groups: { key: GroupKey; label: string; hint: string; icon: string }[] = [
 const severityTone: Record<string, string> = { Critical: "red", High: "red", Medium: "yellow", Low: "gray" };
 const severities = ["Critical", "High", "Medium", "Low"];
 
-const canRunExecution = () => {
-  try { const user = JSON.parse(localStorage.getItem("qa.user") ?? "{}") as SessionUser; return Boolean(user.roles?.includes("SYS_ADMIN") || user.permissions?.includes("EXECUTION.RUN")); }
-  catch { return false; }
-};
-
 /** Defect ของ Build (หน้าต่างรายละเอียด Build) — คิวตรวจซ้ำ / ค้างจาก Build ก่อน / เจอใน Build นี้ + สร้าง Retest Cycle จากคิวตรวจซ้ำ */
-export function BuildDefectsPanel({ buildId, projectId, isActive, onOpenCycle }: { buildId: string; projectId?: string; isActive: boolean; onOpenCycle?: (cycleId: string) => void }) {
+export function BuildDefectsPanel({ buildId, projectId, isActive, canRunExecution, onOpenCycle }: { buildId: string; projectId?: string; isActive: boolean; canRunExecution: boolean; onOpenCycle?: (cycleId: string) => void }) {
   const [data, setData] = useState<Carryover | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
@@ -34,7 +29,7 @@ export function BuildDefectsPanel({ buildId, projectId, isActive, onOpenCycle }:
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [environmentId, setEnvironmentId] = useState("");
   const [creating, setCreating] = useState(false);
-  const canCreate = canRunExecution() && isActive;
+  const canCreate = canRunExecution && isActive;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -58,17 +53,10 @@ export function BuildDefectsPanel({ buildId, projectId, isActive, onOpenCycle }:
     if (!environmentId) return;
     setCreating(true);
     try {
-      const response = await fetch(`${apiUrl}/builds/${buildId}/retest-cycle`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, body: JSON.stringify({ environmentId }) });
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        let message = text.trim();
-        try { const parsed = JSON.parse(text); message = typeof parsed === "string" ? parsed : parsed?.detail ?? parsed?.title ?? message; } catch { /* ข้อความธรรมดา */ }
-        throw new Error(response.status === 403 ? "ต้องมีสิทธิ์รัน Test Execution เพื่อสร้าง Retest Cycle" : message || "สร้าง Retest Cycle ไม่สำเร็จ");
-      }
-      const result = await response.json() as { testCycleId: string; cycleCode: string; caseCount: number };
+      const result = await apiFetch<{ testCycleId: string; cycleCode: string; caseCount: number }>(`/builds/${buildId}/retest-cycle`, { method: "POST", json: { environmentId }, fallbackMessage: "สร้าง Retest Cycle ไม่สำเร็จ" });
       notify(`สร้าง ${result.cycleCode} แล้ว (${result.caseCount} Test Case) — ผลผ่าน/ไม่ผ่านของเคสใช้ปิดหรือ Reopen Defect`, "success");
       onOpenCycle?.(result.testCycleId);
-    } catch (e) { notify(e instanceof Error ? e.message : "สร้าง Retest Cycle ไม่สำเร็จ", "error"); }
+    } catch (e) { notify(e instanceof ApiError && e.status === 403 ? "ต้องมีสิทธิ์รัน Test Execution เพื่อสร้าง Retest Cycle" : e instanceof Error ? e.message : "สร้าง Retest Cycle ไม่สำเร็จ", "error"); }
     finally { setCreating(false); }
   };
 

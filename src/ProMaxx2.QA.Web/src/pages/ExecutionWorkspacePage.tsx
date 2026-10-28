@@ -8,6 +8,7 @@ import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { formatThaiDateTime } from "../dateTime";
 import { type ModuleItem, type SessionUser, type TestCycleItem, currentUserId, defectStatusTones, priorityTone, renderModuleSelectOptions } from "../shared/appShared";
+import { isDefectDone } from "../shared/defects";
 
 // เหตุผลของ Skip Test Case (test-case-execution-ui-spec.md §18) — ไม่มีคอลัมน์ DB แยกเก็บ Reason
 // เลยเข้ารหัสรวมไว้ใน Comment field เดิมตอนส่ง (ดู confirmSkip ใน ExecutionWorkspacePage)
@@ -31,7 +32,8 @@ function executionStatusTone(status: string): string {
     default: return "gray"; // NotRun
   }
 }
-const isOpenDefectStatus = (status: string) => !["Resolved", "Closed", "Rejected"].includes(status);
+// Resolved = รอตรวจซ้ำ ยังไม่จบ (DefectStatusGroups) — เคส Fail ซ้ำระบบ Reopen ตัวเดิม จึงไม่ชวนสร้าง Defect ใหม่
+const isOpenDefectStatus = (status: string) => !isDefectDone(status);
 type ExecutionCase = {
   testCycleCaseId: string;
   testCaseId: string;

@@ -402,6 +402,7 @@ git diff --check
 ### 2026-10-28 — Release Sign-off / Test Summary: Defect ใน Release Gate และ Known Issues
 
 - Release Gate Panel มีส่วน "Defect ของ Release" ใต้ `gate-grid` เดิม (`.defect-gate`, เส้นคั่นบน `--line`): หัวข้อ + Badge "นับใน Gate" (blue) / "ยังไม่นับใน Gate" (gray), 4 `gate-cell` (Critical ค้าง / High ค้าง / Resolved รอตรวจซ้ำ / ยังไม่มี Risk Acceptance) — เส้นซ้ายบอกผลด้วย `is-pass` (`--green`) / `is-warn` (`--yellow`) / `is-fail` (`--red`) และมีข้อความอธิบายใน cell เสมอ (ไม่สื่อด้วยสีอย่างเดียว); ระหว่างปิด Gate มีหมายเหตุ muted 12px ใต้ grid; Mobile ใช้ breakpoint เดิมของ `gate-grid` (2 คอลัมน์ ≤900px, 1 คอลัมน์ ≤560px)
+- หน้า Defect โหมด "ยังไม่ปิด ณ Build นี้": ชิปสถานะและการ์ดสรุปนับชุดเดียวกับตาราง (เดิมนับเฉพาะที่เจอใน Build นี้); Test Summary ที่บันทึกข้อความไว้แล้วจะเติม Known Issue ใหม่ต่อท้ายเมื่อโหลดหน้า ไม่ทับข้อความที่แก้เอง
 - Test Summary: ข้อความ Known Issues ที่สร้างอัตโนมัติ = บรรทัดสรุปเดิม + รายการ `• รหัส [Severity] ชื่อ — เหตุผล` / `• Build n: ข้อความ` (15 รายการแรก + "และอีก N รายการ"); Top Defect ใช้นิยามเดียวกับ API (`isDefectDone`) จึงรวม Resolved ที่รอตรวจซ้ำ
 
 ### 2026-10-28 — Release / Build: ส่วน "Defect ของ Build นี้"

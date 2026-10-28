@@ -148,4 +148,11 @@ Defect เก็บ Build ไว้ 3 แบบ:
   - `GET /releases/{id}/test-summary` เพิ่ม `knownIssues[]` จาก `KnownIssueRepository` (Defect ปิดด้วย Deferred / Won't Fix, Defect ที่ยังไม่จบแต่มี Risk Approved — สูงสุด 200 รายการ เรียง Severity แล้วรหัส — ต่อท้ายด้วย Known Issues ของ Build ที่ใช้งาน)
   - หน้าเว็บ: ส่วน "Defect ของ Release" ใน Release Gate Panel; Test Summary สร้างข้อความ Known Issues จาก `knownIssues` (15 รายการแรก + จำนวนที่เหลือ)
   - ทดสอบ: `DefectReleaseGateTests` (กลุ่มสถานะครบ, จัดประเภท Blocker, ตาราง Gate เปิด/ปิด, กฎเดิมมาก่อน, ตัวเลขจาก repository, Known Issues, แปลง SQL)
+- **2026-10-28 — แก้ตาม `/code-review` (เฟส 3–4):**
+  - Retest Cycle สร้างเป็น `InProgress` ทันที (Execution Workspace แสดงเฉพาะ Cycle ที่ InProgress)
+  - `POST /defects/{id}/retest` รับเฉพาะ Build ใน Release เดียวกับ Defect, Build ที่ใช้งานอยู่ และเป็น Fix Build หรือใหม่กว่า
+  - คิวตรวจซ้ำใช้กฎเดียว (`DefectBuilds.RetestQueue`) ทั้งส่วน "Defect ของ Build" และ Retest Cycle; ส่วน "Defect ของ Build" ดึงข้อมูลด้วย query เดียว (`BuildDefectsController.CarryoverQuery`)
+  - `GET /defects/stats` รับ `buildMode=openAsOf` เหมือนรายการ ชิปสถานะจึงนับชุดเดียวกับตาราง
+  - Release Gate ไม่นับ Risk Acceptance ที่ถูกลบ; Dashboard นับ Critical เฉพาะที่ยังไม่ได้แก้ (ตรงกับ Gate)
+  - หน้าเว็บใช้ `isDefectDone` ทุกจุด (Execution Workspace, อายุ Defect ในตาราง); Test Summary ที่บันทึกข้อความไว้แล้วเติม Known Issue ใหม่ต่อท้ายโดยไม่ทับข้อความเดิม; `BuildDefectsPanel` ใช้ `apiFetch` และรับสิทธิ์จาก App; `apiFetch` อ่านข้อความ error แบบ text ธรรมดาได้
   - **ช่องว่างที่พบ:** หน้า Risk Acceptance โหลดตัวเลือก Defect แค่ 100 รายการแรกของ Release — Release ที่มี Defect หลักพันเลือก Defect ส่วนใหญ่ไม่ได้ ต้องเปลี่ยนเป็นช่องค้นหา Defect ก่อนเปิด Gate

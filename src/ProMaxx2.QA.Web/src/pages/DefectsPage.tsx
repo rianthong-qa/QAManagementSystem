@@ -13,7 +13,7 @@ import { ListPager } from "../components/ListPager";
 import { useUserPageSize } from "../components/usePageSize";
 import "./DefectsPage.css";
 import { Badge } from "../components/Badge";
-import { defectAgeDays, defectClosingStatuses, defectResolutionLabel, parseReproSteps, splitResolutionChoice, type DefectResolutionChoice } from "../shared/defects";
+import { defectAgeDays, defectClosingStatuses, isDefectDone, defectResolutionLabel, parseReproSteps, splitResolutionChoice, type DefectResolutionChoice } from "../shared/defects";
 import { DefectResolutionModal } from "../components/DefectResolutionModal";
 import { useDebounced } from "../components/useDebounced";
 import { ReproSteps } from "../components/ReproSteps";
@@ -182,7 +182,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     setStatsLoaded(false);
     setStatsError("");
     const controller = new AbortController();
-    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(buildId && buildMode === "openAsOf" && { buildMode }) });
     fetch(`${apiUrl}/defects/stats?${q}`, { headers, signal: controller.signal }).then(r => { if (!r.ok) throw new Error(`โหลดสรุป Defect ไม่สำเร็จ (${r.status})`); return r.json(); }).then(d => {
       if (controller.signal.aborted) return;
       if (d && typeof d === "object") setSummaryStats({
@@ -194,7 +194,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       if (d && typeof d === "object") setStatsLoaded(true);
     }).catch((e) => { if (!controller.signal.aborted) setStatsError(e instanceof Error ? e.message : "โหลดสรุป Defect ไม่สำเร็จ"); });
     return () => controller.abort();
-  }, [projectId, releaseId, buildId, headers, reload, statsReload]);
+  }, [projectId, releaseId, buildId, buildMode, headers, reload, statsReload]);
   useEffect(() => {
     if (!projectId) return;
     Promise.all([
@@ -485,7 +485,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       </select></label>
       {buildId && <div className="lp-chips df-build-mode" role="group" aria-label="Defect ของ Build ที่เลือก">
         <button type="button" aria-pressed={buildMode === "foundIn"} onClick={() => { setBuildMode("foundIn"); setPage(1); }} title="Defect ที่แจ้งบน Build นี้ทุกสถานะ">เจอใน Build นี้</button>
-        <button type="button" aria-pressed={buildMode === "openAsOf"} onClick={() => { setBuildMode("openAsOf"); setPage(1); }} title="ยังไม่ปิด (Open / In Progress / Resolved) ที่เจอใน Build นี้หรือ Build ก่อนหน้าของ Release เดียวกัน — ตัวเลขในชิปสถานะยังนับเฉพาะที่เจอใน Build นี้">ยังไม่ปิด ณ Build นี้ (รวมของค้าง)</button>
+        <button type="button" aria-pressed={buildMode === "openAsOf"} onClick={() => { setBuildMode("openAsOf"); setPage(1); }} title="ยังไม่ปิด (Open / In Progress / Resolved) ที่เจอใน Build นี้หรือ Build ก่อนหน้าของ Release เดียวกัน">ยังไม่ปิด ณ Build นี้ (รวมของค้าง)</button>
       </div>}
       <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
         <button type="button" aria-pressed={statusFilter === ""} onClick={() => setStatusFilter("")}>ทุกสถานะ <b>{summaryStats.total.toLocaleString()}</b></button>
@@ -544,7 +544,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                     ? <button type="button" className="df-crm-send" title={`ส่ง ${x.defectCode} ไป CRM`} aria-label={`ส่ง ${x.defectCode} ไป CRM`} onClick={() => openCrmDialog("send", x)}><span className="material-symbols-outlined" aria-hidden="true">upload</span>ส่งไป CRM</button>
                     : <Badge tone={defectCrmSyncTones[crmStatus] ?? "gray"}>{defectCrmSyncLabels[crmStatus] ?? "ยังไม่ส่ง"}</Badge>}
                 </td>
-                <td className="lp-col-date" title={`สร้าง ${fmtAgo(x.createdAt)}`}><span className="lp-date"><span className={defectAgeDays(x.createdAt) > 30 && !["Resolved", "Closed", "Rejected"].includes(x.status) ? "df-age-old" : undefined}>{defectAgeDays(x.createdAt)} วัน</span><small>{fmtAgo(x.createdAt)}</small></span></td>
+                <td className="lp-col-date" title={`สร้าง ${fmtAgo(x.createdAt)}`}><span className="lp-date"><span className={defectAgeDays(x.createdAt) > 30 && !isDefectDone(x.status) ? "df-age-old" : undefined}>{defectAgeDays(x.createdAt)} วัน</span><small>{fmtAgo(x.createdAt)}</small></span></td>
                 <td className="lp-col-actions lp-actions-4"><div className="lp-row-actions">
                   {canEdit !== false && x.status === "Open" && <button type="button" title="เริ่มดำเนินการ" aria-label={`เริ่มดำเนินการ ${x.defectCode}`} onClick={() => quickStatus(x, "In Progress")}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span></button>}
                   {canEdit !== false && x.status === "In Progress" && <button type="button" title="Resolve" aria-label={`Resolve ${x.defectCode}`} onClick={() => quickStatus(x, "Resolved")}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span></button>}

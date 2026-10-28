@@ -26,7 +26,7 @@ public sealed class ReleaseSignoffRepository(QaDbContext db, ProjectAccessContex
         var covered = await db.RequirementTestCases.AsNoTracking().Where(x => requirementIds.Contains(x.RequirementId)).Select(x => x.RequirementId).Distinct().ToListAsync(ct);
         var coverage = requirementIds.Count == 0 ? 0 : Math.Round(covered.Count * 100m / requirementIds.Count, 1);
 
-        var approvedRisks = await db.RiskAcceptances.AsNoTracking().CountAsync(r => r.ReleaseId == releaseId && r.Status == "Approved", ct);
+        var approvedRisks = await db.RiskAcceptances.AsNoTracking().CountAsync(r => r.ReleaseId == releaseId && !r.IsDeleted && r.Status == "Approved", ct);
 
         var smokeStatus = buildId.HasValue ? await db.AutomationBuildTriggerRuns.AsNoTracking().Where(x => x.BuildId == buildId.Value && x.Policy.Pack == "Smoke").OrderByDescending(x => x.FiredAtUtc).Select(x => x.Status).FirstOrDefaultAsync(ct) ?? "NOT_RUN" : "NOT_RUN";
         var defects = await DefectCountsAsync(releaseId, ct);

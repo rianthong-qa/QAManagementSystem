@@ -48,6 +48,8 @@ public sealed class BuildDefectCarryoverTests
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
         var s = await SeedAsync(db);
 
+        var stats = (DefectStatsDto)((OkObjectResult)(await DefectController(db, s).Stats(s.ProjectId, null, s.B1.BuildId, default, "openAsOf")).Result!).Value!;
+        Assert.Equal(5, stats.Total); // ชิปสถานะนับชุดเดียวกับรายการ
         var result = (OkObjectResult)(await DefectController(db, s).List(s.ProjectId, null, s.B1.BuildId, null, false, null, null, null, null, null, null, 1, 100, "openAsOf", default)).Result!;
         var codes = ((DefectListResultDto)result.Value!).Rows.Select(x => x.DefectCode).OrderBy(x => x).ToList();
 
@@ -70,6 +72,8 @@ public sealed class BuildDefectCarryoverTests
 
         Assert.IsType<BadRequestObjectResult>((await controller.Retest(s.Id("OPEN-B0"), new(s.B1.BuildId, true), default)).Result); // ยังไม่ Resolved
         Assert.IsType<BadRequestObjectResult>((await controller.Retest(s.Id("RES-FIX-B2"), new(Guid.NewGuid(), true), default)).Result); // Build อื่น
+        Assert.IsType<BadRequestObjectResult>((await controller.Retest(s.Id("RES-FIX-B2"), new(s.B1.BuildId, true), default)).Result); // เก่ากว่า Fix Build (B2)
+        Assert.Equal("Resolved", (await db.Defects.AsNoTracking().SingleAsync(d => d.DefectId == s.Id("RES-FIX-B2"))).Status);
     }
 
     [Fact]
@@ -85,7 +89,7 @@ public sealed class BuildDefectCarryoverTests
 
         Assert.Equal(1, result.CaseCount);
         var cycle = await db.TestCycles.Include(c => c.Cases).SingleAsync(c => c.TestCycleId == result.TestCycleId);
-        Assert.Equal((s.B1.BuildId, "Regression", $"Retest Build {s.B1.BuildNumber}"), (cycle.BuildId, cycle.CycleType, cycle.CycleName));
+        Assert.Equal((s.B1.BuildId, "Regression", $"Retest Build {s.B1.BuildNumber}", "InProgress"), (cycle.BuildId, cycle.CycleType, cycle.CycleName, cycle.Status)); // InProgress = เปิดใน Execution Workspace ได้ทันที
         Assert.Equal(s.Baseline.TestCase.TestCaseId, cycle.Cases.Single().TestCaseId);
 
         // คิวว่าง (ไม่มีเคสผูก) = แจ้งให้ตรวจซ้ำจากหน้า Defect
@@ -97,13 +101,14 @@ public sealed class BuildDefectCarryoverTests
     {
         using var db = new QaDbContext(new DbContextOptionsBuilder<QaDbContext>()
             .UseSqlServer(@"Server=(localdb)\mssqllocaldb;Database=ProMaxx2QA;Trusted_Connection=True;TrustServerCertificate=True").Options);
-        IReadOnlyList<Guid> upTo = [Guid.NewGuid(), Guid.NewGuid()];
-        var carried = db.Defects.Where(d => !d.IsDeleted && Defect.UnresolvedStatuses.Contains(d.Status) && d.BuildId.HasValue && upTo.Contains(d.BuildId.Value));
-        var queue = db.Defects.Where(d => d.Status == "Resolved" && (!d.FixedInBuildId.HasValue || upTo.Contains(d.FixedInBuildId.Value)));
-        var ordered = queue.OrderBy(d => d.Severity == "Critical" ? 0 : d.Severity == "High" ? 1 : 2).ThenBy(d => d.CreatedAt).Take(BuildDefectsController.ItemsPerGroup);
+        var b0 = Guid.NewGuid();
+        var b1 = Guid.NewGuid();
+        var order = new ReleaseBuildOrder(b1, "1", Guid.NewGuid(), "REL", Guid.NewGuid(), [b0], [b0, b1]);
 
-        Assert.Contains("[FixedInBuildId]", ordered.ToQueryString());
-        Assert.Contains("[BuildId]", carried.GroupBy(d => d.Severity).Select(g => new { g.Key, Count = g.Count() }).ToQueryString());
+        var sql = BuildDefectsController.CarryoverQuery(db, order).ToQueryString();
+
+        Assert.Contains("[FixedInBuildId]", sql);
+        Assert.Contains("[BuildId]", sql);
     }
 
     // ---------- seed ----------
