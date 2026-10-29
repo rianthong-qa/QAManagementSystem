@@ -1,6 +1,6 @@
 # Test Plan / Configuration Matrix — แผนพัฒนา
 
-> สถานะ: เฟส 1–3 เสร็จและใช้งานบน `ProMaxx2QA` แล้ว; เฟส 4 (Clone/Rerun, Run-level Assignment, Counter optimization) เสร็จในโค้ด — รอ restart API; เฟส 5–6 ยังไม่เริ่ม
+> สถานะ: เฟส 1–3 ใช้งานบน `ProMaxx2QA` แล้ว; เฟส 4–5 เสร็จในโค้ด (commit แล้ว/รอ commit) — ต้อง restart API ก่อนใช้งาน; เฟส 6 ยังไม่เริ่ม
 >
 > เป้าหมาย: เพิ่ม Test Plan สำหรับรวม Test Cycle หลายชุดและแสดง Configuration Matrix โดยรักษาข้อมูลและ flow เดิมของ Test Cycle, Test Suite และ Execution Workspace ให้ใช้งานต่อได้โดยไม่ต้อง migrate ข้อมูลเดิมแบบทำลายข้อมูล
 
@@ -656,7 +656,8 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 2 | เสร็จ (2026-10-29) — Migration ยังไม่ apply ลง `ProMaxx2QA` | ดูรายละเอียดด้านล่าง |
 | 3 | เสร็จ (2026-10-29) — Migration apply แล้ว รอทดสอบกับข้อมูลจริงผ่าน UI | ดูรายละเอียดด้านล่างและ `UI_DESIGN_SYSTEM.md` Change Log 2026-10-29 |
 | 4 | เสร็จในโค้ด (2026-10-29) — ไม่มี Migration ใหม่, ต้อง restart API | ดูรายละเอียดด้านล่าง |
-| 5–6 | ยังไม่เริ่ม | |
+| 5 | เสร็จในโค้ด (2026-10-29) — ต้อง restart API | ดูรายละเอียดด้านล่าง |
+| 6 | ยังไม่เริ่ม | |
 
 เฟส 1 ที่ทำแล้ว:
 
@@ -691,12 +692,22 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 - Counter optimization — วัดบน DB ทดสอบ (60 Plan, 300 Run, 30,000 เคส, 28,292 Execution): เดิม List 137 ms / กรองสถานะ 318 ms (Query สถานะแบบ subquery ต่อ Plan รันซ้ำ 3 รอบ) → ใหม่ List 123 ms / กรองสถานะ 112 ms (นับเคสด้วย `GROUP BY (TestCycleId, CurrentStatus)` ครั้งเดียว ใช้ index `IX_TestCycleCases_TestCycleId` ที่ INCLUDE `CurrentStatus` อยู่แล้ว แล้วรวม/คำนวณสถานะในหน่วยความจำด้วย `PlanStatus` — unit test เทียบสถานะหน้ารายการกับรายละเอียดทุกขั้น); Detail ~45 ms, Matrix ~18 ms — ไม่ต้องเพิ่ม index
 - UI: บรรทัดทีม/เคสที่ยังไม่มีผู้รับผิดชอบในแถว Matrix, หน้าต่างจัดทีม, หน้าต่าง Clone/Rerun พร้อม Preview ทุก Run (ดู `UI_DESIGN_SYSTEM.md` Change Log)
 
+เฟส 5 ที่ทำแล้ว (Freeze guard §7.3):
+
+- `ITestPlanFreezeGuard.EnsureNotFrozenAsync(testCycleId)` (Application) + `TestPlanFreezeGuard` (Infrastructure) — Cycle ที่อยู่ใน Plan ที่ `IsFrozen` (นับรวม Plan ที่ปิด/ยกเลิก/ลบแล้ว) โยน `TestPlanRuleException` `TEST_PLAN_FROZEN` พร้อม Plan/Run และสาเหตุ (ถูก Freeze / ปิดแล้ว / ถูกยกเลิก)
+- จุดที่เรียก: `ExecutionService.CreateAsync` (รวม Save Progress) และ `DeleteAsync`; `TestCycleService.UpdateAsync`, `StatusAsync`; `WorkloadController` assign/reassign; `WeightedAssignmentController` confirm/rebalance; Run-level assign ของ Test Plan ใช้ `EnsureEditable` อยู่แล้ว
+- `TestCycleService.DeleteAsync` **ไม่ใช้ guard** — Cycle ที่อยู่ใน Plan ลบไม่ได้อยู่แล้ว (`TEST_CYCLE_LINKED_TO_PLAN`) และข้อความนั้นบอกทางที่ถูกกว่า (Reopen อย่างเดียวไม่ทำให้ลบได้)
+- ไม่มี `PopulateAsync` แยกเป็น endpoint (ใช้ตอนสร้าง Cycle ใหม่ซึ่งยังไม่อยู่ใน Plan) และ Clone Cycle ไม่แก้ Cycle ต้นทาง — จึงไม่ต้องใส่ guard
+- `TestPlanRuleExceptionFilter` (MVC filter กลาง) แปลง `TestPlanRuleException` ที่ไม่มี controller จับเป็น 409 ProblemDetails + `code` — endpoint เดิมไม่ต้องเพิ่ม catch และไม่ตอบ 500
+- ข้อจำกัด: ตรวจก่อนบันทึก (check-then-act) — คำขอบันทึกผลที่เริ่มก่อนกด Freeze เพียงเสี้ยววินาทีอาจบันทึกสำเร็จ; ไม่ได้ทำ lock ระดับฐานข้อมูลตาม §9.2 "Concurrent Freeze กับ Save Execution"
+- Unit tests: บันทึก/ลบผลถูกบล็อกเมื่อ Freeze และใช้ได้หลัง Unfreeze, แก้/เปลี่ยนสถานะ Cycle ของแผนที่ปิดถูกบล็อก, Cycle ที่ไม่อยู่ในแผนไม่ถูกกระทบ, filter แปลงเป็น 409 (ทั้งชุด 926 ผ่าน)
+
 ค้าง/ยกไปเฟสถัดไป:
 
 - ตรวจบน SQL Server แล้ว (2026-10-29): สร้าง DB ทดสอบ `ProMaxx2QA_TestPlanCheck` บน `MSSQLSERVER2022` apply ทุก Migration → รัน Service/Repository จริง (Create/Attach/Create Run จาก Suite/Get/List filter/Matrix/Retest/Unique index ชน → `TEST_PLAN_CYCLE_LINKED`/ลบ Cycle ที่ผูก → 409/Freeze/Cancel/Delete/Audit) ผ่าน และตรวจ `SeedTestPlanPermissions` ทั้ง Up/Down กับ Role จริง (ASSIGN/EXPORT ตาม Role ที่มี `EXECUTION.ASSIGN`/`REPORT.EXPORT`) แล้วลบ DB ทดสอบทิ้ง
 - ยังไม่ apply Migration ลง `ProMaxx2QA` และยังไม่ได้ restart API — ทำพร้อมเฟส 3 (ใช้ `dotnet ef migrations script AddSoftDeleteAuditColumns SeedTestPlanPermissions --idempotent -o x.sql` แล้ว `sqlcmd ... -b -I -i x.sql`); ผู้ใช้ต้อง Login ใหม่จึงจะได้ claim `TESTPLAN.*`
 - ยังไม่มี Integration test แบบ HTTP (Concurrent Attach/Freeze ตาม §9.2) — Concurrent Attach พึ่ง Unique index + mapping 409
-- เฟส 5: Freeze guard ใน Execution/Cycle/Assignment เดิม; เฟส 6: Export + Plan context ในหน้าเดิม
+- เฟส 6: Export Plan Summary + Plan context ในหน้า Test Cycle/Execution Workspace (รวม Banner Frozen และปิดปุ่มบันทึกผลล่วงหน้า แทนที่จะรอ 409)
 
 ลำดับ Release แนะนำ:
 
@@ -795,3 +806,4 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 2026-10-29 | เฟส 3: หน้า Test Plan (รายการ/รายละเอียด/Matrix/ฟอร์มแผน/ฟอร์ม Run/Lifecycle) + เมนู + สิทธิ์; ตรวจ build/lint และ headless Chrome + mock API ที่ 1440/1024/390px ไม่มี horizontal scroll; การ apply Migration ลง ProMaxx2QA ถูกระบบ permission ปฏิเสธ (ทรัพยากรที่ใช้ร่วม) — รอผู้ใช้อนุญาตหรือ apply เอง | เฟส 3 เสร็จในโค้ด |
 | 2026-10-29 | ผู้ใช้อนุญาต: apply `AddTestPlansAndConfigurationMatrix` + `SeedTestPlanPermissions` ลง `ProMaxx2QA` (sqlcmd -b -I ผ่าน PowerShell — Git Bash แปลง argument ผิดจน sqlcmd แจ้ง -E/-U ชนกัน) และ restart API แบบ Production; ตรวจ `/health` 200, `/test-plans` 401 ทั้ง local และโดเมนสาธารณะ, Vite เสิร์ฟไฟล์ใหม่; สิทธิ์ ASSIGN/EXPORT ตาม Role จริง (QA_TESTER ได้ด้วยเพราะมี `EXECUTION.ASSIGN`/`REPORT.EXPORT` อยู่แล้ว) | Migration apply แล้ว |
 | 2026-10-29 | เฟส 4: Run-level Assignment (+ members), Clone/Rerun Plan, Counter optimization (List กรองสถานะ 318 → 112 ms ที่ 30,000 เคส), UI จัดทีม/Clone; unit tests ทั้งชุด 922 ผ่าน; ตรวจ Clone/Assign บน SQL Server ใน DB ทดสอบ (ลบแล้ว) | เฟส 4 เสร็จในโค้ด — รอ restart API |
+| 2026-10-29 | เฟส 5: Freeze guard ใน Execution (บันทึก/ลบ), Test Cycle (แก้/สถานะ), Assignment (Workload, Weighted) + exception filter กลาง 409 `TEST_PLAN_FROZEN`; การ restart API ถูกระบบ permission บล็อก (Production Deploy) — รอผู้ใช้ restart | เฟส 5 เสร็จในโค้ด |

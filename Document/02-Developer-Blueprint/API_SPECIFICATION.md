@@ -455,6 +455,7 @@ Soft delete (สิทธิ์ `EXECUTION.ASSIGN`) — **Cycle ที่ผู�
 - ทุกคำสั่งที่แก้ข้อมูลบันทึก Audit Log (`EntityType = TestPlan`) — Close/Cancel/Reopen/Freeze/Unfreeze เก็บเหตุผลใน `ChangeSummary`
 - Error เป็น ProblemDetails พร้อม `code`: `TEST_PLAN_INVALID` (400), `TEST_PLAN_NOT_FOUND` (404), `TEST_PLAN_DUPLICATE_CODE`, `TEST_PLAN_FROZEN`, `TEST_PLAN_NOT_ACTIVE`, `TEST_PLAN_INVALID_STATE`, `TEST_PLAN_RUNS_NOT_TERMINAL`, `TEST_PLAN_HAS_RUNS`, `TEST_PLAN_CYCLE_LINKED`, `TEST_PLAN_RUN_HAS_EXECUTIONS`, `TEST_PLAN_NO_RUNS` (409)
 - แถว Run (`runs[]`, `matrix`) มี `unassignedCases` (เคส NotRun ที่ยังไม่มีผู้รับผิดชอบ) และ `assignments` (ทีมระดับ Run)
+- **Freeze guard (เพิ่ม 2026-10-29):** Test Cycle ที่อยู่ใน Test Plan ที่ Frozen (รวมแผนที่ปิด/ยกเลิก/ลบแล้ว) — endpoint เดิมต่อไปนี้ตอบ `409` + `code: TEST_PLAN_FROZEN` พร้อม Plan Code/Run Code ใน `detail`: `POST /test-cycle-cases/{id}/executions` (รวม Save Progress), `DELETE /executions/{id}`, `PUT /test-cycles/{id}`, `POST /test-cycles/{id}/status`, `POST /test-cycles/{id}/assign`, `POST /test-cycle-cases/{id}/reassign`, `POST /test-cycles/{id}/auto-assign/confirm` และ `/rebalance` — แปลงด้วย exception filter กลาง (`TestPlanRuleExceptionFilter`); `DELETE /test-cycles/{id}` ถูกบล็อกด้วย `TEST_CYCLE_LINKED_TO_PLAN` อยู่แล้ว
 - ยังไม่มี: Export (เฟส 6)
 
 ---

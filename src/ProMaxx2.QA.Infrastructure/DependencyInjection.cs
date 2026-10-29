@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<ITestSuiteRepository,TestSuiteRepository>();
         services.AddScoped<ITestCycleRepository,TestCycleRepository>();
         services.AddScoped<ITestPlanRepository,TestPlanRepository>();
+        services.AddScoped<ITestPlanFreezeGuard,TestPlanFreezeGuard>();
         services.AddScoped<IExecutionRepository,ExecutionRepository>();
         services.AddScoped<IAdministrationRepository,AdministrationRepository>();
         services.AddScoped<IDashboardRepository,DashboardRepository>();

@@ -9,7 +9,7 @@ using ProMaxx2.QA.Api.Services;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController, Route("api/v1"), Authorize, RequireProjectAccess]
-public sealed class WorkloadController(QaDbContext db, ProMaxx2.QA.Application.Common.ProjectAccessContext projectCtx) : ControllerBase
+public sealed class WorkloadController(QaDbContext db, ProMaxx2.QA.Application.Common.ProjectAccessContext projectCtx, ProMaxx2.QA.Application.TestPlanning.ITestPlanFreezeGuard freezeGuard) : ControllerBase
 {
     [HttpGet("my-work"), Authorize(Policy = "QaMyWorkView")]
     public async Task<IActionResult> MyWork(string? status, bool? today, CancellationToken ct)
@@ -68,6 +68,7 @@ public sealed class WorkloadController(QaDbContext db, ProMaxx2.QA.Application.C
     {
         if (!TryUserId(out var actor)) return Unauthorized();
         if (request.TesterUserId == Guid.Empty || request.TestCycleCaseIds is null || request.TestCycleCaseIds.Count == 0) return BadRequest("Tester and cases are required.");
+        await freezeGuard.EnsureNotFrozenAsync(cycleId, ct);
         var cases = await db.TestCycleCases.Where(x => x.TestCycleId == cycleId && request.TestCycleCaseIds.Contains(x.TestCycleCaseId)).ToListAsync(ct);
         if (cases.Count != request.TestCycleCaseIds.Distinct().Count()) return BadRequest("One or more cases do not belong to the cycle.");
         // โหลด assignment metadata ครั้งเดียวทั้งชุด แทน query ต่อ 1 case (N+1)
@@ -98,6 +99,7 @@ public sealed class WorkloadController(QaDbContext db, ProMaxx2.QA.Application.C
         if (request.TesterUserId == Guid.Empty) return BadRequest("Tester is required.");
         var item = await db.TestCycleCases.Include(x => x.Cycle).SingleOrDefaultAsync(x => x.TestCycleCaseId == cycleCaseId, ct);
         if (item is null) return NotFound();
+        await freezeGuard.EnsureNotFrozenAsync(item.TestCycleId, ct);
         var old = item.AssignedTesterUserId;
         try { item.AssignTester(request.TesterUserId); }
         catch (InvalidOperationException ex) { return Conflict(new { code = "ASSIGNMENT_CONFLICT", detail = ex.Message }); }

@@ -43,6 +43,16 @@ public sealed record CloneEnvironmentOverride(Guid SourceRunId, Guid TargetEnvir
 /// <summary>เหตุผลของคำสั่ง Close/Cancel/Reopen/Freeze/Unfreeze — บันทึกใน Audit Log</summary>
 public sealed record TestPlanActionRequest(string Reason);
 
+/// <summary>
+/// Freeze guard (TEST_PLAN_CONFIGURATION_MATRIX_PLAN.md §7.3) — เรียกก่อน Mutation ที่กระทบผลของ Test Cycle
+/// (บันทึก/ลบ Execution, แก้/เปลี่ยนสถานะ/ลบ Cycle, assign เคส); Cycle ที่อยู่ใน Plan ที่ Frozen (รวม Plan ที่ปิด/ยกเลิก/ลบแล้ว)
+/// โยน <see cref="TestPlanRuleException"/> code <c>TEST_PLAN_FROZEN</c> — API ตอบ 409
+/// </summary>
+public interface ITestPlanFreezeGuard
+{
+    Task EnsureNotFrozenAsync(Guid testCycleId, CancellationToken ct);
+}
+
 /// <summary>ข้อมูล Test Cycle ที่ต้องใช้ตรวจก่อน Attach</summary>
 public sealed record TestPlanCycleRef(Guid TestCycleId, Guid ProjectId, Guid ReleaseId, string CycleCode, string CycleName, bool IsDeleted);
 

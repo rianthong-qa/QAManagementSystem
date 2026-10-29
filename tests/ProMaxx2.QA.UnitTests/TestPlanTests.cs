@@ -159,7 +159,7 @@ public sealed class TestPlanTests
         var access = new ProjectAccessContext { AllowedProjectIds = [baseline.Project.ProjectId] };
         var repository = new TestPlanRepository(db, access);
         var projects = new ProjectRepository(db, access);
-        var cycles = new TestCycleService(new TestCycleRepository(db, access), projects);
+        var cycles = new TestCycleService(new TestCycleRepository(db, access), projects, new TestPlanFreezeGuard(db));
         return new Ctx(db, baseline, new TestPlanService(repository, projects, cycles), repository, cycles, access);
     }
 
@@ -734,6 +734,84 @@ public sealed class TestPlanTests
         await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloneAsync(plan.TestPlanId, request with { CloneMode = "SuiteLatest" }, actor, CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloneAsync(plan.TestPlanId, request with { EnvironmentOverrides = [new(Guid.NewGuid(), c.Baseline.Environment.TestEnvironmentId)] }, actor, CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloneAsync(plan.TestPlanId, request, null, CancellationToken.None));
+    }
+
+    // ---------- เฟส 5: Freeze guard ใน Execution / Test Cycle / Assignment เดิม ----------
+
+    [Fact]
+    public async Task Freeze_guard_blocks_execution_save_and_delete_until_unfrozen()
+    {
+        var c = await CreateAsync();
+        var (plan, cycle) = await PlanWithRunAsync(c);
+        var cycleCase = cycle.Cases.Single();
+        var executions = new ExecutionService(new ExecutionRepository(c.Db, c.Access), new TestPlanFreezeGuard(c.Db));
+        var tester = Guid.NewGuid();
+        var request = new CreateExecutionRequest("Pass", "ok", null, [new SaveStepResultRequest(1, "Pass", "ok", null)]);
+        var saved = await executions.CreateAsync(cycleCase.TestCycleCaseId, request, tester, CancellationToken.None);
+
+        await c.Service.FreezeAsync(plan.TestPlanId, "รอ Sign-off", null, CancellationToken.None);
+        var create = await Assert.ThrowsAsync<TestPlanRuleException>(() => executions.CreateAsync(cycleCase.TestCycleCaseId, request, tester, CancellationToken.None));
+        Assert.Equal(TestPlanErrorCodes.Frozen, create.Code);
+        Assert.Contains(plan.PlanCode, create.Message);
+        await Assert.ThrowsAsync<TestPlanRuleException>(() => executions.DeleteAsync(saved.TestExecutionId, null, CancellationToken.None));
+
+        await c.Service.UnfreezeAsync(plan.TestPlanId, "แก้ผล", null, CancellationToken.None);
+        await executions.CreateAsync(cycleCase.TestCycleCaseId, request, tester, CancellationToken.None);
+        Assert.Equal(2, await c.Db.TestExecutions.CountAsync(x => x.TestCycleCaseId == cycleCase.TestCycleCaseId));
+    }
+
+    [Fact]
+    public async Task Freeze_guard_blocks_cycle_update_and_status_for_closed_plan()
+    {
+        var c = await CreateAsync();
+        var (plan, cycle) = await PlanWithRunAsync(c, "Completed");
+        await c.Service.CloseAsync(plan.TestPlanId, "ปิดรอบ", null, CancellationToken.None);
+        var request = new SaveTestCycleRequest(c.Baseline.Project.ProjectId, c.Baseline.Release.ReleaseId, c.Baseline.Build.BuildId, c.Baseline.Environment.TestEnvironmentId, null, cycle.CycleCode, "Renamed", null, null, null, null, null, false);
+
+        foreach (var action in new Func<Task>[]
+        {
+            () => c.Cycles.UpdateAsync(cycle.TestCycleId, request, CancellationToken.None),
+            () => c.Cycles.StatusAsync(cycle.TestCycleId, "InProgress", CancellationToken.None),
+        })
+        {
+            var ex = await Assert.ThrowsAsync<TestPlanRuleException>(action);
+            Assert.Equal(TestPlanErrorCodes.Frozen, ex.Code);
+            Assert.Contains("ปิดแล้ว", ex.Message);
+        }
+        // ลบยังถูกบล็อกด้วยเงื่อนไข "อยู่ใน Test Plan" (ข้อความบอกให้ถอด Run/Cancel แทน — Reopen อย่างเดียวไม่พอ)
+        await Assert.ThrowsAsync<TestCycleLinkedToPlanException>(() => c.Cycles.DeleteAsync(cycle.TestCycleId, null, CancellationToken.None));
+        Assert.Equal("Completed", (await c.Db.TestCycles.SingleAsync(x => x.TestCycleId == cycle.TestCycleId)).Status);
+    }
+
+    [Fact]
+    public async Task Freeze_guard_ignores_cycles_outside_frozen_plans()
+    {
+        var c = await CreateAsync();
+        var standalone = await AddCycleAsync(c, "AUT-CYC-050", "Draft");
+        var (plan, _) = await PlanWithRunAsync(c);
+        await c.Service.FreezeAsync(plan.TestPlanId, "lock", null, CancellationToken.None);
+        var guard = new TestPlanFreezeGuard(c.Db);
+
+        await guard.EnsureNotFrozenAsync(standalone.TestCycleId, CancellationToken.None);
+        var updated = await c.Cycles.StatusAsync(standalone.TestCycleId, "InProgress", CancellationToken.None);
+        Assert.Equal("InProgress", updated.Status);
+    }
+
+    [Fact]
+    public void Exception_filter_maps_rule_violation_to_409_with_code()
+    {
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        var action = new Microsoft.AspNetCore.Mvc.ActionContext(http, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
+        var context = new Microsoft.AspNetCore.Mvc.Filters.ExceptionContext(action, []) { Exception = new TestPlanRuleException(TestPlanErrorCodes.Frozen, "frozen") };
+        new TestPlanRuleExceptionFilter().OnException(context);
+
+        Assert.True(context.ExceptionHandled);
+        var result = Assert.IsType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>(context.Result);
+        Assert.Equal(TestPlanErrorCodes.Frozen, Assert.IsType<Microsoft.AspNetCore.Mvc.ProblemDetails>(result.Value).Extensions["code"]);
+
+        var other = new Microsoft.AspNetCore.Mvc.Filters.ExceptionContext(action, []) { Exception = new InvalidOperationException("x") };
+        new TestPlanRuleExceptionFilter().OnException(other);
+        Assert.False(other.ExceptionHandled);
     }
 
     // ---------- แปลงเป็น SQL ได้ (ไม่เชื่อมต่อ DB จริง) ----------

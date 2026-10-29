@@ -23,7 +23,7 @@ using ProMaxx2.QA.Application.TestPlanning;
 using ModelContextProtocol.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddControllers(options => options.Filters.Add<ProjectAccessFilter>());
+builder.Services.AddControllers(options => { options.Filters.Add<ProjectAccessFilter>(); options.Filters.Add<TestPlanRuleExceptionFilter>(); });
 builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen(options =>
 {
