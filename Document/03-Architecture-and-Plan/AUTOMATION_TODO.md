@@ -2,7 +2,7 @@
 
 > สถานะ: **Automation Work Tracker — Single Source of Truth**
 >
-> อัปเดตล่าสุด: 20 ตุลาคม 2026
+> อัปเดตล่าสุด: 28 ตุลาคม 2026
 >
 > ขอบเขต: Automation UI, API, Domain, Database, Windows Agent, DSL, Queue, Evidence, Test Data, Regression และ CI/CD
 
@@ -204,6 +204,55 @@
 8. `AUT-P2-001` ถึง `AUT-P2-008` — Monitoring, UX และ Scalability
 
 ## 11. Progress Log
+
+### 2026-10-28 — แท็บ "วิเคราะห์ Fail" กระชับ พร้อมรายละเอียด
+
+- Failure Dashboard (AUT-P0-011) จัดใหม่: ชิปประเภท Fail ภาษาไทยพร้อมความหมายและสิ่งที่ควรทำ (อิงประเภท/คำแนะนำจาก `AutomationFailureClassifier`), 3 กลุ่มสาเหตุ (Build/Agent/Case) แบบแถบในแถวเดียว กด Build/Agent เพื่อกรอง, รายการ Fail กางดูข้อความ Error + คำแนะนำ + Environment/ใช้เวลา/รันซ้ำ ได้ทันทีโดยไม่ต้องเปิดหน้าต่าง — รายละเอียดใน Change Log ของ `UI_DESIGN_SYSTEM.md`
+- เพิ่มคำขอ `GET failures/dashboard` แบบไม่กรองประเภท 1 ครั้งเฉพาะตอนเลือกประเภท (ให้ตัวเลขบนชิปคงที่); ไม่เปลี่ยน endpoint
+- harness ตรวจภาพใช้ `cacheDir` แยก (`node_modules/.vite-harness`, ลบแล้ว) เพื่อไม่ให้ไปแตะแคช dependency ของ dev server จริง
+- หลักฐาน: build/lint/test/`git diff --check` ผ่าน, ตรวจภาพด้วย headless Chrome + mock API ที่ 1440/1024/390px — **ยังไม่ได้ตรวจกับข้อมูลจริง**
+
+### 2026-10-28 — ต้นเหตุจริงของ "ปิด Suite แล้วนิ่ง"
+
+- ไม่ใช่บั๊กของ API หรือหน้า Suite: dev server (5173) มี `components/dialogStore.ts` สองชุดในหน้าเว็บ — หลังสลับ branch ตอนต้นงาน (ไฟล์ถูกเขียนใหม่ 87 ไฟล์) โมดูลที่แปลงใหม่ (App, AutomationPage, suiteTab, manageTabs ฯลฯ) import `dialogStore.ts?t=…` แต่ `DialogHost` import แบบไม่มี `?t` จึงไม่เห็นคำขอกล่องยืนยันจากหน้า Automation → `confirmDialog` ไม่แสดงและไม่ resolve (กระทบกล่องยืนยัน/toast ทุกจุดในหน้า Automation ไม่ใช่แค่ปิด Suite)
+- แก้: touch ไฟล์ `.ts/.tsx/.css` ทั้งหมดใน `src` (ไม่เปลี่ยนเนื้อหา) แล้วสแกน module graph ที่เสิร์ฟจาก 5173 — ไม่มีโมดูลที่ถูก import ด้วย URL ต่างกันแล้ว (0 จุด จาก 82 โมดูล); ผู้ใช้ต้องกด F5 หนึ่งครั้ง; ทดสอบด้วยแอปจำลองเต็มตัว (App + StrictMode + mock API) ปิด Suite ได้; บันทึกข้อควรระวังใน `SYSTEM_OVERVIEW.md` §4
+
+### 2026-10-28 — แก้ "ปิด Suite ไม่ได้" (หน้าจอ Suite)
+
+- ตรวจแล้ว: UI ส่ง `POST automation/suites/{id}/close` ถูกต้อง (ทดสอบด้วย harness + mock) และ ASP.NET Core รับ body ว่างสำหรับ `[FromBody] SuiteLifecycleRequest?` ได้ (ทดสอบด้วยโปรเจกต์จำลอง .NET 10 ได้ 200); ฐานข้อมูลไม่มี revision "Closed" ของ Suite ที่ผู้ใช้พยายามปิด — ยังไม่ได้ทดสอบกับ API จริงเพราะต้องใช้ token ผู้ใช้
+- แก้ฝั่ง UI: เพิ่มปุ่มปิด/เปิดใช้งาน Suite ในหน้าต่างรายละเอียด (เดิมไม่มี), แสดง error ในหน้าต่าง + toast (เดิมอยู่หลังหน้าต่าง), กล่องยืนยันอธิบายผล, ส่ง body `{}` ชัดเจน
+- ถ้ายังปิดไม่ได้ ข้อความที่แสดงตอนนี้จะบอกสาเหตุ (สิทธิ์ 403 / HTTP status / ข้อความจาก API) เพื่อใช้ตรวจต่อ
+- หลักฐาน: build/lint/test/`git diff --check` ผ่าน, harness ยืนยันทั้งกรณีสำเร็จและ 409
+
+### 2026-10-28 — แท็บ "Suite (ชุดรัน)" กระชับ ดูง่าย
+
+- รายการ Suite (AUT-P1-001..004) ใช้การ์ด/ชิปแบบเดียวกับแท็บอื่น: แถบความพร้อม n/N, ปุ่มรัน + ปุ่มไอคอนแทนปุ่มข้อความ 5 ปุ่ม, กดแถวเปิดรายละเอียด; หน้าต่างรายละเอียดมีแถบสรุป + รายการ Case บรรทัดเดียวพร้อมปุ่มสลับ Required/Optional และเลื่อน/นำออก — รายละเอียดใน Change Log ของ `UI_DESIGN_SYSTEM.md`
+- ช่องค้นหา Suite เปลี่ยนเป็น debounce (เดิมยิง `GET automation/suites` ทุกตัวอักษร); ไม่เปลี่ยน endpoint/การรัน/ประวัติ (AUT-P1-003)
+- หลักฐาน: build/lint/test/`git diff --check` ผ่าน, ตรวจภาพด้วย headless Chrome + mock API ที่ 1440/1024/390px — **ยังไม่ได้ตรวจกับข้อมูลจริง**
+
+### 2026-10-28 — แท็บ "Automation Case" กระชับ ดูง่าย
+
+- รายการ Case ใช้การ์ด/ชิปแบบเดียวกับแท็บผลการรัน: ชิปสถานะภาษาไทยพร้อมจำนวน (แทน select + คำอธิบายสถานะท้ายตาราง), Flaky Candidates (AUT-P0-010) เป็นแถบพับได้, ตารางแถวเตี้ย กดทั้งแถวเปิดรายละเอียด, มือถือเป็นรายการบรรทัดเดียว — รายละเอียดใน Change Log ของ `UI_DESIGN_SYSTEM.md`
+- ไม่เปลี่ยน endpoint, การแบ่งหน้าฝั่ง Server (AUT-P2-001), การลบถาวรหลายรายการ หรือ modal; จำนวนบนชิปสถานะนับจาก Case สูงสุด 200 รายการที่หน้าโหลด ("ทั้งหมด" ใช้ตัวเลขจาก dashboard)
+- หลักฐาน: build/lint/test/`git diff --check` ผ่าน, ตรวจภาพด้วย headless Chrome + mock API ที่ 1440/1024/390px — **ยังไม่ได้ตรวจกับข้อมูลจริง**
+
+### 2026-10-28 — กราฟสรุปในแท็บภาพรวม
+
+- เพิ่ม `automation/overviewCharts.tsx`: กราฟแท่งซ้อนผลการรัน 14 วันล่าสุด + อัตราผ่าน (ใช้ `GET automation/executions/trend` เดิมพร้อม `from`) และแถบสัดส่วนสถานะ Automation Case + legend ที่กดไปรายการที่กรองแล้ว — ไม่แก้ backend
+- ข้อจำกัด: วันในกราฟใช้ `CreatedAt.Date` ของ Server (คนละ timezone กับ browser ได้ ทำให้ผลช่วงใกล้เที่ยงคืนตกไปอีกวัน) และสัดส่วนสถานะนับจาก Case สูงสุด 200 รายการที่หน้าโหลด (แสดงหมายเหตุเมื่อไม่ครบ)
+- หลักฐาน: build/lint/test/`git diff --check` ผ่าน, ตรวจภาพด้วย headless Chrome + mock API ที่ 1440/1024/390px — **ยังไม่ได้ตรวจกับข้อมูลจริง**
+
+### 2026-10-28 — แท็บ "ผลการรัน" กระชับ ดูง่าย
+
+- `ExecutionTab` จัดใหม่ (รายละเอียดใน Change Log ของ `UI_DESIGN_SYSTEM.md`): ตารางผลการรันขึ้นก่อน, KPI 5 การ์ดเปลี่ยนเป็นชิปกรองผลพร้อมจำนวน, ตัวกรองขั้นสูง (AUT-P2-002) พับไว้หลังปุ่ม "ตัวกรอง", Job Queue และกราฟแนวโน้ม (AUT-P2-003) เป็นแผงพับได้ — กราฟโหลดเฉพาะตอนเปิด (ลดคำขอ `executions/trend` ตอนเปิดแท็บ), มือถือเป็นรายการ 2 บรรทัด
+- ไม่เปลี่ยน endpoint/การแบ่งหน้าฝั่ง Server/ปุ่มยกเลิก-รันซ้ำ; แท็บวิเคราะห์ Fail ยังใช้ class เดิม (`automation-run-toolbar`, `automation-exec-table`)
+- หลักฐาน: build/lint/test/`git diff --check` ผ่าน, ตรวจภาพด้วย headless Chrome + mock API ที่ 1440/1024/390px ไม่มี horizontal scroll — **ยังไม่ได้ตรวจกับข้อมูลจริง**
+
+### 2026-10-28 — ปรับ UI หน้า Automation ให้ผู้ใช้ใหม่ใช้งานง่าย
+
+- ส่วนหัว/เมนู/แท็บภาพรวมออกแบบใหม่ (รายละเอียดใน Change Log ของ `UI_DESIGN_SYSTEM.md` วันเดียวกัน): เมนู 5 กลุ่มภาษาไทยพร้อมไอคอน + เมนูย่อย + คำอธิบายว่าแต่ละแท็บใช้ทำอะไร, คู่มือเริ่มต้นใช้งาน 5 ขั้นที่คิดสถานะจากข้อมูลจริง (Agent ออนไลน์, จำนวน Case, Case ที่ตรวจผ่าน, Ready, มีผลรัน) พร้อมปุ่มไปทำแต่ละขั้น, ตัวเลขสรุป/สิ่งที่ควรทำต่อ/Agent/ผลรันล่าสุดเป็นภาษาไทย และคำศัพท์ที่ควรรู้; กลุ่ม "ตั้งค่า" รวม sub-nav ของแท็บการจัดการเข้ากับเมนูย่อยกลาง
+- ไม่เปลี่ยน endpoint, การโหลด/poll ข้อมูล, สิทธิ์ หรือ modal เดิม — เปลี่ยนเฉพาะ `AutomationPage.tsx` (ส่วน render หัว/เมนู/ภาพรวม), `Automation.css` และคำอธิบายหน้า + ซ่อนช่องค้นหา Topbar ใน `App.tsx`
+- หลักฐาน: `npm.cmd run build`, `npm.cmd run lint`, `npm.cmd run test` (35/35), `git diff --check` ผ่าน; ตรวจภาพด้วย headless Chrome + mock API ที่ 1440px และ 390px ไม่มี horizontal scroll — **ยังไม่ได้ตรวจกับข้อมูลจริงบนหน้าเว็บ** และยังไม่ได้ตรวจแท็บย่อยทุกแท็บที่ 768/1024px (เกี่ยวข้องกับ AUT-P2-008 ซึ่งยังเป็น TODO)
 
 ### 2026-10-20 — ลดการโหลดซ้ำของหน้า Automation ระหว่างมีงานรัน
 

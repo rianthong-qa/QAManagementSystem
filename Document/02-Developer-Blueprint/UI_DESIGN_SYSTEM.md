@@ -12,7 +12,7 @@
 
 > Release selector — Active only rule (23 สิงหาคม 2026): **ทุกหน้า** ที่มี dropdown/selector เลือก Release ต้องแสดงเฉพาะ Release ที่ **Active** (`Release.status !== "Cancelled"`) เท่านั้น เมื่อเปลี่ยน Project/Release context ต้องเคลียร์ Release/Build ที่ถูกปิดใช้งานออก และเลือก Active Release แรกถ้ามี — ให้ใช้เงื่อนไขเดียวกันกับหน้า Regression และ Test Summary เป็นมาตรฐานกลาง ทั่วทั้งแอป
 
-> Automation page style rule (25 สิงหาคม 2026): หน้า **Automation** ใช้ UX/UI ตาม `Document/06.UI/automation-ui-style4.html` — Page Header มีช่องค้นหา + Export + ปุ่มสร้าง; แท็บ ภาพรวม เรียงเป็น KPI 6 การ์ด (กดแล้วไปแท็บที่เกี่ยวข้อง) → Workflow Flow 5 ขั้นตอน (สร้าง Case → Generate DSL/AI → Validate → Run Agent → Evidence/Result) → สองคอลัมน์ (สิ่งที่ต้องดำเนินการ + Agent Status พร้อม Health ring) → ตารางผลการรันล่าสุด; ช่องค้นหาหัวหน้าหน้ากรองรายการ Automation Cases
+> Automation page style rule (ปรับ 28 ตุลาคม 2026 — แทนแบบ `automation-ui-style4.html` เดิม): หน้า **Automation** เรียง แถบค้นหา + รีเฟรช/Export/สร้าง Automation Case (`.au-toolbar`; ช่องค้นหากลางของ Topbar ถูกซ่อนในหน้านี้) → เมนู 5 กลุ่มภาษาไทยมีไอคอน (ภาพรวม / ทดสอบอัตโนมัติ / ตั้งเวลา & CI / ข้อมูลทดสอบ / ตั้งค่า) + เมนูย่อย → บรรทัดคำอธิบายว่าแท็บนี้ใช้ทำอะไร; แท็บภาพรวม = คู่มือเริ่มต้นใช้งาน 5 ขั้นจากข้อมูลจริง → ตัวเลขสรุป 6 ช่อง (กดไปรายการที่กรองแล้ว) → สิ่งที่ควรทำต่อ | Agent → ผลการรันล่าสุด → คำศัพท์ที่ควรรู้ — ดู Change Log 2026-10-28
 
 > RTM rule (13 สิงหาคม 2026): หน้า RTM ต้องอ้างอิง Project/Release ที่ผู้ใช้เลือก, แสดง KPI Covered/Partial/Not Covered, กรอง Module/Requirement Status/Coverage ได้, เปิดดู Requirement และ Test Case แบบ read-only modal, จัดการ Direct/Indirect Link ตามสิทธิ์, Export CSV และเปลี่ยนตารางเป็น card บน Mobile
 
@@ -98,7 +98,7 @@ git diff --check
 | Execution | Execution Workspace | Queue, execution detail, history |
 | Execution | Defect | Table และ create/edit defect form |
 | Execution | Regression | Regression overview |
-| Execution | Automation | Dashboard, Automation Cases (DSL/Version/Validate/Approve/Run), Action Library, Object Repository, Agents, Execution Queue/History/Evidence |
+| Execution | Automation | ภาพรวมแบบนำทางผู้ใช้ใหม่ (คู่มือ 5 ขั้น, ตัวเลขสรุป, สิ่งที่ควรทำต่อ, คำศัพท์), Automation Cases (DSL/Version/Validate/Approve/Run), Action Library, Object Repository, Agents, Execution Queue/History/Evidence |
 | Execution | CRM | Per-user read-only work queue, connection state, KPI, filter and responsive ticket list |
 | Governance | Test Summary | Reporting summary |
 | Governance | Risk Acceptance | Risk review/approval |
@@ -404,6 +404,56 @@ git diff --check
 - เลือกหลาย Suite แล้วแถบ `.lp-bulk` มีปุ่ม `btn lp-bulk-delete`: SYS_ADMIN = "ลบที่เลือก" (เลือก Suite ที่ปิดใช้งานได้ด้วย), สิทธิ์อื่น = "ปิดใช้งานที่เลือก"; ยืนยันด้วย `confirmDialog` tone danger พร้อมรหัส 5 รายการแรก; ยิงคำขอครั้งละ 4; สรุปผลด้วย `notify` และรายการที่ไม่สำเร็จคงอยู่ในรายการที่เลือก; ปุ่ม "สร้าง Test Cycle" นับเฉพาะ Suite ที่ใช้งานอยู่
 - กฎลบของ SYS_ADMIN (ปุ่มในแถวและแบบหลายรายการ ใช้ `DELETE /test-suites/{id}/remove`): Suite ที่ไม่เคยมี Test Cycle (รวม Cycle ที่ลบแล้ว) ลบถาวร; เคยมีแล้ว → **soft delete** เก็บ Cycle/ผล Execution ไว้ให้รายงานย้อนหลัง — ไม่มีปุ่มในหน้ารายการที่ลบผลการทดสอบทิ้ง
 - ชิปสถานะ **"ลบแล้ว"** (จุดแดง, เฉพาะ SYS_ADMIN) แยกจาก ทั้งหมด/ใช้งาน/ปิดใช้งาน; แถวที่ลบแล้วแสดง Badge แดง "ลบแล้ว", เลือกไม่ได้, ปุ่มจัดการเหลือ รายละเอียด + **กู้คืน** (`restore_from_trash`); หน้าต่างรายละเอียดซ่อน "แก้ไข" และแสดงปุ่ม "กู้คืน" — กู้คืนแล้วกลับเป็นสถานะปิดใช้งาน
+
+### 2026-10-28 — Automation: แท็บ "วิเคราะห์ Fail" กระชับ + รายละเอียดในแถว
+
+- `FailureDashboardTab` (`automation/executionTabs.tsx`) ใช้การ์ด `au-runs-*`: หัว = จำนวนครั้งที่ Fail (+ "· กรองอยู่", spinner ระหว่างโหลด) | ล้างตัวกรอง | ปุ่ม "ตัวกรอง" (ตั้งแต่/ถึง/Build/Agent พับไว้) → **ชิปประเภท Fail ภาษาไทย** พร้อมจำนวน (ผลไม่ตรงที่คาด / สคริปต์-Object / สภาพแวดล้อม / Agent / … — ความหมายใน `title`, จำนวนบนชิปคิดจากชุดที่ไม่กรองประเภทจึงไม่หายเมื่อเลือกประเภทอื่น) แทนการ์ด KPI 5 ใบ + select ประเภท; เลือกประเภทแล้วแสดงกล่อง 💡 ความหมาย + สิ่งที่ควรทำ
+- **3 กลุ่มสาเหตุในแถวเดียว** `.au-fail-groups` (Build / Agent / Case ที่ Fail บ่อย, 5 อันดับ, แถบแดงเทียบค่าสูงสุดของกลุ่ม + ตัวเลข) แทนการ์ด 3 ใบ — แถว Build/Agent กดเพื่อกรอง (`aria-pressed`, กดซ้ำยกเลิก)
+- **รายการ Fail กางดูรายละเอียดในที่** `.au-fail-list` (เส้นซ้ายแดง): แถว = รหัส + Test Case | Badge ประเภทภาษาไทย + ErrorCode | Build · Agent | เวลา | chevron (`aria-expanded`); กางแล้ว = กล่อง "ข้อความ Error" (monospace, pre-wrap) → `dl` ประเภท + ความหมาย / ควรทำต่อ (แปล `ClassifiedRecommendation` เป็นภาษาไทย) / Version · Build / Environment · Agent / ใช้เวลา + รันซ้ำครั้งที่ / Defect → ปุ่ม "ดูผลเต็ม / ภาพหน้าจอ / สร้าง Defect" (เปิดหน้าต่าง Execution เดิม) — แทนตารางที่ต้องเปิดหน้าต่างเพื่อดู error
+- ลบ CSS ที่ไม่ใช้แล้ว (`.automation-failure-grid/-stat-*`, `.automation-run-toolbar`, `.automation-advanced-filters`, `.automation-exec-table`); ≤1100px ซ่อนเวลา, ≤760px กลุ่มสาเหตุซ้อนกัน แถว Fail เป็น 3 บรรทัด ปุ่มเต็มแถว 44px; ตรวจด้วย headless Chrome + mock API ที่ 1440 / 1024 / 390px ไม่มี horizontal scroll
+
+### 2026-10-28 — Automation Suite: ปิด/เปิดใช้งาน Suite จากหน้าต่างรายละเอียด + แจ้งผลให้เห็น
+
+- ผู้ใช้แจ้ง "ปิด Suite ไม่ได้": หน้าต่างรายละเอียดไม่มีปุ่มปิด Suite (มีเฉพาะไอคอนในแถวรายการ) และเมื่อปิดไม่สำเร็จ ข้อความ error ไปอยู่ด้านบนรายการซึ่งถูกหน้าต่างบัง/เลื่อนพ้นจอ — เพิ่มปุ่ม "ปิด Suite" (ตัวอักษรแดง) / "เปิดใช้งาน" ในแถบสรุปของหน้าต่าง (สิทธิ์ `AUTOMATION.EDIT`), กล่องยืนยันบอกผล (รันและแก้ไข Case ไม่ได้, ย้ายไปตัวกรอง "ปิดแล้ว", เปิดใหม่ได้) ใช้ `tone: "danger"`, สำเร็จแจ้ง toast เขียว, ไม่สำเร็จแจ้ง toast แดง + ข้อความในหน้าต่าง (403 บอกสิทธิ์ที่ต้องมี, อื่น ๆ บอก HTTP status)
+
+### 2026-10-28 — Automation: แท็บ "Suite (ชุดรัน)" กระชับ
+
+- `automation/suiteTab.tsx` ใช้การ์ด/ชิปชุดเดียวกับแท็บผลการรัน: หัว = จำนวน Suite | ช่องค้นหา 36px (debounce 300ms — เดิมยิง API ทุกตัวอักษร) | "สร้าง Suite" → ชิป เปิดใช้งาน / ปิดแล้ว / ทั้งหมด (แทน select) → ตาราง `.au-suites-table` แถว ~54px: Suite (รหัส + ชื่อ · คำอธิบาย บรรทัดเดียว) | **ความพร้อม** = แถบเขียว 6px + "n/N พร้อมรัน" (แทนข้อความ "x/y Ready") | สถานะ | สร้างเมื่อ | ปุ่ม "▶ รัน" ขอบเขียว (disabled + `title` เมื่อไม่มี Case พร้อม) + ปุ่มไอคอน แก้ไข / ประวัติ / ปิด-เปิด (แทนปุ่มข้อความ 5 ปุ่มต่อแถว) — **กดแถวเปิดรายละเอียด**, Suite ที่ปิดแล้วตัวอักษรเทา
+- **หน้าต่างรายละเอียด** `.au-suite-modal` (900px): หัว = eyebrow "AUTOMATION SUITE · Rev n" + รหัส · ชื่อ + คำอธิบาย → แถบสรุป (Badge สถานะ · n Case · n พร้อมรัน · n Required | ประวัติ (ไอคอน) | เพิ่ม Case | "▶ รัน n Case" primary) → รายการ Case `ol.au-suite-cases` แถวเดียว: ลำดับ | รหัส + Test Case (ellipsis) | Target | Badge สถานะภาษาไทย | ปุ่มสลับ **Required / Optional** แบบ pill `aria-pressed` | ปุ่มไอคอน เลื่อนขึ้น / ลง / นำออก — Case ที่ยังไม่พร้อมพื้นเหลืองอ่อน; หมายเหตุว่ารันเฉพาะ Case ที่พร้อม; ตัดแถบปุ่มล่าง "ปิดหน้าต่าง" (ใช้ปุ่มปิดที่หัว)
+- หน้าต่างเพิ่ม Case แสดงสถานะภาษาไทย (`caseStatusTh` ย้ายไป `automation/shared.ts` ใช้ร่วมกับแท็บ Automation Case)
+- ≤1100px ซ่อนวันที่สร้าง; ≤760px รายการ = รหัส + ชื่อ / แถบความพร้อม | ปุ่ม (ซ่อนสถานะ/วันที่/คำอธิบาย), รายการ Case ในหน้าต่าง 2 บรรทัด (รหัส | Badge / Required | ปุ่ม 36px); ตรวจด้วย headless Chrome + mock API ที่ 1440 / 1024 / 390px ไม่มี horizontal scroll
+
+### 2026-10-28 — Automation: แท็บ "Automation Case" กระชับ
+
+- ใช้การ์ด/ชิปชุดเดียวกับแท็บผลการรัน (`au-runs-*`): หัว = จำนวน 20px + "Automation Case" (+ "· กรองอยู่" และปุ่ม "ล้างตัวกรอง" สีแดง) | "รันเป็นกลุ่ม" — ตัดหัว section + ปุ่มสร้างที่ซ้ำกับแถบด้านบนออก → **ชิปสถานะภาษาไทย** พร้อมจำนวนและจุดสี (ทั้งหมด / พร้อมรัน / รอตรวจ / ฉบับร่าง / ตรวจผ่าน / อนุมัติแล้ว / ต้องซ่อม / กำลังรัน — แสดงเฉพาะสถานะที่มี Case, ความหมายอยู่ใน `title`) แทน select สถานะ + แถบคำอธิบายสถานะท้ายตารางเดิม; select Target / เรียงตาม แบบ pill ชิดขวาในแถวเดียวกัน
+- **Flaky Candidates** เป็นแถบเหลืองพับได้ `.au-flaky` ("ผลไม่นิ่ง (Flaky) n Case" + คำอธิบาย → รายการ: รหัส · สลับ n ครั้งใน m รอบ · ล่าสุด | ปุ่ม Quarantine) แทน section เต็ม; แถบเลือกหลายรายการ `.au-bulk` (พื้น primary อ่อน: "n เลือกแล้ว" | ลบถาวร | ×)
+- ตาราง `.au-cases-table` (`table-layout: fixed`, แถว ~50px): เลือก | Automation Case (รหัส + "รหัส Test Case · ชื่อ" บรรทัดเดียว ellipsis + `title`) | สถานะ (Badge ภาษาไทย + Quarantined ไม่ตัดบรรทัด) | Target | Version | Owner | ปุ่ม › — **กดทั้งแถวเพื่อเปิดรายละเอียด**; แถวต้องซ่อมเส้นซ้ายแดง, รอตรวจเส้นซ้ายเหลือง, แถวที่เลือกพื้น primary 6%; ≤1100px ซ่อน Owner; **≤760px รายการบรรทัดเดียว** (เลือก | รหัส + Test Case | Badge | ›) ซ่อน Target/Version/Owner
+- ตรวจด้วย headless Chrome + mock API ที่ 1440 / 1024 / 390px — ไม่มี horizontal scroll ระดับหน้า; ไม่เปลี่ยน endpoint/การแบ่งหน้า/สิทธิ์ลบ
+
+### 2026-10-28 — Automation: กราฟสรุปในแท็บภาพรวม
+
+- `automation/overviewCharts.tsx` (`OverviewCharts`) วางต่อจากตัวเลขสรุป 6 ช่อง เป็นแถว 2 การ์ด (1.6fr | 1fr, ≤1100px ซ้อน): **ผลการรัน 14 วันล่าสุด** — หัว = อัตราผ่าน 28px + ผ่าน / Fail / รันทั้งหมด (มีสี่เหลี่ยมสีกำกับ), กราฟแท่งซ้อนรายวัน HTML/CSS (ผ่านเขียวด้านล่าง, Fail แดงด้านบน, ช่องว่าง 2px, ปลายบนโค้ง 4px, กว้างสูงสุด 22px) เส้นกริดจาง 5 ระดับพร้อมตัวเลขแกน, วันที่ไม่มีการรันแสดงเป็น 0 ให้แกนเวลาต่อเนื่อง, ชื่อเดือนใต้วันแรก/วันที่ 1, hover คอลัมน์ = พื้น primary 6% + tooltip เหนือแท่ง (วันที่ · ผ่าน · Fail), ≤760px ซ่อนป้ายวันคู่; ข้อมูลจาก `executions/trend?groupBy=day&from=` (endpoint เดิม, คีย์วันจากเวลา Server) | **สถานะ Automation Case** — หัว = % พร้อมรัน (n จาก N) + แถบสัดส่วน 14px 5 กลุ่ม (พร้อมรัน เขียว / ตรวจผ่าน-อนุมัติ `--info` / รอตรวจ เหลือง / ฉบับร่าง เทา `#98a2b3` / ต้องซ่อม แดง) + legend ที่เป็นปุ่ม (สี · ชื่อ · จำนวน · %) กดเพื่อไปรายการ Case ที่กรองสถานะนั้น, hover ส่วนใด ส่วนอื่นจาง; นับจากรายการ Case ที่หน้าโหลดไว้ (สูงสุด 200) และบอกเมื่อไม่ครบ
+- **กฎสีกราฟของหน้านี้:** ใช้สีสถานะเท่านั้น และทุกสีต้องมีชื่อ + ตัวเลขกำกับ (validator: เหลือง/เทา contrast ต่ำกว่า 3:1 บนพื้นขาว จึงห้ามสื่อด้วยสีอย่างเดียว); มีตาราง `sr-only` + `role="img"` `aria-label` สรุปตัวเลข; โหลดไม่สำเร็จ = ข้อความ + ปุ่มลองใหม่ในการ์ด
+- ตรวจด้วย headless Chrome + mock API ที่ 1440 / 1024 / 390px — ไม่มี horizontal scroll ระดับหน้า
+
+### 2026-10-28 — Automation: แท็บ "ผลการรัน" กระชับ
+
+- `automation/executionTabs.tsx` (`ExecutionTab`) + `Automation.css` prefix `au-runs`/`au-fold`/`au-queue`/`au-trend`: **ตารางผลการรันขึ้นก่อน** (เดิม KPI 5 ใบ + กราฟเต็มการ์ด + 2 คอลัมน์ Job Queue | Run History) — การ์ดเดียว: หัว = จำนวน 20px + "ผลการรัน" (+ "· กรองอยู่") | ช่องค้นหา 36px | ปุ่ม "ตัวกรอง" (`aria-expanded` + ป้ายจำนวนตัวกรองขั้นสูงที่ใช้) → **ชิปผล** ทั้งหมด / รอคิว / กำลังรัน / ผ่าน / Fail พร้อมจำนวน (แทนการ์ด KPI, กดกรอง `aria-pressed`, กดซ้ำยกเลิก) + select "สถานะอื่น…" (Blocked/Cancelled/Timeout/AgentLost) → ตัวกรองขั้นสูงพับไว้ (ตั้งแต่/ถึง/Build/Environment/Agent/Target/ประเภท Fail มีป้ายเหนือช่อง, พื้นเทา, เปิดเองเมื่อมีตัวกรองค้าง) → ตาราง `table-layout: fixed` แถวสูง ~50px: Automation Case (รหัส + Rev · Build · Retry) | ผล (Badge + ประเภท Fail) | Agent · Target | ใช้เวลา ("4.2 วิ" / "1 นาที 26 วิ") | เวลารัน | ปุ่มไอคอนโปร่ง 30px ดูผล / รันซ้ำ / ยกเลิก (`.au-icon-btn`) — แถว Failed/AgentLost เส้นซ้ายแดง, Running เส้นซ้ายน้ำเงิน, กดแถวเปิดรายละเอียดเหมือนเดิม
+- **Pattern: ส่วนประกอบพับได้** `.au-fold` (`<details>`): "คิวงาน" (รายการบรรทัดเดียว Badge | P · Agent · Retry + error | เวลา, สูงสุด 320px เลื่อนในตัว; เปิดเองเมื่อมีงาน Queued/Assigned/Running) และ "แนวโน้ม Pass / Fail" (พับไว้ — **โหลดกราฟเฉพาะตอนเปิด**, กดแท่งกราฟกรองตารางด้านบนและเปิดแผงตัวกรอง)
+- ≤1100px ซ่อนคอลัมน์เวลารัน; **≤760px ตารางเป็นรายการ 2 บรรทัด** (แทน `table-cards` มาตรฐานที่สูงแถวละ ~200px): บรรทัด 1 รหัส + Rev/Build | Badge ชิดขวา, บรรทัด 2 Agent Target · ใช้เวลา · เวลารัน (ตัด ellipsis) | ปุ่ม 36px; ช่องค้นหา/ตัวกรอง 44px, ชิปเลื่อนแนวนอน, ตัวกรองขั้นสูง 2 คอลัมน์
+- ตรวจด้วย headless Chrome + mock API ที่ 1440px / 1024px และ iframe 390px — ไม่มี horizontal scroll ระดับหน้า; ไม่เปลี่ยน endpoint, การแบ่งหน้า หรือ filter ฝั่ง Server
+
+### 2026-10-28 — Automation: ส่วนหัว เมนู และภาพรวมสำหรับผู้ใช้ใหม่
+
+- **ส่วนหัว** `.au-toolbar`: ช่องค้นหาไอคอนนำหน้า (Enter = ไปแท็บ Automation Case) | รีเฟรช / Export (ไอคอน + ข้อความ, ≤520px เหลือไอคอน) / "สร้าง Automation Case" — ซ่อนช่องค้นหากลางของ Topbar ในหน้านี้ (เดิมมีสองช่องและช่องของ Topbar ไม่ได้กรองอะไร); คำอธิบายหน้าใน App เป็นภาษาที่ผู้ใช้ใหม่เข้าใจ
+- **เมนู** `.au-nav` (sticky ใต้ topbar 74px เฉพาะ >900px): กลุ่ม 5 ปุ่มภาษาไทย + ไอคอน Material (แทน glyph ◉▤◷💾⚙) ที่เลือกพื้น primary ตัวขาว → แถบเมนูย่อยพื้นเทา (ที่เลือกพื้นขาวตัว primary) — กลุ่ม "ตั้งค่า" ใช้เมนูย่อยชุดเดียวกัน (Action Library / Object Repository / Agent / Retry Policy) แทน sub-nav แยกในแท็บเดิม; ชื่อเมนูย่อยเป็นไทยเมื่อสื่อความได้ (ผลการรัน, วิเคราะห์ Fail, ตั้งเวลารัน, รันเมื่อมี Build ใหม่)
+- **Pattern: คำอธิบายแท็บ** `.au-intro` — ใต้เมนูทุกแท็บยกเว้นภาพรวม: ไอคอน info + **ชื่อแท็บ** — ใช้ทำอะไร (1 บรรทัด) เพื่อให้ผู้ใช้ใหม่รู้ว่าอยู่ที่ไหน
+- **Pattern: คู่มือเริ่มต้นใช้งาน** `.au-guide` (`<details>`): หัว = ไอคอน 44px + หัวข้อ + คำอธิบาย Automation หนึ่งประโยค + "ทำแล้ว n/5" พร้อมแถบเขียว → การ์ด 5 ขั้น (เชื่อมต่อ Agent → สร้าง Automation Case → เขียนขั้นตอนและตรวจสอบ → อนุมัติให้พร้อมรัน → สั่งรันและดูผล) แต่ละขั้น: เลขวงกลม (เสร็จ = ✓ เขียว, ขั้นถัดไป = primary + กรอบ + `aria-current="step"`), คำอธิบายภาษาง่าย, ป้ายสถานะจากข้อมูลจริง, ปุ่มไปทำขั้นนั้น (ขั้นถัดไปเป็น primary); ยังไม่ครบเปิดเอง ครบแล้วพับและเปลี่ยนเป็น "ตั้งค่าครบทุกขั้นแล้ว" — ผู้ใช้เปิด/ปิดเองจำใน `localStorage` `qa.automation.guide` (try/catch); 5/3/2/1 คอลัมน์ที่ >1280 / ≤1280 / ≤900 / ≤760px
+- **ตัวเลขสรุป** `.au-stats` การ์ดเดียว 6 ช่องคั่นเส้น (Automation Case / พร้อมรัน / ต้องซ่อม / กำลังรัน / Fail / Agent ออนไลน์) ไอคอนสีตามความหมาย ตัวเลข 26px สีข้อความ กดแล้วไปรายการที่กรองไว้เหมือนเดิม — 6/3/2 คอลัมน์; **สิ่งที่ควรทำต่อ** เป็นรายการ ไอคอนสี + หัวข้อ + คำอธิบาย + ปุ่มชัดเจน (เพิ่มเรื่อง "Case ต้องซ่อม"), ไม่มีเรื่อง = กล่องเขียว; **Agent** วงแหวนออนไลน์ n/N + ชื่อ + Badge + `dl` ภาษาไทย; **ผลการรันล่าสุด** 6 คอลัมน์ (รวมรหัส · ชื่อ Test Case ไว้ใต้ Automation Case) ปุ่มไอคอน ดูผล/รันซ้ำ/ยกเลิก ใช้ `.table-action.icon-only`; empty state มีไอคอน + วิธีเริ่ม
+- **คำศัพท์ที่ควรรู้** `.au-glossary` (`<details>` พับไว้): 8 คำ (Automation Case, DSL, Version, Validate, Agent, Evidence, Object, Maintenance) grid auto-fit ≥240px
+- ตัวกรองสถานะในแท็บ Automation Case แสดง "ค่า · ความหมายไทย" (เช่น `MaintenanceRequired · ต้องซ่อม`)
+- ลบ CSS เดิมที่ไม่ได้ใช้แล้ว (`.automation-tabs/-subtabs/-page-head/-search/-metric(s)/-flow*/-two-col/-panel*/-task*/-agent-card/-health/-ring/-recent-table/-table-footer/-search-hint/-hide-mobile`); class ใหม่ prefix `au-` scope ด้วย `.automation-page`; ไม่เปลี่ยน logic/API
+- ตรวจด้วย headless Chrome + mock API ที่ 1440px (มีข้อมูล / ผู้ใช้ใหม่ / แท็บตั้งค่า) และ iframe 390px — ไม่มี horizontal scroll ระดับหน้า
 
 ### 2026-10-28 — Release Sign-off / Test Summary: Defect ใน Release Gate และ Known Issues
 

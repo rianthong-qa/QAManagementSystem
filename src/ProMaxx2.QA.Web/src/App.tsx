@@ -559,7 +559,7 @@ function App() {
       page === "dashboard"
         ? "สถานะคุณภาพและความพร้อมใช้งาน"
         : page === "automation"
-          ? "สร้างและจัดการ Automation Case, DSL, Action Library, Agent และติดตามผลการรัน"
+          ? "ให้ Agent บนเครื่อง Windows รัน Test Case แทนคน พร้อมเก็บผลและภาพหน้าจอเป็นหลักฐาน"
         : page === "crm"
           ? "ดู Ticket จาก CRM ตามบัญชีผู้ใช้ที่ Login เข้าระบบ"
         : page === "settings"
@@ -902,8 +902,8 @@ function App() {
               <p>{description}</p>
             </div>
             <div className="actions">
-              {/* หน้า Defect มีช่องค้นหาในแถวตัวกรองของรายการเอง */}
-              {page !== "audit" && page !== "performance" && page !== "knowledge" && page !== "defects" && <label className="search">
+              {/* หน้า Defect / Automation มีช่องค้นหาของตัวเอง */}
+              {page !== "audit" && page !== "performance" && page !== "knowledge" && page !== "defects" && page !== "automation" && <label className="search">
                 ⌕
                 <input
                   value={search}

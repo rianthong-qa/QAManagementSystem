@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
-import { confirmDialog } from "../components/dialogStore";
+import { confirmDialog, notify } from "../components/dialogStore";
 import { formatThaiDateTime } from "../dateTime";
 import { apiUrl } from "../api";
 import {
   automationCaseTone as caseStatusTone,
 } from "../automationUtils";
 import type { AutomationCaseItem, AutomationSuiteCaseItem, AutomationSuiteListItem, AutomationSuiteDetailItem, AutomationSuiteRevisionItem } from "./types";
-import { fetchJson, isAbort, useBuildsAndEnvironments, targetTone } from "./shared";
+import { fetchJson, isAbort, useBuildsAndEnvironments, useDebounced, caseStatusTh } from "./shared";
 import { ModalShell, Badge } from "./ui";
 
 export function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, canRun, cases }: {
   projectId: string; releaseId?: string; headers: Record<string, string>; canEdit: boolean; canRun: boolean; cases: AutomationCaseItem[];
 }) {
   const [suites, setSuites] = useState<AutomationSuiteListItem[]>([]);
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const search = useDebounced(searchInput.trim());
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "closed">("active");
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -71,15 +72,31 @@ export function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, can
     } catch (e) { setError(e instanceof Error ? e.message : "แก้ไข Suite ไม่สำเร็จ"); } finally { setBusy(false); }
   };
 
-  const toggleSuite = async (row: AutomationSuiteListItem) => {
-    if (!await confirmDialog(`${row.isActive ? "ปิด" : "เปิด"} Suite "${row.suiteCode}"?`)) return;
+  const toggleSuite = async (row: { automationSuiteId: string; suiteCode: string; isActive: boolean }) => {
+    const closing = row.isActive;
+    if (!await confirmDialog({
+      title: closing ? "ปิด Suite" : "เปิดใช้งาน Suite",
+      message: closing ? `ปิด Suite "${row.suiteCode}" ใช่หรือไม่?
+Suite ที่ปิดแล้วจะรันและแก้ไข Case ไม่ได้ (เปิดใช้งานอีกครั้งได้ภายหลัง) และจะย้ายไปอยู่ในตัวกรอง "ปิดแล้ว"` : `เปิดใช้งาน Suite "${row.suiteCode}" อีกครั้ง?`,
+      confirmLabel: closing ? "ปิด Suite" : "เปิดใช้งาน",
+      tone: closing ? "danger" : undefined,
+    })) return;
     setError("");
     try {
-      const r = await fetch(`${apiUrl}/automation/suites/${row.automationSuiteId}/${row.isActive ? "close" : "reopen"}?projectId=${projectId}`, { method: "POST", headers });
-      if (!r.ok) { const p = await r.json().catch(() => null); throw new Error(p?.detail ?? "เปลี่ยนสถานะ Suite ไม่สำเร็จ"); }
+      const r = await fetch(`${apiUrl}/automation/suites/${row.automationSuiteId}/${closing ? "close" : "reopen"}?projectId=${projectId}`, { method: "POST", headers, body: "{}" });
+      if (!r.ok) {
+        const p = await r.json().catch(() => null);
+        throw new Error(p?.detail ?? (r.status === 403 ? "ไม่มีสิทธิ์เปลี่ยนสถานะ Suite (ต้องมีสิทธิ์ AUTOMATION.EDIT)" : `เปลี่ยนสถานะ Suite ไม่สำเร็จ (HTTP ${r.status})`));
+      }
       setReload((v) => v + 1);
       if (detail?.automationSuiteId === row.automationSuiteId) await refreshDetail(row.automationSuiteId);
-    } catch (e) { setError(e instanceof Error ? e.message : "เปลี่ยนสถานะ Suite ไม่สำเร็จ"); }
+      notify(closing ? `ปิด Suite ${row.suiteCode} แล้ว — ดูได้ที่ตัวกรอง "ปิดแล้ว"` : `เปิดใช้งาน Suite ${row.suiteCode} แล้ว`, "success");
+    } catch (e) {
+      // แจ้งเป็น toast ด้วย — ข้อความ error ด้านบนรายการอาจถูกหน้าต่างรายละเอียดบังหรือเลื่อนพ้นจอ
+      const msg = e instanceof Error ? e.message : "เปลี่ยนสถานะ Suite ไม่สำเร็จ";
+      setError(msg);
+      notify(msg, "error");
+    }
   };
 
   const addCases = async (caseIds: string[], isRequired: boolean, changeReason: string) => {
@@ -139,47 +156,79 @@ export function AutomationSuiteTab({ projectId, releaseId, headers, canEdit, can
     } catch { setError("เรียงลำดับไม่สำเร็จ"); }
   };
 
-  return <section className="automation-cases" aria-label="Automation Suite">
-    <header className="automation-section-head"><div><h2>Automation Suite (AUT-P1-001/002)</h2><p>รวม Automation Case เป็นชุดถาวรสำหรับรัน Regression/Smoke ซ้ำได้ — Required/Optional ต่อ Case</p></div>{canEdit && <button className="btn primary" type="button" onClick={() => setCreateModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Suite</button>}</header>
-    {error && <div className="inline-alert error"><span>{error}</span></div>}
-    <div className="filter-toolbar">
-      <div className="filter-toolbar-top"><div className="result-count"><strong>{suites.length.toLocaleString()}</strong><span>Automation Suite</span></div></div>
-      <div className="filter-toolbar-row automation-case-toolbar">
-        <input type="text" aria-label="ค้นหา Suite" placeholder="ค้นหา Suite..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select aria-label="กรองสถานะ Suite" value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "closed")}>
-          <option value="active">เปิดใช้งาน</option>
-          <option value="closed">ปิดแล้ว</option>
-          <option value="all">ทั้งหมด</option>
-        </select>
-      </div>
-    </div>
-    {suites.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>Code</th><th>ชื่อ</th><th>Case</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead><tbody>{suites.map((s) => <tr key={s.automationSuiteId}>
-      <td><b>{s.suiteCode}</b></td>
-      <td><span>{s.suiteName}</span>{s.description && <small>{s.description}</small>}</td>
-      <td>{s.readyCaseCount}/{s.caseCount} Ready</td>
-      <td><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
-      <td>{formatThaiDateTime(s.createdAt)}</td>
-      <td>{canRun && s.isActive && <button type="button" className="table-action" onClick={() => setRunSuiteFor(s)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> รัน</button>}<button type="button" className="table-action" onClick={() => openDetail(s)}><span className="material-symbols-outlined" aria-hidden="true">info</span> รายละเอียด</button><button type="button" className="table-action" onClick={() => openHistory(s.automationSuiteId)}><span aria-hidden="true">↺</span> ประวัติ</button>{canEdit && s.isActive && <button type="button" className="table-action" onClick={() => setEditSuite(s)}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}{canEdit && <button type="button" className={`table-action${s.isActive ? " danger" : ""}`} onClick={() => toggleSuite(s)}><span className="material-symbols-outlined" aria-hidden="true">power_settings_new</span> {s.isActive ? "ปิด" : "เปิด"}</button>}</td>
-    </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Automation Suite</p><small>สร้าง Suite เพื่อรวม Automation Case ที่ต้องรันซ้ำเป็นชุด (Smoke/Regression)</small></div>}
+  const sortedDetailCases = detail ? [...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder) : [];
+  const detailReady = sortedDetailCases.filter((c) => c.status === "Ready").length;
+  const detailRequired = sortedDetailCases.filter((c) => c.isRequired).length;
+  const detailEditable = !!detail?.isActive && canEdit;
+  const filterChips: { id: "active" | "closed" | "all"; label: string }[] = [{ id: "active", label: "เปิดใช้งาน" }, { id: "closed", label: "ปิดแล้ว" }, { id: "all", label: "ทั้งหมด" }];
 
-    {detail && <ModalShell labelledBy="automation-suite-detail-title" onDismiss={() => setDetail(null)}>
-      <div className="modal-head"><div><h2 id="automation-suite-detail-title">{detail.suiteCode} · {detail.suiteName}</h2><small>{detail.cases.length} case · Rev {detail.revisionNo} · <Badge tone={detail.isActive ? "green" : "gray"}>{detail.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></small></div><button aria-label="ปิด" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
-      {!detail.isActive && <div className="inline-alert"><span>Suite นี้ปิดแล้ว — ต้องเปิดใช้งานก่อนจึงจะแก้ไข Case ได้</span></div>}
-      {detail.isActive && (canEdit || canRun) && <div className="acw-action-bar">
-        {canRun && <button type="button" className="btn primary" onClick={() => setRunSuiteFor({ automationSuiteId: detail.automationSuiteId, suiteCode: detail.suiteCode, caseCount: detail.cases.length, readyCaseCount: detail.cases.filter((c) => c.status === "Ready").length })}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> รัน Suite</button>}
-        {canEdit && <button type="button" className="btn" onClick={() => setAddCasesModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม Case</button>}
-        <button type="button" className="btn" onClick={() => openHistory(detail.automationSuiteId)}>🕐 ประวัติ</button>
-      </div>}
-      {detail.cases.length ? <div className="table-wrap"><table className="table-cards"><thead><tr><th>ลำดับ</th><th>Code</th><th>Test Case</th><th>Target</th><th>สถานะ</th><th>Required</th><th></th></tr></thead><tbody>{[...detail.cases].sort((a, b) => a.sortOrder - b.sortOrder).map((c, i, arr) => <tr key={c.automationCaseId}>
-        <td>{canEdit && detail.isActive ? <span className="automation-sort-controls"><button type="button" className="table-action icon-btn" aria-label="เลื่อนขึ้น" disabled={i === 0} onClick={() => moveCase(c, -1)}>↑</button><button type="button" className="table-action icon-btn" aria-label="เลื่อนลง" disabled={i === arr.length - 1} onClick={() => moveCase(c, 1)}>↓</button></span> : c.sortOrder}</td>
-        <td><b>{c.automationCode}</b></td>
-        <td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td>
-        <td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td>
-        <td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></td>
-        <td>{canEdit && detail.isActive ? <button type="button" className="table-action" onClick={() => toggleRequired(c)}>{c.isRequired ? "Required" : "Optional"}</button> : <Badge tone={c.isRequired ? "blue" : "gray"}>{c.isRequired ? "Required" : "Optional"}</Badge>}</td>
-        <td>{canEdit && detail.isActive && <button type="button" className="table-action danger" onClick={() => removeCase(c.automationCaseId)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบ</button>}</td>
-      </tr>)}</tbody></table></div> : <div className="empty"><p>ยังไม่มี Case ใน Suite นี้</p></div>}
-      <div className="modal-actions"><button className="btn" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span> ปิดหน้าต่าง</button></div>
+  return <section className="au-runs" aria-label="Automation Suite">
+    {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+    <article className="au-runs-card">
+      <header className="au-runs-head">
+        <h2><strong>{suites.length.toLocaleString()}</strong> Suite</h2>
+        <label className="au-runs-search">
+          <span className="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="search" aria-label="ค้นหา Suite" placeholder="ค้นหารหัส / ชื่อ Suite" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+        </label>
+        {canEdit && <button className="btn primary au-runs-more" type="button" onClick={() => setCreateModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span>สร้าง Suite</button>}
+      </header>
+      <div className="au-runs-chips" role="group" aria-label="กรองสถานะ Suite">
+        {filterChips.map((c) => <button key={c.id} type="button" aria-pressed={activeFilter === c.id} className={activeFilter === c.id ? "active" : ""} onClick={() => setActiveFilter(c.id)}>{c.label}{activeFilter === c.id && <b>{suites.length}</b>}</button>)}
+      </div>
+
+      {suites.length ? <div className="table-wrap au-runs-wrap"><table className="au-suites-table table-cards">
+        <thead><tr><th>Suite</th><th>ความพร้อม</th><th>สถานะ</th><th>สร้างเมื่อ</th><th className="actions-col"><span className="sr-only">จัดการ</span></th></tr></thead>
+        <tbody>{suites.map((s) => { const pct = s.caseCount ? Math.round((s.readyCaseCount / s.caseCount) * 100) : 0; return <tr key={s.automationSuiteId} className={`au-runs-tr${s.isActive ? "" : " is-closed"}`} onClick={() => openDetail(s)}>
+          <td data-label="Suite"><b>{s.suiteCode}</b><span title={s.description ?? s.suiteName}>{s.suiteName}{s.description && <small> · {s.description}</small>}</span></td>
+          <td data-label="ความพร้อม"><div className="au-ready" title={`พร้อมรัน ${s.readyCaseCount} จาก ${s.caseCount} Case`}><span className="au-ready-bar" role="img" aria-label={`พร้อมรัน ${s.readyCaseCount} จาก ${s.caseCount}`}><i style={{ width: `${pct}%` }} /></span><span className="au-ready-text">{s.readyCaseCount}/{s.caseCount} พร้อมรัน</span></div></td>
+          <td data-label="สถานะ"><Badge tone={s.isActive ? "green" : "gray"}>{s.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge></td>
+          <td data-label="สร้างเมื่อ" className="au-runs-time">{formatThaiDateTime(s.createdAt)}</td>
+          <td className="actions-col" onClick={(e) => e.stopPropagation()}><div className="au-runs-actions">
+            {canRun && s.isActive && <button type="button" className="btn au-run-btn" disabled={!s.readyCaseCount} title={s.readyCaseCount ? `รัน ${s.readyCaseCount} Case ที่พร้อม` : "ยังไม่มี Case ที่พร้อมรัน"} onClick={() => setRunSuiteFor(s)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span>รัน</button>}
+            {canEdit && s.isActive && <button type="button" className="au-icon-btn" title="แก้ไขชื่อ / คำอธิบาย" aria-label={`แก้ไข ${s.suiteCode}`} onClick={() => setEditSuite(s)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>}
+            <button type="button" className="au-icon-btn" title="ประวัติการแก้ไข" aria-label={`ประวัติ ${s.suiteCode}`} onClick={() => openHistory(s.automationSuiteId)}><span className="material-symbols-outlined" aria-hidden="true">history</span></button>
+            {canEdit && <button type="button" className={`au-icon-btn${s.isActive ? " danger" : ""}`} title={s.isActive ? "ปิด Suite" : "เปิดใช้งานอีกครั้ง"} aria-label={`${s.isActive ? "ปิด" : "เปิด"} ${s.suiteCode}`} onClick={() => toggleSuite(s)}><span className="material-symbols-outlined" aria-hidden="true">{s.isActive ? "block" : "restart_alt"}</span></button>}
+          </div></td>
+        </tr>; })}</tbody>
+      </table></div> : <div className="au-runs-empty">{search ? "ไม่พบ Suite ที่ตรงคำค้นหา" : activeFilter === "closed" ? "ไม่มี Suite ที่ปิดแล้ว" : "ยังไม่มี Suite — สร้าง Suite เพื่อรวม Automation Case ที่ต้องรันซ้ำเป็นชุด เช่น Smoke / Regression"}</div>}
+    </article>
+
+    {detail && <ModalShell labelledBy="automation-suite-detail-title" className="au-suite-modal" onDismiss={() => setDetail(null)}>
+      <div className="modal-head au-suite-head">
+        <div>
+          <span className="au-eyebrow">AUTOMATION SUITE · Rev {detail.revisionNo}</span>
+          <h2 id="automation-suite-detail-title">{detail.suiteCode} · {detail.suiteName}</h2>
+          {detail.description && <p>{detail.description}</p>}
+        </div>
+        <button aria-label="ปิด" onClick={() => setDetail(null)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+      </div>
+      <div className="au-suite-bar">
+        <Badge tone={detail.isActive ? "green" : "gray"}>{detail.isActive ? "เปิดใช้งาน" : "ปิดแล้ว"}</Badge>
+        <span><b>{sortedDetailCases.length}</b> Case</span>
+        <span><b>{detailReady}</b> พร้อมรัน</span>
+        <span><b>{detailRequired}</b> Required</span>
+        <span className="au-chips-spacer" />
+        <button type="button" className="au-icon-btn" title="ประวัติการแก้ไข" aria-label="ประวัติการแก้ไข" onClick={() => openHistory(detail.automationSuiteId)}><span className="material-symbols-outlined" aria-hidden="true">history</span></button>
+        {canEdit && <button type="button" className={`btn au-runs-more${detail.isActive ? " au-btn-danger" : ""}`} onClick={() => toggleSuite(detail)}><span className="material-symbols-outlined" aria-hidden="true">{detail.isActive ? "block" : "restart_alt"}</span>{detail.isActive ? "ปิด Suite" : "เปิดใช้งาน"}</button>}
+        {detailEditable && <button type="button" className="btn au-runs-more" onClick={() => setAddCasesModal(true)}><span className="material-symbols-outlined" aria-hidden="true">add</span>เพิ่ม Case</button>}
+        {detail.isActive && canRun && <button type="button" className="btn primary au-runs-more" disabled={!detailReady} onClick={() => setRunSuiteFor({ automationSuiteId: detail.automationSuiteId, suiteCode: detail.suiteCode, caseCount: detail.cases.length, readyCaseCount: detailReady })}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span>รัน {detailReady} Case</button>}
+      </div>
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+      {!detail.isActive && <div className="inline-alert"><span>Suite นี้ปิดแล้ว — กด "เปิดใช้งาน" ก่อนจึงจะแก้ไขหรือรันได้</span></div>}
+      {sortedDetailCases.length ? <ol className="au-suite-cases">{sortedDetailCases.map((c, i) => <li key={c.automationCaseId} className={c.status === "Ready" ? "" : "is-notready"}>
+        <span className="au-suite-no">{i + 1}</span>
+        <span className="au-suite-main"><b>{c.automationCode}</b><small title={`${c.testCaseCode} · ${c.testCaseTitle}`}>{c.testCaseCode} · {c.testCaseTitle}</small></span>
+        <span className="au-suite-target">{c.automationType}</span>
+        <Badge tone={caseStatusTone[c.status] ?? "blue"}>{caseStatusTh[c.status] ?? c.status}</Badge>
+        {detailEditable ? <button type="button" className={`au-req${c.isRequired ? " is-on" : ""}`} aria-pressed={c.isRequired} title="กดเพื่อสลับ Required / Optional" onClick={() => toggleRequired(c)}>{c.isRequired ? "Required" : "Optional"}</button> : <span className={`au-req is-static${c.isRequired ? " is-on" : ""}`}>{c.isRequired ? "Required" : "Optional"}</span>}
+        {detailEditable && <span className="au-suite-tools">
+          <button type="button" className="au-icon-btn" aria-label={`เลื่อน ${c.automationCode} ขึ้น`} title="เลื่อนขึ้น" disabled={i === 0} onClick={() => moveCase(c, -1)}><span className="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+          <button type="button" className="au-icon-btn" aria-label={`เลื่อน ${c.automationCode} ลง`} title="เลื่อนลง" disabled={i === sortedDetailCases.length - 1} onClick={() => moveCase(c, 1)}><span className="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+          <button type="button" className="au-icon-btn danger" aria-label={`นำ ${c.automationCode} ออก`} title="นำออกจาก Suite" onClick={() => removeCase(c.automationCaseId)}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+        </span>}
+      </li>)}</ol> : <div className="au-runs-empty">ยังไม่มี Case ใน Suite นี้{detailEditable && " — กด \"เพิ่ม Case\""}</div>}
+      <p className="au-suite-note">รัน Suite จะส่งเฉพาะ Case ที่พร้อมรัน (Ready และไม่ถูก Quarantine)</p>
     </ModalShell>}
 
     {addCasesModal && detail && <AddSuiteCasesModal cases={cases} existingCaseIds={detail.cases.map((c) => c.automationCaseId)} busy={busy} onClose={() => setAddCasesModal(false)} onAdd={addCases} />}
@@ -262,7 +311,7 @@ function AddSuiteCasesModal({ cases, existingCaseIds, busy, onClose, onAdd }: {
     <label className="checkbox-field"><input type="checkbox" checked={isRequired} onChange={(e) => setIsRequired(e.target.checked)} /> ตั้งเป็น Required (ต้องผ่านทุกตัว)</label>
     <label>เหตุผล (ไม่บังคับ — บันทึกลงประวัติ)<input type="text" value={changeReason} onChange={(e) => setChangeReason(e.target.value)} placeholder="เช่น เพิ่ม case สำหรับ regression รอบนี้" /></label>
     {available.length ? <div className="automation-batch-list">
-      {available.map((c) => <label key={c.automationCaseId} className="automation-batch-row"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selected.has(c.automationCaseId)} onChange={() => toggle(c.automationCaseId)} /><span><b>{c.automationCode}</b><small>{c.testCaseCode} · {c.testCaseTitle}</small></span><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge></label>)}
+      {available.map((c) => <label key={c.automationCaseId} className="automation-batch-row"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selected.has(c.automationCaseId)} onChange={() => toggle(c.automationCaseId)} /><span><b>{c.automationCode}</b><small>{c.testCaseCode} · {c.testCaseTitle}</small></span><Badge tone={caseStatusTone[c.status] ?? "blue"}>{caseStatusTh[c.status] ?? c.status}</Badge></label>)}
     </div> : <div className="empty"><p>ทุก Automation Case ถูกเพิ่มเข้า Suite นี้หมดแล้ว</p></div>}
     <div className="modal-actions"><button className="btn" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิก</button><button className="btn primary" disabled={busy || !selected.size} onClick={() => onAdd([...selected], isRequired, changeReason)}>{busy ? "กำลังเพิ่ม..." : `เพิ่ม ${selected.size} case`}</button></div>
   </ModalShell>;
