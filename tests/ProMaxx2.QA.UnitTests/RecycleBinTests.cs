@@ -50,6 +50,26 @@ public sealed class RecycleBinTests : IDisposable
     }
 
     [Fact]
+    public async Task TestPlan_DeletedPlanListedAndRestoredSoItCanBeReopened()
+    {
+        var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var b = await AutomationTestFixtures.SeedBaselineAsync(db);
+        var plan = new ProMaxx2.QA.Domain.TestPlanning.TestPlan(b.Project.ProjectId, b.Release.ReleaseId, "TP-001", "Regression", "Regression", null, null, null, null, null);
+        plan.Cancel(null);
+        plan.SoftDelete(hasRuns: true, null);
+        db.Add(plan);
+        await db.SaveChangesAsync();
+
+        var row = Assert.Single(await Bin(db).ListAsync("test-plans", b.Project.ProjectId, default));
+        Assert.Equal("TP-001", row.Code);
+        Assert.True(await Bin(db).RestoreAsync("test-plans", plan.TestPlanId, null, null, default));
+        Assert.False(plan.IsDeleted);
+        plan.Reopen(null); // กู้คืนแล้ว Reopen ปลดล็อก Cycle ได้
+        Assert.False(plan.IsFrozen);
+        Assert.Equal(1, await db.AuditLogs.CountAsync(x => x.EntityType == "TestPlan" && x.Action == "Restored"));
+    }
+
+    [Fact]
     public async Task Defect_RestoreLogsActivity()
     {
         var db = AutomationTestFixtures.CreateInMemoryDatabase();

@@ -6,7 +6,7 @@ import { fmtDateTimeBE } from "../shared/appShared";
 import "./DeletedItemsModal.css";
 
 /** ประเภทที่ API `/recycle-bin/{type}` รองรับ — ดู RecycleBinService.Types */
-export type DeletedItemType = "test-cases" | "test-cycles" | "requirements" | "defects" | "risk-acceptances" | "knowledge-articles" | "knowledge-files" | "work-logs";
+export type DeletedItemType = "test-cases" | "test-cycles" | "requirements" | "defects" | "risk-acceptances" | "knowledge-articles" | "knowledge-files" | "work-logs" | "test-plans";
 
 type DeletedItem = { id: string; code?: string | null; title: string; detail?: string | null; projectName?: string | null; deletedAt?: string | null; deletedByName?: string | null };
 

@@ -716,7 +716,8 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 - ยังไม่มี Integration test แบบ HTTP (Concurrent Attach/Freeze ตาม §9.2) — Concurrent Attach พึ่ง Unique index + mapping 409
 - Restart API เพื่อใช้งานเฟส 4–6 แล้วทดสอบตาม §9.4 กับข้อมูลจริง (ยังไม่ได้ทำ)
 - Freeze guard เป็น check-then-act (ดูข้อจำกัดเฟส 5) — ยังไม่ได้ทำ lock ระดับฐานข้อมูล
-- ยังไม่มีแท็บ Activity ในรายละเอียดแผน (ดูที่ Audit Log `EntityType = TestPlan`) และ Recycle Bin ยังไม่รองรับ Test Plan
+- ยังไม่มีแท็บ Activity ในรายละเอียดแผน (ดูที่ Audit Log `EntityType = TestPlan`)
+- Reopen ปลด Freeze เสมอ (ตาม §ออกแบบ) — ถ้าต้องการล็อกต่อหลัง Reopen ต้องกด Freeze ใหม่
 
 ลำดับ Release แนะนำ:
 
@@ -816,4 +817,5 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 2026-10-29 | ผู้ใช้อนุญาต: apply `AddTestPlansAndConfigurationMatrix` + `SeedTestPlanPermissions` ลง `ProMaxx2QA` (sqlcmd -b -I ผ่าน PowerShell — Git Bash แปลง argument ผิดจน sqlcmd แจ้ง -E/-U ชนกัน) และ restart API แบบ Production; ตรวจ `/health` 200, `/test-plans` 401 ทั้ง local และโดเมนสาธารณะ, Vite เสิร์ฟไฟล์ใหม่; สิทธิ์ ASSIGN/EXPORT ตาม Role จริง (QA_TESTER ได้ด้วยเพราะมี `EXECUTION.ASSIGN`/`REPORT.EXPORT` อยู่แล้ว) | Migration apply แล้ว |
 | 2026-10-29 | เฟส 4: Run-level Assignment (+ members), Clone/Rerun Plan, Counter optimization (List กรองสถานะ 318 → 112 ms ที่ 30,000 เคส), UI จัดทีม/Clone; unit tests ทั้งชุด 922 ผ่าน; ตรวจ Clone/Assign บน SQL Server ใน DB ทดสอบ (ลบแล้ว) | เฟส 4 เสร็จในโค้ด — รอ restart API |
 | 2026-10-29 | เฟส 5: Freeze guard ใน Execution (บันทึก/ลบ), Test Cycle (แก้/สถานะ), Assignment (Workload, Weighted) + exception filter กลาง 409 `TEST_PLAN_FROZEN`; การ restart API ถูกระบบ permission บล็อก (Production Deploy) — รอผู้ใช้ restart | เฟส 5 เสร็จในโค้ด |
+| 2026-10-30 | Pre-PR `/code-review` (10 ข้อ): แก้ — Recycle Bin รองรับ Test Plan (Plan ที่ลบแล้วเคยล็อก Cycle ถาวรเพราะกู้คืน/Reopen ไม่ได้), หน้าต่างจัดทีมตัดสมาชิกที่ออกจาก Project แล้ว (เดิมบันทึกไม่ผ่านตลอด), Bulk assign ข้ามเคสของ Cycle ที่ Closed/Cancelled, Freeze guard ใน Accept/Start assignment, Clone ปฏิเสธ Release ที่ Released ก่อนเริ่ม (§4.4), ความคืบหน้าในรายการ/Matrix ใช้สูตรเดียวกับ Summary (§3.4), revoke URL ของ CSV หลังดาวน์โหลด; ไม่แก้ (อธิบายใน PR) — race ของ Freeze guard, Reopen ปลด Freeze, Export หลายหน้าคำนวณซ้ำ, helper CSV ซ้ำหลายหน้า; unit tests 933 ผ่าน | Review แล้ว |
 | 2026-10-30 | เฟส 6: Export (รายการแผน + Plan Summary เป็น CSV), `plan` ใน `TestCycleDto`/`ExecutionWorkspaceDto` + ตัวกรอง `plan` ของ `GET /test-cycles`, หน้า Test Cycle (บรรทัดแผน, ตัวกรอง, ลิงก์ไปแผน, "เพิ่มเข้า Test Plan", ปิดปุ่มเมื่อ Frozen), Execution Workspace (แถบแผน + Banner Frozen ปิดปุ่มบันทึกล่วงหน้า); แก้บรรทัดสถานะที่ยังเขียนว่า "รอ commit" | เฟส 6 เสร็จในโค้ด — รอ restart API |

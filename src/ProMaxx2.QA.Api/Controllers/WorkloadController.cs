@@ -117,6 +117,7 @@ public sealed class WorkloadController(QaDbContext db, ProMaxx2.QA.Application.C
         var item = await db.TestCycleCases.SingleOrDefaultAsync(x => x.TestCycleCaseId == cycleCaseId && x.AssignedTesterUserId == userId, ct);
         var metadata = await db.TestCycleCaseAssignments.SingleOrDefaultAsync(x => x.TestCycleCaseId == cycleCaseId, ct);
         if (item is null || metadata is null) return NotFound();
+        await freezeGuard.EnsureNotFrozenAsync(item.TestCycleId, ct);
         try { if (start) metadata.Start(); else metadata.Accept(); }
         catch (InvalidOperationException ex) { return Conflict(new { code = "INVALID_ASSIGNMENT_TRANSITION", detail = ex.Message }); }
         await db.SaveChangesAsync(ct);

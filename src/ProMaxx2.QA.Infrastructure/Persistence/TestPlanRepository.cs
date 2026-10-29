@@ -49,7 +49,8 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
         {
             var x = details[c.TestPlanId];
             var completed = c.Passed + c.Failed + c.Blocked + c.Skipped;
-            var touched = c.TotalCases - c.Untested;
+            // สูตรเดียวกับ Summarize (§3.4) — สถานะเก่า/ไม่รู้จักไม่นับว่าแตะแล้ว ให้ List, Matrix และ Summary ตรงกัน
+            var touched = c.InProgress + completed;
             return new TestPlanListItemDto(c.TestPlanId, x.ProjectId, x.ReleaseId, x.ReleaseCode, c.PlanCode, x.PlanName, x.PlanType, x.StartDate, x.EndDate, x.OwnerUserId, x.OwnerName,
                 c.Status, x.LifecycleStatus, x.IsFrozen, c.RunCount, c.TotalCases, touched, completed, c.Passed, Percent(touched, c.TotalCases), completed == 0 ? null : Percent(c.Passed, completed), c.CreatedAt);
         }).ToList();
@@ -147,7 +148,7 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
         var members = await db.ProjectUsers.AsNoTracking().Where(x => x.ProjectId == projectId && userIds.Contains(x.UserId)).Select(x => x.UserId).ToListAsync(ct);
         return userIds.Except(members).ToList();
     }
-    public async Task<IReadOnlyList<TestCycleCase>> UnassignedNotRunCasesAsync(Guid testCycleId, CancellationToken ct) => await db.TestCycleCases.Where(x => x.TestCycleId == testCycleId && x.AssignedTesterUserId == null && x.CurrentStatus == "NotRun").OrderBy(x => x.ExecutionOrder).ToListAsync(ct);
+    public async Task<IReadOnlyList<TestCycleCase>> UnassignedNotRunCasesAsync(Guid testCycleId, CancellationToken ct) => await db.TestCycleCases.Where(x => x.TestCycleId == testCycleId && x.AssignedTesterUserId == null && x.CurrentStatus == "NotRun" && x.Cycle.Status != "Closed" && x.Cycle.Status != "Cancelled").OrderBy(x => x.ExecutionOrder).ToListAsync(ct);
     public Task<Dictionary<Guid, TestCycleCaseAssignment>> AssignmentMetadataAsync(IReadOnlyCollection<Guid> testCycleCaseIds, CancellationToken ct) => db.TestCycleCaseAssignments.Where(x => testCycleCaseIds.Contains(x.TestCycleCaseId)).ToDictionaryAsync(x => x.TestCycleCaseId, ct);
     public void AddAssignmentMetadata(TestCycleCaseAssignment entity) => db.TestCycleCaseAssignments.Add(entity);
     public void AddAssignmentHistory(AssignmentHistory entity) => db.AssignmentHistories.Add(entity);
@@ -283,7 +284,7 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
             var completed = x.Passed + x.Failed + x.Blocked + x.Skipped;
             return new TestPlanRunDto(x.TestPlanRunId, x.TestPlanId, x.TestCycleId, x.CycleCode, x.CycleName, x.Status, x.RunCode, x.RunName, x.ConfigurationKey, x.ConfigurationName, x.ConfigurationJson,
                 x.OwnerUserId, x.OwnerName, x.BuildId, x.BuildNumber, x.EnvironmentId, x.EnvironmentName, x.Total, x.Untested, x.InProgress, x.Passed, x.Failed, x.Blocked, x.Skipped,
-                Percent(x.Total - x.Untested, x.Total), completed == 0 ? null : Percent(x.Passed, completed), x.CreatedAt, x.Unassigned, teamByRun[x.TestPlanRunId].ToList());
+                Percent(x.InProgress + completed, x.Total), completed == 0 ? null : Percent(x.Passed, completed), x.CreatedAt, x.Unassigned, teamByRun[x.TestPlanRunId].ToList());
         }).ToList();
     }
 

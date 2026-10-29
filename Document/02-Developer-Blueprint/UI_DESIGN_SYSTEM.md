@@ -400,6 +400,11 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-30 — Test Plan: ปุ่ม "ลบแล้ว" + แก้จาก code review
+
+- หัวรายการ Test Plan มีปุ่ม `DeletedItemsButton` ("Test Plan ที่ลบแล้ว", เฉพาะ SYS_ADMIN) ระหว่าง Export กับ "+ Test Plan" — ลำดับเดียวกับหน้า Test Cycle; กู้คืนแล้วโหลดรายการใหม่
+- หน้าต่างจัดทีม: สมาชิกที่ออกจาก Project แล้วถูกตัดออกจากรายการที่เลือกเมื่อโหลดสมาชิกเสร็จ (ไม่มีแถวให้ติ๊กออก จึงเคยทำให้บันทึกไม่ผ่าน)
+
 ### 2026-10-30 — Test Plan: Export + Plan context ในหน้า Test Cycle / Execution Workspace (เฟส 6)
 
 - **Export** (`TESTPLAN.EXPORT`): ปุ่ม "Export" (ไอคอน `download`, ปุ่มรอง) ที่หัวรายการ Test Plan ก่อน "+ Test Plan" (สถานะ "กำลัง Export..." + spinner, disabled เมื่อไม่มีรายการ) และในแถบปุ่มรายละเอียดแผน (หลัง Freeze/Reopen, `title` อธิบาย) — CSV UTF-8 BOM แบบเดียวกับหน้า Test Cycle/RTM, แจ้งผลด้วย toast; ชื่อไฟล์ `TestPlans_yyyymmdd.csv` / `TestPlan_<รหัส>_yyyymmdd.csv`

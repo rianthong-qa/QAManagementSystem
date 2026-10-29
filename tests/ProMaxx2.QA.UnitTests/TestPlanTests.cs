@@ -736,6 +736,58 @@ public sealed class TestPlanTests
         await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloneAsync(plan.TestPlanId, request, null, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Clone_rejects_released_target_release_before_creating_anything()
+    {
+        var c = await CreateAsync();
+        var (plan, _) = await PlanWithRunAsync(c);
+        var plansBefore = await c.Db.TestPlans.CountAsync();
+        c.Baseline.Release.ChangeStatus("Released", null);
+        await c.Db.SaveChangesAsync();
+
+        var request = new CloneTestPlanRequest(c.Baseline.Release.ReleaseId, c.Baseline.Build.BuildId, null, null, null, null);
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloneAsync(plan.TestPlanId, request, Guid.NewGuid(), CancellationToken.None));
+        Assert.Contains("Released", error.Message);
+        Assert.Equal(plansBefore, await c.Db.TestPlans.CountAsync());
+        // สร้าง Plan ใหม่บน Release ที่ Released ยังทำได้ (§3 ห้ามเฉพาะ Cancelled) — ใช้รวบรวม Cycle เดิมย้อนหลัง
+        await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Bulk_assign_skips_cases_of_closed_or_cancelled_cycles()
+    {
+        var c = await CreateAsync();
+        var cycle = await AddCycleAsync(c, "AUT-CYC-001", "InProgress", null, "NotRun", "NotRun");
+        var plan = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        var run = await c.Service.AttachCycleAsync(plan.TestPlanId, Attach(cycle.TestCycleId), null, CancellationToken.None);
+        cycle.ChangeStatus("Cancelled");
+        await c.Db.SaveChangesAsync();
+        var tester = await AddMemberAsync(c);
+
+        var result = await c.Service.AssignRunAsync(plan.TestPlanId, run.TestPlanRunId, new AssignTestPlanRunRequest([new(tester, "Tester")], true), Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Equal(0, result.AssignedCases);
+        Assert.All(cycle.Cases, x => Assert.Null(x.AssignedTesterUserId));
+    }
+
+    [Fact]
+    public async Task Progress_ignores_unknown_case_status_consistently_in_list_matrix_and_summary()
+    {
+        var c = await CreateAsync();
+        var cycle = await AddCycleAsync(c, "AUT-CYC-001", "InProgress", null, "Pass", "NotRun", "NotRun", "NotRun");
+        var plan = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        await c.Service.AttachCycleAsync(plan.TestPlanId, Attach(cycle.TestCycleId), null, CancellationToken.None);
+        // สถานะเก่าที่ไม่อยู่ในสูตร §3.4 — ไม่นับว่าแตะแล้ว
+        c.Db.Entry(cycle.Cases.OrderBy(x => x.ExecutionOrder).Last()).Property(nameof(TestCycleCase.CurrentStatus)).CurrentValue = "Retest";
+        await c.Db.SaveChangesAsync();
+
+        var detail = await c.Service.GetAsync(plan.TestPlanId, CancellationToken.None);
+        var listed = Assert.Single((await c.Service.ListAsync(c.Baseline.Project.ProjectId, null, null, null, null, null, 1, 20, CancellationToken.None)).Items.Rows);
+        Assert.Equal(25m, detail.Summary.ProgressPercent);
+        Assert.Equal(detail.Summary.ProgressPercent, listed.ProgressPercent);
+        Assert.Equal(detail.Summary.ProgressPercent, Assert.Single(detail.Runs).ProgressPercent);
+    }
+
     // ---------- เฟส 5: Freeze guard ใน Execution / Test Cycle / Assignment เดิม ----------
 
     [Fact]

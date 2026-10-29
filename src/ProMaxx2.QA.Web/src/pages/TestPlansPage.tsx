@@ -7,6 +7,7 @@ import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { DateField } from "../components/DateField";
 import { ListPager } from "../components/ListPager";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { useUserPageSize } from "../components/usePageSize";
 import { formatThaiDateTime } from "../dateTime";
 import "../components/ListPage.css";
@@ -61,7 +62,8 @@ const configSummary = (run: PlanRun) => { const c = parseConfig(run.configuratio
 const downloadCsv = (fileName: string, rows: (string | number | null | undefined)[][]) => {
   const csv = "\ufeff" + rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",")).join("\r\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a"); link.href = url; link.download = fileName; link.click(); URL.revokeObjectURL(url);
+  const link = document.createElement("a"); link.href = url; link.download = fileName; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000); // revoke ทันทีหลัง click ทำให้บาง browser ยกเลิกการดาวน์โหลด
 };
 const fileStamp = () => new Date().toISOString().slice(0, 10).replaceAll("-", "");
 const csvPercent = (value: number | null | undefined) => value === null || value === undefined ? "" : `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
@@ -182,10 +184,11 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
             <div><strong>{total.toLocaleString()}</strong><span>Test Plan{filterCount ? ` · กรอง ${filterCount} เงื่อนไข` : ""}</span></div>
             {summary && <small>{summary.runCount.toLocaleString()} Run · Test Case {summary.totalCases.toLocaleString()} · เริ่มทดสอบแล้ว {percentText(summary.progressPercent)} · อัตราผ่าน {percentText(summary.passRate)}{summary.failed + summary.blocked > 0 ? ` · Fail/Blocked ${(summary.failed + summary.blocked).toLocaleString()}` : ""}</small>}
           </div>
-          {(canEdit || canExport) && <div className="lp-actions">
+          <div className="lp-actions">
             {canExport && <button className="btn" type="button" disabled={exporting || loading || total === 0} onClick={exportList}>{exporting ? <><span className="spinner inline" aria-hidden="true" />กำลัง Export...</> : <><span className="material-symbols-outlined" aria-hidden="true">download</span>Export</>}</button>}
+            <DeletedItemsButton type="test-plans" label="Test Plan" projectId={contextProjectId} onRestored={() => setReload((x) => x + 1)} />
             {canEdit && <button className="btn primary" type="button" disabled={!!createDisabledReason} title={createDisabledReason || undefined} onClick={() => setForm({})}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Plan</button>}
-          </div>}
+          </div>
         </div>
         <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
           <button type="button" aria-pressed={status === ""} onClick={() => setStatus("")}>ทั้งหมด</button>
@@ -654,7 +657,12 @@ function RunTeamModal({ plan, run, onClose, onSaved }: { plan: PlanDetail; run: 
   useEffect(() => {
     const ctrl = new AbortController();
     getJson<PlanMember[]>(`${apiUrl}/test-plans/${plan.testPlanId}/members`, ctrl.signal)
-      .then(setMembers)
+      .then((list) => {
+        setMembers(list);
+        // คนที่ออกจาก Project แล้วไม่อยู่ในรายการให้ติ๊กออก — ตัดทิ้งเลย ไม่งั้น Server ปฏิเสธทุกครั้งที่บันทึก (บันทึกแทนทีมทั้งชุด)
+        const ids = new Set(list.map((m) => m.userId));
+        setRoles((current) => Object.fromEntries(Object.entries(current).filter(([userId]) => ids.has(userId))));
+      })
       .catch((e) => { if (!isAbortError(e)) setError(errorText(e, "โหลดสมาชิก Project ไม่สำเร็จ")); })
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
     return () => ctrl.abort();

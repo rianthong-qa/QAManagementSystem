@@ -315,7 +315,7 @@ public sealed class TestPlanService(ITestPlanRepository repository, IProjectRepo
         if (!string.IsNullOrWhiteSpace(r.CloneMode) && !r.CloneMode.Trim().Equals(TestCycleCloneModes.SourceSnapshot, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Clone Test Plan รองรับเฉพาะ SourceSnapshot");
         var runs = await repository.ListRunEntitiesAsync(planId, ct);
         if (runs.Count == 0) throw new TestPlanRuleException(TestPlanErrorCodes.NoRuns, "Test Plan ที่ยังไม่มี Run Clone ไม่ได้");
-        await EnsureReleaseAsync(source.ProjectId, r.TargetReleaseId, ct);
+        await EnsureReleaseAsync(source.ProjectId, r.TargetReleaseId, ct, forNewCycles: true);
         var overrides = (r.EnvironmentOverrides ?? []).ToDictionary(x => x.SourceRunId, x => x.TargetEnvironmentId);
         if (overrides.Keys.Any(id => runs.All(x => x.TestPlanRunId != id))) throw new ArgumentException("Environment override อ้างถึง Run ที่ไม่อยู่ใน Test Plan นี้");
         var project = await projects.GetAsync(source.ProjectId, ct) ?? throw new EntityNotFoundException("Project not found.");
@@ -367,9 +367,11 @@ public sealed class TestPlanService(ITestPlanRepository repository, IProjectRepo
 
     private static string FirstNonBlank(params string?[] values) => values.First(x => !string.IsNullOrWhiteSpace(x))!.Trim();
 
-    private async Task EnsureReleaseAsync(Guid projectId, Guid releaseId, CancellationToken ct)
+    /// <summary>สร้าง Plan: ห้าม Release ที่ Cancelled (§3); Clone สร้าง Cycle ใหม่จึงห้าม Released ด้วย (§4.4) — ตรวจก่อนเริ่ม ไม่ให้ล้มกลางทางใน CloneAsync</summary>
+    private async Task EnsureReleaseAsync(Guid projectId, Guid releaseId, CancellationToken ct, bool forNewCycles = false)
     {
         var status = await repository.ReleaseStatusAsync(projectId, releaseId, ct) ?? throw new EntityNotFoundException("Release not found in project.");
         if (status == "Cancelled") throw new ArgumentException("Cannot create a test plan for a cancelled release.");
+        if (forNewCycles && status == "Released") throw new ArgumentException("Release นี้ Released แล้ว — Clone ไปสร้าง Test Cycle ใหม่ไม่ได้ ให้เลือก Release ที่ยังไม่ปิด");
     }
 }

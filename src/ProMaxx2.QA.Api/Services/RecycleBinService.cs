@@ -12,13 +12,13 @@ public sealed record DeletedItemDto(Guid Id, string? Code, string Title, string?
 public sealed class RestoreConflictException(string message) : Exception(message);
 
 /// <summary>
-/// ถังรายการที่ลบแล้วของ Test Case / Test Cycle / Requirement / Defect / Risk Acceptance / บทความ / เอกสารความรู้ / บันทึกงาน —
+/// ถังรายการที่ลบแล้วของ Test Case / Test Cycle / Test Plan / Requirement / Defect / Risk Acceptance / บทความ / เอกสารความรู้ / บันทึกงาน —
 /// การลบในหน้าเหล่านี้เป็น soft delete ที่เก็บประวัติไว้ (รายงานไม่นับ) และกู้คืนจากที่นี่ได้
 /// รายการที่ลบก่อนมีคอลัมน์ DeletedAt ใช้ UpdatedAt แทน (Test Cycle ไม่มี UpdatedAt จึงอาจไม่มีวันที่)
 /// </summary>
 public sealed class RecycleBinService(QaDbContext db, DefectActivityService defectActivity, KnowledgeFileService knowledgeFiles, KnowledgeIndexTrigger knowledgeTrigger)
 {
-    public static readonly string[] Types = ["test-cases", "test-cycles", "requirements", "defects", "risk-acceptances", "knowledge-articles", "knowledge-files", "work-logs"];
+    public static readonly string[] Types = ["test-cases", "test-cycles", "requirements", "defects", "risk-acceptances", "knowledge-articles", "knowledge-files", "work-logs", "test-plans"];
     private const int MaxRows = 500;
 
     private sealed record Row(Guid Id, string? Code, string Title, string? Detail, Guid? ProjectId, DateTime? DeletedAt, Guid? DeletedBy);
@@ -41,6 +41,9 @@ public sealed class RecycleBinService(QaDbContext db, DefectActivityService defe
                 .Select(x => new Row(x.KnowledgeArticleId, null, x.Title, x.Status, x.ProjectId, x.DeletedAt ?? x.UpdatedAt, x.DeletedBy ?? x.UpdatedBy)).ToListAsync(ct),
             "knowledge-files" => await db.KnowledgeFiles.AsNoTracking().Where(x => x.IsDeleted && (projectId == null || x.ProjectId == null || x.ProjectId == projectId))
                 .Select(x => new Row(x.KnowledgeFileId, null, x.FileName, x.ImportPath != null ? "นำเข้าจากโฟลเดอร์" : null, x.ProjectId, x.DeletedAt ?? x.UpdatedAt, x.DeletedBy)).ToListAsync(ct),
+            // Plan ที่ลบแล้วยังล็อก Test Cycle ของ Run ไว้ (§7.2.1) — กู้คืนแล้ว Reopen/Unfreeze ได้; PlanCode unique รวมแถวที่ลบ จึงไม่ชนตอนกู้คืน
+            "test-plans" => await db.TestPlans.AsNoTracking().Where(x => x.IsDeleted && (projectId == null || x.ProjectId == projectId))
+                .Select(x => new Row(x.TestPlanId, x.PlanCode, x.PlanName, x.LifecycleStatus, x.ProjectId, x.DeletedAt, x.DeletedBy)).ToListAsync(ct),
             // บันทึกงานเป็นของแต่ละคน — Detail = เจ้าของ · วันที่
             "work-logs" => (await db.WorkLogEntries.AsNoTracking().Where(x => x.IsDeleted)
                 .Select(x => new { x.WorkLogEntryId, x.Title, x.WorkDate, x.ProjectId, x.DeletedAt, x.DeletedBy, Owner = db.Users.Where(u => u.UserId == x.UserId).Select(u => u.DisplayName).FirstOrDefault() }).ToListAsync(ct))
@@ -100,6 +103,11 @@ public sealed class RecycleBinService(QaDbContext db, DefectActivityService defe
                 if (await db.KnowledgeFiles.AnyAsync(x => !x.IsDeleted && x.KnowledgeFileId != id && ((e.ImportPath != null && x.ImportPath == e.ImportPath) || (x.ContentHash == e.ContentHash && x.ProjectId == e.ProjectId)), ct))
                     throw new RestoreConflictException($"มีเอกสาร \"{e.FileName}\" เนื้อหาเดียวกันอยู่ในคลังความรู้แล้ว (อาจนำเข้าใหม่จากโฟลเดอร์)");
                 e.Restore(); (entityType, label) = (KnowledgeFileService.AuditEntityType, e.FileName); break;
+            }
+            case "test-plans":
+            {
+                var e = await db.TestPlans.FirstOrDefaultAsync(x => x.TestPlanId == id && x.IsDeleted, ct); if (e is null) return false;
+                e.Restore(userId); (entityType, label) = ("TestPlan", e.PlanCode); break;
             }
             case "work-logs":
             {
