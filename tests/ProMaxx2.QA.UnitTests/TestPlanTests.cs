@@ -1,6 +1,11 @@
+using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using ProMaxx2.QA.Api.Services;
 using ProMaxx2.QA.Application.Common;
+using ProMaxx2.QA.Application.Execution;
 using ProMaxx2.QA.Application.Projects;
 using ProMaxx2.QA.Application.TestPlanning;
 using ProMaxx2.QA.Domain.Execution;
@@ -43,8 +48,8 @@ public sealed class TestPlanTests
         closed.Close(null);
         Assert.Equal(TestPlanLifecycleStatuses.Closed, closed.LifecycleStatus);
         Assert.True(closed.IsFrozen);
-        Assert.Throws<InvalidOperationException>(() => closed.Unfreeze(null));
-        Assert.Throws<InvalidOperationException>(() => closed.Update("x", null, null, null, null, null, null));
+        Assert.Throws<TestPlanRuleException>(() => closed.Unfreeze(null));
+        Assert.Throws<TestPlanRuleException>(() => closed.Update("x", null, null, null, null, null, null));
 
         closed.Reopen(null);
         Assert.Equal(TestPlanLifecycleStatuses.Active, closed.LifecycleStatus);
@@ -54,7 +59,7 @@ public sealed class TestPlanTests
         var cancelled = NewPlan();
         cancelled.Cancel(null);
         Assert.True(cancelled.IsFrozen);
-        Assert.Throws<InvalidOperationException>(() => cancelled.Freeze(null));
+        Assert.Throws<TestPlanRuleException>(() => cancelled.Freeze(null));
         cancelled.Reopen(null);
         Assert.True(cancelled.IsActive);
     }
@@ -67,19 +72,19 @@ public sealed class TestPlanTests
         plan.Freeze(user);
         Assert.True(plan.IsFrozen);
         Assert.Equal(user, plan.FrozenByUserId);
-        Assert.Throws<InvalidOperationException>(() => plan.Freeze(user));
-        Assert.Throws<InvalidOperationException>(() => plan.EnsureEditable());
+        Assert.Throws<TestPlanRuleException>(() => plan.Freeze(user));
+        Assert.Throws<TestPlanRuleException>(() => plan.EnsureEditable());
         plan.Unfreeze(user);
         Assert.False(plan.IsFrozen);
-        Assert.Throws<InvalidOperationException>(() => plan.Unfreeze(user));
-        Assert.Throws<InvalidOperationException>(() => plan.Reopen(user));
+        Assert.Throws<TestPlanRuleException>(() => plan.Unfreeze(user));
+        Assert.Throws<TestPlanRuleException>(() => plan.Reopen(user));
     }
 
     [Fact]
     public void Soft_delete_requires_closed_or_cancelled_when_plan_has_runs()
     {
         var plan = NewPlan();
-        Assert.Throws<InvalidOperationException>(() => plan.SoftDelete(hasRuns: true, null));
+        Assert.Throws<TestPlanRuleException>(() => plan.SoftDelete(hasRuns: true, null));
         plan.Close(null);
         plan.SoftDelete(hasRuns: true, null);
         Assert.True(plan.IsDeleted);
@@ -145,7 +150,7 @@ public sealed class TestPlanTests
 
     // ---------- Service + Repository (EF InMemory) ----------
 
-    private sealed record Ctx(QaDbContext Db, AutomationTestFixtures.Baseline Baseline, TestPlanService Service, TestPlanRepository Repository);
+    private sealed record Ctx(QaDbContext Db, AutomationTestFixtures.Baseline Baseline, TestPlanService Service, TestPlanRepository Repository, TestCycleService Cycles, ProjectAccessContext Access);
 
     private static async Task<Ctx> CreateAsync()
     {
@@ -153,7 +158,9 @@ public sealed class TestPlanTests
         var baseline = await AutomationTestFixtures.SeedBaselineAsync(db);
         var access = new ProjectAccessContext { AllowedProjectIds = [baseline.Project.ProjectId] };
         var repository = new TestPlanRepository(db, access);
-        return new Ctx(db, baseline, new TestPlanService(repository, new ProjectRepository(db, access)), repository);
+        var projects = new ProjectRepository(db, access);
+        var cycles = new TestCycleService(new TestCycleRepository(db, access), projects);
+        return new Ctx(db, baseline, new TestPlanService(repository, projects, cycles), repository, cycles, access);
     }
 
     private static SaveTestPlanRequest PlanRequest(Ctx c, string? code = null) => new(c.Baseline.Project.ProjectId, c.Baseline.Release.ReleaseId, code, "Release 1.0 Regression", "Regression", null, null, null, null);
@@ -243,7 +250,7 @@ public sealed class TestPlanTests
 
         await Assert.ThrowsAsync<ArgumentException>(() => c.Service.AttachCycleAsync(second.TestPlanId, Attach(wrongRelease.TestCycleId), null, CancellationToken.None));
         await Assert.ThrowsAsync<EntityNotFoundException>(() => c.Service.AttachCycleAsync(second.TestPlanId, Attach(deleted.TestCycleId), null, CancellationToken.None));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => c.Service.AttachCycleAsync(second.TestPlanId, Attach(linked.TestCycleId), null, CancellationToken.None));
+        await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.AttachCycleAsync(second.TestPlanId, Attach(linked.TestCycleId), null, CancellationToken.None));
     }
 
     [Fact]
@@ -261,7 +268,7 @@ public sealed class TestPlanTests
         var entity = await c.Repository.FindAsync(plan.TestPlanId, CancellationToken.None);
         entity!.Freeze(null);
         await c.Db.SaveChangesAsync();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => c.Service.AttachCycleAsync(plan.TestPlanId, Attach(d.TestCycleId), null, CancellationToken.None));
+        await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.AttachCycleAsync(plan.TestPlanId, Attach(d.TestCycleId), null, CancellationToken.None));
     }
 
     [Fact]
@@ -391,6 +398,208 @@ public sealed class TestPlanTests
         entity!.SoftDelete(hasRuns: false, null);
         await c.Db.SaveChangesAsync();
         Assert.Null(await c.Repository.GetAsync(plan.TestPlanId, CancellationToken.None));
+    }
+
+    // ---------- เฟส 2: Lifecycle / Run / ลบ Cycle / Scope / Policy / Error contract ----------
+
+    private static async Task<(TestPlanDto Plan, TestCycle Cycle)> PlanWithRunAsync(Ctx c, string cycleStatus = "InProgress")
+    {
+        var cycle = await AddCycleAsync(c, "AUT-CYC-001", cycleStatus, null, "NotRun");
+        var plan = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        await c.Service.AttachCycleAsync(plan.TestPlanId, Attach(cycle.TestCycleId), null, CancellationToken.None);
+        return (plan, cycle);
+    }
+
+    [Fact]
+    public async Task Close_requires_reason_and_all_runs_terminal_then_freezes_and_audits()
+    {
+        var c = await CreateAsync();
+        var empty = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        var noRuns = await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.CloseAsync(empty.TestPlanId, "done", null, CancellationToken.None));
+        Assert.Equal(TestPlanErrorCodes.RunsNotTerminal, noRuns.Code);
+
+        var (plan, cycle) = await PlanWithRunAsync(c);
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloseAsync(plan.TestPlanId, "  ", null, CancellationToken.None));
+        var open = await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.CloseAsync(plan.TestPlanId, "done", null, CancellationToken.None));
+        Assert.Equal(TestPlanErrorCodes.RunsNotTerminal, open.Code);
+
+        cycle.ChangeStatus("Completed");
+        await c.Db.SaveChangesAsync();
+        var closed = await c.Service.CloseAsync(plan.TestPlanId, "Regression ครบแล้ว", null, CancellationToken.None);
+
+        Assert.Equal(TestPlanStatuses.Closed, closed.Status);
+        Assert.True(closed.IsFrozen);
+        var audit = await c.Db.AuditLogs.SingleAsync(x => x.EntityId == plan.TestPlanId.ToString() && x.Action == "Closed");
+        Assert.Contains("Regression ครบแล้ว", audit.ChangeSummary);
+        var unfreeze = await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.UnfreezeAsync(plan.TestPlanId, "edit", null, CancellationToken.None));
+        Assert.Equal(TestPlanErrorCodes.NotActive, unfreeze.Code);
+
+        var reopened = await c.Service.ReopenAsync(plan.TestPlanId, "ต้องรันเพิ่ม", null, CancellationToken.None);
+        Assert.False(reopened.IsFrozen);
+        Assert.Equal(TestPlanStatuses.Completed, reopened.Status);
+    }
+
+    [Fact]
+    public async Task Frozen_plan_blocks_edit_attach_and_run_changes_with_frozen_code()
+    {
+        var c = await CreateAsync();
+        var (plan, _) = await PlanWithRunAsync(c);
+        var other = await AddCycleAsync(c, "AUT-CYC-002");
+        await c.Service.FreezeAsync(plan.TestPlanId, "รอ Sign-off", null, CancellationToken.None);
+        var runId = (await c.Service.GetAsync(plan.TestPlanId, CancellationToken.None)).Runs.Single().TestPlanRunId;
+
+        foreach (var action in new Func<Task>[]
+        {
+            () => c.Service.UpdateAsync(plan.TestPlanId, PlanRequest(c), null, CancellationToken.None),
+            () => c.Service.AttachCycleAsync(plan.TestPlanId, Attach(other.TestCycleId), null, CancellationToken.None),
+            () => c.Service.UpdateRunAsync(plan.TestPlanId, runId, new UpdateTestPlanRunRequest("x", null, null, null, null), null, CancellationToken.None),
+            () => c.Service.DetachRunAsync(plan.TestPlanId, runId, null, CancellationToken.None),
+        })
+        {
+            var ex = await Assert.ThrowsAsync<TestPlanRuleException>(action);
+            Assert.Equal(TestPlanErrorCodes.Frozen, ex.Code);
+        }
+    }
+
+    [Fact]
+    public async Task Create_run_from_suite_creates_populated_cycle_and_run()
+    {
+        var c = await CreateAsync();
+        var suite = new ProMaxx2.QA.Domain.TestManagement.TestSuite(c.Baseline.Project.ProjectId, "TS-1", "Regression", null, null, null);
+        c.Db.AddRange(suite, new ProMaxx2.QA.Domain.TestManagement.TestSuiteCase(suite.TestSuiteId, c.Baseline.TestCase.TestCaseId, 1, true));
+        await c.Db.SaveChangesAsync();
+        var plan = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+
+        var run = await c.Service.CreateRunAsync(plan.TestPlanId, new CreateTestPlanRunRequest("REG-WIN", null, "windows-chrome", "Windows 11 · Chrome", null, null, true, null, suite.TestSuiteId, c.Baseline.Build.BuildId, c.Baseline.Environment.TestEnvironmentId, null), null, CancellationToken.None);
+
+        Assert.Equal("REG-WIN", run.RunCode);
+        Assert.Equal("Release 1.0 Regression · Windows 11 · Chrome", run.CycleName);
+        Assert.Equal(1, run.TotalCases);
+        Assert.StartsWith("AUT-CYC-", run.CycleCode);
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CreateRunAsync(plan.TestPlanId, new CreateTestPlanRunRequest(null, null, null, null, null, null, true, null, null, c.Baseline.Build.BuildId, c.Baseline.Environment.TestEnvironmentId, null), null, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CreateRunAsync(plan.TestPlanId, new CreateTestPlanRunRequest(null, null, null, null, null, null, false, null, null, null, null, null), null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Detach_run_is_rejected_once_cycle_ever_had_execution_even_if_deleted()
+    {
+        var c = await CreateAsync();
+        var (plan, cycle) = await PlanWithRunAsync(c);
+        var runId = (await c.Service.GetAsync(plan.TestPlanId, CancellationToken.None)).Runs.Single().TestPlanRunId;
+        var execution = new TestExecution(cycle.Cases.Single().TestCycleCaseId, 1, c.Baseline.Build.BuildId, c.Baseline.Environment.TestEnvironmentId, Guid.NewGuid(), "Pass", null, null, []);
+        execution.SoftDelete(null);
+        c.Db.Add(execution);
+        await c.Db.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.DetachRunAsync(plan.TestPlanId, runId, null, CancellationToken.None));
+        Assert.Equal(TestPlanErrorCodes.RunHasExecutions, ex.Code);
+    }
+
+    [Fact]
+    public async Task Detach_run_without_execution_unlinks_cycle_and_allows_cycle_delete()
+    {
+        var c = await CreateAsync();
+        var (plan, cycle) = await PlanWithRunAsync(c);
+        var runId = (await c.Service.GetAsync(plan.TestPlanId, CancellationToken.None)).Runs.Single().TestPlanRunId;
+        await Assert.ThrowsAsync<TestCycleLinkedToPlanException>(() => c.Cycles.DeleteAsync(cycle.TestCycleId, null, CancellationToken.None));
+
+        await c.Service.DetachRunAsync(plan.TestPlanId, runId, null, CancellationToken.None);
+
+        Assert.Empty(await c.Db.TestPlanRuns.ToListAsync());
+        Assert.True(await c.Db.TestCycles.AnyAsync(x => x.TestCycleId == cycle.TestCycleId && !x.IsDeleted));
+        await c.Cycles.DeleteAsync(cycle.TestCycleId, null, CancellationToken.None);
+        Assert.True((await c.Db.TestCycles.SingleAsync(x => x.TestCycleId == cycle.TestCycleId)).IsDeleted);
+    }
+
+    [Fact]
+    public async Task Deleting_plan_requires_closed_or_cancelled_and_keeps_cycle_locked()
+    {
+        var c = await CreateAsync();
+        var (plan, cycle) = await PlanWithRunAsync(c);
+        var active = await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.DeleteAsync(plan.TestPlanId, null, CancellationToken.None));
+        Assert.Equal(TestPlanErrorCodes.HasRuns, active.Code);
+
+        await c.Service.CancelAsync(plan.TestPlanId, "ยกเลิกแผน", null, CancellationToken.None);
+        await c.Service.DeleteAsync(plan.TestPlanId, null, CancellationToken.None);
+
+        await Assert.ThrowsAsync<EntityNotFoundException>(() => c.Service.GetAsync(plan.TestPlanId, CancellationToken.None));
+        var blocked = await Assert.ThrowsAsync<TestCycleLinkedToPlanException>(() => c.Cycles.DeleteAsync(cycle.TestCycleId, null, CancellationToken.None));
+        Assert.Contains("ลบแล้ว", blocked.Message);
+        var other = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.AttachCycleAsync(other.TestPlanId, Attach(cycle.TestCycleId), null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Matrix_filters_by_run_status_configuration_and_pages()
+    {
+        var c = await CreateAsync();
+        var plan = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        var a = await AddCycleAsync(c, "AUT-CYC-001", "InProgress");
+        var b = await AddCycleAsync(c, "AUT-CYC-002", "Draft");
+        var d = await AddCycleAsync(c, "AUT-CYC-003", "InProgress");
+        await c.Service.AttachCycleAsync(plan.TestPlanId, Attach(a.TestCycleId), null, CancellationToken.None);
+        await c.Service.AttachCycleAsync(plan.TestPlanId, Attach(b.TestCycleId) with { ConfigurationKey = "android-pixel" }, null, CancellationToken.None);
+        await c.Service.AttachCycleAsync(plan.TestPlanId, Attach(d.TestCycleId), null, CancellationToken.None);
+
+        Assert.Equal(2, (await c.Service.MatrixAsync(plan.TestPlanId, "InProgress", null, null, 1, 50, CancellationToken.None)).Total);
+        Assert.Equal("AUT-CYC-002", Assert.Single((await c.Service.MatrixAsync(plan.TestPlanId, null, "Android-Pixel", null, 1, 50, CancellationToken.None)).Rows).RunCode);
+        var paged = await c.Service.MatrixAsync(plan.TestPlanId, null, null, null, 2, 2, CancellationToken.None);
+        Assert.Equal(3, paged.Total);
+        Assert.Single(paged.Rows);
+    }
+
+    [Fact]
+    public async Task Scope_guard_hides_plan_and_run_of_other_projects()
+    {
+        var c = await CreateAsync();
+        var (plan, _) = await PlanWithRunAsync(c);
+        var runId = (await c.Service.GetAsync(plan.TestPlanId, CancellationToken.None)).Runs.Single().TestPlanRunId;
+        var member = new ProjectScopeGuard(c.Db, c.Access);
+        var outsider = new ProjectScopeGuard(c.Db, new ProjectAccessContext { AllowedProjectIds = [Guid.NewGuid()] });
+
+        Assert.True(await member.RouteValueAsync("planId", plan.TestPlanId, CancellationToken.None));
+        Assert.True(await member.RouteValueAsync("runId", runId, CancellationToken.None));
+        Assert.False(await outsider.RouteValueAsync("planId", plan.TestPlanId, CancellationToken.None));
+        Assert.False(await outsider.RouteValueAsync("runId", runId, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("TestPlanView", "TESTPLAN.VIEW")]
+    [InlineData("TestPlanEdit", "TESTPLAN.EDIT")]
+    [InlineData("TestPlanFreeze", "TESTPLAN.FREEZE")]
+    public async Task Policies_require_their_permission_or_sys_admin(string policy, string permission)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorizationCore();
+        services.AddAuthorizationBuilder().AddTestPlanPolicies();
+        var auth = services.BuildServiceProvider().GetRequiredService<IAuthorizationService>();
+        static ClaimsPrincipal With(string type, string value) => new(new ClaimsIdentity([new Claim(type, value)], "TestAuth"));
+
+        Assert.True((await auth.AuthorizeAsync(With("permission", permission), null, policy)).Succeeded);
+        Assert.True((await auth.AuthorizeAsync(With(ClaimTypes.Role, "SYS_ADMIN"), null, policy)).Succeeded);
+        Assert.False((await auth.AuthorizeAsync(With("permission", "EXECUTION.RUN"), null, policy)).Succeeded);
+    }
+
+    [Fact]
+    public async Task Controller_maps_rule_violation_to_409_with_test_plan_code()
+    {
+        var c = await CreateAsync();
+        var (plan, _) = await PlanWithRunAsync(c);
+        await c.Service.FreezeAsync(plan.TestPlanId, "lock", null, CancellationToken.None);
+        var controller = new ProMaxx2.QA.Api.Controllers.TestPlansController(c.Service)
+        {
+            ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() },
+        };
+
+        var frozen = await controller.Update(plan.TestPlanId, PlanRequest(c), CancellationToken.None);
+        var missing = await controller.Get(Guid.NewGuid(), CancellationToken.None);
+        var invalid = await controller.Freeze(plan.TestPlanId, new TestPlanActionRequest(""), CancellationToken.None);
+
+        var conflict = Assert.IsType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>(frozen.Result);
+        Assert.Equal(TestPlanErrorCodes.Frozen, Assert.IsType<Microsoft.AspNetCore.Mvc.ProblemDetails>(conflict.Value).Extensions["code"]);
+        Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(missing.Result);
+        Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(invalid.Result);
     }
 
     // ---------- แปลงเป็น SQL ได้ (ไม่เชื่อมต่อ DB จริง) ----------

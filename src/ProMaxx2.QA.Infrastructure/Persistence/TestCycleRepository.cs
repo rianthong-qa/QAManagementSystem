@@ -166,5 +166,10 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
     }
 
     public Task DeleteAsync(TestCycle entity, CancellationToken ct) { db.TestCycles.Update(entity); return Task.CompletedTask; }
+
+    public Task<string?> LinkedTestPlanAsync(Guid cycleId, CancellationToken ct) => db.TestPlanRuns.AsNoTracking()
+        .Where(x => x.TestCycleId == cycleId)
+        .Select(x => x.Plan.PlanCode + " / Run " + x.RunCode + (x.Plan.IsDeleted ? " (Plan อยู่ในรายการที่ลบแล้ว)" : ""))
+        .FirstOrDefaultAsync(ct);
     public Task SaveAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
 }

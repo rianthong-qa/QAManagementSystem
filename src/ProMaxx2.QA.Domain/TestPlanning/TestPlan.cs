@@ -27,6 +27,28 @@ public static class TestPlanStatuses
     public static readonly string[] TerminalRunStatuses = ["Completed", "Closed", "Cancelled"];
 }
 
+/// <summary>รหัสข้อผิดพลาดใน ProblemDetails (<c>code</c>) ของ Test Plan API</summary>
+public static class TestPlanErrorCodes
+{
+    public const string Invalid = "TEST_PLAN_INVALID";
+    public const string NotFound = "TEST_PLAN_NOT_FOUND";
+    public const string DuplicateCode = "TEST_PLAN_DUPLICATE_CODE";
+    public const string Frozen = "TEST_PLAN_FROZEN";
+    public const string NotActive = "TEST_PLAN_NOT_ACTIVE";
+    public const string InvalidState = "TEST_PLAN_INVALID_STATE";
+    public const string RunsNotTerminal = "TEST_PLAN_RUNS_NOT_TERMINAL";
+    public const string HasRuns = "TEST_PLAN_HAS_RUNS";
+    public const string CycleLinked = "TEST_PLAN_CYCLE_LINKED";
+    public const string RunHasExecutions = "TEST_PLAN_RUN_HAS_EXECUTIONS";
+    public const string CycleLinkedToPlan = "TEST_CYCLE_LINKED_TO_PLAN";
+}
+
+/// <summary>ละเมิดกฎของ Test Plan — Controller ตอบ 409 พร้อม <see cref="Code"/></summary>
+public sealed class TestPlanRuleException(string code, string message) : InvalidOperationException(message)
+{
+    public string Code { get; } = code;
+}
+
 public static class TestPlanRunRoles { public static readonly string[] All = ["Tester", "Reviewer", "Observer"]; }
 
 public sealed class TestPlan
@@ -75,8 +97,8 @@ public sealed class TestPlan
     /// <summary>แก้ข้อมูลหลัก/Run ได้เฉพาะ Plan ที่ Active และยังไม่ Freeze</summary>
     public void EnsureEditable()
     {
-        if (!IsActive) throw new InvalidOperationException("Test Plan ที่ปิดหรือยกเลิกแล้วแก้ไขไม่ได้");
-        if (IsFrozen) throw new InvalidOperationException("Test Plan ถูก Freeze อยู่ แก้ไขไม่ได้");
+        if (!IsActive) throw new TestPlanRuleException(TestPlanErrorCodes.NotActive, "Test Plan ที่ปิดหรือยกเลิกแล้วแก้ไขไม่ได้");
+        if (IsFrozen) throw new TestPlanRuleException(TestPlanErrorCodes.Frozen, "Test Plan ถูก Freeze อยู่ แก้ไขไม่ได้");
     }
 
     public void Update(string name, string? type, DateTime? start, DateTime? end, Guid? ownerUserId, string? notes, Guid? updatedBy)
@@ -89,7 +111,7 @@ public sealed class TestPlan
     /// <summary>ปิด Plan และ Freeze อัตโนมัติ — การตรวจว่าทุก Run จบแล้วทำที่ Service เพราะต้องอ่านสถานะ Test Cycle</summary>
     public void Close(Guid? userId)
     {
-        if (!IsActive) throw new InvalidOperationException("ปิดได้เฉพาะ Test Plan ที่ยัง Active");
+        if (!IsActive) throw new TestPlanRuleException(TestPlanErrorCodes.NotActive, "ปิดได้เฉพาะ Test Plan ที่ยัง Active");
         LifecycleStatus = TestPlanLifecycleStatuses.Closed;
         FreezeCore(userId);
         Touch(userId);
@@ -97,7 +119,7 @@ public sealed class TestPlan
 
     public void Cancel(Guid? userId)
     {
-        if (!IsActive) throw new InvalidOperationException("ยกเลิกได้เฉพาะ Test Plan ที่ยัง Active");
+        if (!IsActive) throw new TestPlanRuleException(TestPlanErrorCodes.NotActive, "ยกเลิกได้เฉพาะ Test Plan ที่ยัง Active");
         LifecycleStatus = TestPlanLifecycleStatuses.Cancelled;
         FreezeCore(userId);
         Touch(userId);
@@ -106,7 +128,7 @@ public sealed class TestPlan
     /// <summary>เปิด Plan ที่ปิด/ยกเลิกกลับมา Active และ Unfreeze พร้อมกัน</summary>
     public void Reopen(Guid? userId)
     {
-        if (IsActive) throw new InvalidOperationException("Reopen ได้เฉพาะ Test Plan ที่ปิดหรือยกเลิกแล้ว");
+        if (IsActive) throw new TestPlanRuleException(TestPlanErrorCodes.InvalidState, "Reopen ได้เฉพาะ Test Plan ที่ปิดหรือยกเลิกแล้ว");
         LifecycleStatus = TestPlanLifecycleStatuses.Active;
         UnfreezeCore();
         Touch(userId);
@@ -114,8 +136,8 @@ public sealed class TestPlan
 
     public void Freeze(Guid? userId)
     {
-        if (!IsActive) throw new InvalidOperationException("Freeze/Unfreeze ได้เฉพาะ Test Plan ที่ Active");
-        if (IsFrozen) throw new InvalidOperationException("Test Plan ถูก Freeze อยู่แล้ว");
+        if (!IsActive) throw new TestPlanRuleException(TestPlanErrorCodes.NotActive, "Freeze/Unfreeze ได้เฉพาะ Test Plan ที่ Active");
+        if (IsFrozen) throw new TestPlanRuleException(TestPlanErrorCodes.InvalidState, "Test Plan ถูก Freeze อยู่แล้ว");
         FreezeCore(userId);
         Touch(userId);
     }
@@ -123,8 +145,8 @@ public sealed class TestPlan
     /// <summary>Plan ที่ Closed/Cancelled ต้องใช้ Reopen เท่านั้น</summary>
     public void Unfreeze(Guid? userId)
     {
-        if (!IsActive) throw new InvalidOperationException("Freeze/Unfreeze ได้เฉพาะ Test Plan ที่ Active — Plan ที่ปิดหรือยกเลิกให้ใช้ Reopen");
-        if (!IsFrozen) throw new InvalidOperationException("Test Plan ไม่ได้ถูก Freeze");
+        if (!IsActive) throw new TestPlanRuleException(TestPlanErrorCodes.NotActive, "Freeze/Unfreeze ได้เฉพาะ Test Plan ที่ Active — Plan ที่ปิดหรือยกเลิกให้ใช้ Reopen");
+        if (!IsFrozen) throw new TestPlanRuleException(TestPlanErrorCodes.InvalidState, "Test Plan ไม่ได้ถูก Freeze");
         UnfreezeCore();
         Touch(userId);
     }
@@ -133,7 +155,7 @@ public sealed class TestPlan
     public void SoftDelete(bool hasRuns, Guid? userId)
     {
         if (IsDeleted) return;
-        if (hasRuns && IsActive) throw new InvalidOperationException("Test Plan ที่มี Run ลบได้เมื่อปิดหรือยกเลิกแล้วเท่านั้น");
+        if (hasRuns && IsActive) throw new TestPlanRuleException(TestPlanErrorCodes.HasRuns, "Test Plan ที่มี Run ลบได้เมื่อปิดหรือยกเลิกแล้วเท่านั้น");
         IsDeleted = true;
         DeletedAt = UpdatedAt = DateTime.UtcNow;
         DeletedBy = UpdatedBy = userId;

@@ -197,6 +197,7 @@ builder.Services.AddAuthorizationBuilder()
         && (c.User.IsInRole("SYS_ADMIN")||(c.User.HasClaim("permission","KNOWLEDGE.VIEW")&&c.User.HasClaim("permission","KNOWLEDGE.MCP")))))
     .AddPolicy("PerformanceView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","PERFORMANCE.VIEW")||c.User.HasClaim("permission","PERFORMANCE.EDIT")))
     .AddAutomationPolicies()
+    .AddTestPlanPolicies()
     // endpoint ที่ลืมใส่ [Authorize] ต้องไม่กลายเป็น public โดยปริยาย — endpoint anonymous ต้องประกาศ [AllowAnonymous] เอง
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 // จำกัดความถี่ endpoint anonymous ที่เดารหัสได้ — key ตาม IP จริงของ client (CF-Connecting-IP เชื่อเฉพาะคำขอจาก cloudflared บน loopback — ดู ClientIp)

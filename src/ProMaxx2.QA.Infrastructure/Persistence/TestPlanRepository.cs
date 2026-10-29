@@ -1,6 +1,8 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.TestPlanning;
+using ProMaxx2.QA.Domain.Governance;
 using ProMaxx2.QA.Domain.TestPlanning;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
@@ -70,12 +72,27 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
             .SingleOrDefaultAsync(ct);
         if (plan is null) return null;
 
-        var runs = await ListRunsAsync(id, ct);
+        var runs = await MapRunsAsync(RunsOf(id).OrderBy(r => r.CreatedAt).ThenBy(r => r.RunCode), ct);
         var summary = await SummaryAsync(db.TestPlans.Where(x => x.TestPlanId == id).Select(x => x.TestPlanId), ct);
         var p = plan.Plan;
         return new TestPlanDto(p.TestPlanId, p.ProjectId, p.ReleaseId, plan.ReleaseCode, p.PlanCode, p.PlanName, p.PlanType, p.StartDate, p.EndDate, p.OwnerUserId, plan.OwnerName,
             plan.Status, p.LifecycleStatus, p.IsFrozen, p.FrozenAt, p.FrozenByUserId, p.CopiedFromTestPlanId, p.Notes, p.CreatedAt, p.UpdatedAt, summary, runs);
     }
+
+    public async Task<PagedResult<TestPlanRunDto>> ListRunsAsync(Guid planId, string? status, string? configurationKey, Guid? ownerUserId, int page, int size, CancellationToken ct)
+    {
+        page = Math.Max(1, page);
+        size = Math.Clamp(size, 1, 100);
+        var runs = RunsOf(planId);
+        if (!string.IsNullOrWhiteSpace(status)) runs = runs.Where(r => r.Cycle.Status == status.Trim());
+        if (!string.IsNullOrWhiteSpace(configurationKey)) runs = runs.Where(r => r.ConfigurationKey == configurationKey.Trim().ToLowerInvariant());
+        if (ownerUserId.HasValue) runs = runs.Where(r => r.OwnerUserId == ownerUserId);
+        var total = await runs.CountAsync(ct);
+        var rows = await MapRunsAsync(runs.OrderBy(r => r.CreatedAt).ThenBy(r => r.RunCode).Skip((page - 1) * size).Take(size), ct);
+        return new PagedResult<TestPlanRunDto>(total, rows);
+    }
+
+    public async Task<TestPlanRunDto?> GetRunAsync(Guid planId, Guid runId, CancellationToken ct) => (await MapRunsAsync(RunsOf(planId).Where(r => r.TestPlanRunId == runId), ct)).SingleOrDefault();
 
     public async Task<TestPlan?> FindAsync(Guid id, CancellationToken ct)
     {
@@ -83,6 +100,29 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
         var e = await db.TestPlans.SingleOrDefaultAsync(x => x.TestPlanId == id && !x.IsDeleted, ct);
         if (e is not null && allowed.Length > 0 && !allowed.Contains(e.ProjectId)) return null;
         return e;
+    }
+
+    public Task<TestPlanRun?> FindRunAsync(Guid planId, Guid runId, CancellationToken ct) => db.TestPlanRuns.SingleOrDefaultAsync(x => x.TestPlanId == planId && x.TestPlanRunId == runId, ct);
+
+    public async Task<(int Total, int NotTerminal)> RunStatusCountsAsync(Guid testPlanId, CancellationToken ct)
+    {
+        var counts = await db.TestPlanRuns.AsNoTracking().Where(r => r.TestPlanId == testPlanId)
+            .GroupBy(_ => 1)
+            .Select(g => new { Total = g.Count(), NotTerminal = g.Count(r => r.Cycle.Status != "Completed" && r.Cycle.Status != "Closed" && r.Cycle.Status != "Cancelled") })
+            .FirstOrDefaultAsync(ct);
+        return counts is null ? (0, 0) : (counts.Total, counts.NotTerminal);
+    }
+
+    public Task<bool> CycleHasExecutionsAsync(Guid testCycleId, CancellationToken ct) => db.TestExecutions.AnyAsync(e => e.CycleCase.TestCycleId == testCycleId, ct);
+    public void RemoveRun(TestPlanRun entity) => db.TestPlanRuns.Remove(entity);
+    public void AddAudit(AuditLog log) => db.AuditLogs.Add(log);
+
+    public async Task RunInTransactionAsync(Func<Task> work, CancellationToken ct)
+    {
+        if (!db.Database.IsRelational()) { await work(); return; }
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await work();
+        await transaction.CommitAsync(ct);
     }
 
     public Task<bool> CodeExistsAsync(Guid projectId, string code, Guid? excludeId, CancellationToken ct) => db.TestPlans.AnyAsync(x => x.ProjectId == projectId && x.PlanCode == code && (excludeId == null || x.TestPlanId != excludeId), ct);
@@ -93,7 +133,16 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
     public Task<bool> RunCodeExistsAsync(Guid testPlanId, string runCode, CancellationToken ct) => db.TestPlanRuns.AnyAsync(x => x.TestPlanId == testPlanId && x.RunCode == runCode, ct);
     public Task AddAsync(TestPlan entity, CancellationToken ct) => db.TestPlans.AddAsync(entity, ct).AsTask();
     public Task AddRunAsync(TestPlanRun entity, CancellationToken ct) => db.TestPlanRuns.AddAsync(entity, ct).AsTask();
-    public Task SaveAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
+    public async Task SaveAsync(CancellationToken ct)
+    {
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 } sql)
+        {
+            // ตรวจซ้ำก่อนบันทึกแล้ว แต่คำขอที่มาพร้อมกันยังชน Unique index ได้ — แปลงเป็น 409 ที่อ่านเข้าใจได้
+            if (sql.Message.Contains("IX_TestPlanRuns_TestCycleId", StringComparison.Ordinal)) throw new TestPlanRuleException(TestPlanErrorCodes.CycleLinked, "Test cycle นี้เพิ่งถูกเพิ่มเข้า Test Plan อื่น");
+            throw new TestPlanRuleException(TestPlanErrorCodes.DuplicateCode, "รหัส Test Plan หรือ Run ซ้ำกับรายการที่เพิ่งบันทึก");
+        }
+    }
 
     /// <summary>
     /// ตัวนับต่อ Plan + สถานะที่คำนวณจาก Run (§2.3) ใน Query เดียว — ใช้ทั้ง filter status และค่าที่แสดง
@@ -162,10 +211,12 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
             Percent(touched, total), Percent(completed, total), completed == 0 ? null : Percent(passed, completed));
     }
 
-    private async Task<IReadOnlyList<TestPlanRunDto>> ListRunsAsync(Guid planId, CancellationToken ct)
+    private IQueryable<TestPlanRun> RunsOf(Guid planId) => db.TestPlanRuns.AsNoTracking().Where(r => r.TestPlanId == planId);
+
+    /// <summary>แถว Matrix พร้อมตัวนับต่อ Run ใน Query เดียว (ไม่ยิงต่อ Run)</summary>
+    private async Task<IReadOnlyList<TestPlanRunDto>> MapRunsAsync(IQueryable<TestPlanRun> runs, CancellationToken ct)
     {
-        var rows = await db.TestPlanRuns.AsNoTracking().Where(r => r.TestPlanId == planId)
-            .OrderBy(r => r.CreatedAt).ThenBy(r => r.RunCode)
+        var rows = await runs
             .Select(r => new
             {
                 r.TestPlanRunId, r.TestPlanId, r.TestCycleId, r.Cycle.CycleCode, r.Cycle.CycleName, r.Cycle.Status, r.RunCode, r.RunName,

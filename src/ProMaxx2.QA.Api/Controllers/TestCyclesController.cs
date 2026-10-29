@@ -74,6 +74,12 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
     {
         try { await service.DeleteAsync(id, UserId(), ct); return NoContent(); }
         catch (EntityNotFoundException) { return NotFound(); }
+        catch (TestCycleLinkedToPlanException exception)
+        {
+            var problem = new ProblemDetails { Title = "ลบ Test Cycle ที่อยู่ใน Test Plan ไม่ได้", Detail = exception.Message, Status = 409 };
+            problem.Extensions["code"] = ProMaxx2.QA.Domain.TestPlanning.TestPlanErrorCodes.CycleLinkedToPlan;
+            return Conflict(problem);
+        }
     }
 
     [HttpPost("test-cycles/generate-ai"), Authorize(Policy = "ExecutionRun"), RequestSizeLimit(21_000_000)]

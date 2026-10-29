@@ -41,6 +41,12 @@ public sealed class ProjectScopeGuard(QaDbContext db, ProjectAccessContext proje
     public async Task<bool> BuildAsync(Guid buildId, CancellationToken ct)
         => Check(await db.Builds.AsNoTracking().Where(x => x.BuildId == buildId).Join(db.Releases, b => b.ReleaseId, r => r.ReleaseId, (b, r) => (Guid?)r.ProjectId).FirstOrDefaultAsync(ct));
 
+    public async Task<bool> TestPlanAsync(Guid testPlanId, CancellationToken ct)
+        => Check(await db.TestPlans.AsNoTracking().Where(x => x.TestPlanId == testPlanId).Select(x => (Guid?)x.ProjectId).FirstOrDefaultAsync(ct));
+
+    public async Task<bool> TestPlanRunAsync(Guid testPlanRunId, CancellationToken ct)
+        => Check(await db.TestPlanRuns.AsNoTracking().Where(x => x.TestPlanRunId == testPlanRunId).Select(x => (Guid?)x.Plan.ProjectId).FirstOrDefaultAsync(ct));
+
     /// <summary>ตรวจ route value ที่ชื่อบอกชนิด record ชัดเจน (releaseId, cycleId, cycleCaseId ฯลฯ) — ใช้จาก
     /// <see cref="ProjectAccessFilter"/> เพื่อปิด IDOR ของ endpoint ที่ไม่มี projectId ใน route/query</summary>
     public Task<bool> RouteValueAsync(string name, Guid value, CancellationToken ct) => name.ToLowerInvariant() switch
@@ -53,6 +59,8 @@ public sealed class ProjectScopeGuard(QaDbContext db, ProjectAccessContext proje
         "requirementid" => RequirementAsync(value, ct),
         "buildid" => BuildAsync(value, ct),
         "testsuiteid" => TestSuiteAsync(value, ct),
+        "planid" or "testplanid" => TestPlanAsync(value, ct),
+        "runid" or "testplanrunid" => TestPlanRunAsync(value, ct),
         _ => Task.FromResult(true),
     };
 
