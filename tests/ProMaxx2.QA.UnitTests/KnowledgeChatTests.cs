@@ -68,11 +68,19 @@ public sealed class KnowledgeChatTests
     [Fact]
     public void Prompt_RetrievalQueryCombinesShortFollowUp()
     {
-        Assert.Equal("พิมพ์ใบกำกับภาษีไม่ได้ แล้วแก้ยังไง", KnowledgePrompt.RetrievalQuery("แล้วแก้ยังไง", "พิมพ์ใบกำกับภาษีไม่ได้"));
-        var longQuestion = "ปิดวันแล้วยอดเงินสดในรายงานสรุปไม่ตรงกับลิ้นชักต้องตรวจอะไรบ้าง";
-        Assert.Equal(longQuestion, KnowledgePrompt.RetrievalQuery(longQuestion, "คำถามก่อนหน้า"));
+        Assert.Equal("พิมพ์ใบกำกับภาษีไม่ได้ แล้วแก้", KnowledgePrompt.RetrievalQuery("แล้วแก้ยังไง", "พิมพ์ใบกำกับภาษีไม่ได้"));
+        // คำถามยาวไม่รวมคำถามก่อนหน้า; "สรุป" กลางคำไม่ถูกตัด
+        Assert.Equal("ปิดวันแล้วยอดเงินสดในรายงานสรุปไม่ตรงกับลิ้นชักต้องตรวจ", KnowledgePrompt.RetrievalQuery("ปิดวันแล้วยอดเงินสดในรายงานสรุปไม่ตรงกับลิ้นชักต้องตรวจอะไรบ้าง", "คำถามก่อนหน้า"));
         Assert.Equal(KnowledgeQuery.MaxLength, KnowledgePrompt.RetrievalQuery(new string('ก', 300), null).Length);
     }
+
+    [Theory]
+    [InlineData("ช่วยสรุปโปรโมชั่น Promaxx2 มีอะไรบ้าง", "โปรโมชั่น Promaxx2")]
+    [InlineData("ปัญหาพิมพ์ใบกำกับภาษีที่เคยพบมีอะไรบ้าง และแก้อย่างไร", "ปัญหาพิมพ์ใบกำกับภาษีที่เคยพบ และแก้")]
+    [InlineData("อยากทราบวิธีตั้งค่าเครื่องพิมพ์หน่อยครับ?", "วิธีตั้งค่าเครื่องพิมพ์")]
+    [InlineData("มีอะไรบ้าง", "มีอะไรบ้าง")]
+    public void Prompt_StripFillersKeepsSearchTerms(string question, string expected) =>
+        Assert.Equal(expected, KnowledgePrompt.StripFillers(question));
 
     [Fact]
     public void Prompt_HistoryStartsWithUserAndTruncates()

@@ -30,7 +30,7 @@ public sealed class AiConfiguration
     /// <summary>เปิดให้เชื่อมต่อคลังความรู้จาก Claude ผ่าน MCP (/mcp + Personal Access Token) — ค่าเริ่มต้นปิด</summary>
     public bool McpEnabled { get; private set; }
 
-    public static readonly string[] EmbeddingProviders = ["None", "OpenAI", "Local"];
+    public static readonly string[] EmbeddingProviders = ["None", "OpenAI", "OpenRouter", "Local"];
 
     public void UpdateKnowledge(string embeddingProvider, string? embeddingModel, string? embeddingBaseUrl, string encryptedEmbeddingApiKey, string? embeddingApiKeyHint, bool allowCrmDataToExternalAi, bool mcpEnabled)
     {
