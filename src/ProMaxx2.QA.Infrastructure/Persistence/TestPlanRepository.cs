@@ -15,7 +15,7 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
     public async Task<TestPlanListResultDto> ListAsync(Guid? projectId, Guid? releaseId, string? status, string? planType, Guid? ownerUserId, string? search, int page, int size, CancellationToken ct)
     {
         page = Math.Max(1, page);
-        size = Math.Clamp(size, 1, 100);
+        size = Math.Clamp(size, 1, 500);
         var plans = db.TestPlans.AsNoTracking().Where(x => !x.IsDeleted);
         if (projectId.HasValue) plans = plans.Where(x => x.ProjectId == projectId);
         else if (projectCtx.AllowedProjectIds.Length > 0) plans = plans.Where(x => projectCtx.AllowedProjectIds.Contains(x.ProjectId));
@@ -82,7 +82,7 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
     public async Task<PagedResult<TestPlanRunDto>> ListRunsAsync(Guid planId, string? status, string? configurationKey, Guid? ownerUserId, int page, int size, CancellationToken ct)
     {
         page = Math.Max(1, page);
-        size = Math.Clamp(size, 1, 100);
+        size = Math.Clamp(size, 1, 500);
         var runs = RunsOf(planId);
         if (!string.IsNullOrWhiteSpace(status)) runs = runs.Where(r => r.Cycle.Status == status.Trim());
         if (!string.IsNullOrWhiteSpace(configurationKey)) runs = runs.Where(r => r.ConfigurationKey == configurationKey.Trim().ToLowerInvariant());

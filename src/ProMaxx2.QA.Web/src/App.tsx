@@ -32,6 +32,7 @@ const TestCasesPage = lazy(() => import("./pages/TestCasesPage").then((m) => ({ 
 const RegressionPage = lazy(() => import("./pages/RegressionPage").then((m) => ({ default: m.RegressionPage })));
 const RtmPage = lazy(() => import("./pages/RtmPage").then((m) => ({ default: m.RtmPage })));
 const TestCyclesPage = lazy(() => import("./pages/TestCyclesPage").then((m) => ({ default: m.TestCyclesPage })));
+const TestPlansPage = lazy(() => import("./pages/TestPlansPage").then((m) => ({ default: m.TestPlansPage })));
 const ExecutionWorkspacePage = lazy(() => import("./pages/ExecutionWorkspacePage").then((m) => ({ default: m.ExecutionWorkspacePage })));
 const TestSuitesPage = lazy(() => import("./pages/TestSuitesPage").then((m) => ({ default: m.TestSuitesPage })));
 const PerformancePage = lazy(() => import("./pages/PerformancePage").then((m) => ({ default: m.PerformancePage })));
@@ -126,6 +127,7 @@ const viewPermission: Record<Page, string> = {
   rtm: "REQUIREMENT.VIEW",
   "test-cases": "TESTCASE.VIEW",
   "test-suites": "TESTCASE.VIEW",
+  "test-plans": "TESTPLAN.VIEW",
   "test-cycles": "EXECUTION.RUN",
   execution: "EXECUTION.RUN",
   defects: "DEFECT.EDIT",
@@ -570,6 +572,8 @@ function App() {
           ? "ผลงานจากระบบ บันทึกงานเพิ่มเติม และติดตามช่วงทดลองงานของทีม QA"
         : page === "knowledge"
           ? "ถามผู้ช่วย AI และค้นหาความรู้จาก Defect, Test Case, บทความ, เอกสาร และ CRM พร้อมอ้างอิงแหล่งที่มา"
+        : page === "test-plans"
+          ? "รวม Test Cycle หลายชุดของ Release เดียวกันเป็นแผน และเทียบผลตาม Configuration (Build / Environment / OS / Browser)"
         : page === "test-suites"
           ? "Test Suite จัดเก็บระดับ Project · เลือก Release/Build ตอนนำไปสร้าง Test Cycle"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
@@ -972,6 +976,8 @@ function App() {
             <Suspense fallback={pageLoading}><AuditLogPage /></Suspense>
           ) : page === "execution" ? (
             <ExecutionWorkspacePage contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} />
+          ) : page === "test-plans" ? (
+            <TestPlansPage search={search} canEdit={can("TESTPLAN.EDIT")} canFreeze={can("TESTPLAN.FREEZE")} canRun={can("EXECUTION.RUN")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenCycle={(cycleId) => openRegressionCycle("test-cycles", cycleId)} />
           ) : page === "test-cycles" ? (
             <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} />
           ) : (

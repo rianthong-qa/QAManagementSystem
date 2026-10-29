@@ -1,0 +1,83 @@
+/* Test Plan / Configuration Matrix (เฟส 3, 2026-10-29) — prefix tp-
+   รายการใช้ ListPage.css (lp-), หน้าต่างรายละเอียดใช้ workspace ของ TestCycleDetail.css (cyd-) แล้วเพิ่มเฉพาะแถว Matrix และฟอร์ม */
+
+/* รายการ: สถานะ + Frozen อยู่คู่กัน */
+.tp-table .lp-col-status { width: 150px; }
+.tp-status { display: flex; flex-wrap: wrap; gap: 4px; }
+.tp-badge-icon { margin-right: 2px; font-size: 13px; vertical-align: -2px; }
+
+/* หน้าต่างรายละเอียด */
+.tp-toolbar-end { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.modal-box.cyd .btn.tp-danger-text { color: var(--red); }
+.modal-box.cyd .btn.tp-danger-text:hover:not(:disabled) { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); background: color-mix(in srgb, var(--red) 6%, var(--card)); }
+.tp-locked { display: flex; flex: none; align-items: center; gap: 6px; margin: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--yellow) 8%, var(--card)); padding: 8px 20px; color: var(--warning-text); font-size: 13px; font-weight: 600; }
+.tp-locked .material-symbols-outlined { font-size: 17px; }
+
+/* ตัวนับใต้แถบความคืบหน้า */
+.tp-counters { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px 12px; margin: 0; }
+.tp-counters > div { display: grid; gap: 1px; min-width: 0; }
+.tp-counters dt { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tp-counters dd { margin: 0; color: var(--text); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tp-counters dd small { color: var(--muted); font-size: 11px; font-weight: 400; }
+
+/* แถว Matrix: Run / Configuration | ความคืบหน้า | ปุ่ม */
+.tp-run { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 220px) 156px; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; padding: 10px 6px 10px 10px; }
+.tp-run:last-child { border-bottom: 0; }
+.tp-run.is-inprogress { border-left-color: var(--info); }
+.tp-run.is-cancelled .tp-run-main > p { color: var(--muted); }
+.tp-run-main { display: grid; gap: 2px; min-width: 0; }
+.tp-run-code { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tp-run-code b { color: var(--primary); font-size: 13px; }
+.tp-config { border-radius: 999px; background: color-mix(in srgb, var(--primary) 8%, var(--card)); padding: 1px 8px; color: var(--primary); font-size: 11px; font-weight: 700; }
+.tp-run-main > p { margin: 0; overflow-wrap: anywhere; color: var(--text); font-size: 13px; font-weight: 600; }
+.tp-run-main > small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.modal-box.cyd button.tp-link { display: inline; min-height: 0; border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.tp-run-progress { display: grid; gap: 4px; min-width: 0; }
+.tp-run-progress small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tp-run-progress small b { margin-right: 2px; color: var(--text); font-size: 12px; }
+.tp-run-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.modal-box.cyd .tp-run-actions .btn { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+.modal-box.cyd button.tp-icon { display: grid; width: 32px; height: 32px; min-height: 0; place-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+.modal-box.cyd button.tp-icon:hover:not(:disabled) { border-color: var(--line); background: var(--card); color: var(--primary); }
+.modal-box.cyd button.tp-icon.danger:hover:not(:disabled) { color: var(--red); }
+.tp-icon .material-symbols-outlined { font-size: 18px; }
+
+/* ฟอร์มแผน / Run */
+.tp-form-status { margin-right: auto; color: var(--green); font-size: 12px; font-weight: 600; }
+.tp-form-status.is-missing { color: var(--red); }
+.form-grid small.tp-field-error, small.tp-field-error { color: var(--red); }
+.tp-mode { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 16px; border: 0; padding: 0; }
+.tp-mode legend { margin-bottom: 8px; padding: 0; color: var(--text); font-size: 13px; font-weight: 700; }
+.tp-mode label { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 10px 12px; cursor: pointer; }
+.tp-mode label.is-selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--card)); }
+.tp-mode input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; border-radius: 50%; accent-color: var(--primary); }
+.tp-mode span { display: grid; gap: 2px; }
+.tp-mode b { font-size: 13px; }
+.tp-mode small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.form-grid label.tp-check { flex-direction: row; align-items: center; gap: 8px; font-weight: 600; }
+.tp-check input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
+.modal-box > .tp-config-title { margin: 18px 0 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+
+@media (max-width: 1100px) {
+  .tp-run { grid-template-columns: minmax(0, 1fr) 160px 140px; }
+}
+@media (max-width: 900px) {
+  .tp-run { grid-template-columns: minmax(0, 1fr) auto; }
+  .tp-run-progress { grid-column: 1 / -1; grid-row: 2; }
+  .tp-locked { padding: 8px 16px; }
+}
+@media (max-width: 760px) {
+  .tp-toolbar-end { width: 100%; margin-left: 0; }
+  .tp-toolbar-end .btn { flex: 1 1 140px; justify-content: center; min-height: 44px; }
+  .tp-run { grid-template-columns: minmax(0, 1fr); }
+  .tp-run-progress { grid-row: auto; }
+  .tp-run-actions { justify-content: flex-start; }
+  .modal-box.cyd .tp-run-actions .btn { min-height: 40px; }
+  .modal-box.cyd button.tp-icon { width: 40px; height: 40px; }
+  .tp-mode { grid-template-columns: minmax(0, 1fr); }
+  /* ข้อความ "ยังขาด" แยกแถว ปุ่มยกเลิก/บันทึกแบ่งพื้นที่เท่ากัน (ปุ่มข้อความยาวต้อง wrap ได้) */
+  .modal-box.tp-form > .modal-actions { flex-wrap: wrap; }
+  .tp-form-status { flex-basis: 100%; margin-right: 0; }
+  .modal-box.tp-form > .modal-actions .btn { flex: 1 1 0; min-width: 0; min-height: 44px; white-space: normal; }
+  .tp-counters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

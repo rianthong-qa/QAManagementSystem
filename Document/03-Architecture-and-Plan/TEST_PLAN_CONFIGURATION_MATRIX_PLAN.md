@@ -1,6 +1,6 @@
 # Test Plan / Configuration Matrix — แผนพัฒนา
 
-> สถานะ: เฟส 1–2 เสร็จ (Domain/EF/Repository/API + unit tests; ตรวจ Query บน SQL Server ใน DB ทดสอบแล้ว) — Migration 2 ตัวยังไม่ apply ลง `ProMaxx2QA`; เฟส 3 (UI) ยังไม่เริ่ม
+> สถานะ: เฟส 1–3 เสร็จ และ apply Migration ลง `ProMaxx2QA` + restart API แล้ว (2026-10-29) — UI ตรวจด้วย mock API แล้ว รอผู้ใช้ทดสอบกับข้อมูลจริง (ต้อง Login ใหม่เพื่อรับสิทธิ์ `TESTPLAN.*`); เฟส 4–6 ยังไม่เริ่ม
 >
 > เป้าหมาย: เพิ่ม Test Plan สำหรับรวม Test Cycle หลายชุดและแสดง Configuration Matrix โดยรักษาข้อมูลและ flow เดิมของ Test Cycle, Test Suite และ Execution Workspace ให้ใช้งานต่อได้โดยไม่ต้อง migrate ข้อมูลเดิมแบบทำลายข้อมูล
 
@@ -654,7 +654,8 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 0 | เสร็จ | Decision Log §1.4 |
 | 1 | เสร็จ (2026-10-29) | ดูรายละเอียดด้านล่าง |
 | 2 | เสร็จ (2026-10-29) — Migration ยังไม่ apply ลง `ProMaxx2QA` | ดูรายละเอียดด้านล่าง |
-| 3–6 | ยังไม่เริ่ม | |
+| 3 | เสร็จ (2026-10-29) — Migration apply แล้ว รอทดสอบกับข้อมูลจริงผ่าน UI | ดูรายละเอียดด้านล่างและ `UI_DESIGN_SYSTEM.md` Change Log 2026-10-29 |
+| 4–6 | ยังไม่เริ่ม | |
 
 เฟส 1 ที่ทำแล้ว:
 
@@ -675,6 +676,12 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 - `DELETE /test-cycles/{id}` ของ Cycle ที่ผูก Plan (รวม Plan ที่ลบแล้ว) → 409 `TEST_CYCLE_LINKED_TO_PLAN`
 - Audit Log ทุกคำสั่งที่แก้ข้อมูล (`EntityType = TestPlan`) พร้อมเหตุผลของ Close/Cancel/Reopen/Freeze/Unfreeze
 - Unit tests เพิ่ม 12 รายการ (lifecycle, frozen, create run จาก suite, detach, ลบ plan/cycle, matrix, scope guard, policy, error mapping)
+
+เฟส 3 ที่ทำแล้ว:
+
+- หน้า `#/test-plans` (`pages/TestPlansPage.tsx` + `TestPlansPage.css`) — เมนู Test Plan ก่อน Test Cycle, สิทธิ์ `TESTPLAN.VIEW`; รายการแบบ `ListPage` (ชิปสถานะ, ตัวกรองประเภท/เจ้าของ, แบ่งหน้า), หน้าต่างรายละเอียด (ความคืบหน้ารวม + Configuration Matrix + Lifecycle ตามสิทธิ์ พร้อมเหตุผล), ฟอร์มแผน และฟอร์ม Run (Attach Cycle / สร้างจาก Suite + Configuration)
+- API `GET /test-plans` และ `/matrix` รับ `size` 1–500 ให้ตรงกับ `ListPager` (เดิม 1–100)
+- ส่วนที่ต่างจาก §5: ยังไม่มีปุ่ม Export (เฟส 6) และ "ลบแล้ว" (Recycle Bin ยังไม่รองรับ Test Plan), ยังไม่มีแท็บ Activity (ดูได้ที่หน้า Audit Log `EntityType = TestPlan`), Release ใช้ตัวเลือกที่ Topbar แทน filter ในการ์ด (แบบเดียวกับหน้า Test Cycle), ชิปสถานะไม่มีจำนวน
 
 ค้าง/ยกไปเฟสถัดไป:
 
@@ -777,3 +784,5 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 2026-10-29 | Review รอบ 2 เทียบโค้ดจริง: Retest ไม่ใช้ `ExecutionNo` (นับเฉพาะผลจบที่ไม่ถูกลบ), แก้ตัวอย่าง Summary JSON ให้ลงตัว, เก็บ `LifecycleStatus` แทน `Status` และคำนวณสถานะใน Query, Close/Cancel Freeze อัตโนมัติ + Unfreeze ได้เฉพาะ Active + Reopen, Clone เพิ่ม `CopiedFromTestPlanId` + ตารางสิ่งที่คัดลอก + Transaction ระดับ Plan, Freeze guard อ้าง Service/Controller จริง (รวม Workload/Weighted assignment) และตัด "Move Build/Environment", Soft Delete Plan ยังล็อก Cycle, Seed Permission ผ่าน Migration | Decision complete |
 | 2026-10-29 | เฟส 1: Domain/EF/Migration `AddTestPlansAndConfigurationMatrix`/Application service/Repository + unit tests 28 รายการ (ทั้งชุด 905 ผ่าน); อัปเดต `SQL_SERVER_SCHEMA.md` §8.x; Migration ยังไม่ apply | เฟส 1 เสร็จ |
 | 2026-10-29 | เฟส 2: `TestPlansController` + Policy/Permission `TESTPLAN.*` (Migration `SeedTestPlanPermissions`) + Lifecycle/Run endpoint + บล็อกลบ Cycle ที่ผูก Plan + Error code `TEST_PLAN_*` + unit tests 12 รายการ (ทั้งชุด 917 ผ่าน); อัปเดต `API_SPECIFICATION.md` §16.1; ตรวจ Query/Migration บน SQL Server ใน DB ทดสอบชั่วคราวผ่าน (ลบทิ้งแล้ว) | เฟส 2 เสร็จ — Migration ยังไม่ apply ลง ProMaxx2QA |
+| 2026-10-29 | เฟส 3: หน้า Test Plan (รายการ/รายละเอียด/Matrix/ฟอร์มแผน/ฟอร์ม Run/Lifecycle) + เมนู + สิทธิ์; ตรวจ build/lint และ headless Chrome + mock API ที่ 1440/1024/390px ไม่มี horizontal scroll; การ apply Migration ลง ProMaxx2QA ถูกระบบ permission ปฏิเสธ (ทรัพยากรที่ใช้ร่วม) — รอผู้ใช้อนุญาตหรือ apply เอง | เฟส 3 เสร็จในโค้ด |
+| 2026-10-29 | ผู้ใช้อนุญาต: apply `AddTestPlansAndConfigurationMatrix` + `SeedTestPlanPermissions` ลง `ProMaxx2QA` (sqlcmd -b -I ผ่าน PowerShell — Git Bash แปลง argument ผิดจน sqlcmd แจ้ง -E/-U ชนกัน) และ restart API แบบ Production; ตรวจ `/health` 200, `/test-plans` 401 ทั้ง local และโดเมนสาธารณะ, Vite เสิร์ฟไฟล์ใหม่; สิทธิ์ ASSIGN/EXPORT ตาม Role จริง (QA_TESTER ได้ด้วยเพราะมี `EXECUTION.ASSIGN`/`REPORT.EXPORT` อยู่แล้ว) | Migration apply แล้ว |

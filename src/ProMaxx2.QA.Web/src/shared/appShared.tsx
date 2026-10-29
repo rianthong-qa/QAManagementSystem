@@ -14,6 +14,7 @@ export type Page =
   | "rtm"
   | "test-cases"
   | "test-suites"
+  | "test-plans"
   | "test-cycles"
   | "execution"
   | "defects"
@@ -153,6 +154,7 @@ export const nav: {
   {
     label: "TEST EXECUTION",
     items: [
+      { id: "test-plans", icon: "event_note", label: "Test Plan" },
       { id: "test-cycles", icon: "cycle", label: "Test Cycle" },
       { id: "execution", icon: "play_circle", label: "Execution Workspace" },
       { id: "defects", icon: "bug_report", label: "Defect" },

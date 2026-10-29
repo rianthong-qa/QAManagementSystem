@@ -17,7 +17,7 @@
 > RTM rule (13 สิงหาคม 2026): หน้า RTM ต้องอ้างอิง Project/Release ที่ผู้ใช้เลือก, แสดง KPI Covered/Partial/Not Covered, กรอง Module/Requirement Status/Coverage ได้, เปิดดู Requirement และ Test Case แบบ read-only modal, จัดการ Direct/Indirect Link ตามสิทธิ์, Export CSV และเปลี่ยนตารางเป็น card บน Mobile
 
 > สถานะ: **UI Single Source of Truth**
-> อัปเดตล่าสุด: 28 ตุลาคม 2026
+> อัปเดตล่าสุด: 29 ตุลาคม 2026
 > ขอบเขต: Web frontend ทั้งหมดใน `src/ProMaxx2.QA.Web`
 
 เอกสารนี้เป็นหลักสำหรับการออกแบบ สร้าง และแก้ไข UI ทุกหน้า หากโค้ดเดิมไม่สอดคล้องกับเอกสารนี้ ให้ปรับโค้ดเข้าหาเอกสาร เว้นแต่ requirement ใหม่ระบุเป็นอย่างอื่นอย่างชัดเจน ทุกครั้งที่มีการเปลี่ยนแปลง UI ต้องอัปเดตหัวข้อที่เกี่ยวข้องและ Change Log ในไฟล์นี้ในงานเดียวกัน
@@ -94,6 +94,7 @@ git diff --check
 | Test Design | RTM | Traceability matrix |
 | Test Design | Test Case | Table, compact form, step editor |
 | Test Design | Test Suite | Table, compact form, case assignment, เลือกหลาย Suite → สร้าง Test Cycle พร้อมกัน |
+| Execution | Test Plan | รายการแบบ `ListPage` + หน้าต่างรายละเอียด workspace (`cyd-`) ที่มี Configuration Matrix — ดู Change Log 2026-10-29 |
 | Execution | Test Cycle | Table, cycle form, suite population |
 | Execution | Execution Workspace | Queue, execution detail, history |
 | Execution | Defect | Table และ create/edit defect form |
@@ -398,6 +399,17 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-10-29 — หน้าใหม่ Test Plan / Configuration Matrix (`#/test-plans`)
+
+- `pages/TestPlansPage.tsx` + `pages/TestPlansPage.css` (prefix `tp-`); เมนู "Test Plan" (ไอคอน `event_note`) อยู่ก่อน Test Cycle ในกลุ่ม TEST EXECUTION, สิทธิ์ดู `TESTPLAN.VIEW` (VIEWER เห็นแบบอ่านอย่างเดียว), ใช้ Project/Release จาก Topbar และช่องค้นหาที่หัวหน้า
+- **รายการ** ใช้ `ListPage.css` (`lp-`): หัว (จำนวน + "n Run · Test Case N · เริ่มทดสอบแล้ว x% · อัตราผ่าน y% · Fail/Blocked n" | "+ Test Plan" เฉพาะ `TESTPLAN.EDIT`, disabled + `title` เมื่อยังไม่เลือก Project) → ชิปสถานะภาษาไทย (ฉบับร่าง เทา / กำลังทดสอบ น้ำเงิน / ทดสอบครบ เขียว / ปิดแล้ว เขียว / ยกเลิก แดง, ความหมายใน `title` — ไม่มีจำนวนเพราะสถานะคำนวณจาก Run) → ตัวกรอง ประเภท / เจ้าของ → `ListPager` บน-ล่าง (`qa.testPlans.pageSize.{userId}`) → ตาราง Test Plan (รหัส | ประเภท · Release + ชื่อ) / Run / ความคืบหน้า (`lp-progress` = เริ่มทดสอบแล้ว touched/total) / อัตราผ่าน (ไม่มีผล = "—" ไม่ใช่ 0%) / เจ้าของ (`lp-hide-md`) / สถานะ + Badge ม่วง "Frozen" / กำหนดการ — กดแถวเปิดรายละเอียด; ยังไม่มีปุ่ม Export และ "ลบแล้ว" (Export เป็นเฟส 6, Recycle Bin ยังไม่รองรับ Test Plan)
+- **หน้าต่างรายละเอียด** ใช้ workspace ของรายละเอียด Test Cycle (`.modal-box.cyd` จาก `TestCycleDetail.css` + class `tp-detail`) เพื่อไม่สร้าง layout ซ้ำ: หัว (eyebrow `TEST PLAN · Release`, รหัส, ชื่อ, Badge สถานะ/Frozen/ประเภท) → แถบปุ่มตามสิทธิ์: เพิ่ม Run (primary) / แก้ไขแผน (`TESTPLAN.EDIT`, เฉพาะแผนที่แก้ได้) / ปิดแผน (disabled + `title` จนทุก Run จบ) / Freeze-Unfreeze / Reopen (แผนที่ปิด-ยกเลิก) และ ยกเลิกแผน / ลบ ชิดขวาตัวอักษรแดง (`TESTPLAN.FREEZE` / `TESTPLAN.EDIT`) — คำสั่ง Close/Cancel/Reopen/Freeze/Unfreeze ใช้ `promptDialog` บังคับกรอกเหตุผล (บันทึกใน Audit Log); แผนที่ Frozen/ปิด แสดงแถบเหลือง `.tp-locked` ใต้แถบปุ่มบอกว่าทำไมแก้ไม่ได้
+- ซ้าย: การ์ดความคืบหน้ารวม (แถบซ้อน 6 สถานะ `role="img"` + `dl.tp-counters` ผ่าน/ไม่ผ่าน/ติดปัญหา/ข้าม/กำลังทำ/ยังไม่เริ่ม + อัตราผ่าน + Retest "(n ครั้ง)") → **Configuration Matrix** — แถว `.tp-run` 3 ช่อง: Run (รหัส + Badge สถานะ Run + ชิป Configuration Name, ชื่อ Run, ลิงก์ Test Cycle · Build · Environment · OS/Browser/Device · ผู้รับผิดชอบ) | แถบซ้อนต่อ Run + "% n/N · ผ่าน x%" | ปุ่ม "ทดสอบ" (Run ที่ InProgress + `EXECUTION.RUN` → Execution Workspace) และไอคอน แก้ไข / ถอดออก (`link_off`) — คอลัมน์ปุ่มกว้างคงที่ 156px (≤1100px 140px) ให้แถบความคืบหน้าตรงกันทุกแถว; ชิปกรองสถานะ Run เมื่อมี ≥ 2 สถานะ; ขวา: ข้อมูลแผน / หมายเหตุ / `<details>` ความหมายสถานะ
+- **ฟอร์มแผน** (`ModalShell` 900px, `.modal-box > .form-grid` 2 คอลัมน์): ชื่อแผน* เต็มแถว, รหัส (เว้นว่าง = สร้างอัตโนมัติ, ตอนแก้ไขไม่แสดง), ประเภท, Release* (เฉพาะตอนสร้าง — Active only), เจ้าของ, วันเริ่ม/สิ้นสุด (`DateField`, เตือนเมื่อสิ้นสุดก่อนเริ่ม), หมายเหตุ; ท้าย "ยังขาด: …" / "ข้อมูลครบ พร้อมบันทึก" + ยกเลิก / บันทึก
+- **ฟอร์ม Run**: เลือกที่มาเป็นการ์ด radio 2 ใบ `.tp-mode` (เพิ่ม Cycle ที่มีอยู่ / สร้าง Cycle ใหม่จาก Suite) → ช่องตามโหมด (Test Cycle ของ Release นี้ที่ยังไม่อยู่ในแผน | Suite* + Build* + Environment* + "เฉพาะ Required") → รหัส/ชื่อ Run (เว้นว่าง = ใช้ของ Test Cycle) → หัวข้อ Configuration: Name, Key (ตรวจ `a-z 0-9 -` ทันที), OS, Browser, Device (รวมเป็น `configurationJson` โดยคงคีย์อื่นเดิมไว้), ผู้รับผิดชอบ; ตัวเลือกทั้งหมดโหลดพร้อมกันครั้งเดียว
+- **Pattern/ข้อควรระวังใหม่:** (1) หน้าต่างที่เปิดจากหน้าต่างอื่นต้อง render เป็น**พี่น้อง**ของ `ModalShell` ตัวแรก ไม่ใช่ลูก — `.modal` (fixed) ที่ซ้อนใน `.modal-box` จะยึดกับกล่องแม่ (พบตอนตรวจ: กล่อง Run กว้างเท่ากล่องรายละเอียด 1240px) (2) `.form-grid` ต้องเป็นลูกตรงของ `.modal-box` จึงได้ grid 2 คอลัมน์ — หัวข้อย่อยในฟอร์มใช้ `h3.modal-section-title` คั่นแทนการห่อ `<section>` (3) ≤760px ฟอร์มที่ปุ่มบันทึกมีข้อความยาว: ข้อความ "ยังขาด" แยกแถว และปุ่มยกเลิก/บันทึก `flex: 1 1 0` + `white-space: normal`
+- ตรวจด้วย headless Chrome + mock API ที่ 1440 / 1024px และ 390px (iframe กว้าง 390 จริง — headless Chrome กว้างขั้นต่ำ 500px) ทั้ง รายการ / รายละเอียด / ฟอร์มแผน / ฟอร์ม Run 2 โหมด: ไม่มี page-level horizontal scroll และกล่อง modal ไม่ล้น (ชิปสถานะบนมือถือเลื่อนในแถบตัวเองตามแบบเดิม) — **ยังไม่ได้ตรวจกับ API/ข้อมูลจริง** เพราะ Migration ยังไม่ apply ลง `ProMaxx2QA`
 
 ### 2026-10-29 — ปุ่ม "ลบแล้ว" + กู้คืน (soft delete) ในหน้าที่มีการลบ
 
