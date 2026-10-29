@@ -584,6 +584,8 @@ function App() {
     setMenu(false);
   };
   const openRegressionCycle=(target:"test-cycles"|"execution",cycleId:string)=>{localStorage.setItem("qa.targetCycleId",cycleId);go(target)};
+  // ลิงก์ "อยู่ใน Test Plan" จากหน้า Test Cycle / Execution Workspace — TestPlansPage เปิดรายละเอียดแผนนี้ทันที
+  const openTestPlan=(planId:string)=>{try{localStorage.setItem("qa.targetPlanId",planId)}catch{/* เปิดหน้ารายการแทน */}go("test-plans")};
   // ปุ่มสร้าง Test Cycle แบบด่วนจากหน้า Test Suite — ฝาก Project/Suite ที่จะ prefill ไว้ใน localStorage
   // แล้วพาไปหน้า Test Cycle ซึ่งจะเปิดฟอร์มสร้างพร้อมข้อมูลนี้ทันที (ดู useEffect ใน TestCyclesPage)
   const createCycleFromSuite=(projectId:string,testSuiteId:string)=>{localStorage.setItem("qa.createCycleFromSuite",JSON.stringify({projectId,testSuiteId}));go("test-cycles")};
@@ -975,11 +977,11 @@ function App() {
           ) : page === "audit" ? (
             <Suspense fallback={pageLoading}><AuditLogPage /></Suspense>
           ) : page === "execution" ? (
-            <ExecutionWorkspacePage contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} />
+            <ExecutionWorkspacePage contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} onOpenPlan={can("TESTPLAN.VIEW") ? openTestPlan : undefined} />
           ) : page === "test-plans" ? (
-            <TestPlansPage search={search} canEdit={can("TESTPLAN.EDIT")} canFreeze={can("TESTPLAN.FREEZE")} canAssign={can("TESTPLAN.ASSIGN")} canRun={can("EXECUTION.RUN")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenCycle={(cycleId) => openRegressionCycle("test-cycles", cycleId)} />
+            <TestPlansPage search={search} canEdit={can("TESTPLAN.EDIT")} canFreeze={can("TESTPLAN.FREEZE")} canAssign={can("TESTPLAN.ASSIGN")} canRun={can("EXECUTION.RUN")} canExport={can("TESTPLAN.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenCycle={(cycleId) => openRegressionCycle("test-cycles", cycleId)} />
           ) : page === "test-cycles" ? (
-            <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} />
+            <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} canViewPlans={can("TESTPLAN.VIEW")} canAddToPlan={can("TESTPLAN.EDIT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenPlan={can("TESTPLAN.VIEW") ? openTestPlan : undefined} />
           ) : (
             <TestSuitesPage search={search} onClearSearch={() => setSearch("")} canEdit={can("TESTCASE.EDIT")} contextProjectId={contextProjectId} onOpenCycle={openRegressionCycle} onCreateCycle={createCycleFromSuite} canCreateCycle={can("EXECUTION.RUN")} onOpenCycleList={() => go("test-cycles")} />
           )}

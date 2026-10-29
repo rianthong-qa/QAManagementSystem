@@ -17,7 +17,7 @@
 > RTM rule (13 สิงหาคม 2026): หน้า RTM ต้องอ้างอิง Project/Release ที่ผู้ใช้เลือก, แสดง KPI Covered/Partial/Not Covered, กรอง Module/Requirement Status/Coverage ได้, เปิดดู Requirement และ Test Case แบบ read-only modal, จัดการ Direct/Indirect Link ตามสิทธิ์, Export CSV และเปลี่ยนตารางเป็น card บน Mobile
 
 > สถานะ: **UI Single Source of Truth**
-> อัปเดตล่าสุด: 29 ตุลาคม 2026
+> อัปเดตล่าสุด: 30 ตุลาคม 2026
 > ขอบเขต: Web frontend ทั้งหมดใน `src/ProMaxx2.QA.Web`
 
 เอกสารนี้เป็นหลักสำหรับการออกแบบ สร้าง และแก้ไข UI ทุกหน้า หากโค้ดเดิมไม่สอดคล้องกับเอกสารนี้ ให้ปรับโค้ดเข้าหาเอกสาร เว้นแต่ requirement ใหม่ระบุเป็นอย่างอื่นอย่างชัดเจน ทุกครั้งที่มีการเปลี่ยนแปลง UI ต้องอัปเดตหัวข้อที่เกี่ยวข้องและ Change Log ในไฟล์นี้ในงานเดียวกัน
@@ -94,7 +94,7 @@ git diff --check
 | Test Design | RTM | Traceability matrix |
 | Test Design | Test Case | Table, compact form, step editor |
 | Test Design | Test Suite | Table, compact form, case assignment, เลือกหลาย Suite → สร้าง Test Cycle พร้อมกัน |
-| Execution | Test Plan | รายการแบบ `ListPage` + หน้าต่างรายละเอียด workspace (`cyd-`) ที่มี Configuration Matrix — ดู Change Log 2026-10-29 |
+| Execution | Test Plan | รายการแบบ `ListPage` + หน้าต่างรายละเอียด workspace (`cyd-`) ที่มี Configuration Matrix + Export CSV — ดู Change Log 2026-10-29 / 2026-10-30 |
 | Execution | Test Cycle | Table, cycle form, suite population |
 | Execution | Execution Workspace | Queue, execution detail, history |
 | Execution | Defect | Table และ create/edit defect form |
@@ -399,6 +399,14 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-10-30 — Test Plan: Export + Plan context ในหน้า Test Cycle / Execution Workspace (เฟส 6)
+
+- **Export** (`TESTPLAN.EXPORT`): ปุ่ม "Export" (ไอคอน `download`, ปุ่มรอง) ที่หัวรายการ Test Plan ก่อน "+ Test Plan" (สถานะ "กำลัง Export..." + spinner, disabled เมื่อไม่มีรายการ) และในแถบปุ่มรายละเอียดแผน (หลัง Freeze/Reopen, `title` อธิบาย) — CSV UTF-8 BOM แบบเดียวกับหน้า Test Cycle/RTM, แจ้งผลด้วย toast; ชื่อไฟล์ `TestPlans_yyyymmdd.csv` / `TestPlan_<รหัส>_yyyymmdd.csv`
+- **หน้า Test Cycle:** ใต้ชื่อในช่องรายการมีบรรทัด `.cy-plan` (ไอคอน `event_note` + "รหัสแผน · Run รหัส" สี primary 12px, ตัดด้วย ellipsis — Frozen ใช้ไอคอน `lock` + "· Frozen" สี `--warning-text`, `title` บอกเหตุผล) → ตัวกรองใหม่ "ทุก Test Plan / ยังไม่อยู่ใน Test Plan / อยู่ใน Test Plan / รายแผน" ต่อจากผู้สร้าง (นับใน "กรอง n เงื่อนไข" และล้างได้) → ปุ่มในแถวของ Cycle ในแผน Frozen (เริ่ม/ปิด/แก้ไข) และปุ่มลบของ Cycle ที่อยู่ในแผน **disabled พร้อม `title` บอกเหตุผล** แทนการรอ error
+- **รายละเอียด Test Cycle:** แถบล็อก `.cyd-locked` (รูปแบบเดียวกับ `.tp-locked`) ใต้แถบปุ่มเมื่อแผน Frozen + ปุ่มแก้ไข disabled; ฝั่งขวาบนสุดมีการ์ด `.cyd-plan` "อยู่ใน Test Plan" (พื้น primary 6%: รหัสแผนเป็นลิงก์เปิดรายละเอียดแผน — ผ่าน `qa.targetPlanId` แบบเดียวกับ `qa.targetCycleId`, ชื่อแผน, "Run · Configuration · Frozen") ; ปุ่ม "เพิ่มเข้า Test Plan" (ไอคอน `playlist_add`, `TESTPLAN.EDIT`) → **หน้าต่าง** `AddCycleToPlanModal` (ใช้ `.tp-form` ของหน้า Test Plan): Test Plan* เต็มแถว (เฉพาะแผน Active ไม่ Freeze ของ Release เดียวกัน, เลือกให้อัตโนมัติเมื่อมีแผนเดียว, คำอธิบายใต้ช่อง) → Configuration Name | Configuration Key (ตรวจรูปแบบทันที) → ท้าย "ยังขาด/ข้อมูลครบ" + ยกเลิก / "เพิ่มเข้า Test Plan" — สำเร็จแล้วรายการและรายละเอียดที่เปิดอยู่แสดงแผนทันที
+- **Execution Workspace:** แถบ `.execution-plan-strip` ระหว่างแถวตัวเลือกกับแถวความคืบหน้า (เส้นคั่นบน, 13px muted: ไอคอน + "Test Plan **รหัส** · Run **รหัส** · Configuration" + ปุ่ม `.btn` เล็ก 32px "เปิด Test Plan" เมื่อมี `TESTPLAN.VIEW`) — ไม่เพิ่มช่องใน `dl.execution-context` เพื่อคงความกว้างคงที่; แผน Frozen/ปิด = พื้นเหลือง 8% + ไอคอน `lock` + ข้อความเหตุผลและทางแก้ (`role="status"`), ปุ่ม Save Progress / Skip / Complete และปุ่มลบประวัติ disabled พร้อม `title`, ปุ่มลัด P/F/B แจ้ง toast แทนการส่ง — ข้อความกลาง `frozenPlanMessage()` ใน `shared/appShared.tsx` ใช้ร่วมกันทั้งสองหน้า
+- ตรวจด้วย headless Chrome + mock API ที่ 1440px และ 390px (iframe): รายการ/รายละเอียด Cycle, หน้าต่างเพิ่มเข้าแผน, Workspace ที่แผน Frozen, รายละเอียดแผน — ไม่มี page-level horizontal scroll และกล่อง modal ไม่ล้น
 
 ### 2026-10-29 — Test Plan: จัดทีม Run + Clone / Rerun (เฟส 4)
 

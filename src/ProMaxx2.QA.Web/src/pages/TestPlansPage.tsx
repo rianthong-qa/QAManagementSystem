@@ -57,13 +57,45 @@ const errorText = (e: unknown, fallback: string) => e instanceof Error && e.mess
 /** Configuration ที่อ่านได้: OS / Browser / Device จาก ConfigurationJson (คีย์อื่นเก็บไว้เมื่อแก้ไข) */
 const parseConfig = (json?: string | null): Record<string, unknown> => { try { const value = json ? JSON.parse(json) : {}; return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; } catch { return {}; } };
 const configSummary = (run: PlanRun) => { const c = parseConfig(run.configurationJson); return ["os", "browser", "device"].map((k) => c[k]).filter((v) => typeof v === "string" && v).join(" · "); };
+/** Export CSV (UTF-8 BOM + CRLF ให้ Excel เปิดภาษาไทยได้) — รูปแบบเดียวกับ Export ของหน้า Test Cycle / RTM */
+const downloadCsv = (fileName: string, rows: (string | number | null | undefined)[][]) => {
+  const csv = "\ufeff" + rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a"); link.href = url; link.download = fileName; link.click(); URL.revokeObjectURL(url);
+};
+const fileStamp = () => new Date().toISOString().slice(0, 10).replaceAll("-", "");
+const csvPercent = (value: number | null | undefined) => value === null || value === undefined ? "" : `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
+/** Plan Summary: ส่วนหัว (ข้อมูลแผน + ตัวนับรวม) แล้วตาม Configuration Matrix ราย Run — ตัวเลขชุดเดียวกับหน้าจอ (§3.4) */
+const exportPlanSummary = (plan: PlanDetail) => {
+  const s = plan.summary;
+  const info = planStatusInfo[plan.status];
+  const rows: (string | number | null | undefined)[][] = [
+    ["Test Plan Summary"],
+    ["Plan Code", plan.planCode], ["Plan Name", plan.planName], ["Type", plan.planType], ["Release", plan.releaseCode],
+    ["Owner", plan.ownerName], ["Status", info ? `${plan.status} (${info.label})` : plan.status], ["Frozen", plan.isFrozen ? `Yes (${shortDate(plan.frozenAt)})` : "No"],
+    ["Start Date", dateOnly(plan.startDate)], ["End Date", dateOnly(plan.endDate)], ["Exported At", formatThaiDateTime(new Date().toISOString())],
+    [],
+    ["Runs", "Total Cases", "Passed", "Failed", "Blocked", "Skipped", "In Progress", "Not Run", "Progress (Touched)", "Completion", "Pass Rate", "Retest Cases", "Retest Attempts"],
+    [s.runCount, s.totalCases, s.passed, s.failed, s.blocked, s.skipped, s.inProgress, s.untested, csvPercent(s.progressPercent), csvPercent(s.completionPercent), csvPercent(s.passRate), s.retest, s.retestAttempts],
+    [],
+    ["Run Code", "Run Name", "Configuration", "Configuration Key", "OS", "Browser", "Device", "Test Cycle", "Cycle Status", "Build", "Environment", "Owner", "Team", "Unassigned Cases", "Total Cases", "Passed", "Failed", "Blocked", "Skipped", "In Progress", "Not Run", "Progress", "Pass Rate"],
+    ...plan.runs.map((r) => {
+      const c = parseConfig(r.configurationJson);
+      const text = (key: string) => typeof c[key] === "string" ? c[key] as string : "";
+      return [r.runCode, r.runName, r.configurationName, r.configurationKey, text("os"), text("browser"), text("device"), r.cycleCode, r.status, r.buildNumber, r.environmentName, r.ownerName,
+        r.assignments.map((m) => `${m.testerName ?? "ผู้ใช้"} (${m.role})`).join("; "), r.unassignedCases, r.totalCases, r.passed, r.failed, r.blocked, r.skipped, r.inProgress, r.untested, csvPercent(r.progressPercent), csvPercent(r.passRate)];
+    }),
+  ];
+  downloadCsv(`TestPlan_${plan.planCode}_${fileStamp()}.csv`, rows);
+};
 
-export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, contextProjectId, contextReleaseId, onOpenExecution, onOpenCycle }: {
+export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, canExport, contextProjectId, contextReleaseId, onOpenExecution, onOpenCycle }: {
   search: string;
   canEdit: boolean;
   canFreeze: boolean;
   canAssign: boolean;
   canRun: boolean;
+  canExport: boolean;
   contextProjectId: string;
   contextReleaseId: string;
   onOpenExecution: (cycleId: string) => void;
@@ -81,7 +113,9 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useUserPageSize("qa.testPlans.pageSize");
   const [users, setUsers] = useState<UserLookup[]>([]);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  // หน้าอื่น (Test Cycle / Execution Workspace) ฝาก TestPlanId ไว้ให้เปิดรายละเอียดแผนทันที — แบบเดียวกับ qa.targetCycleId
+  const [detailId, setDetailId] = useState<string | null>(() => { try { const target = localStorage.getItem("qa.targetPlanId"); localStorage.removeItem("qa.targetPlanId"); return target; } catch { return null; } });
+  const [exporting, setExporting] = useState(false);
   const [form, setForm] = useState<{ plan?: PlanDetail } | null>(null);
   const [detailVersion, setDetailVersion] = useState(0);
   const debouncedSearch = useDebounced(search.trim(), 300);
@@ -115,6 +149,28 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
   }, [contextProjectId, contextReleaseId, status, planType, owner, debouncedSearch, page, pageSize, reload]);
 
   const clearFilters = () => { setStatus(""); setPlanType(""); setOwner(""); };
+  // Export รายการแผนตามตัวกรองปัจจุบันทุกหน้า — ขอทุกหน้าพร้อมกัน (หน้าละ 500) ไม่วนทีละหน้า
+  const exportList = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ size: "500" });
+      if (contextProjectId) params.set("projectId", contextProjectId);
+      if (contextReleaseId) params.set("releaseId", contextReleaseId);
+      if (status) params.set("status", status);
+      if (planType) params.set("planType", planType);
+      if (owner) params.set("ownerUserId", owner);
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      const pages = Math.max(1, Math.ceil(total / 500));
+      const results = await Promise.all(Array.from({ length: pages }, (_, i) => { const q = new URLSearchParams(params); q.set("page", String(i + 1)); return getJson<PlanListResult>(`${apiUrl}/test-plans?${q}`); }));
+      const plans = results.flatMap((r) => r.items.rows);
+      downloadCsv(`TestPlans_${fileStamp()}.csv`, [
+        ["Plan Code", "Plan Name", "Type", "Release", "Owner", "Status", "Frozen", "Runs", "Total Cases", "Touched", "Completed", "Passed", "Progress", "Pass Rate", "Start Date", "End Date"],
+        ...plans.map((x) => [x.planCode, x.planName, x.planType, x.releaseCode, x.ownerName, planStatusInfo[x.status]?.label ?? x.status, x.isFrozen ? "Yes" : "No", x.runCount, x.totalCases, x.touched, x.completed, x.passed, csvPercent(x.progressPercent), csvPercent(x.passRate), dateOnly(x.startDate), dateOnly(x.endDate)]),
+      ]);
+      notify(`ส่งออก ${plans.length.toLocaleString()} Test Plan แล้ว`, "success");
+    } catch (e) { notify(errorText(e, "ส่งออก Test Plan ไม่สำเร็จ"), "error"); }
+    finally { setExporting(false); }
+  };
   const createDisabledReason = contextProjectId ? "" : "เลือก Project ที่ด้านบนก่อนสร้าง Test Plan";
 
   return (
@@ -126,8 +182,9 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
             <div><strong>{total.toLocaleString()}</strong><span>Test Plan{filterCount ? ` · กรอง ${filterCount} เงื่อนไข` : ""}</span></div>
             {summary && <small>{summary.runCount.toLocaleString()} Run · Test Case {summary.totalCases.toLocaleString()} · เริ่มทดสอบแล้ว {percentText(summary.progressPercent)} · อัตราผ่าน {percentText(summary.passRate)}{summary.failed + summary.blocked > 0 ? ` · Fail/Blocked ${(summary.failed + summary.blocked).toLocaleString()}` : ""}</small>}
           </div>
-          {canEdit && <div className="lp-actions">
-            <button className="btn primary" type="button" disabled={!!createDisabledReason} title={createDisabledReason || undefined} onClick={() => setForm({})}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Plan</button>
+          {(canEdit || canExport) && <div className="lp-actions">
+            {canExport && <button className="btn" type="button" disabled={exporting || loading || total === 0} onClick={exportList}>{exporting ? <><span className="spinner inline" aria-hidden="true" />กำลัง Export...</> : <><span className="material-symbols-outlined" aria-hidden="true">download</span>Export</>}</button>}
+            {canEdit && <button className="btn primary" type="button" disabled={!!createDisabledReason} title={createDisabledReason || undefined} onClick={() => setForm({})}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Plan</button>}
           </div>}
         </div>
         <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
@@ -196,7 +253,7 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
         </div>
         <ListPager position="bottom" page={page} pageCount={pageCount} totalCount={total} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} />
       </article>
-      {detailId && <PlanDetailModal planId={detailId} version={detailVersion} users={users} canEdit={canEdit} canFreeze={canFreeze} canAssign={canAssign} canRun={canRun}
+      {detailId && <PlanDetailModal planId={detailId} version={detailVersion} users={users} canEdit={canEdit} canFreeze={canFreeze} canAssign={canAssign} canRun={canRun} canExport={canExport}
         onClose={() => setDetailId(null)}
         onChanged={() => setReload((x) => x + 1)}
         onDeleted={() => { setDetailId(null); setReload((x) => x + 1); }}
@@ -211,8 +268,8 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
   );
 }
 
-function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign, canRun, onClose, onChanged, onDeleted, onEdit, onCloned, onOpenExecution, onOpenCycle }: {
-  planId: string; version: number; users: UserLookup[]; canEdit: boolean; canFreeze: boolean; canAssign: boolean; canRun: boolean;
+function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign, canRun, canExport, onClose, onChanged, onDeleted, onEdit, onCloned, onOpenExecution, onOpenCycle }: {
+  planId: string; version: number; users: UserLookup[]; canEdit: boolean; canFreeze: boolean; canAssign: boolean; canRun: boolean; canExport: boolean;
   onClose: () => void; onChanged: () => void; onDeleted: () => void; onEdit: (plan: PlanDetail) => void; onCloned: (plan: PlanDetail) => void;
   onOpenExecution: (cycleId: string) => void; onOpenCycle: (cycleId: string) => void;
 }) {
@@ -297,13 +354,14 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign
         </div>}
         <button type="button" className="cyd-close" aria-label="ปิดรายละเอียด Test Plan" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
       </header>
-      {plan && (canEdit || canFreeze) && <div className="cyd-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Plan">
+      {plan && (canEdit || canFreeze || canExport) && <div className="cyd-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Plan">
         {canEdit && editable && <button type="button" className="btn primary" disabled={busy} onClick={() => setRunForm({})}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม Run</button>}
         {canEdit && editable && <button type="button" className="btn" disabled={busy} onClick={() => onEdit(plan)}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไขแผน</button>}
         {canEdit && plan.runs.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => setCloneOpen(true)} title="สร้างแผนใหม่จากแผนนี้สำหรับ Build ใหม่ (ไม่คัดลอกผลการทดสอบ)"><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone / Rerun</button>}
         {canFreeze && plan.lifecycleStatus === "Active" && <button type="button" className="btn" disabled={busy || plan.status !== "Completed"} title={plan.status !== "Completed" ? "ปิดได้เมื่อทุก Run จบแล้ว (Completed / Closed / Cancelled)" : undefined} onClick={() => lifecycle("close")}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> ปิดแผน</button>}
         {canFreeze && plan.lifecycleStatus === "Active" && <button type="button" className="btn" disabled={busy} onClick={() => lifecycle(plan.isFrozen ? "unfreeze" : "freeze")}><span className="material-symbols-outlined" aria-hidden="true">{plan.isFrozen ? "lock_open" : "lock"}</span> {plan.isFrozen ? "Unfreeze" : "Freeze"}</button>}
         {canFreeze && plan.lifecycleStatus !== "Active" && <button type="button" className="btn primary" disabled={busy} onClick={() => lifecycle("reopen")}><span className="material-symbols-outlined" aria-hidden="true">replay</span> Reopen</button>}
+        {canExport && <button type="button" className="btn" disabled={busy} onClick={() => { exportPlanSummary(plan); notify(`ส่งออกสรุป ${plan.planCode} แล้ว`, "success"); }} title="ดาวน์โหลดสรุปแผนและ Configuration Matrix เป็น CSV"><span className="material-symbols-outlined" aria-hidden="true">download</span> Export</button>}
         <span className="tp-toolbar-end">
           {canFreeze && plan.lifecycleStatus === "Active" && <button type="button" className="btn tp-danger-text" disabled={busy} onClick={() => lifecycle("cancel")}><span className="material-symbols-outlined" aria-hidden="true">block</span> ยกเลิกแผน</button>}
           {canEdit && (plan.lifecycleStatus !== "Active" || plan.runs.length === 0) && <button type="button" className="btn tp-danger-text" disabled={busy} onClick={remove}><span className="material-symbols-outlined" aria-hidden="true">delete</span> ลบ</button>}

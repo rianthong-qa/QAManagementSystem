@@ -381,7 +381,9 @@ Add Cases:
 
 ### GET `/test-cycles`
 
-แบ่งหน้า `page`/`size` — `size` 10–500 (เดิมสูงสุด 150; ขยาย 2026-10-20) รองรับ `status`, `projectId`, `releaseId`, `buildId`, `moduleId`, `cycleType`, `search`, `createdBy` — Execution Workspace ขอ `status=InProgress&size=500` เพื่อให้ได้ Cycle ที่กำลังทดสอบครบทุกรายการ
+แบ่งหน้า `page`/`size` — `size` 10–500 (เดิมสูงสุด 150; ขยาย 2026-10-20) รองรับ `status`, `projectId`, `releaseId`, `buildId`, `moduleId`, `cycleType`, `search`, `createdBy`, `plan` (`none` = ยังไม่อยู่ใน Test Plan, `any` = อยู่ในแผนใดก็ได้, หรือ TestPlanId; ค่าอื่นไม่กรอง — เพิ่ม 2026-10-30) — Execution Workspace ขอ `status=InProgress&size=500` เพื่อให้ได้ Cycle ที่กำลังทดสอบครบทุกรายการ
+
+แต่ละแถว (และ `GET /test-cycles/{cycleId}`) มี `plan` (เพิ่ม 2026-10-30) = `{ testPlanId, planCode, planName, testPlanRunId, runCode, runName, configurationName, lifecycleStatus, isFrozen, isPlanDeleted }` หรือ `null` เมื่อไม่อยู่ใน Test Plan — `isFrozen` = บันทึกผล/แก้ Cycle/assign ได้ 409 `TEST_PLAN_FROZEN`
 
 `summary.statusCounts` (เพิ่ม 2026-10-20) = จำนวน Cycle ต่อสถานะ (`{ "InProgress": 3, "Closed": 1, ... }`) ตาม filter อื่นทั้งหมด **ยกเว้น** `status` — หน้า Test Cycle ใช้แสดงชิปสถานะจากคำขอเดียว (เดิมยิงแยกทีละสถานะ 5 คำขอ ซึ่งถูกยกเลิกพร้อมกันบ่อยเมื่อเปลี่ยน filter)
 ### POST `/test-cycles`
@@ -456,7 +458,7 @@ Soft delete (สิทธิ์ `EXECUTION.ASSIGN`) — **Cycle ที่ผู�
 - Error เป็น ProblemDetails พร้อม `code`: `TEST_PLAN_INVALID` (400), `TEST_PLAN_NOT_FOUND` (404), `TEST_PLAN_DUPLICATE_CODE`, `TEST_PLAN_FROZEN`, `TEST_PLAN_NOT_ACTIVE`, `TEST_PLAN_INVALID_STATE`, `TEST_PLAN_RUNS_NOT_TERMINAL`, `TEST_PLAN_HAS_RUNS`, `TEST_PLAN_CYCLE_LINKED`, `TEST_PLAN_RUN_HAS_EXECUTIONS`, `TEST_PLAN_NO_RUNS` (409)
 - แถว Run (`runs[]`, `matrix`) มี `unassignedCases` (เคส NotRun ที่ยังไม่มีผู้รับผิดชอบ) และ `assignments` (ทีมระดับ Run)
 - **Freeze guard (เพิ่ม 2026-10-29):** Test Cycle ที่อยู่ใน Test Plan ที่ Frozen (รวมแผนที่ปิด/ยกเลิก/ลบแล้ว) — endpoint เดิมต่อไปนี้ตอบ `409` + `code: TEST_PLAN_FROZEN` พร้อม Plan Code/Run Code ใน `detail`: `POST /test-cycle-cases/{id}/executions` (รวม Save Progress), `DELETE /executions/{id}`, `PUT /test-cycles/{id}`, `POST /test-cycles/{id}/status`, `POST /test-cycles/{id}/assign`, `POST /test-cycle-cases/{id}/reassign`, `POST /test-cycles/{id}/auto-assign/confirm` และ `/rebalance` — แปลงด้วย exception filter กลาง (`TestPlanRuleExceptionFilter`); `DELETE /test-cycles/{id}` ถูกบล็อกด้วย `TEST_CYCLE_LINKED_TO_PLAN` อยู่แล้ว
-- ยังไม่มี: Export (เฟส 6)
+- **Export (เฟส 6, 2026-10-30):** ไม่มี endpoint แยก — หน้าเว็บสร้าง CSV จาก `GET /test-plans` (ทุกหน้า) และ `GET /test-plans/{id}`; ปุ่มแสดงเฉพาะผู้มี `TESTPLAN.EXPORT`
 
 ---
 
@@ -465,6 +467,8 @@ Soft delete (สิทธิ์ `EXECUTION.ASSIGN`) — **Cycle ที่ผู�
 ### GET `/test-cycles/{cycleId}/execution`
 
 `cases[].assignedTesterUserId` (เพิ่ม 2026-10-20) = ผู้ทดสอบที่ถูก assign เคสนี้ (null = ยังไม่ assign) — คิวใช้กรอง "เฉพาะเคสที่ assign ให้ฉัน"
+
+`plan` (เพิ่ม 2026-10-30) = Test Plan ที่ Cycle นี้อยู่ รูปแบบเดียวกับ `GET /test-cycles` — Workspace ใช้แสดงแถบแผนและปิดปุ่มบันทึกผลเมื่อ `isFrozen`
 
 ### GET `/test-cycles/{cycleId}/cases/{cycleCaseId}`
 

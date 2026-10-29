@@ -12,7 +12,8 @@ import { ListPager } from "../components/ListPager";
 import { useUserPageSize } from "../components/usePageSize";
 import { SortHeader, type SortState } from "../components/SortHeader";
 import { formatThaiDateTime } from "../dateTime";
-import { type ModuleItem, type TestCycleItem, type TestSuiteItem, currentUserId, masterOptionElements, nextBusinessCode, okJsonOrEmpty, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
+import { AddCycleToPlanModal } from "./AddCycleToPlanModal";
+import { type ModuleItem, type TestCycleItem, type TestSuiteItem, currentUserId, frozenPlanMessage, masterOptionElements, nextBusinessCode, okJsonOrEmpty, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
 
 const cycleStatusOptions = ["Draft", "InProgress", "Completed", "Closed", "Cancelled"];
 const cycleStatusDot: Record<string, string> = { Draft: "gray", InProgress: "blue", Completed: "green", Closed: "green", Cancelled: "red" };
@@ -83,7 +84,7 @@ type TestCycleCaseSummary = {
   actualResult?: string | null;
 };
 type GeneratedTestCycleDraft = { cycleName: string; cycleType: string; startDate?: string; endDate?: string; notes?: string; selectionSummary: string };
-export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, contextReleaseId, contextBuildId, onOpenExecution }: { search: string; canEdit: boolean; canExport: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string; onOpenExecution?: (cycleId: string) => void }) {
+export function TestCyclesPage({ search, canEdit, canExport, canViewPlans = false, canAddToPlan = false, contextProjectId, contextReleaseId, contextBuildId, onOpenExecution, onOpenPlan }: { search: string; canEdit: boolean; canExport: boolean; canViewPlans?: boolean; canAddToPlan?: boolean; contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string; onOpenExecution?: (cycleId: string) => void; onOpenPlan?: (planId: string) => void }) {
   const masterOptions = useMasterOptions(), cycleTypes = masterOptions("TestCycleType");
   const [items, setItems] = useState<TestCycleItem[]>([]),
     [projects, setProjects] = useState<ProjectItem[]>([]),
@@ -109,6 +110,10 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
     [listCycleTypeFilter, setListCycleTypeFilter] = useState(""),
     [listCreatedByFilter, setListCreatedByFilter] = useState(currentUserId),
     [listStatusFilter, setListStatusFilter] = useState(""),
+    // ตัวกรอง Test Plan: "" = ทั้งหมด, "none" = ยังไม่อยู่ในแผน, "any" = อยู่ในแผนใดก็ได้, หรือ TestPlanId
+    [listPlanFilter, setListPlanFilter] = useState(""),
+    [planOptions, setPlanOptions] = useState<{ testPlanId: string; planCode: string; planName: string }[]>([]),
+    [addToPlanCycle, setAddToPlanCycle] = useState<TestCycleItem | null>(null),
     [statusCounts, setStatusCounts] = useState<Record<string, number>>({}),
     [listModules, setListModules] = useState<ModuleItem[]>([]),
     [cycleSelected, setCycleSelected] = useState<Set<string>>(new Set()),
@@ -269,6 +274,7 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
     if (listCycleTypeFilter) query.set("cycleType", listCycleTypeFilter);
     if (listCreatedByFilter) query.set("createdBy", listCreatedByFilter);
     if (listStatusFilter) query.set("status", listStatusFilter);
+    if (listPlanFilter) query.set("plan", listPlanFilter);
     if (debouncedSearch) query.set("search", debouncedSearch);
     query.set("sortBy", listSortBy);
     setLoading(true);
@@ -294,8 +300,21 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
       .catch(reason => { if (isAbortError(reason)) return; setItems([]); setTotalCount(0); setCaseSummary({ totalCases: 0, executedCases: 0 }); setStatusCounts({}); setError(reason instanceof Error ? reason.message : "โหลด Test Cycle ไม่สำเร็จ"); })
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
     return () => ctrl.abort();
-  }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, debouncedSearch, listSortBy, page, pageSize, reload]);
-  useEffect(() => { setPage(1); }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, debouncedSearch, listSortBy]);
+  }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, listPlanFilter, debouncedSearch, listSortBy, page, pageSize, reload]);
+  useEffect(() => { setPage(1); }, [contextProjectId, contextReleaseId, contextBuildId, listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, listPlanFilter, debouncedSearch, listSortBy]);
+  // ตัวเลือกแผนของ Project/Release ปัจจุบัน (คำขอเดียว) — ผู้ไม่มี TESTPLAN.VIEW ยังกรอง "อยู่/ไม่อยู่ในแผน" ได้
+  useEffect(() => {
+    if (!canViewPlans || !contextProjectId) { setPlanOptions([]); return; }
+    const ctrl = new AbortController();
+    const query = new URLSearchParams({ projectId: contextProjectId, size: "500" });
+    if (contextReleaseId) query.set("releaseId", contextReleaseId);
+    fetch(`${apiUrl}/test-plans?${query}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, signal: ctrl.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => setPlanOptions(Array.isArray(data?.items?.rows) ? data.items.rows : []))
+      .catch(reason => { if (!isAbortError(reason)) setPlanOptions([]); });
+    return () => ctrl.abort();
+  }, [canViewPlans, contextProjectId, contextReleaseId, reload]);
+  useEffect(() => { setListPlanFilter((current) => current && current !== "none" && current !== "any" && !planOptions.some((x) => x.testPlanId === current) ? "" : current); }, [planOptions]);
   useEffect(() => { setCycleSelected(new Set()); }, [items]);
   useEffect(() => {
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
@@ -728,6 +747,7 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
         if (listCycleTypeFilter) query.set("cycleType", listCycleTypeFilter);
         if (listStatusFilter) query.set("status", listStatusFilter);
         if (listCreatedByFilter) query.set("createdBy", listCreatedByFilter);
+        if (listPlanFilter) query.set("plan", listPlanFilter);
         if (search.trim()) query.set("search", search.trim());
         query.set("sortBy", listSortBy);
         const response = await fetch(`${apiUrl}/test-cycles?${query}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } });
@@ -739,7 +759,7 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
         exported.push(...batch);
         exportPage += 1;
       } while (exported.length < total);
-      const csvRows = [["Cycle Code", "Name", "Module", "Release", "Build", "Environment", "Type", "Executed", "Cases", "Progress", "Status"], ...exported.map(item => [item.cycleCode, item.cycleName, item.modules?.map(m => m.moduleName).join("; ") ?? "", item.releaseCode, item.buildNumber, item.environmentName, item.cycleType ?? "", item.executedCount, item.caseCount, `${item.progressPercent}%`, item.status])];
+      const csvRows = [["Cycle Code", "Name", "Module", "Release", "Build", "Environment", "Type", "Executed", "Cases", "Progress", "Status", "Test Plan", "Run"], ...exported.map(item => [item.cycleCode, item.cycleName, item.modules?.map(m => m.moduleName).join("; ") ?? "", item.releaseCode, item.buildNumber, item.environmentName, item.cycleType ?? "", item.executedCount, item.caseCount, `${item.progressPercent}%`, item.status, item.plan ? `${item.plan.planCode}${item.plan.isFrozen ? " (Frozen)" : ""}` : "", item.plan?.runCode ?? ""])];
       const csv = "\ufeff" + csvRows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
       const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
       const link = document.createElement("a"); link.href = url; link.download = "test-cycles.csv"; link.click(); URL.revokeObjectURL(url);
@@ -757,7 +777,9 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
   );
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
   // ตัวกรองที่ผู้ใช้เลือกเพิ่ม (ไม่นับ Project/Release/Build ที่มาจาก Context ด้านบน)
-  const listFilterCount = [listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter].filter(Boolean).length;
+  const listFilterCount = [listModuleFilter, listCycleTypeFilter, listCreatedByFilter, listStatusFilter, listPlanFilter].filter(Boolean).length;
+  // Cycle ใน Test Plan ที่ Freeze/ปิด แก้/เปลี่ยนสถานะไม่ได้ (Server ตอบ 409) — ปิดปุ่มไว้ก่อนพร้อมเหตุผล
+  const frozenTitle = (cycle: TestCycleItem) => cycle.plan?.isFrozen ? frozenPlanMessage(cycle.plan) : undefined;
   const detailCaseStatusCounts = detailCases.reduce<Record<string, number>>((counts, item) => { counts[item.currentStatus] = (counts[item.currentStatus] ?? 0) + 1; return counts; }, {});
   return (
     <>
@@ -801,7 +823,13 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
             <option value="">ผู้สร้างทั้งหมด</option>
             {users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}
           </select>
-          {listFilterCount > 0 && <button type="button" className="btn lp-clear" onClick={() => { setListModuleFilter(""); setListCycleTypeFilter(""); setListCreatedByFilter(""); setListStatusFilter(""); }}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
+          <select aria-label="Test Plan" value={listPlanFilter} onChange={e => setListPlanFilter(e.target.value)}>
+            <option value="">ทุก Test Plan</option>
+            <option value="none">ยังไม่อยู่ใน Test Plan</option>
+            <option value="any">อยู่ใน Test Plan</option>
+            {planOptions.map(x => <option key={x.testPlanId} value={x.testPlanId}>{x.planCode} · {x.planName}</option>)}
+          </select>
+          {listFilterCount > 0 && <button type="button" className="btn lp-clear" onClick={() => { setListModuleFilter(""); setListCycleTypeFilter(""); setListCreatedByFilter(""); setListStatusFilter(""); setListPlanFilter(""); }}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
         </div>
         {canEdit && cycleSelected.size > 0 && (
           <div className="lp-bulk" role="region" aria-label="กำหนดสถานะแบบกลุ่ม">
@@ -845,6 +873,7 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
                     <button type="button" className="lp-item" onClick={() => openDetail(x)} aria-label={`เปิด ${x.cycleCode} ${x.cycleName}`}>
                       <span className="lp-code">{x.cycleCode}<span className="lp-meta">{[x.cycleType, x.modules?.[0]?.moduleName].filter(Boolean).join(" · ") || "-"}</span></span>
                       <span className="lp-name">{x.cycleName}</span>
+                      {x.plan && <span className={`cy-plan${x.plan.isFrozen ? " is-frozen" : ""}`} title={x.plan.isFrozen ? frozenPlanMessage(x.plan) : `อยู่ใน Test Plan ${x.plan.planCode} · ${x.plan.planName}`}><span className="material-symbols-outlined" aria-hidden="true">{x.plan.isFrozen ? "lock" : "event_note"}</span>{x.plan.planCode} · Run {x.plan.runCode}{x.plan.isFrozen ? " · Frozen" : ""}</span>}
                     </button>
                   </td>
                   <td className="lp-col-module"><span className="lp-module" title={`${x.releaseCode} · Build ${x.buildNumber} · ${x.environmentName}`}><b>{x.releaseCode || "-"}</b><small>Build {x.buildNumber || "-"} · {x.environmentName || "-"}</small></span></td>
@@ -858,11 +887,11 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
                   <td className="lp-col-date lp-col-schedule"><span className="lp-date">{x.startDate || x.endDate ? schedule : "ไม่ระบุวันที่"}{x.createdByName && <small>{x.createdByName}</small>}</span></td>
                   {canEdit && <td className="lp-col-actions lp-actions-4">
                     <div className="lp-row-actions">
-                      {x.status === "Draft" && <button type="button" title="เริ่มทดสอบ" aria-label={`เริ่ม ${x.cycleCode}`} onClick={() => changeStatus(x, "InProgress")}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span></button>}
-                      {x.status === "InProgress" && <button type="button" title="ปิด Cycle" aria-label={`ปิด Cycle ${x.cycleCode}`} onClick={() => changeStatus(x, "Closed")}><span className="material-symbols-outlined" aria-hidden="true">stop_circle</span></button>}
-                      <button type="button" title="แก้ไข" aria-label={`แก้ไข ${x.cycleCode}`} onClick={() => openForm(x)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>
+                      {x.status === "Draft" && <button type="button" title={frozenTitle(x) ?? "เริ่มทดสอบ"} aria-label={`เริ่ม ${x.cycleCode}`} disabled={!!x.plan?.isFrozen} onClick={() => changeStatus(x, "InProgress")}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span></button>}
+                      {x.status === "InProgress" && <button type="button" title={frozenTitle(x) ?? "ปิด Cycle"} aria-label={`ปิด Cycle ${x.cycleCode}`} disabled={!!x.plan?.isFrozen} onClick={() => changeStatus(x, "Closed")}><span className="material-symbols-outlined" aria-hidden="true">stop_circle</span></button>}
+                      <button type="button" title={frozenTitle(x) ?? "แก้ไข"} aria-label={`แก้ไข ${x.cycleCode}`} disabled={!!x.plan?.isFrozen} onClick={() => openForm(x)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>
                       <button type="button" title="Clone เป็น Test Cycle ใหม่" aria-label={`Clone ${x.cycleCode} เป็น Test Cycle ใหม่`} onClick={() => openClone(x)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span></button>
-                      <button type="button" className="danger" title="ลบ" aria-label={`ลบ ${x.cycleCode}`} onClick={() => remove(x)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
+                      <button type="button" className="danger" title={x.plan ? `อยู่ใน Test Plan ${x.plan.planCode} — ลบไม่ได้ (ถอด Run ออกจากแผนก่อน ถ้ายังไม่มีผลการทดสอบ)` : "ลบ"} aria-label={`ลบ ${x.cycleCode}`} disabled={!!x.plan} onClick={() => remove(x)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
                     </div>
                   </td>}
                 </tr>
@@ -903,11 +932,13 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
             </div>
             <button type="button" className="cyd-close" aria-label="ปิดรายละเอียด Test Cycle" onClick={closeDetail}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
           </header>
-          {(canEdit || (onOpenExecution && detail.status === "InProgress")) && <div className="cyd-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Cycle">
+          {(canEdit || (onOpenExecution && detail.status === "InProgress") || (canAddToPlan && !detail.plan)) && <div className="cyd-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Cycle">
             {onOpenExecution && detail.status === "InProgress" && <button type="button" className="btn primary" onClick={() => { closeDetail(); onOpenExecution(detail.testCycleId); }}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> เปิด Execution Workspace</button>}
-            {canEdit && <button type="button" className={`btn${onOpenExecution && detail.status === "InProgress" ? "" : " primary"}`} onClick={() => { const cycle = detail; closeDetail(); openForm(cycle); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
+            {canEdit && <button type="button" className={`btn${onOpenExecution && detail.status === "InProgress" ? "" : " primary"}`} disabled={!!detail.plan?.isFrozen} title={frozenTitle(detail)} onClick={() => { const cycle = detail; closeDetail(); openForm(cycle); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข</button>}
             {canEdit && <button type="button" className="btn" onClick={() => openClone(detail)}><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone เป็น Cycle ใหม่</button>}
+            {canAddToPlan && !detail.plan && detail.status !== "Cancelled" && <button type="button" className="btn" onClick={() => setAddToPlanCycle(detail)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span> เพิ่มเข้า Test Plan</button>}
           </div>}
+          {detail.plan?.isFrozen && <p className="cyd-locked" role="status"><span className="material-symbols-outlined" aria-hidden="true">lock</span>{frozenPlanMessage(detail.plan)}</p>}
           <div className="cyd-body">
             <div className="cyd-main">
               <section className="cyd-progress" aria-labelledby="cyd-progress-title">
@@ -954,6 +985,16 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
               </section>
             </div>
             <aside className="cyd-side" aria-label="ข้อมูล Test Cycle">
+              {detail.plan && <section className="cyd-plan">
+                <h3><span className="material-symbols-outlined" aria-hidden="true">event_note</span> อยู่ใน Test Plan</h3>
+                <p>
+                  {canViewPlans && onOpenPlan && !detail.plan.isPlanDeleted
+                    ? <button type="button" className="cyd-plan-link" onClick={() => { const planId = detail.plan!.testPlanId; closeDetail(); onOpenPlan(planId); }} title="เปิดรายละเอียด Test Plan">{detail.plan.planCode}</button>
+                    : <b>{detail.plan.planCode}</b>}
+                  <span>{detail.plan.planName}</span>
+                  <small>Run {detail.plan.runCode}{detail.plan.configurationName ? ` · ${detail.plan.configurationName}` : ""}{detail.plan.isFrozen ? " · Frozen" : ""}{detail.plan.isPlanDeleted ? " · แผนถูกลบแล้ว" : ""}</small>
+                </p>
+              </section>}
               <section>
                 <h3><span className="material-symbols-outlined" aria-hidden="true">dataset</span> ข้อมูลการทดสอบ</h3>
                 <dl className="cyd-info">
@@ -988,6 +1029,13 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
         </ModalShell>
         );
       })()}
+      {addToPlanCycle && <AddCycleToPlanModal cycle={addToPlanCycle} onClose={() => setAddToPlanCycle(null)} onAdded={() => {
+        const cycleId = addToPlanCycle.testCycleId;
+        setAddToPlanCycle(null);
+        setReload(value => value + 1);
+        // รายละเอียดที่เปิดอยู่แสดงแผนทันที (ไม่ต้องปิด-เปิดใหม่)
+        fetch(`${apiUrl}/test-cycles/${cycleId}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` } }).then(r => r.ok ? r.json() : null).then((cycle: TestCycleItem | null) => { if (cycle) setDetail(current => current?.testCycleId === cycleId ? cycle : current); }).catch(() => { /* รายการโหลดใหม่อยู่แล้ว */ });
+      }} />}
       {cycleAiModal && (
         <ModalShell labelledBy="cycle-ai-title" dirty={cycleAiDrafts.length > 0} className="requirement-ai-modal suite-ai-modal cycle-ai-modal" boxStyle={{ position: "relative" }} onDismiss={() => { if (!cycleAiGenerating) setCycleAiModal(false); }}>
             {cycleAiGenerating && (

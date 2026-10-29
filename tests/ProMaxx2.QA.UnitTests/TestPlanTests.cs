@@ -814,6 +814,54 @@ public sealed class TestPlanTests
         Assert.False(other.ExceptionHandled);
     }
 
+    // ---------- เฟส 6: Plan context ในหน้า Test Cycle / Execution Workspace ----------
+
+    [Fact]
+    public async Task Cycle_list_and_detail_carry_plan_context_and_filter_by_plan()
+    {
+        var c = await CreateAsync();
+        var standalone = await AddCycleAsync(c, "AUT-CYC-050", "Draft");
+        var (plan, cycle) = await PlanWithRunAsync(c);
+
+        async Task<IReadOnlyList<TestCycleDto>> List(string? filter) =>
+            (await c.Cycles.ListAsync(c.Baseline.Project.ProjectId, null, null, null, null, null, null, null, filter, null, 1, 50, CancellationToken.None)).Items.Rows;
+
+        var all = await List(null);
+        Assert.Equal(2, all.Count);
+        var linked = Assert.Single(all, x => x.Plan is not null);
+        Assert.Equal(cycle.TestCycleId, linked.TestCycleId);
+        Assert.Equal(plan.PlanCode, linked.Plan!.PlanCode);
+        Assert.Equal("Windows 11 · Chrome", linked.Plan.ConfigurationName);
+        Assert.False(linked.Plan.IsFrozen);
+        Assert.Null(all.Single(x => x.TestCycleId == standalone.TestCycleId).Plan);
+
+        Assert.Equal(standalone.TestCycleId, Assert.Single(await List("none")).TestCycleId);
+        Assert.Equal(cycle.TestCycleId, Assert.Single(await List("any")).TestCycleId);
+        Assert.Equal(cycle.TestCycleId, Assert.Single(await List(plan.TestPlanId.ToString())).TestCycleId);
+        Assert.Empty(await List(Guid.NewGuid().ToString()));
+        Assert.Equal(2, (await List("not-a-filter")).Count);
+
+        Assert.Equal(plan.TestPlanId, (await c.Cycles.GetAsync(cycle.TestCycleId, CancellationToken.None))!.Plan!.TestPlanId);
+        Assert.Null((await c.Cycles.GetAsync(standalone.TestCycleId, CancellationToken.None))!.Plan);
+    }
+
+    [Fact]
+    public async Task Execution_workspace_reports_frozen_plan_before_saving()
+    {
+        var c = await CreateAsync();
+        var (plan, cycle) = await PlanWithRunAsync(c);
+        var executions = new ExecutionService(new ExecutionRepository(c.Db, c.Access), new TestPlanFreezeGuard(c.Db));
+
+        var open = await executions.WorkspaceAsync(cycle.TestCycleId, CancellationToken.None);
+        Assert.Equal(plan.PlanCode, open.Plan!.PlanCode);
+        Assert.False(open.Plan.IsFrozen);
+
+        await c.Service.FreezeAsync(plan.TestPlanId, "รอ Sign-off", null, CancellationToken.None);
+        var frozen = await executions.WorkspaceAsync(cycle.TestCycleId, CancellationToken.None);
+        Assert.True(frozen.Plan!.IsFrozen);
+        Assert.Equal(TestPlanLifecycleStatuses.Active, frozen.Plan.LifecycleStatus);
+    }
+
     // ---------- แปลงเป็น SQL ได้ (ไม่เชื่อมต่อ DB จริง) ----------
 
     private static QaDbContext SqlServerDb() => new(new DbContextOptionsBuilder<QaDbContext>()
@@ -841,5 +889,15 @@ public sealed class TestPlanTests
         Assert.Contains("GROUP BY", sql);
         Assert.Contains("HAVING", sql);
         Assert.Contains("[IsDeleted]", sql);
+    }
+
+    [Fact]
+    public void Cycle_plan_links_translate_to_single_join()
+    {
+        using var db = SqlServerDb();
+        var sql = TestCyclePlanLinks.Query(db, [Guid.NewGuid(), Guid.NewGuid()]).ToQueryString();
+        Assert.Contains("[TestPlanRuns]", sql);
+        Assert.Contains("JOIN [TestPlans]", sql);
+        Assert.Contains("[IsFrozen]", sql);
     }
 }

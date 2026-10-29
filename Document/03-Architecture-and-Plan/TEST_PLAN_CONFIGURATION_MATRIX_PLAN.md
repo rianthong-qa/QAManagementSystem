@@ -1,6 +1,6 @@
 # Test Plan / Configuration Matrix — แผนพัฒนา
 
-> สถานะ: เฟส 1–3 ใช้งานบน `ProMaxx2QA` แล้ว; เฟส 4–5 เสร็จในโค้ด (commit แล้ว/รอ commit) — ต้อง restart API ก่อนใช้งาน; เฟส 6 ยังไม่เริ่ม
+> สถานะ: เฟส 1–3 ใช้งานบน `ProMaxx2QA` แล้ว; เฟส 4–6 เสร็จในโค้ด (ไม่มี Migration ใหม่) — ต้อง restart API ก่อนใช้งาน; ยังไม่ได้ทดสอบกับ API/ข้อมูลจริง
 >
 > เป้าหมาย: เพิ่ม Test Plan สำหรับรวม Test Cycle หลายชุดและแสดง Configuration Matrix โดยรักษาข้อมูลและ flow เดิมของ Test Cycle, Test Suite และ Execution Workspace ให้ใช้งานต่อได้โดยไม่ต้อง migrate ข้อมูลเดิมแบบทำลายข้อมูล
 
@@ -657,7 +657,7 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 3 | เสร็จ (2026-10-29) — Migration apply แล้ว รอทดสอบกับข้อมูลจริงผ่าน UI | ดูรายละเอียดด้านล่างและ `UI_DESIGN_SYSTEM.md` Change Log 2026-10-29 |
 | 4 | เสร็จในโค้ด (2026-10-29) — ไม่มี Migration ใหม่, ต้อง restart API | ดูรายละเอียดด้านล่าง |
 | 5 | เสร็จในโค้ด (2026-10-29) — ต้อง restart API | ดูรายละเอียดด้านล่าง |
-| 6 | ยังไม่เริ่ม | |
+| 6 | เสร็จในโค้ด (2026-10-30) — ต้อง restart API | ดูรายละเอียดด้านล่างและ `UI_DESIGN_SYSTEM.md` Change Log 2026-10-30 |
 
 เฟส 1 ที่ทำแล้ว:
 
@@ -702,12 +702,21 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 - ข้อจำกัด: ตรวจก่อนบันทึก (check-then-act) — คำขอบันทึกผลที่เริ่มก่อนกด Freeze เพียงเสี้ยววินาทีอาจบันทึกสำเร็จ; ไม่ได้ทำ lock ระดับฐานข้อมูลตาม §9.2 "Concurrent Freeze กับ Save Execution"
 - Unit tests: บันทึก/ลบผลถูกบล็อกเมื่อ Freeze และใช้ได้หลัง Unfreeze, แก้/เปลี่ยนสถานะ Cycle ของแผนที่ปิดถูกบล็อก, Cycle ที่ไม่อยู่ในแผนไม่ถูกกระทบ, filter แปลงเป็น 409 (ทั้งชุด 926 ผ่าน)
 
+เฟส 6 ที่ทำแล้ว (Export + Plan context §5.5):
+
+- **Export (สิทธิ์ `TESTPLAN.EXPORT`)** — สร้าง CSV ฝั่ง browser (UTF-8 BOM, รูปแบบเดียวกับ Export หน้า Test Cycle/RTM; ไม่มี endpoint ใหม่): ปุ่ม Export ในรายการ = ทุกแผนตามตัวกรอง (ขอทุกหน้าพร้อมกัน หน้าละ 500) และในรายละเอียด = **Plan Summary** (ข้อมูลแผน + ตัวนับรวม §3.4 + Configuration Matrix ราย Run: Configuration/OS/Browser/Device, Cycle, Build, Environment, ทีม, เคสที่ยังไม่มีผู้รับผิดชอบ, ตัวนับ, Progress, Pass Rate) — ตัวเลขชุดเดียวกับหน้าจอเพราะใช้ข้อมูลจาก `GET /test-plans/{id}`
+- **API:** `TestCycleDto.plan` และ `ExecutionWorkspaceDto.plan` = `{ testPlanId, planCode, planName, testPlanRunId, runCode, runName, configurationName, lifecycleStatus, isFrozen, isPlanDeleted }` (null = ไม่อยู่ใน Plan) — โหลดเพิ่ม 1 Query ต่อหน้า (`TestCyclePlanLinks`, JOIN `TestPlanRuns`→`TestPlans`) ไม่ใช่ต่อแถว; `GET /test-cycles?plan=none|any|{testPlanId}`
+- **หน้า Test Cycle:** บรรทัด "รหัสแผน · Run" ใต้ชื่อ Cycle (ไอคอนแม่กุญแจสีเหลืองเมื่อ Frozen), ตัวกรอง Test Plan (ทุกแผน / ยังไม่อยู่ในแผน / อยู่ในแผน / รายแผน), คอลัมน์ Test Plan/Run ใน CSV; Cycle ในแผนที่ Frozen ปิดปุ่มเริ่ม/ปิด Cycle/แก้ไขพร้อมเหตุผล และ Cycle ที่อยู่ในแผนปิดปุ่มลบ; รายละเอียด Cycle มีแถบล็อก + ส่วน "อยู่ใน Test Plan" พร้อมลิงก์เปิดรายละเอียดแผน (`qa.targetPlanId`) และปุ่ม **"เพิ่มเข้า Test Plan"** (สิทธิ์ `TESTPLAN.EDIT`, Cycle ที่ยังไม่อยู่ในแผนและไม่ Cancelled) — เลือกได้เฉพาะแผน Active ที่ไม่ Freeze ของ Release เดียวกัน, ใช้ `POST /test-plans/{id}/runs/attach-cycle`
+- **Execution Workspace:** แถบ "Test Plan · Run · Configuration" ใต้แถวตัวเลือก (ไม่แตะความกว้างคงที่ของ `dl.execution-context`); แผน Frozen/ปิด = แถบเหลืองบอกเหตุผลและทางแก้ (Unfreeze/Reopen) + ปิด Save Progress / Skip / Complete / ลบผล ล่วงหน้า และปุ่มลัด P/F/B แจ้งเตือนแทนการส่ง — Server ยังบล็อกด้วย 409 เป็นชั้นสุดท้าย
+- Unit tests: `plan` ใน List/Get และตัวกรอง none/any/planId, Workspace คืน `plan.isFrozen` หลัง Freeze, Query ของ `TestCyclePlanLinks` แปลงเป็น SQL JOIN (ทั้งชุด 929 ผ่าน); UI ตรวจด้วย headless Chrome + mock API ที่ 1440px และ 390px (รายการ/รายละเอียด Cycle, หน้าต่างเพิ่มเข้าแผน, Workspace Frozen, รายละเอียดแผน) ไม่มี horizontal scroll
+
 ค้าง/ยกไปเฟสถัดไป:
 
 - ตรวจบน SQL Server แล้ว (2026-10-29): สร้าง DB ทดสอบ `ProMaxx2QA_TestPlanCheck` บน `MSSQLSERVER2022` apply ทุก Migration → รัน Service/Repository จริง (Create/Attach/Create Run จาก Suite/Get/List filter/Matrix/Retest/Unique index ชน → `TEST_PLAN_CYCLE_LINKED`/ลบ Cycle ที่ผูก → 409/Freeze/Cancel/Delete/Audit) ผ่าน และตรวจ `SeedTestPlanPermissions` ทั้ง Up/Down กับ Role จริง (ASSIGN/EXPORT ตาม Role ที่มี `EXECUTION.ASSIGN`/`REPORT.EXPORT`) แล้วลบ DB ทดสอบทิ้ง
-- ยังไม่ apply Migration ลง `ProMaxx2QA` และยังไม่ได้ restart API — ทำพร้อมเฟส 3 (ใช้ `dotnet ef migrations script AddSoftDeleteAuditColumns SeedTestPlanPermissions --idempotent -o x.sql` แล้ว `sqlcmd ... -b -I -i x.sql`); ผู้ใช้ต้อง Login ใหม่จึงจะได้ claim `TESTPLAN.*`
 - ยังไม่มี Integration test แบบ HTTP (Concurrent Attach/Freeze ตาม §9.2) — Concurrent Attach พึ่ง Unique index + mapping 409
-- เฟส 6: Export Plan Summary + Plan context ในหน้า Test Cycle/Execution Workspace (รวม Banner Frozen และปิดปุ่มบันทึกผลล่วงหน้า แทนที่จะรอ 409)
+- Restart API เพื่อใช้งานเฟส 4–6 แล้วทดสอบตาม §9.4 กับข้อมูลจริง (ยังไม่ได้ทำ)
+- Freeze guard เป็น check-then-act (ดูข้อจำกัดเฟส 5) — ยังไม่ได้ทำ lock ระดับฐานข้อมูล
+- ยังไม่มีแท็บ Activity ในรายละเอียดแผน (ดูที่ Audit Log `EntityType = TestPlan`) และ Recycle Bin ยังไม่รองรับ Test Plan
 
 ลำดับ Release แนะนำ:
 
@@ -807,3 +816,4 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 2026-10-29 | ผู้ใช้อนุญาต: apply `AddTestPlansAndConfigurationMatrix` + `SeedTestPlanPermissions` ลง `ProMaxx2QA` (sqlcmd -b -I ผ่าน PowerShell — Git Bash แปลง argument ผิดจน sqlcmd แจ้ง -E/-U ชนกัน) และ restart API แบบ Production; ตรวจ `/health` 200, `/test-plans` 401 ทั้ง local และโดเมนสาธารณะ, Vite เสิร์ฟไฟล์ใหม่; สิทธิ์ ASSIGN/EXPORT ตาม Role จริง (QA_TESTER ได้ด้วยเพราะมี `EXECUTION.ASSIGN`/`REPORT.EXPORT` อยู่แล้ว) | Migration apply แล้ว |
 | 2026-10-29 | เฟส 4: Run-level Assignment (+ members), Clone/Rerun Plan, Counter optimization (List กรองสถานะ 318 → 112 ms ที่ 30,000 เคส), UI จัดทีม/Clone; unit tests ทั้งชุด 922 ผ่าน; ตรวจ Clone/Assign บน SQL Server ใน DB ทดสอบ (ลบแล้ว) | เฟส 4 เสร็จในโค้ด — รอ restart API |
 | 2026-10-29 | เฟส 5: Freeze guard ใน Execution (บันทึก/ลบ), Test Cycle (แก้/สถานะ), Assignment (Workload, Weighted) + exception filter กลาง 409 `TEST_PLAN_FROZEN`; การ restart API ถูกระบบ permission บล็อก (Production Deploy) — รอผู้ใช้ restart | เฟส 5 เสร็จในโค้ด |
+| 2026-10-30 | เฟส 6: Export (รายการแผน + Plan Summary เป็น CSV), `plan` ใน `TestCycleDto`/`ExecutionWorkspaceDto` + ตัวกรอง `plan` ของ `GET /test-cycles`, หน้า Test Cycle (บรรทัดแผน, ตัวกรอง, ลิงก์ไปแผน, "เพิ่มเข้า Test Plan", ปิดปุ่มเมื่อ Frozen), Execution Workspace (แถบแผน + Banner Frozen ปิดปุ่มบันทึกล่วงหน้า); แก้บรรทัดสถานะที่ยังเขียนว่า "รอ commit" | เฟส 6 เสร็จในโค้ด — รอ restart API |
