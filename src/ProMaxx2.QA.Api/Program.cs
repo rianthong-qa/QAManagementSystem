@@ -112,6 +112,7 @@ builder.Services.AddSingleton<KnowledgeEmbeddingState>();
 builder.Services.AddScoped<KnowledgeEmbeddingService>();
 builder.Services.AddScoped<IKnowledgeVectorSearch>(sp => sp.GetRequiredService<KnowledgeEmbeddingService>());
 builder.Services.AddScoped<KnowledgeFileService>(); // Phase 3: เอกสาร PDF/DOCX/MD/TXT
+builder.Services.AddScoped<RecycleBinService>(); // รายการที่ลบแล้ว (soft delete) ของหลายหน้า — SYS_ADMIN กู้คืน
 builder.Services.AddScoped<ICrmKnowledgeSource, CrmApiKnowledgeSource>(); // Phase 4: ดึงรายละเอียด/คำตอบ CRM ด้วยบัญชีกลาง
 builder.Services.AddScoped<CrmKnowledgeFetcher>(); // mask แล้วเก็บ CrmTicketContents/Answers — เรียกจาก CrmMirrorWorker ทุกรอบ
 builder.Services.AddScoped<IAiChatClient, AiChatClient>();
@@ -174,7 +175,7 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"))
     .AddPolicy("CrmView",p=>p.AddRequirements(new CrmViewRequirement()))
     .AddPolicy("CrmEdit",p=>p.AddRequirements(new CrmEditRequirement()))
-    .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"))
+    .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN")).AddPolicy("ExecutionAssign",p=>p.RequireClaim("permission","EXECUTION.ASSIGN"))
     .AddPolicy("QaWorkloadView",p=>p.RequireClaim("permission","QA.WORKLOAD.VIEW"))
     .AddPolicy("QaMyWorkView",p=>p.RequireClaim("permission","QA.MYWORK.VIEW"))
     .AddPolicy("QaMyWorkExecute",p=>p.RequireClaim("permission","QA.MYWORK.EXECUTE"))

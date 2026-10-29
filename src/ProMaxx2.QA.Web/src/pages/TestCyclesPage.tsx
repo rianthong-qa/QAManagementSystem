@@ -5,6 +5,7 @@ import { useDebounced } from "../components/useDebounced";
 import { notify, confirmDialog } from "../components/dialogStore";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import "./TestCycleDetail.css";
 import "../components/ListPage.css";
 import { ListPager } from "../components/ListPager";
@@ -771,6 +772,7 @@ export function TestCyclesPage({ search, canEdit, canExport, contextProjectId, c
           {(canExport || canEdit) && <div className="lp-actions">
             {canExport && <button className="btn" type="button" disabled={exporting || loading || totalCount === 0} onClick={exportCsv}>{exporting ? <><span className="spinner inline" aria-hidden="true" />กำลัง Export...</> : <><span className="material-symbols-outlined" aria-hidden="true">download</span>Export</>}</button>}
             {canEdit && <button className="btn ai-button" type="button" onClick={openCycleAi}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span>AI Generate</button>}
+            <DeletedItemsButton type="test-cycles" label="Test Cycle" onRestored={() => setReload((x) => x + 1)} />
             {canEdit && <button className="btn primary" type="button" onClick={() => openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Cycle</button>}
           </div>}
         </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { confirmDialog, notify } from "../components/dialogStore";
 import { useDebounced } from "../components/useDebounced";
 import { formatThaiDateTime } from "../dateTime";
@@ -384,6 +385,7 @@ function ArticlesPanel({ projects, canEdit, version, onView, onCreate, onImportH
       <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project"><option value="">ทุก Project</option>{projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.projectName}</option>)}</select>
       {canEdit && <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="สถานะ"><option value="">ทุกสถานะ</option><option value="Published">เผยแพร่</option><option value="Draft">ฉบับร่าง</option></select>}
       {canEdit && <button type="button" className="btn" onClick={onImportHtml}><span className="material-symbols-outlined" aria-hidden="true">upload_file</span>นำเข้า HTML</button>}
+      <DeletedItemsButton type="knowledge-articles" label="บทความ" onRestored={() => setAttempt((x) => x + 1)} />
       {canEdit && <button type="button" className="btn primary" onClick={onCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span>เขียนบทความ</button>}
     </div>
     {error ? <div className="kn-empty kn-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span><b>{error}</b><button type="button" className="btn" onClick={() => setAttempt((x) => x + 1)}>ลองใหม่</button></div>

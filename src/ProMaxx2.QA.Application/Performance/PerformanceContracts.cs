@@ -92,7 +92,6 @@ public interface IPerformanceRepository
     Task<WorkLogDto?> GetWorkLogAsync(Guid id, Guid viewerId, bool viewerCanManage, CancellationToken ct);
     Task<WorkLogEntry?> FindWorkLogAsync(Guid id, CancellationToken ct);
     Task AddWorkLogAsync(WorkLogEntry entry, CancellationToken ct);
-    void RemoveWorkLog(WorkLogEntry entry);
     Task<IReadOnlyList<WorkLogAttachment>> ListAttachmentsAsync(Guid workLogEntryId, CancellationToken ct);
     Task AddAttachmentsAsync(IEnumerable<WorkLogAttachment> attachments, CancellationToken ct);
     void RemoveAttachment(WorkLogAttachment attachment);
@@ -189,7 +188,8 @@ public sealed class PerformanceService(IPerformanceRepository repository, TimePr
     public async Task DeleteWorkLogAsync(PerformanceViewer viewer, Guid id, CancellationToken ct)
     {
         var entry = await FindEditableWorkLogAsync(viewer, id, ct);
-        repository.RemoveWorkLog(entry);
+        // เก็บไว้ (รวมไฟล์หลักฐาน) — ใช้ในการประเมินผลย้อนหลัง; SYS_ADMIN กู้คืนได้จากรายการ "ลบแล้ว"
+        entry.SoftDelete(viewer.UserId);
         await repository.SaveChangesAsync(ct);
     }
 

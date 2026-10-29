@@ -4,6 +4,7 @@ import { apiUrl, getJson } from "../api";
 import { notify, confirmDialog } from "../components/dialogStore";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { formatThaiDateTime } from "../dateTime";
 import { type AdminUser, type ModuleItem, type RtmItem, buildModuleTree, renderModuleSelectOptions } from "../shared/appShared";
 
@@ -313,6 +314,7 @@ export function RequirementsPage({
         <div className="filter-toolbar-top">
           <div className="requirement-filter-title"><span className="material-symbols-outlined" aria-hidden="true">tune</span><div><b>ตัวกรองเพิ่มเติม</b><small>{activeFilterCount ? `กำลังใช้ ${activeFilterCount} เงื่อนไข` : "แสดงข้อมูลทุกเงื่อนไข"}</small></div></div>
           {activeFilterCount > 0 && <button type="button" className="requirement-clear-filter" onClick={clearFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span> ล้างตัวกรอง</button>}
+          <DeletedItemsButton type="requirements" label="Requirement" onRestored={() => setReload((x) => x + 1)} />
         </div>
         <div className="filter-toolbar-row">
           <select aria-label="กรองตาม Module" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
