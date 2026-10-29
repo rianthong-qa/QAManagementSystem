@@ -1,6 +1,6 @@
 # Test Plan / Configuration Matrix — แผนพัฒนา
 
-> สถานะ: เฟส 1–3 เสร็จ และ apply Migration ลง `ProMaxx2QA` + restart API แล้ว (2026-10-29) — UI ตรวจด้วย mock API แล้ว รอผู้ใช้ทดสอบกับข้อมูลจริง (ต้อง Login ใหม่เพื่อรับสิทธิ์ `TESTPLAN.*`); เฟส 4–6 ยังไม่เริ่ม
+> สถานะ: เฟส 1–3 เสร็จและใช้งานบน `ProMaxx2QA` แล้ว; เฟส 4 (Clone/Rerun, Run-level Assignment, Counter optimization) เสร็จในโค้ด — รอ restart API; เฟส 5–6 ยังไม่เริ่ม
 >
 > เป้าหมาย: เพิ่ม Test Plan สำหรับรวม Test Cycle หลายชุดและแสดง Configuration Matrix โดยรักษาข้อมูลและ flow เดิมของ Test Cycle, Test Suite และ Execution Workspace ให้ใช้งานต่อได้โดยไม่ต้อง migrate ข้อมูลเดิมแบบทำลายข้อมูล
 
@@ -655,7 +655,8 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 1 | เสร็จ (2026-10-29) | ดูรายละเอียดด้านล่าง |
 | 2 | เสร็จ (2026-10-29) — Migration ยังไม่ apply ลง `ProMaxx2QA` | ดูรายละเอียดด้านล่าง |
 | 3 | เสร็จ (2026-10-29) — Migration apply แล้ว รอทดสอบกับข้อมูลจริงผ่าน UI | ดูรายละเอียดด้านล่างและ `UI_DESIGN_SYSTEM.md` Change Log 2026-10-29 |
-| 4–6 | ยังไม่เริ่ม | |
+| 4 | เสร็จในโค้ด (2026-10-29) — ไม่มี Migration ใหม่, ต้อง restart API | ดูรายละเอียดด้านล่าง |
+| 5–6 | ยังไม่เริ่ม | |
 
 เฟส 1 ที่ทำแล้ว:
 
@@ -683,12 +684,19 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 - API `GET /test-plans` และ `/matrix` รับ `size` 1–500 ให้ตรงกับ `ListPager` (เดิม 1–100)
 - ส่วนที่ต่างจาก §5: ยังไม่มีปุ่ม Export (เฟส 6) และ "ลบแล้ว" (Recycle Bin ยังไม่รองรับ Test Plan), ยังไม่มีแท็บ Activity (ดูได้ที่หน้า Audit Log `EntityType = TestPlan`), Release ใช้ตัวเลือกที่ Topbar แทน filter ในการ์ด (แบบเดียวกับหน้า Test Cycle), ชิปสถานะไม่มีจำนวน
 
+เฟส 4 ที่ทำแล้ว (คำตัดสิน 2026-10-29: Bulk assign วนทีละคน, บันทึกทีมแบบแทนที่ทั้งชุด, Clone ได้ทุกสถานะที่มี Run, วัดประสิทธิภาพด้วยข้อมูลจำลอง):
+
+- `POST /test-plans/{id}/runs/{runId}/assign` (`TESTPLAN.ASSIGN`) — ทีมระดับ Run แทนที่ทั้งชุด, ตรวจสมาชิก Project (`ProjectUsers`), Bulk assign เฉพาะเคส `NotRun` ที่ยังไม่มีผู้รับผิดชอบแบบ round-robin ผ่าน flow เดิม (`TestCycleCase.AssignTester` + `TestCycleCaseAssignment` + `AssignmentHistory` `testplan-round-robin-v1`) ให้ My Work เห็นงาน; Plan Frozen/ปิด ถูกบล็อก; `GET /test-plans/{id}/members` สำหรับตัวเลือก
+- `POST /test-plans/{id}/clone` (`TESTPLAN.EDIT`) — ตาม §4.4: Plan ใหม่ + `CopiedFromTestPlanId`, Clone Cycle ทุก Run ด้วย `TestCycleService.CloneAsync` (SourceSnapshot) ไป Target Build เดียว, Environment override ราย Run, คัดลอก Configuration/Owner/ทีม Run, ไม่คัดลอก Execution/ผู้รับผิดชอบรายเคส — ทั้งหมดใน Transaction (ตรวจบน SQL Server: Clone ล้มกลางทางแล้วไม่มี Plan/Cycle ค้าง)
+- Counter optimization — วัดบน DB ทดสอบ (60 Plan, 300 Run, 30,000 เคส, 28,292 Execution): เดิม List 137 ms / กรองสถานะ 318 ms (Query สถานะแบบ subquery ต่อ Plan รันซ้ำ 3 รอบ) → ใหม่ List 123 ms / กรองสถานะ 112 ms (นับเคสด้วย `GROUP BY (TestCycleId, CurrentStatus)` ครั้งเดียว ใช้ index `IX_TestCycleCases_TestCycleId` ที่ INCLUDE `CurrentStatus` อยู่แล้ว แล้วรวม/คำนวณสถานะในหน่วยความจำด้วย `PlanStatus` — unit test เทียบสถานะหน้ารายการกับรายละเอียดทุกขั้น); Detail ~45 ms, Matrix ~18 ms — ไม่ต้องเพิ่ม index
+- UI: บรรทัดทีม/เคสที่ยังไม่มีผู้รับผิดชอบในแถว Matrix, หน้าต่างจัดทีม, หน้าต่าง Clone/Rerun พร้อม Preview ทุก Run (ดู `UI_DESIGN_SYSTEM.md` Change Log)
+
 ค้าง/ยกไปเฟสถัดไป:
 
 - ตรวจบน SQL Server แล้ว (2026-10-29): สร้าง DB ทดสอบ `ProMaxx2QA_TestPlanCheck` บน `MSSQLSERVER2022` apply ทุก Migration → รัน Service/Repository จริง (Create/Attach/Create Run จาก Suite/Get/List filter/Matrix/Retest/Unique index ชน → `TEST_PLAN_CYCLE_LINKED`/ลบ Cycle ที่ผูก → 409/Freeze/Cancel/Delete/Audit) ผ่าน และตรวจ `SeedTestPlanPermissions` ทั้ง Up/Down กับ Role จริง (ASSIGN/EXPORT ตาม Role ที่มี `EXECUTION.ASSIGN`/`REPORT.EXPORT`) แล้วลบ DB ทดสอบทิ้ง
 - ยังไม่ apply Migration ลง `ProMaxx2QA` และยังไม่ได้ restart API — ทำพร้อมเฟส 3 (ใช้ `dotnet ef migrations script AddSoftDeleteAuditColumns SeedTestPlanPermissions --idempotent -o x.sql` แล้ว `sqlcmd ... -b -I -i x.sql`); ผู้ใช้ต้อง Login ใหม่จึงจะได้ claim `TESTPLAN.*`
 - ยังไม่มี Integration test แบบ HTTP (Concurrent Attach/Freeze ตาม §9.2) — Concurrent Attach พึ่ง Unique index + mapping 409
-- เฟส 4: Run-level Assign, Clone/Rerun; เฟส 5: Freeze guard ใน Execution/Cycle/Assignment เดิม; เฟส 6: Export + Plan context ในหน้าเดิม
+- เฟส 5: Freeze guard ใน Execution/Cycle/Assignment เดิม; เฟส 6: Export + Plan context ในหน้าเดิม
 
 ลำดับ Release แนะนำ:
 
@@ -786,3 +794,4 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 2026-10-29 | เฟส 2: `TestPlansController` + Policy/Permission `TESTPLAN.*` (Migration `SeedTestPlanPermissions`) + Lifecycle/Run endpoint + บล็อกลบ Cycle ที่ผูก Plan + Error code `TEST_PLAN_*` + unit tests 12 รายการ (ทั้งชุด 917 ผ่าน); อัปเดต `API_SPECIFICATION.md` §16.1; ตรวจ Query/Migration บน SQL Server ใน DB ทดสอบชั่วคราวผ่าน (ลบทิ้งแล้ว) | เฟส 2 เสร็จ — Migration ยังไม่ apply ลง ProMaxx2QA |
 | 2026-10-29 | เฟส 3: หน้า Test Plan (รายการ/รายละเอียด/Matrix/ฟอร์มแผน/ฟอร์ม Run/Lifecycle) + เมนู + สิทธิ์; ตรวจ build/lint และ headless Chrome + mock API ที่ 1440/1024/390px ไม่มี horizontal scroll; การ apply Migration ลง ProMaxx2QA ถูกระบบ permission ปฏิเสธ (ทรัพยากรที่ใช้ร่วม) — รอผู้ใช้อนุญาตหรือ apply เอง | เฟส 3 เสร็จในโค้ด |
 | 2026-10-29 | ผู้ใช้อนุญาต: apply `AddTestPlansAndConfigurationMatrix` + `SeedTestPlanPermissions` ลง `ProMaxx2QA` (sqlcmd -b -I ผ่าน PowerShell — Git Bash แปลง argument ผิดจน sqlcmd แจ้ง -E/-U ชนกัน) และ restart API แบบ Production; ตรวจ `/health` 200, `/test-plans` 401 ทั้ง local และโดเมนสาธารณะ, Vite เสิร์ฟไฟล์ใหม่; สิทธิ์ ASSIGN/EXPORT ตาม Role จริง (QA_TESTER ได้ด้วยเพราะมี `EXECUTION.ASSIGN`/`REPORT.EXPORT` อยู่แล้ว) | Migration apply แล้ว |
+| 2026-10-29 | เฟส 4: Run-level Assignment (+ members), Clone/Rerun Plan, Counter optimization (List กรองสถานะ 318 → 112 ms ที่ 30,000 เคส), UI จัดทีม/Clone; unit tests ทั้งชุด 922 ผ่าน; ตรวจ Clone/Assign บน SQL Server ใน DB ทดสอบ (ลบแล้ว) | เฟส 4 เสร็จในโค้ด — รอ restart API |

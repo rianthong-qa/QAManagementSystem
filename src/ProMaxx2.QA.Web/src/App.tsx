@@ -977,7 +977,7 @@ function App() {
           ) : page === "execution" ? (
             <ExecutionWorkspacePage contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} />
           ) : page === "test-plans" ? (
-            <TestPlansPage search={search} canEdit={can("TESTPLAN.EDIT")} canFreeze={can("TESTPLAN.FREEZE")} canRun={can("EXECUTION.RUN")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenCycle={(cycleId) => openRegressionCycle("test-cycles", cycleId)} />
+            <TestPlansPage search={search} canEdit={can("TESTPLAN.EDIT")} canFreeze={can("TESTPLAN.FREEZE")} canAssign={can("TESTPLAN.ASSIGN")} canRun={can("EXECUTION.RUN")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenCycle={(cycleId) => openRegressionCycle("test-cycles", cycleId)} />
           ) : page === "test-cycles" ? (
             <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} />
           ) : (

@@ -40,6 +40,7 @@ public static class TestPlanErrorCodes
     public const string HasRuns = "TEST_PLAN_HAS_RUNS";
     public const string CycleLinked = "TEST_PLAN_CYCLE_LINKED";
     public const string RunHasExecutions = "TEST_PLAN_RUN_HAS_EXECUTIONS";
+    public const string NoRuns = "TEST_PLAN_NO_RUNS";
     public const string CycleLinkedToPlan = "TEST_CYCLE_LINKED_TO_PLAN";
 }
 

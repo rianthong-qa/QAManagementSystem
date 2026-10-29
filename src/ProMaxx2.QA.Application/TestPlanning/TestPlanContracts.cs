@@ -2,6 +2,7 @@ using System.Text.Json;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.Execution;
 using ProMaxx2.QA.Application.Projects;
+using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Governance;
 using ProMaxx2.QA.Domain.TestPlanning;
 
@@ -17,7 +18,9 @@ public sealed record TestPlanListItemDto(Guid TestPlanId, Guid ProjectId, Guid R
 public sealed record TestPlanListResultDto(PagedResult<TestPlanListItemDto> Items, TestPlanSummaryDto Summary);
 
 /// <summary>1 แถวของ Matrix — Build/Environment/สถานะมาจาก Test Cycle ที่ผูกอยู่</summary>
-public sealed record TestPlanRunDto(Guid TestPlanRunId, Guid TestPlanId, Guid TestCycleId, string CycleCode, string CycleName, string Status, string RunCode, string RunName, string? ConfigurationKey, string? ConfigurationName, string? ConfigurationJson, Guid? OwnerUserId, string? OwnerName, Guid BuildId, string? BuildNumber, Guid EnvironmentId, string? EnvironmentName, int TotalCases, int Untested, int InProgress, int Passed, int Failed, int Blocked, int Skipped, decimal ProgressPercent, decimal? PassRate, DateTime CreatedAt);
+public sealed record TestPlanRunDto(Guid TestPlanRunId, Guid TestPlanId, Guid TestCycleId, string CycleCode, string CycleName, string Status, string RunCode, string RunName, string? ConfigurationKey, string? ConfigurationName, string? ConfigurationJson, Guid? OwnerUserId, string? OwnerName, Guid BuildId, string? BuildNumber, Guid EnvironmentId, string? EnvironmentName, int TotalCases, int Untested, int InProgress, int Passed, int Failed, int Blocked, int Skipped, decimal ProgressPercent, decimal? PassRate, DateTime CreatedAt, int UnassignedCases, IReadOnlyList<TestPlanRunAssignmentDto> Assignments);
+public sealed record TestPlanMemberDto(Guid UserId, string DisplayName);
+public sealed record TestPlanRunAssignmentDto(Guid TesterUserId, string? TesterName, string Role, DateTime AssignedAt);
 
 public sealed record TestPlanDto(Guid TestPlanId, Guid ProjectId, Guid ReleaseId, string? ReleaseCode, string PlanCode, string PlanName, string PlanType, DateTime? StartDate, DateTime? EndDate, Guid? OwnerUserId, string? OwnerName, string Status, string LifecycleStatus, bool IsFrozen, DateTime? FrozenAt, Guid? FrozenByUserId, Guid? CopiedFromTestPlanId, string? Notes, DateTime CreatedAt, DateTime? UpdatedAt, TestPlanSummaryDto Summary, IReadOnlyList<TestPlanRunDto> Runs);
 
@@ -30,6 +33,13 @@ public sealed record AttachTestPlanCycleRequest(Guid TestCycleId, string? RunCod
 /// </summary>
 public sealed record CreateTestPlanRunRequest(string? RunCode, string? RunName, string? ConfigurationKey, string? ConfigurationName, JsonElement? ConfigurationJson, Guid? OwnerUserId, bool CreateCycleFromSuite, Guid? TestCycleId, Guid? TestSuiteId, Guid? BuildId, Guid? EnvironmentId, string? CycleName, bool RequiredOnly = false);
 public sealed record UpdateTestPlanRunRequest(string RunName, string? ConfigurationKey, string? ConfigurationName, JsonElement? ConfigurationJson, Guid? OwnerUserId);
+/// <summary>ทีมระดับ Run (แทนที่ทั้งชุด) — <c>BulkAssignUnassignedCases</c> แบ่งเคส NotRun ที่ยังไม่มีผู้รับผิดชอบให้ Role Tester แบบวนทีละคน</summary>
+public sealed record AssignTestPlanRunRequest(IReadOnlyList<RunAssignmentInput>? Assignments, bool BulkAssignUnassignedCases);
+public sealed record RunAssignmentInput(Guid TesterUserId, string Role);
+public sealed record AssignTestPlanRunResultDto(TestPlanRunDto Run, int AssignedCases);
+/// <summary>Clone/Rerun Plan (§4.4) — Target Build ครั้งเดียวทั้ง Plan, Environment เดิมเป็นค่าเริ่มต้น เปลี่ยนได้ราย Run ผ่าน EnvironmentOverrides</summary>
+public sealed record CloneTestPlanRequest(Guid TargetReleaseId, Guid TargetBuildId, string? CloneMode, IReadOnlyList<CloneEnvironmentOverride>? EnvironmentOverrides, string? PlanName, string? PlanCode);
+public sealed record CloneEnvironmentOverride(Guid SourceRunId, Guid TargetEnvironmentId);
 /// <summary>เหตุผลของคำสั่ง Close/Cancel/Reopen/Freeze/Unfreeze — บันทึกใน Audit Log</summary>
 public sealed record TestPlanActionRequest(string Reason);
 
@@ -57,6 +67,20 @@ public interface ITestPlanRepository
     Task<(int Total, int NotTerminal)> RunStatusCountsAsync(Guid testPlanId, CancellationToken ct);
     /// <summary>Cycle เคยมี Execution หรือไม่ — นับรวมแถวที่ถูกลบ เพราะเคยเป็นผลที่บันทึกจริง</summary>
     Task<bool> CycleHasExecutionsAsync(Guid testCycleId, CancellationToken ct);
+    /// <summary>Run ของ Plan (tracked) พร้อมทีมระดับ Run เรียงตามลำดับที่เพิ่ม — ใช้ตอน Clone</summary>
+    Task<IReadOnlyList<TestPlanRun>> ListRunEntitiesAsync(Guid testPlanId, CancellationToken ct);
+    Task<IReadOnlyList<TestPlanRunAssignment>> ListRunAssignmentsAsync(Guid testPlanRunId, CancellationToken ct);
+    void AddRunAssignment(TestPlanRunAssignment entity);
+    void RemoveRunAssignment(TestPlanRunAssignment entity);
+    /// <summary>ผู้ใช้ที่ Active และเป็นสมาชิก Project (ตัวเลือกทีมระดับ Run)</summary>
+    Task<IReadOnlyList<TestPlanMemberDto>> ListProjectMembersAsync(Guid projectId, CancellationToken ct);
+    /// <summary>ผู้ใช้ในรายการที่ไม่ได้เป็นสมาชิก Project (ProjectUsers)</summary>
+    Task<IReadOnlyList<Guid>> NonMemberUserIdsAsync(Guid projectId, IReadOnlyCollection<Guid> userIds, CancellationToken ct);
+    /// <summary>เคส NotRun ที่ยังไม่มีผู้รับผิดชอบใน Cycle (tracked) เรียงตามลำดับในรอบ</summary>
+    Task<IReadOnlyList<TestCycleCase>> UnassignedNotRunCasesAsync(Guid testCycleId, CancellationToken ct);
+    Task<Dictionary<Guid, TestCycleCaseAssignment>> AssignmentMetadataAsync(IReadOnlyCollection<Guid> testCycleCaseIds, CancellationToken ct);
+    void AddAssignmentMetadata(TestCycleCaseAssignment entity);
+    void AddAssignmentHistory(AssignmentHistory entity);
     Task AddAsync(TestPlan entity, CancellationToken ct);
     Task AddRunAsync(TestPlanRun entity, CancellationToken ct);
     void RemoveRun(TestPlanRun entity);
@@ -80,6 +104,8 @@ public sealed class TestPlanService(ITestPlanRepository repository, IProjectRepo
         _ = await repository.FindAsync(planId, ct) ?? throw new EntityNotFoundException("Test plan not found.");
         return await repository.ListRunsAsync(planId, status, configurationKey, ownerUserId, page, size, ct);
     }
+
+    public async Task<IReadOnlyList<TestPlanMemberDto>> MembersAsync(Guid planId, CancellationToken ct) => await repository.ListProjectMembersAsync((await FindPlanAsync(planId, ct)).ProjectId, ct);
 
     public async Task<TestPlanRunDto> GetRunAsync(Guid planId, Guid runId, CancellationToken ct) => await repository.GetRunAsync(planId, runId, ct) ?? throw new EntityNotFoundException("Test plan run not found.");
 
@@ -219,6 +245,92 @@ public sealed class TestPlanService(ITestPlanRepository repository, IProjectRepo
         plan.Touch(userId);
         Audit(userId, "RunDetached", plan, $"ถอด Run {run.RunCode} ออกจาก Test Plan {plan.PlanCode}");
         await repository.SaveAsync(ct);
+    }
+
+    /// <summary>
+    /// บันทึกทีมระดับ Run แบบแทนที่ทั้งชุด แล้ว (ถ้าเลือก) แบ่งเคส NotRun ที่ยังไม่มีผู้รับผิดชอบให้ Role Tester แบบวนทีละคนตามลำดับเคส
+    /// — ไม่เขียนทับเคสที่มีผู้รับผิดชอบแล้ว และบันทึกผ่าน flow เดิม (Assignment metadata + AssignmentHistory) ให้ My Work เห็นงาน
+    /// </summary>
+    public async Task<AssignTestPlanRunResultDto> AssignRunAsync(Guid planId, Guid runId, AssignTestPlanRunRequest r, Guid? userId, CancellationToken ct)
+    {
+        if (userId is not { } actor) throw new ArgumentException("User identity is required.");
+        var plan = await FindPlanAsync(planId, ct);
+        plan.EnsureEditable();
+        var run = await repository.FindRunAsync(planId, runId, ct) ?? throw new EntityNotFoundException("Test plan run not found.");
+        var desired = (r.Assignments ?? [])
+            .Select(x => (x.TesterUserId, Role: TestPlanRunRoles.All.SingleOrDefault(role => role.Equals(x.Role?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? throw new ArgumentException("Role must be Tester, Reviewer or Observer.")))
+            .Distinct()
+            .ToList();
+        if (desired.Any(x => x.TesterUserId == Guid.Empty)) throw new ArgumentException("Tester is required.");
+        var nonMembers = await repository.NonMemberUserIdsAsync(plan.ProjectId, desired.Select(x => x.TesterUserId).Distinct().ToList(), ct);
+        if (nonMembers.Count > 0) throw new ArgumentException("ผู้ที่ assign ต้องเป็นสมาชิกของ Project นี้");
+        var testers = desired.Where(x => x.Role == "Tester").Select(x => x.TesterUserId).Distinct().ToList();
+        if (r.BulkAssignUnassignedCases && testers.Count == 0) throw new ArgumentException("ต้องมี Role Tester อย่างน้อย 1 คนจึงจะ Bulk assign ได้");
+
+        var existing = await repository.ListRunAssignmentsAsync(runId, ct);
+        foreach (var item in existing.Where(x => !desired.Contains((x.TesterUserId, x.Role)))) repository.RemoveRunAssignment(item);
+        foreach (var (testerId, role) in desired.Where(x => !existing.Any(e => e.TesterUserId == x.TesterUserId && e.Role == x.Role)))
+            repository.AddRunAssignment(new TestPlanRunAssignment(runId, testerId, role, actor));
+
+        var assigned = 0;
+        if (r.BulkAssignUnassignedCases)
+        {
+            var cases = await repository.UnassignedNotRunCasesAsync(run.TestCycleId, ct);
+            var metadata = await repository.AssignmentMetadataAsync(cases.Select(x => x.TestCycleCaseId).ToList(), ct);
+            foreach (var (cycleCase, index) in cases.Select((x, i) => (x, i)))
+            {
+                var tester = testers[index % testers.Count];
+                cycleCase.AssignTester(tester);
+                if (!metadata.TryGetValue(cycleCase.TestCycleCaseId, out var meta)) repository.AddAssignmentMetadata(meta = new TestCycleCaseAssignment(cycleCase.TestCycleCaseId));
+                meta.Assign(actor, null);
+                repository.AddAssignmentHistory(new AssignmentHistory(cycleCase.TestCycleCaseId, null, tester, cycleCase.CaseWeight, 0, $"Test Plan {plan.PlanCode} / Run {run.RunCode}", "Assigned", actor, "testplan-round-robin-v1"));
+                assigned++;
+            }
+        }
+        plan.Touch(userId);
+        Audit(userId, "RunTeamAssigned", plan, $"ทีม Run {run.RunCode}: {desired.Count} คน{(r.BulkAssignUnassignedCases ? $" · Bulk assign {assigned} เคส" : "")}");
+        await repository.SaveAsync(ct);
+        return new AssignTestPlanRunResultDto((await repository.GetRunAsync(planId, runId, ct))!, assigned);
+    }
+
+    /// <summary>
+    /// Clone/Rerun Plan เป็น Plan ใหม่ (§4.4): ทุก Run ใช้ Target Build เดียวกัน, Environment เดิมเว้นแต่ override,
+    /// SourceSnapshot เท่านั้น — คัดลอกเคส/Revision, Configuration, Owner และทีมระดับ Run แต่ไม่คัดลอก Execution หรือผู้รับผิดชอบรายเคส
+    /// ทั้งหมดใน Transaction เดียว (TestCycleRepository.CloneAsync บันทึกเองทุก Cycle)
+    /// </summary>
+    public async Task<TestPlanDto> CloneAsync(Guid planId, CloneTestPlanRequest r, Guid? userId, CancellationToken ct)
+    {
+        if (userId is not { } actor) throw new ArgumentException("User identity is required.");
+        var source = await FindPlanAsync(planId, ct);
+        if (!string.IsNullOrWhiteSpace(r.CloneMode) && !r.CloneMode.Trim().Equals(TestCycleCloneModes.SourceSnapshot, StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Clone Test Plan รองรับเฉพาะ SourceSnapshot");
+        var runs = await repository.ListRunEntitiesAsync(planId, ct);
+        if (runs.Count == 0) throw new TestPlanRuleException(TestPlanErrorCodes.NoRuns, "Test Plan ที่ยังไม่มี Run Clone ไม่ได้");
+        await EnsureReleaseAsync(source.ProjectId, r.TargetReleaseId, ct);
+        var overrides = (r.EnvironmentOverrides ?? []).ToDictionary(x => x.SourceRunId, x => x.TargetEnvironmentId);
+        if (overrides.Keys.Any(id => runs.All(x => x.TestPlanRunId != id))) throw new ArgumentException("Environment override อ้างถึง Run ที่ไม่อยู่ใน Test Plan นี้");
+        var project = await projects.GetAsync(source.ProjectId, ct) ?? throw new EntityNotFoundException("Project not found.");
+        var prefix = $"{project.ProjectCode}-TP";
+        var code = string.IsNullOrWhiteSpace(r.PlanCode) ? BusinessCodeGenerator.NextAvailable(prefix, await repository.ListCodesAsync(source.ProjectId, prefix, ct)) : r.PlanCode.Trim().ToUpperInvariant();
+        if (await repository.CodeExistsAsync(source.ProjectId, code, null, ct)) throw new DuplicateCodeException("Plan code already exists.");
+
+        var target = new TestPlan(source.ProjectId, r.TargetReleaseId, code, string.IsNullOrWhiteSpace(r.PlanName) ? $"{source.PlanName} (Rerun)" : r.PlanName, source.PlanType, null, null, source.OwnerUserId, source.Notes, actor, source.TestPlanId);
+        await repository.RunInTransactionAsync(async () =>
+        {
+            await repository.AddAsync(target, ct);
+            Audit(userId, "Cloned", target, $"Clone จาก Test Plan {source.PlanCode} ({runs.Count} Run, SourceSnapshot)");
+            await repository.SaveAsync(ct);
+            foreach (var run in runs)
+            {
+                var cycle = await cycles.GetAsync(run.TestCycleId, ct) ?? throw new EntityNotFoundException($"Test cycle of run {run.RunCode} not found.");
+                var environmentId = overrides.TryGetValue(run.TestPlanRunId, out var overrideId) ? overrideId : cycle.EnvironmentId;
+                var cloned = await cycles.CloneAsync(run.TestCycleId, new CloneTestCycleRequest(r.TargetReleaseId, r.TargetBuildId, environmentId, null, cycle.CycleName, cycle.CycleType, null, null, cycle.OwnerUserId, cycle.Notes, TestCycleCloneModes.SourceSnapshot), actor, ct);
+                var newRun = new TestPlanRun(target.TestPlanId, cloned.TestCycleId, run.RunCode, run.RunName, run.ConfigurationKey, run.ConfigurationName, run.ConfigurationJson, run.OwnerUserId, actor);
+                await repository.AddRunAsync(newRun, ct);
+                foreach (var member in run.Assignments) repository.AddRunAssignment(new TestPlanRunAssignment(newRun.TestPlanRunId, member.TesterUserId, member.Role, actor));
+            }
+            await repository.SaveAsync(ct);
+        }, ct);
+        return (await repository.GetAsync(target.TestPlanId, ct))!;
     }
 
     private async Task<TestPlanDto> LifecycleAsync(TestPlan entity, Action change, string action, string label, string reason, Guid? userId, CancellationToken ct)

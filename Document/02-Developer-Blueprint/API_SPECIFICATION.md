@@ -447,11 +447,15 @@ Soft delete (สิทธิ์ `EXECUTION.ASSIGN`) — **Cycle ที่ผู�
 | GET | `/test-plans/{planId}/runs/{runId}` | `TESTPLAN.VIEW` | แถว Matrix 1 แถว |
 | PUT | `/test-plans/{planId}/runs/{runId}` | `TESTPLAN.EDIT` | `{ runName, configurationKey, configurationName, configurationJson, ownerUserId }` |
 | DELETE | `/test-plans/{planId}/runs/{runId}` | `TESTPLAN.EDIT` | ถอด Run — ได้เฉพาะ Run ที่ Test Cycle ไม่เคยมี Execution (รวมแถวที่ลบ) |
+| GET | `/test-plans/{planId}/members` | `TESTPLAN.ASSIGN` | สมาชิก Project ที่ Active (`[{ userId, displayName }]`) — ตัวเลือกทีมระดับ Run (เพิ่ม 2026-10-29) |
+| POST | `/test-plans/{planId}/runs/{runId}/assign` | `TESTPLAN.ASSIGN` | `{ assignments: [{ testerUserId, role: Tester\|Reviewer\|Observer }], bulkAssignUnassignedCases }` — **แทนที่ทีมทั้งชุด**; ผู้ถูก assign ต้องเป็นสมาชิก Project; bulk = แบ่งเคส `NotRun` ที่ยังไม่มีผู้รับผิดชอบให้ Role Tester แบบวนทีละคนตามลำดับเคส (ไม่เขียนทับเคสที่มีผู้รับผิดชอบ) ผ่าน flow เดิม (Assignment metadata + AssignmentHistory `testplan-round-robin-v1`); คืน `{ run, assignedCases }`; Plan ที่ Frozen/ปิด ได้ 409 |
+| POST | `/test-plans/{planId}/clone` | `TESTPLAN.EDIT` | `{ targetReleaseId, targetBuildId, cloneMode: "SourceSnapshot", environmentOverrides: [{ sourceRunId, targetEnvironmentId }], planName?, planCode? }` — สร้าง Plan ใหม่ (`copiedFromTestPlanId`) ใน Transaction เดียว: ทุก Run Clone Test Cycle ไป Build เดียวกัน, Environment เดิมเว้นแต่ override, คัดลอก Configuration/Owner/ทีม Run แต่ไม่คัดลอก Execution/Defect/ผู้รับผิดชอบรายเคส; Plan ต้นทางสถานะใดก็ได้ที่มี ≥ 1 Run (ไม่มี Run = 409 `TEST_PLAN_NO_RUNS`) |
 
 - `configurationKey` เก็บเป็นตัวพิมพ์เล็ก `a-z 0-9 -` (เช่น `windows-chrome`); `configurationJson` ต้องเป็น JSON object
 - ทุกคำสั่งที่แก้ข้อมูลบันทึก Audit Log (`EntityType = TestPlan`) — Close/Cancel/Reopen/Freeze/Unfreeze เก็บเหตุผลใน `ChangeSummary`
-- Error เป็น ProblemDetails พร้อม `code`: `TEST_PLAN_INVALID` (400), `TEST_PLAN_NOT_FOUND` (404), `TEST_PLAN_DUPLICATE_CODE`, `TEST_PLAN_FROZEN`, `TEST_PLAN_NOT_ACTIVE`, `TEST_PLAN_INVALID_STATE`, `TEST_PLAN_RUNS_NOT_TERMINAL`, `TEST_PLAN_HAS_RUNS`, `TEST_PLAN_CYCLE_LINKED`, `TEST_PLAN_RUN_HAS_EXECUTIONS` (409)
-- ยังไม่มี: Run-level Assign และ Clone/Rerun (เฟส 4), Export (เฟส 6)
+- Error เป็น ProblemDetails พร้อม `code`: `TEST_PLAN_INVALID` (400), `TEST_PLAN_NOT_FOUND` (404), `TEST_PLAN_DUPLICATE_CODE`, `TEST_PLAN_FROZEN`, `TEST_PLAN_NOT_ACTIVE`, `TEST_PLAN_INVALID_STATE`, `TEST_PLAN_RUNS_NOT_TERMINAL`, `TEST_PLAN_HAS_RUNS`, `TEST_PLAN_CYCLE_LINKED`, `TEST_PLAN_RUN_HAS_EXECUTIONS`, `TEST_PLAN_NO_RUNS` (409)
+- แถว Run (`runs[]`, `matrix`) มี `unassignedCases` (เคส NotRun ที่ยังไม่มีผู้รับผิดชอบ) และ `assignments` (ทีมระดับ Run)
+- ยังไม่มี: Export (เฟส 6)
 
 ---
 

@@ -19,7 +19,9 @@ import "./TestPlansPage.css";
 type PlanSummary = { runCount: number; totalCases: number; untested: number; inProgress: number; touched: number; completed: number; passed: number; failed: number; blocked: number; skipped: number; retest: number; retestAttempts: number; progressPercent: number; completionPercent: number; passRate: number | null };
 type PlanListItem = { testPlanId: string; projectId: string; releaseId: string; releaseCode?: string | null; planCode: string; planName: string; planType: string; startDate?: string | null; endDate?: string | null; ownerUserId?: string | null; ownerName?: string | null; status: string; lifecycleStatus: string; isFrozen: boolean; runCount: number; totalCases: number; touched: number; completed: number; passed: number; progressPercent: number; passRate: number | null; createdAt: string };
 type PlanListResult = { items: { total: number; rows: PlanListItem[] }; summary: PlanSummary };
-type PlanRun = { testPlanRunId: string; testPlanId: string; testCycleId: string; cycleCode: string; cycleName: string; status: string; runCode: string; runName: string; configurationKey?: string | null; configurationName?: string | null; configurationJson?: string | null; ownerUserId?: string | null; ownerName?: string | null; buildId: string; buildNumber?: string | null; environmentId: string; environmentName?: string | null; totalCases: number; untested: number; inProgress: number; passed: number; failed: number; blocked: number; skipped: number; progressPercent: number; passRate: number | null; createdAt: string };
+type PlanRun = { testPlanRunId: string; testPlanId: string; testCycleId: string; cycleCode: string; cycleName: string; status: string; runCode: string; runName: string; configurationKey?: string | null; configurationName?: string | null; configurationJson?: string | null; ownerUserId?: string | null; ownerName?: string | null; buildId: string; buildNumber?: string | null; environmentId: string; environmentName?: string | null; totalCases: number; untested: number; inProgress: number; passed: number; failed: number; blocked: number; skipped: number; progressPercent: number; passRate: number | null; createdAt: string; unassignedCases: number; assignments: RunMember[] };
+type RunMember = { testerUserId: string; testerName?: string | null; role: string; assignedAt: string };
+type PlanMember = { userId: string; displayName: string };
 type PlanDetail = Omit<PlanListItem, "runCount" | "totalCases" | "touched" | "completed" | "passed" | "progressPercent" | "passRate"> & { frozenAt?: string | null; copiedFromTestPlanId?: string | null; notes?: string | null; updatedAt?: string | null; summary: PlanSummary; runs: PlanRun[] };
 type CycleOption = { testCycleId: string; projectId: string; releaseId: string; buildId: string; cycleCode: string; cycleName: string; status: string };
 type SuiteOption = { testSuiteId: string; suiteCode: string; suiteName: string; caseCount: number };
@@ -34,6 +36,8 @@ const planStatusInfo: Record<string, { label: string; tone: string; dot: string;
   Closed: { label: "ปิดแล้ว", tone: "green", dot: "green", meaning: "ปิดแผนแล้ว ระบบ Freeze อัตโนมัติ ใช้ Reopen เพื่อแก้ไขต่อ" },
   Cancelled: { label: "ยกเลิก", tone: "red", dot: "red", meaning: "ยกเลิกแผน เก็บ Run และผลการทดสอบไว้ ใช้ Reopen เพื่อนำกลับมา" },
 };
+const runRoles = ["Tester", "Reviewer", "Observer"] as const;
+const runRoleLabel: Record<string, string> = { Tester: "ผู้ทดสอบ", Reviewer: "ผู้ตรวจ", Observer: "ผู้ติดตาม" };
 const runStatusTone: Record<string, string> = { Draft: "gray", InProgress: "blue", Completed: "green", Closed: "green", Cancelled: "red" };
 const caseStatusSegments = [
   { key: "passed", label: "ผ่าน", className: "is-pass" },
@@ -47,15 +51,18 @@ const caseStatusSegments = [
 const percentText = (value: number | null | undefined) => value === null || value === undefined ? "—" : `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
 const shortDate = (value?: string | null) => value ? formatThaiDateTime(value, { day: "numeric", month: "short", year: "2-digit" }) : "";
 const dateOnly = (value?: string | null) => value ? value.slice(0, 10) : "";
+/** API รุ่นก่อนเฟส 4 ไม่ส่งทีม/จำนวนเคสที่ยังไม่มีผู้รับผิดชอบของ Run — เติมค่าว่างกันหน้าพังระหว่างรอ deploy API */
+const normalizePlan = (plan: PlanDetail): PlanDetail => ({ ...plan, runs: plan.runs.map((r) => ({ ...r, assignments: r.assignments ?? [], unassignedCases: r.unassignedCases ?? 0 })) });
 const errorText = (e: unknown, fallback: string) => e instanceof Error && e.message ? e.message : fallback;
 /** Configuration ที่อ่านได้: OS / Browser / Device จาก ConfigurationJson (คีย์อื่นเก็บไว้เมื่อแก้ไข) */
 const parseConfig = (json?: string | null): Record<string, unknown> => { try { const value = json ? JSON.parse(json) : {}; return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; } catch { return {}; } };
 const configSummary = (run: PlanRun) => { const c = parseConfig(run.configurationJson); return ["os", "browser", "device"].map((k) => c[k]).filter((v) => typeof v === "string" && v).join(" · "); };
 
-export function TestPlansPage({ search, canEdit, canFreeze, canRun, contextProjectId, contextReleaseId, onOpenExecution, onOpenCycle }: {
+export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, contextProjectId, contextReleaseId, onOpenExecution, onOpenCycle }: {
   search: string;
   canEdit: boolean;
   canFreeze: boolean;
+  canAssign: boolean;
   canRun: boolean;
   contextProjectId: string;
   contextReleaseId: string;
@@ -189,11 +196,12 @@ export function TestPlansPage({ search, canEdit, canFreeze, canRun, contextProje
         </div>
         <ListPager position="bottom" page={page} pageCount={pageCount} totalCount={total} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} />
       </article>
-      {detailId && <PlanDetailModal planId={detailId} version={detailVersion} users={users} canEdit={canEdit} canFreeze={canFreeze} canRun={canRun}
+      {detailId && <PlanDetailModal planId={detailId} version={detailVersion} users={users} canEdit={canEdit} canFreeze={canFreeze} canAssign={canAssign} canRun={canRun}
         onClose={() => setDetailId(null)}
         onChanged={() => setReload((x) => x + 1)}
         onDeleted={() => { setDetailId(null); setReload((x) => x + 1); }}
         onEdit={(plan) => setForm({ plan })}
+        onCloned={(created) => { setReload((x) => x + 1); setDetailId(created.testPlanId); }}
         onOpenExecution={(cycleId) => { setDetailId(null); onOpenExecution(cycleId); }}
         onOpenCycle={(cycleId) => { setDetailId(null); onOpenCycle(cycleId); }} />}
       {form && <PlanFormModal plan={form.plan} projectId={form.plan?.projectId ?? contextProjectId} defaultReleaseId={contextReleaseId} users={users}
@@ -203,9 +211,9 @@ export function TestPlansPage({ search, canEdit, canFreeze, canRun, contextProje
   );
 }
 
-function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canRun, onClose, onChanged, onDeleted, onEdit, onOpenExecution, onOpenCycle }: {
-  planId: string; version: number; users: UserLookup[]; canEdit: boolean; canFreeze: boolean; canRun: boolean;
-  onClose: () => void; onChanged: () => void; onDeleted: () => void; onEdit: (plan: PlanDetail) => void;
+function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign, canRun, onClose, onChanged, onDeleted, onEdit, onCloned, onOpenExecution, onOpenCycle }: {
+  planId: string; version: number; users: UserLookup[]; canEdit: boolean; canFreeze: boolean; canAssign: boolean; canRun: boolean;
+  onClose: () => void; onChanged: () => void; onDeleted: () => void; onEdit: (plan: PlanDetail) => void; onCloned: (plan: PlanDetail) => void;
   onOpenExecution: (cycleId: string) => void; onOpenCycle: (cycleId: string) => void;
 }) {
   const [plan, setPlan] = useState<PlanDetail | null>(null);
@@ -215,12 +223,14 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canRun, o
   const [reload, setReload] = useState(0);
   const [runFilter, setRunFilter] = useState("");
   const [runForm, setRunForm] = useState<{ run?: PlanRun } | null>(null);
+  const [teamRun, setTeamRun] = useState<PlanRun | null>(null);
+  const [cloneOpen, setCloneOpen] = useState(false);
 
   useEffect(() => {
     const ctrl = new AbortController();
     setLoading(true);
     getJson<PlanDetail>(`${apiUrl}/test-plans/${planId}`, ctrl.signal)
-      .then((data) => { setPlan(data); setError(""); })
+      .then((data) => { setPlan(normalizePlan(data)); setError(""); })
       .catch((e) => { if (!isAbortError(e)) setError(errorText(e, "โหลด Test Plan ไม่สำเร็จ")); })
       .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
     return () => ctrl.abort();
@@ -245,7 +255,7 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canRun, o
     setBusy(true);
     try {
       const updated = await apiFetch<PlanDetail>(`/test-plans/${plan.testPlanId}/${action}`, { method: "POST", json: { reason }, fallbackMessage: `${meta.title} ไม่สำเร็จ` });
-      setPlan(updated);
+      setPlan(normalizePlan(updated));
       onChanged();
       notify(meta.done, "success");
     } catch (e) { notify(errorText(e, `${meta.title} ไม่สำเร็จ`), "error"); }
@@ -290,6 +300,7 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canRun, o
       {plan && (canEdit || canFreeze) && <div className="cyd-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Plan">
         {canEdit && editable && <button type="button" className="btn primary" disabled={busy} onClick={() => setRunForm({})}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม Run</button>}
         {canEdit && editable && <button type="button" className="btn" disabled={busy} onClick={() => onEdit(plan)}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไขแผน</button>}
+        {canEdit && plan.runs.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => setCloneOpen(true)} title="สร้างแผนใหม่จากแผนนี้สำหรับ Build ใหม่ (ไม่คัดลอกผลการทดสอบ)"><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone / Rerun</button>}
         {canFreeze && plan.lifecycleStatus === "Active" && <button type="button" className="btn" disabled={busy || plan.status !== "Completed"} title={plan.status !== "Completed" ? "ปิดได้เมื่อทุก Run จบแล้ว (Completed / Closed / Cancelled)" : undefined} onClick={() => lifecycle("close")}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> ปิดแผน</button>}
         {canFreeze && plan.lifecycleStatus === "Active" && <button type="button" className="btn" disabled={busy} onClick={() => lifecycle(plan.isFrozen ? "unfreeze" : "freeze")}><span className="material-symbols-outlined" aria-hidden="true">{plan.isFrozen ? "lock_open" : "lock"}</span> {plan.isFrozen ? "Unfreeze" : "Freeze"}</button>}
         {canFreeze && plan.lifecycleStatus !== "Active" && <button type="button" className="btn primary" disabled={busy} onClick={() => lifecycle("reopen")}><span className="material-symbols-outlined" aria-hidden="true">replay</span> Reopen</button>}
@@ -337,6 +348,10 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canRun, o
                         {canRun ? <button type="button" className="tp-link" onClick={() => onOpenCycle(run.testCycleId)} title="เปิดรายละเอียด Test Cycle">{run.cycleCode}</button> : run.cycleCode}
                         {` · Build ${run.buildNumber ?? "-"} · ${run.environmentName ?? "-"}`}{config ? ` · ${config}` : ""}{run.ownerName ? ` · ${run.ownerName}` : ""}
                       </small>
+                      {(run.assignments.length > 0 || run.unassignedCases > 0) && <span className="tp-team">
+                        {run.assignments.length > 0 && <span><span className="material-symbols-outlined" aria-hidden="true">group</span>{run.assignments.map((m) => `${m.testerName ?? "ผู้ใช้"} (${runRoleLabel[m.role] ?? m.role})`).join(", ")}</span>}
+                        {run.unassignedCases > 0 && <span className="tp-unassigned">ยังไม่มีผู้รับผิดชอบ {run.unassignedCases.toLocaleString()} เคส</span>}
+                      </span>}
                     </div>
                     <div className="tp-run-progress">
                       <div className="cyd-bar" role="img" aria-label={`${run.runCode}: ${caseStatusSegments.map((x) => `${x.label} ${run[x.key]}`).join(", ")}`}>
@@ -346,6 +361,7 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canRun, o
                     </div>
                     <div className="tp-run-actions">
                       {canRun && run.status === "InProgress" && <button type="button" className="btn" disabled={busy} onClick={() => onOpenExecution(run.testCycleId)} aria-label={`เปิด Execution Workspace ของ ${run.runCode}`} title="เปิด Execution Workspace"><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span>ทดสอบ</button>}
+                      {canAssign && editable && <button type="button" className="tp-icon" disabled={busy} aria-label={`จัดทีม ${run.runCode}`} title="จัดทีมและแบ่งเคส" onClick={() => setTeamRun(run)}><span className="material-symbols-outlined" aria-hidden="true">group_add</span></button>}
                       {canEdit && editable && <button type="button" className="tp-icon" disabled={busy} aria-label={`แก้ไข ${run.runCode}`} title="แก้ไข Run" onClick={() => setRunForm({ run })}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>}
                       {canEdit && editable && <button type="button" className="tp-icon danger" disabled={busy} aria-label={`ถอด ${run.runCode} ออกจากแผน`} title="ถอดออกจากแผน (เฉพาะ Run ที่ยังไม่มีผลการทดสอบ)" onClick={() => detach(run)}><span className="material-symbols-outlined" aria-hidden="true">link_off</span></button>}
                     </div>
@@ -379,6 +395,8 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canRun, o
     </ModalShell>
     {/* หน้าต่าง Run อยู่นอกกล่องรายละเอียด — ถ้าซ้อนข้างใน .modal (fixed) จะยึดกับกล่องแม่แทนหน้าจอ */}
     {runForm && plan && <RunFormModal plan={plan} run={runForm.run} users={users} onClose={() => setRunForm(null)} onSaved={() => { setRunForm(null); refresh(); }} />}
+    {teamRun && plan && <RunTeamModal plan={plan} run={teamRun} onClose={() => setTeamRun(null)} onSaved={() => { setTeamRun(null); refresh(); }} />}
+    {cloneOpen && plan && <ClonePlanModal plan={plan} onClose={() => setCloneOpen(false)} onCloned={(created) => { setCloneOpen(false); onCloned(created); }} />}
     </>
   );
 }
@@ -560,6 +578,158 @@ function RunFormModal({ plan, run, users, onClose, onSaved }: { plan: PlanDetail
         <small className={`tp-form-status${missing.length || keyInvalid ? " is-missing" : ""}`} role="status">{missing.length ? `ยังขาด: ${missing.join(", ")}` : keyInvalid ? "Configuration Key ไม่ถูกต้อง" : "ข้อมูลครบ พร้อมบันทึก"}</small>
         <button className="btn" disabled={saving} onClick={onClose}>ยกเลิก</button>
         <button className="btn primary" disabled={saving || missing.length > 0 || keyInvalid || (!run && optionsLoading)} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : run ? "บันทึก" : mode === "suite" ? "สร้าง Cycle และเพิ่ม Run" : "เพิ่ม Run"}</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/** ทีมระดับ Run (แทนที่ทั้งชุด) + แบ่งเคส NotRun ที่ยังไม่มีผู้รับผิดชอบให้ผู้ทดสอบแบบวนทีละคน — ไม่เขียนทับเคสที่มีผู้รับผิดชอบแล้ว */
+function RunTeamModal({ plan, run, onClose, onSaved }: { plan: PlanDetail; run: PlanRun; onClose: () => void; onSaved: () => void }) {
+  const [members, setMembers] = useState<PlanMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [roles, setRoles] = useState<Record<string, string>>(() => Object.fromEntries(run.assignments.map((m) => [m.testerUserId, m.role])));
+  const [query, setQuery] = useState("");
+  const [bulk, setBulk] = useState(run.unassignedCases > 0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getJson<PlanMember[]>(`${apiUrl}/test-plans/${plan.testPlanId}/members`, ctrl.signal)
+      .then(setMembers)
+      .catch((e) => { if (!isAbortError(e)) setError(errorText(e, "โหลดสมาชิก Project ไม่สำเร็จ")); })
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+    return () => ctrl.abort();
+  }, [plan.testPlanId]);
+
+  const selected = Object.entries(roles);
+  const testerCount = selected.filter(([, role]) => role === "Tester").length;
+  const visible = members.filter((m) => !query.trim() || m.displayName.toLowerCase().includes(query.trim().toLowerCase()));
+  const toggle = (userId: string, on: boolean) => setRoles((current) => { const next = { ...current }; if (on) next[userId] = next[userId] ?? "Tester"; else delete next[userId]; return next; });
+  const bulkBlocked = bulk && testerCount === 0;
+
+  const save = async () => {
+    setSaving(true); setError("");
+    try {
+      const result = await apiFetch<{ assignedCases: number }>(`/test-plans/${plan.testPlanId}/runs/${run.testPlanRunId}/assign`, { method: "POST", json: { assignments: selected.map(([testerUserId, role]) => ({ testerUserId, role })), bulkAssignUnassignedCases: bulk }, fallbackMessage: "บันทึกทีมไม่สำเร็จ" });
+      notify(`บันทึกทีมของ ${run.runCode} แล้ว${bulk ? ` · แบ่งเคสให้ผู้ทดสอบ ${result.assignedCases.toLocaleString()} เคส` : ""}`, "success");
+      onSaved();
+    } catch (e) { setError(errorText(e, "บันทึกทีมไม่สำเร็จ")); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <ModalShell labelledBy="tp-team-title" className="tp-form tp-team-form" onDismiss={() => { if (!saving) onClose(); }}>
+      <div className="modal-head"><div><h2 id="tp-team-title">จัดทีม {run.runCode}</h2><small>{run.runName} — เลือกสมาชิก Project และบทบาท (บันทึกแทนทีมเดิมทั้งชุด)</small></div><button disabled={saving} aria-label="ปิดหน้าต่าง" onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+      {members.length > 8 && <label className="tp-member-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ค้นหาชื่อ" aria-label="ค้นหาสมาชิก" /></label>}
+      <div className="tp-members" role="group" aria-label="สมาชิก Project">
+        {loading ? <div className="cyd-state" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังโหลดสมาชิก...</div>
+          : !members.length ? <div className="cyd-state">ยังไม่มีสมาชิกใน Project นี้ — เพิ่มสมาชิกที่หน้า User / Role</div>
+          : visible.map((m) => {
+            const role = roles[m.userId];
+            return <div key={m.userId} className={`tp-member${role ? " is-selected" : ""}`}>
+              <label><input type="checkbox" checked={!!role} disabled={saving} onChange={(e) => toggle(m.userId, e.target.checked)} /><span>{m.displayName}</span></label>
+              <select aria-label={`บทบาทของ ${m.displayName}`} value={role ?? "Tester"} disabled={saving || !role} onChange={(e) => setRoles((current) => ({ ...current, [m.userId]: e.target.value }))}>
+                {runRoles.map((r) => <option key={r} value={r}>{runRoleLabel[r]} ({r})</option>)}
+              </select>
+            </div>;
+          })}
+      </div>
+      <label className="tp-check tp-bulk">
+        <input type="checkbox" checked={bulk} disabled={saving || run.unassignedCases === 0} onChange={(e) => setBulk(e.target.checked)} />
+        <span>แบ่งเคสที่ยังไม่เริ่มและยังไม่มีผู้รับผิดชอบ ({run.unassignedCases.toLocaleString()} เคส) ให้ผู้ทดสอบแบบวนทีละคน<small>เคสที่มีผู้รับผิดชอบแล้วจะไม่ถูกเปลี่ยน · ผู้ทดสอบเห็นงานในหน้า My Work</small></span>
+      </label>
+      <div className="modal-actions">
+        <small className={`tp-form-status${bulkBlocked ? " is-missing" : ""}`} role="status">{bulkBlocked ? "ยังขาด: ผู้ทดสอบ (Tester) อย่างน้อย 1 คนเพื่อแบ่งเคส" : `เลือก ${selected.length} คน · ผู้ทดสอบ ${testerCount} คน`}</small>
+        <button className="btn" disabled={saving} onClick={onClose}>ยกเลิก</button>
+        <button className="btn primary" disabled={saving || loading || bulkBlocked} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : "บันทึกทีม"}</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/** Clone/Rerun Plan (§4.4): เลือก Release + Build ครั้งเดียวทั้งแผน, Environment เดิมเป็นค่าเริ่มต้น เปลี่ยนได้ราย Run — Preview ทุก Run ก่อนยืนยัน */
+function ClonePlanModal({ plan, onClose, onCloned }: { plan: PlanDetail; onClose: () => void; onCloned: (created: PlanDetail) => void }) {
+  const [releases, setReleases] = useState<ReleaseItem[]>([]);
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
+  const [builds, setBuilds] = useState<BuildItem[]>([]);
+  const [releaseId, setReleaseId] = useState("");
+  const [buildId, setBuildId] = useState("");
+  const [planName, setPlanName] = useState(`${plan.planName} (Rerun)`);
+  const [targets, setTargets] = useState<Record<string, string>>(() => Object.fromEntries(plan.runs.map((r) => [r.testPlanRunId, r.environmentId])));
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    Promise.all([
+      getJson<ReleaseItem[]>(`${apiUrl}/releases?projectId=${plan.projectId}`, ctrl.signal),
+      getJson<EnvironmentOption[]>(`${apiUrl}/test-environments?projectId=${plan.projectId}`, ctrl.signal),
+    ]).then(([releaseRows, environmentRows]) => {
+      // Test Cycle สร้างใน Release ที่ปล่อยแล้ว/ยกเลิกไม่ได้ จึงแสดงเฉพาะ Release ที่ยังใช้งาน
+      const open = releaseRows.filter((x) => x.status !== "Cancelled" && x.status !== "Released");
+      setReleases(open);
+      setReleaseId(open.some((x) => x.releaseId === plan.releaseId) ? plan.releaseId : open[0]?.releaseId ?? "");
+      setEnvironments(environmentRows.filter((x) => x.isActive));
+    }).catch((e) => { if (!isAbortError(e)) setError(errorText(e, "โหลดตัวเลือกไม่สำเร็จ")); })
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+    return () => ctrl.abort();
+  }, [plan.projectId, plan.releaseId]);
+
+  useEffect(() => {
+    setBuildId("");
+    if (!releaseId) { setBuilds([]); return; }
+    const ctrl = new AbortController();
+    getJson<BuildItem[]>(`${apiUrl}/releases/${releaseId}/builds`, ctrl.signal)
+      .then((rows) => setBuilds(rows.filter((x) => x.isActive)))
+      .catch((e) => { if (!isAbortError(e)) setError(errorText(e, "โหลด Build ไม่สำเร็จ")); });
+    return () => ctrl.abort();
+  }, [releaseId]);
+
+  const activeEnvironmentIds = new Set(environments.map((x) => x.testEnvironmentId));
+  const missingEnvironment = plan.runs.filter((r) => !activeEnvironmentIds.has(targets[r.testPlanRunId]));
+  const missing = [!releaseId && "Release", !buildId && "Build", !planName.trim() && "ชื่อแผนใหม่", ...(loading ? [] : missingEnvironment.map((r) => `Environment ของ ${r.runCode}`))].filter(Boolean) as string[];
+
+  const save = async () => {
+    setSaving(true); setError("");
+    try {
+      const environmentOverrides = plan.runs.filter((r) => targets[r.testPlanRunId] !== r.environmentId).map((r) => ({ sourceRunId: r.testPlanRunId, targetEnvironmentId: targets[r.testPlanRunId] }));
+      const created = await apiFetch<PlanDetail>(`/test-plans/${plan.testPlanId}/clone`, { method: "POST", json: { targetReleaseId: releaseId, targetBuildId: buildId, cloneMode: "SourceSnapshot", environmentOverrides, planName: planName.trim(), planCode: null }, fallbackMessage: "Clone Test Plan ไม่สำเร็จ" });
+      notify(`สร้าง ${created.planCode} จาก ${plan.planCode} แล้ว (${created.runs.length} Run)`, "success");
+      onCloned(created);
+    } catch (e) { setError(errorText(e, "Clone Test Plan ไม่สำเร็จ")); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <ModalShell labelledBy="tp-clone-title" className="tp-form tp-clone-form" onDismiss={() => { if (!saving) onClose(); }}>
+      <div className="modal-head"><div><h2 id="tp-clone-title">Clone / Rerun {plan.planCode}</h2><small>สร้างแผนใหม่สำหรับ Build ใหม่ — แผนเดิมไม่ถูกแก้ไข</small></div><button disabled={saving} aria-label="ปิดหน้าต่าง" onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+      <div className="form-grid">
+        <label className="full">ชื่อแผนใหม่ <span className="required">*</span><input value={planName} disabled={saving} onChange={(e) => setPlanName(e.target.value)} maxLength={200} /></label>
+        <label>Release <span className="required">*</span><select value={releaseId} disabled={saving || loading} onChange={(e) => setReleaseId(e.target.value)}><option value="">เลือก Release</option>{releases.map((r) => <option key={r.releaseId} value={r.releaseId}>{r.releaseCode}{r.version ? ` · ${r.version}` : ""}</option>)}</select></label>
+        <label>Build เป้าหมาย <span className="required">*</span><select value={buildId} disabled={saving || !releaseId} onChange={(e) => setBuildId(e.target.value)}><option value="">{releaseId && !builds.length ? "ไม่มี Build ที่ใช้งานใน Release นี้" : "เลือก Build"}</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select><small>ทุก Run ใช้ Build นี้</small></label>
+      </div>
+      <h3 className="modal-section-title tp-config-title">Run ที่จะสร้าง ({plan.runs.length})</h3>
+      <ul className="tp-clone-runs">
+        {plan.runs.map((r) => {
+          const sourceInactive = !loading && !activeEnvironmentIds.has(r.environmentId);
+          return <li key={r.testPlanRunId} className={!loading && !activeEnvironmentIds.has(targets[r.testPlanRunId]) ? "is-missing" : undefined}>
+            <span className="tp-clone-run"><b>{r.runCode}</b>{r.configurationName && <span className="tp-config">{r.configurationName}</span>}<small>{r.runName} · {r.totalCases.toLocaleString()} เคส · เดิม {r.environmentName ?? "-"}{sourceInactive ? " (ปิดใช้งานแล้ว)" : ""}</small></span>
+            <select aria-label={`Environment ของ ${r.runCode}`} value={activeEnvironmentIds.has(targets[r.testPlanRunId]) ? targets[r.testPlanRunId] : ""} disabled={saving || loading} onChange={(e) => setTargets((current) => ({ ...current, [r.testPlanRunId]: e.target.value }))}>
+              <option value="">เลือก Environment</option>
+              {environments.map((x) => <option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}{x.testEnvironmentId === r.environmentId ? " (เดิม)" : ""}</option>)}
+            </select>
+          </li>;
+        })}
+      </ul>
+      <p className="tp-note"><span className="material-symbols-outlined" aria-hidden="true">info</span><span>คัดลอก Test Case + Revision (Source Snapshot), Configuration, ผู้รับผิดชอบ Run และทีม — <b>ไม่คัดลอก</b> ผลการทดสอบ, Defect, หลักฐาน และผู้รับผิดชอบรายเคส; Test Cycle ใหม่เริ่มเป็น Draft</span></p>
+      <div className="modal-actions">
+        <small className={`tp-form-status${missing.length ? " is-missing" : ""}`} role="status">{missing.length ? `ยังขาด: ${missing.join(", ")}` : "ข้อมูลครบ พร้อมสร้าง"}</small>
+        <button className="btn" disabled={saving} onClick={onClose}>ยกเลิก</button>
+        <button className="btn primary" disabled={saving || loading || missing.length > 0} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง...</> : `สร้างแผนใหม่ (${plan.runs.length} Run)`}</button>
       </div>
     </ModalShell>
   );

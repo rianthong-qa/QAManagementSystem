@@ -61,6 +61,15 @@ public sealed class TestPlansController(TestPlanService service) : ControllerBas
     [HttpPost("{planId:guid}/runs/attach-cycle"), Authorize(Policy = "TestPlanEdit")]
     public Task<ActionResult<TestPlanRunDto>> AttachCycle(Guid planId, AttachTestPlanCycleRequest request, CancellationToken ct) => Run(() => service.AttachCycleAsync(planId, request, UserId(), ct));
 
+    [HttpPost("{planId:guid}/clone"), Authorize(Policy = "TestPlanEdit")]
+    public Task<ActionResult<TestPlanDto>> Clone(Guid planId, CloneTestPlanRequest request, CancellationToken ct) => Run(() => service.CloneAsync(planId, request, UserId(), ct));
+
+    [HttpGet("{planId:guid}/members"), Authorize(Policy = "TestPlanAssign")]
+    public Task<ActionResult<IReadOnlyList<TestPlanMemberDto>>> Members(Guid planId, CancellationToken ct) => Run(() => service.MembersAsync(planId, ct));
+
+    [HttpPost("{planId:guid}/runs/{runId:guid}/assign"), Authorize(Policy = "TestPlanAssign")]
+    public Task<ActionResult<AssignTestPlanRunResultDto>> AssignRun(Guid planId, Guid runId, AssignTestPlanRunRequest request, CancellationToken ct) => Run(() => service.AssignRunAsync(planId, runId, request, UserId(), ct));
+
     [HttpGet("{planId:guid}/runs/{runId:guid}")]
     public Task<ActionResult<TestPlanRunDto>> GetRun(Guid planId, Guid runId, CancellationToken ct) => Run(() => service.GetRunAsync(planId, runId, ct));
 

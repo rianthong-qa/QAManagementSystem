@@ -2,6 +2,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Application.TestPlanning;
+using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Governance;
 using ProMaxx2.QA.Domain.TestPlanning;
 
@@ -29,31 +30,47 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
             plans = plans.Where(x => x.PlanCode.Contains(term) || x.PlanName.Contains(term));
         }
 
-        var rows = WithStatus(plans);
-        if (!string.IsNullOrWhiteSpace(status)) rows = rows.Where(x => x.Status == status.Trim());
-
-        var total = await rows.CountAsync(ct);
-        var pageRows = await rows.OrderByDescending(x => x.Row.Plan.CreatedAt).ThenBy(x => x.Row.Plan.PlanCode)
-            .Skip((page - 1) * size).Take(size)
+        // ตัวนับ + สถานะของทุก Plan ที่ตรง filter: นับเคสด้วย GROUP BY (TestCycleId, CurrentStatus) ครั้งเดียว (index ครอบ) แล้วรวม/คำนวณสถานะ
+        // ในหน่วยความจำ — จำนวน Plan/Run น้อยกว่าเคสมาก; แทน Query สถานะแบบ subquery ต่อ Plan ที่รันซ้ำ 3 รอบ (วัดที่ 30,000 เคส: กรองสถานะ 318 ms)
+        var matches = await CountersAsync(plans, ct);
+        if (!string.IsNullOrWhiteSpace(status)) matches = matches.Where(x => x.Status == status.Trim()).ToList();
+        var pageCounters = matches.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.PlanCode, StringComparer.Ordinal).Skip((page - 1) * size).Take(size).ToList();
+        var pageIds = pageCounters.Select(x => x.TestPlanId).ToList();
+        var details = await db.TestPlans.AsNoTracking().Where(x => pageIds.Contains(x.TestPlanId))
             .Select(x => new
             {
-                x.Row.Plan.TestPlanId, x.Row.Plan.ProjectId, x.Row.Plan.ReleaseId, x.Row.Plan.PlanCode, x.Row.Plan.PlanName, x.Row.Plan.PlanType,
-                x.Row.Plan.StartDate, x.Row.Plan.EndDate, x.Row.Plan.OwnerUserId, x.Row.Plan.LifecycleStatus, x.Row.Plan.IsFrozen, x.Row.Plan.CreatedAt,
-                ReleaseCode = db.Releases.Where(r => r.ReleaseId == x.Row.Plan.ReleaseId).Select(r => r.ReleaseCode).FirstOrDefault(),
-                OwnerName = x.Row.Plan.OwnerUserId != null ? db.Users.Where(u => u.UserId == x.Row.Plan.OwnerUserId).Select(u => u.DisplayName).FirstOrDefault() : null,
-                x.Status, x.Row.RunCount, x.Row.TotalCases, x.Row.Untested, x.Row.Passed, x.Row.Failed, x.Row.Blocked, x.Row.Skipped,
+                x.TestPlanId, x.ProjectId, x.ReleaseId, x.PlanName, x.PlanType, x.StartDate, x.EndDate, x.OwnerUserId, x.LifecycleStatus, x.IsFrozen,
+                ReleaseCode = db.Releases.Where(r => r.ReleaseId == x.ReleaseId).Select(r => r.ReleaseCode).FirstOrDefault(),
+                OwnerName = x.OwnerUserId != null ? db.Users.Where(u => u.UserId == x.OwnerUserId).Select(u => u.DisplayName).FirstOrDefault() : null,
             })
-            .ToListAsync(ct);
+            .ToDictionaryAsync(x => x.TestPlanId, ct);
 
-        var items = pageRows.Select(x =>
+        var items = pageCounters.Select(c =>
         {
-            var completed = x.Passed + x.Failed + x.Blocked + x.Skipped;
-            var touched = x.TotalCases - x.Untested;
-            return new TestPlanListItemDto(x.TestPlanId, x.ProjectId, x.ReleaseId, x.ReleaseCode, x.PlanCode, x.PlanName, x.PlanType, x.StartDate, x.EndDate, x.OwnerUserId, x.OwnerName,
-                x.Status, x.LifecycleStatus, x.IsFrozen, x.RunCount, x.TotalCases, touched, completed, x.Passed, Percent(touched, x.TotalCases), completed == 0 ? null : Percent(x.Passed, completed), x.CreatedAt);
+            var x = details[c.TestPlanId];
+            var completed = c.Passed + c.Failed + c.Blocked + c.Skipped;
+            var touched = c.TotalCases - c.Untested;
+            return new TestPlanListItemDto(c.TestPlanId, x.ProjectId, x.ReleaseId, x.ReleaseCode, c.PlanCode, x.PlanName, x.PlanType, x.StartDate, x.EndDate, x.OwnerUserId, x.OwnerName,
+                c.Status, x.LifecycleStatus, x.IsFrozen, c.RunCount, c.TotalCases, touched, completed, c.Passed, Percent(touched, c.TotalCases), completed == 0 ? null : Percent(c.Passed, completed), c.CreatedAt);
         }).ToList();
 
-        var summary = await SummaryAsync(rows.Select(x => x.Row.Plan.TestPlanId), ct);
+        var runCount = matches.Sum(x => x.RunCount);
+        TestPlanSummaryDto summary;
+        if (runCount == 0) summary = TestPlanSummaryDto.Empty;
+        else
+        {
+            var matchIds = matches.Select(x => x.TestPlanId).ToList();
+            var retestCounts = await RetestCountsQuery(db, db.TestPlanRuns.Where(r => matchIds.Contains(r.TestPlanId))).ToListAsync(ct);
+            var counts = new Dictionary<string, int>
+            {
+                ["NotRun"] = matches.Sum(x => x.Untested), ["InProgress"] = matches.Sum(x => x.InProgress), ["Pass"] = matches.Sum(x => x.Passed),
+                ["Fail"] = matches.Sum(x => x.Failed), ["Blocked"] = matches.Sum(x => x.Blocked), ["Skipped"] = matches.Sum(x => x.Skipped),
+            };
+            // สถานะอื่นที่ไม่อยู่ในสูตร (ข้อมูลเก่า) ยังนับใน Total เหมือน SummaryAsync
+            counts["Other"] = matches.Sum(x => x.TotalCases) - counts.Values.Sum();
+            summary = Summarize(runCount, counts, retestCounts);
+        }
+        var total = matches.Count;
         return new TestPlanListResultDto(new PagedResult<TestPlanListItemDto>(total, items), summary);
     }
 
@@ -115,6 +132,25 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
 
     public Task<bool> CycleHasExecutionsAsync(Guid testCycleId, CancellationToken ct) => db.TestExecutions.AnyAsync(e => e.CycleCase.TestCycleId == testCycleId, ct);
     public void RemoveRun(TestPlanRun entity) => db.TestPlanRuns.Remove(entity);
+    public async Task<IReadOnlyList<TestPlanRun>> ListRunEntitiesAsync(Guid testPlanId, CancellationToken ct) => await db.TestPlanRuns.Include(x => x.Assignments).Where(x => x.TestPlanId == testPlanId).OrderBy(x => x.CreatedAt).ThenBy(x => x.RunCode).ToListAsync(ct);
+    public async Task<IReadOnlyList<TestPlanRunAssignment>> ListRunAssignmentsAsync(Guid testPlanRunId, CancellationToken ct) => await db.TestPlanRunAssignments.Where(x => x.TestPlanRunId == testPlanRunId).ToListAsync(ct);
+    public void AddRunAssignment(TestPlanRunAssignment entity) => db.TestPlanRunAssignments.Add(entity);
+    public void RemoveRunAssignment(TestPlanRunAssignment entity) => db.TestPlanRunAssignments.Remove(entity);
+    public async Task<IReadOnlyList<TestPlanMemberDto>> ListProjectMembersAsync(Guid projectId, CancellationToken ct) => await db.ProjectUsers.AsNoTracking()
+        .Where(x => x.ProjectId == projectId)
+        .Join(db.Users.Where(u => u.IsActive), pu => pu.UserId, u => u.UserId, (pu, u) => new TestPlanMemberDto(u.UserId, u.DisplayName))
+        .OrderBy(x => x.DisplayName)
+        .ToListAsync(ct);
+    public async Task<IReadOnlyList<Guid>> NonMemberUserIdsAsync(Guid projectId, IReadOnlyCollection<Guid> userIds, CancellationToken ct)
+    {
+        if (userIds.Count == 0) return [];
+        var members = await db.ProjectUsers.AsNoTracking().Where(x => x.ProjectId == projectId && userIds.Contains(x.UserId)).Select(x => x.UserId).ToListAsync(ct);
+        return userIds.Except(members).ToList();
+    }
+    public async Task<IReadOnlyList<TestCycleCase>> UnassignedNotRunCasesAsync(Guid testCycleId, CancellationToken ct) => await db.TestCycleCases.Where(x => x.TestCycleId == testCycleId && x.AssignedTesterUserId == null && x.CurrentStatus == "NotRun").OrderBy(x => x.ExecutionOrder).ToListAsync(ct);
+    public Task<Dictionary<Guid, TestCycleCaseAssignment>> AssignmentMetadataAsync(IReadOnlyCollection<Guid> testCycleCaseIds, CancellationToken ct) => db.TestCycleCaseAssignments.Where(x => testCycleCaseIds.Contains(x.TestCycleCaseId)).ToDictionaryAsync(x => x.TestCycleCaseId, ct);
+    public void AddAssignmentMetadata(TestCycleCaseAssignment entity) => db.TestCycleCaseAssignments.Add(entity);
+    public void AddAssignmentHistory(AssignmentHistory entity) => db.AssignmentHistories.Add(entity);
     public void AddAudit(AuditLog log) => db.AuditLogs.Add(log);
 
     public async Task RunInTransactionAsync(Func<Task> work, CancellationToken ct)
@@ -231,16 +267,62 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
                 Failed = r.Cycle.Cases.Count(c => c.CurrentStatus == "Fail"),
                 Blocked = r.Cycle.Cases.Count(c => c.CurrentStatus == "Blocked"),
                 Skipped = r.Cycle.Cases.Count(c => c.CurrentStatus == "Skipped"),
+                Unassigned = r.Cycle.Cases.Count(c => c.AssignedTesterUserId == null && c.CurrentStatus == "NotRun"),
             })
             .ToListAsync(ct);
+        // ทีมระดับ Run ของทุกแถวในคำขอเดียว (ไม่ยิงต่อ Run)
+        var runIds = rows.Select(x => x.TestPlanRunId).ToList();
+        var team = runIds.Count == 0 ? [] : await db.TestPlanRunAssignments.AsNoTracking()
+            .Where(a => runIds.Contains(a.TestPlanRunId))
+            .OrderBy(a => a.AssignedAt)
+            .Select(a => new { a.TestPlanRunId, Dto = new TestPlanRunAssignmentDto(a.TesterUserId, db.Users.Where(u => u.UserId == a.TesterUserId).Select(u => u.DisplayName).FirstOrDefault(), a.Role, a.AssignedAt) })
+            .ToListAsync(ct);
+        var teamByRun = team.ToLookup(x => x.TestPlanRunId, x => x.Dto);
         return rows.Select(x =>
         {
             var completed = x.Passed + x.Failed + x.Blocked + x.Skipped;
             return new TestPlanRunDto(x.TestPlanRunId, x.TestPlanId, x.TestCycleId, x.CycleCode, x.CycleName, x.Status, x.RunCode, x.RunName, x.ConfigurationKey, x.ConfigurationName, x.ConfigurationJson,
                 x.OwnerUserId, x.OwnerName, x.BuildId, x.BuildNumber, x.EnvironmentId, x.EnvironmentName, x.Total, x.Untested, x.InProgress, x.Passed, x.Failed, x.Blocked, x.Skipped,
-                Percent(x.Total - x.Untested, x.Total), completed == 0 ? null : Percent(x.Passed, completed), x.CreatedAt);
+                Percent(x.Total - x.Untested, x.Total), completed == 0 ? null : Percent(x.Passed, completed), x.CreatedAt, x.Unassigned, teamByRun[x.TestPlanRunId].ToList());
         }).ToList();
     }
+
+    private async Task<List<PlanCounters>> CountersAsync(IQueryable<TestPlan> plans, CancellationToken ct)
+    {
+        var heads = await plans.Select(p => new { p.TestPlanId, p.CreatedAt, p.PlanCode, p.LifecycleStatus }).ToListAsync(ct);
+        var runs = await db.TestPlanRuns.AsNoTracking().Where(r => plans.Select(p => p.TestPlanId).Contains(r.TestPlanId))
+            .Select(r => new { r.TestPlanId, r.TestCycleId, CycleStatus = r.Cycle.Status }).ToListAsync(ct);
+        var caseCounts = await db.TestCycleCases.AsNoTracking()
+            .Where(c => db.TestPlanRuns.Where(r => plans.Select(p => p.TestPlanId).Contains(r.TestPlanId)).Select(r => r.TestCycleId).Contains(c.TestCycleId))
+            .GroupBy(c => new { c.TestCycleId, c.CurrentStatus })
+            .Select(g => new { g.Key.TestCycleId, g.Key.CurrentStatus, Count = g.Count() })
+            .ToListAsync(ct);
+        var byCycle = caseCounts.ToLookup(x => x.TestCycleId);
+        var runsByPlan = runs.ToLookup(x => x.TestPlanId);
+        return heads.Select(h =>
+        {
+            var planRuns = runsByPlan[h.TestPlanId].ToList();
+            var counts = planRuns.SelectMany(r => byCycle[r.TestCycleId]).ToList();
+            int Count(string s) => counts.Where(x => x.CurrentStatus == s).Sum(x => x.Count);
+            var total = counts.Sum(x => x.Count);
+            var untested = Count("NotRun");
+            var status = PlanStatus(h.LifecycleStatus, planRuns.Count, planRuns.Count(r => r.CycleStatus == "InProgress"), planRuns.Count(r => TestPlanStatuses.TerminalRunStatuses.Contains(r.CycleStatus)), total, untested);
+            return new PlanCounters(h.TestPlanId, h.CreatedAt, h.PlanCode, status, planRuns.Count, total, untested, Count("InProgress"), Count("Pass"), Count("Fail"), Count("Blocked"), Count("Skipped"));
+        }).ToList();
+    }
+
+    /// <summary>
+    /// สถานะที่แสดงของ Plan (§2.3) ในหน่วยความจำ — ต้องตรงกับ expression ใน <see cref="WithStatus"/> ที่ใช้ฝั่ง SQL
+    /// (ตรวจด้วย unit test ที่เทียบรายการกับรายละเอียด)
+    /// </summary>
+    public static string PlanStatus(string lifecycleStatus, int runCount, int inProgressRuns, int terminalRuns, int totalCases, int untestedCases) =>
+        lifecycleStatus == TestPlanLifecycleStatuses.Cancelled ? TestPlanStatuses.Cancelled
+        : lifecycleStatus == TestPlanLifecycleStatuses.Closed ? TestPlanStatuses.Closed
+        : runCount > 0 && terminalRuns == runCount ? TestPlanStatuses.Completed
+        : inProgressRuns > 0 || totalCases > untestedCases ? TestPlanStatuses.InProgress
+        : TestPlanStatuses.Draft;
+
+    private sealed record PlanCounters(Guid TestPlanId, DateTime CreatedAt, string PlanCode, string Status, int RunCount, int TotalCases, int Untested, int InProgress, int Passed, int Failed, int Blocked, int Skipped);
 
     private static decimal Percent(int value, int total) => total == 0 ? 0m : Math.Round(value * 100m / total, 1);
 

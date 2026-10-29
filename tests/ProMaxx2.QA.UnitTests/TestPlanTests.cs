@@ -332,7 +332,14 @@ public sealed class TestPlanTests
     public async Task Plan_status_is_computed_from_runs_and_lifecycle()
     {
         var c = await CreateAsync();
-        async Task<string> StatusAsync(Guid id) => (await c.Service.GetAsync(id, CancellationToken.None)).Status;
+        // หน้ารายละเอียดคำนวณสถานะใน SQL (WithStatus) ส่วนหน้ารายการคำนวณในหน่วยความจำ (PlanStatus) — ต้องตรงกันทุกขั้น
+        async Task<string> StatusAsync(Guid id)
+        {
+            var detail = (await c.Service.GetAsync(id, CancellationToken.None)).Status;
+            var listed = (await c.Service.ListAsync(c.Baseline.Project.ProjectId, null, null, null, null, null, 1, 100, CancellationToken.None)).Items.Rows.Single(x => x.TestPlanId == id).Status;
+            Assert.Equal(detail, listed);
+            return detail;
+        }
         var plan = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
         Assert.Equal(TestPlanStatuses.Draft, await StatusAsync(plan.TestPlanId));
 
@@ -567,6 +574,7 @@ public sealed class TestPlanTests
     [InlineData("TestPlanView", "TESTPLAN.VIEW")]
     [InlineData("TestPlanEdit", "TESTPLAN.EDIT")]
     [InlineData("TestPlanFreeze", "TESTPLAN.FREEZE")]
+    [InlineData("TestPlanAssign", "TESTPLAN.ASSIGN")]
     public async Task Policies_require_their_permission_or_sys_admin(string policy, string permission)
     {
         var services = new ServiceCollection();
@@ -600,6 +608,132 @@ public sealed class TestPlanTests
         Assert.Equal(TestPlanErrorCodes.Frozen, Assert.IsType<Microsoft.AspNetCore.Mvc.ProblemDetails>(conflict.Value).Extensions["code"]);
         Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(missing.Result);
         Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(invalid.Result);
+    }
+
+    // ---------- เฟส 4: Run-level Assignment / Clone-Rerun ----------
+
+    private static async Task<Guid> AddMemberAsync(Ctx c)
+    {
+        var user = new ProMaxx2.QA.Domain.Identity.User($"member-{Guid.NewGuid():N}"[..20], "Member", null, "x");
+        var userId = user.UserId;
+        c.Db.AddRange(user, new ProMaxx2.QA.Domain.Identity.ProjectUser(c.Baseline.Project.ProjectId, userId, null));
+        await c.Db.SaveChangesAsync();
+        return userId;
+    }
+
+    [Fact]
+    public async Task Assign_replaces_team_and_round_robins_only_unassigned_not_run_cases()
+    {
+        var c = await CreateAsync();
+        var cycle = await AddCycleAsync(c, "AUT-CYC-001", "InProgress", null, "NotRun", "NotRun", "NotRun", "Pass", "NotRun");
+        var existingOwner = Guid.NewGuid();
+        var ordered = cycle.Cases.OrderBy(x => x.ExecutionOrder).ToList();
+        ordered[4].AssignTester(existingOwner);
+        await c.Db.SaveChangesAsync();
+        var plan = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        var run = await c.Service.AttachCycleAsync(plan.TestPlanId, Attach(cycle.TestCycleId), null, CancellationToken.None);
+        var a = await AddMemberAsync(c);
+        var b = await AddMemberAsync(c);
+        var reviewer = await AddMemberAsync(c);
+        var actor = Guid.NewGuid();
+
+        var result = await c.Service.AssignRunAsync(plan.TestPlanId, run.TestPlanRunId, new AssignTestPlanRunRequest([new(a, "tester"), new(b, "Tester"), new(reviewer, "Reviewer")], true), actor, CancellationToken.None);
+
+        Assert.Equal(3, (await c.Service.MembersAsync(plan.TestPlanId, CancellationToken.None)).Count);
+        Assert.Equal(3, result.AssignedCases);
+        Assert.Equal(3, result.Run.Assignments.Count);
+        Assert.Equal(0, result.Run.UnassignedCases);
+        Assert.Equal(a, ordered[0].AssignedTesterUserId);
+        Assert.Equal(b, ordered[1].AssignedTesterUserId);
+        Assert.Equal(a, ordered[2].AssignedTesterUserId);
+        Assert.Null(ordered[3].AssignedTesterUserId);              // Pass แล้ว ไม่ assign
+        Assert.Equal(existingOwner, ordered[4].AssignedTesterUserId); // มีผู้รับผิดชอบแล้ว ไม่เขียนทับ
+        Assert.Equal(3, await c.Db.TestCycleCaseAssignments.CountAsync(x => x.Status == "Assigned"));
+        Assert.Equal(3, await c.Db.AssignmentHistories.CountAsync(x => x.AlgorithmVersion == "testplan-round-robin-v1"));
+
+        // ส่งทีมใหม่ = แทนที่ทั้งชุด แต่ไม่ถอด assignment รายเคสที่ทำไปแล้ว
+        var replaced = await c.Service.AssignRunAsync(plan.TestPlanId, run.TestPlanRunId, new AssignTestPlanRunRequest([new(b, "Tester")], false), actor, CancellationToken.None);
+        Assert.Equal(b, Assert.Single(replaced.Run.Assignments).TesterUserId);
+        Assert.Equal(a, ordered[0].AssignedTesterUserId);
+    }
+
+    [Fact]
+    public async Task Assign_rejects_non_member_missing_tester_for_bulk_and_frozen_plan()
+    {
+        var c = await CreateAsync();
+        var (plan, _) = await PlanWithRunAsync(c);
+        var runId = (await c.Service.GetAsync(plan.TestPlanId, CancellationToken.None)).Runs.Single().TestPlanRunId;
+        var member = await AddMemberAsync(c);
+        var actor = Guid.NewGuid();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.AssignRunAsync(plan.TestPlanId, runId, new AssignTestPlanRunRequest([new(Guid.NewGuid(), "Tester")], false), actor, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.AssignRunAsync(plan.TestPlanId, runId, new AssignTestPlanRunRequest([new(member, "Reviewer")], true), actor, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.AssignRunAsync(plan.TestPlanId, runId, new AssignTestPlanRunRequest([new(member, "Owner")], false), actor, CancellationToken.None));
+        await c.Service.FreezeAsync(plan.TestPlanId, "lock", null, CancellationToken.None);
+        var frozen = await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.AssignRunAsync(plan.TestPlanId, runId, new AssignTestPlanRunRequest([new(member, "Tester")], true), actor, CancellationToken.None));
+        Assert.Equal(TestPlanErrorCodes.Frozen, frozen.Code);
+    }
+
+    [Fact]
+    public async Task Clone_creates_new_plan_on_target_build_without_history_and_keeps_source()
+    {
+        var c = await CreateAsync();
+        var cycle = await AddCycleAsync(c, "AUT-CYC-001", "Completed", null, "Pass", "Fail");
+        var tester = Guid.NewGuid();
+        cycle.Cases.First().AssignTester(tester);
+        c.Db.Add(new TestExecution(cycle.Cases.First().TestCycleCaseId, 1, c.Baseline.Build.BuildId, c.Baseline.Environment.TestEnvironmentId, tester, "Pass", null, null, []));
+        var newBuild = new Build(c.Baseline.Release.ReleaseId, "2", "1.1", null, null, DateTime.UtcNow, null, null, null);
+        var newEnv = new TestEnvironment(c.Baseline.Project.ProjectId, "UAT", null);
+        c.Db.AddRange(newBuild, newEnv);
+        await c.Db.SaveChangesAsync();
+        var source = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        var run = await c.Service.AttachCycleAsync(source.TestPlanId, Attach(cycle.TestCycleId, "REG-WIN", "{\"os\":\"Windows 11\"}"), null, CancellationToken.None);
+        var member = await AddMemberAsync(c);
+        var actor = Guid.NewGuid();
+        await c.Service.AssignRunAsync(source.TestPlanId, run.TestPlanRunId, new AssignTestPlanRunRequest([new(member, "Tester")], false), actor, CancellationToken.None);
+        await c.Service.CloseAsync(source.TestPlanId, "done", null, CancellationToken.None);
+
+        var clone = await c.Service.CloneAsync(source.TestPlanId, new CloneTestPlanRequest(c.Baseline.Release.ReleaseId, newBuild.BuildId, null, [new(run.TestPlanRunId, newEnv.TestEnvironmentId)], null, null), actor, CancellationToken.None);
+
+        Assert.NotEqual(source.TestPlanId, clone.TestPlanId);
+        Assert.Equal(source.TestPlanId, clone.CopiedFromTestPlanId);
+        Assert.Equal("AUT-TP-002", clone.PlanCode);
+        Assert.Equal("Release 1.0 Regression (Rerun)", clone.PlanName);
+        Assert.Equal(TestPlanStatuses.Draft, clone.Status);
+        Assert.False(clone.IsFrozen);
+        var newRun = Assert.Single(clone.Runs);
+        Assert.Equal("REG-WIN", newRun.RunCode);
+        Assert.Equal("windows-chrome", newRun.ConfigurationKey);
+        Assert.Equal("{\"os\":\"Windows 11\"}", newRun.ConfigurationJson);
+        Assert.Equal(newBuild.BuildId, newRun.BuildId);
+        Assert.Equal(newEnv.TestEnvironmentId, newRun.EnvironmentId);
+        Assert.NotEqual(cycle.TestCycleId, newRun.TestCycleId);
+        Assert.Equal(2, newRun.TotalCases);
+        Assert.Equal(2, newRun.Untested);
+        Assert.Equal(member, Assert.Single(newRun.Assignments).TesterUserId);
+        var newCases = await c.Db.TestCycleCases.Where(x => x.TestCycleId == newRun.TestCycleId).ToListAsync();
+        Assert.All(newCases, x => Assert.Null(x.AssignedTesterUserId));
+        Assert.False(await c.Db.TestExecutions.AnyAsync(x => x.CycleCase.TestCycleId == newRun.TestCycleId));
+        var original = await c.Service.GetAsync(source.TestPlanId, CancellationToken.None);
+        Assert.Equal(TestPlanStatuses.Closed, original.Status);
+        Assert.Equal(cycle.TestCycleId, Assert.Single(original.Runs).TestCycleId);
+        Assert.Single(await c.Db.AuditLogs.Where(x => x.EntityId == clone.TestPlanId.ToString() && x.Action == "Cloned").ToListAsync());
+    }
+
+    [Fact]
+    public async Task Clone_rejects_plan_without_runs_other_modes_and_unknown_override()
+    {
+        var c = await CreateAsync();
+        var empty = await c.Service.CreateAsync(PlanRequest(c), null, CancellationToken.None);
+        var actor = Guid.NewGuid();
+        var request = new CloneTestPlanRequest(c.Baseline.Release.ReleaseId, c.Baseline.Build.BuildId, null, null, null, null);
+        var noRuns = await Assert.ThrowsAsync<TestPlanRuleException>(() => c.Service.CloneAsync(empty.TestPlanId, request, actor, CancellationToken.None));
+        Assert.Equal(TestPlanErrorCodes.NoRuns, noRuns.Code);
+
+        var (plan, _) = await PlanWithRunAsync(c);
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloneAsync(plan.TestPlanId, request with { CloneMode = "SuiteLatest" }, actor, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloneAsync(plan.TestPlanId, request with { EnvironmentOverrides = [new(Guid.NewGuid(), c.Baseline.Environment.TestEnvironmentId)] }, actor, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentException>(() => c.Service.CloneAsync(plan.TestPlanId, request, null, CancellationToken.None));
     }
 
     // ---------- แปลงเป็น SQL ได้ (ไม่เชื่อมต่อ DB จริง) ----------

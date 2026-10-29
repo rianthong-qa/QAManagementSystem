@@ -11,5 +11,6 @@ public static class TestPlanAuthorizationPolicies
     public static AuthorizationBuilder AddTestPlanPolicies(this AuthorizationBuilder builder) => builder
         .AddPolicy("TestPlanView", p => p.RequireAssertion(c => c.User.IsInRole("SYS_ADMIN") || c.User.HasClaim("permission", "TESTPLAN.VIEW")))
         .AddPolicy("TestPlanEdit", p => p.RequireAssertion(c => c.User.IsInRole("SYS_ADMIN") || c.User.HasClaim("permission", "TESTPLAN.EDIT")))
+        .AddPolicy("TestPlanAssign", p => p.RequireAssertion(c => c.User.IsInRole("SYS_ADMIN") || c.User.HasClaim("permission", "TESTPLAN.ASSIGN")))
         .AddPolicy("TestPlanFreeze", p => p.RequireAssertion(c => c.User.IsInRole("SYS_ADMIN") || c.User.HasClaim("permission", "TESTPLAN.FREEZE")));
 }

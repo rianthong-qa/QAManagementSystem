@@ -400,6 +400,14 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-29 — Test Plan: จัดทีม Run + Clone / Rerun (เฟส 4)
+
+- แถว Configuration Matrix เพิ่มบรรทัดทีม `.tp-team` (ไอคอน `group` + "ชื่อ (ผู้ทดสอบ/ผู้ตรวจ/ผู้ติดตาม)") และ "ยังไม่มีผู้รับผิดชอบ n เคส" (`.tp-unassigned` สี `--warning-text`) + ปุ่มไอคอน `group_add` "จัดทีม" (สิทธิ์ `TESTPLAN.ASSIGN`, เฉพาะแผนที่แก้ได้)
+- **หน้าต่างจัดทีม** (`.tp-team-form`, 900px): รายชื่อสมาชิก Project จาก `GET /test-plans/{id}/members` (ค้นหาเมื่อ > 8 คน, เลื่อนในตัวสูงสุด 420px) — แถว `.tp-member` = checkbox + ชื่อ | select บทบาท "ผู้ทดสอบ (Tester) / ผู้ตรวจ (Reviewer) / ผู้ติดตาม (Observer)" (disabled เมื่อไม่ได้เลือก; ≤760px ซ่อน select ของคนที่ไม่ได้เลือก) → กล่อง checkbox `.tp-bulk` "แบ่งเคสที่ยังไม่เริ่มและยังไม่มีผู้รับผิดชอบ (n เคส) ให้ผู้ทดสอบแบบวนทีละคน" + คำอธิบายว่าไม่เปลี่ยนเคสที่มีผู้รับผิดชอบและผู้ทดสอบเห็นงานใน My Work (เลือกไว้เมื่อมีเคสว่าง) → ท้าย "เลือก n คน · ผู้ทดสอบ m คน" หรือ "ยังขาด: ผู้ทดสอบ (Tester) อย่างน้อย 1 คน…" — บันทึกแทนทีมเดิมทั้งชุด, toast บอกจำนวนเคสที่แบ่ง
+- **หน้าต่าง Clone / Rerun** (`.tp-clone-form`, ปุ่ม "Clone / Rerun" ในแถบปุ่มรายละเอียด — `TESTPLAN.EDIT` และมี Run ≥ 1, ใช้ได้ทุกสถานะรวม Frozen/ปิด): ชื่อแผนใหม่ (ค่าเริ่มต้น "ชื่อเดิม (Rerun)") เต็มแถว → Release (เฉพาะที่ไม่ Released/Cancelled) | Build เป้าหมาย ("ทุก Run ใช้ Build นี้") → **Preview ทุก Run** `ul.tp-clone-runs` (รหัส + ชิป Configuration + "ชื่อ · n เคส · เดิม Environment" | select Environment ค่าเริ่มต้น = เดิม "(เดิม)"; Environment เดิมที่ปิดใช้งานแล้วต้องเลือกใหม่ — แถวเส้นซ้ายแดง + "(ปิดใช้งานแล้ว)") → กล่อง `.tp-note` บอกสิ่งที่คัดลอก/ไม่คัดลอก → ท้าย "ยังขาด: Build, Environment ของ …" + "สร้างแผนใหม่ (n Run)"; สำเร็จแล้วเปิดรายละเอียดแผนใหม่ทันที
+- กฎ CSS: label ใน `.modal-box.tp-form > .form-grid` ใช้ `align-content: flex-start` — label ที่มี `<small>` คำอธิบายใต้ช่องทำให้ label ข้างกันที่ใช้ row-wrap (มี `.required`) ถูกยืดจนช่องกรอกไม่อยู่ระดับเดียวกัน; กล่องข้อความที่เป็น flex + ไอคอนต้องห่อข้อความใน `<span>` เดียว (ไม่งั้น `<b>` ในประโยคแยกเป็นคอลัมน์)
+- ตรวจด้วย headless Chrome + mock API ที่ 1440px และ 390px (iframe): รายละเอียด / จัดทีม / Clone ไม่มี page-level horizontal scroll และกล่องไม่ล้น
+
 ### 2026-10-29 — หน้าใหม่ Test Plan / Configuration Matrix (`#/test-plans`)
 
 - `pages/TestPlansPage.tsx` + `pages/TestPlansPage.css` (prefix `tp-`); เมนู "Test Plan" (ไอคอน `event_note`) อยู่ก่อน Test Cycle ในกลุ่ม TEST EXECUTION, สิทธิ์ดู `TESTPLAN.VIEW` (VIEWER เห็นแบบอ่านอย่างเดียว), ใช้ Project/Release จาก Topbar และช่องค้นหาที่หัวหน้า
