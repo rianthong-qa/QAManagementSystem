@@ -786,6 +786,77 @@ CREATE TABLE dbo.TestStepResults (
 GO
 ```
 
+### 8.x Test Plan / Configuration Matrix (Migration `AddTestPlansAndConfigurationMatrix`, 2026-10-29)
+
+ชั้นจัดกลุ่ม Test Cycle เดิม — ไม่แก้ตาราง `TestCycles` และไม่เก็บตัวนับซ้ำ (Progress/Result คำนวณจาก `TestCycleCases`/`TestExecutions`) ดูกติกาเต็มที่ `03-Architecture-and-Plan/TEST_PLAN_CONFIGURATION_MATRIX_PLAN.md`
+
+```sql
+CREATE TABLE dbo.TestPlans (
+    TestPlanId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_TestPlans PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+    ProjectId UNIQUEIDENTIFIER NOT NULL,
+    ReleaseId UNIQUEIDENTIFIER NOT NULL,
+    PlanCode NVARCHAR(100) NOT NULL,
+    PlanName NVARCHAR(200) NOT NULL,
+    PlanType NVARCHAR(50) NOT NULL,              -- Smoke/Regression/UAT/Retest/Other
+    StartDate DATETIME2(0) NULL,
+    EndDate DATETIME2(0) NULL,
+    OwnerUserId UNIQUEIDENTIFIER NULL,
+    LifecycleStatus NVARCHAR(30) NOT NULL DEFAULT N'Active', -- Active/Closed/Cancelled; Draft/InProgress/Completed คำนวณใน Query
+    IsFrozen BIT NOT NULL,
+    FrozenAt DATETIME2(0) NULL,
+    FrozenByUserId UNIQUEIDENTIFIER NULL,
+    CopiedFromTestPlanId UNIQUEIDENTIFIER NULL,  -- Plan ต้นทางของ Clone/Rerun
+    Notes NVARCHAR(MAX) NULL,
+    CreatedBy UNIQUEIDENTIFIER NULL, CreatedAt DATETIME2(0) NOT NULL,
+    UpdatedAt DATETIME2(0) NULL, UpdatedBy UNIQUEIDENTIFIER NULL,
+    IsDeleted BIT NOT NULL, DeletedAt DATETIME2(0) NULL, DeletedBy UNIQUEIDENTIFIER NULL,
+    CONSTRAINT FK_TestPlans_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES dbo.Projects(ProjectId),
+    CONSTRAINT FK_TestPlans_Releases_ReleaseId FOREIGN KEY (ReleaseId) REFERENCES dbo.Releases(ReleaseId),
+    CONSTRAINT FK_TestPlans_TestPlans_CopiedFromTestPlanId FOREIGN KEY (CopiedFromTestPlanId) REFERENCES dbo.TestPlans(TestPlanId),
+    CONSTRAINT FK_TestPlans_Users_OwnerUserId FOREIGN KEY (OwnerUserId) REFERENCES dbo.Users(UserId),
+    CONSTRAINT FK_TestPlans_Users_FrozenByUserId FOREIGN KEY (FrozenByUserId) REFERENCES dbo.Users(UserId)
+);
+CREATE UNIQUE INDEX IX_TestPlans_ProjectId_PlanCode ON dbo.TestPlans(ProjectId, PlanCode);
+CREATE INDEX IX_TestPlans_ProjectId_ReleaseId_LifecycleStatus ON dbo.TestPlans(ProjectId, ReleaseId, LifecycleStatus);
+CREATE INDEX IX_TestPlans_ProjectId_IsDeleted_CreatedAt ON dbo.TestPlans(ProjectId, IsDeleted, CreatedAt);
+GO
+
+CREATE TABLE dbo.TestPlanRuns (
+    TestPlanRunId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_TestPlanRuns PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+    TestPlanId UNIQUEIDENTIFIER NOT NULL,
+    TestCycleId UNIQUEIDENTIFIER NOT NULL,       -- Build/Environment/สถานะ Run ใช้จาก TestCycles
+    RunCode NVARCHAR(100) NOT NULL,
+    RunName NVARCHAR(200) NOT NULL,
+    ConfigurationKey NVARCHAR(100) NULL,         -- a-z 0-9 - เช่น windows-chrome
+    ConfigurationName NVARCHAR(200) NULL,
+    ConfigurationJson NVARCHAR(MAX) NULL,        -- JSON object
+    OwnerUserId UNIQUEIDENTIFIER NULL,
+    CreatedBy UNIQUEIDENTIFIER NULL, CreatedAt DATETIME2(0) NOT NULL,
+    UpdatedAt DATETIME2(0) NULL, UpdatedBy UNIQUEIDENTIFIER NULL,
+    CONSTRAINT FK_TestPlanRuns_TestPlans_TestPlanId FOREIGN KEY (TestPlanId) REFERENCES dbo.TestPlans(TestPlanId),
+    CONSTRAINT FK_TestPlanRuns_TestCycles_TestCycleId FOREIGN KEY (TestCycleId) REFERENCES dbo.TestCycles(TestCycleId),
+    CONSTRAINT FK_TestPlanRuns_Users_OwnerUserId FOREIGN KEY (OwnerUserId) REFERENCES dbo.Users(UserId)
+);
+CREATE UNIQUE INDEX IX_TestPlanRuns_TestCycleId ON dbo.TestPlanRuns(TestCycleId);  -- MVP: 1 Cycle อยู่ได้ 1 Plan ทั้งระบบ
+CREATE UNIQUE INDEX IX_TestPlanRuns_TestPlanId_RunCode ON dbo.TestPlanRuns(TestPlanId, RunCode);
+CREATE INDEX IX_TestPlanRuns_TestPlanId_ConfigurationKey ON dbo.TestPlanRuns(TestPlanId, ConfigurationKey);
+GO
+
+CREATE TABLE dbo.TestPlanRunAssignments (
+    TestPlanRunAssignmentId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_TestPlanRunAssignments PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+    TestPlanRunId UNIQUEIDENTIFIER NOT NULL,
+    TesterUserId UNIQUEIDENTIFIER NOT NULL,
+    Role NVARCHAR(30) NOT NULL,                  -- Tester/Reviewer/Observer
+    AssignedAt DATETIME2(0) NOT NULL,
+    AssignedBy UNIQUEIDENTIFIER NOT NULL,
+    CONSTRAINT FK_TestPlanRunAssignments_TestPlanRuns_TestPlanRunId FOREIGN KEY (TestPlanRunId) REFERENCES dbo.TestPlanRuns(TestPlanRunId) ON DELETE CASCADE,
+    CONSTRAINT FK_TestPlanRunAssignments_Users_TesterUserId FOREIGN KEY (TesterUserId) REFERENCES dbo.Users(UserId),
+    CONSTRAINT FK_TestPlanRunAssignments_Users_AssignedBy FOREIGN KEY (AssignedBy) REFERENCES dbo.Users(UserId)
+);
+CREATE UNIQUE INDEX IX_TestPlanRunAssignments_TestPlanRunId_TesterUserId_Role ON dbo.TestPlanRunAssignments(TestPlanRunId, TesterUserId, Role);
+GO
+```
+
 ---
 
 ## 9. Defect

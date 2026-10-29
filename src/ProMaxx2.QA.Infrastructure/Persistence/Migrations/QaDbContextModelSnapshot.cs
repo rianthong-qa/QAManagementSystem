@@ -5419,6 +5419,215 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.ToTable("TestSuiteCases", (string)null);
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestPlanning.TestPlan", b =>
+                {
+                    b.Property<Guid>("TestPlanId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<Guid?>("CopiedFromTestPlanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<DateTime?>("FrozenAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("FrozenByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsFrozen")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LifecycleStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("Active");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PlanCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("PlanName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("PlanType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ReleaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("StartDate")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("TestPlanId");
+
+                    b.HasIndex("CopiedFromTestPlanId");
+
+                    b.HasIndex("FrozenByUserId");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("ReleaseId");
+
+                    b.HasIndex("ProjectId", "PlanCode")
+                        .IsUnique();
+
+                    b.HasIndex("ProjectId", "IsDeleted", "CreatedAt");
+
+                    b.HasIndex("ProjectId", "ReleaseId", "LifecycleStatus");
+
+                    b.ToTable("TestPlans", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestPlanning.TestPlanRun", b =>
+                {
+                    b.Property<Guid>("TestPlanRunId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("ConfigurationJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ConfigurationKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ConfigurationName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RunCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("RunName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("TestCycleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TestPlanId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("TestPlanRunId");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("TestCycleId")
+                        .IsUnique();
+
+                    b.HasIndex("TestPlanId", "ConfigurationKey");
+
+                    b.HasIndex("TestPlanId", "RunCode")
+                        .IsUnique();
+
+                    b.ToTable("TestPlanRuns", (string)null);
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestPlanning.TestPlanRunAssignment", b =>
+                {
+                    b.Property<Guid>("TestPlanRunAssignmentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid>("AssignedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("TestPlanRunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TesterUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("TestPlanRunAssignmentId");
+
+                    b.HasIndex("AssignedBy");
+
+                    b.HasIndex("TesterUserId");
+
+                    b.HasIndex("TestPlanRunId", "TesterUserId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("TestPlanRunAssignments", (string)null);
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationAgentCapability", b =>
                 {
                     b.HasOne("ProMaxx2.QA.Domain.Automation.AutomationAgent", "Agent")
@@ -6514,6 +6723,81 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.Navigation("TestCase");
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestPlanning.TestPlan", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.TestPlanning.TestPlan", null)
+                        .WithMany()
+                        .HasForeignKey("CopiedFromTestPlanId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("FrozenByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Projects.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Releases.Release", null)
+                        .WithMany()
+                        .HasForeignKey("ReleaseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestPlanning.TestPlanRun", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ProMaxx2.QA.Domain.Execution.TestCycle", "Cycle")
+                        .WithMany()
+                        .HasForeignKey("TestCycleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.TestPlanning.TestPlan", "Plan")
+                        .WithMany("Runs")
+                        .HasForeignKey("TestPlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Cycle");
+
+                    b.Navigation("Plan");
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestPlanning.TestPlanRunAssignment", b =>
+                {
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("AssignedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.TestPlanning.TestPlanRun", null)
+                        .WithMany("Assignments")
+                        .HasForeignKey("TestPlanRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ProMaxx2.QA.Domain.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("TesterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Automation.AutomationAgent", b =>
                 {
                     b.Navigation("Capabilities");
@@ -6608,6 +6892,16 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ProMaxx2.QA.Domain.TestManagement.TestSuite", b =>
                 {
                     b.Navigation("Cases");
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestPlanning.TestPlan", b =>
+                {
+                    b.Navigation("Runs");
+                });
+
+            modelBuilder.Entity("ProMaxx2.QA.Domain.TestPlanning.TestPlanRun", b =>
+                {
+                    b.Navigation("Assignments");
                 });
 #pragma warning restore 612, 618
         }

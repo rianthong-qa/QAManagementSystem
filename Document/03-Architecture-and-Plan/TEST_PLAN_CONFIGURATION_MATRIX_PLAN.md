@@ -1,6 +1,6 @@
 # Test Plan / Configuration Matrix — แผนพัฒนา
 
-> สถานะ: Draft — เอกสารวางแผน ยังไม่เริ่มแก้ Domain/API/Database/UI
+> สถานะ: เฟส 1 เสร็จ (Domain/EF/Migration/Repository/Unit tests — Migration ยังไม่ apply ลง DB) — เฟส 2 (API) ยังไม่เริ่ม
 >
 > เป้าหมาย: เพิ่ม Test Plan สำหรับรวม Test Cycle หลายชุดและแสดง Configuration Matrix โดยรักษาข้อมูลและ flow เดิมของ Test Cycle, Test Suite และ Execution Workspace ให้ใช้งานต่อได้โดยไม่ต้อง migrate ข้อมูลเดิมแบบทำลายข้อมูล
 
@@ -647,6 +647,27 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 5 | Freeze guard เชื่อม Test Cycle/Execution/Assignment | ป้องกัน Historical Result ถูกแก้ |
 | 6 | Export Plan Summary และเพิ่ม Plan context ใน Test Cycle/Execution | รายงานและ Navigation เชื่อมครบ |
 
+### 8.1 สถานะรายเฟส
+
+| เฟส | สถานะ | หมายเหตุ |
+|---|---|---|
+| 0 | เสร็จ | Decision Log §1.4 |
+| 1 | เสร็จ (2026-10-29) | ดูรายละเอียดด้านล่าง; Migration ยังไม่ apply ลง `ProMaxx2QA` — apply พร้อมเฟส 2 |
+| 2–6 | ยังไม่เริ่ม | |
+
+เฟส 1 ที่ทำแล้ว:
+
+- Domain `ProMaxx2.QA.Domain/TestPlanning/TestPlan.cs` — `TestPlan` (Close/Cancel Freeze อัตโนมัติ, Reopen, Freeze/Unfreeze เฉพาะ Active, `EnsureEditable`, Soft delete), `TestPlanRun` (normalize `ConfigurationKey`, ตรวจ `ConfigurationJson` เป็น object), `TestPlanRunAssignment`
+- EF `TestPlanConfiguration.cs` + Migration `20261029132845_AddTestPlansAndConfigurationMatrix` (สร้าง 3 ตารางใหม่เท่านั้น, unique `TestPlanRuns.TestCycleId` ทั้งระบบ)
+- Application `ProMaxx2.QA.Application/TestPlanning/TestPlanContracts.cs` — DTO, `ITestPlanRepository`, `TestPlanService` (Create พร้อมรหัส `<ProjectCode>-TP-nnn`, Update ห้ามเปลี่ยน Project/Release/Code, Attach Cycle เดิม)
+- Repository `TestPlanRepository.cs` — List (filter ตามสถานะที่คำนวณ + Summary ของทุกแถวที่ตรง filter), Get (Summary + Runs/Matrix rows), สถานะ Plan คำนวณใน Query เดียว (`WithStatus`), Retest จาก Execution ที่ไม่ถูกลบและมีผลจบแล้ว (`RetestCountsQuery`)
+- Unit tests `TestPlanTests.cs` 28 รายการ (Domain lifecycle, สูตรตัวนับตามตัวอย่าง §4.1, Attach/Scope/Soft delete, สถานะที่คำนวณ, ToQueryString แปลงเป็น SQL)
+
+ยกไปเฟสถัดไป:
+
+- เฟส 2: Controller + Policy `TestPlan*` + Migration seed Permission `TESTPLAN.*`, Lifecycle endpoint (close/cancel/reopen/freeze/unfreeze พร้อมเหตุผล + Audit), Create Run จาก Suite, Detach Run, บล็อกลบ Test Cycle ที่ผูก Plan (`409 TEST_CYCLE_LINKED_TO_PLAN`), map ข้อผิดพลาด unique index ตอน Attach พร้อมกันเป็น 409, apply Migration
+- ตัว Query ของ List/Detail ทดสอบด้วย EF InMemory และ `ToQueryString` แล้ว แต่ยังไม่ได้รันกับ SQL Server จริง — ต้องตรวจหลัง apply Migration ในเฟส 2
+
 ลำดับ Release แนะนำ:
 
 - Release A: เฟส 1–3 — Plan/Run/Matrix แบบไม่ Freeze
@@ -739,3 +760,4 @@ Mutation ที่ต้องตรวจอย่างน้อย (อ้า
 | 2026-10-29 | สร้างแผน Test Plan / Configuration Matrix จากโครงสร้าง Test Cycle/Execution ปัจจุบัน | Draft |
 | 2026-10-29 | ตัดสินใจเรื่อง InProgress, Retest, Plan lifecycle, Clone/Rerun, Permission และการลบ Cycle ที่ผูก Plan | Decision complete |
 | 2026-10-29 | Review รอบ 2 เทียบโค้ดจริง: Retest ไม่ใช้ `ExecutionNo` (นับเฉพาะผลจบที่ไม่ถูกลบ), แก้ตัวอย่าง Summary JSON ให้ลงตัว, เก็บ `LifecycleStatus` แทน `Status` และคำนวณสถานะใน Query, Close/Cancel Freeze อัตโนมัติ + Unfreeze ได้เฉพาะ Active + Reopen, Clone เพิ่ม `CopiedFromTestPlanId` + ตารางสิ่งที่คัดลอก + Transaction ระดับ Plan, Freeze guard อ้าง Service/Controller จริง (รวม Workload/Weighted assignment) และตัด "Move Build/Environment", Soft Delete Plan ยังล็อก Cycle, Seed Permission ผ่าน Migration | Decision complete |
+| 2026-10-29 | เฟส 1: Domain/EF/Migration `AddTestPlansAndConfigurationMatrix`/Application service/Repository + unit tests 28 รายการ (ทั้งชุด 905 ผ่าน); อัปเดต `SQL_SERVER_SCHEMA.md` §8.x; Migration ยังไม่ apply | เฟส 1 เสร็จ |

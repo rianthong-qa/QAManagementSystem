@@ -19,6 +19,7 @@ using ProMaxx2.QA.Application.Governance;
 using ProMaxx2.QA.Application.Automation;
 using ProMaxx2.QA.Application.Performance;
 using ProMaxx2.QA.Application.Knowledge;
+using ProMaxx2.QA.Application.TestPlanning;
 using ModelContextProtocol.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -76,6 +77,7 @@ builder.Services.AddScoped<RequirementService>();
 builder.Services.AddScoped<TestCaseService>();
 builder.Services.AddScoped<TestSuiteService>();
 builder.Services.AddScoped<TestCycleService>();
+builder.Services.AddScoped<TestPlanService>(); // Test Plan / Configuration Matrix (TEST_PLAN_CONFIGURATION_MATRIX_PLAN.md)
 builder.Services.AddScoped<ExecutionService>();
 builder.Services.AddScoped<AutomationCaseService>();
 builder.Services.AddScoped<AutomationSuiteService>();

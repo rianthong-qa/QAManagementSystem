@@ -10,6 +10,7 @@ using ProMaxx2.QA.Application.Governance;
 using ProMaxx2.QA.Application.Requirements;
 using ProMaxx2.QA.Application.TestManagement;
 using ProMaxx2.QA.Application.Execution;
+using ProMaxx2.QA.Application.TestPlanning;
 using ProMaxx2.QA.Application.Dashboard;
 using ProMaxx2.QA.Application.Automation;
 using ProMaxx2.QA.Application.Performance;
@@ -31,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<ITestCaseRepository,TestCaseRepository>();
         services.AddScoped<ITestSuiteRepository,TestSuiteRepository>();
         services.AddScoped<ITestCycleRepository,TestCycleRepository>();
+        services.AddScoped<ITestPlanRepository,TestPlanRepository>();
         services.AddScoped<IExecutionRepository,ExecutionRepository>();
         services.AddScoped<IAdministrationRepository,AdministrationRepository>();
         services.AddScoped<IDashboardRepository,DashboardRepository>();
