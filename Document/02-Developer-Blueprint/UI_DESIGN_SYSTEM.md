@@ -399,6 +399,12 @@ git diff --check
 
 ## 15. Change Log
 
+### 2026-10-29 — Test Suite: ลบหลายรายการ + สถานะ "ลบแล้ว" (soft delete) และกู้คืน
+
+- เลือกหลาย Suite แล้วแถบ `.lp-bulk` มีปุ่ม `btn lp-bulk-delete`: SYS_ADMIN = "ลบที่เลือก" (เลือก Suite ที่ปิดใช้งานได้ด้วย), สิทธิ์อื่น = "ปิดใช้งานที่เลือก"; ยืนยันด้วย `confirmDialog` tone danger พร้อมรหัส 5 รายการแรก; ยิงคำขอครั้งละ 4; สรุปผลด้วย `notify` และรายการที่ไม่สำเร็จคงอยู่ในรายการที่เลือก; ปุ่ม "สร้าง Test Cycle" นับเฉพาะ Suite ที่ใช้งานอยู่
+- กฎลบของ SYS_ADMIN (ปุ่มในแถวและแบบหลายรายการ ใช้ `DELETE /test-suites/{id}/remove`): Suite ที่ไม่เคยมี Test Cycle (รวม Cycle ที่ลบแล้ว) ลบถาวร; เคยมีแล้ว → **soft delete** เก็บ Cycle/ผล Execution ไว้ให้รายงานย้อนหลัง — ไม่มีปุ่มในหน้ารายการที่ลบผลการทดสอบทิ้ง
+- ชิปสถานะ **"ลบแล้ว"** (จุดแดง, เฉพาะ SYS_ADMIN) แยกจาก ทั้งหมด/ใช้งาน/ปิดใช้งาน; แถวที่ลบแล้วแสดง Badge แดง "ลบแล้ว", เลือกไม่ได้, ปุ่มจัดการเหลือ รายละเอียด + **กู้คืน** (`restore_from_trash`); หน้าต่างรายละเอียดซ่อน "แก้ไข" และแสดงปุ่ม "กู้คืน" — กู้คืนแล้วกลับเป็นสถานะปิดใช้งาน
+
 ### 2026-10-28 — Release Sign-off / Test Summary: Defect ใน Release Gate และ Known Issues
 
 - Release Gate Panel มีส่วน "Defect ของ Release" ใต้ `gate-grid` เดิม (`.defect-gate`, เส้นคั่นบน `--line`): หัวข้อ + Badge "นับใน Gate" (blue) / "ยังไม่นับใน Gate" (gray), 4 `gate-cell` (Critical ค้าง / High ค้าง / Resolved รอตรวจซ้ำ / ยังไม่มี Risk Acceptance) — เส้นซ้ายบอกผลด้วย `is-pass` (`--green`) / `is-warn` (`--yellow`) / `is-fail` (`--red`) และมีข้อความอธิบายใน cell เสมอ (ไม่สื่อด้วยสีอย่างเดียว); ระหว่างปิด Gate มีหมายเหตุ muted 12px ใต้ grid; Mobile ใช้ breakpoint เดิมของ `gate-grid` (2 คอลัมน์ ≤900px, 1 คอลัมน์ ≤560px)

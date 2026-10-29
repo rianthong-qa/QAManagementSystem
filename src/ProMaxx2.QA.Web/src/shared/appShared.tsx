@@ -271,6 +271,8 @@ export type TestSuiteItem = {
   description?: string;
   riskTier?: string;
   isActive: boolean;
+  /** ลบแล้วแบบเก็บผลทดสอบ (soft delete) — API ส่งมาเฉพาะ SYS_ADMIN ที่ขอ includeDeleted */
+  isDeleted?: boolean;
   cycleCount: number;
   /** จาก API รายการ (`GET /test-suites`) — รายการไม่มี `cases` ต้องโหลด `GET /test-suites/{id}` ถ้าต้องการรายละเอียด */
   caseCount?: number;
