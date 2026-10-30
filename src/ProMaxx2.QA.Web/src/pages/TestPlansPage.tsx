@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { BuildItem, ReleaseItem, UserLookup } from "../shared/types";
 import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
 import { useDebounced } from "../components/useDebounced";
@@ -24,7 +24,15 @@ type PlanRun = { testPlanRunId: string; testPlanId: string; testCycleId: string;
 type RunMember = { testerUserId: string; testerName?: string | null; role: string; assignedAt: string };
 type PlanMember = { userId: string; displayName: string };
 type PlanDetail = Omit<PlanListItem, "runCount" | "totalCases" | "touched" | "completed" | "passed" | "progressPercent" | "passRate"> & { frozenAt?: string | null; copiedFromTestPlanId?: string | null; notes?: string | null; updatedAt?: string | null; summary: PlanSummary; runs: PlanRun[] };
-type CycleOption = { testCycleId: string; projectId: string; releaseId: string; buildId: string; cycleCode: string; cycleName: string; status: string };
+/** Test Cycle ที่เพิ่มเข้าแผนได้ — จาก GET /test-cycles (มี Suite/Environment/Module/จำนวนเคส ให้แยกแยะ Cycle ชื่อคล้ายกันได้) */
+type CycleRow = { testCycleId: string; cycleCode: string; cycleName: string; status: string; buildId: string; buildNumber: string; environmentId: string; environmentName: string; suiteName?: string | null; caseCount: number; executedCount: number; progressPercent: number; modules: { moduleId: string; moduleCode: string; moduleName: string }[] };
+type CycleListResult = { items: { total: number; rows: CycleRow[] } };
+/** ค่าที่มีจริงในรายการ + จำนวน เรียงตามชื่อ — ใช้สร้างตัวกรอง (มีค่าเดียวไม่ต้องแสดงตัวกรอง) */
+const distinctCounts = (pairs: [string, string][]) => {
+  const map = new Map<string, { label: string; count: number }>();
+  for (const [id, label] of pairs) { const item = map.get(id); if (item) item.count++; else map.set(id, { label, count: 1 }); }
+  return [...map.entries()].map(([id, x]) => ({ id, ...x })).sort((a, b) => a.label.localeCompare(b.label, "th", { numeric: true }));
+};
 type SuiteOption = { testSuiteId: string; suiteCode: string; suiteName: string; caseCount: number };
 type EnvironmentOption = { testEnvironmentId: string; environmentName: string; isActive: boolean };
 
@@ -39,7 +47,10 @@ const planStatusInfo: Record<string, { label: string; tone: string; dot: string;
 };
 const runRoles = ["Tester", "Reviewer", "Observer"] as const;
 const runRoleLabel: Record<string, string> = { Tester: "ผู้ทดสอบ", Reviewer: "ผู้ตรวจ", Observer: "ผู้ติดตาม" };
-const runStatusTone: Record<string, string> = { Draft: "gray", InProgress: "blue", Completed: "green", Closed: "green", Cancelled: "red" };
+const runStatusInfo: Record<string, { label: string; tone: string }> = {
+  Draft: { label: "ฉบับร่าง", tone: "gray" }, InProgress: { label: "กำลังทดสอบ", tone: "blue" }, Completed: { label: "ทดสอบเสร็จ", tone: "green" }, Closed: { label: "ปิดแล้ว", tone: "green" }, Cancelled: { label: "ยกเลิก", tone: "red" },
+};
+const runStatusLabel = (status: string) => runStatusInfo[status]?.label ?? status;
 const caseStatusSegments = [
   { key: "passed", label: "ผ่าน", className: "is-pass" },
   { key: "failed", label: "ไม่ผ่าน", className: "is-fail" },
@@ -52,6 +63,21 @@ const caseStatusSegments = [
 const percentText = (value: number | null | undefined) => value === null || value === undefined ? "—" : `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
 const shortDate = (value?: string | null) => value ? formatThaiDateTime(value, { day: "numeric", month: "short", year: "2-digit" }) : "";
 const dateOnly = (value?: string | null) => value ? value.slice(0, 10) : "";
+/** ช่วงวันที่บรรทัดเดียว — ปีเดียวกันแสดงปีครั้งเดียวท้ายช่วง เช่น "29 ต.ค. – 5 พ.ย. 69" */
+const scheduleText = (start?: string | null, end?: string | null) => {
+  if (!start && !end) return "ไม่ระบุวันที่";
+  const sameYear = !!start && !!end && start.slice(0, 4) === end.slice(0, 4);
+  const from = start ? sameYear ? formatThaiDateTime(start, { day: "numeric", month: "short" }) : shortDate(start) : "?";
+  return `${from} – ${shortDate(end) || "?"}`;
+};
+/** วันคงเหลือของแผนที่ยังทดสอบอยู่ (ฉบับร่าง/กำลังทดสอบ) — วันที่เก็บแบบ date-only จึงเทียบกับเที่ยงคืนของวันนี้ แบบเดียวกับรายละเอียด Test Cycle */
+const daysLeftOf = (status: string, end?: string | null) => {
+  if (!end || (status !== "Draft" && status !== "InProgress")) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((new Date(`${end.slice(0, 10)}T00:00:00`).getTime() - today.getTime()) / 86_400_000);
+};
+const DueHint = ({ days }: { days: number | null }) => days === null ? null
+  : <small className={`tp-due${days < 0 ? " is-late" : days <= 2 ? " is-near" : ""}`}>{days < 0 ? `เลยกำหนด ${-days} วัน` : days === 0 ? "ครบกำหนดวันนี้" : `เหลือ ${days} วัน`}</small>;
 /** API รุ่นก่อนเฟส 4 ไม่ส่งทีม/จำนวนเคสที่ยังไม่มีผู้รับผิดชอบของ Run — เติมค่าว่างกันหน้าพังระหว่างรอ deploy API */
 const normalizePlan = (plan: PlanDetail): PlanDetail => ({ ...plan, runs: plan.runs.map((r) => ({ ...r, assignments: r.assignments ?? [], unassignedCases: r.unassignedCases ?? 0 })) });
 const errorText = (e: unknown, fallback: string) => e instanceof Error && e.message ? e.message : fallback;
@@ -91,9 +117,11 @@ const exportPlanSummary = (plan: PlanDetail) => {
   downloadCsv(`TestPlan_${plan.planCode}_${fileStamp()}.csv`, rows);
 };
 
-export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, canExport, contextProjectId, contextReleaseId, onOpenExecution, onOpenCycle }: {
+export function TestPlansPage({ search, canCreate, canEdit, canDelete, canFreeze, canAssign, canRun, canExport, contextProjectId, contextReleaseId, onOpenExecution, onOpenCycle }: {
   search: string;
+  canCreate: boolean;
   canEdit: boolean;
+  canDelete: boolean;
   canFreeze: boolean;
   canAssign: boolean;
   canRun: boolean;
@@ -177,45 +205,55 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
 
   return (
     <>
+      <PlanGuide defaultOpen={!loading && !error && total === 0 && !filterCount && !debouncedSearch} canCreate={canCreate} createDisabledReason={createDisabledReason} onCreate={() => setForm({})} />
       <article className="card lp-card tp-list">
         {error && <div className="inline-alert error" role="alert"><span>{error}{rows.length ? " — แสดงข้อมูลชุดก่อนหน้า" : ""}</span><button onClick={() => setReload((x) => x + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div>}
         <div className="lp-head">
           <div className="lp-title">
             <div><strong>{total.toLocaleString()}</strong><span>Test Plan{filterCount ? ` · กรอง ${filterCount} เงื่อนไข` : ""}</span></div>
-            {summary && <small>{summary.runCount.toLocaleString()} Run · Test Case {summary.totalCases.toLocaleString()} · เริ่มทดสอบแล้ว {percentText(summary.progressPercent)} · อัตราผ่าน {percentText(summary.passRate)}{summary.failed + summary.blocked > 0 ? ` · Fail/Blocked ${(summary.failed + summary.blocked).toLocaleString()}` : ""}</small>}
+            {summary && <dl className="tp-stats" aria-label="สรุป Test Plan ตามตัวกรอง">
+              <div><dt>Run</dt><dd>{summary.runCount.toLocaleString()}</dd></div>
+              <div><dt>Test Case</dt><dd>{summary.totalCases.toLocaleString()}</dd></div>
+              <div><dt>เริ่มทดสอบแล้ว</dt><dd>{percentText(summary.progressPercent)}</dd></div>
+              <div><dt>อัตราผ่าน</dt><dd>{percentText(summary.passRate)}</dd></div>
+              {summary.failed + summary.blocked > 0 && <div className="is-alert"><dt>Fail / Blocked</dt><dd>{(summary.failed + summary.blocked).toLocaleString()}</dd></div>}
+            </dl>}
           </div>
           <div className="lp-actions">
             {canExport && <button className="btn" type="button" disabled={exporting || loading || total === 0} onClick={exportList}>{exporting ? <><span className="spinner inline" aria-hidden="true" />กำลัง Export...</> : <><span className="material-symbols-outlined" aria-hidden="true">download</span>Export</>}</button>}
             <DeletedItemsButton type="test-plans" label="Test Plan" projectId={contextProjectId} onRestored={() => setReload((x) => x + 1)} />
-            {canEdit && <button className="btn primary" type="button" disabled={!!createDisabledReason} title={createDisabledReason || undefined} onClick={() => setForm({})}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Plan</button>}
+            {canCreate && <button className="btn primary" type="button" disabled={!!createDisabledReason} title={createDisabledReason || undefined} onClick={() => setForm({})}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Plan</button>}
           </div>
         </div>
-        <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
-          <button type="button" aria-pressed={status === ""} onClick={() => setStatus("")}>ทั้งหมด</button>
-          {planStatuses.map((s) => (
-            <button key={s} type="button" aria-pressed={status === s} onClick={() => setStatus((current) => current === s ? "" : s)} title={planStatusInfo[s].meaning}>
-              <span className={`lp-dot ${planStatusInfo[s].dot}`} aria-hidden="true" />{planStatusInfo[s].label}
-            </button>
-          ))}
+        {/* สถานะ + ตัวกรองอยู่แถวเดียวกัน (ตัวกรองมีแค่ 2 ช่อง — ไม่ยืดเต็มความกว้าง) */}
+        <div className="tp-filterbar">
+          <div className="lp-chips" role="group" aria-label="กรองตามสถานะ">
+            <button type="button" aria-pressed={status === ""} onClick={() => setStatus("")}>ทั้งหมด</button>
+            {planStatuses.map((s) => (
+              <button key={s} type="button" aria-pressed={status === s} onClick={() => setStatus((current) => current === s ? "" : s)} title={planStatusInfo[s].meaning}>
+                <span className={`lp-dot ${planStatusInfo[s].dot}`} aria-hidden="true" />{planStatusInfo[s].label}
+              </button>
+            ))}
+          </div>
+          <div className="lp-filters" role="group" aria-label="ตัวกรอง Test Plan">
+            <select aria-label="ประเภทแผน" value={planType} onChange={(e) => setPlanType(e.target.value)}>
+              <option value="">ทุกประเภท</option>
+              {planTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select aria-label="เจ้าของแผน" value={owner} onChange={(e) => setOwner(e.target.value)}>
+              <option value="">เจ้าของทั้งหมด</option>
+              {users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}
+            </select>
+            {filterCount > 0 && <button type="button" className="btn lp-clear" onClick={clearFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
+          </div>
         </div>
-        <div className="lp-filters" role="group" aria-label="ตัวกรอง Test Plan">
-          <select aria-label="ประเภทแผน" value={planType} onChange={(e) => setPlanType(e.target.value)}>
-            <option value="">ทุกประเภท</option>
-            {planTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <select aria-label="เจ้าของแผน" value={owner} onChange={(e) => setOwner(e.target.value)}>
-            <option value="">เจ้าของทั้งหมด</option>
-            {users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}
-          </select>
-          {filterCount > 0 && <button type="button" className="btn lp-clear" onClick={clearFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
-        </div>
-        <ListPager position="top" page={page} pageCount={pageCount} totalCount={total} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} />
+        {/* แบ่งหน้าด้านบนแสดงเมื่อมีมากกว่า 1 หน้า — หน้าเดียวไม่มีอะไรให้เปลี่ยน (จำนวนต่อหน้ายังปรับได้ที่แถบล่าง) */}
+        {pageCount > 1 && <ListPager position="top" page={page} pageCount={pageCount} totalCount={total} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} />}
         <div className="lp-table-wrap">
           <table className="lp-table tp-table">
             <thead>
               <tr>
                 <th className="lp-col-item">Test Plan</th>
-                <th className="lp-col-num">Run</th>
                 <th className="lp-col-progress">ความคืบหน้า</th>
                 <th className="lp-col-num">อัตราผ่าน</th>
                 <th className="lp-col-module lp-hide-md">เจ้าของ</th>
@@ -224,30 +262,28 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
               </tr>
             </thead>
             <tbody>
-              {loading && !rows.length && <tr className="lp-empty-row"><td colSpan={7}><div className="lp-empty" role="status"><span className="spinner" aria-hidden="true" /><b>กำลังโหลด Test Plan...</b></div></td></tr>}
-              {!loading && !error && rows.length === 0 && <tr className="lp-empty-row"><td colSpan={7}><div className="lp-empty"><span className="material-symbols-outlined" aria-hidden="true">event_note</span><b>{filterCount || debouncedSearch ? "ไม่พบ Test Plan ตามตัวกรองที่เลือก" : "ยังไม่มี Test Plan"}</b><small>{filterCount || debouncedSearch ? "ลองเปลี่ยนสถานะ ตัวกรอง หรือคำค้น" : "Test Plan ใช้รวม Test Cycle หลายชุดของ Release เดียวกันและเทียบผลตาม Configuration"}</small></div></td></tr>}
+              {loading && !rows.length && <tr className="lp-empty-row"><td colSpan={6}><div className="lp-empty" role="status"><span className="spinner" aria-hidden="true" /><b>กำลังโหลด Test Plan...</b></div></td></tr>}
+              {!loading && !error && rows.length === 0 && <tr className="lp-empty-row"><td colSpan={6}><div className="lp-empty"><span className="material-symbols-outlined" aria-hidden="true">event_note</span><b>{filterCount || debouncedSearch ? "ไม่พบ Test Plan ตามตัวกรองที่เลือก" : "ยังไม่มี Test Plan"}</b><small>{filterCount || debouncedSearch ? "ลองเปลี่ยนสถานะ ตัวกรอง หรือคำค้น" : "เริ่มจากขั้นตอนใน “เริ่มต้นใช้งาน Test Plan” ด้านบน — สร้างแผนแล้วเพิ่ม Run ต่อ Configuration"}</small></div></td></tr>}
               {rows.map((x) => {
                 const info = planStatusInfo[x.status] ?? planStatusInfo.Draft;
-                const schedule = x.startDate || x.endDate ? [x.startDate, x.endDate].map((d) => shortDate(d) || "?").join(" – ") : "ไม่ระบุวันที่";
                 return (
                   <tr key={x.testPlanId} className={x.status === "Cancelled" ? "is-inactive" : undefined}>
                     <td className="lp-col-item">
-                      <button type="button" className="lp-item" onClick={() => setDetailId(x.testPlanId)} aria-label={`เปิด ${x.planCode} ${x.planName}`}>
-                        <span className="lp-code">{x.planCode}<span className="lp-meta">{[x.planType, x.releaseCode].filter(Boolean).join(" · ")}</span></span>
+                      <button type="button" className="lp-item" onClick={() => setDetailId(x.testPlanId)} aria-label={`เปิด ${x.planCode} ${x.planName}${x.isFrozen ? " (Frozen)" : ""}`}>
+                        <span className="lp-code">{x.planCode}{x.isFrozen && <span className="tp-frozen" title="แผนถูก Freeze — แก้ไขแผนและ Run ไม่ได้"><span className="material-symbols-outlined" aria-hidden="true">lock</span>Frozen</span>}<span className="lp-meta">{[x.planType, x.releaseCode].filter(Boolean).join(" · ")}</span></span>
                         <span className="lp-name">{x.planName}</span>
                       </button>
                     </td>
-                    <td className="lp-col-num lp-labeled" data-label="Run"><b>{x.runCount.toLocaleString()}</b></td>
                     <td className="lp-col-progress">
-                      <span className={`lp-progress${x.progressPercent >= 100 ? " is-done" : x.progressPercent > 0 ? "" : " is-empty"}`} role="img" aria-label={`เริ่มทดสอบแล้ว ${x.touched} จาก ${x.totalCases} (${percentText(x.progressPercent)})`}>
+                      <span className={`lp-progress${x.progressPercent >= 100 ? " is-done" : x.progressPercent > 0 ? "" : " is-empty"}`} role="img" aria-label={`เริ่มทดสอบแล้ว ${x.touched} จาก ${x.totalCases} (${percentText(x.progressPercent)}) ใน ${x.runCount} Run`}>
                         <span className="lp-progress-track"><span style={{ width: `${Math.min(100, x.progressPercent)}%` }} /></span>
-                        <small><b>{percentText(x.progressPercent)}</b> {x.touched.toLocaleString()}/{x.totalCases.toLocaleString()}</small>
+                        <small><b>{percentText(x.progressPercent)}</b> {x.touched.toLocaleString()}/{x.totalCases.toLocaleString()} เคส · {x.runCount.toLocaleString()} Run</small>
                       </span>
                     </td>
-                    <td className="lp-col-num lp-labeled" data-label="อัตราผ่าน">{percentText(x.passRate)}</td>
+                    <td className="lp-col-num lp-labeled" data-label="อัตราผ่าน"><span className="tp-rate"><b>{percentText(x.passRate)}</b>{x.passRate !== null && <small>ผ่าน {x.passed.toLocaleString()}</small>}</span></td>
                     <td className="lp-col-module lp-hide-md lp-labeled" data-label="เจ้าของ">{x.ownerName || "-"}</td>
-                    <td className="lp-col-status"><span className="tp-status"><Badge tone={info.tone}>{info.label}</Badge>{x.isFrozen && <Badge tone="purple"><span className="material-symbols-outlined tp-badge-icon" aria-hidden="true">lock</span> Frozen</Badge>}</span></td>
-                    <td className="lp-col-date"><span className="lp-date">{schedule}</span></td>
+                    <td className="lp-col-status"><Badge tone={info.tone}>{info.label}</Badge></td>
+                    <td className="lp-col-date"><span className="lp-date">{scheduleText(x.startDate, x.endDate)}<DueHint days={daysLeftOf(x.status, x.endDate)} /></span></td>
                   </tr>
                 );
               })}
@@ -256,7 +292,7 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
         </div>
         <ListPager position="bottom" page={page} pageCount={pageCount} totalCount={total} pageSize={pageSize} disabled={loading} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} />
       </article>
-      {detailId && <PlanDetailModal planId={detailId} version={detailVersion} users={users} canEdit={canEdit} canFreeze={canFreeze} canAssign={canAssign} canRun={canRun} canExport={canExport}
+      {detailId && <PlanDetailModal planId={detailId} version={detailVersion} users={users} canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} canFreeze={canFreeze} canAssign={canAssign} canRun={canRun} canExport={canExport}
         onClose={() => setDetailId(null)}
         onChanged={() => setReload((x) => x + 1)}
         onDeleted={() => { setDetailId(null); setReload((x) => x + 1); }}
@@ -271,8 +307,148 @@ export function TestPlansPage({ search, canEdit, canFreeze, canAssign, canRun, c
   );
 }
 
-function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign, canRun, canExport, onClose, onChanged, onDeleted, onEdit, onCloned, onOpenExecution, onOpenCycle }: {
-  planId: string; version: number; users: UserLookup[]; canEdit: boolean; canFreeze: boolean; canAssign: boolean; canRun: boolean; canExport: boolean;
+/** คู่มือเริ่มต้นสำหรับผู้ใช้ใหม่ — Flow 5 ขั้น + ตัวอย่างแผน + คำศัพท์; เปิดเองเมื่อยังไม่มีแผน และจำการเปิด/ปิดของผู้ใช้ */
+const guideSteps = [
+  { icon: "add_task", title: "สร้าง Test Plan", desc: "ตั้งชื่อแผน เลือก Release และประเภท (Smoke / Regression / UAT)", example: "เช่น “Regression ก่อนปล่อย 2026.11” ของ REL-2026.11", where: "ปุ่ม “+ Test Plan” มุมขวาบน" },
+  { icon: "playlist_add", title: "เพิ่ม Run ต่อ Configuration", desc: "1 Run = 1 Test Cycle ที่ทดสอบบนสภาพแวดล้อมหนึ่ง เลือก Cycle ที่มีอยู่ หรือสร้างใหม่จาก Test Suite", example: "เช่น 3 Run: Windows · Chrome / Windows · Edge / Android · Pixel 8", where: "เปิดแผน → “เพิ่ม Run”" },
+  { icon: "group_add", title: "จัดทีมและแบ่งเคส", optional: true, desc: "เลือกผู้ทดสอบของแต่ละ Run ระบบแบ่งเคสที่ยังไม่มีผู้รับผิดชอบให้แบบวนทีละคน และผู้ทดสอบเห็นงานในหน้า My Work", example: "เช่น Run Chrome: สมชาย (ผู้ทดสอบ) · สมหญิง (ผู้ตรวจ)", where: "ไอคอน “จัดทีม” ในแถว Run" },
+  { icon: "play_arrow", title: "เริ่มทดสอบ", desc: "เริ่ม Test Cycle ของ Run ในหน้า Test Cycle แล้วกด “ทดสอบ” เพื่อบันทึกผลใน Execution Workspace — ความคืบหน้าของแผนรวมจากทุก Run ให้อัตโนมัติ", example: "เช่น Run Chrome ทดสอบแล้ว 10/12 เคส ผ่าน 8", where: "ปุ่ม “ทดสอบ” ในแถว Run" },
+  { icon: "task_alt", title: "ติดตามผลและปิดแผน", desc: "เทียบผลแต่ละ Configuration ใน Matrix เมื่อทุก Run จบ ให้ปิดแผน — ระบบ Freeze ผลไว้; ได้ Build ใหม่ใช้ Clone / Rerun", example: "เช่น Edge Fail มากกว่า Chrome → แจ้ง Defect เฉพาะ Edge", where: "“จัดการแผน” → “ปิดแผน”" },
+];
+const guideExampleRuns = [
+  { code: "REG-WIN-CHROME", config: "Windows · Chrome", status: "กำลังทดสอบ", tone: "blue", passed: 8, failed: 2, inProgress: 0, untested: 2 },
+  { code: "REG-WIN-EDGE", config: "Windows · Edge", status: "ทดสอบเสร็จ", tone: "green", passed: 9, failed: 3, inProgress: 0, untested: 0 },
+  { code: "REG-ANDROID", config: "Android · Pixel 8", status: "ฉบับร่าง", tone: "gray", passed: 0, failed: 0, inProgress: 0, untested: 12 },
+];
+const guideTerms = [
+  { term: "Test Plan", meaning: "แผนรวมการทดสอบของ Release หนึ่ง — รวมหลาย Test Cycle ไว้ดูผลที่เดียว" },
+  { term: "Run", meaning: "Test Cycle 1 ชุดในแผน ผูกกับ Build, Environment และ Configuration" },
+  { term: "Configuration", meaning: "สภาพแวดล้อมที่ทดสอบ เช่น OS · Browser · Device ใช้เทียบผลข้าม Run" },
+  { term: "Freeze", meaning: "ล็อกแผนและ Run ไม่ให้แก้ไขหรือบันทึกผลเพิ่ม — ปิดแผนแล้ว Freeze อัตโนมัติ" },
+];
+
+function PlanGuide({ defaultOpen, canCreate, createDisabledReason, onCreate }: { defaultOpen: boolean; canCreate: boolean; createDisabledReason: string; onCreate: () => void }) {
+  const [pref, setPref] = useState<string | null>(() => { try { return localStorage.getItem("qa.testPlans.guide"); } catch { return null; } });
+  const open = pref ? pref === "open" : defaultOpen;
+  const toggle = (next: boolean) => {
+    if (next === open) return; // React ตั้งค่า open เอง (ข้อมูลเพิ่งโหลด) ไม่ใช่ผู้ใช้กด
+    const value = next ? "open" : "closed";
+    setPref(value);
+    try { localStorage.setItem("qa.testPlans.guide", value); } catch { /* ใช้ค่าเริ่มต้นได้ */ }
+  };
+  return (
+    <details className="tp-guide" open={open} onToggle={(e) => toggle((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary>
+        <span className="tp-guide-icon material-symbols-outlined" aria-hidden="true">route</span>
+        <span className="tp-guide-title"><strong>เริ่มต้นใช้งาน Test Plan</strong><small>รวม Test Cycle หลายชุดของ Release เดียวกันเป็นแผนเดียว แล้วเทียบผลตาม Configuration — 5 ขั้นตอนพร้อมตัวอย่าง</small></span>
+        <span className="tp-guide-toggle">{open ? "ซ่อน" : "ดูวิธีใช้"}<span className="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+      </summary>
+      <ol className="tp-guide-steps">
+        {guideSteps.map((step, i) => (
+          <li key={step.title}>
+            <span className="tp-guide-no" aria-hidden="true">{i + 1}</span>
+            <div>
+              <strong>{step.title}{step.optional && <span className="tp-guide-optional">ไม่บังคับ</span>}</strong>
+              <p>{step.desc}</p>
+              <p className="tp-guide-example"><span className="material-symbols-outlined" aria-hidden="true">lightbulb</span><span>{step.example}</span></p>
+              <small><span className="material-symbols-outlined" aria-hidden="true">{step.icon}</span>{step.where}</small>
+            </div>
+            {i === 0 && canCreate && <button type="button" className="btn primary" disabled={!!createDisabledReason} title={createDisabledReason || undefined} onClick={onCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span>สร้าง Test Plan</button>}
+          </li>
+        ))}
+      </ol>
+      <div className="tp-guide-extra">
+        <section aria-labelledby="tp-guide-example-title">
+          <h3 id="tp-guide-example-title">ตัวอย่าง: Configuration Matrix ของแผน Regression</h3>
+          <ul className="tp-guide-matrix">
+            {guideExampleRuns.map((r) => {
+              const total = r.passed + r.failed + r.inProgress + r.untested;
+              const done = total - r.untested;
+              return <li key={r.code}>
+                <span><b>{r.code}</b><span className="tp-config">{r.config}</span><Badge tone={r.tone}>{r.status}</Badge></span>
+                <span className="cyd-bar" role="img" aria-label={`ผ่าน ${r.passed}, ไม่ผ่าน ${r.failed}, ยังไม่เริ่ม ${r.untested}`}>
+                  <span className="is-pass" style={{ flexGrow: r.passed }} /><span className="is-fail" style={{ flexGrow: r.failed }} /><span className="is-notrun" style={{ flexGrow: r.untested }} />
+                </span>
+                <small>{Math.round((done / total) * 100)}% · {done}/{total}</small>
+              </li>;
+            })}
+          </ul>
+          <p className="tp-guide-note">เห็นทันทีว่า Edge ทดสอบครบแล้วแต่ Fail มากกว่า Chrome และ Android ยังไม่เริ่ม — เป็นข้อมูลตัวอย่าง ไม่ใช่ข้อมูลจริง</p>
+        </section>
+        <section aria-labelledby="tp-guide-terms-title">
+          <h3 id="tp-guide-terms-title">คำศัพท์ที่ควรรู้</h3>
+          <dl className="tp-guide-terms">{guideTerms.map((t) => <div key={t.term}><dt>{t.term}</dt><dd>{t.meaning}</dd></div>)}</dl>
+        </section>
+      </div>
+    </details>
+  );
+}
+
+/** ขั้นต่อไปของแผนที่เปิดอยู่ ตาม Flow ในคู่มือ — ไม่มีสิทธิ์ทำ = แสดงเฉพาะคำแนะนำ ไม่มีปุ่ม */
+type NextStep = { icon: string; text: string; action?: { label: string; icon: string; go: () => void } };
+const nextStepOf = (plan: PlanDetail, can: { create: boolean; edit: boolean; freeze: boolean; run: boolean; editable: boolean }, go: { addRun: () => void; openCycle: (id: string) => void; openExecution: (id: string) => void; close: () => void; clone: () => void }): NextStep | null => {
+  if (plan.lifecycleStatus !== "Active") return plan.runs.length ? { icon: "content_copy", text: "แผนนี้ปิดแล้ว — เมื่อได้ Build ใหม่ ใช้ Clone / Rerun สร้างแผนรอบใหม่จากแผนนี้ได้ทันที", action: can.create ? { label: "Clone / Rerun", icon: "content_copy", go: go.clone } : undefined } : null;
+  if (plan.isFrozen) return null; // แถบ Frozen บอกวิธีแก้อยู่แล้ว
+  if (!plan.runs.length) return { icon: "playlist_add", text: "ขั้นต่อไป: เพิ่ม Run แรก — เลือก Test Cycle ที่มีอยู่ หรือสร้างใหม่จาก Test Suite แล้วตั้งชื่อ Configuration เช่น “Windows · Chrome”", action: can.edit && can.editable ? { label: "เพิ่ม Run", icon: "add", go: go.addRun } : undefined };
+  const testing = plan.runs.find((r) => r.status === "InProgress");
+  if (testing) return { icon: "play_arrow", text: `ขั้นต่อไป: บันทึกผลของ ${testing.runCode} ใน Execution Workspace — ความคืบหน้าของแผนจะอัปเดตเอง`, action: can.run ? { label: "ทดสอบ", icon: "play_arrow", go: () => go.openExecution(testing.testCycleId) } : undefined };
+  const draft = plan.runs.find((r) => r.status === "Draft");
+  if (draft) return { icon: "rocket_launch", text: `ขั้นต่อไป: เริ่ม Test Cycle ${draft.cycleCode} ของ ${draft.runCode} (จัดทีมก่อนได้ถ้าต้องการ) — เริ่มแล้วปุ่ม “ทดสอบ” จะขึ้นในแถว Run`, action: can.run ? { label: "เปิด Test Cycle", icon: "open_in_new", go: () => go.openCycle(draft.testCycleId) } : undefined };
+  if (plan.status === "Completed") return { icon: "task_alt", text: "ทุก Run จบแล้ว — ตรวจผลใน Matrix แล้วปิดแผน ระบบจะ Freeze ผลไว้เป็นหลักฐาน", action: can.freeze ? { label: "ปิดแผน", icon: "task_alt", go: go.close } : undefined };
+  return null;
+};
+
+type ActionMenuItem ={ key: string; icon: string; label: string; hint?: string; danger?: boolean; disabled?: boolean; onSelect: () => void };
+/** เมนูคำสั่งรองในแถบปุ่ม — ↑/↓/Home/End เลื่อน, Esc ปิดเฉพาะเมนู (ไม่ปิดหน้าต่าง) แล้วคืน focus ที่ปุ่ม, คลิกนอกเมนูเพื่อปิด */
+function ActionMenu({ label, items, disabled }: { label: string; items: ActionMenuItem[]; disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const enabledItems = () => [...(rootRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
+
+  useEffect(() => {
+    if (!open) return;
+    enabledItems()[0]?.focus();
+    const onPointerDown = (e: PointerEvent) => { if (!rootRef.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  if (!items.length) return null;
+  const close = () => { setOpen(false); buttonRef.current?.focus(); };
+  const onMenuKeyDown = (e: React.KeyboardEvent) => {
+    // ModalShell ฟัง Escape ที่ document — หยุดไว้ที่นี่ไม่ให้หน้าต่างรายละเอียดปิดตาม
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key === "Tab") { setOpen(false); return; }
+    const list = enabledItems();
+    if (!list.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    const index = list.indexOf(document.activeElement as HTMLButtonElement);
+    const next = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + list.length) % list.length;
+    list[next].focus();
+  };
+
+  return (
+    <div className="tp-menu" ref={rootRef}>
+      <button ref={buttonRef} type="button" className="btn" disabled={disabled} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
+        onClick={() => setOpen((x) => !x)} onKeyDown={(e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } }}>
+        <span className="material-symbols-outlined" aria-hidden="true">more_horiz</span> {label}
+      </button>
+      {open && <div id={menuId} className="tp-menu-list" role="menu" aria-label={label} onKeyDown={onMenuKeyDown}>
+        {items.map((item) => (
+          <button key={item.key} type="button" role="menuitem" className={item.danger ? "is-danger" : undefined} disabled={item.disabled} onClick={() => { setOpen(false); item.onSelect(); }}>
+            <span className="material-symbols-outlined" aria-hidden="true">{item.icon}</span>
+            <span><b>{item.label}</b>{item.hint && <small>{item.hint}</small>}</span>
+          </button>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
+function PlanDetailModal({ planId, version, users, canCreate, canEdit, canDelete, canFreeze, canAssign, canRun, canExport, onClose, onChanged, onDeleted, onEdit, onCloned, onOpenExecution, onOpenCycle }: {
+  planId: string; version: number; users: UserLookup[]; canCreate: boolean; canEdit: boolean; canDelete: boolean; canFreeze: boolean; canAssign: boolean; canRun: boolean; canExport: boolean;
   onClose: () => void; onChanged: () => void; onDeleted: () => void; onEdit: (plan: PlanDetail) => void; onCloned: (plan: PlanDetail) => void;
   onOpenExecution: (cycleId: string) => void; onOpenCycle: (cycleId: string) => void;
 }) {
@@ -341,6 +517,7 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign
 
   const s = plan?.summary;
   const info = plan ? planStatusInfo[plan.status] ?? planStatusInfo.Draft : null;
+  const next = plan ? nextStepOf(plan, { create: canCreate, edit: canEdit, freeze: canFreeze, run: canRun, editable }, { addRun: () => setRunForm({}), openCycle: onOpenCycle, openExecution: onOpenExecution, close: () => lifecycle("close"), clone: () => setCloneOpen(true) }) : null;
   return (
     <>
     <ModalShell labelledBy="tp-detail-title" className="cyd tp-detail" onDismiss={() => { if (!busy) onClose(); }}>
@@ -357,58 +534,72 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign
         </div>}
         <button type="button" className="cyd-close" aria-label="ปิดรายละเอียด Test Plan" disabled={busy} onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
       </header>
-      {plan && (canEdit || canFreeze || canExport) && <div className="cyd-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Plan">
+      {plan && (canCreate || canEdit || canDelete || canFreeze || canExport) && <div className="cyd-toolbar tp-toolbar" role="toolbar" aria-label="การดำเนินการกับ Test Plan">
+        {canFreeze && plan.lifecycleStatus !== "Active" && <button type="button" className="btn primary" disabled={busy} onClick={() => lifecycle("reopen")}><span className="material-symbols-outlined" aria-hidden="true">replay</span> Reopen</button>}
         {canEdit && editable && <button type="button" className="btn primary" disabled={busy} onClick={() => setRunForm({})}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่ม Run</button>}
         {canEdit && editable && <button type="button" className="btn" disabled={busy} onClick={() => onEdit(plan)}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไขแผน</button>}
-        {canEdit && plan.runs.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => setCloneOpen(true)} title="สร้างแผนใหม่จากแผนนี้สำหรับ Build ใหม่ (ไม่คัดลอกผลการทดสอบ)"><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone / Rerun</button>}
-        {canFreeze && plan.lifecycleStatus === "Active" && <button type="button" className="btn" disabled={busy || plan.status !== "Completed"} title={plan.status !== "Completed" ? "ปิดได้เมื่อทุก Run จบแล้ว (Completed / Closed / Cancelled)" : undefined} onClick={() => lifecycle("close")}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> ปิดแผน</button>}
-        {canFreeze && plan.lifecycleStatus === "Active" && <button type="button" className="btn" disabled={busy} onClick={() => lifecycle(plan.isFrozen ? "unfreeze" : "freeze")}><span className="material-symbols-outlined" aria-hidden="true">{plan.isFrozen ? "lock_open" : "lock"}</span> {plan.isFrozen ? "Unfreeze" : "Freeze"}</button>}
-        {canFreeze && plan.lifecycleStatus !== "Active" && <button type="button" className="btn primary" disabled={busy} onClick={() => lifecycle("reopen")}><span className="material-symbols-outlined" aria-hidden="true">replay</span> Reopen</button>}
+        {canCreate && plan.runs.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => setCloneOpen(true)} title="สร้างแผนใหม่จากแผนนี้สำหรับ Build ใหม่ (ไม่คัดลอกผลการทดสอบ)"><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone / Rerun</button>}
         {canExport && <button type="button" className="btn" disabled={busy} onClick={() => { exportPlanSummary(plan); notify(`ส่งออกสรุป ${plan.planCode} แล้ว`, "success"); }} title="ดาวน์โหลดสรุปแผนและ Configuration Matrix เป็น CSV"><span className="material-symbols-outlined" aria-hidden="true">download</span> Export</button>}
-        <span className="tp-toolbar-end">
-          {canFreeze && plan.lifecycleStatus === "Active" && <button type="button" className="btn tp-danger-text" disabled={busy} onClick={() => lifecycle("cancel")}><span className="material-symbols-outlined" aria-hidden="true">block</span> ยกเลิกแผน</button>}
-          {canEdit && (plan.lifecycleStatus !== "Active" || plan.runs.length === 0) && <button type="button" className="btn tp-danger-text" disabled={busy} onClick={remove}><span className="material-symbols-outlined" aria-hidden="true">delete</span> ลบ</button>}
-        </span>
+        {/* คำสั่งที่ใช้ไม่บ่อยและคำสั่งอันตรายรวมในเมนูเดียว ลดปุ่มในแถบจาก 7–8 ปุ่ม */}
+        <ActionMenu label="จัดการแผน" disabled={busy} items={[
+          ...(canFreeze && plan.lifecycleStatus === "Active" ? [
+            { key: "close", icon: "task_alt", label: "ปิดแผน", hint: plan.status !== "Completed" ? "ปิดได้เมื่อทุก Run จบแล้ว" : "Freeze อัตโนมัติ", disabled: plan.status !== "Completed", onSelect: () => lifecycle("close") },
+            { key: "freeze", icon: plan.isFrozen ? "lock_open" : "lock", label: plan.isFrozen ? "Unfreeze" : "Freeze", hint: plan.isFrozen ? "แก้ไขแผนและ Run ได้อีกครั้ง" : "ล็อกแผนและ Run ไม่ให้แก้ไข", onSelect: () => lifecycle(plan.isFrozen ? "unfreeze" : "freeze") },
+            { key: "cancel", icon: "block", label: "ยกเลิกแผน", hint: "เก็บ Run และผลไว้ Reopen ได้", danger: true, onSelect: () => lifecycle("cancel") },
+          ] : []),
+          ...(canDelete && (plan.lifecycleStatus !== "Active" || plan.runs.length === 0) ? [{ key: "delete", icon: "delete", label: "ลบ Test Plan", hint: "Test Cycle และผลยังอยู่ครบ", danger: true, onSelect: remove }] : []),
+        ]} />
       </div>}
       {plan && !editable && <p className="tp-locked" role="status"><span className="material-symbols-outlined" aria-hidden="true">lock</span>{plan.lifecycleStatus !== "Active" ? `แผน${info?.label ?? ""} — แก้ไขแผนและ Run ไม่ได้ ใช้ Reopen เพื่อแก้ไขต่อ` : "แผนถูก Freeze — แก้ไขแผนและ Run ไม่ได้จนกว่าจะ Unfreeze"}</p>}
+      {next && <div className="tp-next">
+        <span className="material-symbols-outlined" aria-hidden="true">{next.icon}</span>
+        <p>{next.text}</p>
+        {next.action && <button type="button" className="btn" disabled={busy} onClick={next.action.go}><span className="material-symbols-outlined" aria-hidden="true">{next.action.icon}</span>{next.action.label}</button>}
+      </div>}
       <div className="cyd-body">
         <div className="cyd-main">
           {error && <div className="inline-alert error" role="alert"><span>{error}</span><button onClick={() => setReload((x) => x + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> ลองใหม่</button></div>}
           {!plan && loading && <div className="cyd-state" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังโหลด Test Plan...</div>}
-          {plan && s && <section className="cyd-progress" aria-labelledby="tp-progress-title">
-            <div className="cyd-progress-head">
-              <h3 id="tp-progress-title"><span className="material-symbols-outlined" aria-hidden="true">monitoring</span> ความคืบหน้ารวม</h3>
-              <p><b>{percentText(s.progressPercent)}</b> เริ่มทดสอบแล้ว {s.touched.toLocaleString()} จาก {s.totalCases.toLocaleString()} · ทดสอบจบ {percentText(s.completionPercent)}</p>
-            </div>
+          {plan && s && <section className="cyd-progress tp-progress" aria-labelledby="tp-progress-title">
+            <h3 id="tp-progress-title" className="sr-only">ความคืบหน้ารวม</h3>
+            <dl className="tp-kpis">
+              <div><dt>เริ่มทดสอบแล้ว</dt><dd><b>{percentText(s.progressPercent)}</b><small>{s.touched.toLocaleString()} / {s.totalCases.toLocaleString()} เคส</small></dd></div>
+              <div><dt>ทดสอบจบ</dt><dd><b>{percentText(s.completionPercent)}</b><small>{s.completed.toLocaleString()} เคส</small></dd></div>
+              <div><dt>อัตราผ่าน</dt><dd><b>{percentText(s.passRate)}</b><small>ผ่าน {s.passed.toLocaleString()} เคส</small></dd></div>
+              <div title="จำนวน Test Case ที่มีผลจบมากกว่า 1 ครั้ง (ไม่นับการกด Save Progress)"><dt>Retest</dt><dd><b>{s.retest.toLocaleString()}</b><small>{s.retestAttempts > s.retest ? `เคส · รวม ${s.retestAttempts.toLocaleString()} ครั้ง` : "เคส"}</small></dd></div>
+            </dl>
             <div className="cyd-bar" role="img" aria-label={caseStatusSegments.map((x) => `${x.label} ${s[x.key]}`).join(", ")}>
               {s.totalCases > 0 ? caseStatusSegments.map((x) => <span key={x.key} className={x.className} style={{ flexGrow: s[x.key] }} title={`${x.label} ${s[x.key]}`} />) : <span className="is-notrun" style={{ flexGrow: 1 }} />}
             </div>
-            <dl className="tp-counters">
-              {caseStatusSegments.map((x) => <div key={x.key}><dt><span className={`cyd-dot ${x.className}`} aria-hidden="true" />{x.label}</dt><dd>{s[x.key].toLocaleString()}</dd></div>)}
-              <div><dt>อัตราผ่าน</dt><dd>{percentText(s.passRate)}</dd></div>
-              <div title="จำนวน Test Case ที่มีผลจบมากกว่า 1 ครั้ง (ไม่นับการกด Save Progress)"><dt>Retest</dt><dd>{s.retest.toLocaleString()}{s.retestAttempts > s.retest ? <small> ({s.retestAttempts} ครั้ง)</small> : null}</dd></div>
-            </dl>
+            <ul className="tp-legend" aria-label="จำนวนเคสตามสถานะ">
+              {caseStatusSegments.map((x) => <li key={x.key} className={s[x.key] ? undefined : "is-zero"}><span className={`cyd-dot ${x.className}`} aria-hidden="true" />{x.label} <b>{s[x.key].toLocaleString()}</b></li>)}
+            </ul>
           </section>}
           {plan && <section className="cyd-cases" aria-labelledby="tp-matrix-title">
             <div className="cyd-cases-head">
               <h3 id="tp-matrix-title"><span className="material-symbols-outlined" aria-hidden="true">grid_view</span> Configuration Matrix <span className="cyd-count">{plan.runs.length.toLocaleString()}</span></h3>
               {runStatuses.length > 1 && <div className="cyd-chips" role="group" aria-label="กรอง Run ตามสถานะ">
                 <button type="button" aria-pressed={!runFilter} onClick={() => setRunFilter("")}>ทั้งหมด</button>
-                {runStatuses.map((st) => <button key={st} type="button" aria-pressed={runFilter === st} onClick={() => setRunFilter((c) => c === st ? "" : st)}>{st} <b>{plan.runs.filter((r) => r.status === st).length}</b></button>)}
+                {runStatuses.map((st) => <button key={st} type="button" aria-pressed={runFilter === st} onClick={() => setRunFilter((c) => c === st ? "" : st)}>{runStatusLabel(st)} <b>{plan.runs.filter((r) => r.status === st).length}</b></button>)}
               </div>}
             </div>
             <div className="cyd-case-list">
               {!plan.runs.length ? <div className="cyd-state"><span className="material-symbols-outlined" aria-hidden="true">add_box</span>ยังไม่มี Run — {canEdit && editable ? "กด \"เพิ่ม Run\" เพื่อเพิ่ม Test Cycle ที่มีอยู่หรือสร้างจาก Suite" : "ผู้มีสิทธิ์แก้ไขแผนเพิ่ม Run ได้"}</div>
                 : visibleRuns.map((run) => {
                   const config = configSummary(run);
+                  // OS/Browser/Device มักซ้ำกับชื่อ Configuration — แสดงเป็นรายการแยกเฉพาะเมื่อให้ข้อมูลเพิ่ม (ที่เหลืออยู่ใน title ของชิป)
+                  const configExtra = config && config !== run.configurationName ? config : "";
                   return <article key={run.testPlanRunId} className={`tp-run is-${run.status.toLowerCase()}`}>
                     <div className="tp-run-main">
-                      <div className="tp-run-code"><b>{run.runCode}</b><Badge tone={runStatusTone[run.status] ?? "blue"}>{run.status}</Badge>{run.configurationName && <span className="tp-config" title={run.configurationKey ?? undefined}>{run.configurationName}</span>}</div>
-                      <p>{run.runName}</p>
-                      <small>
-                        {canRun ? <button type="button" className="tp-link" onClick={() => onOpenCycle(run.testCycleId)} title="เปิดรายละเอียด Test Cycle">{run.cycleCode}</button> : run.cycleCode}
-                        {` · Build ${run.buildNumber ?? "-"} · ${run.environmentName ?? "-"}`}{config ? ` · ${config}` : ""}{run.ownerName ? ` · ${run.ownerName}` : ""}
-                      </small>
+                      <div className="tp-run-code"><b>{run.runCode}</b><Badge tone={runStatusInfo[run.status]?.tone ?? "blue"}>{runStatusLabel(run.status)}</Badge>{run.configurationName && <span className="tp-config" title={[config, run.configurationKey].filter(Boolean).join(" · ") || undefined}><span className="material-symbols-outlined" aria-hidden="true">devices</span>{run.configurationName}</span>}</div>
+                      {run.runName !== run.configurationName && <p>{run.runName}</p>}
+                      <ul className="tp-run-meta">
+                        <li title="Test Cycle"><span className="material-symbols-outlined" aria-hidden="true">fact_check</span>{canRun ? <button type="button" className="tp-link" onClick={() => onOpenCycle(run.testCycleId)} title="เปิดรายละเอียด Test Cycle">{run.cycleCode}</button> : run.cycleCode}</li>
+                        <li title="Build"><span className="material-symbols-outlined" aria-hidden="true">deployed_code</span>Build {run.buildNumber ?? "-"}</li>
+                        <li title="Environment"><span className="material-symbols-outlined" aria-hidden="true">dns</span>{run.environmentName ?? "-"}</li>
+                        {configExtra && <li title="OS · Browser · Device"><span className="material-symbols-outlined" aria-hidden="true">devices</span>{configExtra}</li>}
+                        {run.ownerName && <li title="ผู้รับผิดชอบ Run"><span className="material-symbols-outlined" aria-hidden="true">person</span>{run.ownerName}</li>}
+                      </ul>
                       {(run.assignments.length > 0 || run.unassignedCases > 0) && <span className="tp-team">
                         {run.assignments.length > 0 && <span><span className="material-symbols-outlined" aria-hidden="true">group</span>{run.assignments.map((m) => `${m.testerName ?? "ผู้ใช้"} (${runRoleLabel[m.role] ?? m.role})`).join(", ")}</span>}
                         {run.unassignedCases > 0 && <span className="tp-unassigned">ยังไม่มีผู้รับผิดชอบ {run.unassignedCases.toLocaleString()} เคส</span>}
@@ -437,7 +628,7 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign
             <dl className="cyd-info">
               <div><dt>Release</dt><dd>{plan.releaseCode ?? "-"}</dd></div>
               <div><dt>เจ้าของแผน</dt><dd>{plan.ownerName ?? "ไม่ระบุ"}</dd></div>
-              <div><dt>กำหนดการ</dt><dd>{plan.startDate || plan.endDate ? `${shortDate(plan.startDate) || "?"} – ${shortDate(plan.endDate) || "?"}` : "ไม่ระบุวันที่"}</dd></div>
+              <div><dt>กำหนดการ</dt><dd className="tp-schedule">{scheduleText(plan.startDate, plan.endDate)}<DueHint days={daysLeftOf(plan.status, plan.endDate)} /></dd></div>
               <div><dt>สร้างเมื่อ</dt><dd>{shortDate(plan.createdAt)}{plan.updatedAt ? <small> · แก้ไขล่าสุด {shortDate(plan.updatedAt)}</small> : null}</dd></div>
               {plan.isFrozen && <div><dt>Freeze เมื่อ</dt><dd>{shortDate(plan.frozenAt)}</dd></div>}
             </dl>
@@ -455,7 +646,9 @@ function PlanDetailModal({ planId, version, users, canEdit, canFreeze, canAssign
       </div>
     </ModalShell>
     {/* หน้าต่าง Run อยู่นอกกล่องรายละเอียด — ถ้าซ้อนข้างใน .modal (fixed) จะยึดกับกล่องแม่แทนหน้าจอ */}
-    {runForm && plan && <RunFormModal plan={plan} run={runForm.run} users={users} onClose={() => setRunForm(null)} onSaved={() => { setRunForm(null); refresh(); }} />}
+    {runForm && plan && (runForm.run
+      ? <RunFormModal plan={plan} run={runForm.run} users={users} onClose={() => setRunForm(null)} onSaved={() => { setRunForm(null); refresh(); }} />
+      : <AddRunsModal plan={plan} users={users} onClose={() => setRunForm(null)} onSaved={() => { setRunForm(null); refresh(); }} onChanged={refresh} />)}
     {teamRun && plan && <RunTeamModal plan={plan} run={teamRun} onClose={() => setTeamRun(null)} onSaved={() => { setTeamRun(null); refresh(); }} />}
     {cloneOpen && plan && <ClonePlanModal plan={plan} onClose={() => setCloneOpen(false)} onCloned={(created) => { setCloneOpen(false); onCloned(created); }} />}
     </>
@@ -528,72 +721,32 @@ function PlanFormModal({ plan, projectId, defaultReleaseId, users, onClose, onSa
   );
 }
 
-function RunFormModal({ plan, run, users, onClose, onSaved }: { plan: PlanDetail; run?: PlanRun; users: UserLookup[]; onClose: () => void; onSaved: () => void }) {
-  const initialConfig = useMemo(() => parseConfig(run?.configurationJson), [run]);
-  const [mode, setMode] = useState<"attach" | "suite">("attach");
-  const [cycles, setCycles] = useState<CycleOption[]>([]);
-  const [suites, setSuites] = useState<SuiteOption[]>([]);
-  const [builds, setBuilds] = useState<BuildItem[]>([]);
-  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
-  const [optionsLoading, setOptionsLoading] = useState(!run);
-  const [cycleId, setCycleId] = useState("");
-  const [suiteId, setSuiteId] = useState("");
-  const [buildId, setBuildId] = useState("");
-  const [environmentId, setEnvironmentId] = useState("");
-  const [requiredOnly, setRequiredOnly] = useState(false);
-  const [runCode, setRunCode] = useState("");
-  const [runName, setRunName] = useState(run?.runName ?? "");
-  const [configurationKey, setConfigurationKey] = useState(run?.configurationKey ?? "");
-  const [configurationName, setConfigurationName] = useState(run?.configurationName ?? "");
+/** แก้ไข Run — เปลี่ยน Test Cycle/รหัส Run ไม่ได้ (เพิ่ม Run ใหม่ใช้ AddRunsModal) */
+function RunFormModal({ plan, run, users, onClose, onSaved }: { plan: PlanDetail; run: PlanRun; users: UserLookup[]; onClose: () => void; onSaved: () => void }) {
+  const initialConfig = useMemo(() => parseConfig(run.configurationJson), [run]);
+  const [runName, setRunName] = useState(run.runName);
+  const [configurationKey, setConfigurationKey] = useState(run.configurationKey ?? "");
+  const [configurationName, setConfigurationName] = useState(run.configurationName ?? "");
   const [os, setOs] = useState(typeof initialConfig.os === "string" ? initialConfig.os : "");
   const [browser, setBrowser] = useState(typeof initialConfig.browser === "string" ? initialConfig.browser : "");
   const [device, setDevice] = useState(typeof initialConfig.device === "string" ? initialConfig.device : "");
-  const [ownerUserId, setOwnerUserId] = useState(run?.ownerUserId ?? "");
+  const [ownerUserId, setOwnerUserId] = useState(run.ownerUserId ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (run) return;
-    const ctrl = new AbortController();
-    const linked = new Set(plan.runs.map((r) => r.testCycleId));
-    // ตัวเลือกทั้งหมดโหลดพร้อมกันครั้งเดียว (ไม่ยิงต่อแถว)
-    Promise.all([
-      getJson<CycleOption[]>(`${apiUrl}/test-cycles/options?projectId=${plan.projectId}`, ctrl.signal),
-      getJson<{ rows: SuiteOption[] }>(`${apiUrl}/test-suites?projectId=${plan.projectId}&isActive=true&size=500&page=1`, ctrl.signal),
-      getJson<BuildItem[]>(`${apiUrl}/releases/${plan.releaseId}/builds`, ctrl.signal),
-      getJson<EnvironmentOption[]>(`${apiUrl}/test-environments?projectId=${plan.projectId}`, ctrl.signal),
-    ]).then(([cycleRows, suiteRows, buildRows, environmentRows]) => {
-      // Cycle ที่ผูกกับแผนอื่นอยู่แล้ว Server ปฏิเสธพร้อมเหตุผล — ที่นี่ตัดเฉพาะ Cycle ที่อยู่ในแผนนี้แล้วและคนละ Release
-      setCycles(cycleRows.filter((x) => x.releaseId === plan.releaseId && !linked.has(x.testCycleId)));
-      setSuites(suiteRows.rows);
-      setBuilds(buildRows.filter((x) => x.isActive));
-      setEnvironments(environmentRows.filter((x) => x.isActive));
-    }).catch((e) => { if (!isAbortError(e)) setError(errorText(e, "โหลดตัวเลือกไม่สำเร็จ")); })
-      .finally(() => { if (!ctrl.signal.aborted) setOptionsLoading(false); });
-    return () => ctrl.abort();
-  }, [run, plan]);
 
   const configJson = () => {
     const merged: Record<string, unknown> = { ...initialConfig };
     for (const [key, value] of [["os", os], ["browser", browser], ["device", device]] as const) { if (value.trim()) merged[key] = value.trim(); else delete merged[key]; }
     return Object.keys(merged).length ? merged : null;
   };
-  const keyInvalid = configurationKey.trim() !== "" && !/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(configurationKey.trim());
-  const missing = (run ? [!runName.trim() && "ชื่อ Run"]
-    : mode === "attach" ? [!cycleId && "Test Cycle"]
-      : [!suiteId && "Test Suite", !buildId && "Build", !environmentId && "Environment"]).filter(Boolean) as string[];
+  const keyInvalid = configurationKey.trim() !== "" && !configKeyPattern.test(configurationKey.trim());
+  const missing = runName.trim() ? [] : ["ชื่อ Run"];
 
   const save = async () => {
     setSaving(true); setError("");
-    const common = { configurationKey: configurationKey.trim().toLowerCase() || null, configurationName: configurationName.trim() || null, configurationJson: configJson(), ownerUserId: ownerUserId || null };
     try {
-      if (run) await apiFetch(`/test-plans/${plan.testPlanId}/runs/${run.testPlanRunId}`, { method: "PUT", json: { runName: runName.trim(), ...common }, fallbackMessage: "บันทึก Run ไม่สำเร็จ" });
-      else await apiFetch(`/test-plans/${plan.testPlanId}/runs`, {
-        method: "POST",
-        json: { runCode: runCode.trim() || null, runName: runName.trim() || null, ...common, createCycleFromSuite: mode === "suite", testCycleId: mode === "attach" ? cycleId : null, testSuiteId: mode === "suite" ? suiteId : null, buildId: mode === "suite" ? buildId : null, environmentId: mode === "suite" ? environmentId : null, cycleName: null, requiredOnly },
-        fallbackMessage: "เพิ่ม Run ไม่สำเร็จ",
-      });
-      notify(run ? `บันทึก ${run.runCode} แล้ว` : "เพิ่ม Run แล้ว", "success");
+      await apiFetch(`/test-plans/${plan.testPlanId}/runs/${run.testPlanRunId}`, { method: "PUT", json: { runName: runName.trim(), configurationKey: configurationKey.trim().toLowerCase() || null, configurationName: configurationName.trim() || null, configurationJson: configJson(), ownerUserId: ownerUserId || null }, fallbackMessage: "บันทึก Run ไม่สำเร็จ" });
+      notify(`บันทึก ${run.runCode} แล้ว`, "success");
       onSaved();
     } catch (e) { setError(errorText(e, "บันทึก Run ไม่สำเร็จ")); }
     finally { setSaving(false); }
@@ -601,44 +754,269 @@ function RunFormModal({ plan, run, users, onClose, onSaved }: { plan: PlanDetail
 
   return (
     <ModalShell labelledBy="tp-run-title" className="tp-form tp-run-form" onDismiss={() => { if (!saving) onClose(); }}>
-      <div className="modal-head"><div><h2 id="tp-run-title">{run ? `แก้ไข Run ${run.runCode}` : "เพิ่ม Run"}</h2><small>{run ? `Test Cycle ${run.cycleCode} · Build ${run.buildNumber ?? "-"} · ${run.environmentName ?? "-"}` : `${plan.planCode} · Release ${plan.releaseCode ?? "-"} — Build/Environment ใช้ค่าจาก Test Cycle`}</small></div><button disabled={saving} aria-label="ปิดหน้าต่าง" onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+      <div className="modal-head"><div><h2 id="tp-run-title">แก้ไข Run {run.runCode}</h2><small>Test Cycle {run.cycleCode} · Build {run.buildNumber ?? "-"} · {run.environmentName ?? "-"}</small></div><button disabled={saving} aria-label="ปิดหน้าต่าง" onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
       {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
-      {!run && <fieldset className="tp-mode" disabled={saving}>
-        <legend>ที่มาของ Test Cycle</legend>
-        <label className={mode === "attach" ? "is-selected" : undefined}><input type="radio" name="tp-run-mode" checked={mode === "attach"} onChange={() => setMode("attach")} /><span><b>เพิ่ม Cycle ที่มีอยู่</b><small>ไม่คัดลอก Test Case หรือผลการทดสอบ</small></span></label>
-        <label className={mode === "suite" ? "is-selected" : undefined}><input type="radio" name="tp-run-mode" checked={mode === "suite"} onChange={() => setMode("suite")} /><span><b>สร้าง Cycle ใหม่จาก Suite</b><small>สร้าง Test Cycle (Draft) แล้วเพิ่มเข้าแผนทันที</small></span></label>
-      </fieldset>}
-      {!run && optionsLoading && <div className="cyd-state" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังโหลดตัวเลือก...</div>}
       <div className="form-grid">
-        {!run && mode === "attach" && <label className="full">Test Cycle <span className="required">*</span>
-          <select value={cycleId} disabled={saving || optionsLoading} onChange={(e) => setCycleId(e.target.value)}>
-            <option value="">{cycles.length ? "เลือก Test Cycle ของ Release นี้" : "ไม่มี Test Cycle ที่เพิ่มได้ใน Release นี้"}</option>
-            {cycles.map((c) => <option key={c.testCycleId} value={c.testCycleId}>{c.cycleCode} · {c.cycleName} ({c.status})</option>)}
-          </select>
-          <small>Cycle ที่อยู่ในแผนอื่นแล้วจะเพิ่มไม่ได้ (1 Cycle อยู่ได้ 1 แผน)</small>
-        </label>}
-        {!run && mode === "suite" && <>
-          <label className="full">Test Suite <span className="required">*</span><select value={suiteId} disabled={saving || optionsLoading} onChange={(e) => setSuiteId(e.target.value)}><option value="">เลือก Test Suite</option>{suites.map((x) => <option key={x.testSuiteId} value={x.testSuiteId}>{x.suiteCode} · {x.suiteName} ({x.caseCount} เคส)</option>)}</select></label>
-          <label>Build <span className="required">*</span><select value={buildId} disabled={saving || optionsLoading} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select></label>
-          <label>Environment <span className="required">*</span><select value={environmentId} disabled={saving || optionsLoading} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((x) => <option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label>
-          <label className="tp-check full"><input type="checkbox" checked={requiredOnly} disabled={saving} onChange={(e) => setRequiredOnly(e.target.checked)} /><span>เฉพาะ Test Case ที่เป็น Required ใน Suite</span></label>
-        </>}
-        {!run && <label>รหัส Run<input value={runCode} disabled={saving} onChange={(e) => setRunCode(e.target.value)} placeholder="เว้นว่าง = ใช้รหัส Test Cycle" maxLength={100} /></label>}
-        <label className={run ? "full" : undefined}>ชื่อ Run{run && <> <span className="required">*</span></>}<input value={runName} disabled={saving} onChange={(e) => setRunName(e.target.value)} placeholder={run ? undefined : "เว้นว่าง = ใช้ชื่อ Test Cycle"} maxLength={200} /></label>
+        <label className="full">ชื่อ Run <span className="required">*</span><input value={runName} disabled={saving} onChange={(e) => setRunName(e.target.value)} maxLength={200} /></label>
       </div>
       <h3 className="modal-section-title tp-config-title">Configuration</h3>
       <div className="form-grid">
-          <label>Configuration Name<input value={configurationName} disabled={saving} onChange={(e) => setConfigurationName(e.target.value)} placeholder="เช่น Windows 11 · Chrome" maxLength={200} /></label>
-          <label>Configuration Key<input value={configurationKey} disabled={saving} aria-invalid={keyInvalid || undefined} onChange={(e) => setConfigurationKey(e.target.value)} placeholder="เช่น windows-chrome" maxLength={100} /><small className={keyInvalid ? "tp-field-error" : undefined}>{keyInvalid ? "ใช้ได้เฉพาะ a-z, 0-9 และ - (เช่น windows-chrome)" : "ใช้กรอง/เทียบผลข้าม Run — ระบบเก็บเป็นตัวพิมพ์เล็ก"}</small></label>
-          <label>OS<input value={os} disabled={saving} onChange={(e) => setOs(e.target.value)} placeholder="เช่น Windows 11" /></label>
-          <label>Browser<input value={browser} disabled={saving} onChange={(e) => setBrowser(e.target.value)} placeholder="เช่น Chrome" /></label>
-          <label>Device<input value={device} disabled={saving} onChange={(e) => setDevice(e.target.value)} placeholder="เช่น Desktop" /></label>
-          <label>ผู้รับผิดชอบ Run<select value={ownerUserId} disabled={saving} onChange={(e) => setOwnerUserId(e.target.value)}><option value="">ไม่ระบุ</option>{users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>
+        <label>Configuration Name<input value={configurationName} disabled={saving} onChange={(e) => setConfigurationName(e.target.value)} placeholder="เช่น Windows 11 · Chrome" maxLength={200} /></label>
+        <label>Configuration Key<input value={configurationKey} disabled={saving} aria-invalid={keyInvalid || undefined} onChange={(e) => setConfigurationKey(e.target.value)} placeholder="เช่น windows-chrome" maxLength={100} /><small className={keyInvalid ? "tp-field-error" : undefined}>{keyInvalid ? "ใช้ได้เฉพาะ a-z, 0-9 และ - (เช่น windows-chrome)" : "ใช้กรอง/เทียบผลข้าม Run — ระบบเก็บเป็นตัวพิมพ์เล็ก"}</small></label>
+        <label>OS<input value={os} disabled={saving} onChange={(e) => setOs(e.target.value)} placeholder="เช่น Windows 11" /></label>
+        <label>Browser<input value={browser} disabled={saving} onChange={(e) => setBrowser(e.target.value)} placeholder="เช่น Chrome" /></label>
+        <label>Device<input value={device} disabled={saving} onChange={(e) => setDevice(e.target.value)} placeholder="เช่น Desktop" /></label>
+        <label>ผู้รับผิดชอบ Run<select value={ownerUserId} disabled={saving} onChange={(e) => setOwnerUserId(e.target.value)}><option value="">ไม่ระบุ</option>{users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>
       </div>
       <div className="modal-actions">
         <small className={`tp-form-status${missing.length || keyInvalid ? " is-missing" : ""}`} role="status">{missing.length ? `ยังขาด: ${missing.join(", ")}` : keyInvalid ? "Configuration Key ไม่ถูกต้อง" : "ข้อมูลครบ พร้อมบันทึก"}</small>
         <button className="btn" disabled={saving} onClick={onClose}>ยกเลิก</button>
-        <button className="btn primary" disabled={saving || missing.length > 0 || keyInvalid || (!run && optionsLoading)} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : run ? "บันทึก" : mode === "suite" ? "สร้าง Cycle และเพิ่ม Run" : "เพิ่ม Run"}</button>
+        <button className="btn primary" disabled={saving || missing.length > 0 || keyInvalid} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : "บันทึก"}</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/** ค่าที่กรอกต่อ Run ในหน้าต่างเพิ่ม Run — รหัส/ชื่อ Run ว่าง = ใช้ของ Test Cycle */
+type RunDraft = { name: string; key: string; os: string; browser: string; device: string; runCode: string; runName: string; more: boolean };
+const emptyDraft = (): RunDraft => ({ name: "", key: "", os: "", browser: "", device: "", runCode: "", runName: "", more: false });
+const configKeyPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/i;
+/** Key แนะนำจากชื่อ Configuration — "Windows 11 · Chrome" → "windows-11-chrome" (ชื่อที่ไม่มีอักษรอังกฤษ/ตัวเลขไม่มี Key แนะนำ) */
+const suggestKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100);
+const draftBody = (d: RunDraft, ownerUserId: string) => {
+  const config: Record<string, string> = {};
+  for (const [key, value] of [["os", d.os], ["browser", d.browser], ["device", d.device]] as const) if (value.trim()) config[key] = value.trim();
+  return { runCode: d.runCode.trim() || null, runName: d.runName.trim() || null, configurationKey: (d.key.trim() || suggestKey(d.name)).toLowerCase() || null, configurationName: d.name.trim() || null, configurationJson: Object.keys(config).length ? config : null, ownerUserId: ownerUserId || null, cycleName: null };
+};
+
+function RunDraftCard({ title, meta, draft, disabled, codePlaceholder, namePlaceholder, onChange, onRemove }: {
+  title: string; meta: string; draft: RunDraft; disabled: boolean; codePlaceholder: string; namePlaceholder: string; onChange: (draft: RunDraft) => void; onRemove?: () => void;
+}) {
+  const keyInvalid = draft.key.trim() !== "" && !configKeyPattern.test(draft.key.trim());
+  const suggested = suggestKey(draft.name);
+  const set = (patch: Partial<RunDraft>) => onChange({ ...draft, ...patch });
+  const extraCount = [draft.os, draft.browser, draft.device, draft.runCode, draft.runName].filter((x) => x.trim()).length;
+  return (
+    <li className={`tp-draft${keyInvalid ? " is-invalid" : ""}`}>
+      <div className="tp-draft-head">
+        <span><b>{title}</b><small>{meta}</small></span>
+        {onRemove && <button type="button" className="tp-draft-remove" disabled={disabled} aria-label={`นำ ${title} ออก`} title="นำออก" onClick={onRemove}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>}
+      </div>
+      <div className="tp-draft-grid">
+        <label><span>Configuration Name</span><input value={draft.name} disabled={disabled} onChange={(e) => set({ name: e.target.value })} placeholder="เช่น Windows 11 · Chrome" maxLength={200} /></label>
+        <label><span>Configuration Key</span><input value={draft.key} disabled={disabled} aria-invalid={keyInvalid || undefined} onChange={(e) => set({ key: e.target.value })} placeholder={suggested ? `อัตโนมัติ: ${suggested}` : "เช่น windows-chrome"} maxLength={100} /></label>
+      </div>
+      {keyInvalid && <small className="tp-field-error">Key ใช้ได้เฉพาะ a-z, 0-9 และ - (เช่น windows-chrome)</small>}
+      <button type="button" className="tp-draft-more" aria-expanded={draft.more} disabled={disabled} onClick={() => set({ more: !draft.more })}>
+        <span className="material-symbols-outlined" aria-hidden="true">tune</span>OS / Browser / Device · รหัส–ชื่อ Run{extraCount > 0 && !draft.more ? ` (กรอกแล้ว ${extraCount})` : ""}
+        <span className="material-symbols-outlined" aria-hidden="true">expand_more</span>
+      </button>
+      {draft.more && <div className="tp-draft-grid is-extra">
+        <label><span>OS</span><input value={draft.os} disabled={disabled} onChange={(e) => set({ os: e.target.value })} placeholder="เช่น Windows 11" /></label>
+        <label><span>Browser</span><input value={draft.browser} disabled={disabled} onChange={(e) => set({ browser: e.target.value })} placeholder="เช่น Chrome" /></label>
+        <label><span>Device</span><input value={draft.device} disabled={disabled} onChange={(e) => set({ device: e.target.value })} placeholder="เช่น Desktop" /></label>
+        <label><span>รหัส Run</span><input value={draft.runCode} disabled={disabled} onChange={(e) => set({ runCode: e.target.value })} placeholder={codePlaceholder} maxLength={100} /></label>
+        <label className="is-wide"><span>ชื่อ Run</span><input value={draft.runName} disabled={disabled} onChange={(e) => set({ runName: e.target.value })} placeholder={namePlaceholder} maxLength={200} /></label>
+      </div>}
+    </li>
+  );
+}
+
+/** เพิ่ม Run หน้าจอเดียว — ซ้าย: เลือก Test Cycle ได้หลายรายการ (หรือสร้างจาก Suite 1 ชุด) | ขวา: Configuration ต่อ Run */
+function AddRunsModal({ plan, users, onClose, onSaved, onChanged }: { plan: PlanDetail; users: UserLookup[]; onClose: () => void; onSaved: () => void; onChanged: () => void }) {
+  const [mode, setMode] = useState<"attach" | "suite">("attach");
+  const [cycles, setCycles] = useState<CycleRow[]>([]);
+  const [suites, setSuites] = useState<SuiteOption[]>([]);
+  const [builds, setBuilds] = useState<BuildItem[]>([]);
+  const [environments, setEnvironments] = useState<EnvironmentOption[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [buildFilter, setBuildFilter] = useState("");
+  const [envFilter, setEnvFilter] = useState("");
+  const [moduleFilter, setModuleFilter] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, RunDraft>>({});
+  const [suiteId, setSuiteId] = useState("");
+  const [buildId, setBuildId] = useState("");
+  const [environmentId, setEnvironmentId] = useState("");
+  const [requiredOnly, setRequiredOnly] = useState(false);
+  const [suiteDraft, setSuiteDraft] = useState<RunDraft>(emptyDraft);
+  const [ownerUserId, setOwnerUserId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [failures, setFailures] = useState<{ code: string; message: string }[]>([]);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    // plan=none: Server ส่งเฉพาะ Cycle ที่ยังไม่อยู่ใน Test Plan ใด (1 Cycle อยู่ได้ 1 แผน) — เกิน 500 รายการขอหน้าที่เหลือพร้อมกัน
+    const cycleUrl = (page: number) => `${apiUrl}/test-cycles?projectId=${plan.projectId}&releaseId=${plan.releaseId}&plan=none&size=500&page=${page}`;
+    const loadCycles = async () => {
+      const first = await getJson<CycleListResult>(cycleUrl(1), ctrl.signal);
+      const pages = Math.ceil(first.items.total / 500);
+      const rest = await Promise.all(Array.from({ length: Math.max(0, pages - 1) }, (_, i) => getJson<CycleListResult>(cycleUrl(i + 2), ctrl.signal)));
+      return [first, ...rest].flatMap((r) => r.items.rows);
+    };
+    // ตัวเลือกทั้งหมดโหลดพร้อมกันครั้งเดียว (ไม่ยิงต่อแถว)
+    Promise.all([
+      loadCycles(),
+      getJson<{ rows: SuiteOption[] }>(`${apiUrl}/test-suites?projectId=${plan.projectId}&isActive=true&size=500&page=1`, ctrl.signal),
+      getJson<BuildItem[]>(`${apiUrl}/releases/${plan.releaseId}/builds`, ctrl.signal),
+      getJson<EnvironmentOption[]>(`${apiUrl}/test-environments?projectId=${plan.projectId}`, ctrl.signal),
+    ]).then(([cycleRows, suiteRows, buildRows, environmentRows]) => {
+      setCycles(cycleRows.map((x) => ({ ...x, modules: x.modules ?? [] })));
+      setSuites(suiteRows.rows);
+      setBuilds(buildRows);
+      setEnvironments(environmentRows.filter((x) => x.isActive));
+    }).catch((e) => { if (!isAbortError(e)) setError(errorText(e, "โหลดตัวเลือกไม่สำเร็จ")); })
+      .finally(() => { if (!ctrl.signal.aborted) setOptionsLoading(false); });
+    return () => ctrl.abort();
+  }, [plan]);
+
+  const cycleById = useMemo(() => new Map(cycles.map((c) => [c.testCycleId, c])), [cycles]);
+  const statusOptions = useMemo(() => distinctCounts(cycles.map((c) => [c.status, runStatusLabel(c.status)])), [cycles]);
+  const buildOptions = useMemo(() => distinctCounts(cycles.map((c) => [c.buildId, c.buildNumber])), [cycles]);
+  const envOptions = useMemo(() => distinctCounts(cycles.map((c) => [c.environmentId, c.environmentName])), [cycles]);
+  const moduleOptions = useMemo(() => distinctCounts(cycles.flatMap((c) => c.modules.map((m): [string, string] => [m.moduleId, `${m.moduleCode} · ${m.moduleName}`]))), [cycles]);
+  const q = query.trim().toLowerCase();
+  const visible = cycles.filter((c) => (!statusFilter || c.status === statusFilter) && (!buildFilter || c.buildId === buildFilter) && (!envFilter || c.environmentId === envFilter)
+    && (!moduleFilter || c.modules.some((m) => m.moduleId === moduleFilter))
+    && (!q || [c.cycleCode, c.cycleName, c.suiteName, c.environmentName, c.buildNumber, ...c.modules.flatMap((m) => [m.moduleCode, m.moduleName])].filter(Boolean).join(" ").toLowerCase().includes(q)));
+  const filterCount = [statusFilter, buildFilter, envFilter, moduleFilter, q].filter(Boolean).length;
+  const clearCycleFilters = () => { setStatusFilter(""); setBuildFilter(""); setEnvFilter(""); setModuleFilter(""); setQuery(""); };
+  const allVisibleSelected = visible.length > 0 && visible.every((c) => selected.includes(c.testCycleId));
+  const select = (ids: string[], on: boolean) => {
+    setSelected((current) => on ? [...current, ...ids.filter((id) => !current.includes(id))] : current.filter((id) => !ids.includes(id)));
+    if (on) setDrafts((current) => ({ ...Object.fromEntries(ids.map((id) => [id, emptyDraft()])), ...current }));
+  };
+  const cycleMeta = (c: CycleRow) => [c.cycleName, c.environmentName, `Build ${c.buildNumber}`, `${c.caseCount.toLocaleString()} เคส`].join(" · ");
+  const suite = suites.find((x) => x.testSuiteId === suiteId);
+
+  const activeDrafts = mode === "attach" ? selected.map((id) => ({ code: cycleById.get(id)?.cycleCode ?? "", draft: drafts[id] ?? emptyDraft() })) : [{ code: "", draft: suiteDraft }];
+  const invalidKeys = activeDrafts.filter(({ draft }) => draft.key.trim() && !configKeyPattern.test(draft.key.trim())).length;
+  const runCodes = activeDrafts.map(({ code, draft }) => (draft.runCode.trim() || code).toUpperCase()).filter(Boolean);
+  const existingCodes = new Set(plan.runs.map((r) => r.runCode.toUpperCase()));
+  const duplicateCode = runCodes.find((c, i) => runCodes.indexOf(c) !== i || existingCodes.has(c));
+  const missing = (mode === "attach" ? [!selected.length && "Test Cycle อย่างน้อย 1 รายการ"] : [!suiteId && "Test Suite", !buildId && "Build", !environmentId && "Environment"]).filter(Boolean) as string[];
+  const problem = missing.length ? `ยังขาด: ${missing.join(", ")}` : invalidKeys ? `Configuration Key ไม่ถูกต้อง ${invalidKeys} รายการ` : duplicateCode ? `รหัส Run ซ้ำ: ${duplicateCode}` : "";
+  const runCount = mode === "attach" ? selected.length : 1;
+
+  const save = async () => {
+    setSaving(true); setError(""); setFailures([]);
+    try {
+      if (mode === "suite") {
+        await apiFetch(`/test-plans/${plan.testPlanId}/runs`, { method: "POST", json: { ...draftBody(suiteDraft, ownerUserId), createCycleFromSuite: true, testCycleId: null, testSuiteId: suiteId, buildId, environmentId, requiredOnly }, fallbackMessage: "เพิ่ม Run ไม่สำเร็จ" });
+        notify("สร้าง Test Cycle และเพิ่ม Run แล้ว", "success");
+        onSaved();
+        return;
+      }
+      // API รับทีละ Cycle — ส่งครั้งละ 4 คำขอ (แบบเดียวกับลบหลาย Test Suite); รายการที่ไม่สำเร็จคงไว้ให้แก้แล้วลองใหม่
+      const ids = [...selected];
+      const failed: { id: string; code: string; message: string }[] = [];
+      for (let i = 0; i < ids.length; i += 4) {
+        const chunk = ids.slice(i, i + 4);
+        const results = await Promise.allSettled(chunk.map((id) => apiFetch(`/test-plans/${plan.testPlanId}/runs`, { method: "POST", json: { ...draftBody(drafts[id] ?? emptyDraft(), ownerUserId), createCycleFromSuite: false, testCycleId: id, testSuiteId: null, buildId: null, environmentId: null, requiredOnly: false }, fallbackMessage: "เพิ่ม Run ไม่สำเร็จ" })));
+        results.forEach((result, j) => { if (result.status === "rejected") failed.push({ id: chunk[j], code: cycleById.get(chunk[j])?.cycleCode ?? "", message: errorText(result.reason, "เพิ่ม Run ไม่สำเร็จ") }); });
+      }
+      const added = ids.length - failed.length;
+      if (!failed.length) { notify(`เพิ่ม ${added.toLocaleString()} Run แล้ว`, "success"); onSaved(); return; }
+      const failedIds = new Set(failed.map((f) => f.id));
+      setSelected(ids.filter((id) => failedIds.has(id)));
+      setCycles((current) => current.filter((c) => failedIds.has(c.testCycleId) || !ids.includes(c.testCycleId)));
+      setFailures(failed.map(({ code, message }) => ({ code, message })));
+      if (added) { notify(`เพิ่ม ${added.toLocaleString()} Run แล้ว · ไม่สำเร็จ ${failed.length.toLocaleString()} รายการ`, "info"); onChanged(); }
+    } catch (e) { setError(errorText(e, "เพิ่ม Run ไม่สำเร็จ")); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <ModalShell labelledBy="tp-add-title" className="tp-form tp-add-runs" onDismiss={() => { if (!saving) onClose(); }}>
+      <div className="modal-head"><div><h2 id="tp-add-title">เพิ่ม Run</h2><small>{plan.planCode} · Release {plan.releaseCode ?? "-"} — 1 Run = 1 Test Cycle, Build/Environment ใช้ค่าจาก Test Cycle</small></div><button disabled={saving} aria-label="ปิดหน้าต่าง" onClick={onClose}><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+      {failures.length > 0 && <div className="inline-alert error tp-add-failures" role="alert"><span><b>เพิ่มไม่สำเร็จ {failures.length.toLocaleString()} รายการ</b> — รายการด้านล่างยังเลือกไว้ แก้แล้วกด “เพิ่ม Run” อีกครั้ง หรือนำออก<ul>{failures.map((f) => <li key={f.code}><b>{f.code}</b> {f.message}</li>)}</ul></span></div>}
+      <div className="tp-add-mode" role="radiogroup" aria-label="ที่มาของ Test Cycle">
+        <label className={mode === "attach" ? "is-selected" : undefined}><input type="radio" name="tp-add-mode" checked={mode === "attach"} disabled={saving} onChange={() => setMode("attach")} /><span className="material-symbols-outlined" aria-hidden="true">checklist</span><span><b>เลือก Cycle ที่มีอยู่</b><small>เลือกได้หลายรายการ · ไม่คัดลอกผลการทดสอบ</small></span></label>
+        <label className={mode === "suite" ? "is-selected" : undefined}><input type="radio" name="tp-add-mode" checked={mode === "suite"} disabled={saving} onChange={() => setMode("suite")} /><span className="material-symbols-outlined" aria-hidden="true">add_circle</span><span><b>สร้าง Cycle ใหม่จาก Suite</b><small>สร้าง Test Cycle (Draft) 1 ชุดแล้วเพิ่มเข้าแผน</small></span></label>
+      </div>
+      <div className="tp-add-body">
+        <section className="tp-add-panel" aria-labelledby="tp-add-source-title">
+          {mode === "attach" ? <>
+            <div className="tp-add-panel-head">
+              <h3 id="tp-add-source-title">Test Cycle ที่เพิ่มได้ <span className="cyd-count">{cycles.length.toLocaleString()}</span></h3>
+              <small className="tp-add-panel-note">เฉพาะ Cycle ของ Release นี้ที่ยังไม่อยู่ใน Test Plan ใด</small>
+            </div>
+            {cycles.length > 0 && <>
+              <label className="tp-add-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ค้นหาชื่อ, รหัส, Suite หรือ Module" aria-label="ค้นหา Test Cycle" /></label>
+              {statusOptions.length > 1 && <div className="tp-add-chips" role="group" aria-label="กรองตามสถานะ Test Cycle">
+                <button type="button" aria-pressed={!statusFilter} onClick={() => setStatusFilter("")}>ทั้งหมด <b>{cycles.length.toLocaleString()}</b></button>
+                {statusOptions.map((x) => <button key={x.id} type="button" aria-pressed={statusFilter === x.id} onClick={() => setStatusFilter((c) => c === x.id ? "" : x.id)}>{x.label} <b>{x.count.toLocaleString()}</b></button>)}
+              </div>}
+              {(buildOptions.length > 1 || envOptions.length > 1 || moduleOptions.length > 1) && <div className="tp-add-filters" role="group" aria-label="ตัวกรอง Test Cycle">
+                {moduleOptions.length > 1 && <select aria-label="Module" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{moduleOptions.map((x) => <option key={x.id} value={x.id}>{x.label} ({x.count})</option>)}</select>}
+                {envOptions.length > 1 && <select aria-label="Environment" value={envFilter} onChange={(e) => setEnvFilter(e.target.value)}><option value="">ทุก Environment</option>{envOptions.map((x) => <option key={x.id} value={x.id}>{x.label} ({x.count})</option>)}</select>}
+                {buildOptions.length > 1 && <select aria-label="Build" value={buildFilter} onChange={(e) => setBuildFilter(e.target.value)}><option value="">ทุก Build</option>{buildOptions.map((x) => <option key={x.id} value={x.id}>Build {x.label} ({x.count})</option>)}</select>}
+              </div>}
+              <div className="tp-add-listbar">
+                <span>แสดง <b>{visible.length.toLocaleString()}</b>{filterCount ? ` จาก ${cycles.length.toLocaleString()}` : ""} · เลือกแล้ว <b>{selected.length.toLocaleString()}</b></span>
+                {filterCount > 0 && <button type="button" className="tp-text-btn" onClick={clearCycleFilters}>ล้างตัวกรอง</button>}
+                {visible.length > 0 && <button type="button" className="tp-text-btn" disabled={saving} onClick={() => select(visible.map((c) => c.testCycleId), !allVisibleSelected)}>{allVisibleSelected ? "ยกเลิกที่แสดงอยู่" : filterCount ? `เลือกทั้ง ${visible.length.toLocaleString()} รายการที่แสดง` : "เลือกทั้งหมด"}</button>}
+              </div>
+            </>}
+            <ul className="tp-cycle-list" aria-label="Test Cycle ที่เพิ่มได้">
+              {optionsLoading ? <li className="tp-add-empty" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังโหลด Test Cycle...</li>
+                : !cycles.length ? <li className="tp-add-empty">ไม่มี Test Cycle ที่เพิ่มได้ใน Release นี้ (ทุก Cycle อยู่ใน Test Plan แล้ว หรือยังไม่มี Cycle) — เลือก “สร้าง Cycle ใหม่จาก Suite” ด้านบน</li>
+                  : !visible.length ? <li className="tp-add-empty">ไม่พบ Test Cycle ตามตัวกรอง</li>
+                    : visible.map((c) => {
+                      const on = selected.includes(c.testCycleId);
+                      const modules = c.modules.map((m) => m.moduleName).join(", ");
+                      return <li key={c.testCycleId}><label className={on ? "is-selected" : undefined} title={c.cycleName}>
+                        <input type="checkbox" checked={on} disabled={saving} onChange={(e) => select([c.testCycleId], e.target.checked)} />
+                        <span className="tp-cycle-text">
+                          <span className="tp-cycle-name">{c.cycleName}</span>
+                          <span className="tp-cycle-sub"><b>{c.cycleCode}</b>{c.suiteName && <span>Suite {c.suiteName}</span>}</span>
+                          <span className="tp-cycle-tags">
+                            {modules && <span title="Module"><span className="material-symbols-outlined" aria-hidden="true">account_tree</span>{modules}</span>}
+                            <span title="Environment"><span className="material-symbols-outlined" aria-hidden="true">dns</span>{c.environmentName}</span>
+                            <span title="Build"><span className="material-symbols-outlined" aria-hidden="true">deployed_code</span>{c.buildNumber}</span>
+                          </span>
+                        </span>
+                        <span className="tp-cycle-side">
+                          <Badge tone={runStatusInfo[c.status]?.tone ?? "blue"}>{runStatusLabel(c.status)}</Badge>
+                          <small><b>{c.caseCount.toLocaleString()}</b> เคส{c.executedCount > 0 ? ` · ${Math.round(c.progressPercent)}%` : ""}</small>
+                        </span>
+                      </label></li>;
+                    })}
+            </ul>
+          </> : <>
+            <div className="tp-add-panel-head"><h3 id="tp-add-source-title">Test Cycle ใหม่</h3></div>
+            <div className="tp-add-fields">
+              <label><span>Test Suite <span className="required">*</span></span><select value={suiteId} disabled={saving || optionsLoading} onChange={(e) => setSuiteId(e.target.value)}><option value="">เลือก Test Suite</option>{suites.map((x) => <option key={x.testSuiteId} value={x.testSuiteId}>{x.suiteCode} · {x.suiteName} ({x.caseCount} เคส)</option>)}</select></label>
+              <label><span>Build <span className="required">*</span></span><select value={buildId} disabled={saving || optionsLoading} onChange={(e) => setBuildId(e.target.value)}><option value="">เลือก Build</option>{builds.filter((b) => b.isActive).map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select></label>
+              <label><span>Environment <span className="required">*</span></span><select value={environmentId} disabled={saving || optionsLoading} onChange={(e) => setEnvironmentId(e.target.value)}><option value="">เลือก Environment</option>{environments.map((x) => <option key={x.testEnvironmentId} value={x.testEnvironmentId}>{x.environmentName}</option>)}</select></label>
+              <label className="tp-add-check"><input type="checkbox" checked={requiredOnly} disabled={saving} onChange={(e) => setRequiredOnly(e.target.checked)} /><span>เฉพาะ Test Case ที่เป็น Required ใน Suite</span></label>
+            </div>
+          </>}
+        </section>
+        <section className="tp-add-panel" aria-labelledby="tp-add-runs-title">
+          <div className="tp-add-panel-head">
+            <h3 id="tp-add-runs-title">Run ที่จะเพิ่ม <span className="cyd-count">{runCount.toLocaleString()}</span></h3>
+            <label className="tp-add-owner"><span>ผู้รับผิดชอบ{runCount > 1 ? " (ทุก Run)" : ""}</span><select value={ownerUserId} disabled={saving} onChange={(e) => setOwnerUserId(e.target.value)}><option value="">ไม่ระบุ</option>{users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>
+          </div>
+          {mode === "attach" && !selected.length
+            ? <div className="tp-add-empty is-guide"><span className="material-symbols-outlined" aria-hidden="true">arrow_back</span><span>ติ๊กเลือก Test Cycle ทางซ้าย (ได้หลายรายการ) แล้วตั้งชื่อ Configuration ของแต่ละ Run ที่นี่ เช่น “Windows 11 · Chrome”</span></div>
+            : <ul className="tp-drafts">
+              {mode === "attach" ? selected.map((id) => {
+                const c = cycleById.get(id);
+                return c && <RunDraftCard key={id} title={c.cycleCode} meta={cycleMeta(c)} draft={drafts[id] ?? emptyDraft()} disabled={saving} codePlaceholder={c.cycleCode} namePlaceholder={c.cycleName}
+                  onChange={(draft) => setDrafts((current) => ({ ...current, [id]: draft }))} onRemove={() => select([id], false)} />;
+              }) : <RunDraftCard title="Run ใหม่" meta={suite ? `${suite.suiteCode} · ${suite.suiteName} (${suite.caseCount} เคส)` : "เลือก Test Suite ทางซ้าย"} draft={suiteDraft} disabled={saving} codePlaceholder="เว้นว่าง = ใช้รหัส Test Cycle ที่สร้าง" namePlaceholder="เว้นว่าง = ใช้ชื่อ Test Cycle" onChange={setSuiteDraft} />}
+            </ul>}
+        </section>
+      </div>
+      <div className="modal-actions">
+        <small className={`tp-form-status${problem ? " is-missing" : ""}`} role="status">{problem || (mode === "attach" ? `พร้อมเพิ่ม ${runCount.toLocaleString()} Run` : "ข้อมูลครบ พร้อมสร้าง")}</small>
+        <button className="btn" disabled={saving} onClick={onClose}>ยกเลิก</button>
+        <button className="btn primary" disabled={saving || optionsLoading || !!problem} onClick={save}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังเพิ่ม...</> : mode === "suite" ? "สร้าง Cycle และเพิ่ม Run" : runCount ? `เพิ่ม ${runCount.toLocaleString()} Run` : "เพิ่ม Run"}</button>
       </div>
     </ModalShell>
   );

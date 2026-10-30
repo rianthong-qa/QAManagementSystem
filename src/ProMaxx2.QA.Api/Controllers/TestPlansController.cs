@@ -27,7 +27,7 @@ public sealed class TestPlansController(TestPlanService service) : ControllerBas
     public Task<ActionResult<PagedResult<TestPlanRunDto>>> Matrix(Guid planId, [FromQuery] string? status, [FromQuery] string? configurationKey, [FromQuery] Guid? ownerUserId, [FromQuery] int page = 1, [FromQuery] int size = 50, CancellationToken ct = default)
         => Run(() => service.MatrixAsync(planId, status, configurationKey, ownerUserId, page, size, ct));
 
-    [HttpPost, Authorize(Policy = "TestPlanEdit")]
+    [HttpPost, Authorize(Policy = "TestPlanCreate")]
     public Task<ActionResult<TestPlanDto>> Create(SaveTestPlanRequest request, CancellationToken ct) => Run(() => service.CreateAsync(request, UserId(), ct));
 
     [HttpPut("{planId:guid}"), Authorize(Policy = "TestPlanEdit")]
@@ -48,7 +48,7 @@ public sealed class TestPlansController(TestPlanService service) : ControllerBas
     [HttpPost("{planId:guid}/unfreeze"), Authorize(Policy = "TestPlanFreeze")]
     public Task<ActionResult<TestPlanDto>> Unfreeze(Guid planId, TestPlanActionRequest request, CancellationToken ct) => Run(() => service.UnfreezeAsync(planId, request.Reason, UserId(), ct));
 
-    [HttpDelete("{planId:guid}"), Authorize(Policy = "TestPlanEdit")]
+    [HttpDelete("{planId:guid}"), Authorize(Policy = "TestPlanDelete")]
     public async Task<IActionResult> Delete(Guid planId, CancellationToken ct)
     {
         var result = await Run(async () => { await service.DeleteAsync(planId, UserId(), ct); return true; });
@@ -61,7 +61,7 @@ public sealed class TestPlansController(TestPlanService service) : ControllerBas
     [HttpPost("{planId:guid}/runs/attach-cycle"), Authorize(Policy = "TestPlanEdit")]
     public Task<ActionResult<TestPlanRunDto>> AttachCycle(Guid planId, AttachTestPlanCycleRequest request, CancellationToken ct) => Run(() => service.AttachCycleAsync(planId, request, UserId(), ct));
 
-    [HttpPost("{planId:guid}/clone"), Authorize(Policy = "TestPlanEdit")]
+    [HttpPost("{planId:guid}/clone"), Authorize(Policy = "TestPlanCreate")]
     public Task<ActionResult<TestPlanDto>> Clone(Guid planId, CloneTestPlanRequest request, CancellationToken ct) => Run(() => service.CloneAsync(planId, request, UserId(), ct));
 
     [HttpGet("{planId:guid}/members"), Authorize(Policy = "TestPlanAssign")]

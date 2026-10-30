@@ -412,7 +412,9 @@ Assign payload:
 | Permission | Default mapping |
 |---|---|
 | `TESTPLAN.VIEW` | QA_LEAD, QA_TESTER, RELEASE_OWNER, VIEWER |
-| `TESTPLAN.EDIT` | SYS_ADMIN, QA_LEAD |
+| `TESTPLAN.CREATE` | Role ที่มี `TESTPLAN.EDIT` — สร้างแผนและ Clone/Rerun (แยกจาก EDIT 2026-10-30, migration `SplitTestPlanCreateDeletePermissions`) |
+| `TESTPLAN.EDIT` | SYS_ADMIN, QA_LEAD — แก้ข้อมูลแผน, เพิ่ม/แก้/ถอด Run, Attach Cycle |
+| `TESTPLAN.DELETE` | Role ที่มี `TESTPLAN.EDIT` — ลบแผน (soft delete) (แยกจาก EDIT 2026-10-30) |
 | `TESTPLAN.ASSIGN` | `EXECUTION.ASSIGN` |
 | `TESTPLAN.FREEZE` | SYS_ADMIN, QA_LEAD, RELEASE_OWNER |
 | `TESTPLAN.EXPORT` | `REPORT.EXPORT` |

@@ -181,6 +181,33 @@ export const nav: {
     ],
   },
 ];
+/** สิทธิ์ที่ทำให้เห็นเมนูใน Sidebar — ใช้ร่วมกับหน้า User / Role เพื่อบอกว่าบทบาทใดเปิดเมนูไหนได้ */
+export const pageViewPermission: Record<Page, string> = {
+  dashboard: "PROJECT.VIEW",
+  "my-work": "QA.MYWORK.VIEW",
+  performance: "PERFORMANCE.VIEW",
+  knowledge: "KNOWLEDGE.VIEW",
+  projects: "PROJECT.VIEW",
+  releases: "PROJECT.VIEW",
+  requirements: "REQUIREMENT.VIEW",
+  rtm: "REQUIREMENT.VIEW",
+  "test-cases": "TESTCASE.VIEW",
+  "test-suites": "TESTCASE.VIEW",
+  "test-plans": "TESTPLAN.VIEW",
+  "test-cycles": "EXECUTION.RUN",
+  execution: "EXECUTION.RUN",
+  defects: "DEFECT.EDIT",
+  regression: "REGRESSION.VIEW",
+  automation: "AUTOMATION.VIEW",
+  crm: "CRM.VIEW",
+  summary: "REPORT.EXPORT",
+  risks: "RISK.APPROVE",
+  signoff: "RELEASE.SIGNOFF",
+  users: "ADMIN.USER",
+  settings: "ADMIN.USER",
+  "system-monitor": "SYSTEM.MONITOR",
+  audit: "ADMIN.PERMISSION",
+};
 /** สี Badge ของ Priority — P0/P1 (หรือ Critical/High) = แดง ที่เหลือ = น้ำเงิน; ใช้ร่วมกันหน้า Execution Workspace และ Test Suite */
 export const priorityTone = (p?: string) => (p === "P0" || p === "P1" || p === "Critical" || p === "High" ? "red" : "blue");
 export const defectStatusTones: Record<string, string> = { Open: "yellow", "In Progress": "blue", Resolved: "green", Closed: "green", Rejected: "gray" };

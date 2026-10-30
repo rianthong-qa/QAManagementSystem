@@ -572,7 +572,9 @@ public sealed class TestPlanTests
 
     [Theory]
     [InlineData("TestPlanView", "TESTPLAN.VIEW")]
+    [InlineData("TestPlanCreate", "TESTPLAN.CREATE")]
     [InlineData("TestPlanEdit", "TESTPLAN.EDIT")]
+    [InlineData("TestPlanDelete", "TESTPLAN.DELETE")]
     [InlineData("TestPlanFreeze", "TESTPLAN.FREEZE")]
     [InlineData("TestPlanAssign", "TESTPLAN.ASSIGN")]
     public async Task Policies_require_their_permission_or_sys_admin(string policy, string permission)

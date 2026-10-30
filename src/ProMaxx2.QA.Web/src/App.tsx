@@ -5,13 +5,11 @@ import { notify, confirmDialog, promptDialog } from "./components/dialogStore";
 import { formatThaiDateTime } from "./dateTime";
 import { Badge } from "./components/Badge";
 import { ModalShell } from "./components/ModalShell";
-import { type AdminUser, type ModuleItem, type Page, type SessionUser, copyText, nav, okJsonOrEmpty, renderModuleSelectOptions } from "./shared/appShared";
+import { type AdminUser, type ModuleItem, type Page, type SessionUser, copyText, nav, okJsonOrEmpty, pageViewPermission, renderModuleSelectOptions } from "./shared/appShared";
 import "./App.css";
 import "./styles.css";
 import "./ExecutionWorkspace.css";
 import "./TestManagement.css";
-import "./PermissionMatrix.css";
-import "./RoleManagement.css";
 import "./MyWork.css";
 import "./Dashboard.css";
 import "./DashboardExecutive.css";
@@ -116,35 +114,8 @@ function restoredActivePage(): Page {
   const savedPage = localStorage.getItem("qa.activePage");
   return savedPage && pageIds.has(savedPage as Page) ? savedPage as Page : "dashboard";
 }
-const viewPermission: Record<Page, string> = {
-  dashboard: "PROJECT.VIEW",
-  "my-work": "QA.MYWORK.VIEW",
-  performance: "PERFORMANCE.VIEW",
-  knowledge: "KNOWLEDGE.VIEW",
-  projects: "PROJECT.VIEW",
-  releases: "PROJECT.VIEW",
-  requirements: "REQUIREMENT.VIEW",
-  rtm: "REQUIREMENT.VIEW",
-  "test-cases": "TESTCASE.VIEW",
-  "test-suites": "TESTCASE.VIEW",
-  "test-plans": "TESTPLAN.VIEW",
-  "test-cycles": "EXECUTION.RUN",
-  execution: "EXECUTION.RUN",
-  defects: "DEFECT.EDIT",
-  regression: "REGRESSION.VIEW",
-  automation: "AUTOMATION.VIEW",
-  crm: "CRM.VIEW",
-  summary: "REPORT.EXPORT",
-  risks: "RISK.APPROVE",
-  signoff: "RELEASE.SIGNOFF",
-  users: "ADMIN.USER",
-  settings: "ADMIN.USER",
-  "system-monitor": "SYSTEM.MONITOR",
-  audit: "ADMIN.PERMISSION",
-};
 const editPermission: Partial<Record<Page, string>> = {
   requirements: "REQUIREMENT.EDIT",
-  users: "ADMIN.USER",
 };
 
 function Login({ onLogin }: { onLogin: (user: SessionUser) => void }) {
@@ -574,6 +545,8 @@ function App() {
           ? "ถามผู้ช่วย AI และค้นหาความรู้จาก Defect, Test Case, บทความ, เอกสาร และ CRM พร้อมอ้างอิงแหล่งที่มา"
         : page === "test-plans"
           ? "รวม Test Cycle หลายชุดของ Release เดียวกันเป็นแผน และเทียบผลตาม Configuration (Build / Environment / OS / Browser)"
+        : page === "users"
+          ? "เพิ่มผู้ใช้ กำหนดบทบาท สิทธิ์ และ Project ที่เข้าถึงได้"
         : page === "test-suites"
           ? "Test Suite จัดเก็บระดับ Project · เลือก Release/Build ตอนนำไปสร้าง Test Cycle"
         : `จัดการข้อมูล ${pageNames[page]} ของ Release ปัจจุบัน`,
@@ -793,7 +766,7 @@ function App() {
           </div>
         </div>
         {nav.map((g) => {
-          const items = g.items.filter((i) => can(viewPermission[i.id]));
+          const items = g.items.filter((i) => can(pageViewPermission[i.id]));
           return items.length ? (
             <div className="nav-group" key={g.label}>
               <p>{g.label}</p>
@@ -909,7 +882,7 @@ function App() {
             </div>
             <div className="actions">
               {/* หน้า Defect / Automation มีช่องค้นหาของตัวเอง */}
-              {page !== "audit" && page !== "performance" && page !== "knowledge" && page !== "defects" && page !== "automation" && <label className="search">
+              {page !== "audit" && page !== "performance" && page !== "knowledge" && page !== "defects" && page !== "automation" && page !== "users" && <label className="search">
                 ⌕
                 <input
                   value={search}
@@ -979,7 +952,7 @@ function App() {
           ) : page === "execution" ? (
             <ExecutionWorkspacePage contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} onOpenPlan={can("TESTPLAN.VIEW") ? openTestPlan : undefined} />
           ) : page === "test-plans" ? (
-            <TestPlansPage search={search} canEdit={can("TESTPLAN.EDIT")} canFreeze={can("TESTPLAN.FREEZE")} canAssign={can("TESTPLAN.ASSIGN")} canRun={can("EXECUTION.RUN")} canExport={can("TESTPLAN.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenCycle={(cycleId) => openRegressionCycle("test-cycles", cycleId)} />
+            <TestPlansPage search={search} canCreate={can("TESTPLAN.CREATE")} canEdit={can("TESTPLAN.EDIT")} canDelete={can("TESTPLAN.DELETE")} canFreeze={can("TESTPLAN.FREEZE")} canAssign={can("TESTPLAN.ASSIGN")} canRun={can("EXECUTION.RUN")} canExport={can("TESTPLAN.EXPORT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenCycle={(cycleId) => openRegressionCycle("test-cycles", cycleId)} />
           ) : page === "test-cycles" ? (
             <TestCyclesPage search={search} canEdit={can("EXECUTION.ASSIGN")} canExport={can("REPORT.EXPORT")} canViewPlans={can("TESTPLAN.VIEW")} canAddToPlan={can("TESTPLAN.EDIT")} contextProjectId={contextProjectId} contextReleaseId={contextReleaseId} contextBuildId={contextBuildId} onOpenExecution={(cycleId) => openRegressionCycle("execution", cycleId)} onOpenPlan={can("TESTPLAN.VIEW") ? openTestPlan : undefined} />
           ) : (
