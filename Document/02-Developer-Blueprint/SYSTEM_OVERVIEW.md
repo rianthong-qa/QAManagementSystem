@@ -107,6 +107,7 @@ Internet ─► api-promaxx2.qahub.store              ─► cloudflared ─► 
 
 **วิธีหลัก: ใช้ Service Manager** (`.artifacts/service-manager-production/ProMaxx2.ServiceManager.exe`) กด Restart API
 — ตัวนี้อ่าน `Jwt__Key` จาก User environment ใหม่ทุกครั้งและสตาร์ทด้วย profile `production` (ถ้าไม่พบ key จะ fallback เป็น Development)
+— รอ API เปิด Port 5038 ได้ถึง 3 นาที (Web 1 นาที) เพราะ `dotnet run` build ก่อน, log "กำลังรอ…" ทุก 15 วินาที และแจ้งทันทีถ้า process จบเองระหว่างเริ่ม (build error/Port ชน) — เดิมรอแค่ ~10–30 วินาทีจึงขึ้น "ไม่พร้อมใช้งานภายในเวลาที่กำหนด" ทั้งที่ API ขึ้นตามมาภายหลัง — Restart API จะ build ตรวจลงโฟลเดอร์แยกก่อน ถ้าไม่ผ่านไม่หยุดตัวเดิม, มีป้าย "มีโค้ดใหม่ — ควร Restart" และตรวจโดเมนสาธารณะ/Tunnel/SQL Server/ดิสก์ (แก้ 2026-10-30 พร้อมปรับหน้าจอใหม่ — ดู `tools/ProMaxx2.ServiceManager/README.md`; แก้โค้ดแล้วต้อง `dotnet publish tools\ProMaxx2.ServiceManager -c Release -o .artifacts\service-manager-production` ขณะปิดโปรแกรม)
 
 **วิธีสำรอง (PowerShell):**
 
