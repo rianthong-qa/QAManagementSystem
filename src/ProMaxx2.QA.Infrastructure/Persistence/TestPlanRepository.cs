@@ -139,8 +139,10 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
     public void RemoveRunAssignment(TestPlanRunAssignment entity) => db.TestPlanRunAssignments.Remove(entity);
     public async Task<IReadOnlyList<TestPlanMemberDto>> ListProjectMembersAsync(Guid projectId, CancellationToken ct) => await db.ProjectUsers.AsNoTracking()
         .Where(x => x.ProjectId == projectId)
-        .Join(db.Users.Where(u => u.IsActive), pu => pu.UserId, u => u.UserId, (pu, u) => new TestPlanMemberDto(u.UserId, u.DisplayName))
-        .OrderBy(x => x.DisplayName)
+        .Join(db.Users.Where(u => u.IsActive), pu => pu.UserId, u => u.UserId, (pu, u) => u)
+        // เรียงก่อน project เป็น record — EF แปล OrderBy บน member ของ record constructor เป็น SQL ไม่ได้ (500)
+        .OrderBy(u => u.DisplayName)
+        .Select(u => new TestPlanMemberDto(u.UserId, u.DisplayName))
         .ToListAsync(ct);
     public async Task<IReadOnlyList<Guid>> NonMemberUserIdsAsync(Guid projectId, IReadOnlyCollection<Guid> userIds, CancellationToken ct)
     {
