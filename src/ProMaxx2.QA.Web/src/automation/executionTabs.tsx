@@ -79,54 +79,105 @@ export function ExecutionTab({ projectId, buildId, releaseId, agents: agentOptio
     return () => ctrl.abort();
   }, [projectId, buildId, execPage, execFilter, debouncedExecSearch, execFrom, execTo, execBuildFilter, execEnvironmentFilter, execAgentFilter, execTargetFilter, execFailureTypeFilter, headers, reload]);
 
-  return <section className="automation-execution" aria-label="Automation Execution">
+  const activeJobs = jobs.filter((j) => j.status === "Queued" || j.status === "Assigned" || j.status === "Running").length;
+  // คิวงานกับกราฟแนวโน้มเป็นข้อมูลประกอบ — พับไว้ให้ตารางผลการรันขึ้นก่อน (คิวเปิดเองเมื่อมีงานค้าง)
+  const [queueOpen, setQueueOpen] = useState(activeJobs > 0);
+  const [trendOpen, setTrendOpen] = useState(false);
+  const advancedCount = [execFrom, execTo, execBuildFilter, execEnvironmentFilter, execAgentFilter, execTargetFilter, execFailureTypeFilter].filter(Boolean).length;
+  const [showMoreFilters, setShowMoreFilters] = useState(advancedCount > 0);
+  const statusChips = [
+    { id: "all", label: "ทั้งหมด", count: executions.length, tone: "" },
+    { id: "Queued", label: "รอคิว", count: queuedJobs.length, tone: "gray" },
+    { id: "Running", label: "กำลังรัน", count: kpiRunning, tone: "blue" },
+    { id: "Passed", label: "ผ่าน", count: kpiPassed, tone: "green" },
+    { id: "Failed", label: "Fail", count: kpiFailed, tone: "red" },
+  ];
+  const filtered = execFilter !== "all" || !!execSearch.trim() || advancedCount > 0;
+
+  return <section className="au-runs" aria-label="ผลการรัน">
     {(listError || filterLoadError) && <div className="inline-alert error" role="alert"><span>{listError || filterLoadError}</span></div>}
-    <header className="automation-section-head"><div><h2>Execution Queue & Run History</h2><p>ติดตามงานที่ Agent รับไปรัน และผลลัพธ์ทั้งหมด — รองรับข้อมูลจำนวนมากด้วยค้นหา/กรอง/แบ่งหน้าฝั่ง Server</p></div></header>
-    <div className="automation-kpis">
-      <div><small>Queued</small><strong>{queuedJobs.length}</strong><span>รอ Agent รับ</span></div>
-      <div><small>Running</small><strong>{kpiRunning}</strong><span>กำลังรัน</span></div>
-      <div><small>Passed</small><strong>{kpiPassed}</strong><span>ผ่านทั้งหมด</span></div>
-      <div className={kpiFailed ? "needs-review" : ""}><small>Failed</small><strong>{kpiFailed}</strong><span>ไม่ผ่าน</span></div>
-      <div><small>Total</small><strong>{executions.length}</strong><span>ผลรัน</span></div>
-    </div>
-    <ExecutionTrendChart projectId={projectId} releaseId={releaseId} headers={headers} onDrillDown={(mode, bucket) => {
-      if (mode === "day") { setExecFrom(bucket.bucketKey); setExecTo(bucket.bucketKey); }
-      else if (mode === "build") { setExecBuildFilter(bucket.bucketKey); }
-    }} />
-    <div className="automation-exec-grid">
-      <article className="card">
-        <div className="automation-section-head"><h3>Job Queue ({jobsPaged.total.toLocaleString()})</h3><span className="muted-text">{queuedJobs.length} queued</span></div>
-        {jobsPaged.rows.length ? <>
-          <div className="automation-exec-list">{jobsPaged.rows.map((j) => <div key={j.jobId} className="automation-queue-list"><article><div className="automation-queue-main"><Badge tone={jobStatusTone[j.status] ?? "blue"}>{j.status}</Badge><b>P{j.priority}</b><span>{j.assignedAgentCode ?? "รอ Agent"}</span>{j.retryCount > 0 && <Badge tone="orange">Retry {j.retryCount}</Badge>}</div><div><time dateTime={j.queuedAt}>{formatThaiDateTime(j.queuedAt)}</time>{j.lastError && <small className="queue-error">{j.lastError}</small>}</div></article></div>)}</div>
-          <Pager page={jobPage} count={jobPageCount} total={jobsPaged.total} pageSize={pageSize} onPrev={() => setJobPage((p) => Math.max(1, p - 1))} onNext={() => setJobPage((p) => Math.min(jobPageCount, p + 1))} />
-        </> : <div className="empty"><p>ไม่มีงานในคิว</p></div>}
-      </article>
-      <article className="card">
-        <div className="automation-section-head"><h3>Run History ({execPaged.total.toLocaleString()})</h3></div>
-        <div className="automation-run-toolbar">
-          <input type="text" aria-label="ค้นหาด้วยรหัสหรือ Agent" placeholder="ค้นหา Code / Agent..." value={execSearch} onChange={(e) => setExecSearch(e.target.value)} />
-          <select aria-label="กรองสถานะ" value={execFilter} onChange={(e) => setExecFilter(e.target.value)}>
-            <option value="all">ทุกสถานะ</option>
-            {["Passed", "Failed", "Running", "Queued", "Blocked", "Cancelled", "Timeout", "AgentLost"].map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        {/* AUT-P2-002: advanced filters — date/Build/Environment/Agent/Target/Failure Type, all server-side. */}
-        <div className="automation-run-toolbar automation-advanced-filters">
-          <label>จาก<input type="date" value={execFrom} onChange={(e) => setExecFrom(e.target.value)} aria-label="วันที่เริ่ม" /></label>
-          <label>ถึง<input type="date" value={execTo} onChange={(e) => setExecTo(e.target.value)} aria-label="วันที่สิ้นสุด" /></label>
-          <select aria-label="กรอง Build" value={execBuildFilter} onChange={(e) => setExecBuildFilter(e.target.value)}><option value="">ทุก Build</option>{execBuilds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select>
-          <select aria-label="กรอง Environment" value={execEnvironmentFilter} onChange={(e) => setExecEnvironmentFilter(e.target.value)}><option value="">ทุก Environment</option>{execEnvironments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select>
-          <select aria-label="กรอง Agent" value={execAgentFilter} onChange={(e) => setExecAgentFilter(e.target.value)}><option value="">ทุก Agent</option>{agentOptions.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select>
-          <select aria-label="กรอง Target" value={execTargetFilter} onChange={(e) => setExecTargetFilter(e.target.value)}><option value="">ทุก Target</option><option value="Pos">Pos</option><option value="App">App</option><option value="WindowsUI">WindowsUI</option></select>
-          <select aria-label="กรอง Failure Type" value={execFailureTypeFilter} onChange={(e) => setExecFailureTypeFilter(e.target.value)}><option value="">ทุก Failure Type</option>{failureTypeOptions.map((f) => <option key={f} value={f}>{f}</option>)}</select>
-          {hasAdvancedFilters && <button type="button" className="table-action" onClick={clearAdvancedFilters}><span className="material-symbols-outlined" aria-hidden="true">close</span> ล้างตัวกรองขั้นสูง</button>}
-        </div>
-        {execPaged.rows.length ? <div className="table-wrap"><table className="automation-exec-table table-cards"><thead><tr><th>Code</th><th>Target</th><th>Agent</th><th>Status</th><th>Duration</th><th>เวลา</th><th></th></tr></thead><tbody>{execPaged.rows.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className="automation-exec-tr"><td><b>{x.automationCode}</b><small>Rev {x.versionNo} · {x.buildNumber}</small></td><td><Badge tone={x.targetApp === "Pos" ? "blue" : x.targetApp === "App" ? "purple" : "gray"}>{x.targetApp ?? "WindowsUI"}</Badge></td><td>{x.agentCode ?? "-"}</td><td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td><td>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)}s` : "-"}</td><td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td><td onClick={(e) => e.stopPropagation()}><div className="automation-row-actions"><button type="button" className="automation-more" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>{canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => onRerun(x)}>▶</button>}{canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => onCancel(x)}>✕</button>}</div></td></tr>)}</tbody></table></div> : <div className="empty"><p>{execSearch || execFilter !== "all" ? "ไม่พบผลการรันที่ตรงเงื่อนไข" : "ยังไม่มีประวัติการรัน"}</p></div>}
-        {execPaged.total > pageSize && <Pager page={execPage} count={execPageCount} total={execPaged.total} pageSize={pageSize} onPrev={() => setExecPage((p) => Math.max(1, p - 1))} onNext={() => setExecPage((p) => Math.min(execPageCount, p + 1))} />}
-      </article>
-    </div>
+
+    <article className="au-runs-card">
+      <header className="au-runs-head">
+        <h2><strong>{execPaged.total.toLocaleString()}</strong> ผลการรัน{filtered && <small> · กรองอยู่</small>}</h2>
+        <label className="au-runs-search">
+          <span className="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="search" aria-label="ค้นหาด้วยรหัสหรือ Agent" placeholder="ค้นหารหัส / Agent" value={execSearch} onChange={(e) => setExecSearch(e.target.value)} />
+        </label>
+        <button type="button" className={`btn au-runs-more${showMoreFilters ? " is-on" : ""}`} aria-expanded={showMoreFilters} onClick={() => setShowMoreFilters((v) => !v)}>
+          <span className="material-symbols-outlined" aria-hidden="true">tune</span>ตัวกรอง{advancedCount > 0 && <span className="au-runs-count">{advancedCount}</span>}
+        </button>
+      </header>
+
+      <div className="au-runs-chips" role="group" aria-label="กรองตามผล">
+        {statusChips.map((c) => <button key={c.id} type="button" aria-pressed={execFilter === c.id} className={execFilter === c.id ? "active" : ""} onClick={() => setExecFilter(c.id === execFilter && c.id !== "all" ? "all" : c.id)}>
+          {c.tone && <i className={`au-chip-dot t-${c.tone}`} aria-hidden="true" />}{c.label}<b>{c.count}</b>
+        </button>)}
+        <select aria-label="สถานะอื่น" className="au-runs-other" value={statusChips.some((c) => c.id === execFilter) ? "" : execFilter} onChange={(e) => setExecFilter(e.target.value || "all")}>
+          <option value="">สถานะอื่น…</option>
+          {["Blocked", "Cancelled", "Timeout", "AgentLost"].map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+
+      {/* AUT-P2-002: ตัวกรองขั้นสูงทั้งหมดกรองฝั่ง Server */}
+      {showMoreFilters && <div className="au-runs-filters">
+        <label>ตั้งแต่<input type="date" value={execFrom} onChange={(e) => setExecFrom(e.target.value)} /></label>
+        <label>ถึง<input type="date" value={execTo} onChange={(e) => setExecTo(e.target.value)} /></label>
+        <label>Build<select value={execBuildFilter} onChange={(e) => setExecBuildFilter(e.target.value)}><option value="">ทั้งหมด</option>{execBuilds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select></label>
+        <label>Environment<select value={execEnvironmentFilter} onChange={(e) => setExecEnvironmentFilter(e.target.value)}><option value="">ทั้งหมด</option>{execEnvironments.map((e) => <option key={e.testEnvironmentId} value={e.testEnvironmentId}>{e.environmentName}</option>)}</select></label>
+        <label>Agent<select value={execAgentFilter} onChange={(e) => setExecAgentFilter(e.target.value)}><option value="">ทั้งหมด</option>{agentOptions.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select></label>
+        <label>Target<select value={execTargetFilter} onChange={(e) => setExecTargetFilter(e.target.value)}><option value="">ทั้งหมด</option><option value="Pos">Pos</option><option value="App">App</option><option value="WindowsUI">WindowsUI</option></select></label>
+        <label>ประเภท Fail<select value={execFailureTypeFilter} onChange={(e) => setExecFailureTypeFilter(e.target.value)}><option value="">ทั้งหมด</option>{failureTypeOptions.map((f) => <option key={f} value={f}>{f}</option>)}</select></label>
+        {hasAdvancedFilters && <button type="button" className="au-runs-clear" onClick={clearAdvancedFilters}><span className="material-symbols-outlined" aria-hidden="true">close</span>ล้างตัวกรอง</button>}
+      </div>}
+
+      {execPaged.rows.length ? <div className="table-wrap au-runs-wrap"><table className="au-runs-table table-cards">
+        <thead><tr><th>Automation Case</th><th>ผล</th><th>Agent · Target</th><th>ใช้เวลา</th><th>เวลารัน</th><th className="actions-col"><span className="sr-only">จัดการ</span></th></tr></thead>
+        <tbody>{execPaged.rows.map((x) => <tr key={x.automationExecutionId} onClick={() => setExecDetail(x)} className={`au-runs-tr is-${x.status.toLowerCase()}`}>
+          <td data-label="Case"><b>{x.automationCode}</b><small>Rev {x.versionNo} · Build {x.buildNumber}{x.retryCount ? ` · Retry ${x.retryCount}` : ""}</small></td>
+          <td data-label="ผล"><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge>{x.status !== "Passed" && x.classifiedFailureType && <small className="au-runs-why">{x.classifiedFailureType}</small>}</td>
+          <td data-label="Agent"><span>{x.agentCode ?? "รอ Agent"}</span><small>{x.targetApp ?? "WindowsUI"}</small></td>
+          <td data-label="ใช้เวลา" className="au-runs-num">{formatRunDuration(x.durationMs)}</td>
+          <td data-label="เวลารัน" className="au-runs-time">{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td>
+          <td className="actions-col" onClick={(e) => e.stopPropagation()}><div className="au-runs-actions">
+            <button type="button" className="au-icon-btn" title="ดูผล / Evidence" aria-label={`ดูผล ${x.automationCode}`} onClick={() => setExecDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">visibility</span></button>
+            {canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="au-icon-btn" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => onRerun(x)}><span className="material-symbols-outlined" aria-hidden="true">replay</span></button>}
+            {canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="au-icon-btn danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => onCancel(x)}><span className="material-symbols-outlined" aria-hidden="true">cancel</span></button>}
+          </div></td>
+        </tr>)}</tbody>
+      </table></div> : <div className="au-runs-empty">{filtered ? "ไม่พบผลการรันที่ตรงเงื่อนไข — ลองล้างตัวกรอง" : "ยังไม่มีผลการรัน — สั่งรัน Automation Case แล้วผลจะแสดงที่นี่"}</div>}
+      {execPaged.total > pageSize && <Pager page={execPage} count={execPageCount} total={execPaged.total} pageSize={pageSize} onPrev={() => setExecPage((p) => Math.max(1, p - 1))} onNext={() => setExecPage((p) => Math.min(execPageCount, p + 1))} />}
+    </article>
+
+    <details className="au-fold" open={queueOpen} onToggle={(e) => setQueueOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary><span className="material-symbols-outlined" aria-hidden="true">pending_actions</span>คิวงาน<small>{activeJobs ? `${activeJobs} งานรอ / กำลังรัน` : "ไม่มีงานค้าง"} · ทั้งหมด {jobsPaged.total.toLocaleString()}</small><span className="au-guide-chevron material-symbols-outlined" aria-hidden="true">expand_more</span></summary>
+      {jobsPaged.rows.length ? <>
+        <ul className="au-queue">{jobsPaged.rows.map((j) => <li key={j.jobId}>
+          <Badge tone={jobStatusTone[j.status] ?? "blue"}>{j.status}</Badge>
+          <span className="au-queue-main"><b>P{j.priority}</b> · {j.assignedAgentCode ?? "รอ Agent"}{j.retryCount > 0 && ` · Retry ${j.retryCount}`}{j.lastError && <small className="queue-error">{j.lastError}</small>}</span>
+          <time dateTime={j.queuedAt}>{formatThaiDateTime(j.queuedAt)}</time>
+        </li>)}</ul>
+        {jobsPaged.total > pageSize && <Pager page={jobPage} count={jobPageCount} total={jobsPaged.total} pageSize={pageSize} onPrev={() => setJobPage((p) => Math.max(1, p - 1))} onNext={() => setJobPage((p) => Math.min(jobPageCount, p + 1))} />}
+      </> : <div className="au-runs-empty">ไม่มีงานในคิว</div>}
+    </details>
+
+    <details className="au-fold" open={trendOpen} onToggle={(e) => setTrendOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary><span className="material-symbols-outlined" aria-hidden="true">bar_chart</span>แนวโน้ม Pass / Fail<small>กดแท่งกราฟเพื่อกรองตารางด้านบน</small><span className="au-guide-chevron material-symbols-outlined" aria-hidden="true">expand_more</span></summary>
+      {/* โหลดกราฟเฉพาะตอนเปิด */}
+      {trendOpen && <ExecutionTrendChart projectId={projectId} releaseId={releaseId} headers={headers} onDrillDown={(mode, bucket) => {
+        if (mode === "day") { setExecFrom(bucket.bucketKey); setExecTo(bucket.bucketKey); }
+        else if (mode === "build") { setExecBuildFilter(bucket.bucketKey); }
+        setShowMoreFilters(true);
+      }} />}
+    </details>
   </section>;
 }
+
+const formatRunDuration = (ms?: number) => {
+  if (ms == null) return "-";
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${(ms / 1000).toFixed(1)} วิ` : `${Math.floor(s / 60)} นาที ${s % 60} วิ`;
+};
 
 /// AUT-P2-003: lightweight, dependency-free SVG bar chart (this codebase has no charting library) — Pass/Fail bars
 /// per bucket plus a small dot marking Flaky activity. "release" grouping is never a drill-down leaf: clicking a
@@ -168,9 +219,9 @@ function ExecutionTrendChart({ projectId, releaseId, headers, onDrillDown }: {
   const gap = 14;
   const maxVal = Math.max(1, ...trend.buckets.map((b) => Math.max(b.passed, b.failed)));
 
-  return <article className="card">
-    <div className="automation-section-head">
-      <h3>Pass / Fail / Flaky Trend{drillReleaseId && groupBy === "build" && " — เจาะดู Build ใน Release ที่เลือก"}</h3>
+  return <div className="au-trend">
+    <div className="au-trend-head">
+      <span>{drillReleaseId && groupBy === "build" ? "Build ใน Release ที่เลือก" : "Pass / Fail / Flaky ย้อนหลัง 90 วัน"}</span>
       <div className="automation-trend-toolbar">
         {drillReleaseId && <button type="button" className="table-action" onClick={() => changeGroupBy("release")}>‹ กลับไป Release</button>}
         <select aria-label="จัดกลุ่มตาม" value={groupBy} onChange={(e) => changeGroupBy(e.target.value as "day" | "build" | "release")}>
@@ -202,13 +253,31 @@ function ExecutionTrendChart({ projectId, releaseId, headers, onDrillDown }: {
       </div>
       <div className="automation-trend-legend">
         <span><i className="legend-pass" />Passed</span><span><i className="legend-fail" />Failed</span><span><i className="legend-flaky" />Flaky</span>
-        <small>{groupBy === "release" ? "คลิกที่แท่งกราฟเพื่อดู Build ใน Release นั้น" : "คลิกที่แท่งกราฟเพื่อดูรายการ Execution ใน Run History ด้านล่าง"}</small>
+        <small>{groupBy === "release" ? "กดแท่งกราฟเพื่อดู Build ใน Release นั้น" : "กดแท่งกราฟเพื่อกรองตารางผลการรันด้านบน"}</small>
       </div>
-    </> : <div className="empty"><p>ยังไม่มีข้อมูล Execution ในช่วง 90 วันล่าสุด</p></div>}
-  </article>;
+    </> : <div className="au-runs-empty">ยังไม่มีข้อมูล Execution ในช่วง 90 วันล่าสุด</div>}
+  </div>;
 }
 
 const failureTypeOptions = ["EnvironmentFailure", "AssertionFailure", "AutomationFailure", "AgentFailure", "Unknown"];
+
+// ความหมายของประเภท Fail (จาก AutomationFailureClassifier ฝั่ง API) และสิ่งที่ควรทำต่อ — ให้ผู้ใช้ใหม่อ่านเข้าใจโดยไม่ต้องรู้ชื่อ enum
+const failureInfo: Record<string, { label: string; meaning: string }> = {
+  AssertionFailure: { label: "ผลไม่ตรงที่คาด", meaning: "ขั้นตอนทำงานครบแต่ผลจริงไม่ตรง Expected — อาจเป็น Bug จริงหรือข้อมูลทดสอบ/Expected ผิด" },
+  AutomationFailure: { label: "สคริปต์ / Object", meaning: "Agent หาปุ่มหรือช่องกรอกไม่เจอ หรือ DSL ผิด — ไม่ใช่ Bug ของโปรแกรม ต้องซ่อม DSL หรือ Object" },
+  EnvironmentFailure: { label: "สภาพแวดล้อม", meaning: "เปิดโปรแกรมไม่ได้ หรือเชื่อมต่อ Database ไม่ได้ — ตรวจ Environment แล้วรันซ้ำ" },
+  AgentFailure: { label: "Agent", meaning: "เครื่อง Agent หลุด ค้าง หรือหมดเวลา — ตรวจเครื่อง Agent แล้วรันซ้ำ" },
+  ApplicationFailure: { label: "Bug ของโปรแกรม", meaning: "โปรแกรมทำงานผิดพลาด — ตรวจสอบแล้วสร้าง Defect" },
+  TestDataFailure: { label: "ข้อมูลทดสอบ", meaning: "ข้อมูลที่ใช้ทดสอบไม่พร้อม — เตรียมหรือ Seed ข้อมูลใหม่แล้วรันซ้ำ" },
+  Unknown: { label: "ยังไม่ทราบสาเหตุ", meaning: "ระบบจำแนกไม่ได้ — เปิดผลเต็มเพื่อดู Log และภาพหน้าจอ" },
+};
+const recommendationTh: Record<string, string> = {
+  QAReviewBeforeCreateDefect: "QA ตรวจผลและภาพหน้าจอก่อน — ถ้าเป็น Bug จริงให้สร้าง Defect",
+  MaintenanceRequired: "ซ่อม DSL หรือ Object Repository แล้ว Validate ใหม่ (Case ถูกตั้งเป็น \"ต้องซ่อม\")",
+  RetryOrCheckEnvironment: "ตรวจ Environment / Database แล้วรันซ้ำ",
+  Retry: "ตรวจเครื่อง Agent แล้วรันซ้ำ",
+};
+const failureLabel = (t?: string) => (t ? failureInfo[t]?.label ?? t : "ยังไม่จำแนก");
 
 export function FailureDashboardTab({ projectId, releaseId, agents, headers, setExecDetail }: {
   projectId: string; releaseId?: string; agents: AutomationAgentItem[]; headers: Record<string, string>; setExecDetail: (v: AutomationExecutionItem | null) => void;
@@ -223,6 +292,11 @@ export function FailureDashboardTab({ projectId, releaseId, agents, headers, set
   const [rows, setRows] = useState<AutomationExecutionItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [openRow, setOpenRow] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  // ตัวเลขแยกตามประเภทคิดจากชุดที่ไม่กรองประเภท — กดชิปประเภทอื่นแล้วตัวเลขชิปไม่หายไป
+  const [typeCounts, setTypeCounts] = useState<{ key: string; count: number }[]>([]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -232,60 +306,92 @@ export function FailureDashboardTab({ projectId, releaseId, agents, headers, set
     if (to) qs.set("to", new Date(to).toISOString());
     if (buildId) qs.set("buildId", buildId);
     if (agentId) qs.set("agentId", agentId);
+    const all = new URLSearchParams(qs);
     if (failureType) qs.set("failureType", failureType);
     const ctrl = new AbortController();
     setLoadError("");
     Promise.all([
       fetchJson(`${apiUrl}/automation/failures/dashboard?${qs}`, headers, ctrl.signal),
       fetchJson(`${apiUrl}/automation/failures/executions?${qs}`, headers, ctrl.signal),
-    ]).then(([b, e]) => { setBreakdown(b); setRows(Array.isArray(e) ? e : []); })
-      .catch((err) => { if (!isAbort(err)) setLoadError("โหลด Failure Dashboard ไม่สำเร็จ"); })
+      failureType ? fetchJson(`${apiUrl}/automation/failures/dashboard?${all}`, headers, ctrl.signal) : Promise.resolve(null),
+    ]).then(([b, e, unfiltered]) => {
+      setBreakdown(b);
+      setRows(Array.isArray(e) ? e : []);
+      setTypeCounts(((unfiltered ?? b) as FailureBreakdownItem | null)?.byFailureType ?? []);
+    })
+      .catch((err) => { if (!isAbort(err)) setLoadError("โหลดข้อมูลวิเคราะห์ Fail ไม่สำเร็จ"); })
       .finally(() => { if (!ctrl.signal.aborted) setBusy(false); });
     return () => ctrl.abort();
-  }, [projectId, from, to, buildId, agentId, failureType, headers]);
+  }, [projectId, from, to, buildId, agentId, failureType, headers, retry]);
 
   const clearFilters = () => { setFrom(""); setTo(""); setBuildId(""); setAgentId(""); setFailureType(""); };
-  const hasFilters = from || to || buildId || agentId || failureType;
+  const advancedCount = [from, to, buildId, agentId].filter(Boolean).length;
+  const hasFilters = advancedCount > 0 || !!failureType;
+  const totalAll = typeCounts.reduce((s, x) => s + x.count, 0);
+  const buildIdByNumber = new Map(builds.map((b) => [b.buildNumber, b.buildId]));
+  const agentIdByCode = new Map(agents.map((a) => [a.agentCode, a.agentId]));
+  const groups: { title: string; items: { key: string; count: number }[]; pick?: (key: string) => void; active?: string }[] = [
+    { title: "Build ที่ Fail มาก", items: breakdown?.byBuild ?? [], pick: (k) => { const id = buildIdByNumber.get(k); if (id) setBuildId(id === buildId ? "" : id); }, active: builds.find((b) => b.buildId === buildId)?.buildNumber },
+    { title: "Agent ที่ Fail มาก", items: breakdown?.byAgent ?? [], pick: (k) => { const id = agentIdByCode.get(k); if (id) setAgentId(id === agentId ? "" : id); }, active: agents.find((a) => a.agentId === agentId)?.agentCode },
+    { title: "Case ที่ Fail บ่อย", items: breakdown?.byAutomationCase ?? [] },
+  ];
 
-  return <section className="automation-execution" aria-label="Failure Dashboard">
-    <header className="automation-section-head"><div><h2>Failure Dashboard</h2><p>วิเคราะห์ Execution ที่ Fail ตาม Failure Type / Build / Agent / วันที่ พร้อม drill down</p></div></header>
-    {(loadError || filterLoadError) && <div className="inline-alert error" role="alert"><span>{loadError || filterLoadError}</span></div>}
-    <div className="automation-run-toolbar automation-advanced-filters">
-      <label>จาก<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="วันที่เริ่ม" /></label>
-      <label>ถึง<input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="วันที่สิ้นสุด" /></label>
-      <select aria-label="กรอง Build" value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">ทุก Build</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select>
-      <select aria-label="กรอง Agent" value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">ทุก Agent</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select>
-      <select aria-label="กรอง Failure Type" value={failureType} onChange={(e) => setFailureType(e.target.value)}><option value="">ทุก Failure Type</option>{failureTypeOptions.map((f) => <option key={f} value={f}>{f}</option>)}</select>
-      {hasFilters && <button type="button" className="table-action icon-only" title="ล้างตัวกรอง" aria-label="ล้างตัวกรอง" onClick={clearFilters}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>}
-    </div>
-    {breakdown && <div className="automation-kpis">
-      <div className="needs-review"><small>Total Failed</small><strong>{breakdown.totalFailed}</strong><span>ตามตัวกรอง</span></div>
-      {breakdown.byFailureType.slice(0, 4).map((x) => <div key={x.key}><small>{x.key}</small><strong>{x.count}</strong><span>Failure Type</span></div>)}
-    </div>}
-    <div className="automation-failure-grid">
-      <article className="card">
-        <div className="automation-section-head"><h3>By Build</h3></div>
-        {breakdown?.byBuild.length ? <div className="automation-result-list">{breakdown.byBuild.map((x) => <div key={x.key} className="automation-failure-stat-row"><b>{x.key}</b><span className="automation-failure-stat-count"><strong>{x.count}</strong><small>fail</small></span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
-      </article>
-      <article className="card">
-        <div className="automation-section-head"><h3>By Agent</h3></div>
-        {breakdown?.byAgent.length ? <div className="automation-result-list">{breakdown.byAgent.map((x) => <div key={x.key} className="automation-failure-stat-row"><b>{x.key}</b><span className="automation-failure-stat-count"><strong>{x.count}</strong><small>fail</small></span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
-      </article>
-      <article className="card">
-        <div className="automation-section-head"><h3>Top Automation Case</h3></div>
-        {breakdown?.byAutomationCase.length ? <div className="automation-result-list">{breakdown.byAutomationCase.map((x) => <div key={x.key} className="automation-failure-stat-row"><b>{x.key}</b><span className="automation-failure-stat-count"><strong>{x.count}</strong><small>fail</small></span></div>)}</div> : <div className="empty"><p>ไม่มีข้อมูล</p></div>}
-      </article>
-    </div>
-    <article className="card">
-      <div className="automation-section-head"><h3>Failed Executions ({rows.length})</h3>{busy && <span className="muted-text"><span className="spinner inline" aria-hidden="true" /> กำลังโหลด...</span>}</div>
-      {rows.length ? <div className="table-wrap"><table className="automation-exec-table table-cards"><thead><tr><th>Code</th><th>Classified</th><th>Build</th><th>Agent</th><th>เวลา</th><th className="actions-col">จัดการ</th></tr></thead><tbody>{rows.map((x) => <tr key={x.automationExecutionId} className="automation-exec-tr" onClick={() => setExecDetail(x)}>
-        <td><b>{x.automationCode}</b><small>Rev {x.versionNo}</small></td>
-        <td>{x.classifiedFailureType ? <Badge tone={failureTone[x.classifiedFailureType] ?? "blue"}>{x.classifiedFailureType}</Badge> : <span className="muted-text">ยังไม่จำแนก</span>}</td>
-        <td>{x.buildNumber}</td>
-        <td>{x.agentCode ?? "-"}</td>
-        <td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td>
-        <td className="actions-col" onClick={(e) => e.stopPropagation()}><button type="button" className="table-action icon-only" title="ดูรายละเอียด" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">info</span></button></td>
-      </tr>)}</tbody></table></div> : <div className="empty"><p>ไม่พบ Execution ที่ Fail ตามเงื่อนไข</p></div>}
+  return <section className="au-runs" aria-label="วิเคราะห์ Fail">
+    {(loadError || filterLoadError) && <div className="inline-alert error" role="alert"><span>{loadError || filterLoadError}</span>{loadError && <button type="button" className="btn" onClick={() => setRetry((v) => v + 1)}>ลองใหม่</button>}</div>}
+    <article className="au-runs-card">
+      <header className="au-runs-head">
+        <h2><strong>{(breakdown?.totalFailed ?? 0).toLocaleString()}</strong> ครั้งที่ Fail{hasFilters && <small> · กรองอยู่</small>}{busy && <span className="spinner inline au-fail-busy" aria-label="กำลังโหลด" />}</h2>
+        {hasFilters && <button type="button" className="au-runs-clear" onClick={clearFilters}><span className="material-symbols-outlined" aria-hidden="true">close</span>ล้างตัวกรอง</button>}
+        <button type="button" className={`btn au-runs-more${showFilters ? " is-on" : ""}`} aria-expanded={showFilters} onClick={() => setShowFilters((v) => !v)}>
+          <span className="material-symbols-outlined" aria-hidden="true">tune</span>ตัวกรอง{advancedCount > 0 && <span className="au-runs-count">{advancedCount}</span>}
+        </button>
+      </header>
+
+      <div className="au-runs-chips" role="group" aria-label="กรองตามประเภท Fail">
+        <button type="button" aria-pressed={!failureType} className={!failureType ? "active" : ""} onClick={() => setFailureType("")}>ทุกประเภท<b>{totalAll}</b></button>
+        {typeCounts.map((t) => <button key={t.key} type="button" aria-pressed={failureType === t.key} className={failureType === t.key ? "active" : ""} title={failureInfo[t.key]?.meaning} onClick={() => setFailureType(failureType === t.key ? "" : t.key)}>
+          <i className={`au-chip-dot t-${failureTone[t.key] ?? "gray"}`} aria-hidden="true" />{failureLabel(t.key)}<b>{t.count}</b>
+        </button>)}
+      </div>
+      {failureType && failureInfo[failureType] && <p className="au-fail-meaning"><span className="material-symbols-outlined" aria-hidden="true">lightbulb</span>{failureInfo[failureType].meaning}</p>}
+
+      {showFilters && <div className="au-runs-filters">
+        <label>ตั้งแต่<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label>ถึง<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+        <label>Build<select value={buildId} onChange={(e) => setBuildId(e.target.value)}><option value="">ทั้งหมด</option>{builds.map((b) => <option key={b.buildId} value={b.buildId}>{b.buildNumber}{b.applicationVersion ? ` · App ${b.applicationVersion}` : ""}</option>)}</select></label>
+        <label>Agent<select value={agentId} onChange={(e) => setAgentId(e.target.value)}><option value="">ทั้งหมด</option>{agents.map((a) => <option key={a.agentId} value={a.agentId}>{a.agentCode}</option>)}</select></label>
+      </div>}
+
+      {(breakdown?.totalFailed ?? 0) > 0 && <div className="au-fail-groups">
+        {groups.map((g) => { const max = Math.max(1, ...g.items.map((x) => x.count)); return <section key={g.title} className="au-fail-group">
+          <h3>{g.title}</h3>
+          {g.items.length ? <ol>{g.items.slice(0, 5).map((x) => { const clickable = !!g.pick; const body = <><span className="au-fail-key" title={x.key}>{x.key}</span><span className="au-fail-bar" aria-hidden="true"><i style={{ width: `${(x.count / max) * 100}%` }} /></span><b>{x.count}</b></>;
+            return <li key={x.key}>{clickable ? <button type="button" aria-pressed={g.active === x.key} className={g.active === x.key ? "active" : ""} title={`กรองเฉพาะ ${x.key}`} onClick={() => g.pick!(x.key)}>{body}</button> : <div>{body}</div>}</li>; })}</ol>
+            : <p className="au-fail-none">ไม่มีข้อมูล</p>}
+        </section>; })}
+      </div>}
+
+      {rows.length ? <ul className="au-fail-list">{rows.map((x) => { const open = openRow === x.automationExecutionId; const info = x.classifiedFailureType ? failureInfo[x.classifiedFailureType] : undefined; return <li key={x.automationExecutionId} className={open ? "is-open" : ""}>
+        <button type="button" className="au-fail-row" aria-expanded={open} onClick={() => setOpenRow(open ? "" : x.automationExecutionId)}>
+          <span className="au-fail-main"><b>{x.automationCode}</b><small>{[x.testCaseCode, x.testCaseTitle].filter(Boolean).join(" · ") || `Rev ${x.versionNo}`}</small></span>
+          <span className="au-fail-type"><Badge tone={failureTone[x.classifiedFailureType ?? ""] ?? "gray"}>{failureLabel(x.classifiedFailureType)}</Badge>{x.errorCode && <code>{x.errorCode}</code>}</span>
+          <span className="au-fail-meta">Build {x.buildNumber}<small>{x.agentCode ?? "-"}</small></span>
+          <span className="au-fail-time">{formatThaiDateTime(x.completedAt ?? x.startedAt)}</span>
+          <span className="au-fail-chevron material-symbols-outlined" aria-hidden="true">expand_more</span>
+        </button>
+        {open && <div className="au-fail-detail">
+          {x.errorMessage && <div className="au-fail-error"><span>ข้อความ Error</span><p>{x.errorMessage}</p></div>}
+          <dl>
+            <div><dt>ประเภท</dt><dd>{failureLabel(x.classifiedFailureType)}{info && <small>{info.meaning}</small>}</dd></div>
+            <div><dt>ควรทำต่อ</dt><dd>{x.classifiedRecommendation ? recommendationTh[x.classifiedRecommendation] ?? x.classifiedRecommendation : "-"}</dd></div>
+            <div><dt>Version / Build</dt><dd>Rev {x.versionNo} · Build {x.buildNumber}</dd></div>
+            <div><dt>Environment / Agent</dt><dd>{x.environmentName ?? "-"} · {x.agentCode ?? "-"}</dd></div>
+            <div><dt>ใช้เวลา</dt><dd>{x.durationMs != null ? `${(x.durationMs / 1000).toFixed(1)} วินาที` : "-"}{x.retryCount ? ` · รันซ้ำครั้งที่ ${x.retryCount}` : ""}</dd></div>
+            {x.defectId && <div><dt>Defect</dt><dd>สร้าง Defect แล้ว</dd></div>}
+          </dl>
+          <div className="au-fail-actions"><button type="button" className="btn primary au-runs-more" onClick={() => setExecDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">open_in_new</span>ดูผลเต็ม / ภาพหน้าจอ / สร้าง Defect</button></div>
+        </div>}
+      </li>; })}</ul> : !busy && <div className="au-runs-empty">{hasFilters ? "ไม่พบผลที่ Fail ตามตัวกรอง — ลองล้างตัวกรอง" : "ยังไม่มีผลที่ Fail"}</div>}
     </article>
   </section>;
 }

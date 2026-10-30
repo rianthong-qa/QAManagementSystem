@@ -22,7 +22,7 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
     public async Task<ActionResult<EnvironmentDto>> CreateEnvironment(SaveEnvironmentRequest request, CancellationToken ct) => Ok(await service.CreateEnvironmentAsync(request, ct));
 
     [HttpGet("test-cycles")]
-    public Task<TestCycleListResultDto> List([FromQuery] Guid? projectId, [FromQuery] Guid? releaseId, [FromQuery] Guid? buildId, [FromQuery] Guid? moduleId, [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? cycleType, [FromQuery] Guid? createdBy, [FromQuery] string? sortBy, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, releaseId, buildId, moduleId, search, status, cycleType, createdBy, sortBy, page, size, ct);
+    public Task<TestCycleListResultDto> List([FromQuery] Guid? projectId, [FromQuery] Guid? releaseId, [FromQuery] Guid? buildId, [FromQuery] Guid? moduleId, [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? cycleType, [FromQuery] Guid? createdBy, [FromQuery] string? plan, [FromQuery] string? sortBy, [FromQuery] int page = 1, [FromQuery] int size = 20, CancellationToken ct = default) => service.ListAsync(projectId, releaseId, buildId, moduleId, search, status, cycleType, createdBy, plan, sortBy, page, size, ct);
 
     [HttpGet("test-cycles/options")]
     public Task<IReadOnlyList<TestCycleOptionDto>> Options([FromQuery] Guid? projectId, CancellationToken ct = default) => service.ListOptionsAsync(projectId, ct);
@@ -68,11 +68,18 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
         catch (ArgumentException exception) { return BadRequest(new ProblemDetails { Title = "สถานะไม่ถูกต้อง", Detail = exception.Message, Status = 400 }); }
     }
 
-    [HttpDelete("test-cycles/{id:guid}")]
+    // ลบ Cycle = ซ่อนผลการรันทั้งชุด — ใช้สิทธิ์จัดการ Cycle (EXECUTION.ASSIGN) เหมือนปุ่มในหน้า ไม่ใช่แค่สิทธิ์รันทดสอบ
+    [HttpDelete("test-cycles/{id:guid}"), Authorize(Policy = "ExecutionAssign")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         try { await service.DeleteAsync(id, UserId(), ct); return NoContent(); }
         catch (EntityNotFoundException) { return NotFound(); }
+        catch (TestCycleLinkedToPlanException exception)
+        {
+            var problem = new ProblemDetails { Title = "ลบ Test Cycle ที่อยู่ใน Test Plan ไม่ได้", Detail = exception.Message, Status = 409 };
+            problem.Extensions["code"] = ProMaxx2.QA.Domain.TestPlanning.TestPlanErrorCodes.CycleLinkedToPlan;
+            return Conflict(problem);
+        }
     }
 
     [HttpPost("test-cycles/generate-ai"), Authorize(Policy = "ExecutionRun"), RequestSizeLimit(21_000_000)]

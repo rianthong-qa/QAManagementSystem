@@ -61,3 +61,5 @@ export const DAY_LABELS: { value: number; label: string }[] = [
   { value: 0, label: "อา" }, { value: 1, label: "จ" }, { value: 2, label: "อ" }, { value: 3, label: "พ" },
   { value: 4, label: "พฤ" }, { value: 5, label: "ศ" }, { value: 6, label: "ส" },
 ];
+
+export const caseStatusTh: Record<string, string> = { Draft: "ฉบับร่าง", NeedsReview: "รอตรวจ", Validated: "ตรวจผ่าน", Approved: "อนุมัติแล้ว", Ready: "พร้อมรัน", Running: "กำลังรัน", MaintenanceRequired: "ต้องซ่อม" };

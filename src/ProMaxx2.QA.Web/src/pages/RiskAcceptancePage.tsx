@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { confirmDialog } from "../components/dialogStore";
 import { ModalShell } from "../components/ModalShell";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { Badge } from "../components/Badge";
 import { apiUrl } from "../api";
 import { formatThaiDateTime } from "../dateTime";
@@ -53,6 +54,7 @@ export function RiskAcceptancePage({ projectId, releaseId: contextReleaseId, can
           <select aria-label="สถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>{filters.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           <span className="count-pill">{filtered.length} รายการ</span>
         </div>
+        <DeletedItemsButton type="risk-acceptances" label="Risk Acceptance" onRestored={reload} />
         {canEdit && <button className="btn primary" onClick={openCreate}>+ เพิ่ม Risk Acceptance</button>}
       </div>
       {error && <div className="inline-alert error"><span>{error}</span></div>}

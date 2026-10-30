@@ -1,0 +1,353 @@
+/* Test Plan / Configuration Matrix (เฟส 3, 2026-10-29) — prefix tp-
+   รายการใช้ ListPage.css (lp-), หน้าต่างรายละเอียดใช้ workspace ของ TestCycleDetail.css (cyd-) แล้วเพิ่มเฉพาะแถว Matrix และฟอร์ม */
+
+/* รายการ: ตัวเลขสรุปในหัว (ตัวเลขหนา คั่นเส้น) */
+.tp-stats { display: flex; flex-wrap: wrap; gap: 2px 0; margin: 2px 0 0; }
+.tp-stats > div { display: inline-flex; align-items: baseline; gap: 5px; border-left: 1px solid var(--line); padding: 0 12px; }
+.tp-stats > div:first-child { border-left: 0; padding-left: 0; }
+.tp-stats dt { color: var(--muted); font-size: 12px; }
+.tp-stats dd { margin: 0; color: var(--text); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tp-stats .is-alert dd { color: var(--red); }
+
+/* ชิปสถานะ | ตัวกรอง 2 ช่อง อยู่แถวเดียว */
+.tp-filterbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; border-bottom: 1px solid var(--line); padding: 0 18px 12px; }
+.lp-card .tp-filterbar .lp-chips { padding: 0; }
+.lp-card .tp-filterbar .lp-filters { display: flex; flex-wrap: wrap; gap: 8px; border: 0; padding: 0; }
+.lp-card .tp-filterbar .lp-filters select { width: 180px; height: 34px; }
+.lp-card .tp-filterbar .lp-clear { min-height: 34px; }
+
+/* ตาราง: Run รวมไว้ในช่องความคืบหน้า, Frozen อยู่ข้างรหัสแผน, กำหนดการบรรทัดเดียว + วันคงเหลือ */
+.tp-table .lp-col-progress { width: 210px; }
+.tp-table .lp-col-num { width: 104px; }
+.tp-table .lp-col-date { width: 150px; }
+.tp-frozen { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; color: var(--warning-text); font-size: 11px; font-weight: 700; }
+.tp-frozen .material-symbols-outlined { font-size: 14px; }
+.tp-rate { display: grid; gap: 1px; font-variant-numeric: tabular-nums; }
+.tp-rate b { color: var(--text); font-size: 13px; }
+.tp-rate small { color: var(--muted); font-size: 11px; }
+.tp-due { color: var(--muted); font-size: 11px; font-weight: 600; }
+.tp-due.is-near { color: var(--warning-text); }
+.tp-due.is-late { color: var(--red); }
+.cyd-info dd.tp-schedule { display: grid; gap: 1px; }
+
+/* หน้าต่างรายละเอียด: แถบปุ่มกระชับ + เมนู "จัดการแผน" ชิดขวา */
+.modal-box.cyd .tp-toolbar { gap: 6px; }
+.modal-box.cyd .tp-toolbar .btn { gap: 6px; min-height: 34px; padding: 6px 12px; font-size: 13px; }
+.modal-box.cyd .tp-toolbar .btn .material-symbols-outlined { font-size: 18px; }
+.tp-menu { position: relative; margin-left: auto; }
+.tp-menu-list { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; display: grid; gap: 2px; width: 270px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 6px; box-shadow: 0 14px 34px color-mix(in srgb, var(--text) 18%, transparent); }
+.modal-box.cyd .tp-menu-list button[role="menuitem"] { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 0; border: 0; border-radius: 8px; background: transparent; padding: 8px 10px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.modal-box.cyd .tp-menu-list button[role="menuitem"]:hover:not(:disabled), .modal-box.cyd .tp-menu-list button[role="menuitem"]:focus-visible { outline: none; background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.modal-box.cyd .tp-menu-list button[role="menuitem"]:disabled { opacity: .55; cursor: not-allowed; }
+.modal-box.cyd .tp-menu-list button.is-danger { color: var(--red); }
+.modal-box.cyd .tp-menu-list button.is-danger:hover:not(:disabled), .modal-box.cyd .tp-menu-list button.is-danger:focus-visible { background: color-mix(in srgb, var(--red) 6%, var(--card)); }
+.tp-menu-list button[role="menuitem"] > .material-symbols-outlined { margin-top: 1px; font-size: 19px; }
+.tp-menu-list button[role="menuitem"] > span:last-child { display: grid; gap: 1px; }
+.tp-menu-list b { font-size: 13px; }
+.tp-menu-list small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.tp-locked { display: flex; flex: none; align-items: center; gap: 6px; margin: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--yellow) 8%, var(--card)); padding: 8px 20px; color: var(--warning-text); font-size: 13px; font-weight: 600; }
+.tp-locked .material-symbols-outlined { font-size: 17px; }
+
+/* ความคืบหน้ารวม: ตัวเลขหลัก 4 ช่อง → แถบซ้อน → จำนวนตามสถานะบรรทัดเดียว */
+.tp-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.tp-kpis > div { display: grid; gap: 2px; min-width: 0; border-left: 1px solid var(--line); padding: 0 14px; }
+.tp-kpis > div:first-child { border-left: 0; padding-left: 0; }
+.tp-kpis dt { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tp-kpis dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin: 0; font-variant-numeric: tabular-nums; }
+.tp-kpis dd b { color: var(--text); font-size: 20px; font-weight: 800; line-height: 1.2; }
+.tp-kpis dd small { color: var(--muted); font-size: 12px; }
+.tp-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; color: var(--muted); font-size: 12px; list-style: none; }
+.tp-legend li { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.tp-legend b { color: var(--text); font-variant-numeric: tabular-nums; }
+.tp-legend .is-zero b { color: var(--muted); font-weight: 600; }
+
+/* แถว Matrix: Run / Configuration | ความคืบหน้า | ปุ่ม */
+.tp-run { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 220px) 156px; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; padding: 10px 6px 10px 10px; }
+.tp-run:last-child { border-bottom: 0; }
+.tp-run.is-inprogress { border-left-color: var(--info); }
+.tp-run.is-cancelled .tp-run-main > p { color: var(--muted); }
+.tp-run-main { display: grid; gap: 2px; min-width: 0; }
+.tp-run-code { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tp-run-code b { color: var(--primary); font-size: 13px; }
+.tp-config { display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 8%, var(--card)); padding: 1px 8px; color: var(--primary); font-size: 11px; font-weight: 700; }
+.tp-config .material-symbols-outlined { font-size: 13px; }
+.tp-run-main > p { margin: 0; overflow-wrap: anywhere; color: var(--text); font-size: 13px; font-weight: 600; }
+/* รายการข้อมูล Run มีไอคอนกำกับ — แต่ละรายการไม่ตัดกลางชื่อ */
+.tp-run-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 2px 0 0; padding: 0; color: var(--muted); font-size: 12px; list-style: none; }
+.tp-run-meta li { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; white-space: nowrap; }
+.tp-run-meta .material-symbols-outlined { color: color-mix(in srgb, var(--muted) 80%, var(--card)); font-size: 15px; }
+.modal-box.cyd button.tp-link { display: inline; min-height: 0; border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.tp-run-progress { display: grid; gap: 4px; min-width: 0; }
+.tp-run-progress small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tp-run-progress small b { margin-right: 2px; color: var(--text); font-size: 12px; }
+.tp-run-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.modal-box.cyd .tp-run-actions .btn { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+.modal-box.cyd button.tp-icon { display: grid; width: 32px; height: 32px; min-height: 0; place-items: center; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+.modal-box.cyd button.tp-icon:hover:not(:disabled) { border-color: var(--line); background: var(--card); color: var(--primary); }
+.modal-box.cyd button.tp-icon.danger:hover:not(:disabled) { color: var(--red); }
+.tp-icon .material-symbols-outlined { font-size: 18px; }
+
+/* ฟอร์มแผน / Run — label ที่ไม่มีคำอธิบายใต้ช่องไม่ยืดตามเพื่อนในแถว (ช่องกรอกอยู่ระดับเดียวกัน) */
+.modal-box.tp-form > .form-grid > label { align-content: flex-start; }
+.tp-form-status { margin-right: auto; color: var(--green); font-size: 12px; font-weight: 600; }
+.tp-form-status.is-missing { color: var(--red); }
+.form-grid small.tp-field-error, small.tp-field-error { color: var(--red); }
+.form-grid label.tp-check { flex-direction: row; align-items: center; gap: 8px; font-weight: 600; }
+.tp-check input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
+.modal-box > .tp-config-title { margin: 18px 0 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+
+/* ทีมระดับ Run ในแถว Matrix (เฟส 4) */
+.tp-team { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.tp-team > span { display: inline-flex; align-items: center; gap: 4px; overflow-wrap: anywhere; }
+.tp-team .material-symbols-outlined { color: var(--primary); font-size: 15px; }
+.tp-unassigned { color: var(--warning-text); font-weight: 600; }
+
+/* หน้าต่างจัดทีม */
+.modal-box > .tp-member-search { position: relative; display: block; margin-bottom: 10px; }
+.tp-member-search .material-symbols-outlined { position: absolute; top: 50%; left: 10px; color: var(--muted); font-size: 18px; transform: translateY(-50%); pointer-events: none; }
+.modal-box .tp-member-search input { width: 100%; height: 38px; border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px 6px 34px; font: inherit; font-size: 13px; }
+.tp-members { display: grid; gap: 6px; max-height: min(420px, 50dvh); overflow-y: auto; margin-bottom: 14px; }
+.tp-member { display: grid; grid-template-columns: minmax(0, 1fr) 200px; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.tp-member.is-selected { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.tp-member label { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; cursor: pointer; }
+.tp-member label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-box .tp-member select { height: 34px; padding: 4px 8px; font-size: 12px; }
+.modal-box > label.tp-bulk { display: flex; align-items: flex-start; gap: 10px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 5%, var(--card)); padding: 10px 12px; font-size: 13px; font-weight: 600; }
+.tp-bulk input { margin-top: 2px; }
+.tp-bulk span { display: grid; gap: 2px; }
+.tp-bulk small { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+/* Clone / Rerun: Preview ราย Run */
+.tp-clone-runs { display: grid; gap: 6px; margin: 0 0 12px; padding: 0; list-style: none; }
+.tp-clone-runs li { display: grid; grid-template-columns: minmax(0, 1fr) 240px; align-items: center; gap: 12px; border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.tp-clone-runs li.is-missing { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 4%, var(--card)); }
+.tp-clone-run { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.tp-clone-run b { color: var(--primary); font-size: 13px; }
+.tp-clone-run small { flex-basis: 100%; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.modal-box .tp-clone-runs select { height: 36px; padding: 4px 8px; font-size: 13px; }
+.modal-box > .tp-note { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 4px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 6%, var(--card)); padding: 10px 12px; color: var(--text); font-size: 12px; line-height: 1.6; }
+.tp-note .material-symbols-outlined { color: var(--primary); font-size: 17px; }
+
+/* ListPage ซ่อนคอลัมน์วันที่ ≤1180px — ตารางนี้มีคอลัมน์น้อยกว่าและกำหนดการบอกวันคงเหลือ จึงคงไว้ (มือถือใช้กฎ card ของ ListPage) */
+@media (min-width: 761px) and (max-width: 1180px) {
+  .lp-table.tp-table .lp-col-date { display: table-cell; }
+}
+@media (max-width: 1100px) {
+  .tp-run { grid-template-columns: minmax(0, 1fr) 160px 140px; }
+}
+@media (max-width: 900px) {
+  .tp-run { grid-template-columns: minmax(0, 1fr) auto; }
+  .tp-run-progress { grid-column: 1 / -1; grid-row: 2; }
+  .tp-locked { padding: 8px 16px; }
+}
+@media (max-width: 760px) {
+  .tp-stats { gap: 4px 14px; }
+  .tp-stats > div { border-left: 0; padding: 0; }
+  .tp-filterbar { display: block; padding: 0 0 12px; }
+  .lp-card .tp-filterbar .lp-chips { padding: 0 14px 10px; }
+  .lp-card .tp-filterbar .lp-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 14px; }
+  .lp-card .tp-filterbar .lp-filters select { width: 100%; height: 44px; }
+  .lp-card .tp-filterbar .lp-clear { min-height: 44px; }
+  .tp-rate { display: inline-flex; align-items: baseline; gap: 4px; }
+  .lp-table.tp-table td.lp-col-num { flex: none; white-space: nowrap; }
+  .tp-frozen { margin-left: 6px; }
+  .modal-box.cyd .tp-toolbar .btn { flex: 1 1 auto; justify-content: center; min-height: 44px; }
+  .tp-menu { flex: 1 1 auto; margin-left: 0; }
+  .tp-menu > .btn { width: 100%; }
+  .tp-menu-list { width: min(300px, calc(100vw - 32px)); }
+  .modal-box.cyd .tp-menu-list button[role="menuitem"] { min-height: 44px; }
+  .tp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 0; }
+  .tp-kpis > div:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .tp-run-meta li { white-space: normal; }
+  .tp-run { grid-template-columns: minmax(0, 1fr); }
+  .tp-run-progress { grid-row: auto; }
+  .tp-run-actions { justify-content: flex-start; }
+  .modal-box.cyd .tp-run-actions .btn { min-height: 40px; }
+  .modal-box.cyd button.tp-icon { width: 40px; height: 40px; }
+  /* ข้อความ "ยังขาด" แยกแถว ปุ่มยกเลิก/บันทึกแบ่งพื้นที่เท่ากัน (ปุ่มข้อความยาวต้อง wrap ได้) */
+  .modal-box.tp-form > .modal-actions { flex-wrap: wrap; }
+  .tp-form-status { flex-basis: 100%; margin-right: 0; }
+  .modal-box.tp-form > .modal-actions .btn { flex: 1 1 0; min-width: 0; min-height: 44px; white-space: normal; }
+  .tp-member, .tp-clone-runs li { grid-template-columns: minmax(0, 1fr); }
+  .modal-box .tp-member select, .modal-box .tp-clone-runs select { height: 44px; }
+  .tp-member:not(.is-selected) select { display: none; }
+  .tp-member label { min-height: 36px; }
+}
+
+/* คู่มือเริ่มต้นใช้งาน (ผู้ใช้ใหม่) — รูปแบบเดียวกับ .au-guide ของหน้า Automation */
+.tp-guide { --cyd-pass: var(--green); --cyd-fail: var(--red); --cyd-notrun: color-mix(in srgb, var(--muted) 22%, var(--card)); margin-bottom: 16px; border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); border-radius: 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 7%, var(--card)), var(--card) 60%); }
+.tp-guide > summary { display: flex; align-items: center; gap: 12px; border-radius: 16px; padding: 12px 16px; list-style: none; cursor: pointer; }
+.tp-guide > summary::-webkit-details-marker { display: none; }
+.tp-guide > summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 30%, transparent); outline-offset: 2px; }
+.tp-guide-icon { display: grid; flex: 0 0 40px; height: 40px; place-items: center; border-radius: 12px; background: var(--primary); color: var(--card); font-size: 22px; }
+.tp-guide-title { flex: 1; min-width: 0; }
+.tp-guide-title strong { display: block; color: var(--text); font-size: 15px; }
+.tp-guide-title small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.tp-guide-toggle { display: inline-flex; flex: none; align-items: center; gap: 2px; color: var(--primary); font-size: 13px; font-weight: 700; }
+.tp-guide-toggle .material-symbols-outlined { font-size: 20px; }
+.tp-guide[open] .tp-guide-toggle .material-symbols-outlined { transform: rotate(180deg); }
+.tp-guide-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0 16px 14px; list-style: none; }
+.tp-guide-steps li { display: flex; flex-direction: column; gap: 8px; min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px; }
+.tp-guide-steps li > div { display: grid; flex: 1; align-content: start; gap: 6px; }
+.tp-guide-no { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); font-size: 13px; font-weight: 800; }
+.tp-guide-steps strong { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
+.tp-guide-optional { border-radius: 999px; background: var(--bg); padding: 1px 7px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.tp-guide-steps p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.tp-guide-steps p.tp-guide-example { display: flex; align-items: flex-start; gap: 4px; border-radius: 8px; background: color-mix(in srgb, var(--yellow) 9%, var(--card)); padding: 6px 8px; color: var(--text); }
+.tp-guide-example .material-symbols-outlined { color: var(--warning-text); font-size: 15px; }
+.tp-guide-steps small { display: flex; align-items: center; gap: 4px; margin-top: auto; color: var(--primary); font-size: 12px; font-weight: 600; }
+.tp-guide-steps small .material-symbols-outlined { font-size: 16px; }
+.tp-guide-steps .btn { align-self: flex-start; gap: 4px; min-height: 34px; padding: 6px 12px; font-size: 13px; white-space: normal; }
+.tp-guide-extra { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 10px; padding: 0 16px 16px; }
+.tp-guide-extra > section { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px; }
+.tp-guide-extra h3 { margin: 0 0 8px; color: var(--text); font-size: 13px; }
+.tp-guide-matrix { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.tp-guide-matrix li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 160px) 72px; align-items: center; gap: 10px; }
+.tp-guide-matrix li > span:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.tp-guide-matrix b { color: var(--primary); font-size: 12px; }
+.tp-guide-matrix small { color: var(--muted); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.tp-guide-matrix .cyd-bar { height: 8px; }
+.tp-guide-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.tp-guide-terms { display: grid; gap: 6px; margin: 0; }
+.tp-guide-terms > div { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 8px; }
+.tp-guide-terms dt { color: var(--text); font-size: 12px; font-weight: 700; }
+.tp-guide-terms dd { margin: 0; color: var(--muted); font-size: 12px; }
+
+/* ขั้นต่อไปของแผนในหน้าต่างรายละเอียด */
+.tp-next { display: flex; flex: none; align-items: center; gap: 10px; margin: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--primary) 5%, var(--card)); padding: 8px 20px; }
+.tp-next > .material-symbols-outlined { color: var(--primary); font-size: 20px; }
+.tp-next p { flex: 1; min-width: 0; margin: 0; color: var(--text); font-size: 13px; }
+.modal-box.cyd .tp-next .btn { flex: none; gap: 4px; min-height: 32px; padding: 4px 12px; font-size: 13px; }
+.tp-next .btn .material-symbols-outlined { font-size: 17px; }
+
+@media (max-width: 1280px) {
+  .tp-guide-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1100px) {
+  .tp-guide-extra { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .tp-guide-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tp-next { padding: 8px 16px; }
+}
+@media (max-width: 760px) {
+  .tp-guide > summary { flex-wrap: wrap; padding: 12px; }
+  .tp-guide-title { flex-basis: calc(100% - 52px); }
+  .tp-guide-toggle { min-height: 36px; margin-left: 52px; }
+  .tp-guide-steps { grid-template-columns: minmax(0, 1fr); padding: 0 12px 12px; }
+  .tp-guide-steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px 10px; }
+  .tp-guide-steps .btn { grid-column: 2; min-height: 44px; }
+  .tp-guide-extra { padding: 0 12px 12px; }
+  .tp-guide-matrix li { grid-template-columns: minmax(0, 1fr) 64px; }
+  .tp-guide-matrix .cyd-bar { grid-column: 1 / -1; grid-row: 2; }
+  .tp-guide-matrix small { grid-row: 1; grid-column: 2; }
+  .tp-guide-terms > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .tp-next { flex-wrap: wrap; }
+  .tp-next p { flex-basis: calc(100% - 30px); }
+  .modal-box.cyd .tp-next .btn { width: 100%; justify-content: center; min-height: 44px; }
+}
+
+/* หน้าต่างเพิ่ม Run หน้าจอเดียว: ที่มา (segmented) → ซ้าย เลือก Test Cycle ได้หลายรายการ | ขวา Configuration ต่อ Run */
+.modal > .modal-box.tp-add-runs { width: min(1200px, calc(100vw - 32px)); max-width: 1200px; }
+.tp-add-mode { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-bottom: 12px; border-radius: 12px; background: var(--bg); padding: 4px; }
+.tp-add-mode label { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; border: 1px solid transparent; border-radius: 9px; padding: 7px 10px; color: var(--muted); cursor: pointer; }
+.tp-add-mode label.is-selected { border-color: color-mix(in srgb, var(--primary) 35%, var(--line)); background: var(--card); color: var(--primary); box-shadow: 0 1px 3px color-mix(in srgb, var(--text) 10%, transparent); }
+.tp-add-mode label:focus-within { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); }
+.tp-add-mode input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.tp-add-mode .material-symbols-outlined { flex: none; font-size: 20px; }
+.tp-add-mode label > span:last-child { display: grid; min-width: 0; }
+.tp-add-mode b { color: var(--text); font-size: 13px; }
+.tp-add-mode label.is-selected b { color: var(--primary); }
+.tp-add-mode small { color: var(--muted); font-size: 11px; font-weight: 400; }
+/* 2 แผงสูงเท่ากันคงที่ — รายการในแผงยืดเต็มพื้นที่ที่เหลือและเลื่อนในตัว ทั้งหน้าต่างไม่ต้องเลื่อน */
+.tp-add-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; height: clamp(380px, calc(82vh - 260px), 640px); }
+.tp-add-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.tp-add-panel-note { width: 100%; margin-top: -4px; color: var(--muted); font-size: 11px; }
+.tp-add-chips { display: flex; flex: none; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.tp-add-chips::-webkit-scrollbar { display: none; }
+.modal-box.tp-add-runs .tp-add-chips button { display: inline-flex; flex: none; align-items: center; gap: 4px; min-height: 28px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 2px 10px; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.modal-box.tp-add-runs .tp-add-chips button[aria-pressed="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--card)); color: var(--primary); }
+.tp-add-chips b { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tp-add-chips button[aria-pressed="true"] b { color: var(--primary); }
+.tp-add-filters { display: grid; flex: none; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; }
+.modal-box.tp-add-runs .tp-add-filters select { width: 100%; min-width: 0; height: 34px; padding: 4px 28px 4px 10px; font-size: 12px; }
+.tp-add-listbar { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--muted); font-size: 12px; }
+.tp-add-listbar > span { margin-right: auto; }
+.tp-add-listbar b { color: var(--text); }
+.tp-add-panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.tp-add-panel-head h3 { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; }
+.modal-box.tp-add-runs button.tp-text-btn { display: inline; min-height: 0; border: 0; background: none; padding: 2px 0; color: var(--primary); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.modal-box.tp-add-runs button.tp-text-btn:hover:not(:disabled) { text-decoration: underline; }
+.tp-add-search { position: relative; display: block; }
+.tp-add-search .material-symbols-outlined { position: absolute; top: 50%; left: 10px; color: var(--muted); font-size: 18px; transform: translateY(-50%); pointer-events: none; }
+.modal-box.tp-add-runs :is(.tp-add-search input, .tp-draft-grid input) { width: 100%; height: 36px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); padding: 6px 10px; color: var(--text); font: inherit; font-size: 13px; }
+.modal-box.tp-add-runs .tp-add-search input { padding-left: 34px; }
+.modal-box.tp-add-runs :is(.tp-add-search input, .tp-draft-grid input):focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.modal-box.tp-add-runs .tp-draft-grid input[aria-invalid="true"] { border-color: var(--red); }
+.tp-cycle-list, .tp-drafts { display: grid; flex: 1 1 auto; align-content: start; gap: 6px; min-height: 0; overflow-y: auto; margin: 0; padding: 0 2px 0 0; list-style: none; }
+.tp-cycle-list label { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: start; gap: 10px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+.tp-cycle-list label:hover { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); }
+.tp-cycle-list label.is-selected { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); background: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.tp-cycle-list input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--primary); }
+/* แถว Cycle: ชื่อเต็ม (2 บรรทัด) → รหัส · Suite → Module · Environment · Build | สถานะ + จำนวนเคสชิดขวา */
+.tp-cycle-text { display: grid; gap: 2px; min-width: 0; }
+.tp-cycle-name { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tp-cycle-sub { display: flex; flex-wrap: wrap; gap: 0 8px; color: var(--muted); font-size: 12px; }
+.tp-cycle-sub b { color: var(--primary); font-size: 12px; }
+.tp-cycle-sub > span { overflow-wrap: anywhere; }
+.tp-cycle-tags { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--muted); font-size: 11px; }
+.tp-cycle-tags > span { display: inline-flex; align-items: center; gap: 3px; min-width: 0; }
+.tp-cycle-tags .material-symbols-outlined { font-size: 14px; }
+.tp-cycle-side { display: grid; justify-items: end; gap: 4px; }
+.tp-cycle-side small { color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tp-cycle-side b { color: var(--text); }
+.tp-add-empty { display: flex; align-items: center; gap: 8px; border: 1px dashed var(--line); border-radius: 10px; padding: 14px 12px; color: var(--muted); font-size: 13px; }
+.tp-add-empty.is-guide { flex: 1; align-items: flex-start; min-height: 160px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); color: var(--text); }
+.tp-add-empty.is-guide .material-symbols-outlined { color: var(--primary); }
+.tp-add-fields { display: grid; gap: 10px; }
+.tp-add-fields label, .tp-add-owner { display: grid; gap: 4px; color: var(--text); font-size: 12px; font-weight: 700; }
+.modal-box.tp-add-runs :is(.tp-add-fields, .tp-add-owner) select { width: 100%; height: 38px; padding: 6px 30px 6px 10px; font-size: 13px; font-weight: 400; }
+.tp-add-owner { grid-template-columns: auto minmax(140px, 200px); align-items: center; gap: 8px; font-weight: 600; }
+.modal-box.tp-add-runs .tp-add-owner select { height: 34px; }
+.tp-add-fields label.tp-add-check { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.tp-add-check input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
+.tp-draft { display: grid; gap: 8px; border: 1px solid var(--line); border-left: 3px solid var(--primary); border-radius: 10px; padding: 10px 12px; }
+.tp-draft.is-invalid { border-left-color: var(--red); }
+.tp-draft-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.tp-draft-head > span { display: grid; gap: 1px; min-width: 0; }
+.tp-draft-head b { color: var(--primary); font-size: 13px; }
+.tp-draft-head small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.modal-box.tp-add-runs button.tp-draft-remove { display: grid; flex: none; width: 28px; height: 28px; min-height: 0; place-items: center; border: 0; border-radius: 8px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+.modal-box.tp-add-runs button.tp-draft-remove:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 8%, var(--card)); color: var(--red); }
+.tp-draft-remove .material-symbols-outlined { font-size: 18px; }
+.tp-draft-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 8px; }
+.tp-draft-grid.is-extra { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tp-draft-grid label { display: grid; gap: 3px; min-width: 0; }
+.tp-draft-grid label > span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.tp-draft-grid label.is-wide { grid-column: span 2; }
+.modal-box.tp-add-runs button.tp-draft-more { display: inline-flex; align-items: center; justify-self: start; gap: 4px; min-height: 0; border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-size: 12px; font-weight: 600; white-space: normal; cursor: pointer; }
+.tp-draft-more .material-symbols-outlined { font-size: 16px; }
+.tp-draft-more[aria-expanded="true"] .material-symbols-outlined:last-child { transform: rotate(180deg); }
+.tp-add-failures ul { margin: 4px 0 0; padding-left: 18px; }
+.tp-add-failures li b { margin-right: 4px; }
+
+@media (max-width: 900px) {
+  .tp-add-body { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .tp-cycle-list, .tp-drafts { flex: none; max-height: 380px; }
+}
+@media (max-width: 760px) {
+  .tp-add-mode label { align-items: flex-start; min-height: 44px; }
+  .tp-add-mode small { display: none; }
+  .tp-add-owner { grid-template-columns: minmax(0, 1fr); width: 100%; }
+  .modal-box.tp-add-runs :is(.tp-add-search input, .tp-draft-grid input, .tp-add-fields select, .tp-add-owner select) { height: 44px; }
+  .tp-cycle-list label { grid-template-columns: 18px minmax(0, 1fr); min-height: 48px; }
+  .tp-cycle-side { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; justify-items: start; gap: 6px; }
+  .tp-add-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tp-add-filters select:first-child:nth-last-child(odd) { grid-column: 1 / -1; }
+  .modal-box.tp-add-runs .tp-add-filters select { height: 44px; }
+  .modal-box.tp-add-runs .tp-add-chips button { min-height: 36px; }
+  .tp-draft-grid, .tp-draft-grid.is-extra { grid-template-columns: minmax(0, 1fr); }
+  .tp-draft-grid label.is-wide { grid-column: auto; }
+  .modal-box.tp-add-runs button.tp-draft-remove { width: 40px; height: 40px; }
+  .modal-box.tp-add-runs button.tp-draft-more { min-height: 36px; }
+}

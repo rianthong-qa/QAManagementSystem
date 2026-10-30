@@ -47,6 +47,8 @@ public sealed class RiskAcceptance
     public Guid? ReviewedBy { get; private set; }
     public string? ReviewComment { get; private set; }
     public bool IsDeleted { get; private set; }
+    public DateTime? DeletedAt { get; private set; }
+    public Guid? DeletedBy { get; private set; }
     public void AssignCode(string code) { RiskCode = code.Trim().ToUpperInvariant(); }
 
     public void Update(string title, string issue, string impact, string probability, string? workaround, string? targetFix, string? qaRecommendation, Guid? ownerUserId, Guid? updatedBy)
@@ -60,7 +62,9 @@ public sealed class RiskAcceptance
     public void Approve(string? comment, Guid? userId) { if (Status != "Submitted") throw new InvalidOperationException("Only Submitted risks can be approved."); Status = "Approved"; ReviewDate = DateTime.UtcNow; ReviewedBy = userId; ReviewComment = comment?.Trim(); UpdatedAt = DateTime.UtcNow; UpdatedBy = userId; }
     public void Reject(string? comment, Guid? userId) { if (Status != "Submitted") throw new InvalidOperationException("Only Submitted risks can be rejected."); Status = "Rejected"; ReviewDate = DateTime.UtcNow; ReviewedBy = userId; ReviewComment = comment?.Trim(); UpdatedAt = DateTime.UtcNow; UpdatedBy = userId; }
     public void Close(Guid? userId) { if (Status is not ("Approved" or "Rejected")) throw new InvalidOperationException("Only Approved or Rejected risks can be closed."); Status = "Closed"; UpdatedAt = DateTime.UtcNow; UpdatedBy = userId; }
-    public void SoftDelete(Guid? userId) { IsDeleted = true; UpdatedAt = DateTime.UtcNow; UpdatedBy = userId; }
+    /// <summary>ลบได้เฉพาะ Draft/Rejected — Risk ที่ส่ง/อนุมัติแล้วเป็นหลักฐานของ Release Gate ให้ปิด (Close) แทน</summary>
+    public void SoftDelete(Guid? userId) { if (Status is not ("Draft" or "Rejected")) throw new InvalidOperationException("ลบได้เฉพาะ Risk ที่เป็น Draft หรือ Rejected — Risk ที่ส่งหรืออนุมัติแล้วให้ปิด (Close) แทน"); IsDeleted = true; DeletedAt = UpdatedAt = DateTime.UtcNow; DeletedBy = UpdatedBy = userId; }
+    public void Restore(Guid? userId) { IsDeleted = false; DeletedAt = null; DeletedBy = null; UpdatedAt = DateTime.UtcNow; UpdatedBy = userId; }
 
     private static string NormalizeImpact(string value) => new[] { "High", "Medium", "Low" }.SingleOrDefault(x => x.Equals(value, StringComparison.OrdinalIgnoreCase)) ?? throw new ArgumentException("Invalid impact.");
     private static string NormalizeProbability(string value) => new[] { "High", "Medium", "Low" }.SingleOrDefault(x => x.Equals(value, StringComparison.OrdinalIgnoreCase)) ?? throw new ArgumentException("Invalid probability.");

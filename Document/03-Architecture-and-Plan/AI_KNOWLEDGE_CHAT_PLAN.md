@@ -492,3 +492,10 @@ Technical debt / ข้อสังเกต:
 - **Defect:** เปิดกลับเป็น Open/In Progress ล้างผลการปิดเดิม (ยังอยู่ใน Activity); `sortBy` ไม่มีทิศใช้ทิศปกติของคอลัมน์ (severity = Critical ก่อน)
 - **CRM login:** headless browser ตรวจใบรับรอง TLS ตามปกติ (เลิก `IgnoreHTTPSErrors`) — ตรวจแล้วว่า bluesea/blueid.seniorsoft.com ใช้ใบรับรองที่ถูกต้อง
 - ทดสอบ: backend 814 ผ่าน (เพิ่ม OAuth single-use/reuse, ClientIp, sanitizer entity, sort ไม่มีทิศ), frontend 35 ผ่าน
+
+### 2026-10-29 — คำค้นของแชท + Embedding ผ่าน OpenRouter
+
+- **ปัญหา:** ถาม "ช่วยสรุปโปรโมชั่น Promaxx2 มีอะไรบ้าง" แล้ว AI ตอบไม่พบ ทั้งที่ `คู่มือโปรโมชั่น ProMaxx2.md` index แล้ว — FREETEXT นำทุกคำมา OR กัน คำทั่วไป ("ช่วย", "สรุป", "มีอะไรบ้าง") ตรง ~10,000 ช่วง เอกสารที่ตรงจริงได้ RANK 138 หลุดจาก top 40 ที่ใช้เป็นบริบท; ตัดคำทั่วไปออก (`โปรโมชั่น Promaxx2`) เอกสารขึ้นอันดับ 1
+- **แก้:** `KnowledgePrompt.StripFillers` ตัดคำขึ้นต้น/ลงท้ายคำถามของแต่ละคำ (ช่วยสรุป/อยากทราบ/มีอะไรบ้าง/อย่างไร/หน่อย/ครับ ฯลฯ) ก่อนค้นในแชท — ไม่ตัดกลางคำ ("รายงานสรุป" คงเดิม), ตัดแล้วว่างใช้คำถามเดิม; หน้า "ค้นหาความรู้" และ MCP ไม่เปลี่ยน
+- **Embedding Provider = OpenRouter:** `AiConfiguration.EmbeddingProviders` เพิ่ม `OpenRouter` — Base URL ตายตัว `https://openrouter.ai/api/v1` (เรียก `/embeddings` แบบ OpenAI), บังคับ API key, นับเป็น provider ภายนอก (ข้าม CRM จนกว่าจะอนุญาต); Setting Center มีตัวเลือก + ช่องคีย์ + model แนะนำ `qwen/qwen3-embedding-8b`, `baai/bge-m3` — ไม่มี migration
+- ทดสอบ: backend 861 ผ่าน (เพิ่ม StripFillers 4 กรณี, ตั้งค่า OpenRouter embedding); frontend build + lint ผ่าน; **ยังไม่ได้ทดสอบกับคีย์ OpenRouter จริงและยังไม่ได้ตรวจหน้าจอบน Mobile**

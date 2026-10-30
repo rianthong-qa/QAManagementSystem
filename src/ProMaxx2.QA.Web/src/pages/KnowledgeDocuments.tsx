@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
 import { downloadKnowledgeFile } from "./knowledgeFiles";
 import { Badge } from "../components/Badge";
@@ -74,6 +75,7 @@ export function KnowledgeDocuments({ projects, canEdit, isSysAdmin, highlightId 
       <label className="kn-search-input"><span className="material-symbols-outlined" aria-hidden="true">search</span><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหาชื่อไฟล์หรือรายละเอียด" aria-label="ค้นหาเอกสาร" /></label>
       <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project"><option value="">ทุก Project</option>{projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.projectName}</option>)}</select>
       {isSysAdmin && <button type="button" className="btn" onClick={() => void importSystem()} disabled={importing}>{importing ? <><span className="spinner inline" aria-hidden="true" /> กำลังนำเข้า...</> : <><span className="material-symbols-outlined" aria-hidden="true">drive_folder_upload</span>นำเข้าเอกสารระบบ</>}</button>}
+      <DeletedItemsButton type="knowledge-files" label="เอกสาร" onRestored={() => setVersion((x) => x + 1)} />
       {canEdit && <button type="button" className="btn primary" onClick={() => setUploading(true)}><span className="material-symbols-outlined" aria-hidden="true">upload_file</span>อัปโหลดเอกสาร</button>}
     </div>
     {importResult && <div className="kn-docs-import" role="status">

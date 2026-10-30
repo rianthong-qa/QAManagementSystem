@@ -7,7 +7,7 @@ import { type StepStatus, calculateOverallResult } from "../overallResult";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { formatThaiDateTime } from "../dateTime";
-import { type ModuleItem, type SessionUser, type TestCycleItem, currentUserId, defectStatusTones, priorityTone, renderModuleSelectOptions } from "../shared/appShared";
+import { type ModuleItem, type SessionUser, type TestCycleItem, type TestCyclePlanLink, currentUserId, defectStatusTones, frozenPlanMessage, priorityTone, renderModuleSelectOptions } from "../shared/appShared";
 import { isDefectDone } from "../shared/defects";
 
 // เหตุผลของ Skip Test Case (test-case-execution-ui-spec.md §18) — ไม่มีคอลัมน์ DB แยกเก็บ Reason
@@ -102,8 +102,10 @@ type ExecutionWorkspace = {
   buildNumber: string;
   environmentName: string;
   cases: ExecutionCase[];
+  /** Test Plan ที่ Cycle นี้อยู่ (API เฟส 6) — isFrozen = บันทึก/ลบผลไม่ได้ */
+  plan?: TestCyclePlanLink | null;
 };
-export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBuildId }: { contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string }) {
+export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, contextBuildId, onOpenPlan }: { contextProjectId?: string; contextReleaseId?: string; contextBuildId?: string; onOpenPlan?: (planId: string) => void }) {
   const [cycles, setCycles] = useState<TestCycleItem[]>([]),
     [cyclesLoaded, setCyclesLoaded] = useState(false),
     // Cycle ที่หน้าอื่นส่งมา (qa.targetCycleId) มาก่อน ไม่งั้นใช้ Cycle ล่าสุดที่เปิด — เริ่มโหลด workspace ได้ทันทีพร้อมรายการ Cycle
@@ -388,6 +390,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   // Cycle ที่เปิดทันทีจาก qa.execution.lastCycleId/qa.targetCycleId ก่อนรายการ Cycle มา — ยังไม่รู้ว่าอยู่ใน context ปัจจุบันและยัง InProgress
   // จึงให้ดูได้แต่ยังบันทึก/ใช้ปุ่มลัดไม่ได้ จนรายการยืนยัน (ถ้าไม่อยู่ในรายการ effect ด้านล่างจะเปลี่ยน Cycle ให้)
   const cycleUnconfirmed = !!cycleId && !filteredCycles.some((x) => x.testCycleId === cycleId);
+  // Cycle ที่อยู่ใน Test Plan ที่ Freeze/ปิด (เฟส 6) — แสดง Banner และปิดปุ่มบันทึก/ลบผลล่วงหน้า
+  const frozenPlan = workspace?.testCycleId === cycleId && workspace.plan?.isFrozen ? workspace.plan : null;
   const caseSwitching = workspaceSwitching || cycleUnconfirmed || (!!selected && selected.testCycleCaseId !== selectedId);
   // UI รอบ 2: เปลี่ยนเคสแล้ว effect ด้านบนคืนค่าที่บันทึกล่าสุด — ผลที่กรอกแต่ยังไม่บันทึกจะหายเงียบ ๆ จึงถามก่อน
   const hasUnsavedResults = !!selected && (
@@ -449,6 +453,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   // เหลือ submitExecution กลางที่ทุกปุ่มใหม่ (Save Progress/Skip/Complete) เรียกใช้ร่วมกัน
   const submitExecution = async (status: string, opts?: { confirmMessage?: string; commentOverride?: string }) => {
     if (!selected || caseSwitching) return;
+    // แผน Freeze/ปิด: Server ตอบ 409 TEST_PLAN_FROZEN อยู่แล้ว — บอกก่อนแทนการให้กรอกแล้วค่อยล้ม (รวมปุ่มลัด P/F/B)
+    if (frozenPlan) { notify(frozenPlanMessage(frozenPlan), "error"); return; }
     if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
       notify(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถบันทึกผล Execution เพิ่มได้`, "error");
       return;
@@ -615,6 +621,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     setDefectEditor(null);
   };
   const removeExecution = async (execution: ExecutionCase["history"][number]) => {
+    if (frozenPlan) { notify(frozenPlanMessage(frozenPlan), "error"); return; }
     if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
       notify(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถลบผล Execution ได้`, "error");
       return;
@@ -714,6 +721,15 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
             <div><dt><span className="material-symbols-outlined" aria-hidden="true">flag</span>สถานะ</dt><dd>{workspace ? <Badge tone={workspace.status === "Closed" ? "green" : "yellow"}>{workspace.status}</Badge> : "-"}</dd></div>
           </dl>
         </div>
+        {workspace?.plan && workspace.testCycleId === cycleId && (
+          <div className={`execution-plan-strip${frozenPlan ? " is-frozen" : ""}`} role={frozenPlan ? "status" : undefined}>
+            <span className="material-symbols-outlined" aria-hidden="true">{frozenPlan ? "lock" : "event_note"}</span>
+            <span>
+              {frozenPlan ? <b>{frozenPlanMessage(frozenPlan)}</b> : <>Test Plan <b>{workspace.plan.planCode}</b> · Run <b>{workspace.plan.runCode}</b>{workspace.plan.configurationName ? ` · ${workspace.plan.configurationName}` : ""}</>}
+            </span>
+            {onOpenPlan && !workspace.plan.isPlanDeleted && <button type="button" className="btn" onClick={() => onOpenPlan(workspace.plan!.testPlanId)}><span className="material-symbols-outlined" aria-hidden="true">open_in_new</span> เปิด Test Plan</button>}
+          </div>
+        )}
         {workspace && workspace.cases.length > 0 && (
           <div className={`execution-progress-row${workspaceSwitching ? " is-loading" : ""}`}>
             <div className="execution-progress-summary">
@@ -1018,10 +1034,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                       <div className="history-item-foot">
                         <button
                           className="history-delete"
-                          disabled={deletingHistoryId === x.testExecutionId || workspace?.status === "Closed" || workspace?.status === "Cancelled"}
+                          disabled={deletingHistoryId === x.testExecutionId || workspace?.status === "Closed" || workspace?.status === "Cancelled" || !!frozenPlan}
                           onClick={() => removeExecution(x)}
                           aria-label={`ลบผลการทดสอบ Run #${x.executionNo}`}
-                          title={workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ"}
+                          title={frozenPlan ? frozenPlanMessage(frozenPlan) : workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ"}
                         >
                           {deletingHistoryId === x.testExecutionId
                             ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>
@@ -1047,11 +1063,11 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                   <small>P {stepCounts.passed} · F {stepCounts.failed} · B {stepCounts.blocked} · — {stepCounts.notRun}</small>
                 </span>
                 <small className="execution-shortcut-hint">ปุ่มลัด: ↑/↓ เลือก Step · 1–4 = Pass/Fail/Blocked/Not Run · Enter = กรอกผล · P/F/B = ทุก Step · N = เคสถัดไป</small>
-                <button className="btn" disabled={saving} onClick={saveProgress}>
+                <button className="btn" disabled={saving || !!frozenPlan} title={frozenPlan ? frozenPlanMessage(frozenPlan) : undefined} onClick={saveProgress}>
                   {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">save</span> Save Progress</>}
                 </button>
-                <button className="result-btn skip" disabled={saving} onClick={openSkipModal}><span className="material-symbols-outlined" aria-hidden="true">skip_next</span> Skip Test Case</button>
-                <button className="result-btn pass" disabled={saving} onClick={completeTest}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> Complete Test</button>
+                <button className="result-btn skip" disabled={saving || !!frozenPlan} title={frozenPlan ? frozenPlanMessage(frozenPlan) : undefined} onClick={openSkipModal}><span className="material-symbols-outlined" aria-hidden="true">skip_next</span> Skip Test Case</button>
+                <button className="result-btn pass" disabled={saving || !!frozenPlan} title={frozenPlan ? frozenPlanMessage(frozenPlan) : undefined} onClick={completeTest}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> Complete Test</button>
               </div>
               {skipModalOpen && (
                 <ModalShell labelledBy="skip-test-case-title" onDismiss={() => setSkipModalOpen(false)}>

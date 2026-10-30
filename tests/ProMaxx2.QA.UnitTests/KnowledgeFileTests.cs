@@ -169,7 +169,8 @@ public sealed class KnowledgeFileTests : IDisposable
         Assert.False(await service.DeleteAsync(id, [], Guid.NewGuid(), null, default));
         Assert.True(await service.DeleteAsync(id, [project], Guid.NewGuid(), null, default));
         Assert.Null(await service.OpenAsync(id, [project], default));
-        Assert.False(Directory.Exists(Path.Combine(root, "App_Data", "KnowledgeFiles", id.ToString("N"))));
+        // ลบแบบ soft delete — เก็บไฟล์บนดิสก์ไว้ให้ SYS_ADMIN กู้คืนได้ (RecycleBinService)
+        Assert.True(Directory.Exists(Path.Combine(root, "App_Data", "KnowledgeFiles", id.ToString("N"))));
     }
 
     // ---------- index + MCP ----------

@@ -19,10 +19,11 @@ using ProMaxx2.QA.Application.Governance;
 using ProMaxx2.QA.Application.Automation;
 using ProMaxx2.QA.Application.Performance;
 using ProMaxx2.QA.Application.Knowledge;
+using ProMaxx2.QA.Application.TestPlanning;
 using ModelContextProtocol.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddControllers(options => options.Filters.Add<ProjectAccessFilter>());
+builder.Services.AddControllers(options => { options.Filters.Add<ProjectAccessFilter>(); options.Filters.Add<TestPlanRuleExceptionFilter>(); });
 builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -76,6 +77,7 @@ builder.Services.AddScoped<RequirementService>();
 builder.Services.AddScoped<TestCaseService>();
 builder.Services.AddScoped<TestSuiteService>();
 builder.Services.AddScoped<TestCycleService>();
+builder.Services.AddScoped<TestPlanService>(); // Test Plan / Configuration Matrix (TEST_PLAN_CONFIGURATION_MATRIX_PLAN.md)
 builder.Services.AddScoped<ExecutionService>();
 builder.Services.AddScoped<AutomationCaseService>();
 builder.Services.AddScoped<AutomationSuiteService>();
@@ -112,6 +114,7 @@ builder.Services.AddSingleton<KnowledgeEmbeddingState>();
 builder.Services.AddScoped<KnowledgeEmbeddingService>();
 builder.Services.AddScoped<IKnowledgeVectorSearch>(sp => sp.GetRequiredService<KnowledgeEmbeddingService>());
 builder.Services.AddScoped<KnowledgeFileService>(); // Phase 3: เอกสาร PDF/DOCX/MD/TXT
+builder.Services.AddScoped<RecycleBinService>(); // รายการที่ลบแล้ว (soft delete) ของหลายหน้า — SYS_ADMIN กู้คืน
 builder.Services.AddScoped<ICrmKnowledgeSource, CrmApiKnowledgeSource>(); // Phase 4: ดึงรายละเอียด/คำตอบ CRM ด้วยบัญชีกลาง
 builder.Services.AddScoped<CrmKnowledgeFetcher>(); // mask แล้วเก็บ CrmTicketContents/Answers — เรียกจาก CrmMirrorWorker ทุกรอบ
 builder.Services.AddScoped<IAiChatClient, AiChatClient>();
@@ -174,7 +177,7 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("DefectEdit",p=>p.RequireClaim("permission","DEFECT.EDIT"))
     .AddPolicy("CrmView",p=>p.AddRequirements(new CrmViewRequirement()))
     .AddPolicy("CrmEdit",p=>p.AddRequirements(new CrmEditRequirement()))
-    .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN"))
+    .AddPolicy("ExecutionRun",p=>p.RequireClaim("permission","EXECUTION.RUN")).AddPolicy("ExecutionAssign",p=>p.RequireClaim("permission","EXECUTION.ASSIGN"))
     .AddPolicy("QaWorkloadView",p=>p.RequireClaim("permission","QA.WORKLOAD.VIEW"))
     .AddPolicy("QaMyWorkView",p=>p.RequireClaim("permission","QA.MYWORK.VIEW"))
     .AddPolicy("QaMyWorkExecute",p=>p.RequireClaim("permission","QA.MYWORK.EXECUTE"))
@@ -194,6 +197,7 @@ builder.Services.AddAuthorizationBuilder()
         && (c.User.IsInRole("SYS_ADMIN")||(c.User.HasClaim("permission","KNOWLEDGE.VIEW")&&c.User.HasClaim("permission","KNOWLEDGE.MCP")))))
     .AddPolicy("PerformanceView",p=>p.RequireAssertion(c=>c.User.IsInRole("SYS_ADMIN")||c.User.HasClaim("permission","PERFORMANCE.VIEW")||c.User.HasClaim("permission","PERFORMANCE.EDIT")))
     .AddAutomationPolicies()
+    .AddTestPlanPolicies()
     // endpoint ที่ลืมใส่ [Authorize] ต้องไม่กลายเป็น public โดยปริยาย — endpoint anonymous ต้องประกาศ [AllowAnonymous] เอง
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 // จำกัดความถี่ endpoint anonymous ที่เดารหัสได้ — key ตาม IP จริงของ client (CF-Connecting-IP เชื่อเฉพาะคำขอจาก cloudflared บน loopback — ดู ClientIp)

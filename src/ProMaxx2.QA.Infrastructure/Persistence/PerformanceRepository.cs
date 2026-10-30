@@ -135,11 +135,10 @@ public sealed class PerformanceRepository(QaDbContext db, TimeProvider clock) : 
         => await PerformanceQueries.WorkLogList(db, userId, from, to, includeConcern, viewerId, viewerCanManage).ToListAsync(ct);
 
     public Task<WorkLogDto?> GetWorkLogAsync(Guid id, Guid viewerId, bool viewerCanManage, CancellationToken ct)
-        => PerformanceQueries.ToWorkLogDto(db, db.WorkLogEntries.AsNoTracking().Where(x => x.WorkLogEntryId == id), viewerId, viewerCanManage).SingleOrDefaultAsync(ct);
+        => PerformanceQueries.ToWorkLogDto(db, db.WorkLogEntries.AsNoTracking().Where(x => x.WorkLogEntryId == id && !x.IsDeleted), viewerId, viewerCanManage).SingleOrDefaultAsync(ct);
 
-    public Task<WorkLogEntry?> FindWorkLogAsync(Guid id, CancellationToken ct) => db.WorkLogEntries.SingleOrDefaultAsync(x => x.WorkLogEntryId == id, ct);
+    public Task<WorkLogEntry?> FindWorkLogAsync(Guid id, CancellationToken ct) => db.WorkLogEntries.SingleOrDefaultAsync(x => x.WorkLogEntryId == id && !x.IsDeleted, ct);
     public Task AddWorkLogAsync(WorkLogEntry entry, CancellationToken ct) => db.WorkLogEntries.AddAsync(entry, ct).AsTask();
-    public void RemoveWorkLog(WorkLogEntry entry) => db.WorkLogEntries.Remove(entry);
     public async Task<IReadOnlyList<WorkLogAttachment>> ListAttachmentsAsync(Guid workLogEntryId, CancellationToken ct)
         => await db.WorkLogAttachments.Where(x => x.WorkLogEntryId == workLogEntryId).OrderBy(x => x.UploadedAt).ToListAsync(ct);
     public Task AddAttachmentsAsync(IEnumerable<WorkLogAttachment> attachments, CancellationToken ct) => db.WorkLogAttachments.AddRangeAsync(attachments, ct);

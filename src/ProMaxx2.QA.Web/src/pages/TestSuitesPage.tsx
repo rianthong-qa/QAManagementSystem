@@ -111,8 +111,8 @@ export function TestSuitesPage({
   const [suitePage, setSuitePage] = useState(1), [suitePageSize, setSuitePageSize] = useUserPageSize("qa.testSuites.pageSize");
   const [listSort, setListSortState] = useState<SortState<SuiteSortKey>>(readSuiteSort);
   const setListSort = (next: SortState<SuiteSortKey>) => { setListSortState(next); try { localStorage.setItem(suiteSortStorageKey, JSON.stringify(next)); } catch { /* ไม่จำก็ได้ */ } };
-  // เลือกหลาย Suite เพื่อสร้าง Test Cycle พร้อมกัน — Release/Build/Environment เป็นของ Project จึงเลือกได้ทีละ Project
-  const [selectedSuiteIds, setSelectedSuiteIds] = useState<string[]>([]), [batchCycleOpen, setBatchCycleOpen] = useState(false);
+  // เลือกหลาย Suite เพื่อสร้าง Test Cycle หรือลบ/ปิดใช้งานพร้อมกัน — Release/Build/Environment เป็นของ Project จึงเลือกได้ทีละ Project
+  const [selectedSuiteIds, setSelectedSuiteIds] = useState<string[]>([]), [batchCycleOpen, setBatchCycleOpen] = useState(false), [bulkDeleting, setBulkDeleting] = useState(false);
   const [code, setCode] = useState(""),
     [name, setName] = useState(""),
     [formModuleId, setFormModuleId] = useState(""),
@@ -125,7 +125,7 @@ export function TestSuitesPage({
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
   }), []);
-  // ปุ่ม "ลบถาวร" (พ่วงลบ Test Cycle + ประวัติ Execution ทั้งหมด) จำกัดเฉพาะ SYS_ADMIN —
+  // ปุ่ม "ลบ" จำกัดเฉพาะ SYS_ADMIN — Suite ที่ไม่เคยมี Test Cycle ลบถาวร, เคยมีแล้วย้ายไป "ลบแล้ว" (เก็บผล Execution, กู้คืนได้)
   // สิทธิ์อื่นกดปุ่มเดียวกันแล้วจะเป็นแค่ "ปิดใช้งาน" (ย้อนกลับได้ ไม่ลบข้อมูลจริง)
   const isSysAdmin = useMemo(() => {
     try { return (JSON.parse(localStorage.getItem("qa.user") ?? "{}") as SessionUser).roles?.includes("SYS_ADMIN") ?? false; }
@@ -142,7 +142,7 @@ export function TestSuitesPage({
       let total = Number.POSITIVE_INFINITY;
       while (collected.length < total) {
         // 500 = ขนาดหน้าสูงสุดของ API — Suite ทั้งหมดมักจบในคำขอเดียว (ทุกคำขอผ่าน Cloudflare เสีย ~0.2–1 วินาที)
-        const response = await fetch(`${apiUrl}/test-suites?page=${pageNo}&size=500`, { headers: requestHeaders });
+        const response = await fetch(`${apiUrl}/test-suites?page=${pageNo}&size=500${isSysAdmin ? "&includeDeleted=true" : ""}`, { headers: requestHeaders });
         if (!response.ok) throw new Error(`โหลด Test Suite ไม่สำเร็จ (${response.status})`);
         const data = await response.json();
         const pageRows = Array.isArray(data) ? data : data?.rows ?? [];
@@ -167,7 +167,7 @@ export function TestSuitesPage({
       setProjectId((current) => current || activeProjects[0]?.projectId || "");
     }).catch((e) => setListError(`โหลดรายการ Test Suite ไม่สำเร็จ (${e instanceof Error ? e.message : "ไม่ทราบสาเหตุ"})`))
       .finally(() => setListLoading(false));
-  }, [reload]);
+  }, [reload, isSysAdmin]);
   useEffect(() => {
     const target = managing?.projectId ?? (form && !editing ? projectId : null) ?? projectFilter ?? contextProjectId;
     if (!target) { setModules([]); return; }
@@ -333,20 +333,84 @@ export function TestSuitesPage({
     const fresh = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}`, { headers }).then(r => r.json());
     applyFresh(fresh); setSaving(false);
   };
+  // SYS_ADMIN: DELETE /remove — server เลือกเอง ไม่เคยมี Test Cycle (รวมที่ลบแล้ว) ลบถาวร, เคยมี soft delete เก็บผล Execution ให้รายงาน
+  // สิทธิ์อื่น: DELETE = ปิดใช้งาน; คืน "hard" | "soft" | "deactivated" หรือข้อความ error
+  const deleteSuiteRequest = async (suite: TestSuiteItem): Promise<{ ok: true; mode: "hard" | "soft" | "deactivated" } | { ok: false; reason: string }> => {
+    try {
+      const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}${isSysAdmin ? "/remove" : ""}`, { method: "DELETE", headers });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => null);
+        return { ok: false, reason: problem?.detail || problem?.title || `HTTP ${response.status}` };
+      }
+      if (!isSysAdmin) return { ok: true, mode: "deactivated" };
+      const result = await response.json().catch(() => null) as { hardDeleted?: boolean } | null;
+      return { ok: true, mode: result?.hardDeleted ? "hard" : "soft" };
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : "เชื่อมต่อไม่สำเร็จ" };
+    }
+  };
+  const sysAdminDeleteRule = "Suite ที่ไม่เคยมี Test Cycle จะถูกลบถาวร ส่วน Suite ที่เคยมี Test Cycle จะย้ายไป \"ลบแล้ว\" โดยเก็บผลการทดสอบไว้ให้รายงานย้อนหลัง และกู้คืนได้";
   const removeSuite = async (suite: TestSuiteItem) => {
-    const confirmMessage = isSysAdmin
-      ? `ยืนยันลบ ${suite.suiteCode} ถาวร? การลบนี้ไม่สามารถกู้คืนได้ Test Case ที่ผูกไว้จะถูกนำออก และถ้ามี Test Cycle ผูกอยู่ ${suite.cycleCount > 0 ? `(${suite.cycleCount} รายการ) ` : ""}จะถูกลบถาวรพร้อมผล Execution/ประวัติการทดสอบทั้งหมดของ Cycle นั้นไปด้วย`
-      : `ยืนยันปิดใช้งาน ${suite.suiteCode}? Suite นี้จะไม่แสดงในรายการที่ใช้งานอยู่ (เปิดกลับมาใช้งานได้ภายหลังผ่านหน้าแก้ไข)`;
-    if (!await confirmDialog(confirmMessage)) return;
-    const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}${isSysAdmin ? "/hard" : ""}`, {
-      method: "DELETE",
-      headers,
+    const ok = await confirmDialog(isSysAdmin
+      ? { title: `ลบ ${suite.suiteCode}`, message: `${sysAdminDeleteRule}\nTest Case ที่ผูกไว้ไม่ถูกลบ`, confirmLabel: "ลบ", tone: "danger" }
+      : `ยืนยันปิดใช้งาน ${suite.suiteCode}? Suite นี้จะไม่แสดงในรายการที่ใช้งานอยู่ (เปิดกลับมาใช้งานได้ภายหลังผ่านหน้าแก้ไข)`);
+    if (!ok) return;
+    const result = await deleteSuiteRequest(suite);
+    if (!result.ok) { notify(`${isSysAdmin ? "ลบ" : "ปิดใช้งาน"} ${suite.suiteCode} ไม่สำเร็จ: ${result.reason}`, "error"); return; }
+    if (result.mode === "hard") notify(`ลบ ${suite.suiteCode} ถาวรแล้ว`, "success");
+    else if (result.mode === "soft") notify(`ย้าย ${suite.suiteCode} ไป "ลบแล้ว" — เก็บผลการทดสอบไว้ กู้คืนได้`, "success");
+    setReload((x) => x + 1);
+  };
+  // ลบ/ปิดใช้งานหลาย Suite — ใช้ endpoint ทีละรายการเดียวกับปุ่มในแถว ยิงพร้อมกันครั้งละ 4 เพื่อไม่รอทีละคำขอผ่าน Cloudflare
+  // รายการที่ไม่สำเร็จคงอยู่ในรายการที่เลือกเพื่อให้ลองใหม่ได้
+  const removeSelectedSuites = async (suites: TestSuiteItem[]) => {
+    // สิทธิ์อื่นเลือกได้เฉพาะ Suite ที่ใช้งานอยู่ — กันไว้อีกชั้น ปิดซ้ำไม่มีผล
+    const targets = isSysAdmin ? suites : suites.filter((x) => x.isActive);
+    if (targets.length === 0) { notify("Suite ที่เลือกปิดใช้งานอยู่แล้วทั้งหมด", "info"); return; }
+    const codes = targets.slice(0, 5).map((x) => x.suiteCode).join(", ") + (targets.length > 5 ? ` และอีก ${targets.length - 5} รายการ` : "");
+    const ok = await confirmDialog({
+      title: `${isSysAdmin ? "ลบ" : "ปิดใช้งาน"} Test Suite ${targets.length.toLocaleString()} รายการ`,
+      message: `${codes}\n${isSysAdmin ? sysAdminDeleteRule : "เปิดกลับมาใช้งานได้ภายหลังผ่านหน้าแก้ไข"}`,
+      confirmLabel: `${isSysAdmin ? "ลบ" : "ปิดใช้งาน"} ${targets.length.toLocaleString()} รายการ`,
+      tone: "danger",
     });
-    if (!response.ok) {
-      const problem = await response.json().catch(() => null);
-      notify(problem?.detail || problem?.title || `${isSysAdmin ? "ลบ" : "ปิดใช้งาน"} Test Suite ไม่สำเร็จ (${response.status})`, "error");
+    if (!ok) return;
+    setBulkDeleting(true);
+    const failed: { suite: TestSuiteItem; reason: string }[] = [];
+    const done = { hard: 0, soft: 0, deactivated: 0 };
+    const queue = [...targets];
+    const worker = async () => {
+      for (let suite = queue.shift(); suite; suite = queue.shift()) {
+        const result = await deleteSuiteRequest(suite);
+        if (result.ok) done[result.mode]++;
+        else failed.push({ suite, reason: result.reason });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+    setBulkDeleting(false);
+    const failedIds = new Set(failed.map((x) => x.suite.testSuiteId));
+    setSelectedSuiteIds((ids) => ids.filter((id) => failedIds.has(id)));
+    const summary = [done.hard > 0 && `ลบถาวร ${done.hard.toLocaleString()} รายการ`, done.soft > 0 && `ย้ายไป "ลบแล้ว" ${done.soft.toLocaleString()} รายการ (เก็บผลการทดสอบไว้)`, done.deactivated > 0 && `ปิดใช้งาน ${done.deactivated.toLocaleString()} รายการ`].filter(Boolean).join(" · ");
+    if (failed.length === 0) notify(`${summary} เรียบร้อยแล้ว`, "success");
+    else notify(`${summary ? `${summary} — ` : ""}ไม่สำเร็จ ${failed.length.toLocaleString()} รายการ: ${failed.slice(0, 3).map((x) => `${x.suite.suiteCode} (${x.reason})`).join(", ")}${failed.length > 3 ? ` และอีก ${failed.length - 3} รายการ` : ""}`, "error");
+    if (done.hard + done.soft + done.deactivated > 0) setReload((x) => x + 1);
+  };
+  const restoreSuite = async (suite: TestSuiteItem) => {
+    const ok = await confirmDialog({ title: `กู้คืน ${suite.suiteCode}`, message: "Suite จะกลับมาในสถานะปิดใช้งาน พร้อม Test Case และ Test Cycle เดิม — เปิดใช้งานได้ที่หน้าแก้ไข", confirmLabel: "กู้คืน" });
+    if (!ok) return;
+    try {
+      const response = await fetch(`${apiUrl}/test-suites/${suite.testSuiteId}/restore`, { method: "POST", headers });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => null);
+        notify(`กู้คืน ${suite.suiteCode} ไม่สำเร็จ: ${problem?.detail || problem?.title || `HTTP ${response.status}`}`, "error");
+        return;
+      }
+    } catch (e) {
+      notify(`กู้คืน ${suite.suiteCode} ไม่สำเร็จ: ${e instanceof Error ? e.message : "เชื่อมต่อไม่สำเร็จ"}`, "error");
       return;
     }
+    notify(`กู้คืน ${suite.suiteCode} แล้ว (สถานะปิดใช้งาน)`, "success");
+    setDetail((d) => d?.testSuiteId === suite.testSuiteId ? null : d);
     setReload((x) => x + 1);
   };
   // โหลดไม่สำเร็จคืน null — เดิมคืน cases: [] ทำให้หน้า detail/รายงาน/editor แสดง 0 case และถ้าบันทึกใน editor อาจทำให้ case หาย
@@ -419,10 +483,13 @@ export function TestSuitesPage({
   const hasExtraFilters = Boolean(search.trim() || suiteModuleFilter || typeFilter || riskFilter || createdByFilter || noCycleOnly);
   const extraFilterCount = [search.trim(), suiteModuleFilter, typeFilter, riskFilter, createdByFilter, noCycleOnly].filter(Boolean).length;
   const clearSuiteFilters = () => { onClearSearch?.(); setSuiteModuleFilter(""); setTypeFilter(""); setRiskFilter(""); setCreatedByFilter(""); setNoCycleOnly(false); };
-  const baseRows = items.filter(matchesOtherSuiteFilters);
+  // Suite ที่ลบแล้ว (soft delete — มีเฉพาะ SYS_ADMIN) แยกไว้ในชิป "ลบแล้ว" ไม่นับใน ทั้งหมด/ใช้งาน/ปิดใช้งาน
+  const matchedRows = items.filter(matchesOtherSuiteFilters);
+  const baseRows = matchedRows.filter((x) => !x.isDeleted);
+  const deletedSuiteCount = matchedRows.length - baseRows.length;
   const activeSuiteCount = baseRows.filter((x) => x.isActive).length;
   const inactiveSuiteCount = baseRows.length - activeSuiteCount;
-  const statusRows = baseRows.filter(
+  const statusRows = activeFilter === "deleted" ? matchedRows.filter((x) => x.isDeleted) : baseRows.filter(
     (x) => activeFilter === "all" || (activeFilter === "active" ? x.isActive : !x.isActive),
   );
   // "ยังไม่มี Test Cycle" is an orthogonal toggle (not another status partition), so its count is
@@ -435,8 +502,12 @@ export function TestSuitesPage({
   const pagedSuiteRows = rows.slice((suitePage - 1) * suitePageSize, suitePage * suitePageSize);
   useEffect(() => { setSuitePage(1); }, [projectFilter, suiteModuleFilter, typeFilter, riskFilter, createdByFilter, activeFilter, noCycleOnly, search, suitePageSize, listSort]);
   useEffect(() => { if (suitePage > suitePageCount) setSuitePage(suitePageCount); }, [suitePage, suitePageCount]);
-  const selectableSuite = (x: TestSuiteItem) => canCreateCycle && x.isActive;
-  const selectedSuites = selectedSuiteIds.map((id) => items.find((x) => x.testSuiteId === id)).filter((x): x is TestSuiteItem => Boolean(x && x.isActive));
+  // เลือกหลายรายการได้เมื่อสร้าง Test Cycle ได้ หรือแก้ไข Suite ได้ (ลบ/ปิดใช้งานที่เลือก)
+  const canSelect = canCreateCycle || canEdit;
+  // Suite ที่ปิดใช้งานแล้วเลือกได้เฉพาะ SYS_ADMIN (เพื่อลบถาวร) — สร้าง Test Cycle ใช้เฉพาะ Suite ที่ใช้งานอยู่
+  const selectableSuite = (x: TestSuiteItem) => canSelect && !x.isDeleted && (x.isActive || (isSysAdmin && canEdit));
+  const selectedSuites = selectedSuiteIds.map((id) => items.find((x) => x.testSuiteId === id)).filter((x): x is TestSuiteItem => Boolean(x && selectableSuite(x)));
+  const selectedActiveSuites = selectedSuites.filter((x) => x.isActive);
   const selectedProjectId = selectedSuites[0]?.projectId;
   const selectedProject = projects.find((x) => x.projectId === selectedProjectId);
   const pageSelectable = pagedSuiteRows.filter((x) => selectableSuite(x) && (!selectedProjectId || x.projectId === selectedProjectId));
@@ -457,7 +528,7 @@ export function TestSuitesPage({
     setSelectedSuiteIds((current) => pageAllSelected ? current.filter((id) => !ids.includes(id)) : [...new Set([...current, ...ids])]);
   };
   // เปลี่ยน Project ที่กรอง หรือ Suite ที่เลือกถูกปิดใช้งาน/ลบ → ตัดออกจากรายการที่เลือก
-  useEffect(() => { setSelectedSuiteIds((ids) => ids.filter((id) => items.some((x) => x.testSuiteId === id && x.isActive && (!projectFilter || x.projectId === projectFilter)))); }, [items, projectFilter]);
+  useEffect(() => { setSelectedSuiteIds((ids) => ids.filter((id) => items.some((x) => x.testSuiteId === id && !x.isDeleted && (x.isActive || (isSysAdmin && canEdit)) && (!projectFilter || x.projectId === projectFilter)))); }, [items, projectFilter, isSysAdmin, canEdit]);
   // When editing, cases live against the already-saved suite (managing). When creating, there's no
   // suite yet — the project comes straight from the form, and picks are staged locally in `checked`
   // until the suite is actually created (then added in one batch right after).
@@ -552,6 +623,7 @@ export function TestSuitesPage({
           <button type="button" aria-pressed={activeFilter === "all"} onClick={() => setActiveFilter("all")}>ทั้งหมด <b>{(activeSuiteCount + inactiveSuiteCount).toLocaleString()}</b></button>
           <button type="button" aria-pressed={activeFilter === "active"} onClick={() => setActiveFilter("active")}><span className="lp-dot green" aria-hidden="true" />ใช้งาน <b>{activeSuiteCount.toLocaleString()}</b></button>
           <button type="button" aria-pressed={activeFilter === "inactive"} onClick={() => setActiveFilter("inactive")}><span className="lp-dot gray" aria-hidden="true" />ปิดใช้งาน <b>{inactiveSuiteCount.toLocaleString()}</b></button>
+          {isSysAdmin && <button type="button" aria-pressed={activeFilter === "deleted"} title="Suite ที่ลบแล้วแต่เก็บผลการทดสอบไว้ — กู้คืนได้" onClick={() => setActiveFilter("deleted")}><span className="lp-dot red" aria-hidden="true" />ลบแล้ว <b>{deletedSuiteCount.toLocaleString()}</b></button>}
           <span className="lp-chip-divider" aria-hidden="true" />
           <button type="button" aria-pressed={noCycleOnly} title="แสดงเฉพาะ Suite ที่ยังไม่ถูกนำไปสร้าง Test Cycle" onClick={() => setNoCycleOnly((v) => !v)}><span className="lp-dot yellow" aria-hidden="true" />ยังไม่มี Test Cycle <b>{noCycleCount.toLocaleString()}</b></button>
         </div>
@@ -564,25 +636,26 @@ export function TestSuitesPage({
           {/* คำค้นมาจากช่องค้นหาที่หัวหน้า (App) — ปุ่มนี้ล้างตัวกรองทั้งหมดรวมคำค้นนั้น */}
           {hasExtraFilters && <button type="button" className="btn lp-clear" onClick={clearSuiteFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>ล้างตัวกรอง</button>}
         </div>
-        {canCreateCycle && selectedSuites.length > 0 && (
+        {canSelect && selectedSuites.length > 0 && (
           <div className="lp-bulk" role="region" aria-label="Suite ที่เลือก">
             <span className="lp-bulk-count"><b>{selectedSuites.length.toLocaleString()}</b> เลือกแล้ว{selectedProject ? ` · ${selectedProject.projectCode}` : ""}</span>
-            <small className="lp-bulk-hint">{selectedSuites.reduce((sum, x) => sum + suiteCaseCount(x), 0).toLocaleString()} Test Case · สร้าง Suite ละ 1 Test Cycle</small>
+            <small className="lp-bulk-hint">{selectedSuites.reduce((sum, x) => sum + suiteCaseCount(x), 0).toLocaleString()} Test Case{canCreateCycle && selectedActiveSuites.length > 0 ? " · สร้าง Suite ละ 1 Test Cycle" : ""}</small>
             <span className="lp-bulk-end">
-              <button className="btn primary" type="button" onClick={() => setBatchCycleOpen(true)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span>สร้าง Test Cycle ({selectedSuites.length})</button>
-              <button type="button" className="lp-bulk-clear" onClick={() => setSelectedSuiteIds([])} aria-label="ยกเลิกการเลือกทั้งหมด" title="ยกเลิกการเลือก"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+              {canEdit && <button type="button" className="btn lp-bulk-delete" disabled={bulkDeleting} onClick={() => void removeSelectedSuites(selectedSuites)}>{bulkDeleting ? <span className="spinner inline" aria-hidden="true" /> : <span className="material-symbols-outlined" aria-hidden="true">{isSysAdmin ? "delete" : "block"}</span>}{isSysAdmin ? "ลบที่เลือก" : "ปิดใช้งานที่เลือก"}</button>}
+              {canCreateCycle && selectedActiveSuites.length > 0 && <button className="btn primary" type="button" disabled={bulkDeleting} onClick={() => setBatchCycleOpen(true)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span>สร้าง Test Cycle ({selectedActiveSuites.length})</button>}
+              <button type="button" className="lp-bulk-clear" disabled={bulkDeleting} onClick={() => setSelectedSuiteIds([])} aria-label="ยกเลิกการเลือกทั้งหมด" title="ยกเลิกการเลือก"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
             </span>
           </div>
         )}
         <ListPager position="top" page={suitePage} pageCount={suitePageCount} totalCount={rows.length} pageSize={suitePageSize} onPage={setSuitePage} onPageSize={setSuitePageSize} />
         <div className="lp-table-wrap">
-          <table className={`lp-table${canCreateCycle ? " is-selectable" : ""}`}>
+          <table className={`lp-table${canSelect ? " is-selectable" : ""}`}>
             <thead>
               <tr>
-                {canCreateCycle && (
+                {canSelect && (
                   <th className="lp-col-select">
                     <input type="checkbox" checked={pageAllSelected} disabled={!canSelectPage} onChange={togglePage}
-                      aria-label={pageAllSelected ? "ยกเลิกเลือก Suite ทั้งหน้า" : "เลือก Suite ที่ใช้งานอยู่ทั้งหน้า"}
+                      aria-label={pageAllSelected ? "ยกเลิกเลือก Suite ทั้งหน้า" : "เลือก Suite ทั้งหน้า"}
                       title={canSelectPage ? undefined : "หน้านี้มี Suite หลาย Project — กรอง Project ก่อนจึงเลือกทั้งหน้าได้"} />
                   </th>
                 )}
@@ -597,9 +670,9 @@ export function TestSuitesPage({
               </tr>
             </thead>
             <tbody>
-              {listLoading && <tr className="lp-empty-row"><td colSpan={(canCreateCycle ? 1 : 0) + (canEdit ? 8 : 7)}><div className="lp-empty" role="status"><span className="spinner" aria-hidden="true" /><b>กำลังโหลด Test Suite...</b></div></td></tr>}
+              {listLoading && <tr className="lp-empty-row"><td colSpan={(canSelect ? 1 : 0) + (canEdit ? 8 : 7)}><div className="lp-empty" role="status"><span className="spinner" aria-hidden="true" /><b>กำลังโหลด Test Suite...</b></div></td></tr>}
               {!listLoading && !listError && rows.length === 0 && (
-                <tr className="lp-empty-row"><td colSpan={(canCreateCycle ? 1 : 0) + (canEdit ? 8 : 7)}>
+                <tr className="lp-empty-row"><td colSpan={(canSelect ? 1 : 0) + (canEdit ? 8 : 7)}>
                   {items.length === 0
                     ? <div className="lp-empty"><span className="material-symbols-outlined" aria-hidden="true">inventory_2</span><b>ยังไม่มี Test Suite</b><small>{canEdit ? "กด \"Test Suite\" หรือ \"AI Generate\" เพื่อเริ่มจัดชุด Test Case" : "ยังไม่มีการสร้าง Test Suite ในระบบ"}</small></div>
                     : <div className="lp-empty"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><b>ไม่พบ Test Suite ตามตัวกรองที่เลือก</b><small>ลองเปลี่ยนคำค้น สถานะ หรือตัวกรอง</small>{hasExtraFilters && <button type="button" className="btn" onClick={clearSuiteFilters}><span className="material-symbols-outlined" aria-hidden="true">filter_alt_off</span> ล้างตัวกรอง</button>}</div>}
@@ -609,13 +682,13 @@ export function TestSuitesPage({
                 const firstModule = x.modules?.[0];
                 const requiredCount = x.cases?.length ? x.cases.filter((c) => c.isRequired).length : null;
                 return (
-                <tr key={x.testSuiteId} className={[selectedSuiteIds.includes(x.testSuiteId) && "is-selected", !x.isActive && "is-inactive"].filter(Boolean).join(" ") || undefined}>
-                  {canCreateCycle && (
+                <tr key={x.testSuiteId} className={[selectedSuiteIds.includes(x.testSuiteId) && "is-selected", (!x.isActive || x.isDeleted) && "is-inactive"].filter(Boolean).join(" ") || undefined}>
+                  {canSelect && (
                     <td className="lp-col-select">
                       {selectableSuite(x) && (
                         <input type="checkbox" checked={selectedSuiteIds.includes(x.testSuiteId)} onChange={() => toggleSuite(x)}
                           disabled={!!selectedProjectId && x.projectId !== selectedProjectId}
-                          aria-label={`เลือก ${x.suiteCode} เพื่อสร้าง Test Cycle`} />
+                          aria-label={`เลือก ${x.suiteCode}`} />
                       )}
                     </td>
                   )}
@@ -629,15 +702,17 @@ export function TestSuitesPage({
                   <td className="lp-col-badge">{x.riskTier ? <Badge tone={x.riskTier === "P0" ? "red" : "yellow"}>{x.riskTier}</Badge> : <span className="lp-muted">-</span>}</td>
                   <td className="lp-col-num lp-hide-md lp-labeled" data-label="Test Case"><span className="lp-num"><b>{suiteCaseCount(x).toLocaleString()}</b>{requiredCount !== null && <small>Required {requiredCount}</small>}</span></td>
                   <td className="lp-col-num lp-labeled" data-label="Test Cycle"><span className="lp-num">{x.cycleCount === 0 ? <span className="is-warning"><span className="material-symbols-outlined" aria-hidden="true">warning</span>ยังไม่มี</span> : <b>{x.cycleCount.toLocaleString()}</b>}</span></td>
-                  <td className="lp-col-status"><Badge tone={x.isActive ? "green" : "gray"}>{x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</Badge></td>
+                  <td className="lp-col-status">{x.isDeleted ? <Badge tone="red">ลบแล้ว</Badge> : <Badge tone={x.isActive ? "green" : "gray"}>{x.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</Badge>}</td>
                   <td className="lp-col-date" title={fmtDateTimeBE(x.createdAt)}><span className="lp-date">{fmtDateTimeBE(x.createdAt).split(" ")[0]}{x.createdByName && <small>{x.createdByName}</small>}</span></td>
                   {canEdit && (
                     <td className="lp-col-actions lp-actions-4">
                       <div className="lp-row-actions">
                         <button type="button" title="รายละเอียด" aria-label={`ดูรายละเอียด ${x.suiteCode}`} onClick={() => openSuiteDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">info</span></button>
+                        {x.isDeleted ? isSysAdmin && <button type="button" title="กู้คืน" aria-label={`กู้คืน ${x.suiteCode}`} onClick={() => void restoreSuite(x)}><span className="material-symbols-outlined" aria-hidden="true">restore_from_trash</span></button> : <>
                         <button type="button" title="แก้ไข / จัด Test Case" aria-label={`แก้ไขหรือจัดการ Test Case ของ ${x.suiteCode}`} onClick={() => void openSuiteEdit(x)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>
                         {onCreateCycle && x.isActive && <button type="button" title="สร้าง Test Cycle จาก Suite นี้" aria-label={`สร้าง Test Cycle จาก ${x.suiteCode}`} onClick={() => onCreateCycle(x.projectId, x.testSuiteId)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span></button>}
-                        <button type="button" className="danger" title={isSysAdmin ? "ลบถาวร" : "ปิดใช้งาน"} aria-label={`${isSysAdmin ? "ลบถาวร" : "ปิดใช้งาน"} ${x.suiteCode}`} onClick={() => removeSuite(x)}><span className="material-symbols-outlined" aria-hidden="true">{isSysAdmin ? "delete" : "block"}</span></button>
+                        <button type="button" className="danger" title={isSysAdmin ? "ลบ" : "ปิดใช้งาน"} aria-label={`${isSysAdmin ? "ลบ" : "ปิดใช้งาน"} ${x.suiteCode}`} onClick={() => void removeSuite(x)}><span className="material-symbols-outlined" aria-hidden="true">{isSysAdmin ? "delete" : "block"}</span></button>
+                        </>}
                       </div>
                     </td>
                   )}
@@ -653,7 +728,7 @@ export function TestSuitesPage({
         <BatchCycleModal
           projectId={selectedProjectId}
           projectCode={selectedProject?.projectCode}
-          suites={selectedSuites}
+          suites={selectedActiveSuites}
           onClose={() => setBatchCycleOpen(false)}
           onCreated={(ids) => { setSelectedSuiteIds((current) => current.filter((id) => !ids.includes(id))); setReload((x) => x + 1); }}
           onOpenCycles={onOpenCycleList ? () => { setBatchCycleOpen(false); onOpenCycleList(); } : undefined}
@@ -801,7 +876,7 @@ export function TestSuitesPage({
                   </div>
                 </div>
                 <div className="suite-detail-head-badges">
-                  <Badge tone={detail.isActive ? "green" : "red"}>{detail.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</Badge>
+                  {detail.isDeleted ? <Badge tone="red">ลบแล้ว</Badge> : <Badge tone={detail.isActive ? "green" : "red"}>{detail.isActive ? "ใช้งาน" : "ปิดใช้งาน"}</Badge>}
                   {detail.suiteType && <Badge tone="blue">{detail.suiteType}</Badge>}
                   {detail.riskTier && <Badge tone={detail.riskTier === "P0" ? "red" : "yellow"}>{detail.riskTier}</Badge>}
                 </div>
@@ -813,7 +888,8 @@ export function TestSuitesPage({
                   <button className="btn" onClick={() => void finishDetailEdit()}><span className="material-symbols-outlined" aria-hidden="true">done</span> เสร็จสิ้นการแก้ไข</button>
                   <span className={`suite-edit-status${detailInfoDirty ? " is-dirty" : ""}`} role="status">{!name.trim() ? "ยังขาด: Suite Name" : detailInfoDirty ? "ข้อมูล Suite มีการแก้ไขที่ยังไม่บันทึก" : "การเพิ่ม นำออก และสลับ Required/Optional ของ Test Case บันทึกทันที"}</span>
                 </> : <>
-                  {canEdit && <button className="btn primary" onClick={() => startDetailEdit(detail)}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข / จัด Test Case</button>}
+                  {detail.isDeleted && isSysAdmin && <button className="btn primary" onClick={() => void restoreSuite(detail)}><span className="material-symbols-outlined" aria-hidden="true">restore_from_trash</span> กู้คืน</button>}
+                  {canEdit && !detail.isDeleted && <button className="btn primary" onClick={() => startDetailEdit(detail)}><span className="material-symbols-outlined" aria-hidden="true">edit</span> แก้ไข / จัด Test Case</button>}
                   {onCreateCycle && detail.isActive && <button className="btn" onClick={() => onCreateCycle(detail.projectId, detail.testSuiteId)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add</span> สร้าง Test Cycle</button>}
                   <button className="btn suite-detail-download" onClick={() => downloadSuiteReport(detail)}><span className="material-symbols-outlined" aria-hidden="true">download</span> ดาวน์โหลดรายงาน</button>
                 </>}

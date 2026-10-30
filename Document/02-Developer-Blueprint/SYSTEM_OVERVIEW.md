@@ -49,7 +49,7 @@ tools/ProMaxx2.ServiceManager ← WinForms: Start/Stop/Restart API + Web, log, C
 | ไฟล์ | เนื้อหา |
 |---|---|
 | `App.tsx` | App shell เท่านั้น: sidebar/topbar, context selector (Project/Release/Build), routing ด้วย `React.lazy` + `Suspense`, Login และลิงก์ Dashboard ที่แชร์ |
-| `pages/*.tsx` | หน้าละไฟล์ (โหลดเป็น chunk แยกเมื่อเปิดหน้า): `Dashboard`, `PerformancePage`, `DefectsPage`, `ProjectsPage`, `ReleasesPage`, `RequirementsPage`, `RtmPage`, `TestCasesPage`, `TestSuitesPage`, `TestCyclesPage`, `ExecutionWorkspacePage`, `RegressionPage`, `MyWorkPage`, `TestSummaryPage`, `RiskAcceptancePage`, `ReleaseSignoffPage`, `AdministrationPage`, `MasterSettingsPage`, `SystemMonitorPage` — type/ค่าคงที่ที่ใช้หน้าเดียวอยู่ในไฟล์หน้านั้น; หน้าใหม่ให้สร้างที่นี่แล้วเพิ่ม lazy import ใน App.tsx |
+| `pages/*.tsx` | หน้าละไฟล์ (โหลดเป็น chunk แยกเมื่อเปิดหน้า): `Dashboard`, `PerformancePage`, `DefectsPage`, `ProjectsPage`, `ReleasesPage`, `RequirementsPage`, `RtmPage`, `TestCasesPage`, `TestSuitesPage`, `TestPlansPage`, `TestCyclesPage`, `ExecutionWorkspacePage`, `RegressionPage`, `MyWorkPage`, `TestSummaryPage`, `RiskAcceptancePage`, `ReleaseSignoffPage`, `AdministrationPage`, `MasterSettingsPage`, `SystemMonitorPage` — type/ค่าคงที่ที่ใช้หน้าเดียวอยู่ในไฟล์หน้านั้น; หน้าใหม่ให้สร้างที่นี่แล้วเพิ่ม lazy import ใน App.tsx |
 | `shared/appShared.tsx`, `shared/types.ts`, `shared/defects.ts`, `components/Badge.tsx` | ของที่หลายหน้าใช้ร่วม: type `Page`/`SessionUser`/`ModuleItem`/`TestCaseItem`/`TestCycleItem`/`TestSuiteItem`/`AdminUser`/`RtmItem` ฯลฯ, `nav`, module tree (`buildModuleTree`, `renderModuleSelectOptions`), `useMasterOptions`, `nextBusinessCode`, `okJsonOrEmpty`, `copyText`, `Badge` — ไฟล์ใน `shared/` ห้าม import จาก `pages/` หรือ `App.tsx` |
 | `components/*` | `ModalShell`, `dialogStore` + `DialogHost` (confirm/prompt/toast), `useDebounced`, `tableCardLabels` |
 | `AutomationPage.tsx` + `automation/*` + `Automation.css` | หน้า Automation: `AutomationPage.tsx` (หน้าหลัก/แท็บ Cases, ~1,300 บรรทัด) + `automation/` แยกตามแท็บ — `types.ts`, `shared.ts` (`fetchJson`, `useDebounced`, `useBuildsAndEnvironments`), `ui.tsx` (`ModalShell`, `Badge`, `Pager`), `caseModals`, `manageTabs`, `executionTabs`, `suiteTab`, `scheduleTabs` (Schedule/Build Trigger/Webhook), `dataTabs` (Snapshot/Seed/Data Profile) |
@@ -69,13 +69,13 @@ tools/ProMaxx2.ServiceManager ← WinForms: Start/Stop/Restart API + Web, log, C
 | `KnowledgeIndexWorker` | ทุก 5 นาที (เริ่มหลังเปิดระบบ 1 นาที, ปลุกทันทีเมื่อบันทึกบทความ/สั่ง reindex) sync Defect + Test Case + บทความ + เอกสาร + CRM Ticket เข้าคลังความรู้ → mask → แบ่ง chunk → `KnowledgeChunks` (Full-Text ภาษาไทย) → สร้าง embedding ของช่วงที่ยังไม่มีเมื่อตั้ง Embedding Provider (ค้นแบบ Hybrid) — ตรวจการเปลี่ยนแปลงจากเวลาแก้ไข/activity ล่าสุด, hash เดิมไม่สร้างใหม่; ปิดได้ด้วย `Knowledge:IndexerEnabled=false` (ดู `AI_KNOWLEDGE_CHAT_PLAN.md`) |
 | `AutomationReaperWorker` | ทุก 1 นาที ปิด Automation Execution ที่ Agent เงียบเกิน 10 นาที (AgentLost) หรือรันเกิน 6 ชม. (Timeout) และปิด snapshot/restore/verification ที่ Agent ไม่รายงานผล (AUT-REL-002) |
 
-## 3. Modules / Pages (22 หน้า)
+## 3. Modules / Pages (23 หน้า)
 
 | Group | Pages |
 |---|---|
 | ภาพรวม | Dashboard, My Work, ผลงานและการประเมิน (`#/performance`), ผู้ช่วย AI / คลังความรู้ (`#/knowledge`), Project/Module, Release/Build |
 | Requirement & Test Design | Requirement, RTM, Test Case, Test Suite |
-| Test Execution | Test Cycle, Execution Workspace, Defect, Regression, Automation |
+| Test Execution | Test Plan (`#/test-plans`, รวม Test Cycle เป็นแผน + Configuration Matrix — ดู `TEST_PLAN_CONFIGURATION_MATRIX_PLAN.md`), Test Cycle, Execution Workspace, Defect, Regression, Automation |
 | Release Governance | Test Summary, Risk Acceptance, Release Sign-off |
 | Administration | User/Role, Setting Center, System Monitor, Audit Log |
 
@@ -91,6 +91,7 @@ Internet ─► api-promaxx2.qahub.store              ─► cloudflared ─► 
 - **Frontend dev**: Vite port **5173**, `.env.development`: `VITE_API_URL=https://api-promaxx2.qahub.store/api/v1`
   → **แก้ backend แล้วต้อง restart API local ไม่งั้น domain สาธารณะยังเรียกของเก่า**
 - **Vite อาจเสิร์ฟไฟล์เก่าหลังแก้ (พบ 2026-10-22):** HMR ปิดอยู่ แต่ Vite ยัง cache โมดูลที่ transform แล้ว และบน Windows watcher พลาด event การเขียนไฟล์บางครั้ง (เช่น เขียนด้วย script) → ผู้ใช้กด F5 แล้วยังได้โค้ดเก่า; หลังแก้ frontend ให้ตรวจ `curl.exe -s http://localhost:5173/src/<ไฟล์> | Select-String <ข้อความใหม่>` ถ้าไม่เจอให้ touch ไฟล์ `(Get-Item <ไฟล์>).LastWriteTime = Get-Date` แล้วตรวจซ้ำ
+- **Vite โหลดโมดูลซ้อนสองชุด (พบ 2026-10-28):** สลับ branch (`git checkout`) ขณะ dev server รันอยู่ทำให้ไฟล์ถูกเขียนใหม่จำนวนมาก — โมดูลที่ถูกแปลงใหม่ภายหลัง import `dialogStore.ts?t=<เวลา>` แต่โมดูลที่แคชไว้ก่อน (เช่น `DialogHost`) import `dialogStore.ts` เฉย ๆ → browser มี store สองชุด กล่องยืนยัน/toast ของบางหน้าไม่ขึ้นและปุ่มดู "นิ่ง" แม้กด F5; **อย่าสลับ branch ใน working copy ที่ dev server ใช้อยู่** — ถ้าเกิดแล้วให้ touch ทุกไฟล์ `.ts/.tsx/.css` ใน `src` แล้วตรวจว่าทุก `import "/src/..."` ที่เสิร์ฟจาก 5173 ใช้ `?t=` เดียวกันต่อโมดูล
 - **HMR/WebSocket ของ Vite ปิดเป็นค่าเริ่มต้น (2026-10-20):** ผู้ใช้จริงเปิดผ่าน dev server นี้ — ถ้าเปิด HMR ทุกครั้งที่แก้ไฟล์ใน `src/` หรือ WebSocket ผ่าน Cloudflare หลุด Vite client จะสั่ง `location.reload()` ทุก browser (หน้า Execution Workspace รีโหลดเองและผลที่กรอกหาย) — ตอนนี้แก้ frontend แล้วต้องกด F5 เอง; ถ้าต้องการ HMR ตอนพัฒนาให้รัน `$env:QA_VITE_HMR='true'; npm.cmd run dev` (ดู `vite.config.ts`) — Console ขึ้น `[vite] failed to connect to websocket` เป็นเรื่องปกติ
 - **API**: ฟังที่ `http://0.0.0.0:5038` และรันแบบ **Production** (launch profile `production`)
   - Production อ่าน connection string จาก `appsettings.Production.json` (Windows auth, ไม่มี secret)
@@ -106,6 +107,7 @@ Internet ─► api-promaxx2.qahub.store              ─► cloudflared ─► 
 
 **วิธีหลัก: ใช้ Service Manager** (`.artifacts/service-manager-production/ProMaxx2.ServiceManager.exe`) กด Restart API
 — ตัวนี้อ่าน `Jwt__Key` จาก User environment ใหม่ทุกครั้งและสตาร์ทด้วย profile `production` (ถ้าไม่พบ key จะ fallback เป็น Development)
+— รอ API เปิด Port 5038 ได้ถึง 3 นาที (Web 1 นาที) เพราะ `dotnet run` build ก่อน, log "กำลังรอ…" ทุก 15 วินาที และแจ้งทันทีถ้า process จบเองระหว่างเริ่ม (build error/Port ชน) — เดิมรอแค่ ~10–30 วินาทีจึงขึ้น "ไม่พร้อมใช้งานภายในเวลาที่กำหนด" ทั้งที่ API ขึ้นตามมาภายหลัง — Restart API จะ build ตรวจลงโฟลเดอร์แยกก่อน ถ้าไม่ผ่านไม่หยุดตัวเดิม, มีป้าย "มีโค้ดใหม่ — ควร Restart" และตรวจโดเมนสาธารณะ/Tunnel/SQL Server/ดิสก์ (แก้ 2026-10-30 พร้อมปรับหน้าจอใหม่ — ดู `tools/ProMaxx2.ServiceManager/README.md`; แก้โค้ดแล้วต้อง `dotnet publish tools\ProMaxx2.ServiceManager -c Release -o .artifacts\service-manager-production` ขณะปิดโปรแกรม)
 
 **วิธีสำรอง (PowerShell):**
 
@@ -176,6 +178,7 @@ powershell -ExecutionPolicy Bypass -File tools\pre-pr-check.ps1
 | `03-Architecture-and-Plan/AUTOMATION_PLAN.md`, `SELECTOR_CONTRACT.md`, `AUTOMATIONID_IMPLEMENTATION_GUIDE.md` | แผน Automation Phase 0–5, Selector Contract, คู่มือใส่ AutomationId |
 | `03-Architecture-and-Plan/CRM_INTEGRATION_PLAN.md`, `CRM_DEFECT_KANBAN_PLAN.md` | การเชื่อม CRM และแผน Defect Kanban (ยังเป็นแผน) |
 | `03-Architecture-and-Plan/WEIGHTED_AUTO_ASSIGN.md` | Weighted Auto Assignment |
+| `03-Architecture-and-Plan/TEST_PLAN_CONFIGURATION_MATRIX_PLAN.md` | Test Plan / Configuration Matrix — เฟส 1–6 เสร็จในโค้ด (ตาราง `TestPlans`/`TestPlanRuns`/`TestPlanRunAssignments`, API `/test-plans`, หน้า `#/test-plans`, สิทธิ์ `TESTPLAN.*`, Clone/Rerun, ทีมระดับ Run, Freeze guard 409 `TEST_PLAN_FROZEN`, Export CSV, Plan context ในหน้า Test Cycle/Execution Workspace) |
 | `03-Architecture-and-Plan/PERFORMANCE_EVALUATION_PLAN.md` | ผลงานและการประเมินทีม QA — เฟส 1 (ผลงานรายคน/ทดลองงาน/บันทึกงาน) และเฟส 2 (แบบประเมิน, รอบทดลองงาน 30/60/90/สรุป, รายไตรมาส, ประเมินตนเอง) และเฟส 3 (อีเมลเตือน, ไฟล์หลักฐานของบันทึกงาน, Export PDF, เทียบผลข้ามรอบ) และสรุปผลงานรายคน + ลิงก์แชร์ HR (`/?p=`) + สรุปประจำสัปดาห์ส่งผู้บริหาร implement แล้ว |
 | `03-Architecture-and-Plan/DEFECT_KNOWLEDGE_PLAN.md` | แผนสรุปข้อมูล Defect + เคสจาก CRM (CRM Inbox) เป็น Knowledge Record สำหรับ AI Local (ยังเป็นแผน; Phase 2–4 ย้ายไป `AI_KNOWLEDGE_CHAT_PLAN.md`) |
 | `03-Architecture-and-Plan/AI_KNOWLEDGE_CHAT_PLAN.md` | ระบบ AI Chat + คลังความรู้ (Defect, CRM, บทความ/ไฟล์ PDF·DOCX·MD) แบบ Hybrid Full-Text ไทย + embedding บน SQL 2022 — Phase 0–6 + MCP/OAuth เสร็จ (ค้นหา Defect + Test Case + บทความ + เอกสาร PDF/DOCX/MD + CRM Ticket ที่ mask แล้ว, แชท AI พร้อมอ้างอิง, MCP + OAuth ให้ Claude), ค้นแบบ Hybrid (Full-Text + embedding, RRF) พร้อมเมื่อตั้ง Embedding Provider; Phase 6 ยังไม่ทำ |

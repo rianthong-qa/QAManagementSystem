@@ -381,7 +381,9 @@ Add Cases:
 
 ### GET `/test-cycles`
 
-แบ่งหน้า `page`/`size` — `size` 10–500 (เดิมสูงสุด 150; ขยาย 2026-10-20) รองรับ `status`, `projectId`, `releaseId`, `buildId`, `moduleId`, `cycleType`, `search`, `createdBy` — Execution Workspace ขอ `status=InProgress&size=500` เพื่อให้ได้ Cycle ที่กำลังทดสอบครบทุกรายการ
+แบ่งหน้า `page`/`size` — `size` 10–500 (เดิมสูงสุด 150; ขยาย 2026-10-20) รองรับ `status`, `projectId`, `releaseId`, `buildId`, `moduleId`, `cycleType`, `search`, `createdBy`, `plan` (`none` = ยังไม่อยู่ใน Test Plan, `any` = อยู่ในแผนใดก็ได้, หรือ TestPlanId; ค่าอื่นไม่กรอง — เพิ่ม 2026-10-30) — Execution Workspace ขอ `status=InProgress&size=500` เพื่อให้ได้ Cycle ที่กำลังทดสอบครบทุกรายการ
+
+แต่ละแถว (และ `GET /test-cycles/{cycleId}`) มี `plan` (เพิ่ม 2026-10-30) = `{ testPlanId, planCode, planName, testPlanRunId, runCode, runName, configurationName, lifecycleStatus, isFrozen, isPlanDeleted }` หรือ `null` เมื่อไม่อยู่ใน Test Plan — `isFrozen` = บันทึกผล/แก้ Cycle/assign ได้ 409 `TEST_PLAN_FROZEN`
 
 `summary.statusCounts` (เพิ่ม 2026-10-20) = จำนวน Cycle ต่อสถานะ (`{ "InProgress": 3, "Closed": 1, ... }`) ตาม filter อื่นทั้งหมด **ยกเว้น** `status` — หน้า Test Cycle ใช้แสดงชิปสถานะจากคำขอเดียว (เดิมยิงแยกทีละสถานะ 5 คำขอ ซึ่งถูกยกเลิกพร้อมกันบ่อยเมื่อเปลี่ยน filter)
 ### POST `/test-cycles`
@@ -420,6 +422,44 @@ Assign:
 }
 ```
 
+### DELETE `/test-cycles/{cycleId}`
+
+Soft delete (สิทธิ์ `EXECUTION.ASSIGN`) — **Cycle ที่ผูกกับ Test Plan ลบไม่ได้** (เพิ่ม 2026-10-29) ตอบ `409` + `code: TEST_CYCLE_LINKED_TO_PLAN` พร้อม Plan Code/Run Code ใน `detail` (รวม Plan ที่ถูกลบแล้ว) — ให้ถอด Run ออกจาก Plan ก่อน (ได้เฉพาะ Run ที่ไม่เคยมีผลการทดสอบ) หรือเปลี่ยน Cycle เป็น `Cancelled`
+
+---
+
+## 16.1 Test Plans / Configuration Matrix (เพิ่ม 2026-10-29)
+
+กติกาเต็มอยู่ที่ `03-Architecture-and-Plan/TEST_PLAN_CONFIGURATION_MATRIX_PLAN.md` — ทุก endpoint มี `[RequireProjectAccess]`; route `{planId}`/`{runId}` ตรวจ Project ของ record (ไม่มีสิทธิ์ตอบ 404)
+
+| Method | Path | Policy | หมายเหตุ |
+|---|---|---|---|
+| GET | `/test-plans?projectId=&releaseId=&status=&planType=&ownerUserId=&search=&page=1&size=20` | `TESTPLAN.VIEW` | `{ items: { total, rows }, summary }` — `status` = สถานะที่คำนวณ (Draft/InProgress/Completed/Closed/Cancelled), `summary` รวมทุกแถวที่ตรง filter |
+| GET | `/test-plans/{planId}` | `TESTPLAN.VIEW` | Plan + `summary` + `runs` ทั้งหมด |
+| GET | `/test-plans/{planId}/matrix?status=&configurationKey=&ownerUserId=&page=1&size=50` | `TESTPLAN.VIEW` | `{ total, rows }` — `status` = สถานะ Run (= สถานะ Test Cycle) |
+| POST | `/test-plans` | `TESTPLAN.EDIT` | `planCode` ว่าง = สร้าง `<ProjectCode>-TP-nnn`; Release ต้องอยู่ Project เดียวกันและไม่ Cancelled |
+| PUT | `/test-plans/{planId}` | `TESTPLAN.EDIT` | เปลี่ยน Project/Release/Code ไม่ได้; Plan ที่ปิด/ยกเลิก/Freeze แก้ไม่ได้ |
+| POST | `/test-plans/{planId}/close` | `TESTPLAN.FREEZE` | body `{ "reason": "..." }` (บังคับ, ≤ 500) — ทุก Run ต้องจบ (Completed/Closed/Cancelled) และมี ≥ 1 Run; Freeze อัตโนมัติ |
+| POST | `/test-plans/{planId}/cancel` | `TESTPLAN.FREEZE` | body `reason`; Freeze อัตโนมัติ ไม่ลบ Run/Execution |
+| POST | `/test-plans/{planId}/reopen` | `TESTPLAN.FREEZE` | body `reason`; Closed/Cancelled → Active + Unfreeze |
+| POST | `/test-plans/{planId}/freeze` / `unfreeze` | `TESTPLAN.FREEZE` | body `reason`; ใช้ได้เฉพาะ Plan ที่ Active (Plan ที่ปิดแล้วใช้ `reopen`) |
+| DELETE | `/test-plans/{planId}` | `TESTPLAN.EDIT` | Soft delete; Plan ที่มี Run ต้อง Closed/Cancelled ก่อน; Run ยังล็อก Test Cycle |
+| POST | `/test-plans/{planId}/runs` | `TESTPLAN.EDIT` | `createCycleFromSuite: true` + `testSuiteId`, `buildId`, `environmentId` (และ `cycleName`, `requiredOnly`) = สร้าง Test Cycle ใหม่จาก Suite แล้วผูกใน Transaction เดียว; `false` + `testCycleId` = ผูก Cycle ที่มีอยู่ |
+| POST | `/test-plans/{planId}/runs/attach-cycle` | `TESTPLAN.EDIT` | `{ testCycleId, runCode?, runName?, configurationKey?, configurationName?, configurationJson?, ownerUserId? }` — Cycle ต้องอยู่ Project/Release เดียวกันและไม่อยู่ Plan อื่น |
+| GET | `/test-plans/{planId}/runs/{runId}` | `TESTPLAN.VIEW` | แถว Matrix 1 แถว |
+| PUT | `/test-plans/{planId}/runs/{runId}` | `TESTPLAN.EDIT` | `{ runName, configurationKey, configurationName, configurationJson, ownerUserId }` |
+| DELETE | `/test-plans/{planId}/runs/{runId}` | `TESTPLAN.EDIT` | ถอด Run — ได้เฉพาะ Run ที่ Test Cycle ไม่เคยมี Execution (รวมแถวที่ลบ) |
+| GET | `/test-plans/{planId}/members` | `TESTPLAN.ASSIGN` | สมาชิก Project ที่ Active (`[{ userId, displayName }]`) — ตัวเลือกทีมระดับ Run (เพิ่ม 2026-10-29) |
+| POST | `/test-plans/{planId}/runs/{runId}/assign` | `TESTPLAN.ASSIGN` | `{ assignments: [{ testerUserId, role: Tester\|Reviewer\|Observer }], bulkAssignUnassignedCases }` — **แทนที่ทีมทั้งชุด**; ผู้ถูก assign ต้องเป็นสมาชิก Project; bulk = แบ่งเคส `NotRun` ที่ยังไม่มีผู้รับผิดชอบให้ Role Tester แบบวนทีละคนตามลำดับเคส (ไม่เขียนทับเคสที่มีผู้รับผิดชอบ) ผ่าน flow เดิม (Assignment metadata + AssignmentHistory `testplan-round-robin-v1`); คืน `{ run, assignedCases }`; Plan ที่ Frozen/ปิด ได้ 409 |
+| POST | `/test-plans/{planId}/clone` | `TESTPLAN.EDIT` | `{ targetReleaseId, targetBuildId, cloneMode: "SourceSnapshot", environmentOverrides: [{ sourceRunId, targetEnvironmentId }], planName?, planCode? }` — สร้าง Plan ใหม่ (`copiedFromTestPlanId`) ใน Transaction เดียว: ทุก Run Clone Test Cycle ไป Build เดียวกัน, Environment เดิมเว้นแต่ override, คัดลอก Configuration/Owner/ทีม Run แต่ไม่คัดลอก Execution/Defect/ผู้รับผิดชอบรายเคส; Plan ต้นทางสถานะใดก็ได้ที่มี ≥ 1 Run (ไม่มี Run = 409 `TEST_PLAN_NO_RUNS`) |
+
+- `configurationKey` เก็บเป็นตัวพิมพ์เล็ก `a-z 0-9 -` (เช่น `windows-chrome`); `configurationJson` ต้องเป็น JSON object
+- ทุกคำสั่งที่แก้ข้อมูลบันทึก Audit Log (`EntityType = TestPlan`) — Close/Cancel/Reopen/Freeze/Unfreeze เก็บเหตุผลใน `ChangeSummary`
+- Error เป็น ProblemDetails พร้อม `code`: `TEST_PLAN_INVALID` (400), `TEST_PLAN_NOT_FOUND` (404), `TEST_PLAN_DUPLICATE_CODE`, `TEST_PLAN_FROZEN`, `TEST_PLAN_NOT_ACTIVE`, `TEST_PLAN_INVALID_STATE`, `TEST_PLAN_RUNS_NOT_TERMINAL`, `TEST_PLAN_HAS_RUNS`, `TEST_PLAN_CYCLE_LINKED`, `TEST_PLAN_RUN_HAS_EXECUTIONS`, `TEST_PLAN_NO_RUNS` (409)
+- แถว Run (`runs[]`, `matrix`) มี `unassignedCases` (เคส NotRun ที่ยังไม่มีผู้รับผิดชอบ) และ `assignments` (ทีมระดับ Run)
+- **Freeze guard (เพิ่ม 2026-10-29):** Test Cycle ที่อยู่ใน Test Plan ที่ Frozen (รวมแผนที่ปิด/ยกเลิก/ลบแล้ว) — endpoint เดิมต่อไปนี้ตอบ `409` + `code: TEST_PLAN_FROZEN` พร้อม Plan Code/Run Code ใน `detail`: `POST /test-cycle-cases/{id}/executions` (รวม Save Progress), `DELETE /executions/{id}`, `PUT /test-cycles/{id}`, `POST /test-cycles/{id}/status`, `POST /test-cycles/{id}/assign`, `POST /test-cycle-cases/{id}/reassign`, `POST /test-cycles/{id}/auto-assign/confirm` และ `/rebalance`, `POST /test-cycle-cases/{id}/accept` และ `/start` (เพิ่ม 2026-10-30) — แปลงด้วย exception filter กลาง (`TestPlanRuleExceptionFilter`); `DELETE /test-cycles/{id}` ถูกบล็อกด้วย `TEST_CYCLE_LINKED_TO_PLAN` อยู่แล้ว; Plan ที่ลบแล้วกู้คืนได้ที่ `POST /recycle-bin/test-plans/{id}/restore` (SYS_ADMIN) แล้วค่อย Reopen เพื่อปลดล็อก
+- **Export (เฟส 6, 2026-10-30):** ไม่มี endpoint แยก — หน้าเว็บสร้าง CSV จาก `GET /test-plans` (ทุกหน้า) และ `GET /test-plans/{id}`; ปุ่มแสดงเฉพาะผู้มี `TESTPLAN.EXPORT`
+
 ---
 
 ## 17. Test Execution
@@ -427,6 +467,8 @@ Assign:
 ### GET `/test-cycles/{cycleId}/execution`
 
 `cases[].assignedTesterUserId` (เพิ่ม 2026-10-20) = ผู้ทดสอบที่ถูก assign เคสนี้ (null = ยังไม่ assign) — คิวใช้กรอง "เฉพาะเคสที่ assign ให้ฉัน"
+
+`plan` (เพิ่ม 2026-10-30) = Test Plan ที่ Cycle นี้อยู่ รูปแบบเดียวกับ `GET /test-cycles` — Workspace ใช้แสดงแถบแผนและปิดปุ่มบันทึกผลเมื่อ `isFrozen`
 
 ### GET `/test-cycles/{cycleId}/cases/{cycleCaseId}`
 

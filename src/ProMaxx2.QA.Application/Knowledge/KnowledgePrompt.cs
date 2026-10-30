@@ -54,9 +54,37 @@ public static partial class KnowledgePrompt
     public static string RetrievalQuery(string question, string? previousQuestion)
     {
         var q = TextChunker.Normalize(question).Replace('\n', ' ');
-        if (!string.IsNullOrWhiteSpace(previousQuestion) && q.Length < 40)
-            q = $"{TextChunker.Normalize(previousQuestion).Replace('\n', ' ')} {q}";
+        var shortFollowUp = q.Length < 40;
+        q = StripFillers(q);
+        if (!string.IsNullOrWhiteSpace(previousQuestion) && shortFollowUp)
+            q = $"{StripFillers(TextChunker.Normalize(previousQuestion).Replace('\n', ' '))} {q}".Trim();
         return q.Length > KnowledgeQuery.MaxLength ? q[..KnowledgeQuery.MaxLength] : q;
+    }
+
+    // คำขึ้นต้น/ลงท้ายคำถามที่ไม่ใช่คำค้น — FREETEXT นำทุกคำมา OR กัน คำอย่าง "สรุป"/"มีอะไรบ้าง" จึงดึง Ticket/Test Case หลายพันรายการ
+    // จนเอกสารที่ตรงจริงหลุดจากอันดับที่ใช้เป็นบริบท (เช่น "ช่วยสรุปโปรโมชั่น Promaxx2 มีอะไรบ้าง" → "โปรโมชั่น Promaxx2")
+    // ตัดเฉพาะหัว/ท้ายของแต่ละคำ (ภาษาไทยไม่เว้นวรรค) เพื่อไม่ทำลายคำกลางประโยคเช่น "รายงานสรุป"; เรียงยาวก่อนสั้น
+    private static readonly string[] LeadingFillers = ["ช่วยสรุป", "ช่วยอธิบาย", "ช่วยบอก", "ช่วยหา", "ช่วย", "อยากทราบ", "อยากรู้", "ขอทราบ", "สรุป", "อธิบาย"];
+    private static readonly string[] TrailingFillers = ["มีอะไรบ้าง", "อะไรบ้าง", "อย่างไรบ้าง", "อย่างไร", "ยังไง", "ได้ไหม", "ได้มั้ย", "หน่อย", "บ้าง", "ครับ", "ค่ะ"];
+
+    public static string StripFillers(string query)
+    {
+        var words = new List<string>();
+        foreach (var raw in query.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var word = raw.Trim('?', '？', '!', '.', ',');
+            for (var changed = true; changed;)
+            {
+                changed = false;
+                foreach (var f in LeadingFillers)
+                    if (word.StartsWith(f, StringComparison.Ordinal)) { word = word[f.Length..]; changed = true; break; }
+                foreach (var f in TrailingFillers)
+                    if (word.EndsWith(f, StringComparison.Ordinal)) { word = word[..^f.Length]; changed = true; break; }
+            }
+            if (word.Length > 0) words.Add(word);
+        }
+        // ตัดแล้วไม่เหลืออะไร (ถามแต่คำทั่วไป) → ใช้คำถามเดิม
+        return words.Count == 0 ? query.Trim() : string.Join(' ', words);
     }
 
     /// <summary>ประวัติสนทนาล่าสุดที่ส่งให้ AI (ตัดข้อความยาว) — ไม่ส่งข้อมูลอ้างอิงของรอบก่อนซ้ำ</summary>

@@ -72,6 +72,15 @@
 .execution-context dt .material-symbols-outlined { font-size: 14px; line-height: 1; }
 .execution-context dd { max-width: 100%; margin: 0; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .execution-context dd .badge { font-size: 11px; }
+/* Test Plan context (เฟส 6, 2026-10-30) — แถบบาง ๆ ใต้แถวตัวเลือก ไม่แตะความกว้างคงที่ของ dl.execution-context; Frozen = เหลือง + ปุ่มบันทึกถูกปิด */
+.execution-plan-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; border-top: 1px solid #eef1f5; padding: 8px 18px; color: var(--muted); font-size: 13px; }
+.execution-plan-strip > .material-symbols-outlined { color: var(--primary); font-size: 18px; }
+.execution-plan-strip b { color: var(--text); }
+.execution-plan-strip > span:not(.material-symbols-outlined) { flex: 1 1 260px; min-width: 0; line-height: 1.5; }
+.execution-plan-strip.is-frozen { background: color-mix(in srgb, var(--yellow) 8%, var(--card)); color: var(--warning-text); }
+.execution-plan-strip.is-frozen > .material-symbols-outlined, .execution-plan-strip.is-frozen b { color: var(--warning-text); }
+.execution-page .execution-plan-strip .btn { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 4px 12px; font-size: 13px; }
+.execution-page .execution-plan-strip .btn .material-symbols-outlined { font-size: 16px; }
 .execution-progress-row { display: grid; grid-template-columns: auto minmax(160px, 1fr) auto; align-items: center; gap: 10px 18px; padding: 12px 18px 14px; border-top: 1px solid #eef1f5; border-radius: 0 0 14px 14px; background: #fbfcfe; }
 .execution-progress-summary { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 .execution-progress-summary strong { color: var(--text); font-size: 22px; font-weight: 800; line-height: 1; }
