@@ -23,7 +23,8 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
     canEdit = false;
   }
   const [items, setItems] = useState<ProjectItem[]>([]),
-    [modules, setModules] = useState<ModuleItem[]>([]),
+    [allModules, setAllModules] = useState<ModuleItem[]>([]),
+    [showHidden, setShowHidden] = useState(false),
     [selectedId, setSelectedId] = useState(""),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -72,7 +73,7 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
   }, [reload]);
   useEffect(() => {
     if (!selectedId) {
-      setModules([]);
+      setAllModules([]);
       return;
     }
     // เดิมไม่ตรวจ r.ok — API ตอบ error แล้ว data.filter พัง; AbortController กันผลของ Project ก่อนหน้ามาทับ
@@ -80,14 +81,18 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
     getJson<ModuleItem[]>(`${apiUrl}/projects/${selectedId}/modules`, ctrl.signal)
       .then((data) => {
         const active = data.filter((x) => x.isActive);
-        setModules(active);
+        setAllModules(data);
         // เปิด Project ที่ Module ไม่เกิน autoExpandLimit ให้เห็นโครงสร้างทั้งหมด; ใหญ่กว่านั้นแสดงเฉพาะ Module หลัก (ใช้ปุ่มขยายทั้งหมดเอง)
         // หลังบันทึก/ย้ายยังคงสถานะเดิม
         if (active.length <= autoExpandLimit) setExpanded((current) => current.length ? current : [...new Set(active.map((x) => x.parentModuleId).filter(Boolean) as string[])]);
       })
-      .catch((e) => { if (!isAbortError(e)) { setModules([]); notify(`โหลด Module ของ Project ไม่สำเร็จ (${e instanceof Error ? e.message : "ไม่ทราบสาเหตุ"})`, "error"); } });
+      .catch((e) => { if (!isAbortError(e)) { setAllModules([]); notify(`โหลด Module ของ Project ไม่สำเร็จ (${e instanceof Error ? e.message : "ไม่ทราบสาเหตุ"})`, "error"); } });
     return () => ctrl.abort();
   }, [selectedId, reload]);
+  // Module ที่ซ่อน (IsActive=false) แสดงใน tree เฉพาะเมื่อกด "แสดงที่ซ่อน" — ตัวเลขสรุปและการลากจัดลำดับนับเฉพาะที่ใช้งานอยู่
+  const activeModules = allModules.filter((x) => x.isActive),
+    hiddenCount = allModules.length - activeModules.length,
+    modules = showHidden ? allModules : activeModules;
   const selected = items.find((x) => x.projectId === selectedId),
     term = search.toLowerCase();
   const filteredProjects = items.filter((x) =>
@@ -166,7 +171,7 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
       item?.moduleCode ??
         nextBusinessCode(
           `${selected?.projectCode ?? "PRJ"}-MOD`,
-          modules.map((x) => x.moduleCode),
+          allModules.map((x) => x.moduleCode),
         ),
     );
     setName(item?.moduleName ?? "");
@@ -235,20 +240,32 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
       setSaving(false);
     }
   };
-  const deactivate = async (
-    kind: "project" | "module",
-    id: string,
-    label: string,
-  ) => {
-    if (!await confirmDialog(`ยืนยันปิดใช้งาน ${label}?`)) return;
-    const response = await fetch(
-      `${apiUrl}/${kind === "project" ? "projects" : "modules"}/${id}`,
-      { method: "DELETE", headers },
-    );
+  const deactivateProject = async (item: ProjectItem) => {
+    if (!await confirmDialog(`ยืนยันปิดใช้งาน ${item.projectName}?`)) return;
+    const response = await fetch(`${apiUrl}/projects/${item.projectId}`, { method: "DELETE", headers });
     if (!response.ok) {
       notify("ไม่สามารถปิดใช้งานข้อมูลได้", "error");
       return;
     }
+    setReload((x) => x + 1);
+  };
+  const setModuleHidden = async (item: ModuleItem, hide: boolean) => {
+    const hasChildren = allModules.some((x) => x.parentModuleId === item.moduleId);
+    if (hide && !await confirmDialog({
+      title: `ซ่อน Module ${item.moduleName}?`,
+      message: `Module นี้${hasChildren ? "และ Module ย่อยทั้งหมด" : ""}จะไม่แสดงในรายการเลือก Module ของ Requirement, Test Case, Defect และหน้าอื่น ๆ — ข้อมูลที่อ้างอิงอยู่เดิมยังอยู่ครบ และแสดงกลับได้จากปุ่ม "แสดงที่ซ่อน"`,
+      confirmLabel: "ซ่อน Module",
+    })) return;
+    const response = await fetch(
+      hide ? `${apiUrl}/modules/${item.moduleId}` : `${apiUrl}/modules/${item.moduleId}/activate`,
+      { method: hide ? "DELETE" : "POST", headers },
+    ).catch(() => null);
+    if (!response?.ok) {
+      const problem = await response?.json().catch(() => null);
+      notify(problem?.detail ?? (hide ? "ซ่อน Module ไม่สำเร็จ" : "แสดง Module ไม่สำเร็จ"), "error");
+      return;
+    }
+    notify(hide ? `ซ่อน ${item.moduleName} แล้ว` : `แสดง ${item.moduleName} แล้ว`, "success");
     setReload((x) => x + 1);
   };
   const moveModule = async (
@@ -256,11 +273,11 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
     position: "before" | "inside" | "after",
   ) => {
     if (!draggingId || draggingId === target.moduleId) return;
-    const dragged = modules.find((x) => x.moduleId === draggingId);
+    const dragged = activeModules.find((x) => x.moduleId === draggingId);
     if (!dragged) return;
     const parentModuleId =
       position === "inside" ? target.moduleId : (target.parentModuleId ?? null);
-    const siblings = modules
+    const siblings = activeModules
       .filter(
         (x) =>
           x.moduleId !== dragged.moduleId &&
@@ -299,8 +316,8 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
     setReload((x) => x + 1);
   };
   const parentIds = new Set(modules.map((x) => x.parentModuleId).filter(Boolean) as string[]);
-  const rootCount = modules.filter((x) => !x.parentModuleId || !modules.some((p) => p.moduleId === x.parentModuleId)).length;
-  const maxDepth = buildModuleTree(modules).reduce((max, x) => Math.max(max, x.depth + 1), 0);
+  const rootCount = activeModules.filter((x) => !x.parentModuleId || !activeModules.some((p) => p.moduleId === x.parentModuleId)).length;
+  const maxDepth = buildModuleTree(activeModules).reduce((max, x) => Math.max(max, x.depth + 1), 0);
   // Module ที่เลือกเป็น Parent ไม่ได้: ตัวเอง และลูกหลานทั้งหมด (กันวนลูป)
   const blockedParents = new Set<string>();
   if (editModule) {
@@ -308,7 +325,7 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
     while (stack.length) {
       const id = stack.pop()!;
       blockedParents.add(id);
-      modules.filter((x) => x.parentModuleId === id).forEach((x) => stack.push(x.moduleId));
+      allModules.filter((x) => x.parentModuleId === id).forEach((x) => stack.push(x.moduleId));
     }
   }
   if (loading)
@@ -372,13 +389,13 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
                   <button className="btn" type="button" onClick={() => openProject(selected)}>
                     <span className="material-symbols-outlined" aria-hidden="true">edit</span>แก้ไข Project
                   </button>
-                  <button className="btn pm-danger" type="button" onClick={() => deactivate("project", selected.projectId, selected.projectName)}>
+                  <button className="btn pm-danger" type="button" onClick={() => deactivateProject(selected)}>
                     <span className="material-symbols-outlined" aria-hidden="true">block</span>ปิดใช้งาน
                   </button>
                 </div>
               )}
               <dl className="pm-stats">
-                <div><dt>Module ทั้งหมด</dt><dd>{modules.length.toLocaleString("th-TH")}</dd></div>
+                <div><dt>Module ทั้งหมด</dt><dd>{activeModules.length.toLocaleString("th-TH")}{hiddenCount > 0 && <small className="pm-stat-note">ซ่อน {hiddenCount.toLocaleString("th-TH")}</small>}</dd></div>
                 <div><dt>Module หลัก</dt><dd>{rootCount.toLocaleString("th-TH")}</dd></div>
                 <div><dt>จำนวนชั้น</dt><dd>{maxDepth.toLocaleString("th-TH")}</dd></div>
                 <div><dt>สร้างเมื่อ</dt><dd className="pm-stat-text">{formatThaiDateTime(selected.createdAt, { dateStyle: "medium" })}</dd></div>
@@ -392,6 +409,11 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
                   <p>{term ? `แสดง ${visibleModules.length.toLocaleString("th-TH")} รายการที่ตรงกับคำค้น (รวม Parent)` : canEdit ? "ลาก ⠿ เพื่อเรียงลำดับ หรือวางกลางแถวเพื่อย้ายเป็น Module ลูก" : "โครงสร้าง Module ของ Project นี้"}</p>
                 </div>
                 <div className="pm-modules-actions">
+                  {hiddenCount > 0 && (
+                    <button className="btn pm-hidden-toggle" type="button" aria-pressed={showHidden} onClick={() => setShowHidden((x) => !x)}>
+                      <span className="material-symbols-outlined" aria-hidden="true">{showHidden ? "visibility" : "visibility_off"}</span>แสดงที่ซ่อน ({hiddenCount.toLocaleString("th-TH")})
+                    </button>
+                  )}
                   {parentIds.size > 0 && !term && (
                     <>
                       <button className="btn" type="button" onClick={() => setExpanded([...parentIds])}><span className="material-symbols-outlined" aria-hidden="true">unfold_more</span>ขยายทั้งหมด</button>
@@ -422,8 +444,8 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
                         role="treeitem"
                         aria-level={level + 1}
                         aria-expanded={childCount ? open : undefined}
-                        draggable={canEdit}
-                        className={`pm-node${level === 0 ? " root" : ""}${draggingId === x.moduleId ? " dragging" : ""}${hint ? ` drop-${hint}` : ""}`}
+                        draggable={canEdit && x.isActive}
+                        className={`pm-node${level === 0 ? " root" : ""}${x.isActive ? "" : " is-hidden"}${draggingId === x.moduleId ? " dragging" : ""}${hint ? ` drop-${hint}` : ""}`}
                         onDragStart={(e) => {
                           setDraggingId(x.moduleId);
                           e.dataTransfer.effectAllowed = "move";
@@ -433,7 +455,7 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
                           setDropHint("");
                         }}
                         onDragOver={(e) => {
-                          if (!canEdit || draggingId === x.moduleId) return;
+                          if (!canEdit || !draggingId || draggingId === x.moduleId || !x.isActive) return;
                           e.preventDefault();
                           const box = e.currentTarget.getBoundingClientRect(),
                             ratio = (e.clientY - box.top) / box.height,
@@ -446,7 +468,7 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
                           moveModule(x, position);
                         }}
                       >
-                        {canEdit && <span className="material-symbols-outlined pm-drag" title="ลากเพื่อย้ายตำแหน่ง" aria-hidden="true">drag_indicator</span>}
+                        {canEdit && <span className={`material-symbols-outlined pm-drag${x.isActive ? "" : " is-off"}`} title="ลากเพื่อย้ายตำแหน่ง" aria-hidden="true">drag_indicator</span>}
                         <span className="pm-indent" style={{ width: `${level * 22}px` }} aria-hidden="true" />
                         {childCount ? (
                           <button
@@ -461,7 +483,7 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
                         ) : <span className="pm-toggle-spacer" aria-hidden="true" />}
                         <span className="material-symbols-outlined pm-node-icon" aria-hidden="true">{childCount ? (open ? "folder_open" : "folder") : "description"}</span>
                         <span className="pm-node-text">
-                          <span className="pm-node-name"><b>{x.moduleName}</b><code>{x.moduleCode}</code>{childCount > 0 && <span className="pm-node-count">{childCount} ย่อย</span>}</span>
+                          <span className="pm-node-name"><b>{x.moduleName}</b><code>{x.moduleCode}</code>{childCount > 0 && <span className="pm-node-count">{childCount} ย่อย</span>}{!x.isActive && <span className="pm-node-hidden">ซ่อนอยู่</span>}</span>
                           {x.description && <small>{x.description}</small>}
                         </span>
                         {canEdit && (
@@ -469,9 +491,15 @@ export function ProjectsPage({ search }: { search: string; refresh?: number }) {
                             <button type="button" title="แก้ไข" aria-label={`แก้ไข ${x.moduleName}`} onClick={() => openModule(x)}>
                               <span className="material-symbols-outlined" aria-hidden="true">edit</span>
                             </button>
-                            <button type="button" className="danger" title="ปิดใช้งาน" aria-label={`ปิดใช้งาน ${x.moduleName}`} onClick={() => deactivate("module", x.moduleId, x.moduleName)}>
-                              <span className="material-symbols-outlined" aria-hidden="true">block</span>
-                            </button>
+                            {x.isActive ? (
+                              <button type="button" title="ซ่อน Module" aria-label={`ซ่อน ${x.moduleName}`} onClick={() => setModuleHidden(x, true)}>
+                                <span className="material-symbols-outlined" aria-hidden="true">visibility_off</span>
+                              </button>
+                            ) : (
+                              <button type="button" className="restore" title="แสดง Module กลับ" aria-label={`แสดง ${x.moduleName} กลับ`} onClick={() => setModuleHidden(x, false)}>
+                                <span className="material-symbols-outlined" aria-hidden="true">visibility</span>
+                              </button>
+                            )}
                           </span>
                         )}
                       </li>

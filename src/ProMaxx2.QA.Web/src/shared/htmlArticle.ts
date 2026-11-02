@@ -33,3 +33,14 @@ export function htmlArticleHasText(html: string): boolean {
   doc.querySelectorAll("style,script,noscript,template,title").forEach((el) => el.remove());
   return Boolean(doc.body?.textContent?.trim());
 }
+
+/**
+ * ถอดไฟล์ HTML เป็นข้อความ — ใช้ charset จาก <meta> ถ้าระบุไว้ (ไฟล์ภาษาไทยเก่ามักเป็น windows-874 / TIS-620
+ * ถ้าอ่านเป็น UTF-8 ตรง ๆ ตัวอักษรไทยจะเพี้ยนทั้งหน้า) ไม่ระบุหรือไม่รู้จัก charset = UTF-8
+ */
+export function decodeHtmlBytes(bytes: ArrayBuffer | Uint8Array): string {
+  const utf8 = new TextDecoder("utf-8").decode(bytes);
+  const charset = /<meta[^>]+charset\s*=\s*["']?\s*([\w.:-]+)/i.exec(utf8.slice(0, 4096))?.[1]?.toLowerCase();
+  if (!charset || charset === "utf-8" || charset === "utf8") return utf8;
+  try { return new TextDecoder(charset).decode(bytes); } catch { return utf8; }
+}

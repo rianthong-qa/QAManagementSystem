@@ -1,0 +1,26 @@
+/* หน้าอ่านอย่างเดียวของบทความคลังความรู้จากลิงก์ ?ka= (ใช้ shell .shared-dashboard ร่วมกับ Dashboard/Defect ที่แชร์) */
+.shared-dashboard.shared-article-shell > main { max-width: 1100px; }
+
+.shared-article { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+.shared-article .card { min-width: 0; }
+.shared-article-hero { padding: 20px 24px; }
+.shared-article-eyebrow { display: block; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .3px; }
+.shared-article-hero h1 { margin: 6px 0 10px; color: var(--text); font-size: 24px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.shared-article-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; color: var(--muted); font-size: 13px; }
+.shared-article-meta > span { display: inline-flex; align-items: center; gap: 4px; }
+.shared-article-meta .material-symbols-outlined { font-size: 17px; }
+.shared-article-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+.shared-article-tags li { border-radius: 999px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); padding: 3px 10px; color: var(--primary); font-size: 12px; font-weight: 600; }
+/* บทความ HTML: กรอบไม่มี padding ให้เนื้อหาในไฟล์เต็มการ์ดเหมือนหน้าเว็บต้นฉบับ (overflow: clip ให้มุมโค้งตัด iframe) */
+.shared-article-html { overflow: clip; padding: 0; }
+.shared-article-body { padding: 20px 24px; color: var(--text); font-size: 15px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.shared-article-state { display: grid; justify-items: center; gap: 8px; padding: 48px 20px; color: var(--muted); text-align: center; }
+.shared-article-state > .material-symbols-outlined { color: var(--muted); font-size: 40px; }
+.shared-article-state p { margin: 0; color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .shared-article-hero, .shared-article-body { padding: 16px; }
+  .shared-article-hero h1 { font-size: 20px; }
+  .shared-article-state .btn { min-height: 44px; }
+}

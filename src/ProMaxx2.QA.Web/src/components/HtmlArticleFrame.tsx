@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { htmlArticleDocument, htmlArticleSandbox } from "../shared/htmlArticle";
+import "./HtmlArticleFrame.css";
 
 /**
  * แสดงบทความ HTML ให้เหมือนไฟล์ต้นฉบับ (ใช้ทั้งหน้าคลังความรู้ ตัวอย่างในหน้าแก้ไข และหน้าแชร์สาธารณะ)

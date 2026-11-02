@@ -1,0 +1,2 @@
+/* กรอบแสดงบทความ HTML (HtmlArticleFrame) — ความสูงตั้งจาก JS ตามเนื้อหา; พื้นขาวเพราะไฟล์ต้นฉบับส่วนใหญ่ออกแบบบนพื้นขาว */
+.html-article-frame { display: block; width: 100%; border: 0; background: var(--card); }
