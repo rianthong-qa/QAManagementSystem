@@ -16,7 +16,7 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
     public async Task PollLinkedDefectsAsync(CancellationToken ct)
     {
         var linked = await db.Defects.Where(x => x.CrmSyncStatus == "Linked" && x.CrmTicketId != null && !x.IsDeleted).ToListAsync(ct);
-        var identities = await CrmPollIdentities.ResolveAsync(db, linked, CrmPollIdentities.MirrorUsername(configuration), ct);
+        var identities = await CrmPollIdentities.ResolveAsync(db, linked, CrmMirrorAccount.Username(configuration), ct);
         foreach (var defect in linked)
         {
             var candidates = identities[defect.DefectId];
@@ -36,19 +36,28 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
         }
     }
 
-    // ลองบัญชีตามลำดับ — คนที่ยังไม่ตั้งค่าบัญชี CRM (CrmNotConfiguredException ตอนขอ token ก่อนแก้ข้อมูลใด ๆ) ข้ามไปคนถัดไป
+    // ลองบัญชีตามลำดับ — บัญชีที่ยังไม่ตั้งค่า (CrmNotConfiguredException) หรือใช้ไม่ได้ (รหัสผ่านหมดอายุ/ไม่มีสิทธิ์ใน Ticket = CrmIntegrationException
+    // ที่ไม่ใช่ transient) ข้ามไปคนถัดไป เฉพาะตอนดึง Ticket ซึ่งยังไม่ได้แก้ข้อมูลใด ๆ — error หลังจากนั้นไม่สลับบัญชี เพราะ snapshot ถูกแก้ไปแล้ว
     private async Task PollWithFallbackAsync(Defect defect, IReadOnlyList<Guid> candidates, CancellationToken ct)
     {
         for (var i = 0; i < candidates.Count; i++)
         {
-            try { await PollOneAsync(defect, candidates[i], ct); return; }
-            catch (CrmNotConfiguredException) when (i < candidates.Count - 1) { }
+            var last = i == candidates.Count - 1;
+            System.Text.Json.JsonElement job;
+            try { job = await crmApi.GetJobDetailAsync(candidates[i], defect.CrmTicketId!, "HD", ct); }
+            catch (CrmNotConfiguredException) when (!last) { continue; }
+            catch (CrmIntegrationException ex) when (!ex.IsTransient && !last)
+            {
+                logger.LogInformation("CRM poll for defect {DefectId} falls back to next account: {Reason}", defect.DefectId, ex.Message);
+                continue;
+            }
+            await PollOneAsync(defect, candidates[i], job, ct);
+            return;
         }
     }
 
-    private async Task PollOneAsync(Defect defect, Guid pollUserId, CancellationToken ct)
+    private async Task PollOneAsync(Defect defect, Guid pollUserId, System.Text.Json.JsonElement job, CancellationToken ct)
     {
-        var job = await crmApi.GetJobDetailAsync(pollUserId, defect.CrmTicketId!, "HD", ct);
         var status = CrmApiClient.GetFieldAsString(job, "status");
         var assignto = CrmApiClient.GetFieldAsString(job, "assignto");
         var ownerSubjectId = CrmApiClient.GetFieldAsString(job, "ownerSubjectId");
@@ -144,8 +153,6 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
 /// <summary>เลือกบัญชีที่ใช้ poll CRM ต่อ Defect ตามลำดับ Assignee → ผู้ส่งไป CRM (activity "CrmSent" ล่าสุด) → บัญชีกลาง Mirror</summary>
 public static class CrmPollIdentities
 {
-    public static string MirrorUsername(IConfiguration configuration) => (configuration["CrmMirror:AccountUsername"] ?? "6101").Trim();
-
     public static async Task<Dictionary<Guid, IReadOnlyList<Guid>>> ResolveAsync(QaDbContext db, IReadOnlyList<Defect> defects, string mirrorUsername, CancellationToken ct)
     {
         var defectIds = defects.Select(d => d.DefectId).ToList();
@@ -153,9 +160,7 @@ public static class CrmPollIdentities
                 .Where(a => defectIds.Contains(a.DefectId) && a.ActionType == "CrmSent" && a.ActorUserId != null)
                 .Select(a => new { a.DefectId, a.ActorUserId, a.CreatedAt }).ToListAsync(ct))
             .GroupBy(a => a.DefectId).ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.CreatedAt).First().ActorUserId);
-        // ผู้ใช้หลายคนอาจผูกบัญชี CRM เดียวกัน — ใช้แถวที่บันทึกรหัสผ่านล่าสุด เหมือน CrmMirrorSyncService
-        var mirror = (await db.CrmConfigurations.AsNoTracking().Where(x => x.Username == mirrorUsername && x.IsEnabled && x.EncryptedPassword != "").ToListAsync(ct))
-            .OrderByDescending(x => x.UpdatedAt).Select(x => (Guid?)x.UserId).FirstOrDefault();
+        var mirror = (await CrmMirrorAccount.FindAsync(db, mirrorUsername, ct))?.UserId;
         return defects.ToDictionary(d => d.DefectId,
             d => (IReadOnlyList<Guid>)new[] { d.AssigneeUserId, senders.GetValueOrDefault(d.DefectId), mirror }.OfType<Guid>().Distinct().ToList());
     }

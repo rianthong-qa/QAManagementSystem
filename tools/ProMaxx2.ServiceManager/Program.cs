@@ -625,7 +625,7 @@ internal sealed class MainForm : Form
     }
 
     /// <returns>Task ที่จบเมื่อ process ออก (ค่า = exit code) — ใช้แยก "ยังเริ่มไม่เสร็จ" ออกจาก "ล้มระหว่างเริ่ม"</returns>
-    private Task<int> StartProcess(string file, string args, string workingDirectory, string source, IReadOnlyDictionary<string, string>? environment = null)
+    private Task<int> StartProcess(string file, string args, string workingDirectory, string source, IReadOnlyDictionary<string, string>? environment = null, Action<Process>? started = null)
     {
         var info = new ProcessStartInfo(file, args) { WorkingDirectory = workingDirectory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         if (environment is not null) foreach (var (name, value) in environment) info.Environment[name] = value;
@@ -636,6 +636,7 @@ internal sealed class MainForm : Form
         process.Exited += (_, _) => { exited.TrySetResult(process.ExitCode); process.Dispose(); };
         process.Start();
         var pid = process.Id;
+        started?.Invoke(process);
         process.BeginOutputReadLine(); process.BeginErrorReadLine();
         Log($"เริ่ม {source} (PID {pid})");
         return exited.Task;
@@ -651,10 +652,13 @@ internal sealed class MainForm : Form
         Log("ตรวจ build ของ API ก่อนหยุดตัวที่รันอยู่...");
         var output = Path.Combine(Path.GetTempPath(), "qa-svcmgr-verify", "api");
         var project = Path.Combine(_root, "src", "ProMaxx2.QA.Api", "ProMaxx2.QA.Api.csproj");
-        var exited = StartProcess("dotnet.exe", $"build \"{project}\" --nologo -v q -o \"{output}\"", _root, "BUILD");
+        Process? build = null;
+        var exited = StartProcess("dotnet.exe", $"build \"{project}\" --nologo -v q -o \"{output}\"", _root, "BUILD", started: p => build = p);
         var finished = await Task.WhenAny(exited, Task.Delay(TimeSpan.FromMinutes(5)));
         if (finished != exited)
         {
+            // หยุด dotnet build ที่ค้าง ไม่งั้นยังล็อกโฟลเดอร์ output/obj ไว้ และ Restart ครั้งถัดไปจะ build ชนกัน
+            try { build?.Kill(true); } catch (InvalidOperationException) { } catch (System.ComponentModel.Win32Exception) { }
             Log("ตรวจ build นานเกิน 5 นาที — ยกเลิก Restart", LogLevel.Error);
             throw new ServiceException("ตรวจ build ของ API นานเกิน 5 นาที — ยกเลิก Restart, API ตัวเดิมยังทำงานอยู่");
         }

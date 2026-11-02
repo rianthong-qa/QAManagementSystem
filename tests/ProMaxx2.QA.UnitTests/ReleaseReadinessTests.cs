@@ -1,5 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using ProMaxx2.QA.Application.Common;
+using ProMaxx2.QA.Application.Governance;
+using ProMaxx2.QA.Domain.Defects;
+using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Governance;
+using ProMaxx2.QA.Domain.Identity;
 using ProMaxx2.QA.Domain.Requirements;
 using ProMaxx2.QA.Domain.TestManagement;
 using ProMaxx2.QA.Infrastructure.Persistence;
@@ -54,6 +60,29 @@ public sealed class ReleaseReadinessTests
     }
 
     [Fact]
+    public async Task Hiding_a_module_does_not_lift_blockers_in_sign_off_or_dashboard()
+    {
+        // ซ่อน Module ได้แม้มี Defect/ผลทดสอบ — ห้ามใช้ซ่อน Module เพื่อเปลี่ยน NO-GO เป็น GO (ผล /code-review 2026-11-02)
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var b = await AutomationTestFixtures.SeedBaselineAsync(db, automationCandidate: false);
+        var owner = new User("owner", "Owner", null, "hash");
+        var cycle = new TestCycle(b.Project.ProjectId, b.Release.ReleaseId, b.Build.BuildId, b.Environment.TestEnvironmentId, null, "CYC-1", "CYC-1", "Smoke", null, null, null, null, owner.UserId);
+        var failedP0 = new TestCycleCase(cycle.TestCycleId, b.TestCase.TestCaseId, b.TestCase.RevisionNo, "P0", 1);
+        failedP0.SetStatus("Fail");
+        var critical = new Defect(b.Project.ProjectId, b.Release.ReleaseId, b.Build.BuildId, b.Module.ModuleId, "DF-1", "Crash", "Critical", "Open", null, null, null, null, null, null);
+        db.AddRange(owner, cycle, failedP0, critical);
+        b.Module.Deactivate(null);
+        await db.SaveChangesAsync();
+        var access = new ProjectAccessContext { CurrentUserId = owner.UserId, AllowedProjectIds = [b.Project.ProjectId] };
+
+        var gate = await new ReleaseSignoffRepository(db, access, new FixedOptions(new DefectGateOptions())).GetGateAsync(b.Release.ReleaseId, null, CancellationToken.None);
+        var dashboard = await new DashboardRepository(db, access).GetAsync(b.Project.ProjectId, b.Release.ReleaseId, null, CancellationToken.None);
+
+        Assert.Equal(("NO_GO", 1, 1), (gate.RecommendedDecision, gate.OpenP0, gate.OpenCriticalDefects));
+        Assert.Equal((1, 1), (dashboard.OpenP0, dashboard.CriticalDefects));
+    }
+
+    [Fact]
     public void Readiness_queries_translate_to_sql()
     {
         using var db = new QaDbContext(new DbContextOptionsBuilder<QaDbContext>()
@@ -68,6 +97,13 @@ public sealed class ReleaseReadinessTests
         var tc = new TestCase(b.Project.ProjectId, b.Module.ModuleId, code, code, null, null, "P1", null, false, null, [new TestStepInput(1, "Action", null, "Expected")], null);
         tc.ChangeStatus(status, null);
         return tc;
+    }
+
+    private sealed class FixedOptions(DefectGateOptions value) : IOptionsMonitor<DefectGateOptions>
+    {
+        public DefectGateOptions CurrentValue => value;
+        public DefectGateOptions Get(string? name) => value;
+        public IDisposable? OnChange(Action<DefectGateOptions, string?> listener) => null;
     }
 
     private static Requirement Requirement(AutomationTestFixtures.Baseline b, string code) => new(b.Project.ProjectId, b.Release.ReleaseId, b.Module.ModuleId, code, code, null, null, "P1", null, null, null, true, null);

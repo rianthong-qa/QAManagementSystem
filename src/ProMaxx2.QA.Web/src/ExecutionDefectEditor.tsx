@@ -188,8 +188,9 @@ export function ExecutionDefectEditor({ apiUrl, context, existing, onClose, onSa
       setDirty(false);
       if (!linked) {
         const link = await fetch(`${apiUrl}/defects/${defect.defectId}/test-cases`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ testCaseId: context.testCaseId }) });
-        // 400 = Test Case ถูกลบไปแล้วแต่ยังค้างอยู่ใน Cycle — กดบันทึกซ้ำก็ไม่สำเร็จ จึงข้ามการเชื่อมแล้วบันทึก/แนบรูปต่อ
-        if (link.status === 400) linkSkipped = true;
+        // 400 "Test Case not found." = Test Case ถูกลบไปแล้วแต่ยังค้างอยู่ใน Cycle — กดบันทึกซ้ำก็ไม่สำเร็จ จึงข้ามการเชื่อมแล้วบันทึก/แนบรูปต่อ
+        // 400 แบบอื่น (validation) ยังถือว่าเชื่อมไม่สำเร็จ
+        if (link.status === 400 && (await link.text().catch(() => "")).includes("Test Case not found")) linkSkipped = true;
         else if (!link.ok && link.status !== 409) throw new Error(`สร้าง ${defect.defectCode} แล้ว แต่เชื่อม Test Case ไม่สำเร็จ กรุณากดบันทึกอีกครั้ง`);
         setLinked(true);
       }

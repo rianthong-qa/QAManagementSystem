@@ -15,12 +15,13 @@ public sealed class ReleaseSignoffRepository(QaDbContext db, ProjectAccessContex
         var release = await db.Releases.AsNoTracking().Where(r => r.ReleaseId == releaseId).Select(r => new { r.ProjectId }).FirstOrDefaultAsync(ct);
         if (release is null || (allowed.Length > 0 && !allowed.Contains(release.ProjectId))) return new ReleaseGateDto(0, 0, 0, 0, false, 0, "NO_DATA");
 
-        // ขอบเขตเดียวกับ Dashboard: เลือก Build = นับเฉพาะ Cycle ของ Build นั้น, ไม่นับ Module ที่ซ่อน และไม่นับ Test Case ที่ถูกลบ
+        // ขอบเขตเดียวกับ Dashboard: เลือก Build = นับเฉพาะ Cycle ของ Build นั้น และไม่นับ Test Case ที่ถูกลบ
+        // Module ที่ซ่อน: ไม่นับใน Coverage/Pass Rate แต่ยังนับ P0/P1 ค้างและ Defect ค้าง — ไม่ให้ซ่อน Module แล้วเปลี่ยน NO-GO เป็น GO ได้
         var hiddenModules = db.Modules.Where(m => !m.IsActive);
-        var baseCases = db.TestCycleCases.AsNoTracking().Where(c => !c.Cycle.IsDeleted && c.Cycle.ReleaseId == releaseId && (!buildId.HasValue || c.Cycle.BuildId == buildId)
-            && !c.TestCase.IsDeleted && !hiddenModules.Any(m => m.ModuleId == c.TestCase.ModuleId));
-        var openP0 = await baseCases.CountAsync(c => (c.CurrentStatus == "Fail" || c.CurrentStatus == "Blocked") && c.Priority == "P0", ct);
-        var openP1 = await baseCases.CountAsync(c => (c.CurrentStatus == "Fail" || c.CurrentStatus == "Blocked") && c.Priority == "P1", ct);
+        var scopeCases = db.TestCycleCases.AsNoTracking().Where(c => !c.Cycle.IsDeleted && c.Cycle.ReleaseId == releaseId && (!buildId.HasValue || c.Cycle.BuildId == buildId) && !c.TestCase.IsDeleted);
+        var baseCases = scopeCases.Where(c => !hiddenModules.Any(m => m.ModuleId == c.TestCase.ModuleId));
+        var openP0 = await scopeCases.CountAsync(c => (c.CurrentStatus == "Fail" || c.CurrentStatus == "Blocked") && c.Priority == "P0", ct);
+        var openP1 = await scopeCases.CountAsync(c => (c.CurrentStatus == "Fail" || c.CurrentStatus == "Blocked") && c.Priority == "P1", ct);
         var executed = await baseCases.CountAsync(c => c.CurrentStatus != "NotRun", ct);
         var passed = await baseCases.CountAsync(c => c.CurrentStatus == "Pass", ct);
         var passRate = executed == 0 ? 0 : Math.Round(passed * 100m / executed, 1);
@@ -31,8 +32,8 @@ public sealed class ReleaseSignoffRepository(QaDbContext db, ProjectAccessContex
 
         var approvedRisks = await db.RiskAcceptances.AsNoTracking().CountAsync(r => r.ReleaseId == releaseId && !r.IsDeleted && r.Status == "Approved", ct);
         var smoke = await ReleaseReadinessQueries.SmokeAsync(db, release.ProjectId, buildId, ct);
-        // Defect ทั้ง Release (ไม่กรอง Build — Defect ที่ยังค้างจาก Build ก่อนก็ยังกันการปล่อย) ไม่นับ Module ที่ซ่อน
-        var defects = await ReleaseReadinessQueries.DefectCountsAsync(db, db.Defects.Where(d => d.ReleaseId == releaseId && !hiddenModules.Any(m => m.ModuleId == d.ModuleId)), ct);
+        // Defect ทั้ง Release (ไม่กรอง Build — Defect ที่ยังค้างจาก Build ก่อนก็ยังกันการปล่อย) รวม Module ที่ซ่อน
+        var defects = await ReleaseReadinessQueries.DefectCountsAsync(db, db.Defects.Where(d => d.ReleaseId == releaseId), ct);
         var gateEnabled = defectGate.CurrentValue.GateEnabled;
         var (decision, reason) = ReleaseGate.Assess(new ReleaseGateInput(openP0, openP1, approvedRisks > 0, smoke.Passed, defects,
             requirementIds.Count == 0 ? null : coverage, executed == 0 ? null : passRate, gateEnabled));

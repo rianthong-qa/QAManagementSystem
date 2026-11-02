@@ -150,7 +150,7 @@ public sealed class TestPlanRepository(QaDbContext db, ProjectAccessContext proj
         var members = await db.ProjectUsers.AsNoTracking().Where(x => x.ProjectId == projectId && userIds.Contains(x.UserId)).Select(x => x.UserId).ToListAsync(ct);
         return userIds.Except(members).ToList();
     }
-    public async Task<IReadOnlyList<TestCycleCase>> UnassignedNotRunCasesAsync(Guid testCycleId, CancellationToken ct) => await db.TestCycleCases.Where(x => x.TestCycleId == testCycleId && x.AssignedTesterUserId == null && x.CurrentStatus == "NotRun" && x.Cycle.Status != "Closed" && x.Cycle.Status != "Cancelled").OrderBy(x => x.ExecutionOrder).ToListAsync(ct);
+    public async Task<IReadOnlyList<TestCycleCase>> UnassignedNotRunCasesAsync(Guid testCycleId, CancellationToken ct) => await db.TestCycleCases.Where(x => x.TestCycleId == testCycleId && x.AssignedTesterUserId == null && x.CurrentStatus == "NotRun" && !db.TestCases.Any(t => t.TestCaseId == x.TestCaseId && t.IsDeleted) && x.Cycle.Status != "Closed" && x.Cycle.Status != "Cancelled").OrderBy(x => x.ExecutionOrder).ToListAsync(ct);
     public Task<Dictionary<Guid, TestCycleCaseAssignment>> AssignmentMetadataAsync(IReadOnlyCollection<Guid> testCycleCaseIds, CancellationToken ct) => db.TestCycleCaseAssignments.Where(x => testCycleCaseIds.Contains(x.TestCycleCaseId)).ToDictionaryAsync(x => x.TestCycleCaseId, ct);
     public void AddAssignmentMetadata(TestCycleCaseAssignment entity) => db.TestCycleCaseAssignments.Add(entity);
     public void AddAssignmentHistory(AssignmentHistory entity) => db.AssignmentHistories.Add(entity);
