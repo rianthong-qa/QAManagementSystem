@@ -13,7 +13,7 @@ namespace ProMaxx2.QA.Api.Controllers;
 public sealed record GenerateTestCycleAiRequest(Guid ProjectId, Guid ReleaseId, Guid BuildId, Guid EnvironmentId, Guid? TestSuiteId);
 
 [ApiController, Route("api/v1"), Authorize(Policy = "ExecutionRun"), RequireProjectAccess]
-public sealed class TestCyclesController(TestCycleService service, TestCycleAiService ai, ProjectService projects, TestSuiteService suites, QaDbContext db) : ControllerBase
+public sealed class TestCyclesController(TestCycleService service, TestCycleAiService ai, ProjectService projects, TestSuiteService suites, QaDbContext db, DeletedCycleCaseCleanupService deletedCases, ProMaxx2.QA.Application.TestPlanning.ITestPlanFreezeGuard freezeGuard) : ControllerBase
 {
     [HttpGet("test-environments")]
     public Task<IReadOnlyList<EnvironmentDto>> Environments([FromQuery] Guid? projectId, CancellationToken ct) => service.EnvironmentsAsync(projectId, ct);
@@ -81,6 +81,24 @@ public sealed class TestCyclesController(TestCycleService service, TestCycleAiSe
             return Conflict(problem);
         }
     }
+
+    // เอาเคสที่ Test Case ถูกลบและยังไม่มีผลทดสอบออกจาก Cycle — สิทธิ์จัดการ Cycle (EXECUTION.ASSIGN) เหมือนปุ่มลบ Cycle
+    [HttpPost("test-cycles/{cycleId:guid}/remove-deleted-cases"), Authorize(Policy = "ExecutionAssign")]
+    public async Task<ActionResult<RemoveDeletedCycleCasesResultDto>> RemoveDeletedCases(Guid cycleId, CancellationToken ct)
+    {
+        var cycle = await db.TestCycles.AsNoTracking().Where(x => x.TestCycleId == cycleId && !x.IsDeleted).Select(x => new { x.ProjectId, x.Status }).FirstOrDefaultAsync(ct);
+        if (cycle is null) return NotFound();
+        if (cycle.Status is "Completed" or "Closed" or "Cancelled") return BadRequest(new ProblemDetails { Title = "Cycle ปิดแล้ว", Detail = $"Cycle นี้อยู่สถานะ {cycle.Status} แล้ว ไม่สามารถเอาเคสออกได้", Status = 400 });
+        await freezeGuard.EnsureNotFrozenAsync(cycleId, ct);
+        return Ok(await deletedCases.RemoveAsync(cycle.ProjectId, cycleId, UserId(), ClientIp.Resolve(HttpContext), ct));
+    }
+
+    // ทั้ง Project (SYS_ADMIN) — ข้าม Cycle ที่ปิดแล้วและ Cycle ใน Test Plan ที่ Frozen
+    [HttpGet("test-cycles/deleted-cases-summary"), Authorize(Policy = "SysAdminOnly")]
+    public Task<DeletedCycleCaseSummaryDto> DeletedCasesSummary([FromQuery] Guid projectId, CancellationToken ct) => deletedCases.SummaryAsync(projectId, ct);
+
+    [HttpPost("test-cycles/remove-deleted-cases"), Authorize(Policy = "SysAdminOnly")]
+    public Task<RemoveDeletedCycleCasesResultDto> RemoveDeletedCasesInProject([FromQuery] Guid projectId, CancellationToken ct) => deletedCases.RemoveAsync(projectId, null, UserId(), ClientIp.Resolve(HttpContext), ct);
 
     [HttpPost("test-cycles/generate-ai"), Authorize(Policy = "ExecutionRun"), RequestSizeLimit(21_000_000)]
     public async Task<ActionResult<GeneratedTestCycle>> GenerateAi(GenerateTestCycleAiRequest request, CancellationToken ct)

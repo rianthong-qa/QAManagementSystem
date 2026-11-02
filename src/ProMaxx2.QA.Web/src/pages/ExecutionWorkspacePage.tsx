@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { CyclePicker } from "../components/CyclePicker";
 import { type WorkspaceDefect, type WorkspaceDefectContext, ExecutionDefectEditor } from "../ExecutionDefectEditor";
-import { apiUrl, getJson, isAbortError } from "../api";
+import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
+import { type RemoveDeletedCasesResult, removeDeletedCasesMessage } from "../shared/recycleBin";
 import { confirmDialog, notify } from "../components/dialogStore";
 import { type StepStatus, calculateOverallResult } from "../overallResult";
 import { Badge } from "../components/Badge";
@@ -45,6 +46,8 @@ type ExecutionCase = {
   currentStatus: string;
   executionOrder: number;
   assignedTesterUserId?: string | null;
+  /** Test Case ถูกลบ (soft delete) แต่ยังอยู่ใน Cycle — ดูผลเดิมได้อย่างเดียว Server ตอบ 409 TEST_CASE_DELETED เมื่อบันทึกผล */
+  testCaseDeleted?: boolean;
   steps: {
     stepNo: number;
     action: string;
@@ -127,6 +130,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     [myCyclesOnly, setMyCyclesOnly] = useState(false),
     // คิว: แสดงเฉพาะเคสที่ assign ให้ฉัน (AssignedTesterUserId) — ปุ่มแสดงเมื่อ Cycle นี้มีการ assign อย่างน้อย 1 เคส
     [queueMineOnly, setQueueMineOnly] = useState(false),
+    // คิว: ซ่อนเคสที่ Test Case ถูกลบแล้ว — ค่าเริ่มต้นแสดง (ผลเดิมยังนับใน Cycle) ปุ่มแสดงเมื่อมีเคสที่ถูกลบ
+    [hideDeletedCases, setHideDeletedCases] = useState(false),
+    [restoringCase, setRestoringCase] = useState(false),
+    [removingDeletedCases, setRemovingDeletedCases] = useState(false),
     [workspaceLoading, setWorkspaceLoading] = useState(false),
     [saving, setSaving] = useState(false),
     [reload, setReload] = useState(0),
@@ -150,6 +157,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     [caseDetailLoadError, setCaseDetailLoadError] = useState("");
   const currentUser = useMemo(() => { try { return JSON.parse(localStorage.getItem("qa.user") ?? "{}") as SessionUser; } catch { return null; } }, []);
   const canEditDefect = Boolean(currentUser?.roles?.includes("SYS_ADMIN") || currentUser?.permissions?.includes("DEFECT.EDIT"));
+  // กู้คืน Test Case ใช้ API ถังขยะ (SysAdminOnly) เหมือนปุ่ม "ลบแล้ว" ในหน้า Test Case
+  const canRestoreTestCase = Boolean(currentUser?.roles?.includes("SYS_ADMIN"));
+  // เอาเคสออกจาก Cycle ใช้สิทธิ์จัดการ Cycle (EXECUTION.ASSIGN) เหมือนปุ่มลบ Cycle
+  const canManageCycle = Boolean(currentUser?.roles?.includes("SYS_ADMIN") || currentUser?.permissions?.includes("EXECUTION.ASSIGN"));
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}`,
@@ -331,13 +342,18 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       .filter((item) =>
         (statusFilter === "All" || item.currentStatus === statusFilter) &&
         (!queueMineOnly || item.assignedTesterUserId === myUserId) &&
+        (!hideDeletedCases || !item.testCaseDeleted) &&
         (!query || `${item.testCaseCode} ${item.title}`.toLocaleLowerCase("th-TH").includes(query)),
       )
       .sort((a, b) =>
         a.testCaseCode.localeCompare(b.testCaseCode, undefined, { numeric: true, sensitivity: "base" }) ||
         a.testCycleCaseId.localeCompare(b.testCycleCaseId),
       );
-  }, [workspace, caseSearch, statusFilter, queueMineOnly, myUserId]);
+  }, [workspace, caseSearch, statusFilter, queueMineOnly, hideDeletedCases, myUserId]);
+  const deletedCaseCount = useMemo(() => (workspace?.cases ?? []).filter((x) => x.testCaseDeleted).length, [workspace]);
+  // เอาออกได้เฉพาะเคสที่ยังไม่มีผล — Server ตรวจซ้ำว่าไม่มีแถว Execution เลย (ตัวเลขนี้เป็นค่าประมาณจากสถานะในคิว)
+  const removableDeletedCount = useMemo(() => (workspace?.cases ?? []).filter((x) => x.testCaseDeleted && x.currentStatus === "NotRun").length, [workspace]);
+  useEffect(() => { if (!deletedCaseCount) setHideDeletedCases(false); }, [deletedCaseCount]);
   const hasAssignedCases = useMemo(() => (workspace?.cases ?? []).some((x) => x.assignedTesterUserId), [workspace]);
   useEffect(() => { if (!hasAssignedCases) setQueueMineOnly(false); }, [hasAssignedCases]);
   // โหลดรายละเอียดเคสถัดไปไว้ล่วงหน้าเมื่อเคสปัจจุบันแสดงแล้ว — กด "ถัดไป" แล้วขึ้นทันทีไม่ต้องรอผ่าน Cloudflare
@@ -392,6 +408,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   const cycleUnconfirmed = !!cycleId && !filteredCycles.some((x) => x.testCycleId === cycleId);
   // Cycle ที่อยู่ใน Test Plan ที่ Freeze/ปิด (เฟส 6) — แสดง Banner และปิดปุ่มบันทึก/ลบผลล่วงหน้า
   const frozenPlan = workspace?.testCycleId === cycleId && workspace.plan?.isFrozen ? workspace.plan : null;
+  // Test Case ของเคสที่แสดงถูกลบแล้ว — ดูผล/ประวัติได้ แต่แก้ผล บันทึก ลบผล และแจ้ง Defect ใหม่ไม่ได้ (แก้ Defect เดิมได้)
+  const caseDeleted = !!selected?.testCaseDeleted;
+  const deletedCaseMessage = selected ? `${selected.testCaseCode} ถูกลบแล้ว — ดูผลเดิมได้อย่างเดียว บันทึกผลไม่ได้` : "";
+  const resultLockReason = frozenPlan ? frozenPlanMessage(frozenPlan) : caseDeleted ? deletedCaseMessage : undefined;
   const caseSwitching = workspaceSwitching || cycleUnconfirmed || (!!selected && selected.testCycleCaseId !== selectedId);
   // UI รอบ 2: เปลี่ยนเคสแล้ว effect ด้านบนคืนค่าที่บันทึกล่าสุด — ผลที่กรอกแต่ยังไม่บันทึกจะหายเงียบ ๆ จึงถามก่อน
   const hasUnsavedResults = !!selected && (
@@ -455,6 +475,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     if (!selected || caseSwitching) return;
     // แผน Freeze/ปิด: Server ตอบ 409 TEST_PLAN_FROZEN อยู่แล้ว — บอกก่อนแทนการให้กรอกแล้วค่อยล้ม (รวมปุ่มลัด P/F/B)
     if (frozenPlan) { notify(frozenPlanMessage(frozenPlan), "error"); return; }
+    if (caseDeleted) { notify(deletedCaseMessage, "error"); return; }
     if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
       notify(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถบันทึกผล Execution เพิ่มได้`, "error");
       return;
@@ -481,8 +502,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         },
       );
       if (!response.ok) {
-        const problem = await response.json();
-        throw new Error(problem.detail ?? "บันทึกผลไม่สำเร็จ");
+        const problem = await response.json().catch(() => null);
+        // Test Case ถูกลบระหว่างที่หน้านี้เปิดอยู่ — โหลดใหม่ให้หน้าจอขึ้นสถานะ "ถูกลบแล้ว"
+        if (problem?.code === "TEST_CASE_DELETED") setReload((x) => x + 1);
+        throw new Error(problem?.detail ?? "บันทึกผลไม่สำเร็จ");
       }
       // ExecutionHistoryDto.CreatedDefectCode/ExistingDefectCode/DefectAutoCreateError มีให้ "ครั้งเดียว"
       // ตรงนี้เท่านั้น — GET .../cases/{id} (ที่ setReload ทำให้ refetch ใหม่) ไม่ได้ persist/ผูกกลับมาให้
@@ -540,7 +563,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         const nextIndex = event.key === "ArrowDown" ? Math.min(stepNos.length - 1, index + 1) : Math.max(0, index - 1);
         scrollToActiveStep.current = true;
         setActiveStep(stepNos[nextIndex]);
-      } else if (mainTab === "steps" && ["1", "2", "3", "4"].includes(key) && activeStep != null) {
+      } else if (mainTab === "steps" && ["1", "2", "3", "4"].includes(key) && activeStep != null && !caseDeleted) {
         event.preventDefault();
         const status = (["Pass", "Fail", "Blocked", "NotRun"] as const)[Number(key) - 1];
         setStepStatuses((s) => ({ ...s, [activeStep]: status }));
@@ -552,7 +575,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       } else if (mainTab === "steps" && event.key === "Enter" && activeStep != null && !target?.closest("button, a")) {
         event.preventDefault();
         document.getElementById(`step-actual-${activeStep}`)?.focus();
-      } else if (["p", "f", "b"].includes(key)) {
+      } else if (["p", "f", "b"].includes(key) && !caseDeleted) {
         const status = key === "p" ? "Pass" : key === "f" ? "Fail" : "Blocked";
         event.preventDefault();
         // เหมือนปุ่ม "ตั้งทุก Step" — ถามก่อนเปลี่ยนผลทุก Step (เดิมปุ่มลัดเปลี่ยนทันทีโดยไม่ถาม)
@@ -565,7 +588,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected, caseSwitching, selectedId, filteredCases, skipModalOpen, defectEditor, hasUnsavedResults, mainTab, activeStep]);
+  }, [selected, caseSwitching, selectedId, filteredCases, skipModalOpen, defectEditor, hasUnsavedResults, mainTab, activeStep, caseDeleted]);
   // §18 Skip Test Case — เปิด modal เลือก Reason + Comment ก่อนเสมอ ไม่มีปุ่มลัด
   const openSkipModal = () => { setSkipReason(""); setSkipComment(""); setSkipModalOpen(true); };
   const confirmSkip = () => {
@@ -620,8 +643,44 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     mergeLinkedDefect(defect);
     setDefectEditor(null);
   };
+  const restoreTestCase = async () => {
+    if (!selected || restoringCase) return;
+    if (!await confirmDialog({ title: `กู้คืน ${selected.testCaseCode}?`, message: "Test Case จะกลับมาในหน้า Test Case และบันทึกผลใน Cycle นี้ได้อีกครั้ง", confirmLabel: "กู้คืน" })) return;
+    setRestoringCase(true);
+    try {
+      const response = await fetch(`${apiUrl}/recycle-bin/test-cases/${selected.testCaseId}/restore`, { method: "POST", headers });
+      // 404 = มีคนกู้คืนไปแล้ว — โหลดใหม่ก็ได้สถานะล่าสุดเหมือนกัน
+      if (!response.ok && response.status !== 404) throw new Error();
+      notify(`กู้คืน ${selected.testCaseCode} แล้ว บันทึกผลได้ตามปกติ`, "success");
+      setReload((x) => x + 1);
+    } catch {
+      notify(`กู้คืน ${selected.testCaseCode} ไม่สำเร็จ กรุณาลองใหม่`, "error");
+    } finally {
+      setRestoringCase(false);
+    }
+  };
+  const removeDeletedCases = async () => {
+    if (!workspace || removingDeletedCases) return;
+    if (!await confirmDialog({
+      title: `เอาเคสที่ Test Case ถูกลบออกจาก ${workspace.cycleCode}?`,
+      message: `เอาออกประมาณ ${removableDeletedCount} เคส — เฉพาะเคสที่ยังไม่มีผลทดสอบ เคสที่มีผลแล้วคงไว้เป็นหลักฐาน การเอาออกย้อนกลับไม่ได้ (บันทึกไว้ใน Audit Log)${hasUnsavedResults ? "\n\nผลที่กรอกไว้แต่ยังไม่บันทึกของเคสที่เปิดอยู่จะหาย" : ""}`,
+      confirmLabel: "เอาออก",
+      tone: "danger",
+    })) return;
+    setRemovingDeletedCases(true);
+    try {
+      const result = await apiFetch<RemoveDeletedCasesResult>(`/test-cycles/${workspace.testCycleId}/remove-deleted-cases`, { method: "POST", fallbackMessage: "เอาเคสที่ถูกลบออกไม่สำเร็จ" });
+      notify(removeDeletedCasesMessage(result), "success");
+      setReload((x) => x + 1);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "เอาเคสที่ถูกลบออกไม่สำเร็จ", "error");
+    } finally {
+      setRemovingDeletedCases(false);
+    }
+  };
   const removeExecution = async (execution: ExecutionCase["history"][number]) => {
     if (frozenPlan) { notify(frozenPlanMessage(frozenPlan), "error"); return; }
+    if (caseDeleted) { notify(deletedCaseMessage, "error"); return; }
     if (workspace?.status === "Closed" || workspace?.status === "Cancelled") {
       notify(`Cycle นี้อยู่สถานะ ${workspace.status} แล้ว ไม่สามารถลบผล Execution ได้`, "error");
       return;
@@ -808,11 +867,25 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                     เฉพาะเคสที่ assign ให้ฉัน
                   </label>
                 )}
+                {deletedCaseCount > 0 && (
+                  <label className={`case-queue-mine${hideDeletedCases ? " is-on" : ""}`}>
+                    <input type="checkbox" checked={hideDeletedCases} onChange={(e) => setHideDeletedCases(e.target.checked)} />
+                    <span className="material-symbols-outlined" aria-hidden="true">visibility_off</span>
+                    ซ่อนเคสที่ Test Case ถูกลบ ({deletedCaseCount})
+                  </label>
+                )}
+                {canManageCycle && removableDeletedCount > 0 && !frozenPlan && workspace.status !== "Closed" && workspace.status !== "Cancelled" && workspace.status !== "Completed" && (
+                  <button type="button" className="case-queue-cleanup" disabled={removingDeletedCases} onClick={() => void removeDeletedCases()}>
+                    {removingDeletedCases
+                      ? <><span className="spinner inline" aria-hidden="true" /> กำลังเอาออก...</>
+                      : <><span className="material-symbols-outlined" aria-hidden="true">playlist_remove</span> เอาเคสที่ถูกลบและยังไม่ทดสอบออก ({removableDeletedCount})</>}
+                  </button>
+                )}
               </div>
               <div className="case-queue-list" ref={queueListRef}>
                 {filteredCases.map((x) => (
                   <button
-                    className={`case-queue-item is-${x.currentStatus.toLowerCase()}${selectedId === x.testCycleCaseId ? " active" : ""}`}
+                    className={`case-queue-item is-${x.currentStatus.toLowerCase()}${x.testCaseDeleted ? " is-deleted" : ""}${selectedId === x.testCycleCaseId ? " active" : ""}`}
                     aria-current={selectedId === x.testCycleCaseId ? "true" : undefined}
                     key={x.testCycleCaseId}
                     onClick={() => { void selectCase(x.testCycleCaseId); setQueueOpen(false); }}
@@ -820,6 +893,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                     <span className="case-row-top">
                       <b>{x.testCaseCode}</b>
                       <span className="case-row-badges">
+                        {x.testCaseDeleted && <Badge tone="gray">ถูกลบแล้ว</Badge>}
                         {x.priority && <Badge tone={priorityTone(x.priority)}>{x.priority}</Badge>}
                         <Badge tone={executionStatusTone(x.currentStatus)}>{x.currentStatus}</Badge>
                       </span>
@@ -845,11 +919,23 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                   <h2>{selected.title}</h2>
                 </div>
                 <div className="execution-case-nav">
+                  {caseDeleted && <Badge tone="gray">ถูกลบแล้ว</Badge>}
                   <Badge tone={executionStatusTone(selected.currentStatus)}>{selected.currentStatus}</Badge>
                   <button type="button" className="btn" disabled={!prevCase} aria-label="Test Case ก่อนหน้า" title="Test Case ก่อนหน้า" onClick={() => prevCase && void selectCase(prevCase.testCycleCaseId)}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
                   <button type="button" className="btn" disabled={!nextCase} aria-label="Test Case ถัดไป" title="Test Case ถัดไป (N)" onClick={() => nextCase && void selectCase(nextCase.testCycleCaseId)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
                 </div>
               </div>
+              {caseDeleted && (
+                <div className="execution-deleted-banner" role="status">
+                  <span className="material-symbols-outlined" aria-hidden="true">delete</span>
+                  <span><b>Test Case นี้ถูกลบแล้ว — ดูผลเดิมได้อย่างเดียว</b> บันทึกผล ลบผล และแจ้ง Defect ใหม่ไม่ได้ (Defect ที่เชื่อมไว้ยังแก้ไขได้){canRestoreTestCase ? "" : " · ติดต่อผู้ดูแลระบบหากต้องการกู้คืน"}</span>
+                  {canRestoreTestCase && (
+                    <button type="button" className="btn" disabled={restoringCase} onClick={() => void restoreTestCase()}>
+                      {restoringCase ? <><span className="spinner inline" aria-hidden="true" /> กำลังกู้คืน...</> : <><span className="material-symbols-outlined" aria-hidden="true">restore_from_trash</span> กู้คืน Test Case</>}
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="execution-tabs" role="tablist" aria-label="บันทึกผลและประวัติ">
                 <button type="button" role="tab" id="execution-tab-steps" aria-controls="execution-panel-steps" aria-selected={mainTab === "steps"} tabIndex={mainTab === "steps" ? 0 : -1}
                   onClick={() => setMainTab("steps")} onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { setMainTab("history"); document.getElementById("execution-tab-history")?.focus(); } }}>
@@ -907,6 +993,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                           type="button"
                           key={status}
                           className={`is-${status.toLowerCase()}`}
+                          disabled={caseDeleted}
                           onClick={async () => {
                             if (!await confirmDialog(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${resultLabel(status)} หรือไม่?`)) return;
                             setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
@@ -954,6 +1041,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                                   className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
                                   title={resultLabel(opt)}
                                   aria-pressed={status === opt}
+                                  disabled={caseDeleted}
                                   aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${resultLabel(opt)}`}
                                   onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
                                 >
@@ -974,11 +1062,12 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                                 aria-invalid={missingActual || undefined}
                                 aria-describedby={missingActual ? actualErrorId : undefined}
                                 value={stepActuals[x.stepNo] ?? ""}
+                                readOnly={caseDeleted}
                                 onChange={(e) => setStepActuals((s) => ({ ...s, [x.stepNo]: e.target.value }))}
                                 placeholder={requiresActual ? "ผลที่ได้จริง (บังคับกรอก) *" : "ผลที่ได้จริง / Comment"}
                               />
                               {missingActual && <small id={actualErrorId} className="sr-only">กรุณาระบุผลที่เกิดขึ้นจริง</small>}
-                              {status === "Fail" && canEditDefect && (
+                              {status === "Fail" && canEditDefect && !caseDeleted && (
                                 stepDefectCodes[x.stepNo]
                                   ? <small className="step-defect-linked">Defect: {stepDefectCodes[x.stepNo]}</small>
                                   : <button type="button" className="step-create-defect" title="สร้าง Defect จาก Step นี้" aria-label={`สร้าง Defect จาก Step ${x.stepNo}`} onClick={() => openDefectEditorForStep(x)}>+ Defect</button>
@@ -993,15 +1082,15 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                     <div className="execution-notes-field">
                       <div className="execution-notes-head">
                         <label htmlFor="execution-actual-summary">Actual Result (สรุปผลที่เกิดขึ้นจริง)</label>
-                        <button type="button" className="execution-generate-summary" disabled={!selected.steps.length} onClick={() => void generateSummary()} title="สร้างสรุปจากผล Step ที่ Fail/Blocked และ Step ที่ยังไม่ได้ทดสอบ">
+                        <button type="button" className="execution-generate-summary" disabled={!selected.steps.length || caseDeleted} onClick={() => void generateSummary()} title="สร้างสรุปจากผล Step ที่ Fail/Blocked และ Step ที่ยังไม่ได้ทดสอบ">
                           <span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span> Generate Summary
                         </button>
                       </div>
-                      <textarea id="execution-actual-summary" rows={3} value={actual} onChange={(e) => setActual(e.target.value)} placeholder="สรุปผลที่เกิดขึ้นจริง หรือกด Generate Summary" />
+                      <textarea id="execution-actual-summary" rows={3} readOnly={caseDeleted} value={actual} onChange={(e) => setActual(e.target.value)} placeholder="สรุปผลที่เกิดขึ้นจริง หรือกด Generate Summary" />
                     </div>
                     <label>
                       Comment / หมายเหตุเพิ่มเติม
-                      <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="หมายเหตุเพิ่มเติม" />
+                      <textarea rows={2} readOnly={caseDeleted} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="หมายเหตุเพิ่มเติม" />
                     </label>
                   </div>
                 </div>
@@ -1034,10 +1123,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                       <div className="history-item-foot">
                         <button
                           className="history-delete"
-                          disabled={deletingHistoryId === x.testExecutionId || workspace?.status === "Closed" || workspace?.status === "Cancelled" || !!frozenPlan}
+                          disabled={deletingHistoryId === x.testExecutionId || workspace?.status === "Closed" || workspace?.status === "Cancelled" || !!resultLockReason}
                           onClick={() => removeExecution(x)}
                           aria-label={`ลบผลการทดสอบ Run #${x.executionNo}`}
-                          title={frozenPlan ? frozenPlanMessage(frozenPlan) : workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ"}
+                          title={resultLockReason ?? (workspace?.status === "Closed" || workspace?.status === "Cancelled" ? "Cycle ปิดแล้ว ไม่สามารถลบผลได้" : "ลบผลการทดสอบ")}
                         >
                           {deletingHistoryId === x.testExecutionId
                             ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</>
@@ -1050,7 +1139,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
               )}
               {/* Action Bar (§14) — 3 ปุ่มเท่านั้น ติดล่างจอ พร้อม Overall Result ย่อให้เห็นตลอดระหว่างเลื่อน Step */}
               <div className="execution-actions">
-                {failedStepsWithoutDefect.length > 0 && (
+                {failedStepsWithoutDefect.length > 0 && !caseDeleted && (
                   <div className="execution-defect-warning" role="status">
                     <span className="material-symbols-outlined" aria-hidden="true">warning</span>
                     <span><b>Step {failedStepsWithoutDefect.map((s) => s.stepNo).join(", ")} Fail ยังไม่มี Defect</b> — เมื่อบันทึกผล Fail ระบบจะสร้าง Defect ให้อัตโนมัติ 1 รายการ</span>
@@ -1063,11 +1152,11 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                   <small>P {stepCounts.passed} · F {stepCounts.failed} · B {stepCounts.blocked} · — {stepCounts.notRun}</small>
                 </span>
                 <small className="execution-shortcut-hint">ปุ่มลัด: ↑/↓ เลือก Step · 1–4 = Pass/Fail/Blocked/Not Run · Enter = กรอกผล · P/F/B = ทุก Step · N = เคสถัดไป</small>
-                <button className="btn" disabled={saving || !!frozenPlan} title={frozenPlan ? frozenPlanMessage(frozenPlan) : undefined} onClick={saveProgress}>
+                <button className="btn" disabled={saving || !!resultLockReason} title={resultLockReason} onClick={saveProgress}>
                   {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">save</span> Save Progress</>}
                 </button>
-                <button className="result-btn skip" disabled={saving || !!frozenPlan} title={frozenPlan ? frozenPlanMessage(frozenPlan) : undefined} onClick={openSkipModal}><span className="material-symbols-outlined" aria-hidden="true">skip_next</span> Skip Test Case</button>
-                <button className="result-btn pass" disabled={saving || !!frozenPlan} title={frozenPlan ? frozenPlanMessage(frozenPlan) : undefined} onClick={completeTest}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> Complete Test</button>
+                <button className="result-btn skip" disabled={saving || !!resultLockReason} title={resultLockReason} onClick={openSkipModal}><span className="material-symbols-outlined" aria-hidden="true">skip_next</span> Skip Test Case</button>
+                <button className="result-btn pass" disabled={saving || !!resultLockReason} title={resultLockReason} onClick={completeTest}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> Complete Test</button>
               </div>
               {skipModalOpen && (
                 <ModalShell labelledBy="skip-test-case-title" onDismiss={() => setSkipModalOpen(false)}>

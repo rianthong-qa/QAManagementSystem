@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { confirmDialog } from "./components/dialogStore";
+import { confirmDialog, notify } from "./components/dialogStore";
 import { ModalShell } from "./components/ModalShell";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { authHeaders } from "./api";
@@ -174,6 +174,7 @@ export function ExecutionDefectEditor({ apiUrl, context, existing, onClose, onSa
     setSaving(true); setError("");
     let defect = record;
     let saved = false;
+    let linkSkipped = false;
     try {
       // ส่ง assigneeUserId เดิมกลับไปเสมอ — PUT แทนค่าทั้งก้อน ถ้าไม่ส่งจะล้างผู้รับผิดชอบของ Defect ทิ้ง
       const body = { projectId: context.projectId, releaseId: context.releaseId || null, buildId: context.buildId || null, moduleId: context.moduleId || null, title: title.trim(), severity, status, description: description.trim() || null, stepsToReproduce: steps.trim() || null, expectedResult: expected.trim() || null, actualResult: actual.trim() || null, assigneeUserId: defect?.assigneeUserId ?? null };
@@ -187,7 +188,9 @@ export function ExecutionDefectEditor({ apiUrl, context, existing, onClose, onSa
       setDirty(false);
       if (!linked) {
         const link = await fetch(`${apiUrl}/defects/${defect.defectId}/test-cases`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ testCaseId: context.testCaseId }) });
-        if (!link.ok && link.status !== 409) throw new Error(`สร้าง ${defect.defectCode} แล้ว แต่เชื่อม Test Case ไม่สำเร็จ กรุณากดบันทึกอีกครั้ง`);
+        // 400 = Test Case ถูกลบไปแล้วแต่ยังค้างอยู่ใน Cycle — กดบันทึกซ้ำก็ไม่สำเร็จ จึงข้ามการเชื่อมแล้วบันทึก/แนบรูปต่อ
+        if (link.status === 400) linkSkipped = true;
+        else if (!link.ok && link.status !== 409) throw new Error(`สร้าง ${defect.defectCode} แล้ว แต่เชื่อม Test Case ไม่สำเร็จ กรุณากดบันทึกอีกครั้ง`);
         setLinked(true);
       }
       if (files.length > 0) {
@@ -198,6 +201,7 @@ export function ExecutionDefectEditor({ apiUrl, context, existing, onClose, onSa
         files.forEach((item) => URL.revokeObjectURL(item.url));
         setFiles([]);
       }
+      if (linkSkipped) notify(`บันทึก ${defect.defectCode} แล้ว แต่ไม่ได้เชื่อมกับ ${context.testCaseCode} เพราะ Test Case นี้ถูกลบไปแล้ว`, "info");
       onSaved(defect);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "บันทึก Defect ไม่สำเร็จ");

@@ -48,7 +48,8 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
             "status" => desc
                 ? query.OrderByDescending(x => x.Status == "Draft" ? 0 : x.Status == "InProgress" ? 1 : x.Status == "Completed" ? 2 : x.Status == "Closed" ? 3 : 4)
                 : query.OrderBy(x => x.Status == "Draft" ? 0 : x.Status == "InProgress" ? 1 : x.Status == "Completed" ? 2 : x.Status == "Closed" ? 3 : 4),
-            "startdate" => desc ? query.OrderByDescending(x => x.StartDate) : query.OrderBy(x => x.StartDate),
+            // Cycle ส่วนใหญ่ไม่กรอกวันเริ่ม (ฟอร์มไม่บังคับ) — ใช้วันที่สร้างแทนเหมือนคอลัมน์ "กำหนดการ" ไม่ให้แถวที่ไม่มีวันกองท้ายตาราง
+            "startdate" => desc ? query.OrderByDescending(x => x.StartDate ?? x.CreatedAt) : query.OrderBy(x => x.StartDate ?? x.CreatedAt),
             "createdat" => desc ? query.OrderByDescending(x => x.CreatedAt) : query.OrderBy(x => x.CreatedAt),
             _ => query.OrderByDescending(x => x.CreatedAt),
         };
@@ -149,12 +150,15 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         IEnumerable<TestCycleCase> cases;
         if (request.CloneMode == TestCycleCloneModes.SuiteLatest)
         {
-            var latest = await db.TestSuiteCases.Where(x => x.TestSuiteId == source.TestSuiteId).OrderBy(x => x.SortOrder).Select(x => new { x.TestCaseId, x.TestCase.RevisionNo, x.TestCase.Priority }).ToListAsync(ct);
+            var latest = await db.TestSuiteCases.Where(x => x.TestSuiteId == source.TestSuiteId && !x.TestCase.IsDeleted).OrderBy(x => x.SortOrder).Select(x => new { x.TestCaseId, x.TestCase.RevisionNo, x.TestCase.Priority }).ToListAsync(ct);
             cases = latest.Select((x, index) => new TestCycleCase(target.TestCycleId, x.TestCaseId, x.RevisionNo, x.Priority, index + 1));
         }
         else
         {
-            cases = source.Cases.OrderBy(x => x.ExecutionOrder).Select((x, index) => new TestCycleCase(target.TestCycleId, x.TestCaseId, x.TestCaseRevisionNo, x.Priority ?? "P2", index + 1));
+            // ไม่คัดลอกเคสที่ Test Case ถูกลบแล้ว — Cycle ใหม่ไม่ควรมีงานที่บันทึกผลไม่ได้ (Server ตอบ 409 TEST_CASE_DELETED)
+            var sourceCaseIds = source.Cases.Select(x => x.TestCaseId).ToList();
+            var deletedIds = (await db.TestCases.Where(t => sourceCaseIds.Contains(t.TestCaseId) && t.IsDeleted).Select(t => t.TestCaseId).ToListAsync(ct)).ToHashSet();
+            cases = source.Cases.Where(x => !deletedIds.Contains(x.TestCaseId)).OrderBy(x => x.ExecutionOrder).Select((x, index) => new TestCycleCase(target.TestCycleId, x.TestCaseId, x.TestCaseRevisionNo, x.Priority ?? "P2", index + 1));
         }
         foreach (var testCycleCase in cases) target.Cases.Add(testCycleCase);
         db.TestCycles.Add(target);
@@ -167,7 +171,7 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
 
     public async Task PopulateAsync(Guid cycleId, Guid suiteId, bool requiredOnly, CancellationToken ct)
     {
-        var source = await db.TestSuiteCases.Where(x => x.TestSuiteId == suiteId && (!requiredOnly || x.IsRequired)).OrderBy(x => x.SortOrder).Select(x => new { x.TestCaseId, x.TestCase.RevisionNo, x.TestCase.Priority }).ToListAsync(ct);
+        var source = await db.TestSuiteCases.Where(x => x.TestSuiteId == suiteId && (!requiredOnly || x.IsRequired) && !x.TestCase.IsDeleted).OrderBy(x => x.SortOrder).Select(x => new { x.TestCaseId, x.TestCase.RevisionNo, x.TestCase.Priority }).ToListAsync(ct);
         db.TestCycleCases.AddRange(source.Select((x, index) => new TestCycleCase(cycleId, x.TestCaseId, x.RevisionNo, x.Priority, index + 1)));
     }
 

@@ -13,6 +13,8 @@ type DashboardSummary = {
   defectSeverityDistribution: { severity: string; count: number; color: string }[];
   projectName?: string;
   releaseCode?: string; releaseVersion?: string; buildNumber?: string;
+  /** เหตุผลของคำตัดสินจาก ReleaseGate (กฎเดียวกับ Release Sign-off) — null = ไม่มีข้อมูลให้ประเมิน */
+  decisionReason?: string | null;
 };
 type Module = DashboardSummary["modules"][number];
 
@@ -161,7 +163,9 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
     <small>ตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง</small>
     <button className="btn" type="button" onClick={() => setRetryKey(k => k + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span>ลองใหม่</button>
   </div>;
+  // เหตุผลมาจาก Server (ReleaseGate ชุดเดียวกับ Release Sign-off) — ด้านล่างเป็น fallback เมื่อ API รุ่นเก่ายังไม่ส่งมา
   const decisionReason = data.recommendedDecision === "NO DATA" ? "ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน"
+    : data.decisionReason ? data.decisionReason
     : data.criticalDefects > 0 ? `พบ Critical Defect ค้าง ${data.criticalDefects} รายการ`
     : data.openP0 > 0 ? `พบ P0 ค้าง ${data.openP0} รายการ`
     : data.highDefects > 0 ? `พบ High Defect ค้าง ${data.highDefects} รายการ`

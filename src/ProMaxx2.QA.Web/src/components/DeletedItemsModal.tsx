@@ -3,6 +3,7 @@ import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
 import { confirmDialog, notify } from "./dialogStore";
 import { ModalShell } from "./ModalShell";
 import { fmtDateTimeBE } from "../shared/appShared";
+import { isSysAdminUser } from "../shared/recycleBin";
 import "./DeletedItemsModal.css";
 
 /** ประเภทที่ API `/recycle-bin/{type}` รองรับ — ดู RecycleBinService.Types */
@@ -10,11 +11,6 @@ export type DeletedItemType = "test-cases" | "test-cycles" | "requirements" | "d
 
 type DeletedItem = { id: string; code?: string | null; title: string; detail?: string | null; projectName?: string | null; deletedAt?: string | null; deletedByName?: string | null };
 
-/** ดู/กู้คืนรายการที่ลบแล้วเป็นสิทธิ์ SYS_ADMIN เท่านั้น (API ใช้ policy SysAdminOnly) */
-function isSysAdminUser(): boolean {
-  try { return (JSON.parse(localStorage.getItem("qa.user") ?? "{}") as { roles?: string[] }).roles?.includes("SYS_ADMIN") ?? false; }
-  catch { return false; }
-}
 
 /**
  * ปุ่ม "ลบแล้ว" + หน้าต่างรายการที่ลบแล้ว (soft delete) ของหน้านั้น — แสดงเฉพาะ SYS_ADMIN

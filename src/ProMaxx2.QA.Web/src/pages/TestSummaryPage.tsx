@@ -10,7 +10,7 @@ import "../TestSummary.css";
 type TestSummaryStatusSlice = { status: string; count: number; color: string };
 type TestSummarySeveritySlice = { severity: string; count: number; color: string };
 type TestSummaryModule = { moduleId: string; parentModuleId?: string | null; moduleCode: string; moduleName: string; testCases: number; executed: number; executionPercent: number; passRate: number; health: string; openDefects?: number };
-type TestSummaryData = { totalRequirements: number; coveredRequirements: number; requirementCoverage: number; totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number; openP0: number; openP1: number; overallScore: number | null; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string; statusDistribution: TestSummaryStatusSlice[]; defectSeverityDistribution: TestSummarySeveritySlice[]; modules?: TestSummaryModule[]; generatedAt: string };
+type TestSummaryData = { totalRequirements: number; coveredRequirements: number; requirementCoverage: number; totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number; openP0: number; openP1: number; overallScore: number | null; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string; statusDistribution: TestSummaryStatusSlice[]; defectSeverityDistribution: TestSummarySeveritySlice[]; modules?: TestSummaryModule[]; generatedAt: string; decisionReason?: string | null };
 type TestSummaryEnv = { testEnvironmentId: string; projectId: string; environmentName: string; baseUrl?: string; isActive: boolean };
 type TestSummaryNarrative = { knownIssues: string; remainingRisks: string; qaRecommendation: string };
 /** Known Issue จาก API (Defect ที่ปิดด้วย Deferred / Won't Fix หรือมี Risk Acceptance + Known Issues ของ Build) */
@@ -67,7 +67,9 @@ export function TestSummaryPage({ projects, projectId: contextProjectId, release
     if (s.openP1 > 0 || s.highDefects > 0) risks.push("มี P1/High ค้างที่ควรประเมินก่อนวาง");
     if (s.criticalDefects > 0) risks.push(`มี Defect ระดับ Critical ${s.criticalDefects} รายการที่ต้องแก้ก่อนปล่อย`);
     if (s.openP0 > 0) risks.push(`มีผลทดสอบ Priority P0 ค้าง ${s.openP0} รายการที่ต้องแก้ ตรวจสอบ หรืออนุมัติความเสี่ยงก่อนปล่อย`);
-    const recText = s.recommendedDecision === "NO-GO" ? "ไม่พร้อมวาง Release — ยังมี P0/วิกฤตหรือ Coverage/Pass rate ไม่ผ่านเกณฑ์ ต้องแก้และทดสอบซ้ำก่อน Sign-off" : s.recommendedDecision === "CONDITIONAL GO" ? "พร้อมแบบมีเงื่อนไข — วาง Release ได้โดยมีเงื่อนไขให้ติดตาม/ปิดความเสี่ยงที่เหลือตามแผน" : s.recommendedDecision === "GO" ? "พร้อมวาง Release — ผ่านเกณฑ์คุณภาพและความครอบคลุมที่กำหนด" : "ยังไม่มีข้อมูลเพียงพอสำหรับการประเมิน กรุณารัน Test ให้ครบและบันทึกผลก่อนสรุป";
+    // เหตุผลจาก ReleaseGate (กฎเดียวกับ Release Sign-off) — NO-GO เกิดจาก Smoke/P0/Critical (หรือ High ไม่มี Risk เมื่อเปิด Defect Gate) ไม่ใช่ Coverage/Pass rate
+    const reason = s.decisionReason ? ` (${s.decisionReason})` : "";
+    const recText = s.recommendedDecision === "NO-GO" ? `ไม่พร้อมวาง Release${reason} — ต้องแก้และทดสอบซ้ำก่อน Sign-off` : s.recommendedDecision === "CONDITIONAL GO" ? `พร้อมแบบมีเงื่อนไข${reason} — วาง Release ได้โดยมีเงื่อนไขให้ติดตาม/ปิดความเสี่ยงที่เหลือตามแผน` : s.recommendedDecision === "GO" ? "พร้อมวาง Release — ผ่านเกณฑ์คุณภาพและความครอบคลุมที่กำหนด" : "ยังไม่มีข้อมูลเพียงพอสำหรับการประเมิน กรุณารัน Test ให้ครบและบันทึกผลก่อนสรุป";
     return { knownIssues: issues, remainingRisks: risks.length ? risks.join(" · ") : "ไม่พบความเสี่ยงคงค้างที่เกินเกณฑ์", qaRecommendation: recText };
   };
   const load = useCallback(async (regenerate: boolean) => {

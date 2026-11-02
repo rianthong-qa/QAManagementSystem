@@ -2,7 +2,7 @@
 
 > สถานะ: **Automation Work Tracker — Single Source of Truth**
 >
-> อัปเดตล่าสุด: 28 ตุลาคม 2026
+> อัปเดตล่าสุด: 2 พฤศจิกายน 2026
 >
 > ขอบเขต: Automation UI, API, Domain, Database, Windows Agent, DSL, Queue, Evidence, Test Data, Regression และ CI/CD
 
@@ -204,6 +204,14 @@
 8. `AUT-P2-001` ถึง `AUT-P2-008` — Monitoring, UX และ Scalability
 
 ## 11. Progress Log
+
+### 2026-11-02 — Smoke Gate ของ Release Sign-off: ประเมินเฉพาะเมื่อตั้ง Smoke policy
+
+- **ปัญหาเดิม:** Smoke `Not Run` = `NO_GO` เสมอ (follow-up ของ 2026-08-30) แต่ระบบจริงยังไม่มี Build Trigger policy แบบ `Smoke` เลย (`AutomationBuildTriggerPolicies` = 0, `AutomationBuildTriggerRuns` = 0, ตรวจ 2026-11-02) ทำให้ Release Sign-off ขึ้น `NO_GO` ทุก Release
+- เปลี่ยนเป็น: นับ Smoke เฉพาะเมื่อ Project มี policy `Pack = Smoke` ที่ `IsActive` และเลือก Build — ไม่มี policy แสดง `NOT_CONFIGURED` ("ไม่ได้ตั้ง Smoke (ไม่ประเมิน)") และไม่กันการปล่อย; มี policy แล้วผลล่าสุดของ Build ไม่ใช่ `Succeeded` (รวม `NOT_RUN`) ยังเป็น `NO_GO` เหมือนเดิม — `ReleaseReadinessQueries.SmokeAsync`
+- Dashboard / Test Summary ใช้ `ReleaseGate.Assess` ชุดเดียวกับ Sign-off แล้ว (กฎรวม: ดู Change Log 2026-11-02 ใน `UI_DESIGN_SYSTEM.md` และ `API_SPECIFICATION.md` § release-gate)
+- หลักฐาน: `ReleaseReadinessTests`, `DefectReleaseGateTests` ผ่าน (unit tests 951); **ยังไม่ได้ตรวจกับ endpoint จริง (ต้อง restart API) และยังไม่มี Smoke policy ให้ทดสอบเส้นทาง `Succeeded`/`Failed` กับข้อมูลจริง**
+- หมายเหตุ: ครั้งนี้อ่าน `AUTOMATION_TODO.md` เฉพาะ §1, §10 และบันทึก Smoke Gate 2026-08-30 เพราะไฟล์ใหญ่เกินอ่านรอบเดียว
 
 ### 2026-10-28 — แท็บ "วิเคราะห์ Fail" กระชับ พร้อมรายละเอียด
 

@@ -7,7 +7,7 @@ import type { ReleaseItem, BuildItem } from "../shared/types";
 import "../ReleaseSignoff.css";
 
 type ReleaseGateData = { openP0: number; p1Blockers: number; requirementCoverage: number; regressionPassRate: number; updateTestPassed: boolean; approvedRisks: number; recommendedDecision: string; smokeStatus?: string;
-  defectGateEnabled?: boolean; openCriticalDefects?: number; openHighDefects?: number; unverifiedResolvedDefects?: number; defectBlockersWithoutRisk?: number; defectBlockersWithRisk?: number };
+  defectGateEnabled?: boolean; openCriticalDefects?: number; openHighDefects?: number; unverifiedResolvedDefects?: number; defectBlockersWithoutRisk?: number; defectBlockersWithRisk?: number; decisionReason?: string | null };
 type SignoffItem = { releaseSignoffId: string; releaseId: string; buildId: string; buildNumber: string; signoffType: string; decision: string; comment?: string | null; signoffBy?: string | null; createdAt: string };
 
 const signoffRoles = ["QA", "DEVELOPMENT", "PRODUCT_OWNER", "RELEASE_OWNER"] as const;
@@ -43,10 +43,10 @@ export function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, can
   useEffect(() => { const activeBuilds = builds.filter((b) => b.isActive && b.status.toLowerCase() !== "cancelled"); if (activeBuilds.length !== builds.length) { setBuilds(activeBuilds); if (buildId && !activeBuilds.some((b) => b.buildId === buildId)) setBuildId(activeBuilds[0]?.buildId ?? ""); } }, [builds, buildId]);
   const decisionClass = (d: string) => d === "GO" ? "go" : d === "CONDITIONAL_GO" ? "conditional" : "nogo";
   // เดิมทุกค่าที่ไม่ใช่ Succeeded/NOT_RUN (รวม null ตอนยังไม่มีข้อมูล และ Running) แสดงเป็น "Fail"
-  const smokeLabel = (status?: string | null) => !status || status === "NOT_RUN" ? "Not Run" : status === "Succeeded" || status === "Passed" ? "Pass" : status === "Failed" ? "Fail" : status;
+  const smokeLabel = (status?: string | null) => status === "NOT_CONFIGURED" ? "ไม่ได้ตั้ง Smoke (ไม่ประเมิน)" : !status || status === "NOT_RUN" ? "Not Run" : status === "Succeeded" || status === "Passed" ? "Pass" : status === "Failed" ? "Fail" : status;
   const gateLabels: { key: keyof ReleaseGateData; label: string; hint: (d: ReleaseGateData) => string }[] = [
     { key: "requirementCoverage", label: "Requirement Coverage", hint: (d) => `${d.requirementCoverage}% Covered` },
-    { key: "regressionPassRate", label: "Regression / Pass Rate", hint: (d) => `${d.regressionPassRate}% Pass` },
+    { key: "regressionPassRate", label: "Pass Rate", hint: (d) => `${d.regressionPassRate}% Pass (ทุก Cycle ของ Build ที่เลือก)` },
     { key: "approvedRisks", label: "Approved Risks", hint: (d) => `${d.approvedRisks} รายการ` },
   ];
   return (
@@ -63,7 +63,7 @@ export function ReleaseSignoffPage({ projectId, releaseId: contextReleaseId, can
         <>
           <section className="card">
             <div className="test-summary-head">
-              <div><h3 style={{ margin: 0 }}>Release Gate Panel</h3><small style={{ color: "var(--muted)" }}>ตรวจสอบเกณฑ์ก่อน Sign-off ตามขั้นตอน Release Governance</small></div>
+              <div><h3 style={{ margin: 0 }}>Release Gate Panel</h3><small style={{ color: "var(--muted)" }}>{gate?.decisionReason ? `เหตุผล: ${gate.decisionReason}` : "ตรวจสอบเกณฑ์ก่อน Sign-off ตามขั้นตอน Release Governance"}</small></div>
               {gate && <span className={`signoff-decision ${decisionClass(gate.recommendedDecision)}`}>{gate.recommendedDecision.replaceAll("_", " ")}</span>}
             </div>
             <div className="gate-grid"><div className="gate-cell"><small>Smoke</small><b>{smokeLabel(gate?.smokeStatus)}</b><span>{gate?.smokeStatus ?? "NOT_RUN"}</span></div>

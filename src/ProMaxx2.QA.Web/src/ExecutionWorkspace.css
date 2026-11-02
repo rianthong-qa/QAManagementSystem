@@ -360,3 +360,22 @@
 @media (prefers-reduced-motion: reduce) {
   .execution-layout > .case-queue, .execution-main > *, .execution-progress-row { transition: none; }
 }
+
+/* --- Test Case ที่ถูกลบแต่ยังอยู่ใน Cycle (2026-11-02): ป้าย "ถูกลบแล้ว" ในคิว/หัวเคส + แถบแจ้งอ่านอย่างเดียว --- */
+.execution-page .case-queue-item.is-deleted { border-left-style: dashed; }
+.execution-page .case-queue-item.is-deleted b, .execution-page .case-queue-item.is-deleted small { color: var(--muted); }
+.execution-page .case-queue-item.is-deleted small { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
+.execution-deleted-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 12px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--muted) 30%, var(--card)); border-left: 4px solid var(--muted); border-radius: 10px; background: color-mix(in srgb, var(--muted) 7%, var(--card)); color: var(--text); font-size: 13px; }
+.execution-deleted-banner > .material-symbols-outlined { color: var(--muted); font-size: 20px; }
+.execution-deleted-banner > span:not(.material-symbols-outlined) { flex: 1 1 260px; min-width: 0; line-height: 1.5; }
+.execution-page .execution-deleted-banner .btn { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 4px 12px; font-size: 13px; }
+.execution-page .execution-deleted-banner .btn .material-symbols-outlined { font-size: 17px; }
+@media (max-width: 760px) {
+  .execution-page .execution-deleted-banner .btn { flex: 1 1 100%; justify-content: center; min-height: 44px; }
+}
+.execution-page .case-queue-cleanup { display: flex; grid-column: 1 / -1; align-items: center; justify-content: center; gap: 6px; min-height: 34px; margin: 0; padding: 6px 9px; border: 1px dashed color-mix(in srgb, var(--red) 45%, var(--card)); border-radius: 8px; background: var(--card); color: var(--red); font-size: 12px; font-weight: 600; white-space: normal; text-align: center; }
+.execution-page .case-queue-cleanup:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 6%, var(--card)); }
+.execution-page .case-queue-cleanup .material-symbols-outlined { font-size: 17px; line-height: 1; }
+@media (max-width: 760px) {
+  .execution-page .case-queue-cleanup { min-height: 44px; }
+}

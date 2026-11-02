@@ -6,6 +6,7 @@ import { notify, confirmDialog } from "../components/dialogStore";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
 import { DeletedItemsButton } from "../components/DeletedItemsModal";
+import { DeletedCycleCasesButton } from "../components/DeletedCycleCasesButton";
 import "./TestCycleDetail.css";
 import "../components/ListPage.css";
 import { ListPager } from "../components/ListPager";
@@ -795,6 +796,7 @@ export function TestCyclesPage({ search, canEdit, canExport, canViewPlans = fals
             {canExport && <button className="btn" type="button" disabled={exporting || loading || totalCount === 0} onClick={exportCsv}>{exporting ? <><span className="spinner inline" aria-hidden="true" />กำลัง Export...</> : <><span className="material-symbols-outlined" aria-hidden="true">download</span>Export</>}</button>}
             {canEdit && <button className="btn ai-button" type="button" onClick={openCycleAi}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span>AI Generate</button>}
             <DeletedItemsButton type="test-cycles" label="Test Cycle" onRestored={() => setReload((x) => x + 1)} />
+            <DeletedCycleCasesButton projectId={contextProjectId} refreshKey={reload} onRemoved={() => setReload((x) => x + 1)} />
             {canEdit && <button className="btn primary" type="button" onClick={() => openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Cycle</button>}
           </div>}
         </div>
@@ -884,7 +886,8 @@ export function TestCyclesPage({ search, canEdit, canExport, canViewPlans = fals
                     </span>
                   </td>
                   <td className="lp-col-status"><Badge tone={x.status === "Closed" || x.status === "Completed" ? "green" : x.status === "Cancelled" ? "red" : x.status === "Draft" ? "gray" : "blue"}>{x.status}</Badge></td>
-                  <td className="lp-col-date lp-col-schedule"><span className="lp-date">{x.startDate || x.endDate ? schedule : "ไม่ระบุวันที่"}{x.createdByName && <small>{x.createdByName}</small>}</span></td>
+                  {/* Cycle ส่วนใหญ่ไม่กรอกวันเริ่ม/สิ้นสุด (ไม่บังคับ) — แสดงวันที่สร้างแทน "ไม่ระบุวันที่" ที่ซ้ำแทบทุกแถว; เรียงด้วยค่าเดียวกัน (Server: StartDate ?? CreatedAt) */}
+                  <td className="lp-col-date lp-col-schedule"><span className="lp-date">{x.startDate || x.endDate ? schedule : x.createdAt ? <span title="ยังไม่กำหนดวันเริ่ม–สิ้นสุด แสดงวันที่สร้างแทน">สร้าง {formatThaiDateTime(x.createdAt, { day: "numeric", month: "short" })}</span> : "ไม่ระบุวันที่"}{x.createdByName && <small>{x.createdByName}</small>}</span></td>
                   {canEdit && <td className="lp-col-actions lp-actions-4">
                     <div className="lp-row-actions">
                       {x.status === "Draft" && <button type="button" title={frozenTitle(x) ?? "เริ่มทดสอบ"} aria-label={`เริ่ม ${x.cycleCode}`} disabled={!!x.plan?.isFrozen} onClick={() => changeStatus(x, "InProgress")}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span></button>}

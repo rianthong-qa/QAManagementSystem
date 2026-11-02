@@ -58,6 +58,7 @@ builder.Services.AddDataProtection();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddScoped<ProjectService>();
+builder.Services.AddScoped<DeletedCycleCaseCleanupService>();
 builder.Services.AddScoped<ReleaseService>();
 builder.Services.AddScoped<TestSummaryService>();
 builder.Services.AddScoped<RiskAcceptanceService>();

@@ -137,6 +137,12 @@ Response:
 ### PUT `/modules/{moduleId}`
 ### DELETE `/modules/{moduleId}`
 
+ซ่อน Module (`IsActive=false`) พร้อม Module ลูกหลานทั้งหมด — ทำได้แม้มี Requirement/Test Case/Defect อ้างอิง (ข้อมูลเดิมไม่ถูกแตะ แค่เลือก Module นี้ในฟอร์มไม่ได้) → 204
+
+### POST `/modules/{moduleId}/activate`
+
+แสดง Module ที่ซ่อนกลับ พร้อม Module ลูกหลานและ Parent ที่ซ่อนอยู่ → 204 (สิทธิ์ `ProjectEdit`)
+
 Request:
 
 ```json
@@ -426,6 +432,16 @@ Assign:
 
 Soft delete (สิทธิ์ `EXECUTION.ASSIGN`) — **Cycle ที่ผูกกับ Test Plan ลบไม่ได้** (เพิ่ม 2026-10-29) ตอบ `409` + `code: TEST_CYCLE_LINKED_TO_PLAN` พร้อม Plan Code/Run Code ใน `detail` (รวม Plan ที่ถูกลบแล้ว) — ให้ถอด Run ออกจาก Plan ก่อน (ได้เฉพาะ Run ที่ไม่เคยมีผลการทดสอบ) หรือเปลี่ยน Cycle เป็น `Cancelled`
 
+Populate จาก Suite / Clone (`SuiteLatest` และ `SourceSnapshot`) ไม่ใส่ Test Case ที่ถูกลบ (ปรับ 2026-11-02); รายการ/จำนวนเคสของ Test Suite ก็ไม่นับ Test Case ที่ถูกลบ แต่คงแถว `TestSuiteCases` ไว้ — กู้คืน Test Case แล้วกลับเข้าชุดเดิมเอง
+
+### POST `/test-cycles/{cycleId}/remove-deleted-cases` (เพิ่ม 2026-11-02)
+
+เอาเคสที่ Test Case ถูกลบ (soft delete) ออกจาก Cycle (สิทธิ์ `EXECUTION.ASSIGN`) — **เฉพาะเคสที่ยังไม่เคยมีผลทดสอบ** (`CurrentStatus = NotRun` และไม่มีแถว `TestExecutions` แม้ที่ลบแล้ว เพราะ FK เป็น CASCADE) เคสที่มีผลคงไว้เป็นหลักฐาน; ลบแถว `TestCycleCases` จริง (ย้อนกลับไม่ได้) และบันทึก Audit Log `TestCycle/Updated` ต่อ Cycle พร้อมรหัส Test Case ที่เอาออก — Cycle `Completed`/`Closed`/`Cancelled` ตอบ `400`, Cycle ใน Test Plan ที่ Frozen ตอบ `409 TEST_PLAN_FROZEN`; ตอบ `{ cycles, removedCases, skippedFrozenCycles }`
+
+### GET `/test-cycles/deleted-cases-summary?projectId=` · POST `/test-cycles/remove-deleted-cases?projectId=` (เพิ่ม 2026-11-02)
+
+แบบทั้ง Project (SYS_ADMIN) เงื่อนไขเดียวกับข้างบน ข้าม Cycle ที่ปิดแล้วและ Cycle ใน Test Plan ที่ Frozen (นับใน `skippedFrozenCycles`) — summary ตอบ `{ cycles, removableCases }`, POST ตอบรูปแบบเดียวกับแบบราย Cycle
+
 ---
 
 ## 16.1 Test Plans / Configuration Matrix (เพิ่ม 2026-10-29)
@@ -470,12 +486,17 @@ Soft delete (สิทธิ์ `EXECUTION.ASSIGN`) — **Cycle ที่ผู�
 
 `plan` (เพิ่ม 2026-10-30) = Test Plan ที่ Cycle นี้อยู่ รูปแบบเดียวกับ `GET /test-cycles` — Workspace ใช้แสดงแถบแผนและปิดปุ่มบันทึกผลเมื่อ `isFrozen`
 
+`cases[].testCaseDeleted` (เพิ่ม 2026-11-02) = Test Case ของเคสนี้ถูกลบ (soft delete) แต่ยังอยู่ใน Cycle — Workspace แสดงป้าย "ถูกลบแล้ว" และให้ดูผลเดิมได้อย่างเดียว
+
 ### GET `/test-cycles/{cycleId}/cases/{cycleCaseId}`
 
-รายละเอียดเคสใน Execution Workspace — `history[].stepResults` (เพิ่ม 2026-10-20) = ผลราย Step ของ Run นั้น `[{ stepNo, status, actualResult }]` เรียงตาม stepNo
+รายละเอียดเคสใน Execution Workspace — `history[].stepResults` (เพิ่ม 2026-10-20) = ผลราย Step ของ Run นั้น `[{ stepNo, status, actualResult }]` เรียงตาม stepNo; `testCaseDeleted` (เพิ่ม 2026-11-02) ความหมายเดียวกับในคิว
 
 ### GET `/test-cycle-cases/{cycleCaseId}`
 ### POST `/test-cycle-cases/{cycleCaseId}/executions`
+
+Cycle สถานะ `Completed`/`Closed`/`Cancelled` → `400` (เพิ่ม 2026-11-02 — เดิมเช็กแค่ `Completed` ซึ่งไม่มี Cycle ใช้; `DELETE /executions/{id}` ใช้กฎเดียวกัน); Test Case ของเคสถูกลบแล้ว (เพิ่ม 2026-11-02) → `409` + `code: TEST_CASE_DELETED` (ไม่บันทึกผล) — กู้คืนที่ `POST /recycle-bin/test-cases/{testCaseId}/restore` (SYS_ADMIN) แล้วจึงบันทึกได้
+
 ### GET `/test-cycle-cases/{cycleCaseId}/executions`
 ### GET `/test-executions/{executionId}`
 
@@ -800,7 +821,13 @@ Response:
 }
 ```
 
-ฟิลด์ `*Defects` / `defectBlockers*` (เพิ่ม 2026-10-28, DEFECT_BUILD_LIFECYCLE.md §4.1) นับ Defect ของ Release เสมอ แต่มีผลกับ `recommendedDecision` เฉพาะเมื่อ `defectGateEnabled` (config `Defects:GateEnabled`): Critical ที่ยัง Open / In Progress = `NO_GO`; High ที่ยังไม่ได้แก้หรือ Resolved ที่ยังไม่ตรวจซ้ำที่ไม่มี Risk Acceptance (Approved, ผูก `defectId`) = `NO_GO`; มีครบ = `CONDITIONAL_GO`
+ฟิลด์ `*Defects` / `defectBlockers*` (เพิ่ม 2026-10-28, DEFECT_BUILD_LIFECYCLE.md §4.1) นับ Defect ของ Release เสมอ
+
+**กฎรวม (ปรับ 2026-11-02 — `ReleaseGate.Assess`, ใช้ชุดเดียวกับ Dashboard / Test Summary ที่ส่ง `recommendedDecision` เป็น `GO` / `CONDITIONAL GO` / `NO-GO` / `NO DATA`):** ตัดสินตามลำดับ และส่ง `decisionReason` (ข้อความไทยของข้อแรกที่เข้าเงื่อนไข) มาด้วย
+1. `NO_GO`: Smoke ไม่ผ่าน (นับเฉพาะเมื่อ Project มี Build Trigger policy `Smoke` ที่เปิดใช้ **และ** เลือก Build — ไม่มี policy `smokeStatus = NOT_CONFIGURED` ไม่ประเมิน) · ผลทดสอบ P0 ค้าง (Fail/Blocked) · Critical ที่ยังไม่ได้แก้ (นับเสมอแม้ปิด `defectGateEnabled`) · เมื่อ `defectGateEnabled`: High ค้าง/Resolved รอตรวจซ้ำที่ไม่มี Risk Acceptance
+2. `CONDITIONAL_GO`: ผลทดสอบ P1 ค้าง (มีหรือไม่มี Risk Acceptance — เดิมไม่มี Risk = `NO_GO`) · High ค้าง/รอตรวจซ้ำ (เมื่อปิด Defect Gate) หรือที่ยอมรับความเสี่ยงไว้ · Requirement Coverage < 90% · Pass Rate < 90% (เดิม Sign-off ไม่ดู 2 ข้อนี้)
+3. `GO`
+- ขอบเขต: ผลทดสอบ = Cycle ของ Release (เลือก Build = เฉพาะ Cycle ของ Build นั้น — เดิม Sign-off ไม่กรอง Build) ไม่นับ Module ที่ซ่อนและ Test Case ที่ถูกลบ; Defect = ทั้ง Release (ไม่กรอง Build) ไม่นับ Module ที่ซ่อน; Coverage = Requirement ที่ผูกกับ Test Case ที่ยังไม่ถูกลบ **และ Ready** (กฎเดียวกับ RTM "Covered" — เดิมนับลิงก์ใดก็ได้); `regressionPassRate` = Pass Rate ของทุก Cycle ในขอบเขต (ชื่อฟิลด์คงเดิม)
 
 `GET /releases/{releaseId}/test-summary` เพิ่ม `knownIssues: [{ source: "Defect" | "Build", reference, title, severity?, reason, defectId? }]` — Defect ที่ปิดด้วย Deferred / Won't Fix หรือยังไม่จบแต่มี Risk Acceptance ที่อนุมัติแล้ว (สูงสุด 200) ต่อท้ายด้วย Known Issues ของ Build ที่ใช้งาน
 
