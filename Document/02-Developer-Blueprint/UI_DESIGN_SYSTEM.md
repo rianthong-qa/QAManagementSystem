@@ -80,6 +80,7 @@ git diff --check
 - Content padding: Desktop ประมาณ 24–28px, Mobile ประมาณ 16–18px
 - Page header แสดงชื่อหน้าและ action; Mobile เปลี่ยนเป็นแนวตั้ง
 - ตารางที่มีหลายคอลัมน์อนุญาตให้เลื่อนเฉพาะ container ของตาราง ห้ามทำให้ทั้งหน้าเลื่อนแนวนอน
+- **Topbar (ปรับ 2026-11-02, `Topbar.css` + `components/AccountMenu.tsx`)** เรียง: ปุ่มเมนู 40px → **กลุ่มขอบเขตข้อมูล** `.context` (`role="group"`) เป็นกรอบเดียวสูง 48px แบ่งช่อง Project / Release / Build ด้วยเส้นคั่น — แต่ละช่องมีไอคอน Material (`folder` / `rocket_launch` / `deployed_code`, เปลี่ยนเป็น primary เมื่อ hover/focus) + ป้ายตัวพิมพ์ใหญ่ 11px เหนือค่า, ตัวเลือกไม่ขึ้นต้นด้วยคำว่า "Release"/"Build" ซ้ำกับป้าย → ชิดขวา (คั่นด้วยเส้นซ้าย): **ป้าย Blocked** (ไอคอน + จำนวน Test Case ที่ผลล่าสุด Blocked ใน Build ที่เลือก + `title` อธิบาย; 0 = เขียว `check_circle`, > 0 = เหลือง `block`; แสดงเฉพาะหน้าที่มีขอบเขตข้อมูลและเลือก Build แล้ว) → **เมนูบัญชี** (avatar + ชื่อ + บทบาท + `expand_more`) เปิดเมนู `role="menu"` ที่มีหัวชื่อ/บทบาท, "บัญชี CRM ของฉัน" และ "ออกจากระบบ" (แดง) ตามมาตรฐานเมนูคำสั่งรอง §8 — แทนปุ่ม CRM (⇪) และปุ่มออกจากระบบแยกเดิม; ความสูง Topbar คง 74px / ≤900px ~60px / ≤420px ~52px เพราะแถบ sticky หลายหน้าอ้างอิง; ≤1100px ซ่อนชื่อในปุ่มบัญชี, ≤900px กลุ่มขอบเขตยืดเต็มพื้นที่ 3 ช่องเท่ากันและป้าย Blocked เหลือไอคอน + ตัวเลข (คำว่า Blocked เป็นข้อความสำหรับ screen reader), ≤760px กลุ่มขอบเขตย่อเป็น**ปุ่มสรุป** `.context-toggle` (ชื่อ Project ตัวหนา + "Release · Build" บรรทัดรอง, `aria-expanded`) กดแล้วกาง**แผงเลือกครบ 3 ช่อง** ใต้ Topbar (ช่องละ 48px, ปิดด้วยการกดปุ่มซ้ำ / คลิกนอก Topbar / Esc ซึ่งคืน focus ที่ปุ่ม / เปลี่ยนหน้า) — ห้ามซ่อน Release/Build บนมือถือ; รายการในเมนูบัญชีสูง ≥ 44px
 
 ## 5. Screen Inventory
 
@@ -407,6 +408,17 @@ git diff --check
 7. เพิ่มรายการใน Change Log ด้านล่าง
 
 ## 15. Change Log
+
+### 2026-11-02 — Topbar มือถือ: เลือก Release / Build ได้
+
+- เดิม ≤760px ซ่อนช่อง Release/Build (เลือกได้แค่ Project) — เปลี่ยนเป็นปุ่มสรุป "Project / Release · Build" ที่กดแล้วกางแผงเลือกครบ 3 ช่องใต้ Topbar; ความสูง Topbar เท่าเดิม — ตรวจ 760/390/360px ไม่มี horizontal scroll, คลิกนอกแผงแล้วปิด
+
+### 2026-11-02 — Topbar: กลุ่มขอบเขตข้อมูล + เมนูบัญชี
+
+- Project / Release / Build รวมเป็นกรอบเดียวแบ่งช่องด้วยเส้นคั่น มีไอคอนต่อช่อง (เดิมเป็นกล่องแยก 3 ใบ และตัวเลือกขึ้นต้น "Release …"/"Build …" ซ้ำกับป้าย)
+- ป้าย "Blockers" เปลี่ยนเป็น "n Blocked" มีไอคอน ใช้สีเหลืองตามกฎ Badge (Blocked = เหลือง) และ `title` บอกว่านับอะไร; ซ่อนในหน้าที่ไม่มีขอบเขตข้อมูล (Project/Module, User/Role, Setting Center ฯลฯ) และเมื่อยังไม่มี Build; ≤900px แสดงไอคอน + ตัวเลข (เดิมซ่อน)
+- ปุ่ม "บัญชี CRM ของฉัน" (⇪ พื้นน้ำเงิน) และ "ออกจากระบบ" ย้ายเข้าเมนูบัญชีใต้ avatar (`AccountMenu`: `aria-haspopup="menu"`, focus รายการแรก, ↑/↓/Home/End, Esc คืน focus, คลิกนอกเมนูปิด)
+- CSS ของ Topbar ย้ายจาก `TestManagement.css` ไป `Topbar.css` (สีใช้ token/`color-mix` ไม่มี hex) และลบกฎที่ไม่ใช้แล้วใน `styles.css` (`.profile .logout`, `.qa-topbar .topbar-menu` ซ้ำ) — ตรวจ 1440/1024/820/390px ไม่มี horizontal scroll, ความสูง Topbar เท่าเดิม
 
 ### 2026-11-02 — Dashboard / Test Summary / Release Sign-off: คำตัดสินและเหตุผลชุดเดียวกัน
 

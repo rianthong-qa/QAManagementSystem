@@ -1,0 +1,191 @@
+/* Topbar (ปรับ 2026-11-02) — ปุ่มเมนู | กลุ่มขอบเขตข้อมูล Project › Release › Build | สถานะ Blocked + เมนูบัญชี
+   ความสูงต้องคง 74px (Desktop) / 60px (≤900px) / 52px (≤420px) เพราะแถบ sticky หลายหน้าอ้างอิงค่านี้
+   selector ขึ้นต้นด้วย .qa-topbar เพื่อชนะกฎเก่าใน App.css / styles.css (.context, .profile > div:last-child) */
+
+.qa-topbar {
+  height: 74px;
+  gap: 14px;
+  padding: 0 22px;
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  box-shadow: 0 1px 0 var(--line), 0 4px 18px rgba(16, 24, 40, .04);
+  backdrop-filter: blur(10px);
+}
+
+.qa-topbar .topbar-menu {
+  display: grid; flex: 0 0 40px; width: 40px; height: 40px; place-items: center; padding: 0;
+  border: 1px solid var(--line); border-radius: 11px; background: var(--card); color: var(--text);
+  font-size: 17px; cursor: pointer; transition: border-color .15s, background-color .15s, color .15s;
+}
+.qa-topbar .topbar-menu:hover { border-color: color-mix(in srgb, var(--primary) 35%, var(--line)); background: color-mix(in srgb, var(--primary) 5%, var(--card)); color: var(--primary); }
+
+/* กลุ่มขอบเขตข้อมูล: กรอบเดียว แบ่งช่องด้วยเส้นคั่น */
+.qa-topbar .context {
+  display: flex; flex: 0 1 auto; min-width: 0; align-items: stretch; gap: 0;
+  height: 48px; border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+}
+.qa-topbar .context-field { position: relative; display: block; flex: 0 1 auto; min-width: 0; }
+.qa-topbar .context-field + .context-field::before { position: absolute; top: 10px; bottom: 10px; left: 0; z-index: 2; width: 1px; background: var(--line); content: ""; }
+.qa-topbar .context-icon {
+  position: absolute; top: 50%; left: 11px; z-index: 1; transform: translateY(-50%);
+  color: var(--muted); font-size: 19px; pointer-events: none; transition: color .15s;
+}
+.qa-topbar .context-label {
+  position: absolute; top: 7px; left: 39px; z-index: 1;
+  color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1; letter-spacing: .3px;
+  text-transform: uppercase; pointer-events: none;
+}
+/* App.css (≤800px) ซ่อน `.context select:nth-child(n+2)` จาก markup เก่า — ต้องคืนการแสดงเสมอ */
+.qa-topbar .context .context-field select {
+  display: block; width: 100%; height: 46px; min-width: 150px; max-width: 260px;
+  padding: 19px 32px 5px 39px; border: 0; border-radius: 11px; background-color: transparent;
+  color: var(--text); font-size: 13px; font-weight: 400; text-overflow: ellipsis; cursor: pointer;
+  transition: background-color .15s, box-shadow .15s;
+}
+.qa-topbar .context .context-project select { min-width: 140px; max-width: 220px; }
+.qa-topbar .context .context-release select { min-width: 190px; }
+.qa-topbar .context .context-field select:hover { border: 0; background-color: color-mix(in srgb, var(--primary) 5%, var(--card)); }
+.qa-topbar .context .context-field select:focus-visible { position: relative; z-index: 3; outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
+.qa-topbar .context .context-field select:disabled { background-color: transparent; color: var(--muted); cursor: not-allowed; }
+.qa-topbar .context-field:hover .context-icon,
+.qa-topbar .context-field:focus-within .context-icon { color: var(--primary); }
+
+/* ฝั่งขวา: สถานะ Blocked + เมนูบัญชี (แยกจากขอบเขตข้อมูลด้วยเส้นคั่น) */
+.qa-topbar .profile { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; margin-left: auto; padding-left: 14px; border-left: 1px solid var(--line); }
+.qa-topbar .topbar-health {
+  display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 11px 0 8px;
+  border: 1px solid color-mix(in srgb, var(--green) 22%, var(--line)); border-radius: 999px;
+  background: color-mix(in srgb, var(--green) 8%, var(--card)); color: color-mix(in srgb, var(--green) 72%, var(--text));
+  white-space: nowrap; cursor: default;
+}
+.qa-topbar .topbar-health .material-symbols-outlined { font-size: 18px; }
+.qa-topbar .topbar-health b { font-size: 13px; font-weight: 700; }
+.qa-topbar .topbar-health small { color: inherit; font-size: 12px; font-weight: 500; }
+.qa-topbar .topbar-health.has-blockers { border-color: color-mix(in srgb, var(--yellow) 35%, var(--line)); background: color-mix(in srgb, var(--yellow) 12%, var(--card)); color: var(--warning-text); }
+
+.qa-topbar .profile > .acct { position: relative; display: block; font-size: inherit; }
+.qa-topbar .acct-trigger {
+  display: flex; align-items: center; gap: 10px; height: 46px; max-width: 260px; padding: 4px 8px 4px 4px;
+  border: 1px solid transparent; border-radius: 12px; background: transparent; color: var(--text);
+  font: inherit; font-weight: 400; text-align: left; cursor: pointer; transition: background-color .15s, border-color .15s;
+}
+.qa-topbar .acct-trigger:hover,
+.qa-topbar .acct-trigger[aria-expanded="true"] { border-color: var(--line); background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
+.qa-topbar .acct-trigger:focus-visible { outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
+.qa-topbar .avatar {
+  display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line)); background: var(--primary-soft);
+  color: var(--primary); font-size: 12px; font-weight: 700;
+}
+.qa-topbar .acct-copy { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.qa-topbar .acct-copy b,
+.qa-topbar .acct-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qa-topbar .acct-copy b { color: var(--text); font-size: 13px; font-weight: 600; }
+.qa-topbar .acct-copy small { color: var(--muted); font-size: 11px; }
+.qa-topbar .acct-caret { flex: 0 0 auto; color: var(--muted); font-size: 18px; transition: transform .15s; }
+.qa-topbar .acct-trigger[aria-expanded="true"] .acct-caret { transform: rotate(180deg); }
+
+.qa-topbar .acct-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; display: grid; gap: 2px; width: 290px; padding: 6px;
+  border: 1px solid var(--line); border-radius: 14px; background: var(--card);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--text) 18%, transparent);
+}
+.qa-topbar .acct-menu-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; padding: 8px 10px 12px; border-bottom: 1px solid var(--line); }
+.qa-topbar .acct-menu-head .avatar { flex-basis: 40px; width: 40px; height: 40px; }
+.qa-topbar .acct-menu-head > span:last-child { display: grid; min-width: 0; gap: 1px; }
+.qa-topbar .acct-menu-head b { overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
+.qa-topbar .acct-menu-head small { color: var(--muted); font-size: 12px; }
+.qa-topbar .acct-menu button[role="menuitem"] {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 0; padding: 9px 10px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text);
+  font: inherit; font-weight: 400; text-align: left; white-space: normal; cursor: pointer;
+}
+.qa-topbar .acct-menu button[role="menuitem"]:hover,
+.qa-topbar .acct-menu button[role="menuitem"]:focus-visible { outline: 0; background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.qa-topbar .acct-menu button[role="menuitem"] > .material-symbols-outlined { margin-top: 1px; color: var(--muted); font-size: 19px; }
+.qa-topbar .acct-menu button[role="menuitem"] > span:last-child { display: grid; gap: 1px; }
+.qa-topbar .acct-menu button[role="menuitem"] b { font-size: 13px; font-weight: 600; }
+.qa-topbar .acct-menu button[role="menuitem"] small { color: var(--muted); font-size: 11px; }
+.qa-topbar .acct-menu button.is-danger,
+.qa-topbar .acct-menu button.is-danger > .material-symbols-outlined { color: var(--red); }
+.qa-topbar .acct-menu button.is-danger:hover,
+.qa-topbar .acct-menu button.is-danger:focus-visible { background: color-mix(in srgb, var(--red) 6%, var(--card)); }
+.qa-topbar .acct-menu-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+
+@media (max-width: 1100px) {
+  .qa-topbar { padding-inline: 16px; }
+  .qa-topbar .context .context-field select { min-width: 120px; max-width: 190px; }
+  .qa-topbar .context .context-release select { min-width: 150px; }
+  .qa-topbar .acct-copy { display: none; }
+  .qa-topbar .profile { gap: 8px; padding-left: 10px; }
+}
+
+@media (max-width: 900px) {
+  .qa-topbar { height: auto; gap: 8px; padding: 10px 12px; }
+  .qa-topbar .context { flex: 1 1 auto; height: 40px; border-radius: 10px; }
+  .qa-topbar .context-field { flex: 1 1 0; }
+  .qa-topbar .context .context-field select,
+  .qa-topbar .context .context-project select,
+  .qa-topbar .context .context-release select { height: 38px; min-width: 0; max-width: none; padding: 15px 26px 3px 33px; border-radius: 9px; font-size: 12px; background-position: right 7px center; }
+  .qa-topbar .context-icon { left: 9px; font-size: 17px; }
+  .qa-topbar .context-label { top: 5px; left: 33px; }
+  .qa-topbar .profile { gap: 6px; padding-left: 8px; }
+  /* เหลือไอคอน + ตัวเลข — คำว่า Blocked ยังอยู่สำหรับ screen reader */
+  .qa-topbar .topbar-health { height: 32px; padding: 0 8px 0 6px; }
+  .qa-topbar .topbar-health small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .qa-topbar .acct-trigger { height: 40px; gap: 4px; padding: 2px 4px 2px 2px; }
+  .qa-topbar .avatar { flex-basis: 34px; width: 34px; height: 34px; }
+}
+
+/* ปุ่มสรุปขอบเขตข้อมูล — ใช้เฉพาะ ≤760px */
+.qa-topbar .context-toggle { display: none; }
+
+@media (max-width: 760px) {
+  .qa-topbar .context-toggle {
+    display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 7px; height: 40px; padding: 0 6px 0 9px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text);
+    font: inherit; font-weight: 400; text-align: left; cursor: pointer;
+  }
+  .qa-topbar .context-toggle[aria-expanded="true"] { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
+  .qa-topbar .context-toggle:focus-visible { outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
+  .qa-topbar .context-toggle > .material-symbols-outlined { flex: 0 0 auto; color: var(--muted); font-size: 18px; }
+  .qa-topbar .context-toggle-copy { display: grid; flex: 1 1 auto; min-width: 0; line-height: 1.25; }
+  .qa-topbar .context-toggle-copy b,
+  .qa-topbar .context-toggle-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qa-topbar .context-toggle-copy b { font-size: 12px; font-weight: 600; }
+  .qa-topbar .context-toggle-copy small { color: var(--muted); font-size: 11px; }
+  .qa-topbar .context-toggle .context-toggle-caret { transition: transform .15s; }
+  .qa-topbar .context-toggle[aria-expanded="true"] .context-toggle-caret { transform: rotate(180deg); }
+
+  /* แผงเลือก: กางใต้ Topbar ครบ 3 ช่อง ช่องละ 48px */
+  .qa-topbar .context { display: none; }
+  .qa-topbar .context.is-open {
+    position: absolute; top: calc(100% + 6px); right: 10px; left: 10px; z-index: 30;
+    display: flex; flex-direction: column; gap: 8px; height: auto; padding: 10px;
+    border-radius: 14px; box-shadow: 0 14px 34px color-mix(in srgb, var(--text) 18%, transparent);
+  }
+  .qa-topbar .context.is-open .context-field { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 10px; }
+  .qa-topbar .context.is-open .context-field + .context-field::before { display: none; }
+  .qa-topbar .context.is-open .context-field select,
+  .qa-topbar .context.is-open .context-project select,
+  .qa-topbar .context.is-open .context-release select { height: 48px; padding: 19px 30px 5px 39px; font-size: 14px; }
+  .qa-topbar .context.is-open .context-icon { left: 11px; font-size: 19px; }
+  .qa-topbar .context.is-open .context-label { top: 7px; left: 39px; }
+  .qa-topbar .context.is-open .context-loading { position: static; align-self: flex-start; box-shadow: none; }
+  .qa-topbar .acct-menu { width: min(300px, calc(100vw - 24px)); }
+  .qa-topbar .acct-menu button[role="menuitem"] { min-height: 44px; align-items: center; }
+}
+
+@media (max-width: 420px) {
+  .qa-topbar { gap: 6px; padding: 8px 10px; }
+  .qa-topbar .topbar-menu { flex-basis: 34px; width: 34px; height: 34px; border-radius: 9px; font-size: 15px; }
+  .qa-topbar .context { height: 36px; }
+  .qa-topbar .context-toggle { height: 36px; }
+  .qa-topbar .context .context-field select,
+  .qa-topbar .context .context-project select { height: 34px; padding: 13px 24px 2px 31px; }
+  .qa-topbar .context-label { top: 4px; left: 31px; }
+  .qa-topbar .profile { gap: 4px; padding-left: 0; border-left: 0; }
+  .qa-topbar .topbar-health { height: 30px; padding: 0 7px 0 5px; }
+  .qa-topbar .acct-trigger { height: 36px; }
+  .qa-topbar .acct-caret { display: none; }
+  .qa-topbar .avatar { flex-basis: 30px; width: 30px; height: 30px; font-size: 11px; }
+}

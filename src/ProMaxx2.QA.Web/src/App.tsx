@@ -1,15 +1,17 @@
-import { lazy, useState, useEffect, useMemo, Suspense } from "react";
+import { lazy, useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { isApiRequest, apiUrl } from "./api";
 import type { ProjectItem, ReleaseItem, BuildItem } from "./shared/types";
 import { notify, confirmDialog, promptDialog } from "./components/dialogStore";
 import { formatThaiDateTime } from "./dateTime";
 import { Badge } from "./components/Badge";
 import { ModalShell } from "./components/ModalShell";
+import { AccountMenu } from "./components/AccountMenu";
 import { type AdminUser, type ModuleItem, type Page, type SessionUser, copyText, nav, okJsonOrEmpty, pageViewPermission, renderModuleSelectOptions } from "./shared/appShared";
 import "./App.css";
 import "./styles.css";
 import "./ExecutionWorkspace.css";
 import "./TestManagement.css";
+import "./Topbar.css";
 import "./MyWork.css";
 import "./Dashboard.css";
 import "./DashboardExecutive.css";
@@ -573,8 +575,20 @@ function App() {
     localStorage.removeItem("qa.user");
     setUser(null);
   };
+  // Mobile (≤760px) ย่อ Project/Release/Build เป็นปุ่มสรุปใน Topbar — กดแล้วกางแผงเลือกครบ 3 ช่อง
+  const [contextOpen, setContextOpen] = useState(false);
+  const topbarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!contextOpen) return;
+    const onPointerDown = (e: PointerEvent) => { if (!topbarRef.current?.contains(e.target as Node)) setContextOpen(false); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") { setContextOpen(false); topbarRef.current?.querySelector<HTMLButtonElement>(".context-toggle")?.focus(); } };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown); };
+  }, [contextOpen]);
+  useEffect(() => setContextOpen(false), [page]);
   // CRM แยกงานตามคนที่ login จริง — แต่ละ user จัดการบัญชี CRM ของตัวเองที่นี่ (self-service, ไม่ใช่ Service
-  // Account กลางที่ Admin ตั้งให้ทุกคนแล้ว) ปุ่มเปิด modal นี้อยู่ข้างๆ ปุ่ม logout ใน topbar
+  // Account กลางที่ Admin ตั้งให้ทุกคนแล้ว) ปุ่มเปิด modal นี้อยู่ในเมนูบัญชีของ topbar
   const [myCrmOpen, setMyCrmOpen] = useState(false);
   const [myCrmConfigVersion, setMyCrmConfigVersion] = useState(0);
   const [myCrmConfig, setMyCrmConfig] = useState<{ merchantId: string; username: string; hasPassword: boolean; passwordHint?: string | null; isEnabled: boolean }>({ merchantId: "", username: "", hasPassword: false, isEnabled: true });
@@ -755,6 +769,8 @@ function App() {
   if (articleShareCode) return <div className="shared-dashboard shared-article-shell"><header><div className="logo">QA</div><div><b>ProMaxx2 QA Hub</b><small>บทความคลังความรู้</small></div><Badge tone="blue">READ ONLY</Badge></header><main><Suspense fallback={pageLoading}><SharedArticlePage code={articleShareCode} /></Suspense></main><footer>เปิดจากลิงก์แชร์ • ไม่สามารถแก้ไขข้อมูลจากหน้านี้</footer></div>;
   if (oauthRequestId) return user ? <Suspense fallback={pageLoading}><OAuthConsentPage requestId={oauthRequestId} user={user} /></Suspense> : <Login onLogin={(u) => setUser(u)} />;
   if (!user) return <Login onLogin={(u) => { localStorage.removeItem("qa.activePage"); setPage("dashboard"); setUser(u); }} />;
+  // หน้าที่ไม่มี data scope ระดับ Project ไม่แสดงตัวเลือก Project/Release/Build และสถานะ Blocked ของ Build
+  const showContext = !["projects","users","settings","system-monitor","crm","performance","knowledge"].includes(page);
   const can = (permission: string) =>
     user.roles.includes("SYS_ADMIN") || user.permissions.includes(permission);
   const canCreate =
@@ -793,16 +809,25 @@ function App() {
       </aside>
       {menu && !sidebarCollapsed && <button className="sidebar-backdrop" type="button" aria-label="ปิดเมนู" onClick={() => setMenu(false)} />}
       <main onScroll={(event) => setShowBackToTop(event.currentTarget.scrollTop > 480)}>
-        <header className="topbar qa-topbar">
+        <header className="topbar qa-topbar" ref={topbarRef}>
           <button className="menu-btn topbar-menu" aria-label={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} title={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} onClick={() => { if (window.matchMedia("(max-width: 900px)").matches) setMenu((v) => !v); else { const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("qa.sidebar.collapsed", String(next)); } }}>
             <span aria-hidden="true">☰</span>
           </button>
-          {!["projects","users","settings","system-monitor","crm","performance","knowledge"].includes(page) && <div className="context">
+          {showContext && <button type="button" className="context-toggle" aria-expanded={contextOpen} aria-controls="topbar-context" aria-label="เปลี่ยน Project / Release / Build" onClick={() => setContextOpen((v) => !v)}>
+            <span className="material-symbols-outlined" aria-hidden="true">folder</span>
+            <span className="context-toggle-copy">
+              <b>{contextProjects.find((x) => x.projectId === contextProjectId)?.projectName ?? "ไม่มี Project"}</b>
+              <small>{[contextReleases.find((x) => x.releaseId === contextReleaseId)?.releaseCode ?? "ไม่มี Release", contextBuilds.find((x) => x.buildId === contextBuildId)?.buildNumber ?? "ไม่มี Build"].join(" · ")}</small>
+            </span>
+            <span className="material-symbols-outlined context-toggle-caret" aria-hidden="true">expand_more</span>
+          </button>}
+          {showContext && <div id="topbar-context" className={`context${contextOpen ? " is-open" : ""}`} role="group" aria-label="ขอบเขตข้อมูล">
             {contextLoading && <span className="context-loading" role="status">กำลังเปลี่ยน Context...</span>}
-            <label className="context-field"><span>Project</span><select
+            <label className="context-field context-project"><span className="material-symbols-outlined context-icon" aria-hidden="true">folder</span><span className="context-label">Project</span><select
               value={contextProjectId}
               onChange={(e) => { setContextLoading(true); setContextProjectId(e.target.value); }}
               aria-label="Project ปัจจุบัน"
+              title={contextProjects.find((x) => x.projectId === contextProjectId)?.projectName}
               disabled={contextLoading}
             >
               {!contextProjects.length && (
@@ -814,7 +839,7 @@ function App() {
                 </option>
               ))}
             </select></label>
-            <label className="context-field context-release"><span>Release</span><select
+            <label className="context-field context-release"><span className="material-symbols-outlined context-icon" aria-hidden="true">rocket_launch</span><span className="context-label">Release</span><select
               value={contextReleaseId}
               onChange={(e) => { setContextLoading(true); setContextReleaseId(e.target.value); }}
               aria-label="Release ปัจจุบัน"
@@ -825,11 +850,11 @@ function App() {
               )}
               {contextReleases.map((x) => (
                 <option key={x.releaseId} value={x.releaseId}>
-                  Release {x.releaseCode}{x.version ? ` · ${x.version}` : ""}
+                  {x.releaseCode}{x.version ? ` · ${x.version}` : ""}
                 </option>
               ))}
             </select></label>
-            <label className="context-field context-build"><span>Build</span><select
+            <label className="context-field context-build"><span className="material-symbols-outlined context-icon" aria-hidden="true">deployed_code</span><span className="context-label">Build</span><select
               value={contextBuildId}
               onChange={(e) => setContextBuildId(e.target.value)}
               aria-label="Build ปัจจุบัน"
@@ -838,23 +863,23 @@ function App() {
               {!contextBuilds.length && <option value="">ไม่มี Build</option>}
               {contextBuilds.map((x) => (
                 <option key={x.buildId} value={x.buildId}>
-                  Build {x.buildNumber}{x.applicationVersion ? ` · App ${x.applicationVersion}` : ""}
+                  {x.buildNumber}{x.applicationVersion ? ` · App ${x.applicationVersion}` : ""}
                   {x.isReleaseCandidate ? " RC" : ""}
                 </option>
               ))}
             </select></label>
           </div>}
           <div className="profile">
-            <div className={`topbar-health ${blockerCount?"has-blockers":""}`}><span aria-hidden="true"></span><b>{blockerCount}</b><small>Blockers</small></div>
-            <div className="avatar">
-              {user.displayName.slice(0, 2).toUpperCase()}
-            </div>
-            <div className="profile-copy">
-              <b>{user.displayName}</b>
-              <small>{user.roles.includes("SYS_ADMIN")?"System Administrator":"QA Workspace"}</small>
-            </div>
-            <button className="table-action icon-only" aria-label="บัญชี CRM ของฉัน" title="บัญชี CRM ของฉัน" onClick={openMyCrmModal}><span aria-hidden="true">⇪</span></button>
-            <button className="logout" aria-label="ออกจากระบบ" title="ออกจากระบบ" onClick={logout}><span aria-hidden="true">↪</span><span>ออกจากระบบ</span></button>
+            {showContext && contextBuildId && <div className={`topbar-health ${blockerCount ? "has-blockers" : ""}`} title="จำนวน Test Case ใน Test Cycle ของ Build ที่เลือกซึ่งผลล่าสุดเป็น Blocked">
+              <span className="material-symbols-outlined" aria-hidden="true">{blockerCount ? "block" : "check_circle"}</span>
+              <b>{blockerCount}</b><small>Blocked<span className="sr-only"> ใน Build นี้</span></small>
+            </div>}
+            <AccountMenu
+              displayName={user.displayName}
+              roleLabel={user.roles.includes("SYS_ADMIN") ? "System Administrator" : "QA Workspace"}
+              onOpenCrm={openMyCrmModal}
+              onLogout={logout}
+            />
           </div>
         </header>
         {myCrmOpen && (
