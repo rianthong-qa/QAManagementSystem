@@ -48,14 +48,15 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
             "status" => desc
                 ? query.OrderByDescending(x => x.Status == "Draft" ? 0 : x.Status == "InProgress" ? 1 : x.Status == "Completed" ? 2 : x.Status == "Closed" ? 3 : 4)
                 : query.OrderBy(x => x.Status == "Draft" ? 0 : x.Status == "InProgress" ? 1 : x.Status == "Completed" ? 2 : x.Status == "Closed" ? 3 : 4),
-            "startdate" => desc ? query.OrderByDescending(x => x.StartDate) : query.OrderBy(x => x.StartDate),
+            // Cycle ส่วนใหญ่ไม่กรอกวันเริ่ม (ฟอร์มไม่บังคับ) — ใช้วันที่สร้างแทนเหมือนคอลัมน์ "กำหนดการ" ไม่ให้แถวที่ไม่มีวันกองท้ายตาราง
+            "startdate" => desc ? query.OrderByDescending(x => x.StartDate ?? x.CreatedAt) : query.OrderBy(x => x.StartDate ?? x.CreatedAt),
             "createdat" => desc ? query.OrderByDescending(x => x.CreatedAt) : query.OrderBy(x => x.CreatedAt),
             _ => query.OrderByDescending(x => x.CreatedAt),
         };
         return ordered.ThenByDescending(x => x.CycleCode);
     }
 
-    public async Task<TestCycleListResultDto> ListAsync(Guid? projectId, Guid? releaseId, Guid? buildId, Guid? moduleId, string? search, string? status, string? cycleType, Guid? createdBy, string? sortBy, int page, int size, CancellationToken ct)
+    public async Task<TestCycleListResultDto> ListAsync(Guid? projectId, Guid? releaseId, Guid? buildId, Guid? moduleId, string? search, string? status, string? cycleType, Guid? createdBy, string? plan, string? sortBy, int page, int size, CancellationToken ct)
     {
         var query = db.TestCycles.AsNoTracking().Where(x => !x.IsDeleted);
         if (projectId.HasValue) query = query.Where(x => x.ProjectId == projectId);
@@ -67,6 +68,10 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.CycleName.Contains(search) || x.CycleCode.Contains(search));
         if (!string.IsNullOrWhiteSpace(cycleType)) query = query.Where(x => x.CycleType == cycleType);
         if (createdBy.HasValue) query = query.Where(x => x.CreatedBy == createdBy);
+        // plan = "none" (ยังไม่อยู่ใน Test Plan — เพิ่มเข้าแผนได้), "any" หรือ TestPlanId; Run ของ Plan ที่ลบแล้วยังล็อก Cycle ไว้จึงนับว่า "อยู่ใน Plan"
+        if (string.Equals(plan, "none", StringComparison.OrdinalIgnoreCase)) query = query.Where(x => !db.TestPlanRuns.Any(r => r.TestCycleId == x.TestCycleId));
+        else if (string.Equals(plan, "any", StringComparison.OrdinalIgnoreCase)) query = query.Where(x => db.TestPlanRuns.Any(r => r.TestCycleId == x.TestCycleId));
+        else if (Guid.TryParse(plan, out var planId)) query = query.Where(x => db.TestPlanRuns.Any(r => r.TestCycleId == x.TestCycleId && r.TestPlanId == planId));
         // นับต่อสถานะก่อนกรอง status — ชิปสถานะหน้า Test Cycle ใช้ค่านี้แทนการยิงคำขอแยกทีละสถานะ (เดิม 6 คำขอต่อการเปลี่ยน filter)
         var statusCounts = await query.GroupBy(x => x.Status).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, StringComparer.OrdinalIgnoreCase, ct);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(x => x.Status == status);
@@ -88,7 +93,8 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         var moduleIds = moduleLinks.Select(x => x.ModuleId).Distinct().ToList();
         var moduleInfo = await db.Modules.AsNoTracking().Where(m => moduleIds.Contains(m.ModuleId)).ToDictionaryAsync(m => m.ModuleId, m => new SuiteModuleDto(m.ModuleId, m.ModuleCode, m.ModuleName), ct);
         var byCycle = moduleLinks.GroupBy(x => x.TestCycleId).ToDictionary(g => g.Key, g => (IReadOnlyList<SuiteModuleDto>)g.Select(x => moduleInfo.GetValueOrDefault(x.ModuleId)).Where(x => x is not null).Select(x => x!).OrderBy(x => x.ModuleCode).ToList());
-        var result = items.Select(x => x with { Modules = byCycle.GetValueOrDefault(x.TestCycleId, Array.Empty<SuiteModuleDto>()) }).ToList();
+        var plans = await TestCyclePlanLinks.ForCyclesAsync(db, cycleIds, ct);
+        var result = items.Select(x => x with { Modules = byCycle.GetValueOrDefault(x.TestCycleId, Array.Empty<SuiteModuleDto>()), Plan = plans.GetValueOrDefault(x.TestCycleId) }).ToList();
         return new(new(total, result), new(total, inProgress, completed, cancelled, executedCases, totalCases, statusCounts));
     }
 
@@ -105,7 +111,8 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
     {
         var query = db.TestCycles.AsNoTracking().Where(x => x.TestCycleId == id && !x.IsDeleted);
         if (projectCtx.AllowedProjectIds.Length > 0) query = query.Where(x => projectCtx.AllowedProjectIds.Contains(x.ProjectId));
-        return await Project(query).SingleOrDefaultAsync(ct);
+        var cycle = await Project(query).SingleOrDefaultAsync(ct);
+        return cycle is null ? null : cycle with { Plan = (await TestCyclePlanLinks.ForCyclesAsync(db, [id], ct)).GetValueOrDefault(id) };
     }
 
     public async Task<TestCycle?> FindAsync(Guid id, CancellationToken ct)
@@ -143,12 +150,15 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
         IEnumerable<TestCycleCase> cases;
         if (request.CloneMode == TestCycleCloneModes.SuiteLatest)
         {
-            var latest = await db.TestSuiteCases.Where(x => x.TestSuiteId == source.TestSuiteId).OrderBy(x => x.SortOrder).Select(x => new { x.TestCaseId, x.TestCase.RevisionNo, x.TestCase.Priority }).ToListAsync(ct);
+            var latest = await db.TestSuiteCases.Where(x => x.TestSuiteId == source.TestSuiteId && !x.TestCase.IsDeleted).OrderBy(x => x.SortOrder).Select(x => new { x.TestCaseId, x.TestCase.RevisionNo, x.TestCase.Priority }).ToListAsync(ct);
             cases = latest.Select((x, index) => new TestCycleCase(target.TestCycleId, x.TestCaseId, x.RevisionNo, x.Priority, index + 1));
         }
         else
         {
-            cases = source.Cases.OrderBy(x => x.ExecutionOrder).Select((x, index) => new TestCycleCase(target.TestCycleId, x.TestCaseId, x.TestCaseRevisionNo, x.Priority ?? "P2", index + 1));
+            // ไม่คัดลอกเคสที่ Test Case ถูกลบแล้ว — Cycle ใหม่ไม่ควรมีงานที่บันทึกผลไม่ได้ (Server ตอบ 409 TEST_CASE_DELETED)
+            var sourceCaseIds = source.Cases.Select(x => x.TestCaseId).ToList();
+            var deletedIds = (await db.TestCases.Where(t => sourceCaseIds.Contains(t.TestCaseId) && t.IsDeleted).Select(t => t.TestCaseId).ToListAsync(ct)).ToHashSet();
+            cases = source.Cases.Where(x => !deletedIds.Contains(x.TestCaseId)).OrderBy(x => x.ExecutionOrder).Select((x, index) => new TestCycleCase(target.TestCycleId, x.TestCaseId, x.TestCaseRevisionNo, x.Priority ?? "P2", index + 1));
         }
         foreach (var testCycleCase in cases) target.Cases.Add(testCycleCase);
         db.TestCycles.Add(target);
@@ -161,10 +171,15 @@ public sealed class TestCycleRepository(QaDbContext db, ProjectAccessContext pro
 
     public async Task PopulateAsync(Guid cycleId, Guid suiteId, bool requiredOnly, CancellationToken ct)
     {
-        var source = await db.TestSuiteCases.Where(x => x.TestSuiteId == suiteId && (!requiredOnly || x.IsRequired)).OrderBy(x => x.SortOrder).Select(x => new { x.TestCaseId, x.TestCase.RevisionNo, x.TestCase.Priority }).ToListAsync(ct);
+        var source = await db.TestSuiteCases.Where(x => x.TestSuiteId == suiteId && (!requiredOnly || x.IsRequired) && !x.TestCase.IsDeleted).OrderBy(x => x.SortOrder).Select(x => new { x.TestCaseId, x.TestCase.RevisionNo, x.TestCase.Priority }).ToListAsync(ct);
         db.TestCycleCases.AddRange(source.Select((x, index) => new TestCycleCase(cycleId, x.TestCaseId, x.RevisionNo, x.Priority, index + 1)));
     }
 
     public Task DeleteAsync(TestCycle entity, CancellationToken ct) { db.TestCycles.Update(entity); return Task.CompletedTask; }
+
+    public Task<string?> LinkedTestPlanAsync(Guid cycleId, CancellationToken ct) => db.TestPlanRuns.AsNoTracking()
+        .Where(x => x.TestCycleId == cycleId)
+        .Select(x => x.Plan.PlanCode + " / Run " + x.RunCode + (x.Plan.IsDeleted ? " (Plan อยู่ในรายการที่ลบแล้ว)" : ""))
+        .FirstOrDefaultAsync(ct);
     public Task SaveAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
 }

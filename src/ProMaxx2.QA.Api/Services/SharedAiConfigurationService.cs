@@ -61,10 +61,13 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
             try { key = embeddingProtector.Unprotect(s.EncryptedEmbeddingApiKey); }
             catch { return new(null, s.AllowCrmDataToExternalAi, "อ่าน API key ของ Embedding ที่เข้ารหัสไว้ไม่ได้ — บันทึก API key ใหม่ใน Setting Center"); }
         }
-        var baseUrl = s.EmbeddingProvider == "OpenAI" ? "https://api.openai.com/v1" : s.EmbeddingBaseUrl;
+        var baseUrl = FixedEmbeddingBaseUrl(s.EmbeddingProvider) ?? s.EmbeddingBaseUrl;
         if (string.IsNullOrWhiteSpace(baseUrl)) return new(null, s.AllowCrmDataToExternalAi, "ยังไม่ได้ระบุ Base URL ของ Embedding");
         return new(new EmbeddingRuntime(s.EmbeddingProvider, s.EmbeddingModel, baseUrl.TrimEnd('/'), key), s.AllowCrmDataToExternalAi, null);
     }
+
+    /// <summary>Embedding provider ที่ Base URL ตายตัว (ไม่เก็บค่าจากฟอร์ม) — Local ใช้ค่าที่ผู้ดูแลกรอก</summary>
+    private static string? FixedEmbeddingBaseUrl(string provider) => provider switch { "OpenAI" => "https://api.openai.com/v1", "OpenRouter" => OpenRouterBaseUrl, _ => null };
 
     public async Task<string> SendStructuredAsync(object openAiPayload, CancellationToken ct)
     {
@@ -226,7 +229,7 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
     }
 
     /// <summary>
-    /// ตั้งค่าคลังความรู้: Embedding provider (None / OpenAI / Local) และการอนุญาตส่งข้อมูล CRM ให้ AI ภายนอก
+    /// ตั้งค่าคลังความรู้: Embedding provider (None / OpenAI / OpenRouter / Local) และการอนุญาตส่งข้อมูล CRM ให้ AI ภายนอก
     /// ต้องบันทึกการตั้งค่า AI หลักก่อน; เปลี่ยน provider = ล้างคีย์เดิม (แบบเดียวกับ SaveAsync)
     /// </summary>
     public async Task<AiConfigurationView> SaveKnowledgeAsync(string embeddingProvider, string? embeddingModel, string? embeddingBaseUrl, string? embeddingApiKey, bool clearEmbeddingApiKey, bool allowCrmDataToExternalAi, bool mcpEnabled, CancellationToken ct)
@@ -235,12 +238,12 @@ public sealed class SharedAiConfigurationService(QaDbContext db, IDataProtection
         var provider = AiConfiguration.EmbeddingProviders.FirstOrDefault(x => string.Equals(x, embeddingProvider?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? throw new ArgumentException("Embedding provider ไม่ถูกต้อง");
         if (provider == "None") { s.UpdateKnowledge("None", null, null, "", null, allowCrmDataToExternalAi, mcpEnabled); await db.SaveChangesAsync(ct); return ToView(s); }
         if (string.IsNullOrWhiteSpace(embeddingModel)) throw new ArgumentException("กรุณาระบุ Embedding model");
-        var baseUrl = provider == "OpenAI" ? "https://api.openai.com/v1" : embeddingBaseUrl;
+        var baseUrl = FixedEmbeddingBaseUrl(provider) ?? embeddingBaseUrl;
         if (provider == "Local" && (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))) throw new ArgumentException("กรุณาระบุ Base URL ของ Embedding Local เป็น http:// หรือ https://");
         var providerChanged = s.EmbeddingProvider != provider;
         var encrypted = clearEmbeddingApiKey || providerChanged ? "" : s.EncryptedEmbeddingApiKey; var hint = clearEmbeddingApiKey || providerChanged ? null : s.EmbeddingApiKeyHint;
         if (!string.IsNullOrWhiteSpace(embeddingApiKey)) { var key = embeddingApiKey.Trim(); encrypted = embeddingProtector.Protect(key); hint = key.Length > 4 ? $"••••{key[^4..]}" : "••••"; }
-        if (provider == "OpenAI" && string.IsNullOrWhiteSpace(encrypted)) throw new ArgumentException("กรุณาระบุ API key สำหรับ Embedding ของ OpenAI");
+        if (provider is "OpenAI" or "OpenRouter" && string.IsNullOrWhiteSpace(encrypted)) throw new ArgumentException($"กรุณาระบุ API key สำหรับ Embedding ของ {provider}");
         s.UpdateKnowledge(provider, embeddingModel, baseUrl, encrypted, hint, allowCrmDataToExternalAi, mcpEnabled);
         await db.SaveChangesAsync(ct);
         return ToView(s);

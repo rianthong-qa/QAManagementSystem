@@ -137,7 +137,7 @@ public static class PerformanceQueries
     // Work Log เป็นบันทึกส่วนตัว ไม่ผูกสิทธิ์ Project — ไม่นับ Concern (ข้อสังเกตของหัวหน้า ไม่ใช่ผลงาน)
     public static IQueryable<WorkLogAggregate> WorkLogs(QaDbContext db, Guid[] users, DateOnly from, DateOnly toExclusive)
         => db.WorkLogEntries.AsNoTracking()
-            .Where(x => users.Contains(x.UserId) && x.WorkDate >= from && x.WorkDate < toExclusive && x.Kind != "Concern")
+            .Where(x => users.Contains(x.UserId) && x.WorkDate >= from && x.WorkDate < toExclusive && x.Kind != "Concern" && !x.IsDeleted)
             .GroupBy(x => x.UserId)
             .Select(g => new WorkLogAggregate(g.Key, g.Count(x => x.Kind == "WorkLog"), g.Count(x => x.Kind == "Highlight"), g.Sum(x => x.EffortHours ?? 0)));
 
@@ -145,7 +145,7 @@ public static class PerformanceQueries
     /// (กรองหลัง project ด้วย constructor ของ record ทำให้ EF แปลงเป็น SQL ไม่ได้)</summary>
     public static IQueryable<WorkLogDto> WorkLogList(QaDbContext db, Guid userId, DateOnly from, DateOnly to, bool includeConcern, Guid viewerId, bool viewerCanManage)
         => ToWorkLogDto(db, db.WorkLogEntries.AsNoTracking()
-            .Where(x => x.UserId == userId && x.WorkDate >= from && x.WorkDate <= to && (includeConcern || x.Kind != "Concern"))
+            .Where(x => x.UserId == userId && x.WorkDate >= from && x.WorkDate <= to && (includeConcern || x.Kind != "Concern") && !x.IsDeleted)
             .OrderByDescending(x => x.WorkDate).ThenByDescending(x => x.CreatedAt), viewerId, viewerCanManage);
 
     public static IQueryable<WorkLogDto> ToWorkLogDto(QaDbContext db, IQueryable<WorkLogEntry> source, Guid viewerId, bool viewerCanManage)

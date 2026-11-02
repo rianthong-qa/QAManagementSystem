@@ -1,0 +1,218 @@
+/* ===== User / Role (prefix ua-, scope .ua-page / .modal-box.ua-form, ปรับ 2026-10-30) =====
+   หัวหน้า + แท็บ ผู้ใช้ | บทบาทและสิทธิ์ → แท็บผู้ใช้ใช้หน้ารายการกลาง (ListPage.css)
+   → แท็บบทบาท: รายการบทบาทซ้าย + สิทธิ์รายเมนูขวา (แถว = เมนูใน Sidebar, ชิป "เข้าเมนู" + สิทธิ์ทำงาน) + แถบบันทึกติดล่าง */
+.ua-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
+.ua-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
+.ua-intro { display: flex; flex: 1 1 280px; align-items: flex-start; gap: 6px; max-width: 760px; margin: 0; color: var(--muted); font-size: 13px; }
+.ua-intro .material-symbols-outlined { flex: none; color: var(--info); font-size: 18px; }
+.ua-intro b { color: var(--text); }
+.ua-tabs { display: inline-flex; gap: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 4px; }
+.ua-page .ua-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; border: 0; border-radius: 9px; background: transparent; padding: 6px 14px; color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.ua-page .ua-tabs button:hover { color: var(--text); }
+.ua-page .ua-tabs button[aria-selected="true"] { background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); }
+.ua-page .ua-tabs button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.ua-tabs .material-symbols-outlined { font-size: 19px; }
+.ua-tabs b { min-width: 22px; border-radius: 999px; background: var(--bg); padding: 0 6px; color: var(--muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+.ua-tabs button[aria-selected="true"] b { background: color-mix(in srgb, var(--primary) 14%, var(--card)); color: var(--primary); }
+.ua-page > .inline-alert { margin: 0; }
+
+/* แท็บผู้ใช้ */
+.ua-table .lp-col-item { width: auto; }
+.ua-table .ua-col-roles { width: 22%; }
+.ua-table .ua-col-projects { width: 17%; }
+.ua-table .lp-col-status { width: 104px; }
+.ua-table .lp-col-date { width: 150px; }
+.ua-table .lp-col-actions { width: 128px; }
+.lp-card button.lp-item.ua-user { display: flex; align-items: center; gap: 10px; }
+.ua-avatar { display: grid; flex: none; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--primary) 12%, var(--card)); color: var(--primary); font-size: 14px; font-weight: 800; }
+.ua-table tr.is-inactive .ua-avatar { background: var(--bg); color: var(--muted); }
+.ua-user-text { display: grid; gap: 1px; min-width: 0; }
+.ua-user-text small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.ua-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ua-tags li { border-radius: 6px; background: color-mix(in srgb, var(--primary) 8%, var(--card)); padding: 2px 8px; color: var(--primary); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ua-tags li.is-admin { background: color-mix(in srgb, var(--red) 9%, var(--card)); color: var(--red); }
+.ua-tags.is-project li { background: var(--bg); color: var(--text); font-variant-numeric: tabular-nums; }
+.ua-tags li.is-more { color: var(--muted); }
+.ua-warn { display: inline-flex; align-items: center; gap: 3px; color: var(--warning-text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ua-warn .material-symbols-outlined { font-size: 15px; }
+
+/* แท็บบทบาทและสิทธิ์ */
+.ua-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px; color: var(--muted); }
+.ua-roles { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); align-items: start; gap: 14px; }
+.ua-role-list { position: sticky; top: 90px; display: grid; gap: 8px; max-height: calc(100dvh - 110px); overflow-y: auto; padding: 14px; }
+.ua-role-list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ua-role-list-head h3 { margin: 0; font-size: 15px; }
+.ua-role-list-head h3 b { margin-left: 4px; color: var(--muted); font-size: 13px; }
+.ua-role-list-head .btn { gap: 4px; min-height: 34px; padding: 4px 10px; font-size: 12px; }
+.ua-role-list-head .material-symbols-outlined { font-size: 17px; }
+.ua-role-list ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ua-page .ua-role-list li > button { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; border: 1px solid transparent; border-left-width: 3px; border-radius: 10px; background: transparent; padding: 7px 10px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.ua-page .ua-role-list li > button:hover { background: var(--bg); }
+.ua-page .ua-role-list li > button[aria-pressed="true"] { border-left-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.ua-page .ua-role-list li > button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.ua-role-icon { display: grid; flex: none; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: var(--bg); color: var(--muted); }
+.ua-role-list button[aria-pressed="true"] .ua-role-icon { background: color-mix(in srgb, var(--primary) 12%, var(--card)); color: var(--primary); }
+.ua-role-icon .material-symbols-outlined { font-size: 19px; }
+.ua-role-text { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.ua-role-text b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ua-role-text small { color: var(--muted); font-size: 11px; }
+.ua-dirty-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--yellow); }
+
+.ua-role-detail { display: grid; gap: 12px; min-width: 0; padding: 16px 18px 0; }
+.ua-role-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.ua-eyebrow { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.ua-role-head h3 { margin: 2px 0 0; font-size: 20px; font-weight: 800; }
+.ua-role-head p { max-width: 640px; margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.ua-role-actions { display: flex; gap: 8px; }
+.ua-role-actions .btn { gap: 4px; min-height: 36px; padding: 6px 12px; }
+.ua-role-actions .material-symbols-outlined { font-size: 17px; }
+.ua-page .btn.ua-danger { color: var(--red); }
+.ua-role-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border: 1px solid var(--line); border-radius: 12px; }
+.ua-role-stats > div { min-width: 0; padding: 10px 14px; }
+.ua-role-stats > div + div { border-left: 1px solid var(--line); }
+.ua-role-stats dt { color: var(--muted); font-size: 11px; font-weight: 700; }
+.ua-role-stats dd { display: grid; gap: 1px; margin: 2px 0 0; font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ua-role-stats dd small { overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.ua-note { display: flex; align-items: center; gap: 6px; margin: 0; border-radius: 10px; background: color-mix(in srgb, var(--info) 8%, var(--card)); padding: 8px 12px; color: var(--info); font-size: 12px; font-weight: 600; }
+.ua-note .material-symbols-outlined { font-size: 18px; }
+
+.ua-perm-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ua-mini-search { position: relative; display: block; flex: 1 1 260px; min-width: 0; }
+.ua-mini-search .material-symbols-outlined { position: absolute; top: 50%; left: 10px; color: var(--muted); font-size: 18px; transform: translateY(-50%); pointer-events: none; }
+.ua-page .ua-mini-search input, .modal-box.ua-form .ua-mini-search input { width: 100%; height: 38px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); padding: 6px 10px 6px 34px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.ua-mini-search input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.ua-only { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.ua-perm-bulk { display: inline-flex; gap: 6px; margin-left: auto; }
+.ua-perm-bulk .btn { min-height: 34px; padding: 4px 12px; font-size: 12px; }
+.ua-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: -2px 0 0; color: var(--muted); font-size: 11px; }
+.ua-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.ua-chip-demo { width: 14px; height: 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.ua-chip-demo.is-access { border-color: var(--green); background: color-mix(in srgb, var(--green) 14%, var(--card)); }
+
+.ua-perm-groups { display: grid; gap: 14px; }
+.ua-perm-group h4 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .05em; }
+.ua-perm-group h4 small { font-size: 11px; font-weight: 600; letter-spacing: 0; }
+.ua-perm-group ul { margin: 0; border: 1px solid var(--line); border-radius: 12px; padding: 0; list-style: none; }
+.ua-perm-group li { display: grid; grid-template-columns: minmax(200px, 250px) minmax(0, 1fr); align-items: center; gap: 8px 14px; padding: 8px 12px; }
+.ua-perm-group li + li { border-top: 1px solid var(--line); }
+.ua-perm-group li.is-closed { background: color-mix(in srgb, var(--muted) 4%, var(--card)); }
+.ua-perm-menu { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.ua-perm-menu > .material-symbols-outlined { flex: none; color: var(--primary); font-size: 20px; }
+.ua-perm-group li.is-closed .ua-perm-menu > .material-symbols-outlined { color: var(--muted); }
+.ua-row-toggle, .ua-row-toggle-space { flex: none; width: 18px; height: 18px; margin: 0; }
+.ua-row-toggle { accent-color: var(--primary); cursor: pointer; }
+.ua-perm-name { display: grid; min-width: 0; }
+.ua-perm-name b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ua-perm-name small { color: var(--green); font-size: 11px; font-weight: 600; }
+.ua-perm-group li.is-closed .ua-perm-name small { color: var(--muted); font-weight: 400; }
+.ua-perm-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ua-chip { position: relative; display: inline-flex; align-items: center; gap: 4px; min-height: 30px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 3px 11px; color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; }
+.ua-chip input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; }
+.ua-chip::before { width: 14px; height: 14px; flex: none; border: 1.5px solid color-mix(in srgb, var(--muted) 55%, var(--card)); border-radius: 4px; background: var(--card); content: ""; }
+.ua-chip:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); color: var(--text); }
+.ua-chip.is-on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); }
+.ua-chip.is-on::before { border-color: var(--primary); background: var(--primary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.4' d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.ua-chip.is-access.is-on { border-color: var(--green); background: color-mix(in srgb, var(--green) 11%, var(--card)); color: var(--green); }
+.ua-chip.is-access.is-on::before { border-color: var(--green); background-color: var(--green); }
+.ua-chip:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: 1px; }
+.ua-chip .material-symbols-outlined { font-size: 15px; }
+.ua-chip.is-locked { border-style: dashed; cursor: not-allowed; }
+.ua-chip.is-locked::before { display: none; }
+
+.ua-save-bar { position: sticky; bottom: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 -18px; border-top: 1px solid var(--line); border-radius: 0 0 14px 14px; background: var(--card); padding: 10px 18px; }
+.ua-save-bar > span { margin-right: auto; color: var(--muted); font-size: 12px; }
+.ua-save-bar.is-dirty { border-top-color: color-mix(in srgb, var(--yellow) 55%, var(--line)); background: color-mix(in srgb, var(--yellow) 8%, var(--card)); box-shadow: 0 -6px 12px -10px rgba(15, 23, 42, .35); }
+.ua-save-bar.is-dirty > span { color: var(--warning-text); }
+.ua-save-bar.is-dirty > span b { color: var(--text); }
+.ua-save-bar .btn { gap: 4px; min-height: 38px; }
+.ua-save-bar .material-symbols-outlined { font-size: 18px; }
+
+/* หน้าต่างผู้ใช้ / บทบาท / รหัสผ่าน */
+.modal > .modal-box.ua-user-form { width: min(860px, calc(100vw - 32px)); }
+.modal > .modal-box.ua-password-form { width: min(520px, calc(100vw - 32px)); }
+.modal > .modal-box.ua-role-form { width: min(680px, calc(100vw - 32px)); }
+.modal-box.ua-form .modal-head small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.modal-box.ua-form > .inline-alert { margin-bottom: 12px; }
+.modal-box.ua-form > .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.modal-box.ua-form .form-grid > label { align-content: flex-start; }
+.modal-box.ua-password-form > .form-grid { grid-template-columns: minmax(0, 1fr); }
+.modal-box.ua-form label > small.is-error { color: var(--red); font-size: 12px; font-weight: 400; }
+.ua-section { display: grid; gap: 10px; padding: 4px 0 16px; }
+.ua-section + .ua-section { border-top: 1px solid var(--line); padding-top: 16px; }
+.ua-section h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0; font-size: 15px; }
+.ua-section h3 small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.ua-step { display: inline-grid; width: 22px; height: 22px; place-items: center; align-self: center; border-radius: 50%; background: color-mix(in srgb, var(--primary) 12%, var(--card)); color: var(--primary); font-size: 12px; font-weight: 800; }
+.ua-password { position: relative; display: block; }
+.modal-box.ua-form .ua-password input { width: 100%; padding-right: 44px; }
+.modal-box.ua-form .ua-password button { position: absolute; top: 50%; right: 6px; display: grid; width: 32px; height: 32px; min-height: 0; place-items: center; border: 0; border-radius: 8px; background: transparent; padding: 0; color: var(--muted); transform: translateY(-50%); cursor: pointer; }
+.modal-box.ua-form .ua-password button:hover { color: var(--text); }
+.ua-password .material-symbols-outlined { font-size: 19px; }
+.modal-box.ua-form label.ua-switch { flex-direction: row; align-items: center; align-self: end; gap: 10px; min-height: 46px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-weight: 400; cursor: pointer; }
+.modal-box.ua-form label.ua-switch input { flex: none; width: 18px; height: 18px; margin: 0; padding: 0; }
+.ua-switch > span { display: grid; gap: 1px; }
+.ua-switch b { font-size: 13px; }
+.ua-switch small { color: var(--muted); font-size: 12px; }
+.ua-role-picks, .ua-project-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.ua-project-picks { max-height: 250px; overflow-y: auto; padding: 2px; }
+.ua-role-picks label, .ua-project-picks label { display: flex; align-items: flex-start; gap: 9px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; cursor: pointer; }
+.ua-role-picks label:hover, .ua-project-picks label:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); }
+.ua-role-picks label.is-selected, .ua-project-picks label.is-selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--card)); }
+.ua-role-picks input, .ua-project-picks input { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--primary); }
+.ua-role-picks label > span, .ua-project-picks label > span { display: grid; gap: 1px; min-width: 0; }
+.ua-role-picks b, .ua-project-picks b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ua-role-picks small, .ua-project-picks small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.ua-project-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ua-project-tools .btn { min-height: 36px; padding: 4px 12px; font-size: 12px; }
+.ua-preview { display: flex; align-items: flex-start; gap: 6px; margin: 0; border-radius: 10px; background: color-mix(in srgb, var(--green) 7%, var(--card)); padding: 8px 12px; color: var(--text); font-size: 12px; line-height: 1.55; }
+.ua-preview > .material-symbols-outlined { flex: none; color: var(--green); font-size: 18px; }
+.ua-preview b { color: var(--green); }
+.ua-preview.is-warning { background: color-mix(in srgb, var(--yellow) 10%, var(--card)); color: var(--warning-text); }
+.ua-preview.is-warning > .material-symbols-outlined { color: var(--warning-text); }
+.ua-form-actions { align-items: center; }
+.ua-status { margin-right: auto; color: var(--green); font-size: 12px; font-weight: 600; }
+.ua-status.is-missing { color: var(--red); }
+.modal-box.ua-form > .modal-actions .btn { gap: 4px; }
+
+@media (max-width: 1100px) {
+  .ua-perm-group li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .ua-perm-chips { padding-left: 27px; }
+}
+@media (max-width: 900px) {
+  .ua-roles { grid-template-columns: minmax(0, 1fr); }
+  .ua-role-list { position: static; max-height: none; overflow: visible; }
+  .ua-role-list ul { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
+  .ua-role-list li { flex: none; width: 210px; scroll-snap-align: start; }
+}
+@media (max-width: 760px) {
+  .ua-header { align-items: stretch; }
+  .ua-intro { flex-basis: 100%; }
+  .ua-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .ua-page .ua-tabs button { justify-content: center; min-height: 44px; }
+  .ua-users .lp-actions { grid-template-columns: minmax(0, 1fr); }
+  .ua-table .lp-col-item { order: 0; }
+  .ua-table td.ua-col-roles, .ua-table td.ua-col-projects { display: block; flex: 1 1 100%; width: auto; border: 0; padding: 0; }
+  .ua-table td.ua-col-projects.lp-hide-md { display: block; }
+  .ua-role-detail { padding: 14px 14px 0; }
+  .ua-role-actions { width: 100%; }
+  .ua-role-actions .btn { flex: 1; justify-content: center; min-height: 44px; }
+  .ua-role-stats { grid-template-columns: minmax(0, 1fr); }
+  .ua-role-stats > div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .ua-role-stats dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .ua-page .ua-mini-search input, .modal-box.ua-form .ua-mini-search input { height: 44px; }
+  .ua-perm-bulk { width: 100%; margin-left: 0; }
+  .ua-perm-bulk .btn { flex: 1; min-height: 44px; }
+  .ua-perm-chips { gap: 8px; padding-left: 0; }
+  .ua-chip { min-height: 40px; padding: 6px 13px; }
+  .ua-row-toggle { width: 22px; height: 22px; }
+  .ua-save-bar { margin: 0 -14px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+  .ua-save-bar > span { flex-basis: 100%; }
+  .ua-save-bar .btn { flex: 1; justify-content: center; min-height: 44px; }
+  .modal-box.ua-form > .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .ua-role-picks, .ua-project-picks { grid-template-columns: minmax(0, 1fr); }
+  .ua-role-picks label, .ua-project-picks label { min-height: 48px; }
+  .ua-project-tools .btn { flex: 1; min-height: 44px; }
+  .ua-project-tools .ua-mini-search { flex-basis: 100%; }
+  .modal-box.ua-form > .modal-actions { flex-wrap: wrap; }
+  .ua-status { flex-basis: 100%; margin-right: 0; }
+  .modal-box.ua-form > .modal-actions .btn { min-height: 44px; }
+}

@@ -83,10 +83,8 @@ public sealed class PerformanceController(PerformanceService service, Evaluation
     public async Task<IActionResult> DeleteWorkLog(Guid id, CancellationToken ct)
     {
         var result = await Run(async v => { await service.DeleteWorkLogAsync(v, id, ct); return true; }, ct);
-        if (result.Result is not null) return result.Result;
-        // ไฟล์หลักฐานถูกลบจากฐานข้อมูลแบบ cascade แล้ว — ลบโฟลเดอร์ทีหลัง ถ้าลบไม่ได้ก็ไม่ตอบ 500 ให้ผู้ใช้
-        if (!evidence.DeleteDirectory(id)) logger.LogWarning("ลบโฟลเดอร์หลักฐานของบันทึกงาน {WorkLogEntryId} ไม่สำเร็จ", id);
-        return NoContent();
+        // soft delete — เก็บโฟลเดอร์หลักฐานไว้เพื่อกู้คืนได้
+        return result.Result ?? NoContent();
     }
 
     /// <summary>แนบไฟล์หลักฐาน (PNG/JPG/WebP/PDF) — สิทธิ์เดียวกับการแก้บันทึกงาน</summary>

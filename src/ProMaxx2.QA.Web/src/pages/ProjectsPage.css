@@ -40,6 +40,7 @@
 .pm-stats dt { color: var(--muted); font-size: 12px; }
 .pm-stats dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .pm-stats dd.pm-stat-text { font-size: 14px; line-height: 1.9; }
+.pm-stats .pm-stat-note { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
 
 /* Module tree */
 .pm-modules { display: grid; gap: 12px; }
@@ -48,6 +49,7 @@
 .pm-modules-head h3 .material-symbols-outlined { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); font-size: 19px; }
 .pm-modules-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .pm-modules-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pm-layout .btn.pm-hidden-toggle[aria-pressed="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--card)); color: var(--primary); }
 .pm-tree { margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; list-style: none; overflow: hidden; }
 .pm-node { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 6px 10px 6px 6px; border-top: 1px solid var(--line); background: var(--card); transition: background .12s, opacity .12s, box-shadow .12s; }
 .pm-node:first-child { border-top: 0; }
@@ -85,6 +87,15 @@
 .pm-layout .pm-node-actions button:hover { border-color: var(--line); background: var(--card); color: var(--primary); }
 .pm-layout .pm-node-actions button.danger:hover { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); color: var(--red); }
 .pm-node-actions .material-symbols-outlined { font-size: 18px; }
+/* Module ที่ซ่อน (แสดงเมื่อกด "แสดงที่ซ่อน"): พื้นเทาอ่อน + ข้อความจาง + ป้าย "ซ่อนอยู่" — ปุ่มแสดงกลับเห็นชัดตลอด */
+.pm-node.is-hidden { background: color-mix(in srgb, var(--bg) 70%, var(--card)); }
+.pm-node.is-hidden .pm-node-text,
+.pm-node.is-hidden .pm-node-icon { opacity: .6; }
+.pm-node.is-hidden .pm-node-actions { opacity: 1; }
+.pm-drag.is-off { visibility: hidden; }
+.pm-node-hidden { padding: 0 6px; border: 1px dashed color-mix(in srgb, var(--muted) 60%, var(--line)); border-radius: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.pm-layout .pm-node-actions button.restore { color: var(--primary); }
+.pm-layout .pm-node-actions button.restore:hover { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); }
 .pm-empty { display: grid; justify-items: center; gap: 8px; padding: 32px 16px; color: var(--muted); text-align: center; }
 .pm-empty > .material-symbols-outlined { color: color-mix(in srgb, var(--primary) 45%, var(--card)); font-size: 36px; }
 .pm-empty b { color: var(--text); font-size: 14px; }
@@ -119,6 +130,7 @@
   .pm-stats > div { padding: 10px 14px; }
   .pm-stats dd { font-size: 20px; }
   .pm-modules-actions { width: 100%; }
+  .pm-modules-actions .btn.pm-hidden-toggle { flex-basis: 100%; }
   .pm-node { min-height: 52px; padding-right: 6px; }
   .pm-drag { display: none; }
   .pm-node-actions { opacity: 1; }

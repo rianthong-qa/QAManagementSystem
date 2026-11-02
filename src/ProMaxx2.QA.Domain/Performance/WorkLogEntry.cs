@@ -33,6 +33,13 @@ public sealed class WorkLogEntry
     public Guid? CreatedBy { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
     public Guid? UpdatedBy { get; private set; }
+    /// <summary>ลบแบบเก็บไว้ — บันทึกงานใช้ในการประเมินผลและรายงานประจำสัปดาห์ จึงกู้คืนได้ (SYS_ADMIN)</summary>
+    public bool IsDeleted { get; private set; }
+    public DateTime? DeletedAt { get; private set; }
+    public Guid? DeletedBy { get; private set; }
+
+    public void SoftDelete(Guid? userId) { IsDeleted = true; DeletedAt = DateTime.UtcNow; DeletedBy = userId; }
+    public void Restore() { IsDeleted = false; DeletedAt = null; DeletedBy = null; }
 
     public void Update(DateOnly workDate, string category, string title, string? description, decimal? effortHours, Guid? projectId, string? referenceUrl, Guid? updatedBy)
     {

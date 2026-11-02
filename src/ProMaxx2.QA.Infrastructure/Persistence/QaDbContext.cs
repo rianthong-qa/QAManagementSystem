@@ -15,6 +15,7 @@ using ProMaxx2.QA.Domain.Automation;
 using ProMaxx2.QA.Domain.Integrations;
 using ProMaxx2.QA.Domain.Performance;
 using ProMaxx2.QA.Domain.Knowledge;
+using ProMaxx2.QA.Domain.TestPlanning;
 
 namespace ProMaxx2.QA.Infrastructure.Persistence;
 
@@ -41,6 +42,9 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<TestCycle> TestCycles => Set<TestCycle>();
     public DbSet<TestCycleCase> TestCycleCases => Set<TestCycleCase>();
     public DbSet<TestExecution> TestExecutions => Set<TestExecution>();
+    public DbSet<TestPlan> TestPlans => Set<TestPlan>();
+    public DbSet<TestPlanRun> TestPlanRuns => Set<TestPlanRun>();
+    public DbSet<TestPlanRunAssignment> TestPlanRunAssignments => Set<TestPlanRunAssignment>();
     public DbSet<RegressionAnalysis> RegressionAnalyses => Set<RegressionAnalysis>();
     public DbSet<RegressionActivity> RegressionActivities => Set<RegressionActivity>();
     public DbSet<RegressionProfile> RegressionProfiles => Set<RegressionProfile>();

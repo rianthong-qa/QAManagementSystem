@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
 import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { confirmDialog, notify } from "../components/dialogStore";
 import { useDebounced } from "../components/useDebounced";
 import { formatThaiDateTime } from "../dateTime";
@@ -12,6 +13,7 @@ import { KnowledgeDocuments } from "./KnowledgeDocuments";
 import { CrmMirrorIntervalEditor } from "../components/CrmMirrorIntervalEditor";
 import { CopyButton } from "../components/CopyButton";
 import { HtmlArticleFrame } from "../components/HtmlArticleFrame";
+import { decodeHtmlBytes, htmlArticleHasText, htmlArticleMaxLength, htmlArticleTitle } from "../shared/htmlArticle";
 import { downloadKnowledgeFile } from "./knowledgeFiles";
 import "./Knowledge.css";
 
@@ -384,6 +386,7 @@ function ArticlesPanel({ projects, canEdit, version, onView, onCreate, onImportH
       <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project"><option value="">ทุก Project</option>{projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.projectName}</option>)}</select>
       {canEdit && <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="สถานะ"><option value="">ทุกสถานะ</option><option value="Published">เผยแพร่</option><option value="Draft">ฉบับร่าง</option></select>}
       {canEdit && <button type="button" className="btn" onClick={onImportHtml}><span className="material-symbols-outlined" aria-hidden="true">upload_file</span>นำเข้า HTML</button>}
+      <DeletedItemsButton type="knowledge-articles" label="บทความ" onRestored={() => setAttempt((x) => x + 1)} />
       {canEdit && <button type="button" className="btn primary" onClick={onCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span>เขียนบทความ</button>}
     </div>
     {error ? <div className="kn-empty kn-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span><b>{error}</b><button type="button" className="btn" onClick={() => setAttempt((x) => x + 1)}>ลองใหม่</button></div>
@@ -431,8 +434,13 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const hintCount = (value.bodyMarkdown.match(hintLine) ?? []).length;
-  const missing = [!value.title.trim() && "หัวข้อ", !value.bodyMarkdown.trim() && "เนื้อหา", hintCount > 0 && `แทนที่ข้อความแนะนำ (›) ${hintCount} จุด`].filter(Boolean) as string[];
+  const isHtml = value.format === "Html";
+  const hintCount = isHtml ? 0 : (value.bodyMarkdown.match(hintLine) ?? []).length;
+  // HTML ที่มีแต่รูป/สไตล์ บันทึกไม่ได้ (เซิร์ฟเวอร์ต้องสกัดข้อความไว้ค้นหา) — parse ครั้งเดียวต่อไฟล์ ไม่ใช่ทุก render
+  const htmlHasText = useMemo(() => !value.bodyHtml.trim() || htmlArticleHasText(value.bodyHtml), [value.bodyHtml]);
+  const missing = (isHtml
+    ? [!value.title.trim() && "หัวข้อ", !value.bodyHtml.trim() && "ไฟล์ HTML", !htmlHasText && "ไฟล์ HTML ที่มีข้อความ (ไฟล์นี้มีแต่รูป/สไตล์)"]
+    : [!value.title.trim() && "หัวข้อ", !value.bodyMarkdown.trim() && "เนื้อหา", hintCount > 0 && `แทนที่ข้อความแนะนำ (›) ${hintCount} จุด`]).filter(Boolean) as string[];
   const set = (patch: Partial<ArticleDraft>) => setValue((current) => ({ ...current, ...patch }));
   // แก้เนื้อหาจากปุ่ม แล้วคืน focus + ตำแหน่งเลือกให้ textarea (ต้องรอ render ก่อน)
   const applyBody = (text: string, selStart: number, selEnd = selStart) => {
@@ -466,15 +474,36 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
     { icon: "format_list_bulleted", label: "รายการ", title: "ทำบรรทัดที่เลือกเป็นรายการ (- )", run: () => prefixLines(() => "- ") },
     { icon: "format_list_numbered", label: "ขั้นตอน 1, 2, 3", title: "ทำบรรทัดที่เลือกเป็นขั้นตอนเรียงเลข (1. 2. 3.)", run: () => prefixLines((i) => `${i + 1}. `) },
   ];
+  // นำเข้าไฟล์ HTML: อ่านในเครื่อง (ถอด charset ตาม <meta>) → แสดงตัวอย่าง → ส่ง HTML ให้เซิร์ฟเวอร์ทำความสะอาดตอนบันทึก
+  const [htmlFileName, setHtmlFileName] = useState<string | null>(null);
+  const [htmlError, setHtmlError] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const maxMillion = (htmlArticleMaxLength / 1_000_000).toLocaleString("th-TH");
+  const loadHtmlFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (!/\.html?$/i.test(file.name) && file.type !== "text/html") { setHtmlError(`"${file.name}" ไม่ใช่ไฟล์ HTML — รองรับเฉพาะ .html และ .htm`); return; }
+    const tooLarge = `ไฟล์ใหญ่เกิน ${maxMillion} ล้านตัวอักษร — มักเกิดจากรูปที่ฝังในไฟล์ ลองย่อรูปหรือใช้ลิงก์รูปแทน`;
+    // UTF-8 ใช้ไม่เกิน 4 ไบต์ต่อตัวอักษร — ไฟล์ใหญ่กว่านี้เกินแน่นอน ไม่ต้องอ่านทั้งไฟล์
+    if (file.size > htmlArticleMaxLength * 4) { setHtmlError(tooLarge); return; }
+    try {
+      const html = decodeHtmlBytes(await file.arrayBuffer());
+      if (html.length > htmlArticleMaxLength) { setHtmlError(tooLarge); return; }
+      setHtmlError("");
+      setHtmlFileName(file.name);
+      setValue((current) => ({ ...current, bodyHtml: html, title: current.title.trim() ? current.title : htmlArticleTitle(html) }));
+    } catch { setHtmlError(`อ่านไฟล์ "${file.name}" ไม่สำเร็จ กรุณาลองใหม่`); }
+  };
+  const onDropHtml = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setDragging(false); void loadHtmlFile(e.dataTransfer.files[0]); };
   const save = async () => {
     if (missing.length) return;
     setSaving(true); setError("");
     try { await onSave(value); } catch (e) { setError(errorText(e, "บันทึกบทความไม่สำเร็จ")); } finally { setSaving(false); }
   };
-  return <ModalShell labelledBy="kn-editor-title" className="kn-editor" onDismiss={onCancel}>
+  return <ModalShell labelledBy="kn-editor-title" className="kn-editor" dirty={value !== draft} onDismiss={onCancel}>
     <div className="modal-head">
       <div>
-        <span className="kn-eyebrow">{value.id ? "แก้ไขบทความ" : "เขียนบทความใหม่"}</span>
+        <span className="kn-eyebrow">{value.id ? "แก้ไขบทความ" : isHtml ? "นำเข้าบทความจากไฟล์ HTML" : "เขียนบทความใหม่"}</span>
         <h2 id="kn-editor-title">{value.title.trim() || "บทความใหม่"}</h2>
       </div>
       <button type="button" className="modal-close" aria-label="ปิด" onClick={onCancel}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
@@ -489,7 +518,34 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
         <label><input type="radio" name="kn-status" checked={value.status === "Draft"} onChange={() => set({ status: "Draft" })} />ฉบับร่าง <small>เห็นเฉพาะผู้แก้ไขคลังความรู้</small></label>
       </fieldset>
       <div className="kn-span-2 kn-body-field">
-        <div className="kn-body-head"><label htmlFor="kn-body">เนื้อหา <span className="required">*</span></label><small aria-live="off">{value.bodyMarkdown.trim().length.toLocaleString("th-TH")} ตัวอักษร</small></div>
+        <div className="kn-body-head">{isHtml ? <span className="kn-body-label">เนื้อหา <span className="required">*</span></span> : <label htmlFor="kn-body">เนื้อหา <span className="required">*</span></label>}{!isHtml && <small aria-live="off">{value.bodyMarkdown.trim().length.toLocaleString("th-TH")} ตัวอักษร</small>}</div>
+        <div className="kn-format-switch" role="group" aria-label="รูปแบบเนื้อหา">
+          <button type="button" aria-pressed={!isHtml} onClick={() => set({ format: "Markdown" })}><span className="material-symbols-outlined" aria-hidden="true">edit_note</span>เขียนเอง</button>
+          <button type="button" aria-pressed={isHtml} onClick={() => set({ format: "Html" })}><span className="material-symbols-outlined" aria-hidden="true">html</span>นำเข้าไฟล์ HTML</button>
+        </div>
+        {isHtml ? <>
+          <p className="kn-step-title"><span className="kn-step-no" aria-hidden="true">1</span>{value.bodyHtml ? "ไฟล์ที่นำเข้า" : "เลือกไฟล์ HTML"} <small>หน้าเว็บที่บันทึกไว้จะแสดงตามรูปแบบในไฟล์ ทั้งในคลังความรู้และหน้าแชร์</small></p>
+          {value.bodyHtml && <div className="kn-html-file">
+            <span className="material-symbols-outlined" aria-hidden="true">html</span>
+            <div><b>{htmlFileName ?? "เนื้อหา HTML ปัจจุบันของบทความ"}</b><small>{value.bodyHtml.length.toLocaleString("th-TH")} ตัวอักษร{htmlHasText ? "" : " · ไม่พบข้อความในไฟล์"}</small></div>
+            <button type="button" className="btn" onClick={() => fileRef.current?.click()}><span className="material-symbols-outlined" aria-hidden="true">swap_horiz</span>เปลี่ยนไฟล์</button>
+          </div>}
+          <div className={`kn-html-drop${dragging ? " is-dragging" : ""}${value.bodyHtml ? " is-compact" : ""}`} onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }} onDrop={onDropHtml}>
+            <span className="material-symbols-outlined" aria-hidden="true">upload_file</span>
+            <b>{value.bodyHtml ? "ลากไฟล์ใหม่มาวางเพื่อแทนที่" : "ลากไฟล์ .html มาวางที่นี่"}</b>
+            <span>หรือ <button type="button" className="kn-link-button" onClick={() => fileRef.current?.click()}>เลือกไฟล์</button> — .html / .htm · ไม่เกิน {maxMillion} ล้านตัวอักษร</span>
+            <input ref={fileRef} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => { void loadHtmlFile(e.target.files?.[0]); e.target.value = ""; }} />
+          </div>
+          {htmlError && <p className="kn-html-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span>{htmlError}</p>}
+          {value.bodyHtml && <>
+            <p className="kn-step-title"><span className="kn-step-no" aria-hidden="true">2</span>ตรวจหน้าตาก่อนบันทึก <small>ผู้อ่านจะเห็นแบบนี้</small></p>
+            <div className="kn-html-view is-preview"><HtmlArticleFrame html={value.bodyHtml} title="ตัวอย่างบทความ HTML" maxHeight={520} /></div>
+          </>}
+          <div className="kn-body-help">
+            <p><span className="material-symbols-outlined" aria-hidden="true">lock</span>ระบบสกัดข้อความในไฟล์ไว้ให้ค้นหาและผู้ช่วย AI ใช้ (ปิดอีเมล เบอร์โทร และ password ในข้อความค้นหาให้อัตโนมัติ) · สคริปต์ในไฟล์ไม่ทำงาน</p>
+            <p className="kn-hint-left"><span className="material-symbols-outlined" aria-hidden="true">visibility</span>หน้าเว็บแสดงข้อมูลตามไฟล์ต้นฉบับ — ตรวจว่าไม่มีข้อมูลลูกค้าหรือรหัสผ่านก่อนเผยแพร่หรือแชร์ลิงก์</p>
+          </div>
+        </> : <>
         <div className="kn-templates" role="group" aria-labelledby="kn-templates-title">
           <p id="kn-templates-title"><span className="kn-step-no" aria-hidden="true">1</span>เลือกแบบฟอร์ม <small>{value.bodyMarkdown.trim() ? "(เลือกใหม่จะแทนที่เนื้อหาเดิม)" : "(แนะนำ — หรือพิมพ์เองในช่องด้านล่างได้เลย)"}</small></p>
           <div className="kn-template-list">{articleTemplates.map((t) => <button key={t.id} type="button" className="kn-template" onClick={() => void applyTemplate(t)}><span className="material-symbols-outlined" aria-hidden="true">{t.icon}</span><span><b>{t.name}</b><small>{t.flow}</small></span></button>)}</div>
@@ -515,6 +571,7 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
             </ul>
           </details>
         </div>
+        </>}
       </div>
     </div>
     {error && <p className="kn-form-error" role="alert">{error}</p>}

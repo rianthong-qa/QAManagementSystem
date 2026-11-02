@@ -110,6 +110,7 @@ Defect เก็บ Build ไว้ 3 แบบ:
 - กฎเดิม (Smoke, P0, P1 Blocker) ยังตัดสินก่อนเหมือนเดิม
 - เปิดใช้ด้วย config `Defects:GateEnabled` (ค่าเริ่มต้น `false` ใน `appsettings.json`, อ่านแบบ live ไม่ต้อง restart) — ระหว่างปิด API ยังส่งตัวเลข Defect มาแสดงในหน้า Release Sign-off เพื่อติดตาม แต่ไม่มีผลกับคำแนะนำ
 - เปิดเมื่อจบเฟส 5 เท่านั้น ไม่งั้น Release ปัจจุบันจะเป็น NO-GO ทันที
+- **ปรับ 2026-11-02 (รวมกฎ Dashboard / Sign-off เป็น `ReleaseGate.Assess` ชุดเดียว):** Critical ที่ยังไม่ได้แก้ = NO-GO **เสมอ** (ไม่ขึ้นกับ config); ระหว่างปิด config, High ค้าง/Resolved รอตรวจซ้ำ = CONDITIONAL GO (เหมือน Dashboard เดิม) แทนการไม่นับ; P1 Blocker ที่ไม่มี Risk = CONDITIONAL GO (เดิม NO-GO); เพิ่ม Coverage/Pass Rate < 90% = CONDITIONAL GO — รายละเอียดใน `API_SPECIFICATION.md` § release-gate
 
 ## 5. แผนที่เหลือ
 

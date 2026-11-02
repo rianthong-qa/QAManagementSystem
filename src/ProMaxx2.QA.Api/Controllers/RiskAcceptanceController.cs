@@ -68,11 +68,13 @@ public sealed class RiskAcceptanceController(RiskAcceptanceService service) : Co
         catch (InvalidOperationException ex) { return Conflict(Problem("ปิด Risk ไม่ได้", ex.Message, 409)); }
     }
 
-    [HttpDelete("{id:guid}")]
+    // ลบต้องมีสิทธิ์แก้ไข (เดิมแค่ ProjectView) และลบได้เฉพาะ Draft/Rejected — ดู RiskAcceptance.SoftDelete
+    [HttpDelete("{id:guid}"), Authorize(Policy="ProjectEdit")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         try { await service.DeleteAsync(id, UserId(), ct); return NoContent(); }
         catch (EntityNotFoundException) { return NotFound(); }
+        catch (InvalidOperationException ex) { return Conflict(Problem("ลบ Risk ไม่ได้", ex.Message, 409)); }
     }
 
     private Guid? UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : null;

@@ -120,7 +120,7 @@ public sealed class WeeklyReportService(QaDbContext db, PerformanceService perfo
     private async Task<Dictionary<Guid, IReadOnlyList<WeeklyWorkItemDto>>> WorkItemsAsync(List<Guid> userIds, DateOnly from, DateOnly to, CancellationToken ct)
     {
         var rows = await db.WorkLogEntries.AsNoTracking()
-            .Where(x => userIds.Contains(x.UserId) && x.WorkDate >= from && x.WorkDate <= to && x.Kind != "Concern")
+            .Where(x => userIds.Contains(x.UserId) && x.WorkDate >= from && x.WorkDate <= to && x.Kind != "Concern" && !x.IsDeleted)
             .OrderByDescending(x => x.Kind == "Highlight").ThenBy(x => x.WorkDate).ThenBy(x => x.CreatedAt)
             .Select(x => new
             {

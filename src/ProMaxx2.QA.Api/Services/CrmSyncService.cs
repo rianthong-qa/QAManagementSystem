@@ -8,18 +8,20 @@ namespace ProMaxx2.QA.Api.Services;
 // (not inline in the BackgroundService) so the timer/retry-on-failure plumbing and the actual poll logic stay
 // independently testable/readable, same split as AutomationScheduleWorker/AutomationAgentService.
 //
-// Polls each linked ticket using the Defect's own Assignee's CRM login (not whoever originally sent it to CRM) —
-// per-user credentials mean there's no single shared identity to poll with anymore, and the Assignee is the
-// person who owns following up on this Defect right now.
-public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectActivityService activityService, EmailSenderService emailSender, DefectShareLinkService shareLinks, ILogger<CrmSyncService> logger)
+// Polls each linked ticket with a per-user CRM login, in order: the Defect's Assignee (who owns following up now)
+// → whoever sent it to CRM → the shared mirror account (CrmMirror:AccountUsername) — see CrmPollIdentities.
+// เดิมใช้เฉพาะ Assignee ทำให้ Defect ที่ไม่มีผู้รับผิดชอบ (88 จาก 92 ใบ ตรวจ 2026-11-02) ไม่เคยถูกดึงสถานะ/คอมเมนต์จาก CRM เลย
+public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectActivityService activityService, EmailSenderService emailSender, DefectShareLinkService shareLinks, IConfiguration configuration, ILogger<CrmSyncService> logger)
 {
     public async Task PollLinkedDefectsAsync(CancellationToken ct)
     {
         var linked = await db.Defects.Where(x => x.CrmSyncStatus == "Linked" && x.CrmTicketId != null && !x.IsDeleted).ToListAsync(ct);
+        var identities = await CrmPollIdentities.ResolveAsync(db, linked, CrmMirrorAccount.Username(configuration), ct);
         foreach (var defect in linked)
         {
-            if (defect.AssigneeUserId is not { } assigneeUserId) continue; // ไม่มี Assignee ใน QA Hub — ไม่รู้จะ poll ด้วย identity ไหน ข้ามไปก่อน
-            try { await PollOneAsync(defect, assigneeUserId, ct); }
+            var candidates = identities[defect.DefectId];
+            if (candidates.Count == 0) continue; // ไม่มีบัญชีใดใช้ poll ได้ (ไม่มี Assignee/ผู้ส่ง และยังไม่ตั้งค่าบัญชีกลาง)
+            try { await PollWithFallbackAsync(defect, candidates, ct); }
             // CRM/BlueID ล่ม (เครือข่าย/503) กระทบทุก Defect เหมือนกัน — log ครั้งเดียวแล้วหยุด tick นี้ แทนการลองทุก Ticket
             // แล้ว log warning พร้อม stack trace ซ้ำทุก ~20 วินาที; tick ถัดไป (2 นาที) จะลองใหม่ตามช่วงพักของ CrmTokenService
             catch (CrmIntegrationException ex) when (ex.IsTransient)
@@ -28,15 +30,34 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
                 break;
             }
             catch (CrmIntegrationException ex) { logger.LogWarning(ex, "CRM poll failed for defect {DefectId} ticket {TicketId}", defect.DefectId, defect.CrmTicketId); }
-            // Assignee คนนี้ยังไม่ได้ตั้งค่า/ปิดใช้งานบัญชี CRM ของตัวเอง — ข้าม Defect นี้ไปเฉยๆ ไม่ใช่หยุดทั้ง
-            // tick เหมือนตอนใช้ Service Account กลาง เพราะ Defect อื่นอาจมี Assignee คนละคนที่ตั้งค่าไว้แล้วก็ได้
+            // ทุกบัญชีที่ลองยังไม่ได้ตั้งค่า/ปิดใช้งานบัญชี CRM — ข้าม Defect นี้ไปเฉยๆ ไม่หยุดทั้ง tick
+            // เพราะ Defect อื่นอาจใช้บัญชีคนละคนที่ตั้งค่าไว้แล้ว
             catch (CrmNotConfiguredException) { continue; }
         }
     }
 
-    private async Task PollOneAsync(Defect defect, Guid assigneeUserId, CancellationToken ct)
+    // ลองบัญชีตามลำดับ — บัญชีที่ยังไม่ตั้งค่า (CrmNotConfiguredException) หรือใช้ไม่ได้ (รหัสผ่านหมดอายุ/ไม่มีสิทธิ์ใน Ticket = CrmIntegrationException
+    // ที่ไม่ใช่ transient) ข้ามไปคนถัดไป เฉพาะตอนดึง Ticket ซึ่งยังไม่ได้แก้ข้อมูลใด ๆ — error หลังจากนั้นไม่สลับบัญชี เพราะ snapshot ถูกแก้ไปแล้ว
+    private async Task PollWithFallbackAsync(Defect defect, IReadOnlyList<Guid> candidates, CancellationToken ct)
     {
-        var job = await crmApi.GetJobDetailAsync(assigneeUserId, defect.CrmTicketId!, "HD", ct);
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            var last = i == candidates.Count - 1;
+            System.Text.Json.JsonElement job;
+            try { job = await crmApi.GetJobDetailAsync(candidates[i], defect.CrmTicketId!, "HD", ct); }
+            catch (CrmNotConfiguredException) when (!last) { continue; }
+            catch (CrmIntegrationException ex) when (!ex.IsTransient && !last)
+            {
+                logger.LogInformation("CRM poll for defect {DefectId} falls back to next account: {Reason}", defect.DefectId, ex.Message);
+                continue;
+            }
+            await PollOneAsync(defect, candidates[i], job, ct);
+            return;
+        }
+    }
+
+    private async Task PollOneAsync(Defect defect, Guid pollUserId, System.Text.Json.JsonElement job, CancellationToken ct)
+    {
         var status = CrmApiClient.GetFieldAsString(job, "status");
         var assignto = CrmApiClient.GetFieldAsString(job, "assignto");
         var ownerSubjectId = CrmApiClient.GetFieldAsString(job, "ownerSubjectId");
@@ -71,7 +92,7 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
 
         // ต้องเช็คคอมเมนต์ใหม่ทุก tick แยกจาก status/assignto ข้างบน — คอมเมนต์เกิดขึ้นได้แม้ status/assignto
         // ไม่เปลี่ยนเลยก็ตาม (early-return ตัวเดิมก่อนหน้านี้จะพลาดจุดนี้ไปเลยถ้าลบไม่ครบ)
-        await PollCommentsAsync(defect, assigneeUserId, ct);
+        await PollCommentsAsync(defect, pollUserId, ct);
 
         await db.SaveChangesAsync(ct); // no-op ราคาถูกถ้าไม่มีอะไรเปลี่ยนจริง (EF change tracker เช็คเองอยู่แล้ว)
     }
@@ -80,9 +101,9 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
     // ก็ log เป็น DefectActivity ทีละรายการ (เรียงจากเก่าไปใหม่) แล้วเลื่อน marker ไปข้างหน้า — เหมือน pattern
     // isFirstPoll ของ status/assignto ข้างบน: poll ครั้งแรกของ ticket ที่เพิ่งผูกจะไม่ log คอมเมนต์เก่าทั้งหมดย้อนหลัง
     // แค่ตั้ง baseline เงียบๆ ไว้ก่อน
-    private async Task PollCommentsAsync(Defect defect, Guid assigneeUserId, CancellationToken ct)
+    private async Task PollCommentsAsync(Defect defect, Guid pollUserId, CancellationToken ct)
     {
-        var answers = await crmApi.GetHelpDeskAnswersAsync(assigneeUserId, defect.CrmTicketId!, ct);
+        var answers = await crmApi.GetHelpDeskAnswersAsync(pollUserId, defect.CrmTicketId!, ct);
         if (answers.Count == 0) return;
 
         var isFirstPoll = defect.CrmLastSeenAnswerNo is null;
@@ -109,8 +130,10 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
 
     private async Task NotifyReturnedToOwnerAsync(Defect defect, CancellationToken ct)
     {
-        if (defect.AssigneeUserId is null) return;
-        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == defect.AssigneeUserId, ct);
+        // แจ้ง Assignee; ไม่มี Assignee = แจ้งคนที่ส่ง Defect ไป CRM (เจ้าของเรื่องฝั่ง QA Hub) — ไม่ส่งหาบัญชีกลาง
+        var recipientId = defect.AssigneeUserId ?? await CrmPollIdentities.SenderAsync(db, defect.DefectId, ct);
+        if (recipientId is null) return;
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == recipientId, ct);
         if (string.IsNullOrWhiteSpace(user?.Email)) return;
         try
         {
@@ -125,4 +148,24 @@ public sealed class CrmSyncService(QaDbContext db, CrmApiClient crmApi, DefectAc
         }
         catch (Exception ex) { logger.LogError(ex, "Failed to send CRM-returned-to-owner email for defect {DefectId}", defect.DefectId); }
     }
+}
+
+/// <summary>เลือกบัญชีที่ใช้ poll CRM ต่อ Defect ตามลำดับ Assignee → ผู้ส่งไป CRM (activity "CrmSent" ล่าสุด) → บัญชีกลาง Mirror</summary>
+public static class CrmPollIdentities
+{
+    public static async Task<Dictionary<Guid, IReadOnlyList<Guid>>> ResolveAsync(QaDbContext db, IReadOnlyList<Defect> defects, string mirrorUsername, CancellationToken ct)
+    {
+        var defectIds = defects.Select(d => d.DefectId).ToList();
+        var senders = (await db.DefectActivities.AsNoTracking()
+                .Where(a => defectIds.Contains(a.DefectId) && a.ActionType == "CrmSent" && a.ActorUserId != null)
+                .Select(a => new { a.DefectId, a.ActorUserId, a.CreatedAt }).ToListAsync(ct))
+            .GroupBy(a => a.DefectId).ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.CreatedAt).First().ActorUserId);
+        var mirror = (await CrmMirrorAccount.FindAsync(db, mirrorUsername, ct))?.UserId;
+        return defects.ToDictionary(d => d.DefectId,
+            d => (IReadOnlyList<Guid>)new[] { d.AssigneeUserId, senders.GetValueOrDefault(d.DefectId), mirror }.OfType<Guid>().Distinct().ToList());
+    }
+
+    public static async Task<Guid?> SenderAsync(QaDbContext db, Guid defectId, CancellationToken ct) =>
+        await db.DefectActivities.AsNoTracking().Where(a => a.DefectId == defectId && a.ActionType == "CrmSent" && a.ActorUserId != null)
+            .OrderByDescending(a => a.CreatedAt).Select(a => a.ActorUserId).FirstOrDefaultAsync(ct);
 }

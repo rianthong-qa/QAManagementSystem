@@ -4,6 +4,7 @@ import { apiUrl } from "../api";
 import { notify } from "../components/dialogStore";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { formatThaiDateTime } from "../dateTime";
 import { type ModuleItem, type TestCaseItem, buildModuleTree, fmtDateTimeBE, masterOptionElements, nextBusinessCode, priorityTone, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
 import "../components/ListPage.css";
@@ -388,6 +389,7 @@ export function TestCasesPage({
             <button className="btn ai-button" type="button" onClick={openTestCaseAi}><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span>AI Generate</button>
             <button className="btn" type="button" disabled={templateDownloading||projects.length===0} onClick={downloadImportTemplate} title="ดาวน์โหลดไฟล์ Template สำหรับนำเข้า">{templateDownloading?<><span className="spinner inline" aria-hidden="true" />กำลังดาวน์โหลด...</>:<><span className="material-symbols-outlined" aria-hidden="true">download</span>Template</>}</button>
             <label className="btn lp-file-btn" title="นำเข้า Test Case จากไฟล์ CSV หรือ XLSX"><span className="material-symbols-outlined" aria-hidden="true">upload_file</span>{importing?"กำลังนำเข้า...":"Import"}<input type="file" accept=".csv,.xlsx" disabled={importing} onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);e.target.value=""}} /></label>
+            <DeletedItemsButton type="test-cases" label="Test Case" onRestored={() => setReload((x) => x + 1)} />
             <button className="btn primary" type="button" onClick={()=>openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span>Test Case</button>
           </div>}
         </div>

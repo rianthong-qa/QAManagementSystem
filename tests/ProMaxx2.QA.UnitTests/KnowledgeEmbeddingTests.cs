@@ -179,6 +179,12 @@ public sealed class KnowledgeEmbeddingTests
         Assert.Equal(("OpenAI", "text-embedding-3-small", "https://api.openai.com/v1", "sk-abcdef1234", true), (settings.Runtime!.Provider, settings.Runtime.Model, settings.Runtime.BaseUrl, settings.Runtime.ApiKey, settings.AllowCrmToExternalAi));
         Assert.True(settings.Runtime.IsExternal);
 
+        // OpenRouter: Base URL ตายตัว (ไม่สนค่าที่ส่งมา), เปลี่ยน provider ต้องกรอกคีย์ใหม่
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveKnowledgeAsync("OpenRouter", "baai/bge-m3", null, null, false, true, false, default));
+        await service.SaveKnowledgeAsync("OpenRouter", "baai/bge-m3", "http://ignored", "sk-or-v1-xyz9", false, true, false, default);
+        settings = await service.GetEmbeddingSettingsAsync(default);
+        Assert.Equal(("OpenRouter", "https://openrouter.ai/api/v1", "sk-or-v1-xyz9", true), (settings.Runtime!.Provider, settings.Runtime.BaseUrl, settings.Runtime.ApiKey, settings.Runtime.IsExternal));
+
         await service.SaveKnowledgeAsync("Local", "bge-m3", "http://gpu-box:11434/v1/", null, false, false, false, default);
         Assert.Equal(("Local:bge-m3", "http://gpu-box:11434/v1", false), ((await service.GetEmbeddingSettingsAsync(default)).Runtime!.ModelKey, (await service.GetEmbeddingSettingsAsync(default)).Runtime!.BaseUrl, (await service.GetEmbeddingSettingsAsync(default)).Runtime!.IsExternal));
     }

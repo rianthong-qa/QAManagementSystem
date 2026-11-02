@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { confirmDialog } from "./components/dialogStore";
 import { formatThaiDateTime } from "./dateTime";
 import { apiUrl } from "./api";
@@ -9,12 +9,13 @@ import {
   parseDslSteps,
 } from "./automationUtils";
 import type { AutomationCaseItem, AutomationVersionItem, AutomationActionItem, AutomationObjectItem, AutomationAgentItem, AutomationJobItem, FlakyCandidateItem, RetryPolicyItem, AutomationStepResultItem, AutomationExecutionItem, AutomationEvidenceItem, TestCandidate, TestCaseDetailItem, AutomationDashboardItem } from "./automation/types";
-import { token, fetchJson, isAbort, useDebounced, AI_GENERATE_TIMEOUT_MS, targetTone, failureTone, sampleDsl } from "./automation/shared";
+import { token, fetchJson, isAbort, useDebounced, AI_GENERATE_TIMEOUT_MS, targetTone, failureTone, sampleDsl, caseStatusTh } from "./automation/shared";
 import { ModalShell, Badge, Pager } from "./automation/ui";
 import { VersionEditor, RunModal, BatchRunModal, QuarantineModal } from "./automation/caseModals";
 import { ActionLibraryTab, ObjectRepositoryTab, RetryPolicyTab, AgentsSection } from "./automation/manageTabs";
 import { ExecutionTab, FailureDashboardTab } from "./automation/executionTabs";
 import { AutomationSuiteTab } from "./automation/suiteTab";
+import { OverviewCharts } from "./automation/overviewCharts";
 import { AutomationScheduleTab, AutomationBuildTriggerTab, AutomationWebhookTab } from "./automation/scheduleTabs";
 import { AutomationDataSnapshotTab, AutomationDataSeedTab, AutomationEnvironmentDataProfileTab } from "./automation/dataTabs";
 
@@ -45,10 +46,6 @@ function moduleTreeOptions(modules: { moduleId: string; moduleCode: string; modu
   ));
 }
 
-const splitTaskText = (text: string) => {
-  const idx = text.indexOf("—");
-  return idx > -1 ? [text.slice(0, idx).trim(), text.slice(idx + 1).trim()] : [text, ""];
-};
 
 const formatDuration = (ms?: number) => {
   if (ms == null) return "-";
@@ -59,14 +56,6 @@ const formatDuration = (ms?: number) => {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 };
 
-const taskClass = (text: string, tab: string) => {
-  if (/Fail/i.test(text)) return "red";
-  if (/Maintenance/i.test(text)) return "orange";
-  if (tab === "suites" || tab === "manage" || tab === "agents") return "green";
-  return "blue";
-};
-
-const taskIcon = (tab: string) => (tab === "execution" ? "!" : tab === "suites" ? "▶" : tab === "manage" || tab === "agents" ? "◉" : "▤");
 
 export function AutomationPage({
   projectId, releaseId, buildId, canEdit, canValidate, canApprove, canRun, canManage, canViewEvidence, canGenerateAi, canCreateDefect,
@@ -725,14 +714,6 @@ export function AutomationPage({
   const goCases = (status: string) => { setCaseStatusFilter(status); setCaseTargetFilter("all"); setCasePage(1); setTab("cases"); };
   const goExecutionWithStatus = (status: string) => { setExecFilter(status); setTab("execution"); };
 
-  const metrics = [
-    { label: "Automation Cases", value: kTotal, note: "ทั้งหมด", tone: "blue", icon: "◇", go: () => goCases("all") },
-    { label: "Ready", value: kReady, note: `${kReadyCoverage}% coverage`, tone: "green", icon: "✓", go: () => goCases("Ready") },
-    { label: "Maintenance", value: kMaintenance, note: "ต้องแก้ DSL / Object", tone: "orange", icon: "⌕", go: () => goCases("MaintenanceRequired") },
-    { label: "Running", value: kRunning, note: "กำลังทำงาน", tone: "purple", icon: "▶", go: () => goExecutionWithStatus("Running") },
-    { label: "Failed", value: kFailToday, note: "ต้องตรวจสอบ", tone: "red", icon: "×", go: () => goExecutionWithStatus("Failed") },
-    { label: "Agents Online", value: `${kAgentsOnline} / ${kAgentsTotal}`, note: "พร้อมใช้งาน", tone: "cyan", icon: "♙", go: () => { setManageTab("agents"); setTab("manage"); } },
-  ] as { label: string; value: number | string; note: string; tone: string; icon: string; go: () => void }[];
 
   // AUT-P2-001: the Cases table is server-paginated for real (separate fetch from the shared "up to 200" load
   // above) — filters/sort become query params instead of a client-side .filter(), and only the current page's rows
@@ -846,189 +827,271 @@ export function AutomationPage({
     URL.revokeObjectURL(url);
   };
 
-  const workflowSteps = [
-    { t: "สร้าง Automation Case", d: kTotal ? `มี ${kTotal} case` : "ยังไม่มี — สร้างจาก Test Case", done: kTotal > 0, tab: "cases", icon: "▧" },
-    { t: "Generate DSL / AI", d: kInProgress ? `มี ${kInProgress} case กำลังเขียน DSL` : "DSL ครบแล้ว", done: kInProgress === 0 && kTotal > 0, tab: "cases", icon: "✦" },
-    { t: "Validate", d: kReady ? `Ready ${kReady} case` : "ยังไม่มี case พร้อมรัน", done: kReady > 0, tab: "cases", icon: "⬟" },
-    { t: "Run Agent", d: kAgentsOnline ? `${kAgentsOnline} agent online` : "ยังไม่มี agent online", done: kAgentsOnline > 0, tab: "cases", icon: "▣" },
-    { t: "Evidence / Result", d: executions.length || kPassToday || kFailToday ? `ผ่าน ${kPassToday} / Fail ${kFailToday}` : "ยังไม่มีผลรัน", done: executions.length > 0, tab: "execution", icon: "⌁" },
-  ] as { t: string; d: string; done: boolean; tab: string; icon: string }[];
-  const activeWorkflowStep = workflowSteps.findIndex((s) => !s.done);
+  // คู่มือเริ่มต้นเปิดเองเมื่อยังทำไม่ครบ — ผู้ใช้เปิด/ปิดเองแล้วจำค่าไว้ต่อเครื่อง
+  const [guidePref, setGuidePref] = useState<string | null>(() => { try { return localStorage.getItem("qa.automation.guide"); } catch { return null; } });
+  const readyOrValidated = kReady > 0 || cases.some((c) => c.status === "Validated" || c.status === "Approved" || c.status === "Ready");
+  // คู่มือเริ่มต้น: สถานะแต่ละขั้นคิดจากข้อมูลจริงของ Project — ขั้นแรกที่ยังไม่เสร็จคือขั้นที่ควรทำต่อ
+  const guideSteps: { title: string; desc: string; status: string; done: boolean; cta?: { label: string; go: () => void } }[] = [
+    { title: "เชื่อมต่อ Agent", desc: "ติดตั้งและเปิด Agent บนเครื่อง Windows ที่มีโปรแกรมที่จะทดสอบ — Agent คือตัวที่กดโปรแกรมแทนคน", status: kAgentsTotal ? `ออนไลน์ ${kAgentsOnline} จาก ${kAgentsTotal} เครื่อง` : "ยังไม่มี Agent ลงทะเบียน", done: kAgentsOnline > 0, cta: { label: "ดู Agent", go: () => { setManageTab("agents"); setTab("manage"); } } },
+    { title: "สร้าง Automation Case", desc: "เลือก Test Case ที่ติ๊ก Automation Candidate ไว้ แล้วสร้างเป็น Automation Case", status: kTotal ? `มีแล้ว ${kTotal} Case` : "ยังไม่มี Case", done: kTotal > 0, cta: canEdit ? { label: "สร้าง Case", go: openCreate } : { label: "ดู Case", go: () => goCases("all") } },
+    { title: "เขียนขั้นตอนและตรวจสอบ", desc: "ให้ AI สร้างขั้นตอน (DSL) จาก Test Steps หรือเขียนเอง แล้วกด Validate ให้ระบบตรวจว่าถูกต้อง", status: kNeedsReview ? `รอตรวจ ${kNeedsReview} Case` : readyOrValidated ? "มี Case ที่ตรวจผ่านแล้ว" : kInProgress ? `กำลังเตรียม ${kInProgress} Case` : "ยังไม่มี Case ที่ตรวจผ่าน", done: readyOrValidated, cta: { label: "ไปตรวจ", go: () => goCases(kNeedsReview ? "NeedsReview" : "Draft") } },
+    { title: "อนุมัติให้พร้อมรัน", desc: "ผู้มีสิทธิ์อนุมัติ Version ที่ตรวจผ่าน — Case จะเปลี่ยนเป็น Ready และ Agent รับไปรันได้", status: kReady ? `พร้อมรัน ${kReady} Case` : "ยังไม่มี Case พร้อมรัน", done: kReady > 0, cta: { label: "ดู Case ที่ตรวจผ่าน", go: () => goCases("Validated") } },
+    { title: "สั่งรันและดูผล", desc: "เลือก Build / Environment แล้วสั่งรัน ผลและภาพหน้าจอ (Evidence) จะกลับมาที่แท็บผลการรัน", status: executions.length ? `ผ่าน ${kPassToday} · Fail ${kFailToday}` : "ยังไม่เคยรัน", done: executions.length > 0, cta: canRun && kReady > 0 ? { label: "รันเป็นกลุ่ม", go: () => setBatchModal(true) } : { label: "ดูผลการรัน", go: () => setTab("execution") } },
+  ];
+  const guideDone = guideSteps.filter((s) => s.done).length;
+  const guideCurrent = guideSteps.findIndex((s) => !s.done);
+  const guideOpen = guidePref ? guidePref === "open" : guideDone < guideSteps.length;
+  const toggleGuide = (open: boolean) => {
+    if (open === guideOpen) return; // React ตั้งค่า open เอง (ข้อมูลเพิ่งโหลด) ไม่ใช่ผู้ใช้กด
+    const v = open ? "open" : "closed";
+    setGuidePref(v);
+    try { localStorage.setItem("qa.automation.guide", v); } catch { /* ใช้ค่าเริ่มต้นได้ */ }
+  };
 
-  const nextActions: { text: string; btn: string; tab: string }[] = [];
-  if (kTotal === 0) nextActions.push({ text: "ยังไม่มี Automation Case — เริ่มจากสร้าง Case จาก Test Case ที่เป็น Automation Candidate", btn: "สร้าง Automation Case", tab: "cases" });
-  if (kNeedsReview > 0) nextActions.push({ text: `มี ${kNeedsReview} case ต้องตรวจสอบ DSL (AI ต้องการ Human Review) — เปิดรายละเอียดแล้ว Validate/อนุมัติ`, btn: "ไปตรวจ DSL", tab: "cases" });
-  if (kReady > 0 && kAgentsOnline === 0) nextActions.push({ text: "มี case พร้อมรัน แต่ยังไม่มี Agent Online — เริ่ม agent\\run-agent.ps1 บนเครื่องทดสอบ", btn: "ดู Agents", tab: "manage" });
-  if (kReady > 0 && kAgentsOnline > 0) nextActions.push({ text: `พร้อมรัน ${kReady} case — เลือก Build/Environment แล้วรันเดี่ยวหรือรันเป็น Regression Suite`, btn: "ไป Regression Suites", tab: "cases" });
-  if (kFailToday > 0) nextActions.push({ text: `มี Fail วันนี้ ${kFailToday} ครั้ง — ตรวจผล/Evidence และจำแนก Fail ก่อนสร้าง Defect`, btn: "ไป Execution", tab: "execution" });
-  if (executions.length > 0 && kFailToday === 0) nextActions.push({ text: "ผลล่าสุดผ่านทั้งหมด — ดูประวัติและ Evidence ในหน้า Execution", btn: "ไป Execution", tab: "execution" });
+  const nextActions: { title: string; desc: string; btn: string; tone: string; icon: string; go: () => void }[] = [];
+  if (kTotal === 0) nextActions.push({ title: "ยังไม่มี Automation Case", desc: "เริ่มจากสร้าง Case จาก Test Case ที่เป็น Automation Candidate", btn: "สร้าง Case", tone: "blue", icon: "add_circle", go: canEdit ? openCreate : () => goCases("all") });
+  if (kNeedsReview > 0) nextActions.push({ title: `${kNeedsReview} Case รอตรวจขั้นตอน (DSL)`, desc: "AI สร้างให้แล้ว ต้องมีคนตรวจ — เปิดรายละเอียดแล้ว Validate / อนุมัติ", btn: "ไปตรวจ", tone: "orange", icon: "rate_review", go: () => goCases("NeedsReview") });
+  if (kMaintenance > 0) nextActions.push({ title: `${kMaintenance} Case ต้องซ่อม`, desc: "รันแล้วหาปุ่ม/ช่องกรอกไม่เจอหรือขั้นตอนผิด — แก้ DSL หรือ Object แล้วตรวจใหม่", btn: "ดู Case", tone: "orange", icon: "build", go: () => goCases("MaintenanceRequired") });
+  if (kReady > 0 && kAgentsOnline === 0) nextActions.push({ title: "มี Case พร้อมรัน แต่ไม่มี Agent ออนไลน์", desc: "เปิด agent\\run-agent.ps1 บนเครื่องทดสอบ งานจึงจะถูกรับไปรัน", btn: "ดู Agent", tone: "red", icon: "computer", go: () => { setManageTab("agents"); setTab("manage"); } });
+  if (kFailToday > 0) nextActions.push({ title: `Fail ${kFailToday} ครั้ง`, desc: "ดูผลและภาพหน้าจอ แยกว่าเป็น Bug จริงหรือสคริปต์ผิด ก่อนสร้าง Defect", btn: "ดูผล Fail", tone: "red", icon: "error", go: () => goExecutionWithStatus("Failed") });
+  if (kReady > 0 && kAgentsOnline > 0) nextActions.push({ title: `พร้อมรัน ${kReady} Case`, desc: "เลือก Build / Environment แล้วรันเดี่ยว รันเป็นกลุ่ม หรือรันผ่าน Suite", btn: "ดู Case", tone: "green", icon: "play_circle", go: () => goCases("Ready") });
 
-  // Grouped instead of one flat row of 12 tabs — that read as cluttered
-  // (a wall of pills, several needing a horizontal scroll to even see).
-  // Each group is one pill in the primary bar; a group with more than one
-  // screen reveals a second, smaller row (reusing the same visual family
-  // "การจัดการ" already used for its own Action Library/Objects/Agents/Retry
-  // sub-nav) so nothing that used to be reachable in one click is lost —
-  // most things are now just one click to reveal, one more to open.
-  const tabGroups = [
-    { id: "dashboard", label: "ภาพรวม", icon: "◉", tabs: [
-      { id: "dashboard", label: "ภาพรวม" },
+  // เมนูจัดเป็น 5 กลุ่ม แต่ละกลุ่มมีเมนูย่อยและคำอธิบายสั้น ๆ ว่าใช้ทำอะไร (ช่วยผู้ใช้ใหม่) —
+  // กลุ่ม "ตั้งค่า" ใช้ manageTab เดิมเป็นเมนูย่อย
+  const tabGroups: { id: string; label: string; icon: string; tabs: { id: string; manage?: string; label: string; desc: string }[] }[] = [
+    { id: "dashboard", label: "ภาพรวม", icon: "space_dashboard", tabs: [
+      { id: "dashboard", label: "ภาพรวม", desc: "สรุปสถานะ Automation ของ Project นี้ และสิ่งที่ควรทำต่อ" },
     ] },
-    { id: "testing", label: "Automation Testing", icon: "▤", tabs: [
-      { id: "cases", label: "Automation Cases" },
-      { id: "suites", label: "Automation Suite" },
-      { id: "execution", label: "Execution" },
-      { id: "failures", label: "Failure Dashboard" },
+    { id: "testing", label: "ทดสอบอัตโนมัติ", icon: "smart_toy", tabs: [
+      { id: "cases", label: "Automation Case", desc: "1 Test Case = 1 Automation Case — เปิดรายละเอียดเพื่อเขียนขั้นตอน (DSL), Validate, อนุมัติ และสั่งรัน" },
+      { id: "suites", label: "Suite (ชุดรัน)", desc: "รวมหลาย Automation Case เป็นชุดเดียว เพื่อสั่งรันพร้อมกัน เช่น ชุด Regression" },
+      { id: "execution", label: "ผลการรัน", desc: "คิวงานที่รอ Agent รับ และประวัติผลการรันพร้อมหลักฐาน (Evidence)" },
+      { id: "failures", label: "วิเคราะห์ Fail", desc: "ดูว่า Fail เพราะอะไร แยกตามประเภทความล้มเหลว, Build, Agent และ Case ที่ Fail บ่อย" },
     ] },
-    { id: "scheduling", label: "Scheduling & CI", icon: "◷", tabs: [
-      { id: "schedules", label: "Schedule" },
-      { id: "buildTriggers", label: "Build Trigger" },
-      { id: "webhooks", label: "Webhook" },
+    { id: "scheduling", label: "ตั้งเวลา & CI", icon: "schedule", tabs: [
+      { id: "schedules", label: "ตั้งเวลารัน", desc: "ให้ระบบสั่งรันเองตามเวลา เช่น ทุกคืนหลังเลิกงาน" },
+      { id: "buildTriggers", label: "รันเมื่อมี Build ใหม่", desc: "สั่งรันอัตโนมัติทันทีที่มีการเพิ่ม Build ใหม่ใน Release" },
+      { id: "webhooks", label: "Webhook (CI/CD)", desc: "ให้ระบบ CI/CD ภายนอกสั่งรันผ่าน URL และ Token" },
     ] },
-    { id: "data", label: "Test Data", icon: "💾", tabs: [
-      { id: "dataSnapshots", label: "DB Snapshot" },
-      { id: "dataSeeds", label: "Seed & Cleanup" },
-      { id: "dataProfiles", label: "Environment Data Profile" },
+    { id: "data", label: "ข้อมูลทดสอบ", icon: "database", tabs: [
+      { id: "dataSnapshots", label: "DB Snapshot", desc: "สำรองและกู้คืนฐานข้อมูลของ Environment ทดสอบ ให้เริ่มรันจากข้อมูลชุดเดิมทุกครั้ง" },
+      { id: "dataSeeds", label: "Seed & Cleanup", desc: "Script เตรียมข้อมูลก่อนรัน และล้างข้อมูลหลังรัน" },
+      { id: "dataProfiles", label: "Data Profile", desc: "กำหนดชุดข้อมูลที่แต่ละ Environment ต้องมีก่อนรัน" },
     ] },
-    { id: "manage", label: "การจัดการ", icon: "⚙", tabs: [
-      { id: "manage", label: "การจัดการ" },
+    { id: "manage", label: "ตั้งค่า", icon: "settings", tabs: [
+      { id: "manage", manage: "actions", label: "Action Library", desc: "คำสั่งที่ใช้เขียนขั้นตอนได้ เช่น CLICK, TYPE, EXPECT_TEXT" },
+      { id: "manage", manage: "objects", label: "Object Repository", desc: "ปุ่ม/ช่องกรอกในโปรแกรมที่ Agent ต้องหาให้เจอ (อ้างอิงด้วย AutomationId)" },
+      { id: "manage", manage: "agents", label: "Agent", desc: "เครื่อง Windows ที่ติดตั้ง Agent ไว้รับงานไปรัน — ดูสถานะ เปิด/ปิด และภาระงาน" },
+      { id: "manage", manage: "retry", label: "Retry Policy", desc: "ให้ระบบรันซ้ำเองเมื่อ Fail จากสาเหตุชั่วคราว เช่น โปรแกรมเปิดช้า" },
     ] },
   ];
+  const isTabActive = (t: { id: string; manage?: string }) => tab === t.id && (!t.manage || manageTab === t.manage);
+  const openTab = (t: { id: string; manage?: string }) => { if (t.manage) setManageTab(t.manage); setTab(t.id); };
   const activeGroup = tabGroups.find((g) => g.tabs.some((t) => t.id === tab)) ?? tabGroups[0];
+  const activeTabInfo = activeGroup.tabs.find(isTabActive) ?? activeGroup.tabs[0];
+
+  const glossary = [
+    ["Automation Case", "Test Case ที่ทำให้รันอัตโนมัติได้ (1 ต่อ 1 กับ Test Case)"],
+    ["DSL", "ขั้นตอนที่ Agent อ่านแล้วทำตาม เขียนเป็น JSON — ให้ AI สร้างให้ได้"],
+    ["Version (Rev)", "ทุกครั้งที่แก้ DSL จะได้ Version ใหม่ ต้อง Validate และอนุมัติก่อนใช้"],
+    ["Validate", "ระบบตรวจว่า DSL ใช้คำสั่งและ Object ที่มีอยู่จริง"],
+    ["Agent", "โปรแกรมบนเครื่อง Windows ที่รับงานไปกดโปรแกรมแทนคน"],
+    ["Evidence", "หลักฐานผลการรัน เช่น ภาพหน้าจอ, Log, ผล SQL"],
+    ["Object", "ปุ่ม/ช่องกรอกในโปรแกรม อ้างอิงด้วย AutomationId"],
+    ["Maintenance", "Case ที่รันแล้วพังจากสคริปต์/Object ต้องซ่อมก่อนรันใหม่"],
+  ];
+
+  const stats = [
+    { label: "Automation Case", value: kTotal, note: "ทั้งหมด", tone: "blue", icon: "smart_toy", go: () => goCases("all") },
+    { label: "พร้อมรัน", value: kReady, note: `Coverage ${kReadyCoverage}%`, tone: "green", icon: "check_circle", go: () => goCases("Ready") },
+    { label: "ต้องซ่อม", value: kMaintenance, note: "แก้ DSL / Object", tone: "orange", icon: "build", go: () => goCases("MaintenanceRequired") },
+    { label: "กำลังรัน", value: kRunning, note: "อยู่ในคิว / Agent", tone: "purple", icon: "play_circle", go: () => goExecutionWithStatus("Running") },
+    { label: "Fail", value: kFailToday, note: "ต้องตรวจสอบ", tone: "red", icon: "error", go: () => goExecutionWithStatus("Failed") },
+    { label: "Agent ออนไลน์", value: `${kAgentsOnline} / ${kAgentsTotal}`, note: "พร้อมรับงาน", tone: "cyan", icon: "computer", go: () => { setManageTab("agents"); setTab("manage"); } },
+  ];
+
+  const caseFiltered = caseStatusFilter !== "all" || caseTargetFilter !== "all" || !!headSearch.trim();
+  // ชิปสถานะแทนตัวกรอง select + คำอธิบายสถานะท้ายตารางเดิม — จำนวนนับจากรายการ Case ที่หน้าโหลดไว้ (สูงสุด 200)
+  const caseCount = (st: string) => cases.filter((c) => c.status === st).length;
+  const caseChips = [
+    { id: "all", label: "ทั้งหมด", count: kTotal, tone: "", hint: "ทุกสถานะ" },
+    { id: "Ready", label: "พร้อมรัน", count: caseCount("Ready"), tone: "green", hint: "อนุมัติแล้ว Agent รับไปรันได้" },
+    { id: "NeedsReview", label: "รอตรวจ", count: caseCount("NeedsReview"), tone: "yellow", hint: "AI/ผู้ใช้สร้าง DSL แล้ว รอคนตรวจและ Validate" },
+    { id: "Draft", label: "ฉบับร่าง", count: caseCount("Draft"), tone: "gray", hint: "ยังไม่มีขั้นตอน (DSL)" },
+    { id: "Validated", label: "ตรวจผ่าน", count: caseCount("Validated"), tone: "blue", hint: "Validate ผ่านแล้ว รออนุมัติ" },
+    { id: "Approved", label: "อนุมัติแล้ว", count: caseCount("Approved"), tone: "blue", hint: "อนุมัติ Version แล้ว" },
+    { id: "MaintenanceRequired", label: "ต้องซ่อม", count: caseCount("MaintenanceRequired"), tone: "red", hint: "รันแล้วพังจากสคริปต์/Object ต้องแก้ DSL หรือ Object" },
+    { id: "Running", label: "กำลังรัน", count: caseCount("Running"), tone: "blue", hint: "มีงานกำลังรันอยู่" },
+  ].filter((c) => c.id === "all" || c.count > 0 || c.id === caseStatusFilter);
 
   return <article className="automation-page">
-    {!pid ? <div className="empty"><p>เลือก Project เพื่อดู Automation Workspace</p></div> : <>
-      <section className="automation-page-head">
-        <div className="automation-page-actions">
-          <div className="automation-search"><input type="text" aria-label="ค้นหา Automation Case" placeholder="ค้นหา Automation Case..." value={headSearch} onChange={(e) => setHeadSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") setTab("cases"); }} /></div>
-          <button className="btn" type="button" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล" onClick={() => setReload((v) => v + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span> <span className="automation-hide-mobile">รีเฟรช</span></button>
-          <button className="btn" type="button" disabled={!cases.length} onClick={exportCases}>↥ Export</button>
+    {!pid ? <div className="empty"><p>เลือก Project ที่แถบด้านบนเพื่อเริ่มใช้งาน Automation</p></div> : <>
+      <section className="au-toolbar" aria-label="ค้นหาและคำสั่ง">
+        <label className="au-search">
+          <span className="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="search" aria-label="ค้นหา Automation Case" placeholder="ค้นหา Automation Case (รหัส / ชื่อ Test Case) แล้วกด Enter" value={headSearch} onChange={(e) => setHeadSearch(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { setCasePage(1); setTab("cases"); } }} />
+        </label>
+        <div className="au-toolbar-actions">
+          <button className="btn" type="button" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล" onClick={() => setReload((v) => v + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span><span className="au-hide-sm">รีเฟรช</span></button>
+          <button className="btn" type="button" title="Export รายการ Automation Case เป็น CSV" disabled={!cases.length} onClick={exportCases}><span className="material-symbols-outlined" aria-hidden="true">download</span><span className="au-hide-sm">Export</span></button>
           {canEdit && <button className="btn primary" type="button" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}
         </div>
       </section>
-      <nav className="automation-tabs" aria-label="Automation Module"><div className="automation-tabs-inner">{tabGroups.map((g) => <button key={g.id} type="button" className={activeGroup.id === g.id ? "active" : ""} aria-current={activeGroup.id === g.id ? "page" : undefined} onClick={() => setTab(g.tabs[0].id)}><span aria-hidden="true">{g.icon}</span>{g.label}</button>)}</div></nav>
-      {activeGroup.tabs.length > 1 && <nav className="automation-subtabs" aria-label={activeGroup.label}>{activeGroup.tabs.map((t) => <button key={t.id} type="button" className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>{t.label}</button>)}</nav>}
-      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
-      {notice && <div className="inline-alert success"><span>{notice}</span></div>}
 
-      {tab === "dashboard" && <section className="automation-dashboard" aria-label="Automation Dashboard">
-        <div className="automation-metrics" aria-label="Automation KPI">
-          {metrics.map((m) => <button key={m.label} type="button" className="automation-metric" aria-label={`${m.label}: ${m.value}`} onClick={() => m.go()}>
-            <span className={`automation-metric-ico m-${m.tone}`} aria-hidden="true">{m.icon}</span>
-            <span className="automation-metric-body"><span className="automation-metric-label">{m.label}</span><strong>{m.value}</strong><span className="automation-metric-note">{m.note}</span></span>
-            <span className="automation-metric-go" aria-hidden="true">›</span>
+      <nav className="au-nav" aria-label="เมนู Automation">
+        <div className="au-groups">{tabGroups.map((g) => <button key={g.id} type="button" className={activeGroup.id === g.id ? "active" : ""} aria-current={activeGroup.id === g.id ? "page" : undefined} onClick={() => openTab(g.tabs[0])}><span className="material-symbols-outlined" aria-hidden="true">{g.icon}</span>{g.label}</button>)}</div>
+        {activeGroup.tabs.length > 1 && <div className="au-subtabs" aria-label={activeGroup.label}>{activeGroup.tabs.map((t) => <button key={t.manage ?? t.id} type="button" className={isTabActive(t) ? "active" : ""} aria-current={isTabActive(t) ? "page" : undefined} onClick={() => openTab(t)}>{t.label}</button>)}</div>}
+      </nav>
+      {tab !== "dashboard" && <p className="au-intro"><span className="material-symbols-outlined" aria-hidden="true">info</span><span><strong>{activeTabInfo.label}</strong> — {activeTabInfo.desc}</span></p>}
+      {error && <div className="inline-alert error" role="alert"><span>{error}</span></div>}
+      {notice && <div className="inline-alert success" role="status"><span>{notice}</span></div>}
+
+      {tab === "dashboard" && <section className="au-overview" aria-label="ภาพรวม Automation">
+        <details className={`au-guide${guideDone === guideSteps.length ? " is-complete" : ""}`} open={guideOpen} onToggle={(e) => toggleGuide((e.currentTarget as HTMLDetailsElement).open)}>
+          <summary>
+            <span className="au-guide-icon material-symbols-outlined" aria-hidden="true">{guideDone === guideSteps.length ? "verified" : "rocket_launch"}</span>
+            <span className="au-guide-title"><strong>{guideDone === guideSteps.length ? "ตั้งค่าครบทุกขั้นแล้ว" : "เริ่มต้นใช้งาน Automation"}</strong><small>ให้ Agent บนเครื่อง Windows กดโปรแกรมตาม Test Case แทนคน แล้วส่งผลและภาพหน้าจอกลับมา — ทำตาม 5 ขั้นนี้</small></span>
+            <span className="au-guide-progress"><span>ทำแล้ว {guideDone}/{guideSteps.length}</span><span className="au-guide-bar" role="img" aria-label={`ทำแล้ว ${guideDone} จาก ${guideSteps.length} ขั้น`}><i style={{ width: `${(guideDone / guideSteps.length) * 100}%` }} /></span></span>
+            <span className="au-guide-chevron material-symbols-outlined" aria-hidden="true">expand_more</span>
+          </summary>
+          <ol className="au-guide-steps">
+            {guideSteps.map((s, i) => <li key={s.title} className={s.done ? "is-done" : i === guideCurrent ? "is-current" : ""} aria-current={i === guideCurrent ? "step" : undefined}>
+              <span className="au-step-no" aria-hidden="true">{s.done ? <span className="material-symbols-outlined">check</span> : i + 1}</span>
+              <div className="au-step-body">
+                <strong>{s.title}<span className="sr-only">{s.done ? " (เสร็จแล้ว)" : i === guideCurrent ? " (ขั้นถัดไป)" : ""}</span></strong>
+                <p>{s.desc}</p>
+                <small className="au-step-status">{s.status}</small>
+              </div>
+              {s.cta && <button type="button" className={`btn${i === guideCurrent ? " primary" : ""}`} onClick={s.cta.go}>{s.cta.label}</button>}
+            </li>)}
+          </ol>
+        </details>
+
+        <div className="au-stats" aria-label="ตัวเลขสรุป">
+          {stats.map((m) => <button key={m.label} type="button" className={`au-stat t-${m.tone}`} aria-label={`${m.label}: ${m.value} — ${m.note}`} onClick={m.go}>
+            <span className="au-stat-head"><span className="material-symbols-outlined" aria-hidden="true">{m.icon}</span>{m.label}</span>
+            <strong>{m.value}</strong>
+            <small>{m.note}</small>
           </button>)}
         </div>
 
-        <section className="automation-flow-card" aria-label="ขั้นตอนการทำงาน Automation">
-          <div className="automation-flow">
-            {workflowSteps.map((s, i) => <Fragment key={s.t}>
-              <button type="button" className={"automation-flow-step" + (s.done ? " done" : i === activeWorkflowStep ? " active" : "")} aria-current={!s.done && i === activeWorkflowStep ? "step" : undefined} onClick={() => setTab(s.tab)}>
-                <span className="automation-flow-icon" aria-hidden="true">{s.icon}{s.done && <span className="automation-flow-badge">✓</span>}</span>
-                <span className="automation-flow-text"><strong>{s.t}</strong><small>{s.d}</small></span>
-              </button>
-              {i < workflowSteps.length - 1 && <span className="automation-flow-arrow" aria-hidden="true">→</span>}
-            </Fragment>)}
-          </div>
-        </section>
+        <OverviewCharts projectId={pid} headers={headers} cases={cases} totalCases={kTotal} reload={reload} onOpenRuns={() => setTab("execution")} onOpenCases={goCases} />
 
-        <div className="automation-two-col">
-          <section className="automation-panel">
-            <div className="automation-panel-head"><h2>สิ่งที่ต้องดำเนินการ</h2></div>
-            {nextActions.length ? <div className="automation-task-list">{nextActions.map((a, i) => { const [title, desc] = splitTaskText(a.text); return <button key={i} type="button" className="automation-task" onClick={() => setTab(a.tab)}><span className={`automation-task-icon ${taskClass(a.text, a.tab)}`} aria-hidden="true">{taskIcon(a.tab)}</span><span className="automation-task-body"><strong>{title}</strong>{desc && <p>{desc}</p>}</span><span className="automation-task-go" aria-hidden="true">›</span></button>; })}</div> : <div className="empty"><p>ไม่มีรายการที่ต้องดำเนินการ</p><small>ทุกอย่างพร้อม — สร้างและรัน Automation Case ได้เลย</small></div>}
+        <div className="au-two-col">
+          <section className="au-panel">
+            <header className="au-panel-head"><h2>สิ่งที่ควรทำต่อ</h2></header>
+            {nextActions.length ? <ul className="au-todo">{nextActions.map((a) => <li key={a.title}>
+              <span className={`au-todo-icon t-${a.tone} material-symbols-outlined`} aria-hidden="true">{a.icon}</span>
+              <span className="au-todo-body"><strong>{a.title}</strong><small>{a.desc}</small></span>
+              <button type="button" className="btn" onClick={a.go}>{a.btn}</button>
+            </li>)}</ul> : <div className="au-empty-ok"><span className="material-symbols-outlined" aria-hidden="true">task_alt</span>ไม่มีเรื่องค้าง — ทุก Case พร้อมใช้งาน</div>}
           </section>
-          <section className="automation-panel">
-            <div className="automation-panel-head"><h2>Agent Status</h2>{agents.length > 0 && <button className="automation-panel-link" onClick={() => setTab("manage")}><span aria-hidden="true">»</span> ดูทั้งหมด</button>}</div>
-            {primaryAgent ? <div className="automation-agent-card">
-              <div>
-                <div className="automation-agent-status"><span className="automation-online-dot" />{primaryAgent.agentCode}<span className="automation-primary-tag">Primary</span></div>
-                <div className="automation-agent-meta">
-                  <div className="k">PC Name</div><div>{primaryAgent.machineName}</div>
-                  <div className="k">OS</div><div>{primaryAgent.operatingSystem}</div>
-                  <div className="k">Agent Version</div><div>{primaryAgent.agentVersion}</div>
-                  <div className="k">Last Heartbeat</div><div>{formatThaiDateTime(primaryAgent.lastHeartbeatAt)}</div>
-                  <div className="k">Running Jobs</div><div>{primaryAgent.currentExecutionId ? 1 : 0}</div>
-                </div>
+          <section className="au-panel">
+            <header className="au-panel-head"><h2>Agent</h2>{agents.length > 0 && <button type="button" className="au-link" onClick={() => { setManageTab("agents"); setTab("manage"); }}>ดูทั้งหมด ›</button>}</header>
+            {primaryAgent ? <div className="au-agent">
+              <div className="au-agent-ring" style={{ "--health": `${healthPct}%` } as React.CSSProperties} role="img" aria-label={`Agent ออนไลน์ ${healthPct}%`}><strong>{kAgentsOnline}/{kAgentsTotal}</strong><small>ออนไลน์</small></div>
+              <div className="au-agent-info">
+                <div className="au-agent-name"><span className={`au-dot${primaryAgent.connectivity === "Online" ? " is-on" : ""}`} aria-hidden="true" />{primaryAgent.agentCode}<Badge tone={primaryAgent.connectivity === "Online" ? "green" : "gray"}>{primaryAgent.connectivity === "Online" ? "ออนไลน์" : primaryAgent.connectivity ?? "ออฟไลน์"}</Badge></div>
+                <dl>
+                  <dt>เครื่อง</dt><dd title={primaryAgent.machineName}>{primaryAgent.machineName}</dd>
+                  <dt>เวอร์ชัน</dt><dd>{primaryAgent.agentVersion}</dd>
+                  <dt>ติดต่อล่าสุด</dt><dd>{formatThaiDateTime(primaryAgent.lastHeartbeatAt)}</dd>
+                  <dt>งานที่รันอยู่</dt><dd>{primaryAgent.currentExecutionId ? "1 งาน" : "ว่าง"}</dd>
+                </dl>
               </div>
-              <div className="automation-health">
-                <div><div className="automation-ring" style={{ "--health": `${healthPct}%` } as React.CSSProperties}><strong>{healthPct}%</strong></div><span>Health</span></div>
-              </div>
-            </div> : <div className="empty"><p>ยังไม่มี Agent ลงทะเบียน</p><small>รัน <code>agent\\run-agent.ps1</code> บนเครื่อง Windows เพื่อเริ่ม Agent</small></div>}
+            </div> : <div className="au-empty-hint"><span className="material-symbols-outlined" aria-hidden="true">computer</span><p><strong>ยังไม่มี Agent ลงทะเบียน</strong><small>รัน <code>agent\run-agent.ps1</code> บนเครื่อง Windows ที่มีโปรแกรมที่จะทดสอบ แล้ว Agent จะขึ้นที่นี่เอง</small></p></div>}
           </section>
         </div>
 
-        <section className="automation-panel automation-result-panel">
-          <div className="automation-panel-head"><h2>ผลการรันล่าสุด</h2><button className="automation-panel-link" onClick={() => setTab("execution")}><span aria-hidden="true">»</span> ดูทั้งหมด</button></div>
-          {executions.length ? <>
-            <div className="automation-table-wrap">
-              <table className="automation-recent-table table-cards">
-                <thead><tr><th>Automation Case</th><th>Linked Test Case</th><th>Result</th><th>Agent</th><th>Execution Time</th><th>Duration</th><th></th></tr></thead>
-                <tbody>{executions.slice(0, 5).map((x) => { const c = caseByExecId.get(x.automationCaseId); const tcCode = x.testCaseCode ?? c?.testCaseCode; const tcTitle = x.testCaseTitle ?? c?.testCaseTitle; return <tr key={x.automationExecutionId}>
-                  <td><span className="automation-case-code">{x.automationCode}</span>{tcTitle && <span className="automation-subline">{tcTitle}</span>}</td>
-                  <td>{tcCode ? <><strong>{tcCode}</strong>{tcTitle && <span className="automation-subline">{tcTitle}</span>}</> : <span className="automation-subline">-</span>}</td>
-                  <td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td>
-                  <td>{x.agentCode ?? "-"}</td>
-                  <td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td>
-                  <td>{formatDuration(x.durationMs)}</td>
-                  <td><div className="automation-row-actions">
-                    <button type="button" className="automation-more" title="ดูรายละเอียด / Evidence / Defect" aria-label={`ดูรายละเอียด ${x.automationCode}`} onClick={() => setExecDetail(x)}>⋮</button>
-                    {canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="automation-more is-run" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => rerunExecution(x)}>▶</button>}
-                    {canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="automation-more is-danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => cancelExecution(x)}>✕</button>}
-                  </div></td>
-                </tr>; })}</tbody>
-              </table>
-            </div>
-            {executions.length > 5 && <div className="automation-table-footer"><button type="button" onClick={() => setTab("execution")}>ดูผลการรันทั้งหมด ›</button></div>}
-          </> : <div className="empty"><p>ยังไม่มีประวัติการรัน</p><small>สร้าง Automation Case แล้วรันผ่าน Agent — ผลจะแสดงที่นี่</small>{canEdit && <button className="btn primary" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}</div>}
+        <section className="au-panel">
+          <header className="au-panel-head"><h2>ผลการรันล่าสุด</h2>{executions.length > 0 && <button type="button" className="au-link" onClick={() => setTab("execution")}>ดูทั้งหมด ›</button>}</header>
+          {executions.length ? <div className="table-wrap au-recent-wrap">
+            <table className="au-recent table-cards">
+              <thead><tr><th>Automation Case</th><th>ผล</th><th>Agent</th><th>เวลารัน</th><th>ใช้เวลา</th><th className="actions-col">จัดการ</th></tr></thead>
+              <tbody>{executions.slice(0, 5).map((x) => { const c = caseByExecId.get(x.automationCaseId); const tcCode = x.testCaseCode ?? c?.testCaseCode; const tcTitle = x.testCaseTitle ?? c?.testCaseTitle; return <tr key={x.automationExecutionId}>
+                <td><span className="automation-case-code">{x.automationCode}</span>{(tcCode || tcTitle) && <span className="automation-subline">{[tcCode, tcTitle].filter(Boolean).join(" · ")}</span>}</td>
+                <td><Badge tone={executionStatusTone[x.status] ?? "blue"}>{x.status}</Badge></td>
+                <td>{x.agentCode ?? "-"}</td>
+                <td>{formatThaiDateTime(x.completedAt ?? x.startedAt)}</td>
+                <td>{formatDuration(x.durationMs)}</td>
+                <td className="actions-col"><div className="automation-row-actions">
+                  <button type="button" className="table-action icon-only" title="ดูผล / Evidence / สร้าง Defect" aria-label={`ดูผล ${x.automationCode}`} onClick={() => setExecDetail(x)}><span className="material-symbols-outlined" aria-hidden="true">visibility</span></button>
+                  {canRun && x.status !== "Running" && x.status !== "Queued" && <button type="button" className="table-action icon-only" title="รันซ้ำ" aria-label={`รันซ้ำ ${x.automationCode}`} onClick={() => rerunExecution(x)}><span className="material-symbols-outlined" aria-hidden="true">replay</span></button>}
+                  {canRun && (x.status === "Running" || x.status === "Queued") && <button type="button" className="table-action icon-only danger" title="ยกเลิก" aria-label={`ยกเลิก ${x.automationCode}`} onClick={() => cancelExecution(x)}><span className="material-symbols-outlined" aria-hidden="true">cancel</span></button>}
+                </div></td>
+              </tr>; })}</tbody>
+            </table>
+          </div> : <div className="au-empty-hint"><span className="material-symbols-outlined" aria-hidden="true">history</span><p><strong>ยังไม่มีผลการรัน</strong><small>เมื่อสั่งรัน Automation Case ผลและภาพหน้าจอจะแสดงที่นี่</small></p></div>}
         </section>
+
+        <details className="au-glossary">
+          <summary><span className="material-symbols-outlined" aria-hidden="true">menu_book</span>คำศัพท์ที่ควรรู้<span className="au-guide-chevron material-symbols-outlined" aria-hidden="true">expand_more</span></summary>
+          <dl>{glossary.map(([term, meaning]) => <div key={term}><dt>{term}</dt><dd>{meaning}</dd></div>)}</dl>
+        </details>
       </section>}
 
-      {tab === "cases" && <section className="automation-cases" aria-label="Automation Cases">
-        <header className="automation-section-head"><div><h2>Automation Cases</h2><p>หนึ่ง Test Case → หนึ่ง Automation Case พร้อม Version (DSL) หลายเวอร์ชัน</p></div><div className="automation-cases-actions">{canRun && <button className="btn" onClick={() => setBatchModal(true)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span> รันเป็นกลุ่ม</button>}{canEdit && <button className="btn primary" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}</div></header>
-        {flakyCandidates.length > 0 && <section className="automation-failure-analysis" aria-label="Flaky Candidates">
-          <div className="automation-section-head"><h3>Flaky Candidates (AUT-P0-010)</h3><span className="muted-text">Pass/Fail สลับกันบ่อยใน execution ล่าสุด</span></div>
-          <div className="automation-result-list">{flakyCandidates.map((f) => <div key={f.automationCaseId} className="automation-failure-row">
-            <b>{f.automationCode}</b><span>{f.transitions} transitions / {f.recentRuns} runs</span><span>ล่าสุด {formatThaiDateTime(f.lastExecutedAt)}</span>
-            {canManage && <button type="button" className="table-action icon-only" title="Quarantine" aria-label={`Quarantine ${f.automationCode}`} onClick={() => setQuarantineModalFor(f)}><span className="material-symbols-outlined" aria-hidden="true">warning</span></button>}
-          </div>)}</div>
-        </section>}
-        {cases.length ? <>
-          <div className="filter-toolbar">
-            <div className="filter-toolbar-top">
-              <div className="result-count"><strong>{casesPaged.total.toLocaleString()}</strong><span>Automation Cases{(headSearch.trim() || caseStatusFilter !== "all" || caseTargetFilter !== "all") ? " ที่ตรงเงื่อนไข" : ""}</span></div>
-              {(caseStatusFilter !== "all" || caseTargetFilter !== "all" || headSearch.trim()) && <button type="button" className="table-action" onClick={() => { setCaseStatusFilter("all"); setCaseTargetFilter("all"); setHeadSearch(""); }}><span className="material-symbols-outlined" aria-hidden="true">close</span> ล้างตัวกรอง</button>}
-            </div>
-            <div className="filter-toolbar-row automation-case-toolbar">
-              <select aria-label="กรองสถานะ" value={caseStatusFilter} onChange={(e) => setCaseStatusFilter(e.target.value)}>
-                <option value="all">ทุกสถานะ</option>
-                {["Draft", "NeedsReview", "Validated", "Approved", "Ready", "Running", "MaintenanceRequired"].map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select aria-label="กรอง Target App" value={caseTargetFilter} onChange={(e) => setCaseTargetFilter(e.target.value)}>
-                <option value="all">ทุก Target App</option>
-                <option value="Pos">Pos · PromaxxsPos.exe</option>
-                <option value="App">App · Promaxxs.App.exe</option>
-                <option value="WindowsUI">WindowsUI · generic</option>
-              </select>
-              <select aria-label="เรียงตาม" value={caseSortBy} onChange={(e) => setCaseSortBy(e.target.value)}>
-                <option value="created">ล่าสุดก่อน</option>
-                <option value="code">Code (A→Z)</option>
-                <option value="status">สถานะ</option>
-              </select>
-            </div>
+      {tab === "cases" && <section className="au-runs" aria-label="Automation Case">
+        {!cases.length ? <div className="au-runs-card au-cases-empty">
+          <span className="material-symbols-outlined" aria-hidden="true">smart_toy</span>
+          <strong>ยังไม่มี Automation Case</strong>
+          <p>สร้างจาก Test Case ที่ติ๊ก Automation Candidate ไว้ แล้วเขียนขั้นตอน (DSL) หรือให้ AI สร้าง → Validate → อนุมัติ → พร้อมรัน</p>
+          {canEdit && <button className="btn primary" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}
+        </div> : <article className="au-runs-card">
+          <header className="au-runs-head">
+            <h2><strong>{casesPaged.total.toLocaleString()}</strong> Automation Case{caseFiltered && <small> · กรองอยู่</small>}</h2>
+            {caseFiltered && <button type="button" className="au-runs-clear" onClick={() => { setCaseStatusFilter("all"); setCaseTargetFilter("all"); setHeadSearch(""); }}><span className="material-symbols-outlined" aria-hidden="true">close</span>ล้างตัวกรอง</button>}
+            {canRun && <button className="btn au-runs-more" onClick={() => setBatchModal(true)}><span className="material-symbols-outlined" aria-hidden="true">play_arrow</span>รันเป็นกลุ่ม</button>}
+          </header>
+
+          <div className="au-runs-chips" role="group" aria-label="กรองตามสถานะ">
+            {caseChips.map((c) => <button key={c.id} type="button" aria-pressed={caseStatusFilter === c.id} className={caseStatusFilter === c.id ? "active" : ""} title={c.hint} onClick={() => { setCaseStatusFilter(c.id === caseStatusFilter && c.id !== "all" ? "all" : c.id); setCasePage(1); }}>
+              {c.tone && <i className={`au-chip-dot t-${c.tone}`} aria-hidden="true" />}{c.label}<b>{c.count}</b>
+            </button>)}
+            <span className="au-chips-spacer" />
+            <select aria-label="กรอง Target App" className="au-runs-other" value={caseTargetFilter} onChange={(e) => { setCaseTargetFilter(e.target.value); setCasePage(1); }}>
+              <option value="all">ทุก Target</option>
+              <option value="Pos">Pos</option>
+              <option value="App">App</option>
+              <option value="WindowsUI">WindowsUI</option>
+            </select>
+            <select aria-label="เรียงตาม" className="au-runs-other" value={caseSortBy} onChange={(e) => setCaseSortBy(e.target.value)}>
+              <option value="created">ล่าสุดก่อน</option>
+              <option value="code">รหัส A→Z</option>
+              <option value="status">สถานะ</option>
+            </select>
           </div>
-          {canManage && selectedCaseIds.size > 0 && (
-            <div className="testcase-bulk-bar" role="region" aria-label="จัดการ Automation Case ที่เลือก">
-              <span className="bulk-count">{selectedCaseIds.size} เลือกแล้ว</span>
-              <button type="button" className="btn danger" disabled={bulkDeleteBusy} onClick={hardDeleteSelectedCases}>{bulkDeleteBusy ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</> : <><span className="material-symbols-outlined" aria-hidden="true">close</span> ลบถาวร</>}</button>
-              <button type="button" className="bulk-clear" disabled={bulkDeleteBusy} onClick={() => setSelectedCaseIds(new Set())}><span className="material-symbols-outlined" aria-hidden="true">close</span> ยกเลิกเลือก</button>
-            </div>
-          )}
+
+          {flakyCandidates.length > 0 && <details className="au-flaky">
+            <summary><span className="material-symbols-outlined" aria-hidden="true">swap_vert</span>ผลไม่นิ่ง (Flaky) {flakyCandidates.length} Case<small>Pass / Fail สลับกันบ่อย — พิจารณา Quarantine เพื่อไม่ให้กระทบผลรวม</small><span className="au-guide-chevron material-symbols-outlined" aria-hidden="true">expand_more</span></summary>
+            <ul>{flakyCandidates.map((f) => <li key={f.automationCaseId}>
+              <b>{f.automationCode}</b><span>สลับ {f.transitions} ครั้งใน {f.recentRuns} รอบ · ล่าสุด {formatThaiDateTime(f.lastExecutedAt)}</span>
+              {canManage && <button type="button" className="btn" onClick={() => setQuarantineModalFor(f)}>Quarantine</button>}
+            </li>)}</ul>
+          </details>}
+
+          {canManage && selectedCaseIds.size > 0 && <div className="au-bulk" role="region" aria-label="จัดการ Automation Case ที่เลือก">
+            <span><b>{selectedCaseIds.size}</b> เลือกแล้ว</span>
+            <button type="button" className="btn danger" disabled={bulkDeleteBusy} onClick={hardDeleteSelectedCases}>{bulkDeleteBusy ? <><span className="spinner inline" aria-hidden="true" /> กำลังลบ...</> : <><span className="material-symbols-outlined" aria-hidden="true">delete</span> ลบถาวร</>}</button>
+            <button type="button" className="au-icon-btn" disabled={bulkDeleteBusy} title="ยกเลิกการเลือก" aria-label="ยกเลิกการเลือก" onClick={() => setSelectedCaseIds(new Set())}><span className="material-symbols-outlined" aria-hidden="true">close</span></button>
+          </div>}
           {casesError && <div className="inline-alert error" role="alert"><span>{casesError}</span><button type="button" className="btn" onClick={() => setReload((v) => v + 1)}>ลองใหม่</button></div>}
-          {casesPaged.rows.length ? <div className="table-wrap"><table className="table-cards"><thead><tr>{canManage && <th className="case-select-col"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={allCasesOnPageSelected} onChange={toggleSelectAllCasesOnPage} /></th>}<th>Code</th><th>Test Case</th><th>Target App</th><th>Status</th><th>Version</th><th>Owner</th><th className="actions-col">จัดการ</th></tr></thead><tbody>{casesPaged.rows.map((c) => <tr key={c.automationCaseId} className={selectedCaseIds.has(c.automationCaseId) ? "is-selected" : ""}>{canManage && <td className="case-select-col" data-label="เลือก"><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selectedCaseIds.has(c.automationCaseId)} onChange={() => toggleCaseSelected(c.automationCaseId)} /></td>}<td><b>{c.automationCode}</b></td><td><span>{c.testCaseCode}</span><small>{c.testCaseTitle}</small></td><td><Badge tone={targetTone[c.automationType] ?? "blue"}>{c.automationType}</Badge></td><td><Badge tone={caseStatusTone[c.status] ?? "blue"}>{c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</td><td>Rev {c.currentVersionNo}</td><td>{c.ownerName ?? "-"}</td><td className="actions-col"><button className="table-action icon-only" title="รายละเอียด" aria-label={`รายละเอียด ${c.automationCode}`} onClick={() => openCase(c)}><span className="material-symbols-outlined" aria-hidden="true">info</span></button></td></tr>)}</tbody></table></div>
-            : <div className="empty"><p>ไม่พบ Automation Case ที่ตรงเงื่อนไข</p><small>ลองเปลี่ยนคำค้นหาหรือตัวกรองด้านบน</small></div>}
+
+          {casesPaged.rows.length ? <div className="table-wrap au-runs-wrap"><table className={`au-cases-table table-cards${canManage ? " has-select" : ""}`}>
+            <thead><tr>{canManage && <th className="au-col-select"><input type="checkbox" aria-label="เลือกทั้งหน้านี้" checked={allCasesOnPageSelected} onChange={toggleSelectAllCasesOnPage} /></th>}<th>Automation Case</th><th>สถานะ</th><th>Target</th><th>Version</th><th>Owner</th><th className="actions-col"><span className="sr-only">จัดการ</span></th></tr></thead>
+            <tbody>{casesPaged.rows.map((c) => <tr key={c.automationCaseId} className={`au-runs-tr is-${c.status.toLowerCase()}${selectedCaseIds.has(c.automationCaseId) ? " is-selected" : ""}`} onClick={() => openCase(c)}>
+              {canManage && <td className="au-col-select" onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`เลือก ${c.automationCode}`} checked={selectedCaseIds.has(c.automationCaseId)} onChange={() => toggleCaseSelected(c.automationCaseId)} /></td>}
+              <td data-label="Case"><b>{c.automationCode}</b><small title={`${c.testCaseCode} · ${c.testCaseTitle}`}>{c.testCaseCode} · {c.testCaseTitle}</small></td>
+              <td data-label="สถานะ"><span className="au-status"><Badge tone={caseStatusTone[c.status] ?? "blue"}>{caseStatusTh[c.status] ?? c.status}</Badge>{c.isQuarantined && <Badge tone="orange">Quarantined</Badge>}</span></td>
+              <td data-label="Target"><span>{c.automationType}</span></td>
+              <td data-label="Version" className="au-runs-num">Rev {c.currentVersionNo}</td>
+              <td data-label="Owner"><span>{c.ownerName ?? "-"}</span></td>
+              <td className="actions-col" onClick={(e) => e.stopPropagation()}><div className="au-runs-actions">
+                <button type="button" className="au-icon-btn" title="เปิดรายละเอียด / DSL / สั่งรัน" aria-label={`เปิด ${c.automationCode}`} onClick={() => openCase(c)}><span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+              </div></td>
+            </tr>)}</tbody>
+          </table></div> : <div className="au-runs-empty">ไม่พบ Automation Case ที่ตรงเงื่อนไข — ลองล้างตัวกรอง</div>}
           {casesPaged.total > casePageSize && <Pager page={casePage} count={casePageCount} total={casesPaged.total} pageSize={casePageSize} onPrev={() => setCasePage((p) => Math.max(1, p - 1))} onNext={() => setCasePage((p) => Math.min(casePageCount, p + 1))} />}
-        </> : <div className="empty"><p>ยังไม่มี Automation Case</p><small>สร้างจาก Test Case ที่เป็น Automation Candidate — จากนั้นเขียน DSL / Generate AI → Validate → อนุมัติ → พร้อมรัน</small>{canEdit && <button className="btn primary" onClick={openCreate}><span className="material-symbols-outlined" aria-hidden="true">add</span> สร้าง Automation Case</button>}</div>}
-      <div className="automation-status-legend" role="note" aria-label="ความหมายสถานะ"><span><i className="legend-dot legend-draft" />Draft — ยังไม่มี DSL</span><span><i className="legend-dot legend-review" />NeedsReview — AI สร้างแล้ว รอตรวจ</span><span><i className="legend-dot legend-ready" />Ready — พร้อมรัน</span><span><i className="legend-dot legend-maint" />MaintenanceRequired — ต้องซ่อม DSL/Object</span></div>
+        </article>}
       </section>}
 
       {tab === "suites" && <AutomationSuiteTab projectId={pid} releaseId={releaseId} headers={headers} canEdit={canEdit} canRun={canRun} cases={cases} />}
@@ -1040,7 +1103,6 @@ export function AutomationPage({
       {tab === "dataProfiles" && <AutomationEnvironmentDataProfileTab projectId={pid} headers={headers} canEdit={canEdit} />}
 
       {tab === "manage" && <section className="automation-manage" aria-label="Automation จัดการ">
-        <nav className="automation-subtabs" aria-label="จัดการ"><button type="button" className={manageTab === "actions" ? "active" : ""} onClick={() => setManageTab("actions")}>Action Library</button><button type="button" className={manageTab === "objects" ? "active" : ""} onClick={() => setManageTab("objects")}>Object Repository</button><button type="button" className={manageTab === "agents" ? "active" : ""} onClick={() => setManageTab("agents")}>Agents</button><button type="button" className={manageTab === "retry" ? "active" : ""} onClick={() => setManageTab("retry")}>Retry Policy</button></nav>
         {manageTab === "actions" && <ActionLibraryTab actions={actions} canManage={canManage} headers={headers} onReload={() => setReload((x) => x + 1)} onError={setError} actionModal={actionModal} setActionModal={setActionModal} />}
         {manageTab === "objects" && <ObjectRepositoryTab projectId={pid} objects={objects} canManage={canManage} headers={headers} onReload={() => setReload((x) => x + 1)} onError={setError} objectModal={objectModal} setObjectModal={setObjectModal} />}
         {manageTab === "agents" && <AgentsSection agents={agents} agentsOnline={agentsOnline} canManage={canManage} headers={headers} onToggle={toggleAgent} onDelete={deleteAgent} />}

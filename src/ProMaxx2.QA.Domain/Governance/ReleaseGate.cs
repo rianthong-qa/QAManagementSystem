@@ -25,19 +25,35 @@ public sealed record DefectGateCounts(int OpenCritical, int OpenHigh, int Unveri
     }
 }
 
-/// <param name="Defects">null = ปิด Defect Gate (config <c>Defects:GateEnabled</c>)</param>
-public sealed record ReleaseGateInput(int OpenP0, int OpenP1Blockers, bool HasApprovedRisk, bool SmokePassed = true, DefectGateCounts? Defects = null);
+/// <summary>ข้อมูลที่ใช้ตัดสินความพร้อมของ Release — กฎชุดเดียวที่ Dashboard / Test Summary / Release Sign-off ใช้ร่วมกัน</summary>
+/// <param name="SmokePassed">false = มี Smoke policy ของ Project และผลล่าสุดของ Build ที่เลือกไม่ผ่าน (ไม่ได้ตั้ง Smoke / ไม่ได้เลือก Build = ไม่ประเมิน → true)</param>
+/// <param name="Defects">null = ไม่นับ Defect เลย</param>
+/// <param name="Coverage">null = ไม่มี Requirement ให้ประเมิน</param>
+/// <param name="PassRate">null = ยังไม่มีผลทดสอบให้ประเมิน</param>
+/// <param name="StrictDefectGate">config <c>Defects:GateEnabled</c> — true: High ค้าง/Resolved รอตรวจซ้ำที่ไม่มี Risk = NO-GO; false = CONDITIONAL GO</param>
+public sealed record ReleaseGateInput(int OpenP0, int OpenP1Blockers, bool HasApprovedRisk, bool SmokePassed = true, DefectGateCounts? Defects = null, decimal? Coverage = null, decimal? PassRate = null, bool StrictDefectGate = true);
 
 public static class ReleaseGate
 {
-    public static ReleaseDecision Evaluate(ReleaseGateInput input)
+    /// <summary>เกณฑ์ขั้นต่ำของ Requirement Coverage และ Pass Rate (%) — ต่ำกว่านี้ = CONDITIONAL GO</summary>
+    public const decimal QualityThreshold = 90m;
+
+    public static ReleaseDecision Evaluate(ReleaseGateInput input) => Assess(input).Decision;
+
+    /// <summary>คำตัดสิน + เหตุผลข้อแรกที่ทำให้ไม่ GO (ภาษาไทย) — หน้าเว็บแสดงเหตุผลนี้ตรง ๆ ไม่คำนวณซ้ำเอง</summary>
+    public static (ReleaseDecision Decision, string Reason) Assess(ReleaseGateInput input)
     {
-        if (!input.SmokePassed) return ReleaseDecision.NoGo;
-        if (input.OpenP0 > 0) return ReleaseDecision.NoGo;
-        // Critical ค้าง = NO-GO; High ค้าง / Resolved ที่ยังไม่ตรวจซ้ำ ต้องมี Risk Acceptance ของ Defect นั้น ไม่งั้น NO-GO
-        if (input.Defects is { } d && (d.OpenCritical > 0 || d.BlockersWithoutRisk > 0)) return ReleaseDecision.NoGo;
-        if (input.OpenP1Blockers > 0) return input.HasApprovedRisk ? ReleaseDecision.ConditionalGo : ReleaseDecision.NoGo;
-        if (input.Defects is { BlockersWithRisk: > 0 }) return ReleaseDecision.ConditionalGo;
-        return ReleaseDecision.Go;
+        var d = input.Defects;
+        if (!input.SmokePassed) return (ReleaseDecision.NoGo, "Smoke Test ของ Build นี้ยังไม่ผ่าน");
+        if (input.OpenP0 > 0) return (ReleaseDecision.NoGo, $"พบผลทดสอบ P0 ค้าง (Fail/Blocked) {input.OpenP0} รายการ");
+        // Critical ที่ยังไม่ได้แก้ปลดด้วย Risk Acceptance ไม่ได้
+        if (d is { OpenCritical: > 0 }) return (ReleaseDecision.NoGo, $"พบ Critical Defect ที่ยังไม่ได้แก้ {d.OpenCritical} รายการ");
+        if (input.StrictDefectGate && d is { BlockersWithoutRisk: > 0 }) return (ReleaseDecision.NoGo, $"พบ High Defect ค้าง/Defect รอตรวจซ้ำ {d.BlockersWithoutRisk} รายการที่ยังไม่มี Risk Acceptance");
+        if (input.OpenP1Blockers > 0) return (ReleaseDecision.ConditionalGo, input.HasApprovedRisk ? $"พบผลทดสอบ P1 ค้าง {input.OpenP1Blockers} รายการ (มี Risk Acceptance อนุมัติแล้ว)" : $"พบผลทดสอบ P1 ค้าง {input.OpenP1Blockers} รายการ ยังไม่มี Risk Acceptance");
+        if (d is { BlockersWithoutRisk: > 0 }) return (ReleaseDecision.ConditionalGo, $"พบ High Defect ค้าง/Defect รอตรวจซ้ำ {d.BlockersWithoutRisk} รายการ");
+        if (d is { BlockersWithRisk: > 0 }) return (ReleaseDecision.ConditionalGo, $"มี Defect ที่ยอมรับความเสี่ยงไว้ {d.BlockersWithRisk} รายการ");
+        if (input.Coverage < QualityThreshold) return (ReleaseDecision.ConditionalGo, $"Requirement Coverage {input.Coverage}% ต่ำกว่าเกณฑ์ {QualityThreshold:0}%");
+        if (input.PassRate < QualityThreshold) return (ReleaseDecision.ConditionalGo, $"Pass Rate {input.PassRate}% ต่ำกว่าเกณฑ์ {QualityThreshold:0}%");
+        return (ReleaseDecision.Go, "ผ่านทุกเกณฑ์ความพร้อม");
     }
 }

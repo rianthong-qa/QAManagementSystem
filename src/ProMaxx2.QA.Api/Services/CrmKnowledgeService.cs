@@ -140,7 +140,7 @@ public sealed class CrmKnowledgeFetcher(QaDbContext db, ICrmKnowledgeSource sour
 
     public bool Enabled => configuration.GetValue("Knowledge:CrmFetchEnabled", true);
     public int PerRun => Math.Clamp(configuration.GetValue("Knowledge:CrmFetchPerRun", 50), 1, 500);
-    public string AccountUsername => (configuration["CrmMirror:AccountUsername"] ?? "6101").Trim();
+    public string AccountUsername => CrmMirrorAccount.Username(configuration);
 
     /// <summary>Ticket ที่ต้องดึง: ยังไม่เคยดึง (ใหม่ก่อน) หรือมีการตอบ/เปลี่ยนสถานะหลังดึงครั้งก่อน หรือดึงไม่สำเร็จเกิน 24 ชม.</summary>
     public static IQueryable<CrmFetchCandidate> Candidates(QaDbContext db, DateTime now)
@@ -163,8 +163,7 @@ public sealed class CrmKnowledgeFetcher(QaDbContext db, ICrmKnowledgeSource sour
         if (!await Gate.WaitAsync(0, ct)) return 0;
         try
         {
-            var account = (await db.CrmConfigurations.AsNoTracking().Where(x => x.Username == AccountUsername && x.IsEnabled && x.EncryptedPassword != "").ToListAsync(ct))
-                .OrderByDescending(x => x.UpdatedAt).FirstOrDefault();
+            var account = await CrmMirrorAccount.FindAsync(db, AccountUsername, ct);
             if (account is null) return 0;
             var now = DateTime.UtcNow;
             var candidates = await Candidates(db, now).Take(PerRun).ToListAsync(ct);

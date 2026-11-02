@@ -135,3 +135,17 @@
   .cyd-case > .badge { grid-column: 2; justify-self: start; margin-top: 0; }
   .cyd-case-results dd { white-space: normal; }
 }
+
+/* Test Plan context (TEST_PLAN_CONFIGURATION_MATRIX_PLAN.md §5.5, 2026-10-30) — บรรทัดแผนในแถวรายการ + ส่วน "อยู่ใน Test Plan" + แถบล็อกเมื่อแผน Freeze */
+.lp-item .cy-plan { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 2px; overflow: hidden; color: var(--primary); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.lp-item .cy-plan .material-symbols-outlined { flex: none; font-size: 15px; }
+.lp-item .cy-plan.is-frozen { color: var(--warning-text); }
+.cyd-locked { display: flex; flex: none; align-items: flex-start; gap: 6px; margin: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--yellow) 8%, var(--card)); padding: 8px 20px; color: var(--warning-text); font-size: 13px; font-weight: 600; line-height: 1.5; }
+.cyd-locked .material-symbols-outlined { flex: none; font-size: 17px; }
+.cyd-side section.cyd-plan { border-radius: 10px; background: color-mix(in srgb, var(--primary) 6%, var(--card)); padding: 10px 12px; }
+.cyd-plan p { display: grid; gap: 1px; margin: 0; font-size: 13px; }
+.cyd-plan p small { color: var(--muted); font-size: 12px; }
+.modal-box.cyd button.cyd-plan-link { display: inline; justify-self: start; min-height: 0; border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+@media (max-width: 760px) {
+  .cyd-locked { padding: 8px 16px; }
+}

@@ -26,6 +26,8 @@ public sealed class KnowledgeArticle
     public string? Tags { get; private set; }
     public string Status { get; private set; } = "Draft";
     public bool IsDeleted { get; private set; }
+    public DateTime? DeletedAt { get; private set; }
+    public Guid? DeletedBy { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public Guid? CreatedBy { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
@@ -38,7 +40,9 @@ public sealed class KnowledgeArticle
         UpdatedBy = updatedBy;
     }
 
-    public void Delete(Guid? deletedBy) { IsDeleted = true; UpdatedAt = DateTime.UtcNow; UpdatedBy = deletedBy; }
+    public void Delete(Guid? deletedBy) { IsDeleted = true; DeletedAt = UpdatedAt = DateTime.UtcNow; DeletedBy = UpdatedBy = deletedBy; }
+    /// <summary>กู้คืน — UpdatedAt ใหม่ทำให้ KnowledgeIndexService index กลับเข้าคลังความรู้</summary>
+    public void Restore(Guid? userId) { IsDeleted = false; DeletedAt = null; DeletedBy = null; UpdatedAt = DateTime.UtcNow; UpdatedBy = userId; }
 
     // bodyHtml มีค่า = บทความ HTML (bodyMarkdown คือข้อความที่สกัดจาก HTML แล้ว); null = บทความ Markdown และล้าง HTML เดิม
     private void Apply(string title, string bodyMarkdown, Guid? projectId, string? tags, string status, string? bodyHtml)
@@ -98,6 +102,8 @@ public sealed class KnowledgeFile
     public string? ExtractedText { get; private set; }
     public string? ExtractError { get; private set; }
     public bool IsDeleted { get; private set; }
+    public DateTime? DeletedAt { get; private set; }
+    public Guid? DeletedBy { get; private set; }
     public DateTime UploadedAt { get; private set; }
     public Guid? UploadedBy { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
@@ -118,7 +124,8 @@ public sealed class KnowledgeFile
         UpdatedAt = DateTime.UtcNow;
     }
 
-    public void Delete() { IsDeleted = true; UpdatedAt = DateTime.UtcNow; }
+    public void Delete(Guid? deletedBy = null) { IsDeleted = true; DeletedAt = UpdatedAt = DateTime.UtcNow; DeletedBy = deletedBy; }
+    public void Restore() { IsDeleted = false; DeletedAt = null; DeletedBy = null; UpdatedAt = DateTime.UtcNow; }
 
     private static string? Cut(string? value, int max)
     {

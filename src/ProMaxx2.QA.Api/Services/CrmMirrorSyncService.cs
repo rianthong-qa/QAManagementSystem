@@ -6,6 +6,17 @@ using ProMaxx2.QA.Infrastructure.Persistence;
 
 namespace ProMaxx2.QA.Api.Services;
 
+/// <summary>บัญชีกลาง CRM (config <c>CrmMirror:AccountUsername</c>, ค่าเริ่มต้น 6101) ที่ Mirror sync, Knowledge fetch และ CRM poller ใช้ร่วมกัน</summary>
+public static class CrmMirrorAccount
+{
+    public static string Username(IConfiguration configuration) => (configuration["CrmMirror:AccountUsername"] ?? "6101").Trim();
+
+    /// <summary>ผู้ใช้หลายคนอาจผูกบัญชี CRM เดียวกัน (เช่น บัญชีทดสอบ) — ใช้แถวที่เปิดใช้งานและบันทึกรหัสผ่านล่าสุด</summary>
+    public static async Task<CrmConfiguration?> FindAsync(QaDbContext db, string username, CancellationToken ct) =>
+        (await db.CrmConfigurations.AsNoTracking().Where(x => x.Username == username && x.IsEnabled && x.EncryptedPassword != "").ToListAsync(ct))
+            .OrderByDescending(x => x.UpdatedAt).FirstOrDefault();
+}
+
 public sealed record CrmMirrorAnswer(string AnswerNo, string? PostedCode, DateTime? AnsweredAt);
 public sealed record CrmMirrorRecord(CrmTicketListItem Ticket, IReadOnlyList<CrmMirrorAnswer> Answers);
 public sealed record CrmMirrorDiagnostics(int Records, int WithJobNo, int WithAnswers, int AnswersWithDate, IReadOnlyList<string> TicketFields, IReadOnlyList<string> AnswerFields);
@@ -90,7 +101,7 @@ public sealed class CrmMirrorSyncService(QaDbContext db, CrmApiClient crm, IConf
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public string AccountUsername => (configuration["CrmMirror:AccountUsername"] ?? "6101").Trim();
+    public string AccountUsername => CrmMirrorAccount.Username(configuration);
     public bool Enabled => configuration.GetValue("CrmMirror:Enabled", true);
 
     public async Task<CrmMirrorRun> RunAsync(bool full, Guid? requestedBy, CancellationToken ct)
@@ -103,9 +114,7 @@ public sealed class CrmMirrorSyncService(QaDbContext db, CrmApiClient crm, IConf
             db.CrmMirrorRuns.Add(run);
             await db.SaveChangesAsync(ct);
 
-            // ผู้ใช้หลายคนอาจผูกบัญชี CRM เดียวกัน (เช่น บัญชีทดสอบ) — ใช้แถวที่บันทึกรหัสผ่านล่าสุด
-            var account = (await db.CrmConfigurations.AsNoTracking().Where(x => x.Username == AccountUsername && x.IsEnabled && x.EncryptedPassword != "").ToListAsync(ct))
-                .OrderByDescending(x => x.UpdatedAt).FirstOrDefault();
+            var account = await CrmMirrorAccount.FindAsync(db, AccountUsername, ct);
             if (account is null)
             {
                 run.Fail($"ไม่พบบัญชี CRM {AccountUsername} ที่เปิดใช้งานใน QA Hub — ผู้ใช้เจ้าของบัญชีต้องตั้งค่า \"บัญชี CRM ของฉัน\" ก่อน", "Skipped");

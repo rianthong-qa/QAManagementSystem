@@ -18,6 +18,7 @@ import { DefectResolutionModal } from "../components/DefectResolutionModal";
 import { useDebounced } from "../components/useDebounced";
 import { ReproSteps } from "../components/ReproSteps";
 import { ModalShell } from "../components/ModalShell";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { type ModuleItem, copyText, defectStatusTones, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
 
 type SimilarDefect = { defectId: string; defectCode: string; title: string; status: string; severity: string; resolutionType?: string | null; snippet: string };
@@ -477,6 +478,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
         <div className="lp-title"><div><strong>{totalCount.toLocaleString()}</strong><span>Defect{activeDefectFilterCount ? ` · กรอง ${activeDefectFilterCount} เงื่อนไข` : ""}</span></div></div>
         <div className="lp-actions">
           <button className="btn" type="button" disabled={!items.length} onClick={exportCsv}><span className="material-symbols-outlined" aria-hidden="true">download</span>Export</button>
+          <DeletedItemsButton type="defects" label="Defect" onRestored={() => setReload(x => x + 1)} />
           {canEdit !== false && <button className="btn primary" type="button" disabled={!projectId} onClick={() => openForm()}><span className="material-symbols-outlined" aria-hidden="true">add</span>Defect</button>}
         </div>
       </div>

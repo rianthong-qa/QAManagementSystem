@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { apiFetch, isAbortError } from "../api";
 import { Badge } from "../components/Badge";
 import { DateField } from "../components/DateField";
@@ -738,7 +739,7 @@ function WorkLogSection({ userId, isSelf, canManage, items, loading, error, onCh
   const [editing, setEditing] = useState<WorkLog | "new" | null>(null);
 
   const remove = async (item: WorkLog) => {
-    if (!await confirmDialog({ title: "ลบบันทึกงาน", message: `ลบ "${item.title}"? การลบย้อนกลับไม่ได้`, confirmLabel: "ลบ", tone: "danger" })) return;
+    if (!await confirmDialog({ title: "ลบบันทึกงาน", message: `ลบ "${item.title}"? บันทึกจะไม่แสดงและไม่นับในการประเมิน (ผู้ดูแลระบบกู้คืนได้)`, confirmLabel: "ลบ", tone: "danger" })) return;
     try {
       await apiFetch(`/performance/work-logs/${item.workLogEntryId}`, { method: "DELETE", fallbackMessage: "ลบบันทึกงานไม่สำเร็จ" });
       notify("ลบบันทึกงานแล้ว", "success");
@@ -752,6 +753,7 @@ function WorkLogSection({ userId, isSelf, canManage, items, loading, error, onCh
     <section className="content-card perf-worklog" aria-label="บันทึกงานและผลงานเด่น">
       <div className="perf-section-head">
         <div><h3>บันทึกงานและผลงานเด่น</h3><p>งานนอกระบบ เช่น ซัพพอร์ต อบรม เอกสาร หรือผลงานที่ควรถูกจดจำ</p></div>
+        <DeletedItemsButton type="work-logs" label="บันทึกงาน" onRestored={onChanged} />
         {(isSelf || canManage) && (
           <button className="btn primary" type="button" onClick={() => setEditing("new")}><span className="material-symbols-outlined" aria-hidden="true">add</span>เพิ่มบันทึก</button>
         )}

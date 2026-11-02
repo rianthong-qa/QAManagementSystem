@@ -9,7 +9,7 @@ using ProMaxx2.QA.Api.Services;
 namespace ProMaxx2.QA.Api.Controllers;
 
 [ApiController, Route("api/v1/test-cycles/{cycleId:guid}/auto-assign"), Authorize(Policy = "ExecutionRun"), RequireProjectAccess]
-public sealed class WeightedAssignmentController(QaDbContext db) : ControllerBase
+public sealed class WeightedAssignmentController(QaDbContext db, ProMaxx2.QA.Application.TestPlanning.ITestPlanFreezeGuard freezeGuard) : ControllerBase
 {
     [HttpPost("regression-auto-preview")]
     public Task<ActionResult<AutoAssignPreviewDto>> RegressionAutoPreview(Guid cycleId, AutoAssignPreviewRequest request, CancellationToken ct) => Preview(cycleId, request, ct);
@@ -45,6 +45,7 @@ public sealed class WeightedAssignmentController(QaDbContext db) : ControllerBas
         try { WeightedAssignmentWorkflow.ValidateConfirm(request, new AssignmentPreviewState(preview.AssignmentPreviewId, preview.Version, preview.ExpiresAt), DateTime.UtcNow); }
         catch (InvalidOperationException e) when (e.Message == "AUTOASSIGN_PREVIEW_EXPIRED") { return Conflict(new { code = e.Message }); }
         catch (InvalidOperationException e) { return Conflict(new { code = e.Message }); }
+        await freezeGuard.EnsureNotFrozenAsync(cycleId, ct);
         var ids = request.Assignments.Select(x => x.TestCycleCaseId).ToHashSet(); var cases = await db.TestCycleCases.Where(x => x.TestCycleId == cycleId && ids.Contains(x.TestCycleCaseId)).ToListAsync(ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var actor = CurrentUserId(); foreach (var item in request.Assignments) { var entity = cases.SingleOrDefault(x => x.TestCycleCaseId == item.TestCycleCaseId); if (entity is null) return BadRequest(new { code = "AUTOASSIGN_CASE_NOT_FOUND" }); var old = entity.AssignedTesterUserId; try { entity.AssignTester(item.TesterUserId); } catch (InvalidOperationException) { await tx.RollbackAsync(ct); return Conflict(new { code = "AUTOASSIGN_ASSIGNMENT_CONFLICT" }); } db.AssignmentHistories.Add(new ProMaxx2.QA.Domain.Execution.AssignmentHistory(entity.TestCycleCaseId, old, item.TesterUserId, entity.CaseWeight, 0, item.OverrideReason, old.HasValue ? "AssignmentOverridden" : "AssignmentConfirmed", actor, entity.AlgorithmVersion)); }
@@ -55,6 +56,7 @@ public sealed class WeightedAssignmentController(QaDbContext db) : ControllerBas
     public async Task<IActionResult> Rebalance(Guid cycleId, AutoRebalanceRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Reason)) return BadRequest(new { code = "AUTOASSIGN_REBALANCE_REASON_REQUIRED" });
+        await freezeGuard.EnsureNotFrozenAsync(cycleId, ct);
         var ids = request.Assignments.Select(x => x.TestCycleCaseId).ToHashSet();
         var cases = await db.TestCycleCases.Where(x => x.TestCycleId == cycleId && ids.Contains(x.TestCycleCaseId)).ToListAsync(ct);
         if (cases.Count != ids.Count) return BadRequest(new { code = "AUTOASSIGN_CASE_NOT_FOUND" });

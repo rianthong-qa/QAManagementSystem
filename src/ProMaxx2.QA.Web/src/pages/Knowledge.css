@@ -213,3 +213,52 @@
   .kn-totals > div { padding: 10px; }
   .kn-totals dd { font-size: 22px; }
 }
+
+/* บทความ HTML (นำเข้าไฟล์ → แสดงตามรูปแบบในไฟล์ผ่าน HtmlArticleFrame) + ลิงก์แชร์สาธารณะ */
+.kn-row-flags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: 2px; }
+.kn-row-flags > span { display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); padding: 1px 8px 1px 6px; color: var(--primary); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.kn-row-flags > span.is-shared { background: color-mix(in srgb, var(--green) 11%, var(--card)); color: var(--green); }
+.kn-row-flags .material-symbols-outlined { font-size: 14px; }
+.kn-html-view { overflow: clip; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.kn-share { display: grid; gap: 10px; margin-top: 14px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); padding: 12px 14px; }
+.kn-share-head { display: flex; align-items: flex-start; gap: 10px; }
+.kn-share-head > .material-symbols-outlined { flex: none; color: var(--primary); font-size: 22px; }
+.kn-share-head h3 { margin: 0; color: var(--text); font-size: 14px; }
+.kn-share-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.kn-share-link { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.modal-box.kn-article-view .kn-share-link input { flex: 1 1 260px; min-width: 0; height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 0 10px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.modal-box.kn-article-view .kn-share-link input:focus { border-color: var(--primary); outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
+.modal-box.kn-article-view .kn-share .kn-danger { margin-right: 0; }
+.kn-share > .btn { justify-self: start; }
+/* ฟอร์ม: สลับ "เขียนเอง | นำเข้าไฟล์ HTML" (aria-pressed) */
+.kn-body-label { color: var(--text); font-size: 13px; font-weight: 700; }
+.kn-format-switch { display: inline-flex; justify-self: start; gap: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 3px; }
+.modal-box.kn-editor .kn-format-switch button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; border: 0; border-radius: 8px; background: transparent; padding: 4px 14px 4px 10px; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.modal-box.kn-editor .kn-format-switch button[aria-pressed="true"] { background: var(--card); color: var(--primary); box-shadow: 0 1px 2px rgb(15 23 42 / 12%); }
+.modal-box.kn-editor .kn-format-switch button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.kn-format-switch .material-symbols-outlined { font-size: 19px; }
+.kn-step-title small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.kn-html-drop { display: grid; justify-items: center; gap: 4px; border: 2px dashed color-mix(in srgb, var(--primary) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); padding: 22px 16px; color: var(--muted); font-size: 13px; text-align: center; }
+.kn-html-drop.is-dragging { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, var(--card)); }
+.kn-html-drop.is-compact { padding: 10px 16px; }
+.kn-html-drop.is-compact > .material-symbols-outlined { display: none; }
+.kn-html-drop > .material-symbols-outlined { color: var(--primary); font-size: 34px; }
+.kn-html-drop b { color: var(--text); font-size: 15px; }
+.kn-html-drop.is-compact b { font-size: 13px; }
+.kn-html-file { display: flex; align-items: center; gap: 10px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 8px 12px; }
+.kn-html-file > .material-symbols-outlined { flex: none; color: var(--primary); font-size: 26px; }
+.kn-html-file > div { display: grid; flex: 1; min-width: 0; }
+.kn-html-file b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.kn-html-file small { color: var(--muted); font-size: 12px; }
+.kn-html-error { display: flex; align-items: flex-start; gap: 6px; margin: 0; color: var(--red); font-size: 13px; }
+.kn-html-error .material-symbols-outlined { font-size: 18px; }
+
+@media (max-width: 760px) {
+  .kn-format-switch { display: flex; justify-self: stretch; }
+  .modal-box.kn-editor .kn-format-switch button { flex: 1; justify-content: center; min-height: 44px; }
+  .kn-html-file { flex-wrap: wrap; }
+  .kn-html-file .btn { flex: 1 1 100%; justify-content: center; min-height: 44px; }
+  .modal-box.kn-article-view .kn-share-link input { flex-basis: 100%; height: 44px; }
+  .kn-share-link .btn, .kn-share > .btn { flex: 1 1 auto; justify-content: center; min-height: 44px; }
+  .kn-share > .btn { justify-self: stretch; }
+}

@@ -27,6 +27,9 @@ public sealed class KnowledgeFileService(QaDbContext db, IWebHostEnvironment env
 
     private string Root => Path.Combine(environment.ContentRootPath, "App_Data", "KnowledgeFiles");
 
+    /// <summary>ไฟล์ยังอยู่บนดิสก์ไหม — ใช้ก่อนกู้คืนเอกสารที่ลบแล้ว (เดิมการลบลบโฟลเดอร์ทิ้งด้วย)</summary>
+    public bool StoredFileExists(KnowledgeFile file) => File.Exists(Path.GetFullPath(Path.Combine(Root, file.StoragePath)));
+
     public async Task<IReadOnlyList<KnowledgeFileUploadResult>> UploadAsync(IReadOnlyList<IncomingKnowledgeFile> files, Guid? projectId, string? description, Guid userId, string? clientIp, CancellationToken ct)
     {
         if (files.Count == 0 || files.Count > MaxFiles) throw new ArgumentException($"อัปโหลดได้ครั้งละ 1–{MaxFiles} ไฟล์");
@@ -117,10 +120,9 @@ public sealed class KnowledgeFileService(QaDbContext db, IWebHostEnvironment env
     {
         var file = await db.KnowledgeFiles.FirstOrDefaultAsync(x => x.KnowledgeFileId == fileId && !x.IsDeleted && (x.ProjectId == null || allowedProjects.Contains(x.ProjectId.Value)), ct);
         if (file is null) return false;
-        file.Delete();
+        file.Delete(userId);
         db.AuditLogs.Add(new AuditLog(userId, "Deleted", AuditEntityType, fileId.ToString(), $"ลบเอกสาร \"{file.FileName}\" ออกจากคลังความรู้", null, null, clientIp));
         await db.SaveChangesAsync(ct);
-        try { var folder = Path.Combine(Root, fileId.ToString("N")); if (Directory.Exists(folder)) Directory.Delete(folder, true); } catch (IOException) { /* ลบไฟล์ไม่ได้ไม่กระทบการลบในระบบ */ }
         trigger.Signal();
         return true;
     }

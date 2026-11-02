@@ -203,6 +203,9 @@ CRM Login ของตัวเอง** (self-service, ไม่ใช่ Admin 
 - **Phase 2 poller** (`CrmSyncService`) เปลี่ยนไป poll ด้วย credential ของ **Assignee ของ Defect ใน QA Hub**
   (`Defect.AssigneeUserId`) ไม่ใช่คนที่กด "ส่งไป CRM" ตอนแรก — ถ้า Assignee ไม่มี/ยังไม่ได้ตั้งค่าบัญชี CRM ก็แค่
   ข้าม Defect นั้นไปในรอบนั้น (ไม่ error ทั้ง tick เหมือนตอนใช้ Service Account กลาง)
+  - **ปรับ 2026-11-02:** Defect ส่วนใหญ่ไม่มี Assignee (88 จาก 92 ใบที่ Linked ไม่เคยถูก poll) — ลำดับบัญชีที่ใช้ poll เป็น
+    Assignee → คนที่ส่งไป CRM (activity `CrmSent` ล่าสุด) → บัญชีกลาง `CrmMirror:AccountUsername` (6101) ถ้าบัญชีไหนยังไม่ตั้งค่า
+    CRM ลองคนถัดไป (`CrmPollIdentities`); อีเมล "ส่งกลับมาหาเจ้าของเรื่อง" ส่งหา Assignee หรือคนที่ส่งไป CRM เมื่อไม่มี Assignee
 - รอบ Poll (`PollIntervalMinutes`) แยกออกมาเป็น entity ใหม่ `CrmSyncSettings` (single row, admin-only ผ่าน
   Setting Center → CRM Sync) เพราะเป็นค่ากลางของทั้งระบบ ไม่ใช่ credential ส่วนตัว
 - **Migration**: ลบ `CrmConfigurations` แถวเก่าทิ้งทั้งหมด (ตามที่ยืนยันกับผู้ใช้) — ทุกคนต้องกรอกบัญชี CRM ของ
