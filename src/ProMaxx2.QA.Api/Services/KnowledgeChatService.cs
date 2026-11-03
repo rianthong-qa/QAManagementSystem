@@ -24,7 +24,7 @@ public sealed class KnowledgeChatException(int statusCode, string message) : Exc
 /// <summary>
 /// ผู้ช่วย AI คลังความรู้ (AI_KNOWLEDGE_CHAT_PLAN.md Phase 2) — ดึงความรู้ตามสิทธิ์ผู้ถาม → ส่ง LLM พร้อมเลขอ้างอิง → stream คำตอบ
 /// คำถาม + คำตอบบันทึกพร้อมกันเมื่อตอบเสร็จ (หรือผู้ใช้กดหยุด) — ตอบไม่สำเร็จจะไม่เหลือคำถามค้างในประวัติ
-/// ไม่พบความรู้ที่เกี่ยวข้อง = ตอบ "ไม่พบ" ทันทีโดยไม่เรียก LLM (ไม่ให้ AI เดา)
+/// ไม่พบความรู้ที่เกี่ยวข้อง = ถาม LLM โดยไม่มีข้อมูลอ้างอิง (ทักทายได้, คำถามเรื่องระบบ prompt สั่งให้ตอบว่าไม่พบ ห้ามเดา)
 /// </summary>
 public sealed class KnowledgeChatService(QaDbContext db, KnowledgeSearchService search, IAiChatClient ai, ILogger<KnowledgeChatService> logger)
 {
@@ -103,38 +103,31 @@ public sealed class KnowledgeChatService(QaDbContext db, KnowledgeSearchService 
         await emit("sources", new { citations = KnowledgePrompt.Citations(contexts, ""), crmExcluded });
 
         var answer = new StringBuilder();
-        var model = contexts.Count == 0 ? null : $"{runtime.Provider}/{runtime.Model}";
+        var model = $"{runtime.Provider}/{runtime.Model}";
         var stopped = false;
-        if (contexts.Count == 0)
+        // ไม่มีเอกสารที่เกี่ยวข้องก็ยังถาม AI (โดยไม่มีข้อมูลอ้างอิง) — ทักทายตอบได้, คำถามเรื่องระบบ prompt สั่งให้ตอบว่าไม่พบ
+        var messages = KnowledgePrompt.History(history.Select(x => (x.Role, x.Content)))
+            .Select(x => new AiChatMessage(x.Role, x.Content))
+            .Append(new AiChatMessage("user", KnowledgePrompt.UserTurn(question, contexts))).ToList();
+        var system = KnowledgePrompt.System(DateTime.UtcNow.AddHours(7).ToString("d MMMM yyyy", CultureInfo.GetCultureInfo("th-TH")));
+        try
         {
-            answer.Append(KnowledgePrompt.NotFoundAnswer);
-            await emit("delta", new { text = KnowledgePrompt.NotFoundAnswer });
+            await foreach (var delta in ai.StreamAsync(runtime, system, messages, sessionId.ToString(), ct))
+            {
+                answer.Append(delta);
+                await emit("delta", new { text = delta });
+            }
         }
-        else
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            var messages = KnowledgePrompt.History(history.Select(x => (x.Role, x.Content)))
-                .Select(x => new AiChatMessage(x.Role, x.Content))
-                .Append(new AiChatMessage("user", KnowledgePrompt.UserTurn(question, contexts))).ToList();
-            var system = KnowledgePrompt.System(DateTime.UtcNow.AddHours(7).ToString("d MMMM yyyy", CultureInfo.GetCultureInfo("th-TH")));
-            try
-            {
-                await foreach (var delta in ai.StreamAsync(runtime, system, messages, sessionId.ToString(), ct))
-                {
-                    answer.Append(delta);
-                    await emit("delta", new { text = delta });
-                }
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                // ผู้ใช้กดหยุด/ปิดหน้า — เก็บคำตอบเท่าที่ได้ (ถ้ามี) ไว้ในประวัติ
-                stopped = true;
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException or IOException)
-            {
-                logger.LogWarning(ex, "Knowledge chat provider {Provider} failed", runtime.Provider);
-                await emit("error", new { message = $"ผู้ช่วย AI ตอบไม่สำเร็จ: {Cut(ex.Message, 300)}" });
-                return;
-            }
+            // ผู้ใช้กดหยุด/ปิดหน้า — เก็บคำตอบเท่าที่ได้ (ถ้ามี) ไว้ในประวัติ
+            stopped = true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException or IOException)
+        {
+            logger.LogWarning(ex, "Knowledge chat provider {Provider} failed", runtime.Provider);
+            await emit("error", new { message = $"ผู้ช่วย AI ตอบไม่สำเร็จ: {Cut(ex.Message, 300)}" });
+            return;
         }
 
         if (stopped && answer.Length == 0) return;
@@ -147,7 +140,7 @@ public sealed class KnowledgeChatService(QaDbContext db, KnowledgeSearchService 
         if (session.Title == "บทสนทนาใหม่") session.Rename(KnowledgePrompt.SessionTitle(question));
         session.Touch();
         db.AuditLogs.Add(new AuditLog(userId, "Asked", AuditEntityType, sessionId.ToString(),
-            $"ถามผู้ช่วย AI · อ้างอิง {citations.Count(x => x.Cited)}/{citations.Count} แหล่ง · {model ?? "ไม่เรียก AI (ไม่พบความรู้)"}{(crmExcluded ? " · ไม่ส่งข้อมูล CRM" : "")}", null, null, null));
+            $"ถามผู้ช่วย AI · อ้างอิง {citations.Count(x => x.Cited)}/{citations.Count} แหล่ง · {model}{(crmExcluded ? " · ไม่ส่งข้อมูล CRM" : "")}", null, null, null));
         // บันทึกแม้ผู้ใช้ยกเลิกคำขอแล้ว
         await db.SaveChangesAsync(CancellationToken.None);
         if (!stopped)

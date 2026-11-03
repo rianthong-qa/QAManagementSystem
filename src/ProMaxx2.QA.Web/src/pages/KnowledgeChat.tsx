@@ -381,7 +381,8 @@ export function KnowledgeChat({ userName, projects, canViewCrm, onOpenCitation }
 
 function AssistantMessage({ item, onCite, onOpen, onFeedback, onRetry }: { item: ChatItem; onCite: (n: number) => void; onOpen: (c: Citation) => void; onFeedback: (value: 1 | -1) => void; onRetry: () => void }) {
   const cited = item.citations.filter((c) => c.cited);
-  const others = item.citations.filter((c) => !c.cited);
+  // คำตอบที่ไม่อ้างอิงแหล่งใดเลย (เช่น "ไม่พบข้อมูล") ไม่แสดงแหล่งที่ค้นพบ — ผลค้นแบบ FREETEXT มักไม่เกี่ยวกับคำถาม
+  const others = cited.length ? item.citations.filter((c) => !c.cited) : [];
   const waiting = item.status === "streaming" && !item.content;
   return <div className={`kn-msg kn-msg-ai${item.status === "error" ? " is-error" : ""}${item.status === "streaming" ? " is-streaming" : ""}`} aria-busy={item.status === "streaming"}>
     <span className="kn-ai-avatar" aria-hidden="true"><span className="material-symbols-outlined">auto_awesome</span></span>
@@ -393,7 +394,7 @@ function AssistantMessage({ item, onCite, onOpen, onFeedback, onRetry }: { item:
       {item.crmExcluded && <small className="kn-chat-note"><span className="material-symbols-outlined" aria-hidden="true">shield</span>ไม่ได้ใช้ข้อมูล CRM เพราะ AI ที่ตั้งค่าไว้อยู่นอกองค์กร</small>}
       {(cited.length > 0 || (item.status === "done" && others.length > 0)) && <div className="kn-sources">
         {cited.length > 0 && <><small><span className="material-symbols-outlined" aria-hidden="true">library_books</span>แหล่งอ้างอิง {cited.length} รายการ</small><ol>{cited.map((c) => <SourceItem key={c.number} citation={c} onOpen={onOpen} />)}</ol></>}
-        {item.status === "done" && others.length > 0 && <details><summary>{cited.length ? `แหล่งที่ค้นพบแต่ไม่ได้อ้างอิง (${others.length})` : `แหล่งที่ค้นพบ (${others.length})`}</summary><ol>{others.map((c) => <SourceItem key={c.number} citation={c} onOpen={onOpen} />)}</ol></details>}
+        {item.status === "done" && others.length > 0 && <details><summary>แหล่งที่ค้นพบแต่ไม่ได้อ้างอิง ({others.length})</summary><ol>{others.map((c) => <SourceItem key={c.number} citation={c} onOpen={onOpen} />)}</ol></details>}
       </div>}
       {item.status === "done" && item.id && <div className="kn-msg-actions">
         <CopyButton text={item.content} className="kn-copy" ariaLabel="คัดลอกคำตอบ" title="คัดลอก"><span className="sr-only">คัดลอก</span></CopyButton>

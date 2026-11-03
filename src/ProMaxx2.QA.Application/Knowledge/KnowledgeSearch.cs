@@ -18,6 +18,32 @@ public interface IKnowledgeTextSearch
 public interface IKnowledgeVectorSearch
 {
     Task<IReadOnlyList<KnowledgeChunkHit>> SearchAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct);
+
+    /// <summary>
+    /// ช่วงที่มีเวกเตอร์แต่ similarity กับคำถามต่ำกว่าเกณฑ์บริบทของผู้ช่วย AI (`Knowledge:ContextMinSimilarity`)
+    /// null = ประเมินไม่ได้ (ไม่ได้ตั้งค่า/embedding ล่ม) — ช่วงที่ยังไม่มีเวกเตอร์ไม่อยู่ในผลลัพธ์ (ถือว่ายังไม่รู้)
+    /// </summary>
+    Task<IReadOnlySet<int>?> WeakMatchesAsync(string query, IReadOnlyCollection<int> chunkIds, CancellationToken ct);
+}
+
+/// <summary>
+/// เกณฑ์ว่าเอกสารเกี่ยวข้องพอจะส่งเป็นบริบทให้ผู้ช่วย AI — FREETEXT นำทุกคำมา OR กัน จึงคืนผลแทบทุกคำถาม (เช่น "สวัสดี", "55")
+/// และ RANK ของ Full-Text เทียบข้ามคำถามไม่ได้ จึงตัดด้วย similarity ของ embedding แทน
+/// ช่วงสั้น ๆ (มีแต่ header เช่น Ticket "test") ใกล้กับทุกคำถามจึงไม่นับ; รหัสที่ผู้ใช้พิมพ์ (PMX2-DEF-1858) embedding ให้คะแนนต่ำจึงยกเว้นเมื่อพบในเอกสาร
+/// </summary>
+public static partial class KnowledgeRelevance
+{
+    public const int MinChunkChars = 150;
+
+    /// <summary>คำในคำถามที่เป็นรหัส (ยาว ≥ 5 ตัวและมีตัวเลข) เช่น PMX2-DEF-1858, BHD690520000008</summary>
+    public static IReadOnlyList<string> Identifiers(string query) =>
+        IdentifierToken().Matches(query).Select(m => m.Value.Trim('-', '_', '.', '/')).Where(x => x.Length >= 5 && x.Any(char.IsAsciiDigit)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    public static bool MentionsAny(string text, IReadOnlyList<string> identifiers) =>
+        identifiers.Any(id => text.Contains(id, StringComparison.OrdinalIgnoreCase));
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"[A-Za-z0-9][A-Za-z0-9\-_./]+")]
+    private static partial System.Text.RegularExpressions.Regex IdentifierToken();
 }
 
 public static class KnowledgeQuery

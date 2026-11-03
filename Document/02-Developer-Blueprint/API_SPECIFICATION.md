@@ -1292,7 +1292,7 @@ Authorization is also checked against the current database profile for the JWT s
 - `PUT /api/v1/master-settings/ai/knowledge` — บันทึกแล้วปลุก `KnowledgeIndexWorker` ให้เริ่มสร้างเวกเตอร์ทันที
 - `GET /api/v1/knowledge/status` เพิ่ม `embedding: { enabled, provider, model, isExternal, eligible, embedded, error, lastErrorAt, lastSuccessAt }`
 - `GET /knowledge/search`, แชท และ MCP ใช้ผลรวม Full-Text + ความหมาย (RRF) อัตโนมัติเมื่อตั้งค่า Embedding — `rank` ในผลค้นหาเป็นคะแนนเพื่อเรียงลำดับเท่านั้น (ไม่ใช่ RANK ของ Full-Text)
-- Config: `Knowledge:EmbeddingBatchSize` (32), `Knowledge:VectorMinScore` (0.35)
+- Config: `Knowledge:EmbeddingBatchSize` (32), `Knowledge:VectorMinScore` (0.35), `Knowledge:ContextMinSimilarity` (0.50 — เกณฑ์เอกสารที่ส่งเป็นบริบทให้แชท; ดู AI_KNOWLEDGE_CHAT_PLAN 2026-11-03)
 
 ### Defect — วงจรข้าม Build (2026-10-28)
 

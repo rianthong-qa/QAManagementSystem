@@ -105,6 +105,11 @@ public sealed class KnowledgeEmbeddingService(QaDbContext db, IKnowledgeEmbeddin
     public int BatchSize => Math.Clamp(configuration.GetValue("Knowledge:EmbeddingBatchSize", 32), 1, 256);
     /// <summary>similarity ต่ำสุดที่ถือว่าเกี่ยวข้อง — ต่ำไป = ดึงเอกสารไม่เกี่ยวมาให้ AI, สูงไป = ไม่ช่วยอะไร (ขึ้นกับ model)</summary>
     public double MinScore => Math.Clamp(configuration.GetValue("Knowledge:VectorMinScore", 0.35), 0, 1);
+    /// <summary>
+    /// similarity ต่ำสุดของเอกสารที่ส่งเป็นบริบทให้ผู้ช่วย AI — วัดกับ qwen3-embedding-8b (2026-11-03): คำถามในระบบ 0.51–0.74,
+    /// คำถามนอกเรื่อง/ทักทาย 0.38–0.50 (ไม่นับช่วงสั้นกว่า KnowledgeRelevance.MinChunkChars) — เปลี่ยน model ต้องวัดใหม่
+    /// </summary>
+    public double ContextMinSimilarity => Math.Clamp(configuration.GetValue("Knowledge:ContextMinSimilarity", 0.50), 0, 1);
 
     /// <summary>สร้าง embedding ให้ chunk ที่ยังไม่มี (หรือสร้างด้วย model อื่น) ไม่เกิน maxChunks — Failed = provider ใช้งานไม่ได้ (หยุดรอบนี้)</summary>
     public async Task<EmbedResult> EmbedPendingAsync(int maxChunks, CancellationToken ct)
@@ -156,22 +161,7 @@ public sealed class KnowledgeEmbeddingService(QaDbContext db, IKnowledgeEmbeddin
         if (current.Runtime is not { } runtime || string.IsNullOrWhiteSpace(query)) return [];
         var index = await LoadIndexAsync(runtime.ModelKey, ct);
         if (index.Entries.Count == 0) return [];
-
-        float[] queryVector;
-        var cacheKey = $"kn-qvec:{runtime.ModelKey}:{query}";
-        if (cache.TryGetValue(cacheKey, out float[]? cached) && cached is not null) queryVector = cached;
-        else
-        {
-            try { queryVector = VectorMath.Normalize((await client.EmbedAsync(runtime, [query], ct))[0]); }
-            catch (EmbeddingException ex)
-            {
-                // ค้นตามความหมายไม่ได้ → ใช้ผลค้นด้วยคำอย่างเดียว (ไม่ทำให้การค้นหาทั้งหมดล้ม)
-                logger.LogWarning("Knowledge embedding: ค้นตามความหมายไม่ได้ — {Reason}", ex.Message);
-                state.Fail(ex.Message);
-                return [];
-            }
-            cache.Set(cacheKey, queryVector, TimeSpan.FromMinutes(30));
-        }
+        if (await QueryVectorAsync(runtime, query, ct) is not { } queryVector) return [];
 
         var allowedDocs = (await AllowedDocuments(scope).ToListAsync(ct)).ToHashSet();
         var minScore = (float)MinScore;
@@ -183,6 +173,35 @@ public sealed class KnowledgeEmbeddingService(QaDbContext db, IKnowledgeEmbeddin
             if (similarity >= minScore) best.Add(new KnowledgeChunkHit(entry.KnowledgeChunkId, (int)Math.Round(similarity * 1000)));
         }
         return best.OrderByDescending(x => x.Rank).ThenBy(x => x.KnowledgeChunkId).Take(take).ToList();
+    }
+
+    public async Task<IReadOnlySet<int>?> WeakMatchesAsync(string query, IReadOnlyCollection<int> chunkIds, CancellationToken ct)
+    {
+        var current = await settings.GetEmbeddingSettingsAsync(ct);
+        if (current.Runtime is not { } runtime || string.IsNullOrWhiteSpace(query)) return null;
+        var index = await LoadIndexAsync(runtime.ModelKey, ct);
+        if (index.Entries.Count == 0 || await QueryVectorAsync(runtime, query, ct) is not { } queryVector) return null;
+        var wanted = chunkIds.ToHashSet();
+        var minSimilarity = (float)ContextMinSimilarity;
+        return index.Entries.Where(e => wanted.Contains(e.KnowledgeChunkId) && VectorMath.Dot(queryVector, e.Vector) < minSimilarity)
+            .Select(e => e.KnowledgeChunkId).ToHashSet();
+    }
+
+    /// <summary>เวกเตอร์คำถาม (cache 30 นาที) — null = embedding ล่ม (ผู้เรียกใช้ผลค้นด้วยคำอย่างเดียว ไม่ทำให้การค้นหาทั้งหมดล้ม)</summary>
+    private async Task<float[]?> QueryVectorAsync(EmbeddingRuntime runtime, string query, CancellationToken ct)
+    {
+        var cacheKey = $"kn-qvec:{runtime.ModelKey}:{query}";
+        if (cache.TryGetValue(cacheKey, out float[]? cached) && cached is not null) return cached;
+        float[] vector;
+        try { vector = VectorMath.Normalize((await client.EmbedAsync(runtime, [query], ct))[0]); }
+        catch (EmbeddingException ex)
+        {
+            logger.LogWarning("Knowledge embedding: ค้นตามความหมายไม่ได้ — {Reason}", ex.Message);
+            state.Fail(ex.Message);
+            return null;
+        }
+        cache.Set(cacheKey, vector, TimeSpan.FromMinutes(30));
+        return vector;
     }
 
     /// <summary>กติกาสิทธิ์เดียวกับ SqlKnowledgeTextSearch (Project ที่เป็นสมาชิก / ความรู้กลาง / CRM เมื่อมีสิทธิ์)</summary>

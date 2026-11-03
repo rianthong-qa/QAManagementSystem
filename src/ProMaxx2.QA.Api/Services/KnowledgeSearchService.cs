@@ -114,7 +114,7 @@ public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch 
 
     /// <summary>
     /// บริบทสำหรับผู้ช่วย AI (RAG): เลข [n] ต่อ 1 เอกสาร (รวมได้ไม่เกิน 2 ช่วงที่ตรงที่สุดของเอกสารนั้น) เรียงตามความตรง
-    /// ไม่ส่งเอกสารที่ติด ExcludeFromAi และจำกัดความยาวรวม ~7,000 ตัวอักษร
+    /// ไม่ส่งเอกสารที่ติด ExcludeFromAi, เอกสารที่ similarity ต่ำกว่าเกณฑ์ (เมื่อตั้ง Embedding) และจำกัดความยาวรวม ~7,000 ตัวอักษร
     /// </summary>
     public async Task<IReadOnlyList<KnowledgeContextChunk>> RetrieveContextAsync(string query, KnowledgeSearchScope scope, CancellationToken ct)
     {
@@ -129,10 +129,17 @@ public sealed class KnowledgeSearchService(QaDbContext db, IKnowledgeTextSearch 
         var projectIds = docs.Values.Where(x => x.ProjectId.HasValue).Select(x => x.ProjectId!.Value).Distinct().ToList();
         var projects = await db.Projects.AsNoTracking().Where(x => projectIds.Contains(x.ProjectId)).ToDictionaryAsync(x => x.ProjectId, x => x.ProjectName, ct);
 
+        // เอกสารที่ใกล้คำถามไม่พอไม่ส่งให้ AI (ดู KnowledgeRelevance) — ไม่มี embedding = ไม่กรอง (เหมือนเดิม)
+        var weak = vectorSearch is null ? null : await vectorSearch.WeakMatchesAsync(query, chunks.Keys.ToList(), ct);
+        var identifiers = KnowledgeRelevance.Identifiers(query);
+        bool Relevant(IEnumerable<KnowledgeChunkHit> group) => weak is null || group.Select(h => chunks[h.KnowledgeChunkId]).Any(c =>
+            KnowledgeRelevance.MentionsAny(c.Text, identifiers) || (c.Text.Length >= KnowledgeRelevance.MinChunkChars && !weak.Contains(c.KnowledgeChunkId)));
+
         var result = new List<KnowledgeContextChunk>();
         var total = 0;
         var groups = hits.Where(h => chunks.TryGetValue(h.KnowledgeChunkId, out var c) && docs.ContainsKey(c.KnowledgeDocumentId))
             .GroupBy(h => chunks[h.KnowledgeChunkId].KnowledgeDocumentId)
+            .Where(Relevant)
             .OrderByDescending(g => g.Max(x => x.Rank));
         foreach (var group in groups)
         {

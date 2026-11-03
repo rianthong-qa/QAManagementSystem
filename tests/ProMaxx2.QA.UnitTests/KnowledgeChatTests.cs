@@ -155,19 +155,62 @@ public sealed class KnowledgeChatTests
     }
 
     [Fact]
-    public async Task Ask_NoKnowledgeAnswersNotFoundWithoutCallingAi()
+    public async Task Ask_NoKnowledgeAsksAiWithoutReferences()
     {
         await using var db = CreateDb();
         var seed = await SeedChatAsync(db);
-        var ai = new FakeAi(["ไม่ควรถูกเรียก"]);
+        var ai = new FakeAi(["สวัสดีครับ"]);
         var events = new List<(string Name, string Json)>();
 
-        await Chat(db, ai, []).AskAsync(seed.User, seed.UserId, seed.SessionId, new("เรื่องที่ไม่มีในคลัง"), Capture(events), default);
+        await Chat(db, ai, []).AskAsync(seed.User, seed.UserId, seed.SessionId, new("สวัสดี"), Capture(events), default);
 
-        Assert.Null(ai.LastMessages);
-        Assert.Contains(KnowledgePrompt.NotFoundAnswer[..20], events.Single(x => x.Name == "delta").Json);
+        Assert.Equal(["sources", "delta", "done"], events.Select(x => x.Name));
+        Assert.Contains("(ไม่มี — ไม่พบข้อมูลที่เกี่ยวข้อง", ai.LastMessages!.Last().Content);
         var answer = await db.ChatMessages.SingleAsync(x => x.Role == "assistant");
-        Assert.Equal((KnowledgePrompt.NotFoundAnswer, (string?)null), (answer.Content, answer.Model));
+        Assert.Equal(("สวัสดีครับ", "Local/qwen3", "[]"), (answer.Content, answer.Model, answer.CitationsJson));
+    }
+
+    // ---------- เกณฑ์ความเกี่ยวข้องของบริบท ----------
+
+    [Fact]
+    public void Relevance_IdentifiersNeedDigitAndLength()
+    {
+        Assert.Equal(["PMX2-DEF-1858", "BHD690520000008"], KnowledgeRelevance.Identifiers("Defect PMX2-DEF-1858แก้ยังไง กับ BHD690520000008"));
+        Assert.Empty(KnowledgeRelevance.Identifiers("55 สวัสดี promaxx stockadjust"));
+        Assert.True(KnowledgeRelevance.MentionsAny("[Defect] pmx2-def-1858 พิมพ์ไม่ได้", ["PMX2-DEF-1858"]));
+    }
+
+    [Fact]
+    public async Task Retrieve_DropsWeakDocumentsButKeepsIdentifierAndUnembedded()
+    {
+        await using var db = CreateDb();
+        var body = new string('ก', KnowledgeRelevance.MinChunkChars);
+        KnowledgeDocument Doc(string key, string text)
+        {
+            var doc = new KnowledgeDocument("Defect", key, "Global", null, key, null);
+            doc.MarkIndexed(key, 1, DateTime.UtcNow);
+            db.KnowledgeDocuments.Add(doc);
+            db.KnowledgeChunks.Add(new KnowledgeChunk(doc.KnowledgeDocumentId, 0, text));
+            return doc;
+        }
+        var strong = Doc("D-STRONG", $"[Defect] D-STRONG\n{body}");
+        var weak = Doc("D-WEAK", $"[Defect] D-WEAK\n{body}");
+        var code = Doc("D-CODE", $"[Defect] PMX2-DEF-1858\n{body}");
+        var shortDoc = Doc("D-SHORT", "[CRM] test");
+        var pending = Doc("D-PENDING", $"[Defect] D-PENDING\n{body}");
+        await db.SaveChangesAsync();
+        var chunk = await db.KnowledgeChunks.ToDictionaryAsync(x => x.KnowledgeDocumentId, x => x.KnowledgeChunkId);
+        var hits = chunk.Values.Select(id => new KnowledgeChunkHit(id, 100)).ToList();
+        // weak/code อยู่ต่ำกว่าเกณฑ์, short ผ่านเกณฑ์แต่สั้นเกินไป, pending ยังไม่มีเวกเตอร์ (ไม่อยู่ในผล)
+        var vector = new FakeVectorSearch(new HashSet<int> { chunk[weak.KnowledgeDocumentId], chunk[code.KnowledgeDocumentId] });
+        var service = new KnowledgeSearchService(db, new FakeTextSearch(hits), new ProjectAccessService(db), new FakeAuthorization(false), vector);
+
+        var docs = (await service.RetrieveContextAsync("ปัญหา PMX2-DEF-1858", new([], false), default)).Select(x => x.KnowledgeDocumentId).ToHashSet();
+
+        Assert.Equal(new HashSet<Guid> { strong.KnowledgeDocumentId, code.KnowledgeDocumentId, pending.KnowledgeDocumentId }, docs);
+        // embedding ใช้ไม่ได้ → ไม่กรอง
+        var down = new KnowledgeSearchService(db, new FakeTextSearch(hits), new ProjectAccessService(db), new FakeAuthorization(false), new FakeVectorSearch(null));
+        Assert.Equal(5, (await down.RetrieveContextAsync("ปัญหา", new([], false), default)).Count);
     }
 
     [Fact]
@@ -330,6 +373,12 @@ public sealed class KnowledgeChatTests
     {
         public KnowledgeSearchScope? LastScope { get; private set; }
         public Task<IReadOnlyList<KnowledgeChunkHit>> SearchAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct) { LastScope = scope; return Task.FromResult(hits); }
+    }
+
+    private sealed class FakeVectorSearch(IReadOnlySet<int>? weak) : IKnowledgeVectorSearch
+    {
+        public Task<IReadOnlyList<KnowledgeChunkHit>> SearchAsync(string query, KnowledgeSearchScope scope, int take, CancellationToken ct) => Task.FromResult<IReadOnlyList<KnowledgeChunkHit>>([]);
+        public Task<IReadOnlySet<int>?> WeakMatchesAsync(string query, IReadOnlyCollection<int> chunkIds, CancellationToken ct) => Task.FromResult(weak);
     }
 
     private sealed class FakeAuthorization(bool succeed) : IAuthorizationService

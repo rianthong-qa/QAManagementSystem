@@ -165,6 +165,24 @@ public sealed class KnowledgeEmbeddingTests
     }
 
     [Fact]
+    public async Task WeakMatches_BelowContextSimilarityOnly()
+    {
+        await using var db = CreateDb();
+        var seed = await SeedAsync(db);
+        var embedding = Service(db, new FakeSettings(Local), new KeywordClient());
+        await embedding.EmbedPendingAsync(100, default);
+        var chunkOf = await db.KnowledgeChunks.ToDictionaryAsync(x => x.KnowledgeDocumentId, x => x.KnowledgeChunkId);
+
+        var weak = await embedding.WeakMatchesAsync("ออกใบกำกับไม่ได้", chunkOf.Values.ToList(), default);
+
+        Assert.Contains(chunkOf[seed.GlobalDoc], weak!);
+        Assert.DoesNotContain(chunkOf[seed.ProjectDoc], weak!);
+        Assert.DoesNotContain(chunkOf[seed.CrmDoc], weak!);
+        Assert.DoesNotContain(chunkOf[seed.StaleDoc], weak!); // ยังไม่มีเวกเตอร์ = ไม่รู้ ไม่ถือว่าอ่อน
+        Assert.Null(await Service(db, new FakeSettings(null), new KeywordClient()).WeakMatchesAsync("ออกใบกำกับไม่ได้", chunkOf.Values.ToList(), default));
+    }
+
+    [Fact]
     public async Task Settings_RuntimeFromSavedConfiguration()
     {
         await using var db = CreateDb();
@@ -201,7 +219,8 @@ public sealed class KnowledgeEmbeddingTests
             var doc = new KnowledgeDocument(type, key, scope, project, key, null);
             if (indexed) doc.MarkIndexed("h-" + key, 1, DateTime.UtcNow);
             db.KnowledgeDocuments.Add(doc);
-            db.KnowledgeChunks.Add(new KnowledgeChunk(doc.KnowledgeDocumentId, 0, text));
+            // เติมเนื้อหาให้ยาวถึง KnowledgeRelevance.MinChunkChars (ช่วงสั้นไม่ถูกส่งเป็นบริบทให้ AI) — ไม่มีคำของ KeywordClient
+            db.KnowledgeChunks.Add(new KnowledgeChunk(doc.KnowledgeDocumentId, 0, $"{text}\n{new string('-', KnowledgeRelevance.MinChunkChars)}"));
             return doc.KnowledgeDocumentId;
         }
         var projectDoc = Add("Defect", "D-1", "Project", projectId, "[Defect] พิมพ์ภาษีแล้วระบบค้าง");
