@@ -109,7 +109,7 @@ export function KnowledgeDocuments({ projects, canEdit, isSysAdmin, highlightId 
           <td><span className="kn-updated">{formatThaiDateTime(f.updatedAt ?? f.uploadedAt)}</span><small>{f.uploadedByName ?? ""}</small></td>
           <td className="kn-row-actions">
             <button type="button" className="table-action icon-only" title="ดาวน์โหลด" aria-label={`ดาวน์โหลด ${f.fileName}`} onClick={() => void download(f)}><span className="material-symbols-outlined" aria-hidden="true">download</span></button>
-            {canEdit && <button type="button" className="table-action danger-action icon-only" title="ลบ" aria-label={`ลบ ${f.fileName}`} onClick={() => void remove(f)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>}
+            {canEdit && <button type="button" className="table-action icon-only is-danger" title="ลบ" aria-label={`ลบ ${f.fileName}`} onClick={() => void remove(f)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>}
           </td>
         </tr>; })}</tbody>
       </table></div>}

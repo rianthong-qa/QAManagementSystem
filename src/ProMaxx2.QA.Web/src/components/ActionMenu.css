@@ -1,0 +1,17 @@
+/* เมนูคำสั่งรอง (components/ActionMenu.tsx, UI_DESIGN_SYSTEM §8) — ตำแหน่งปุ่มในแถบให้หน้าที่ใช้กำหนดผ่าน className
+   selector รายการต้องมี [role="menuitem"] (0,2,1) ให้ชนะกฎกลาง button:not(.icon-button) (0,1,1) */
+.action-menu { position: relative; }
+.action-menu-list { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; display: grid; gap: 2px; width: 270px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 6px; box-shadow: 0 14px 34px color-mix(in srgb, var(--text) 18%, transparent); }
+.action-menu-list button[role="menuitem"] { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 0; border: 0; border-radius: 8px; background: transparent; padding: 8px 10px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.action-menu-list button[role="menuitem"]:hover:not(:disabled), .action-menu-list button[role="menuitem"]:focus-visible { outline: none; background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.action-menu-list button[role="menuitem"]:disabled { opacity: .55; cursor: not-allowed; }
+.action-menu-list button[role="menuitem"].is-danger { color: var(--red); }
+.action-menu-list button[role="menuitem"].is-danger:hover:not(:disabled), .action-menu-list button[role="menuitem"].is-danger:focus-visible { background: color-mix(in srgb, var(--red) 6%, var(--card)); }
+.action-menu-list button[role="menuitem"] > .material-symbols-outlined { margin-top: 1px; font-size: 19px; }
+.action-menu-list button[role="menuitem"] > span:last-child { display: grid; gap: 1px; }
+.action-menu-list b { font-size: 13px; }
+.action-menu-list small { color: var(--muted); font-size: 11px; font-weight: 400; }
+@media (max-width: 760px) {
+  .action-menu-list { width: min(300px, calc(100vw - 32px)); }
+  .action-menu-list button[role="menuitem"] { min-height: 44px; }
+}

@@ -1,10 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BuildItem, ReleaseItem, UserLookup } from "../shared/types";
 import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
 import { useDebounced } from "../components/useDebounced";
 import { confirmDialog, notify, promptDialog } from "../components/dialogStore";
 import { Badge } from "../components/Badge";
 import { ModalShell } from "../components/ModalShell";
+import { ActionMenu } from "../components/ActionMenu";
 import { DateField } from "../components/DateField";
 import { ListPager } from "../components/ListPager";
 import { DeletedItemsButton } from "../components/DeletedItemsModal";
@@ -398,55 +399,6 @@ const nextStepOf = (plan: PlanDetail, can: { create: boolean; edit: boolean; fre
   return null;
 };
 
-type ActionMenuItem ={ key: string; icon: string; label: string; hint?: string; danger?: boolean; disabled?: boolean; onSelect: () => void };
-/** เมนูคำสั่งรองในแถบปุ่ม — ↑/↓/Home/End เลื่อน, Esc ปิดเฉพาะเมนู (ไม่ปิดหน้าต่าง) แล้วคืน focus ที่ปุ่ม, คลิกนอกเมนูเพื่อปิด */
-function ActionMenu({ label, items, disabled }: { label: string; items: ActionMenuItem[]; disabled: boolean }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuId = useId();
-  const enabledItems = () => [...(rootRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
-
-  useEffect(() => {
-    if (!open) return;
-    enabledItems()[0]?.focus();
-    const onPointerDown = (e: PointerEvent) => { if (!rootRef.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
-
-  if (!items.length) return null;
-  const close = () => { setOpen(false); buttonRef.current?.focus(); };
-  const onMenuKeyDown = (e: React.KeyboardEvent) => {
-    // ModalShell ฟัง Escape ที่ document — หยุดไว้ที่นี่ไม่ให้หน้าต่างรายละเอียดปิดตาม
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
-    if (e.key === "Tab") { setOpen(false); return; }
-    const list = enabledItems();
-    if (!list.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
-    e.preventDefault();
-    const index = list.indexOf(document.activeElement as HTMLButtonElement);
-    const next = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + list.length) % list.length;
-    list[next].focus();
-  };
-
-  return (
-    <div className="tp-menu" ref={rootRef}>
-      <button ref={buttonRef} type="button" className="btn" disabled={disabled} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((x) => !x)} onKeyDown={(e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } }}>
-        <span className="material-symbols-outlined" aria-hidden="true">more_horiz</span> {label}
-      </button>
-      {open && <div id={menuId} className="tp-menu-list" role="menu" aria-label={label} onKeyDown={onMenuKeyDown}>
-        {items.map((item) => (
-          <button key={item.key} type="button" role="menuitem" className={item.danger ? "is-danger" : undefined} disabled={item.disabled} onClick={() => { setOpen(false); item.onSelect(); }}>
-            <span className="material-symbols-outlined" aria-hidden="true">{item.icon}</span>
-            <span><b>{item.label}</b>{item.hint && <small>{item.hint}</small>}</span>
-          </button>
-        ))}
-      </div>}
-    </div>
-  );
-}
-
 function PlanDetailModal({ planId, version, users, canCreate, canEdit, canDelete, canFreeze, canAssign, canRun, canExport, onClose, onChanged, onDeleted, onEdit, onCloned, onOpenExecution, onOpenCycle }: {
   planId: string; version: number; users: UserLookup[]; canCreate: boolean; canEdit: boolean; canDelete: boolean; canFreeze: boolean; canAssign: boolean; canRun: boolean; canExport: boolean;
   onClose: () => void; onChanged: () => void; onDeleted: () => void; onEdit: (plan: PlanDetail) => void; onCloned: (plan: PlanDetail) => void;
@@ -541,7 +493,7 @@ function PlanDetailModal({ planId, version, users, canCreate, canEdit, canDelete
         {canCreate && plan.runs.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => setCloneOpen(true)} title="สร้างแผนใหม่จากแผนนี้สำหรับ Build ใหม่ (ไม่คัดลอกผลการทดสอบ)"><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> Clone / Rerun</button>}
         {canExport && <button type="button" className="btn" disabled={busy} onClick={() => { exportPlanSummary(plan); notify(`ส่งออกสรุป ${plan.planCode} แล้ว`, "success"); }} title="ดาวน์โหลดสรุปแผนและ Configuration Matrix เป็น CSV"><span className="material-symbols-outlined" aria-hidden="true">download</span> Export</button>}
         {/* คำสั่งที่ใช้ไม่บ่อยและคำสั่งอันตรายรวมในเมนูเดียว ลดปุ่มในแถบจาก 7–8 ปุ่ม */}
-        <ActionMenu label="จัดการแผน" disabled={busy} items={[
+        <ActionMenu label="จัดการแผน" className="tp-menu" disabled={busy} items={[
           ...(canFreeze && plan.lifecycleStatus === "Active" ? [
             { key: "close", icon: "task_alt", label: "ปิดแผน", hint: plan.status !== "Completed" ? "ปิดได้เมื่อทุก Run จบแล้ว" : "Freeze อัตโนมัติ", disabled: plan.status !== "Completed", onSelect: () => lifecycle("close") },
             { key: "freeze", icon: plan.isFrozen ? "lock_open" : "lock", label: plan.isFrozen ? "Unfreeze" : "Freeze", hint: plan.isFrozen ? "แก้ไขแผนและ Run ได้อีกครั้ง" : "ล็อกแผนและ Run ไม่ให้แก้ไข", onSelect: () => lifecycle(plan.isFrozen ? "unfreeze" : "freeze") },

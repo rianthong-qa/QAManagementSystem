@@ -34,17 +34,12 @@
 .modal-box.cyd .tp-toolbar { gap: 6px; }
 .modal-box.cyd .tp-toolbar .btn { gap: 6px; min-height: 34px; padding: 6px 12px; font-size: 13px; }
 .modal-box.cyd .tp-toolbar .btn .material-symbols-outlined { font-size: 18px; }
-.tp-menu { position: relative; margin-left: auto; }
-.tp-menu-list { position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; display: grid; gap: 2px; width: 270px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 6px; box-shadow: 0 14px 34px color-mix(in srgb, var(--text) 18%, transparent); }
-.modal-box.cyd .tp-menu-list button[role="menuitem"] { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 0; border: 0; border-radius: 8px; background: transparent; padding: 8px 10px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
-.modal-box.cyd .tp-menu-list button[role="menuitem"]:hover:not(:disabled), .modal-box.cyd .tp-menu-list button[role="menuitem"]:focus-visible { outline: none; background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
-.modal-box.cyd .tp-menu-list button[role="menuitem"]:disabled { opacity: .55; cursor: not-allowed; }
-.modal-box.cyd .tp-menu-list button.is-danger { color: var(--red); }
-.modal-box.cyd .tp-menu-list button.is-danger:hover:not(:disabled), .modal-box.cyd .tp-menu-list button.is-danger:focus-visible { background: color-mix(in srgb, var(--red) 6%, var(--card)); }
-.tp-menu-list button[role="menuitem"] > .material-symbols-outlined { margin-top: 1px; font-size: 19px; }
-.tp-menu-list button[role="menuitem"] > span:last-child { display: grid; gap: 1px; }
-.tp-menu-list b { font-size: 13px; }
-.tp-menu-list small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.tp-menu { margin-left: auto; }
+.modal-box.cyd .action-menu-list button[role="menuitem"] { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 0; border: 0; border-radius: 8px; background: transparent; padding: 8px 10px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+.modal-box.cyd .action-menu-list button[role="menuitem"]:hover:not(:disabled), .modal-box.cyd .action-menu-list button[role="menuitem"]:focus-visible { outline: none; background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.modal-box.cyd .action-menu-list button[role="menuitem"]:disabled { opacity: .55; cursor: not-allowed; }
+.modal-box.cyd .action-menu-list button.is-danger { color: var(--red); }
+.modal-box.cyd .action-menu-list button.is-danger:hover:not(:disabled), .modal-box.cyd .action-menu-list button.is-danger:focus-visible { background: color-mix(in srgb, var(--red) 6%, var(--card)); }
 .tp-locked { display: flex; flex: none; align-items: center; gap: 6px; margin: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--yellow) 8%, var(--card)); padding: 8px 20px; color: var(--warning-text); font-size: 13px; font-weight: 600; }
 .tp-locked .material-symbols-outlined { font-size: 17px; }
 
@@ -154,8 +149,7 @@
   .modal-box.cyd .tp-toolbar .btn { flex: 1 1 auto; justify-content: center; min-height: 44px; }
   .tp-menu { flex: 1 1 auto; margin-left: 0; }
   .tp-menu > .btn { width: 100%; }
-  .tp-menu-list { width: min(300px, calc(100vw - 32px)); }
-  .modal-box.cyd .tp-menu-list button[role="menuitem"] { min-height: 44px; }
+  .modal-box.cyd .action-menu-list button[role="menuitem"] { min-height: 44px; }
   .tp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 0; }
   .tp-kpis > div:nth-child(odd) { border-left: 0; padding-left: 0; }
   .tp-run-meta li { white-space: normal; }

@@ -65,7 +65,6 @@ export function KnowledgeMcp({ isSysAdmin }: { isSysAdmin: boolean }) {
 
   return <div className="kn-mcp">
     <div className="kn-mcp-head">
-      <span className="kn-mcp-mark" aria-hidden="true"><span className="material-symbols-outlined">hub</span></span>
       <div>
         <h3>เชื่อมต่อ Claude (MCP)</h3>
         <p>ให้ Claude Code หรือ Claude Desktop ค้นคลังความรู้ QA ได้โดยตรง — ใช้สิทธิ์ของคุณ (เห็นเฉพาะ Project ที่เป็นสมาชิก) อ่านอย่างเดียว ไม่รวมข้อมูล CRM</p>

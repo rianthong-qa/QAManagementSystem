@@ -910,8 +910,8 @@ function App() {
               <p>{description}</p>
             </div>
             <div className="actions">
-              {/* หน้า Defect / Automation มีช่องค้นหาของตัวเอง */}
-              {page !== "audit" && page !== "performance" && page !== "knowledge" && page !== "defects" && page !== "automation" && page !== "users" && <label className="search">
+              {/* หน้า Defect / Automation มีช่องค้นหาของตัวเอง · Execution Workspace ไม่ใช้ค่าค้นหานี้ (ค้นในคิว Test Case แทน) */}
+              {page !== "audit" && page !== "performance" && page !== "knowledge" && page !== "defects" && page !== "automation" && page !== "users" && page !== "execution" && <label className="search">
                 ⌕
                 <input
                   value={search}
@@ -945,7 +945,7 @@ function App() {
           ) : page === "performance" ? (
             <PerformancePage user={user} canManage={can("PERFORMANCE.EDIT")} />
           ) : page === "knowledge" ? (
-            <KnowledgePage canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} canConnectClaude={can("KNOWLEDGE.MCP")} canViewCrm={can("CRM.VIEW")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} onOpenTestCase={openTestCase} />
+            <KnowledgePage userName={user.displayName} canEdit={can("KNOWLEDGE.EDIT")} isSysAdmin={user.roles.includes("SYS_ADMIN")} canConnectClaude={can("KNOWLEDGE.MCP")} canViewCrm={can("CRM.VIEW")} onOpenDefect={(defectId) => { localStorage.setItem("qa.targetDefectId", defectId); go("defects"); }} onOpenTestCase={openTestCase} />
           ) : page === "projects" ? (
             <ProjectsPage search={search} refresh={refresh} />
           ) : page === "releases" ? (

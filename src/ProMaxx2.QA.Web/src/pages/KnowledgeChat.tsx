@@ -22,7 +22,7 @@ const suggestions = [
   { icon: "build", label: "หาวิธีแก้ปัญหา", question: "ปัญหาพิมพ์ใบกำกับภาษีที่เคยพบมีอะไรบ้าง และแก้อย่างไร" },
   { icon: "bug_report", label: "ค้น Defect ที่เคยพบ", question: "Defect ระดับ High ที่เกี่ยวกับการบันทึกเอกสารไม่ได้" },
   { icon: "fact_check", label: "หา Test Case ที่เกี่ยวข้อง", question: "Test Case ที่ทดสอบการพิมพ์ใบกำกับภาษีมีอะไรบ้าง" },
-  { icon: "summarize", label: "สรุปปัญหาที่พบบ่อย", question: "สรุปปัญหาที่พบบ่อยในโมดูลเอกสารขาย" },
+  { icon: "insights", label: "สรุปปัญหาที่พบบ่อย", question: "สรุปปัญหาที่พบบ่อยในโมดูลเอกสารขาย" },
 ];
 const collapsedStorageKey = "qa.knowledge.sessionsCollapsed";
 let keySeed = 0;
@@ -70,7 +70,7 @@ async function streamAsk(sessionId: string, body: object, signal: AbortSignal, o
   }
 }
 
-/** Markdown แบบย่อที่ปลอดภัย (ไม่ใช้ innerHTML): หัวข้อ #, รายการ -/1., **ตัวหนา**, `code` และเลขอ้างอิง [n] */
+/** Markdown แบบย่อที่ปลอดภัย (ไม่ใช้ innerHTML): หัวข้อ #, รายการ -/1., **ตัวหนา**, `code`, ```code block``` และเลขอ้างอิง [n] */
 function renderInline(text: string, onCite: (n: number) => void, citations: Citation[]): ReactNode[] {
   return text.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`|\[\d{1,2}(?:\s*,\s*\d{1,2})*\])/g).map((part, i) => {
     if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={i}>{part.slice(2, -2)}</strong>;
@@ -95,7 +95,13 @@ function ChatMarkdown({ text, citations, onCite }: { text: string; citations: Ci
     blocks.push(list.ordered ? <ol key={blocks.length}>{items}</ol> : <ul key={blocks.length}>{items}</ul>);
     list = null;
   };
+  // code block ที่ยังไม่ปิด ``` (ระหว่าง streaming) แสดงเท่าที่ได้รับ
+  let code: { lang: string; lines: string[] } | null = null;
+  const flushCode = () => { if (code) { blocks.push(<CodeBlock key={blocks.length} lang={code.lang} code={code.lines.join("\n")} />); code = null; } };
   for (const raw of text.split("\n")) {
+    const fence = raw.trim().match(/^```\s*([\w+#.-]*)/);
+    if (code) { if (fence) flushCode(); else (code as { lines: string[] }).lines.push(raw); continue; }
+    if (fence) { flushParagraph(); flushList(); code = { lang: fence[1], lines: [] }; continue; }
     const line = raw.trimEnd();
     const heading = line.match(/^#{1,4}\s+(.*)$/);
     const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
@@ -114,12 +120,19 @@ function ChatMarkdown({ text, citations, onCite }: { text: string; citations: Ci
     flushList();
     paragraph.push(line);
   }
-  flushParagraph(); flushList();
+  flushParagraph(); flushList(); flushCode();
   return <>{blocks}</>;
 }
 
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  return <div className="kn-codeblock">
+    <div className="kn-codeblock-head"><span>{lang || "code"}</span><CopyButton text={code} className="kn-codeblock-copy" ariaLabel="คัดลอกโค้ด">คัดลอก</CopyButton></div>
+    <pre><code>{code}</code></pre>
+  </div>;
+}
+
 // canViewCrm = มีสิทธิ์ CRM.VIEW (แสดงตัวกรอง CRM — ฝั่ง API กรองสิทธิ์ซ้ำเสมอ)
-export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projects: ProjectItem[]; canViewCrm: boolean; onOpenCitation: (citation: Citation) => void }) {
+export function KnowledgeChat({ userName, projects, canViewCrm, onOpenCitation }: { userName?: string; projects: ProjectItem[]; canViewCrm: boolean; onOpenCitation: (citation: Citation) => void }) {
   const chatSources = canViewCrm ? [...baseSources, crmSource] : baseSources;
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
@@ -133,6 +146,8 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
   const [showSessions, setShowSessions] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(readCollapsed);
   const [focusMode, setFocusMode] = useState(false);
+  const [sessionQuery, setSessionQuery] = useState("");
+  const [showJump, setShowJump] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const [liveStatus, setLiveStatus] = useState("");
   const abortRef = useRef<AbortController | null>(null);
@@ -148,7 +163,7 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
 
   const openSession = useCallback(async (id: string) => {
     abortRef.current?.abort();
-    setActiveId(id); store(id); setShowSessions(false); setLoadingSession(true);
+    setActiveId(id); store(id); setShowSessions(false); setShowJump(false); setLoadingSession(true);
     try {
       const detail = await getJson<{ session: Session; messages: ServerMessage[] }>(`${apiUrl}/knowledge/chat/sessions/${id}`);
       setItems(detail.messages.map(toItem));
@@ -193,9 +208,15 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
     return () => document.removeEventListener("keydown", onKey);
   }, [focusMode]);
   const toggleCollapsed = () => setSessionsCollapsed((value) => { try { localStorage.setItem(collapsedStorageKey, value ? "0" : "1"); } catch { /* storage ใช้ไม่ได้ */ } return !value; });
-  const onLogScroll = () => { const log = logRef.current; if (log) stickToBottom.current = log.scrollHeight - log.scrollTop - log.clientHeight < 80; };
+  const onLogScroll = () => {
+    const log = logRef.current;
+    if (!log) return;
+    stickToBottom.current = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    setShowJump(!stickToBottom.current);
+  };
+  const jumpToLatest = () => { const log = logRef.current; if (log) log.scrollTo({ top: log.scrollHeight, behavior: "smooth" }); };
 
-  const newChat = () => { abortRef.current?.abort(); setActiveId(""); store(""); setItems([]); setShowSessions(false); setTimeout(() => inputRef.current?.focus(), 0); };
+  const newChat = () => { abortRef.current?.abort(); setActiveId(""); store(""); setItems([]); setShowSessions(false); setShowJump(false); setTimeout(() => inputRef.current?.focus(), 0); };
 
   const deleteSession = async (s: Session) => {
     if (!await confirmDialog({ title: "ลบบทสนทนา", message: `ลบ "${s.title}"? ลบแล้วกู้คืนไม่ได้`, confirmLabel: "ลบ", tone: "danger" })) return;
@@ -277,11 +298,17 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
   };
   const submit = (event: FormEvent) => { event.preventDefault(); void ask(question); };
   const activeSession = sessions.find((s) => s.chatSessionId === activeId);
+  const sessionNeedle = sessionQuery.trim().toLowerCase();
+  const shownSessions = sessionNeedle ? sessions.filter((s) => s.title.toLowerCase().includes(sessionNeedle)) : sessions;
+  const firstName = userName?.trim().split(/\s+/)[0] ?? "";
 
   const empty = !loadingSession && items.length === 0;
+  // ปุ่มกลับไปข้อความล่าสุดแสดงเฉพาะตอนมีบทสนทนา (หน้าว่างไม่มี log ให้เลื่อน)
+  const jumpVisible = showJump && !empty;
   const composer = <form className="kn-chat-composer" onSubmit={submit}>
+    {jumpVisible && <button type="button" className="kn-jump" onClick={jumpToLatest} aria-label="ไปข้อความล่าสุด" title="ไปข้อความล่าสุด"><span className="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>}
     <div className="kn-composer-box">
-      <textarea ref={inputRef} value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={onKeyDown} rows={empty ? 2 : 1} maxLength={2000} placeholder="ถามเกี่ยวกับปัญหา วิธีแก้ Defect หรือ Test Case ที่เคยพบ..." aria-label="คำถามถึงผู้ช่วย AI" />
+      <textarea ref={inputRef} value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={onKeyDown} rows={empty ? 2 : 1} maxLength={2000} placeholder={empty ? "ถามเกี่ยวกับปัญหา วิธีแก้ Defect หรือ Test Case ที่เคยพบ..." : "ถามต่อ..."} aria-label="คำถามถึงผู้ช่วย AI" />
       <div className="kn-composer-tools">
         <label className="kn-composer-select"><span className="material-symbols-outlined" aria-hidden="true">filter_list</span><select value={source} onChange={(e) => setSource(e.target.value)} aria-label="แหล่งความรู้ที่ใช้ตอบ">{chatSources.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
         <label className="kn-composer-select"><span className="material-symbols-outlined" aria-hidden="true">folder</span><select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project ที่ใช้ตอบ"><option value="">ทุก Project ที่มีสิทธิ์</option>{projects.map((p) => <option key={p.projectId} value={p.projectId}>{p.projectName}</option>)}</select></label>
@@ -290,18 +317,26 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
           : <button type="submit" className="kn-send" disabled={!question.trim()} aria-label="ส่งคำถาม" title="ส่ง (Enter)"><span className="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>}
       </div>
     </div>
-    <small className="kn-chat-hint">Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่ · AI อาจสรุปผิดได้ ตรวจสอบจากแหล่งอ้างอิงก่อนนำไปใช้</small>
+    <small className="kn-chat-hint">AI อาจสรุปผิดได้ ตรวจสอบจากแหล่งอ้างอิงก่อนนำไปใช้ · Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่</small>
   </form>;
 
   return <div ref={rootRef} className={`kn-chat${showSessions ? " sessions-open" : ""}${sessionsCollapsed ? " sessions-collapsed" : ""}${focusMode ? " is-focus" : ""}`}>
     <aside className="kn-chat-sessions" aria-label="บทสนทนา">
       <div className="kn-chat-sessions-head">
-        <button type="button" className="kn-chat-new-chat" onClick={newChat}><span className="material-symbols-outlined" aria-hidden="true">edit_square</span>บทสนทนาใหม่</button>
+        <span className="kn-chat-brand"><span className="kn-ai-avatar" aria-hidden="true"><span className="material-symbols-outlined">auto_awesome</span></span>ผู้ช่วย AI</span>
         <button type="button" className="kn-icon-button kn-chat-collapse" onClick={toggleCollapsed} aria-label="ซ่อนรายการบทสนทนา" title="ซ่อนรายการบทสนทนา"><span className="material-symbols-outlined" aria-hidden="true">left_panel_close</span></button>
+      </div>
+      <div className="kn-chat-sessions-tools">
+        <button type="button" className="kn-chat-new-chat" onClick={newChat}><span className="material-symbols-outlined" aria-hidden="true">edit_square</span>บทสนทนาใหม่</button>
+        {sessions.length > 0 && <label className="kn-chat-session-search">
+          <span className="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="search" value={sessionQuery} onChange={(e) => setSessionQuery(e.target.value)} placeholder="ค้นหาบทสนทนา" aria-label="ค้นหาบทสนทนา" />
+        </label>}
       </div>
       {sessionsLoading ? <p className="kn-chat-muted" role="status">กำลังโหลด...</p>
         : sessions.length === 0 ? <p className="kn-chat-muted">ยังไม่มีบทสนทนา — เริ่มถามได้เลย</p>
-        : <div className="kn-chat-session-list">{groupSessions(sessions).map((g) => <section key={g.label} aria-label={g.label}>
+        : shownSessions.length === 0 ? <p className="kn-chat-muted" role="status">ไม่พบบทสนทนาที่ตรงกับ "{sessionQuery.trim()}"</p>
+        : <div className="kn-chat-session-list">{groupSessions(shownSessions).map((g) => <section key={g.label} aria-label={g.label}>
           <h3>{g.label}</h3>
           <ul>{g.items.map((s) => <li key={s.chatSessionId} className={s.chatSessionId === activeId ? "active" : ""}>
             <button type="button" className="kn-chat-session" aria-current={s.chatSessionId === activeId ? "true" : undefined} onClick={() => void openSession(s.chatSessionId)} title={`${s.title} · ${formatThaiDateTime(s.updatedAt)}`}>
@@ -323,9 +358,9 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
       <div className="kn-chat-log" ref={logRef} onScroll={onLogScroll} aria-busy={loadingSession}>
         {loadingSession ? <div className="kn-empty" role="status"><span className="spinner" aria-hidden="true" /><span>กำลังเปิดบทสนทนา...</span></div>
           : empty ? <div className="kn-chat-welcome">
-            <span className="kn-chat-welcome-icon material-symbols-outlined" aria-hidden="true">neurology</span>
-            <h2>วันนี้ให้ช่วยค้นเรื่องอะไรดี?</h2>
-            <p>ผู้ช่วย AI ตอบจาก Defect, Test Case, บทความ, เอกสาร{canViewCrm ? " และ CRM Ticket" : ""} ใน Project ที่คุณมีสิทธิ์ พร้อมเลขอ้างอิงแหล่งที่มาทุกครั้ง</p>
+            <span className="kn-ai-mark" aria-hidden="true"><span className="material-symbols-outlined">auto_awesome</span></span>
+            <h2><span className="kn-greet">สวัสดี{firstName ? ` คุณ${firstName}` : ""}</span><span>วันนี้ให้ช่วยค้นหาอะไรดี?</span></h2>
+            <p>ตอบจาก Defect, Test Case, บทความ, เอกสาร{canViewCrm ? " และ CRM Ticket" : ""} ใน Project ที่คุณมีสิทธิ์ พร้อมเลขอ้างอิงแหล่งที่มาทุกคำตอบ</p>
           </div>
           : <div className="kn-chat-thread">{items.map((item) => item.role === "user"
             ? <div key={item.key} className="kn-msg kn-msg-user"><div className="kn-bubble">{item.content}</div></div>
@@ -333,9 +368,13 @@ export function KnowledgeChat({ projects, canViewCrm, onOpenCitation }: { projec
       </div>
       <p className="sr-only" role="status" aria-live="polite">{liveStatus}</p>
       {composer}
-      {empty && <div className="kn-chat-suggestions" role="group" aria-label="ตัวอย่างคำถาม">{suggestions.map((x) => <button key={x.question} type="button" onClick={() => void ask(x.question)} disabled={busy}>
-        <span className="material-symbols-outlined" aria-hidden="true">{x.icon}</span><span><b>{x.label}</b><small>{x.question}</small></span>
-      </button>)}</div>}
+      {empty && <section className="kn-chat-suggestions" aria-labelledby="kn-suggest-title">
+        <h3 id="kn-suggest-title" className="sr-only">ตัวอย่างคำถาม</h3>
+        <ul>{suggestions.map((x) => <li key={x.question}><button type="button" onClick={() => void ask(x.question)} disabled={busy}>
+          <span className="material-symbols-outlined" aria-hidden="true">{x.icon}</span>
+          <span><b>{x.label}</b><small>{x.question}</small></span>
+        </button></li>)}</ul>
+      </section>}
     </section>
   </div>;
 }
@@ -344,20 +383,20 @@ function AssistantMessage({ item, onCite, onOpen, onFeedback, onRetry }: { item:
   const cited = item.citations.filter((c) => c.cited);
   const others = item.citations.filter((c) => !c.cited);
   const waiting = item.status === "streaming" && !item.content;
-  return <div className={`kn-msg kn-msg-ai${item.status === "error" ? " is-error" : ""}`} aria-busy={item.status === "streaming"}>
-    <span className="kn-msg-avatar" aria-hidden="true"><span className="material-symbols-outlined">neurology</span></span>
+  return <div className={`kn-msg kn-msg-ai${item.status === "error" ? " is-error" : ""}${item.status === "streaming" ? " is-streaming" : ""}`} aria-busy={item.status === "streaming"}>
+    <span className="kn-ai-avatar" aria-hidden="true"><span className="material-symbols-outlined">auto_awesome</span></span>
     <div className="kn-msg-body">
-      {waiting ? <div className="kn-typing" role="status"><span /><span /><span />{item.citations.length ? `พบ ${item.citations.length} แหล่งที่เกี่ยวข้อง กำลังเรียบเรียงคำตอบ...` : "กำลังค้นหาความรู้..."}</div>
+      {waiting ? <div className="kn-thinking" role="status">{item.citations.length ? `พบ ${item.citations.length} แหล่งที่เกี่ยวข้อง กำลังเรียบเรียงคำตอบ...` : "กำลังค้นหาความรู้..."}</div>
         : item.content && <div className="kn-answer"><ChatMarkdown text={item.content} citations={item.citations} onCite={onCite} />{item.status === "streaming" && <span className="kn-caret" aria-hidden="true" />}</div>}
       {item.status === "error" && <div className="kn-msg-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span>{item.error}<button type="button" className="btn" onClick={onRetry}>ลองใหม่</button></div>}
       {item.status === "stopped" && <small className="kn-chat-muted">หยุดการตอบแล้ว</small>}
       {item.crmExcluded && <small className="kn-chat-note"><span className="material-symbols-outlined" aria-hidden="true">shield</span>ไม่ได้ใช้ข้อมูล CRM เพราะ AI ที่ตั้งค่าไว้อยู่นอกองค์กร</small>}
       {(cited.length > 0 || (item.status === "done" && others.length > 0)) && <div className="kn-sources">
-        {cited.length > 0 && <><small>แหล่งอ้างอิง</small><ol>{cited.map((c) => <SourceItem key={c.number} citation={c} onOpen={onOpen} />)}</ol></>}
+        {cited.length > 0 && <><small><span className="material-symbols-outlined" aria-hidden="true">library_books</span>แหล่งอ้างอิง {cited.length} รายการ</small><ol>{cited.map((c) => <SourceItem key={c.number} citation={c} onOpen={onOpen} />)}</ol></>}
         {item.status === "done" && others.length > 0 && <details><summary>{cited.length ? `แหล่งที่ค้นพบแต่ไม่ได้อ้างอิง (${others.length})` : `แหล่งที่ค้นพบ (${others.length})`}</summary><ol>{others.map((c) => <SourceItem key={c.number} citation={c} onOpen={onOpen} />)}</ol></details>}
       </div>}
       {item.status === "done" && item.id && <div className="kn-msg-actions">
-        <CopyButton text={item.content} className="kn-copy" ariaLabel="คัดลอกคำตอบ">คัดลอก</CopyButton>
+        <CopyButton text={item.content} className="kn-copy" ariaLabel="คัดลอกคำตอบ" title="คัดลอก"><span className="sr-only">คัดลอก</span></CopyButton>
         <button type="button" className={item.feedback === 1 ? "active" : ""} aria-pressed={item.feedback === 1} aria-label="คำตอบมีประโยชน์" title="มีประโยชน์" onClick={() => onFeedback(1)}><span className="material-symbols-outlined" aria-hidden="true">thumb_up</span></button>
         <button type="button" className={item.feedback === -1 ? "active" : ""} aria-pressed={item.feedback === -1} aria-label="คำตอบไม่มีประโยชน์" title="ไม่มีประโยชน์" onClick={() => onFeedback(-1)}><span className="material-symbols-outlined" aria-hidden="true">thumb_down</span></button>
         {item.model && <small className="kn-chat-muted">{item.model}</small>}
@@ -366,11 +405,14 @@ function AssistantMessage({ item, onCite, onOpen, onFeedback, onRetry }: { item:
   </div>;
 }
 
+// แหล่งอ้างอิงเป็นการ์ดเล็กเรียงเป็นตาราง: แถวบน เลข | ไอคอน | แหล่ง · Project → ชื่อ 2 บรรทัด
 function SourceItem({ citation, onOpen }: { citation: Citation; onOpen: (c: Citation) => void }) {
-  return <li><button type="button" onClick={() => onOpen(citation)}>
-    <span className="kn-source-no">{citation.number}</span>
-    <span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[citation.sourceType]}</span>
+  return <li><button type="button" onClick={() => onOpen(citation)} title={citation.title}>
+    <span className="kn-source-meta">
+      <span className="kn-source-no">{citation.number}</span>
+      <span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[citation.sourceType]}</span>
+      <small>{sourceLabel[citation.sourceType]}{citation.projectName ? ` · ${citation.projectName}` : ""}</small>
+    </span>
     <span className="kn-source-title">{citation.title}</span>
-    <small>{sourceLabel[citation.sourceType]}{citation.projectName ? ` · ${citation.projectName}` : ""}</small>
   </button></li>;
 }

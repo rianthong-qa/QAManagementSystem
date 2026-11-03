@@ -25,18 +25,11 @@
   min-height: 40px;
 }
 
-.execution-linked-defects { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 13px; }
-.execution-linked-defects > b { flex-basis: 100%; font-size: 12px; }
 .execution-linked-defect { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; padding: 5px 8px; }
 .execution-linked-defect small { color: var(--muted); font-size: 12px; }
 .execution-linked-defect .link-btn { border: 0; background: none; padding: 0; color: var(--primary); font-size: 12px; font-weight: 700; cursor: pointer; }
 .execution-linked-defect .link-btn:hover { text-decoration: underline; }
 
-@media (max-width: 760px) {
-  .execution-page .step-bulk-actions { align-items: stretch; }
-  .execution-page .step-bulk-actions > div { width: 100%; }
-  .execution-page .step-bulk-actions > div > button { flex: 1 1 120px; min-height: 40px; }
-}
 
 /* ===== Execution Workspace layout (ปรับใหม่ 2026-10-20) =====
    ปุ่มต้องขึ้นต้นด้วย .execution-page — กฎกลาง button:not(.icon-button) (specificity 0,1,1) ตั้ง display/padding/white-space ทับ class เดี่ยว
@@ -47,6 +40,8 @@
 
 /* --- Toolbar (ปรับรอบ 2: ป้ายเหนือช่อง, กล่องข้อมูล Cycle, แถบความคืบหน้าแบ่งสีตามสถานะ) --- */
 .execution-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0; overflow: visible; }
+/* ≤760px ปุ่มสรุป Cycle ที่เลือก (ชื่อ Cycle + Build · Environment · สถานะ) กดกางตัวเลือก — จอใหญ่ซ่อน */
+.execution-page .execution-toolbar-toggle { display: none; }
 .execution-toolbar-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 14px; min-width: 0; padding: 14px 18px; }
 .execution-field-label { display: block; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .03em; }
 /* Test Cycle เต็มพื้นที่ที่เหลือ (flex-basis 0) แต่ไม่ขยับตามข้อมูล — ทุกชิ้นอื่นในแถวกว้างคงที่ และกล่อง Build/Environment
@@ -54,7 +49,7 @@
 .execution-cycle-field { display: grid; flex: 1 1 0; gap: 5px; min-width: 280px; }
 .execution-cycle-field .cycle-picker { min-width: 0; font-weight: 400; white-space: normal; }
 .execution-cycle-field .cycle-picker .cycle-picker-trigger { min-height: 42px; }
-.execution-module-field { display: grid; flex: 0 0 240px; gap: 5px; min-width: 0; margin: 0; }
+.execution-module-field { display: grid; flex: 0 0 350px; gap: 5px; min-width: 0; margin: 0; }
 .execution-module-field select { width: 100%; min-width: 0; height: 42px; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 0 34px 0 12px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
 .execution-module-field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
 .execution-mine-toggle { position: relative; display: inline-flex; flex: none; align-items: center; gap: 6px; height: 42px; margin: 0; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: #344054; font-size: 13px; font-weight: 600; cursor: pointer; user-select: none; }
@@ -121,11 +116,14 @@
 .case-queue .card-title { width: 100%; margin-bottom: 8px; padding-bottom: 8px; text-align: left; }
 .case-queue .card-title h3 { margin: 0; }
 .case-queue .card-title p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
-.case-queue-tools { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 6px; padding-bottom: 8px; }
-.case-queue-tools input, .case-queue-tools select { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 7px 8px; font: inherit; font-size: 12px; font-weight: 400; }
-.case-queue-tools input:focus, .case-queue-tools select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
+.case-queue-tools { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding-bottom: 8px; }
+/* กรองสถานะจากชิปด้านบนอยู่ — บอกในคิว + ล้างได้ */
+.case-queue-filter { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; border-radius: 8px; background: #eef3ff; padding: 5px 9px; color: var(--primary); font-size: 12px; }
+.execution-page .case-queue-filter .link-btn { border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.case-queue-tools input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 7px 8px; font: inherit; font-size: 12px; font-weight: 400; }
+.case-queue-tools input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
 .case-queue-list { min-height: 0; overflow-y: auto; padding-right: 2px; }
-.execution-page .case-queue-item { display: flex; width: 100%; white-space: normal; flex-direction: column; gap: 3px; margin-bottom: 3px; padding: 8px 10px; border: 1px solid transparent; border-left: 3px solid #d0d5dd; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
+.execution-page .case-queue-item { display: flex; width: 100%; white-space: normal; flex-direction: column; align-items: stretch; gap: 3px; margin-bottom: 3px; padding: 8px 10px; border: 1px solid transparent; border-left: 3px solid #d0d5dd; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
 .execution-page .case-queue-item.is-pass { border-left-color: var(--green); } .case-queue-item.is-fail { border-left-color: var(--red); }
 .execution-page .case-queue-item.is-blocked { border-left-color: var(--yellow); } .case-queue-item.is-inprogress { border-left-color: var(--info); }
 .execution-page .case-queue-item.is-skipped { border-left-color: #98a2b3; }
@@ -148,6 +146,7 @@
 .execution-case-title h2 { margin: 4px 0 0; font-size: 19px; line-height: 1.4; }
 .execution-case-nav { display: flex; flex: none; align-items: center; gap: 6px; }
 .execution-case-nav .btn { min-height: 34px; padding: 0 10px; }
+.execution-saved-status { display: inline-flex; align-items: center; gap: 5px; margin-right: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .execution-case-nav .material-symbols-outlined { font-size: 18px; line-height: 1; }
 .execution-tabs { display: flex; gap: 4px; margin: 12px -18px 0; padding: 0 18px; border-bottom: 1px solid var(--line); }
 .execution-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px; padding: 9px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
@@ -156,42 +155,44 @@
 .execution-tabs [role="tab"]:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: -3px; border-radius: 8px 8px 0 0; }
 .execution-tab-count { min-width: 20px; padding: 0 7px; border-radius: 999px; background: #eef3ff; color: var(--primary); font-size: 12px; text-align: center; }
 .execution-steps-panel { display: grid; gap: 12px; padding-top: 14px; }
-.execution-context-notes { display: grid; gap: 10px; }
-.precondition { border-left: 3px solid var(--yellow); border-radius: 8px; background: #fff8e7; padding: 8px 12px; }
-.precondition b { font-size: 12px; } .precondition p { margin: 3px 0 0; font-size: 13px; white-space: pre-wrap; }
-.execution-linked-defects { margin-bottom: 0; }
+/* Preconditions + Linked Defects = กล่องเดียว แถวละหัวข้อ (หัวข้อซ้าย 112px | เนื้อหา) — Preconditions ยาวพับเหลือ 2 บรรทัด */
+.execution-context-notes { display: grid; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; }
+.execution-info-row { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; align-items: baseline; gap: 4px 10px; padding: 7px 12px; }
+.execution-info-row + .execution-info-row, .execution-context-notes > .inline-alert + .execution-info-row { border-top: 1px solid var(--line); }
+.execution-info-row > b { color: var(--muted); font-size: 12px; font-weight: 700; }
+.execution-info-row.precondition > b { color: var(--warning-text); }
+.precondition p { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.precondition.is-clamped p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.execution-page .execution-info-row .link-btn { border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.execution-linked-defects { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.execution-linked-defects > b { flex: 0 0 102px; }
 
-/* Overall Result Summary (spec §4) */
-.execution-overall { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 10px 14px; border: 1px solid var(--line); border-left: 4px solid #98a2b3; border-radius: 10px; background: #fbfcfe; }
+/* Overall Result Summary (spec §4) — แถบบรรทัดเดียว: ป้าย | ผล | คำอธิบาย | จำนวนต่อผล (เดิมกล่องสูง + กล่องตัวเลข 4 ช่อง) */
+.execution-overall { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 7px 12px; border: 1px solid var(--line); border-left: 4px solid #98a2b3; border-radius: 10px; background: #fbfcfe; font-size: 13px; }
 .execution-overall.is-pass { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 5%, #fff); }
 .execution-overall.is-fail { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 5%, #fff); }
 .execution-overall.is-blocked { border-left-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 7%, #fff); }
 .execution-overall.is-inprogress { border-left-color: var(--info); background: color-mix(in srgb, var(--info) 5%, #fff); }
-.execution-overall-result { display: grid; gap: 1px; }
-.execution-overall-result small { color: var(--muted); font-size: 11px; font-weight: 700; }
-.execution-overall-result b { display: inline-flex; align-items: center; gap: 6px; font-size: 17px; }
-.execution-overall-result b .material-symbols-outlined { font-size: 20px; font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20; }
-.execution-overall.is-pass b { color: var(--green); } .execution-overall.is-fail b { color: var(--red); }
-.execution-overall.is-blocked b { color: var(--warning-text); } .execution-overall.is-inprogress b { color: var(--info); }
-.execution-overall-result > span { color: #475467; font-size: 12px; }
-.execution-overall-counts { display: flex; gap: 6px; margin: 0; }
-.execution-overall-counts > div { min-width: 64px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); text-align: center; }
-.execution-overall-counts dt { color: var(--muted); font-size: 11px; font-weight: 700; }
-.execution-overall-counts dd { margin: 0; font-size: 16px; font-weight: 800; }
-.execution-overall-counts .is-pass dd { color: var(--green); } .execution-overall-counts .is-fail dd { color: var(--red); }
-.execution-overall-counts .is-blocked dd { color: var(--warning-text); } .execution-overall-counts .is-notrun dd { color: var(--muted); }
+.execution-overall > small { color: var(--muted); font-size: 11px; font-weight: 700; }
+.execution-overall > b { display: inline-flex; align-items: center; gap: 5px; font-size: 15px; }
+.execution-overall > b .material-symbols-outlined { font-size: 19px; font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20; }
+.execution-overall.is-pass > b { color: var(--green); } .execution-overall.is-fail > b { color: var(--red); }
+.execution-overall.is-blocked > b { color: var(--warning-text); } .execution-overall.is-inprogress > b { color: var(--info); }
+.execution-overall-message { flex: 1 1 160px; min-width: 0; color: #475467; font-size: 12px; }
+.execution-overall-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 12px; }
+.execution-overall-counts b { margin-left: 2px; font-size: 13px; font-weight: 800; }
+.execution-overall-counts .is-pass b { color: var(--green); } .execution-overall-counts .is-fail b { color: var(--red); }
+.execution-overall-counts .is-blocked b { color: var(--warning-text); } .execution-overall-counts .is-notrun b { color: var(--text); }
 
 /* --- Test Steps (spec §6–§10) --- */
 .step-table { border: 1px solid var(--line); border-radius: 10px; }
 .step-bulk-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; background: #fbfcfe; color: var(--muted); font-size: 12px; }
-.step-bulk-actions > div { display: flex; flex-wrap: wrap; gap: 5px; }
-.execution-page .step-bulk-actions button { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: #475467; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.execution-page .step-bulk-actions button:hover { border-color: var(--primary); color: var(--primary); }
-.bulk-result-icon { font-size: 16px; font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20; }
-.execution-page .step-bulk-actions .is-pass .bulk-result-icon { color: var(--green); } .step-bulk-actions .is-fail .bulk-result-icon { color: var(--red); }
-.execution-page .step-bulk-actions .is-blocked .bulk-result-icon { color: var(--warning-text); } .step-bulk-actions .is-notrun .bulk-result-icon { color: var(--muted); }
-/* Step Result 300px — ปุ่ม 4 ปุ่มมีทั้งไอคอนและข้อความ (สเปก §2.3: ห้ามบีบจนอ่าน/กดไม่ได้) */
-.step-row { display: grid; grid-template-columns: 40px minmax(140px, 1fr) minmax(140px, 1fr) 300px minmax(180px, 1.15fr); border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
+/* "ตั้งทุก Step" (ActionMenu) — แทนปุ่ม Set All 4 ปุ่มเดิม */
+.execution-page .step-bulk-menu > .btn { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.execution-page .step-bulk-menu > .btn .material-symbols-outlined { font-size: 17px; }
+.step-bulk-menu .action-menu-list button[role="menuitem"] > .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20; }
+/* Step Result 340px — ปุ่ม 4 ปุ่มมีทั้งไอคอนและข้อความ ("ยังไม่ทดสอบ" ยาวกว่าปุ่มอื่น ปุ่มจึงกว้างตามข้อความ) (สเปก §2.3: ห้ามบีบจนอ่าน/กดไม่ได้) */
+.step-row { display: grid; grid-template-columns: 40px minmax(140px, 1fr) minmax(140px, 1fr) 340px minmax(180px, 1.15fr); border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
 .step-row:last-child { border-bottom: 0; }
 .step-row.is-pass { border-left-color: var(--green); } .step-row.is-fail { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 3%, #fff); }
 .step-row.is-blocked { border-left-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 5%, #fff); }
@@ -206,7 +207,7 @@
 .step-row input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 7px; background: #fff; padding: 7px 9px; font: inherit; font-size: 13px; font-weight: 400; }
 .step-row input:focus, .execution-notes textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
 .step-result-control { display: flex; gap: 4px; }
-.execution-page .step-result-btn { display: inline-flex; flex: 1; min-width: 0; align-items: center; justify-content: center; gap: 4px; min-height: 34px; padding: 4px 5px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.execution-page .step-result-btn { display: inline-flex; flex: 1 1 auto; min-width: 0; align-items: center; justify-content: center; gap: 4px; min-height: 34px; padding: 4px 5px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .step-result-icon { font-size: 17px; line-height: 1; font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20; }
 .execution-page .step-result-btn em { font-style: normal; white-space: nowrap; }
 .execution-page .step-result-btn.pass .step-result-icon { color: var(--green); } .step-result-btn.fail .step-result-icon { color: var(--red); }
@@ -225,8 +226,17 @@
 .execution-page .step-create-defect { flex-shrink: 0; white-space: nowrap; border: 1px dashed var(--red); border-radius: 6px; background: #fff; padding: 4px 7px; color: var(--red); font-size: 11px; font-weight: 700; cursor: pointer; }
 .execution-page .step-create-defect:hover { background: #fdecec; }
 .step-defect-linked { flex-shrink: 0; white-space: nowrap; border-radius: 6px; background: #fdecec; padding: 3px 7px; color: var(--red); font-size: 11px; font-weight: 700; }
-/* พื้นที่ทดสอบแคบ (≈ แท็บเล็ต/จอเล็ก) — Step เป็น card แนวตั้งมีหัวข้อกำกับ (RESPONSIVE-UI-SPEC §2.2) */
-@container (max-width: 940px) {
+/* พื้นที่ทดสอบกลาง (≈ แท็บเล็ต 641–940px) — ยังเป็นตาราง: แถวบน Action | Expected, แถวล่าง ปุ่มผล | Actual
+   (เดิมเป็น card แนวตั้งตั้งแต่ 940px สูง ~250px ต่อ Step) */
+@container (max-width: 940px) and (min-width: 641px) {
+  .step-row { grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "no action expected" "no result actual"; }
+  .step-row > .step-field-no { grid-area: no; }
+  .step-row > span:nth-child(2) { grid-area: action; } .step-row > span:nth-child(3) { grid-area: expected; }
+  .step-row > span:nth-child(4) { grid-area: result; padding-top: 0; } .step-row > span:nth-child(5) { grid-area: actual; padding-top: 0; }
+  .step-head > span:nth-child(4), .step-head > span:nth-child(5) { display: none; }
+}
+/* พื้นที่ทดสอบแคบ (≈ มือถือ) — Step เป็น card แนวตั้งมีหัวข้อกำกับ (RESPONSIVE-UI-SPEC §2.2) */
+@container (max-width: 640px) {
   .step-head { display: none; }
   .step-row { grid-template-columns: 40px minmax(0, 1fr); grid-template-areas: "no action" "no expected" "no result" "no actual"; padding: 4px 0; }
   .step-row > .step-field-no { grid-area: no; padding-top: 12px; }
@@ -250,7 +260,8 @@
 .execution-actions-overall small { color: var(--muted); font-size: 11px; }
 .execution-actions-overall.is-pass { color: var(--green); } .execution-actions-overall.is-fail { color: var(--red); }
 .execution-actions-overall.is-blocked { color: var(--warning-text); } .execution-actions-overall.is-inprogress { color: var(--info); }
-.execution-shortcut-hint { flex: 1 1 200px; color: var(--muted); font-size: 11px; }
+.execution-shortcut-hint { display: inline-flex; flex: 1 1 200px; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; cursor: help; }
+.execution-shortcut-hint .material-symbols-outlined { font-size: 16px; }
 .execution-actions .btn, .execution-actions .result-btn { min-height: 38px; }
 /* ไอคอนในปุ่ม Action Bar — Save = save, Skip = skip_next, Complete = task_alt (ไอคอนแบบเติมสีให้เด่นบนปุ่ม) */
 .execution-page .execution-actions .btn, .execution-page .execution-actions .result-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
@@ -293,6 +304,16 @@
 }
 @media (max-width: 760px) {
   .execution-toolbar-row { flex-direction: column; align-items: stretch; flex-wrap: nowrap; padding: 12px 14px; }
+  /* แถบเลือก Cycle พับเป็นปุ่มสรุป — ตัวเลือกเต็มแสดงเมื่อกาง (หรือยังไม่ได้เลือก Cycle) */
+  .execution-page .execution-toolbar-toggle { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; border: 0; border-radius: 14px 14px 0 0; background: none; padding: 10px 14px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; }
+  .execution-toolbar-toggle > span:first-child { display: grid; flex: 1; gap: 1px; min-width: 0; }
+  .execution-toolbar-toggle small { color: var(--muted); font-size: 11px; font-weight: 600; }
+  .execution-toolbar-toggle b { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+  .execution-toolbar-toggle b em { color: var(--primary); font-style: normal; }
+  .execution-toolbar-toggle > .material-symbols-outlined { color: var(--muted); font-size: 22px; }
+  .execution-page .execution-toolbar-toggle:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: -3px; }
+  .execution-toolbar:not(.is-open) > .execution-toolbar-row { display: none; }
+  .execution-toolbar.is-open > .execution-toolbar-toggle + .execution-toolbar-row { border-top: 1px solid #eef1f5; }
   .execution-cycle-field, .execution-module-field { flex: none; width: auto; min-width: 0; }
   .execution-context > div:nth-child(n) { width: auto; }
   .execution-cycle-field .cycle-picker .cycle-picker-trigger, .execution-module-field select, .execution-mine-toggle { min-height: 44px; }
@@ -306,10 +327,11 @@
   .execution-tabs { margin-inline: -14px; padding-inline: 14px; overflow-x: auto; }
   .execution-case-nav { width: 100%; }
   .execution-case-nav .btn:last-child { flex: 1; justify-content: center; }
-  .execution-overall-counts { width: 100%; }
-  .execution-overall-counts > div { flex: 1; min-width: 0; }
-  .step-bulk-actions > div { width: 100%; }
-  .step-bulk-actions > div > button { flex: 1 1 120px; min-height: 40px; }
+  .execution-page .step-bulk-menu > .btn { min-height: 40px; }
+  .execution-info-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .execution-info-row > b { grid-column: 1 / -1; }
+  .execution-linked-defects > b { flex-basis: 100%; }
+  .execution-saved-status { margin-right: auto; }
   .execution-actions { margin-inline: -14px; padding-inline: 14px; border-radius: 0; }
   .execution-shortcut-hint { display: none; }
   .execution-actions-overall { flex: 1 1 100%; justify-content: center; }
@@ -378,4 +400,19 @@
 .execution-page .case-queue-cleanup .material-symbols-outlined { font-size: 17px; line-height: 1; }
 @media (max-width: 760px) {
   .execution-page .case-queue-cleanup { min-height: 44px; }
+}
+/* ไอคอนในเมนู "ตั้งทุก Step" สีเดียวกับปุ่มผลของ Step (ลำดับรายการ Pass / Fail / Blocked / ยังไม่ทดสอบ) */
+.step-bulk-menu .action-menu-list button[role="menuitem"]:nth-child(1) > .material-symbols-outlined { color: var(--green); }
+.step-bulk-menu .action-menu-list button[role="menuitem"]:nth-child(2) > .material-symbols-outlined { color: var(--red); }
+.step-bulk-menu .action-menu-list button[role="menuitem"]:nth-child(3) > .material-symbols-outlined { color: var(--warning-text); }
+.step-bulk-menu .action-menu-list button[role="menuitem"]:nth-child(4) > .material-symbols-outlined { color: var(--muted); }
+/* Module ยังไม่ได้เลือก (ค่าเริ่มต้น — เลือก Module ก่อน Test Cycle) — กรอบ primary ชี้ว่าเป็นขั้นแรก */
+.execution-module-field.is-unset select:not(:disabled) { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); color: var(--muted); }
+/* กู้คืน Test Case ที่ถูกลบทั้งหมดใน Cycle (SYS_ADMIN) — เส้นประ primary คู่กับปุ่มเอาออก (เส้นประแดง) */
+.execution-page .case-queue-restore { display: flex; grid-column: 1 / -1; align-items: center; justify-content: center; gap: 6px; min-height: 34px; margin: 0; padding: 6px 9px; border: 1px dashed color-mix(in srgb, var(--primary) 45%, var(--card)); border-radius: 8px; background: var(--card); color: var(--primary); font-size: 12px; font-weight: 600; white-space: normal; text-align: center; }
+.execution-page .case-queue-restore:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 6%, var(--card)); }
+.execution-page .case-queue-restore:disabled { cursor: wait; opacity: .6; }
+.execution-page .case-queue-restore .material-symbols-outlined { font-size: 17px; line-height: 1; }
+@media (max-width: 760px) {
+  .execution-page .case-queue-restore { min-height: 44px; }
 }

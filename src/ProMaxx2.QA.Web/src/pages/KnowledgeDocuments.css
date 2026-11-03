@@ -1,7 +1,7 @@
 /* คลังเอกสาร (pages/KnowledgeDocuments.tsx) — prefix kn-docs / kn-upload */
 .kn-docs { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 18px; }
 .kn-docs-name { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-.kn-docs-name > .material-symbols-outlined { flex: none; margin-top: 1px; color: var(--primary); font-size: 22px; }
+.kn-docs-name > .material-symbols-outlined { flex: none; margin-top: 1px; color: var(--muted); font-size: 20px; }
 .kn-docs-name > div { display: grid; min-width: 0; }
 .kn-docs-error { color: var(--red); font-size: 12px; white-space: normal; }
 .kn-docs-table tr.is-highlight td { background: color-mix(in srgb, var(--primary) 7%, var(--card)); }

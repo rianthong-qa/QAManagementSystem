@@ -32,15 +32,20 @@ type Tab = "chat" | "search" | "articles" | "documents" | "claude" | "status";
 type ArticleDraft = { id?: string; title: string; bodyMarkdown: string; projectId: string; tags: string; status: "Draft" | "Published"; format: "Markdown" | "Html"; bodyHtml: string };
 
 const sourceLabel: Record<SourceType, string> = { Defect: "Defect", CrmTicket: "CRM Ticket", Article: "บทความ", File: "เอกสาร", TestCase: "Test Case" };
-const sourceTone: Record<SourceType, string> = { Defect: "red", CrmTicket: "purple", Article: "blue", File: "green", TestCase: "yellow" };
 const sourceIcon: Record<SourceType, string> = { Defect: "bug_report", CrmTicket: "support_agent", Article: "article", File: "description", TestCase: "fact_check" };
 const searchSources: { value: string; label: string }[] = [{ value: "", label: "ทั้งหมด" }, { value: "Defect", label: "Defect" }, { value: "Article", label: "บทความ" }, { value: "File", label: "เอกสาร" }, { value: "TestCase", label: "Test Case" }];
 const crmClosedStatuses = ["Close", "Closed", "Finish"];
+// "Defect 2 · บทความ 1 · …" นับจากผลที่แสดงอยู่ (เรียงตามจำนวนมาก → น้อย) — ตัวเลขตามมุมมองปัจจุบันเสมอ
+const sourceBreakdown = (rows: { sourceType: SourceType }[]) => {
+  const counts = new Map<SourceType, number>();
+  for (const r of rows) counts.set(r.sourceType, (counts.get(r.sourceType) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([type, n]) => `${sourceLabel[type]} ${n.toLocaleString("th-TH")}`).join(" · ");
+};
 const indexStateInfo: Record<string, { label: string; tone: string }> = { Indexed: { label: "ค้นหาได้แล้ว", tone: "green" }, Stale: { label: "รอสร้างดัชนี", tone: "yellow" }, Failed: { label: "สร้างดัชนีไม่สำเร็จ", tone: "red" }, Excluded: { label: "ไม่อยู่ในคลัง", tone: "gray" } };
 const emptyDraft: ArticleDraft = { title: "", bodyMarkdown: "", projectId: "", tags: "", status: "Published", format: "Markdown", bodyHtml: "" };
 const errorText = (error: unknown, fallback: string) => error instanceof Error && error.message ? error.message : fallback;
 
-export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, canViewCrm, onOpenDefect, onOpenTestCase }: { canEdit: boolean; isSysAdmin: boolean; canConnectClaude: boolean; canViewCrm: boolean; onOpenDefect: (defectId: string) => void; onOpenTestCase: (testCaseId: string) => void }) {
+export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude, canViewCrm, onOpenDefect, onOpenTestCase }: { userName?: string; canEdit: boolean; isSysAdmin: boolean; canConnectClaude: boolean; canViewCrm: boolean; onOpenDefect: (defectId: string) => void; onOpenTestCase: (testCaseId: string) => void }) {
   const tabs = useMemo<{ id: Tab; label: string; icon: string }[]>(() => [
     { id: "chat", label: "ถามผู้ช่วย AI", icon: "forum" },
     { id: "search", label: "ค้นหาความรู้", icon: "search" },
@@ -180,7 +185,7 @@ export function KnowledgePage({ canEdit, isSysAdmin, canConnectClaude, canViewCr
       {viewLoading && <span className="kn-tab-status" role="status"><span className="spinner inline" aria-hidden="true" /> กำลังเปิด...</span>}
     </div>
     <section id={`kn-panel-${tab}`} role="tabpanel" aria-labelledby={`kn-tab-${tab}`}>
-      {tab === "chat" && <KnowledgeChat projects={projects} canViewCrm={canViewCrm} onOpenCitation={openCitation} />}
+      {tab === "chat" && <KnowledgeChat userName={userName} projects={projects} canViewCrm={canViewCrm} onOpenCitation={openCitation} />}
       {tab === "search" && <SearchPanel projects={projects} canViewCrm={canViewCrm} onOpen={openResult} />}
       {tab === "articles" && <ArticlesPanel projects={projects} canEdit={canEdit} version={articlesVersion} onView={(a) => void openArticle(a.knowledgeArticleId)} onCreate={() => setDraft({ ...emptyDraft })} onImportHtml={() => setDraft({ ...emptyDraft, format: "Html" })} onEdit={(a) => void editArticle(a)} onDelete={(a) => void deleteArticle(a)} />}
       {tab === "documents" && <KnowledgeDocuments projects={projects} canEdit={canEdit} isSysAdmin={isSysAdmin} highlightId={highlightFileId} />}
@@ -299,23 +304,20 @@ function SearchPanel({ projects, canViewCrm, onOpen }: { projects: ProjectItem[]
       <b>ไม่พบความรู้ที่ตรงกับ "{submitted.q}"</b>
       <span>ลองใช้คำที่สั้นลง คำพ้องความหมาย หรือเลือก "ทุก Project"</span>
     </div> : <>
-      <p className="kn-result-count" role="status">{loading ? "กำลังค้นหา..." : `พบ ${results.length} รายการ สำหรับ "${submitted.q}"`}</p>
+      <div className="kn-result-count" role="status">
+        <b>{loading ? "กำลังค้นหา..." : `พบ ${results.length.toLocaleString("th-TH")} รายการ สำหรับ "${submitted.q}"`}</b>
+        {!loading && results.length > 0 && <span>{sourceBreakdown(results)}</span>}
+      </div>
       <ol className={`kn-results${loading ? " is-loading" : ""}`} aria-busy={loading}>
         {results.map((r) => <li key={r.knowledgeDocumentId} className="kn-result" data-source={r.sourceType}>
-          <span className={`kn-result-icon tone-${sourceTone[r.sourceType]}`} aria-hidden="true"><span className="material-symbols-outlined">{sourceIcon[r.sourceType]}</span></span>
-          <div className="kn-result-main">
-            <div className="kn-result-head">
-              <Badge tone={sourceTone[r.sourceType]}>{sourceLabel[r.sourceType]}</Badge>
-              <button type="button" className="kn-result-title" onClick={() => onOpen(r)}>{r.title}</button>
-            </div>
-            <p className="kn-result-snippet">{r.snippet}</p>
-            <div className="kn-result-meta">
-              <span>{r.projectName ?? "ความรู้กลาง"}</span>
-              {r.matchedChunks > 1 && <span>ตรงกัน {r.matchedChunks} ช่วง</span>}
-              {r.indexedAt && <span title={formatThaiDateTime(r.indexedAt)}>อัปเดตดัชนี {formatThaiDateTime(r.indexedAt)}</span>}
-            </div>
-          </div>
-          <button type="button" className="btn kn-result-open" onClick={() => onOpen(r)} aria-label={`เปิด ${r.title}`}>เปิด<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button>
+          <p className="kn-result-source"><span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[r.sourceType]}</span>{sourceLabel[r.sourceType]}<span aria-hidden="true">·</span>{r.projectName ?? "ความรู้กลาง"}</p>
+          {/* ทั้งแถวกดเปิดได้ (::after ของปุ่มชื่อคลุมแถว) — ปุ่มเดียวต่อแถว ไม่ต้องมีปุ่ม "เปิด" ซ้ำ */}
+          <button type="button" className="kn-result-title" onClick={() => onOpen(r)}>{r.title}</button>
+          <p className="kn-result-snippet">{r.snippet}</p>
+          {(r.matchedChunks > 1 || r.indexedAt) && <p className="kn-result-meta">
+            {r.matchedChunks > 1 && <span>ตรงกัน {r.matchedChunks} ช่วง</span>}
+            {r.indexedAt && <span>อัปเดตดัชนี {formatThaiDateTime(r.indexedAt)}</span>}
+          </p>}
         </li>)}
       </ol>
     </>}
@@ -407,7 +409,7 @@ function ArticlesPanel({ projects, canEdit, version, onView, onCreate, onImportH
           <td className="kn-row-actions">
             <button type="button" className="table-action icon-only" title="ดู" aria-label={`ดู ${a.title}`} onClick={() => onView(a)}><span className="material-symbols-outlined" aria-hidden="true">visibility</span></button>
             {canEdit && <button type="button" className="table-action icon-only" title="แก้ไข" aria-label={`แก้ไข ${a.title}`} onClick={() => onEdit(a)}><span className="material-symbols-outlined" aria-hidden="true">edit</span></button>}
-            {canEdit && <button type="button" className="table-action danger-action icon-only" title="ลบ" aria-label={`ลบ ${a.title}`} onClick={() => onDelete(a)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>}
+            {canEdit && <button type="button" className="table-action icon-only is-danger" title="ลบ" aria-label={`ลบ ${a.title}`} onClick={() => onDelete(a)}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>}
           </td>
         </tr>)}</tbody>
       </table></div>}
@@ -642,6 +644,25 @@ function StatusPanel() {
         <button type="button" className="btn" onClick={() => void reindex()} disabled={busy}><span className="material-symbols-outlined" aria-hidden="true">restart_alt</span>สร้างดัชนีใหม่ทั้งหมด</button>
       </div>
     </div>
+    {!status.indexerEnabled && <div className="kn-notice" role="note"><span className="material-symbols-outlined" aria-hidden="true">pause_circle</span>เอกสารใหม่และที่แก้ไขจะยังไม่ถูกค้นเจอจนกว่าจะเปิดการสร้างดัชนี</div>}
+    <dl className="kn-totals">
+      <div><dt>ค้นหาได้</dt><dd>{totals.indexed.toLocaleString("th-TH")}<small>เอกสาร</small></dd><span>{totals.chunks.toLocaleString("th-TH")} ช่วงข้อความ</span></div>
+      <div><dt>รอสร้างดัชนี</dt><dd className={totals.pending ? "is-warning" : ""}>{totals.pending.toLocaleString("th-TH")}<small>เอกสาร</small></dd><span>{totals.pending ? "เข้าคลังในรอบถัดไป" : "ไม่มีงานค้าง"}</span></div>
+      <div><dt>ไม่สำเร็จ</dt><dd className={totals.failed ? "is-danger" : ""}>{totals.failed.toLocaleString("th-TH")}<small>เอกสาร</small></dd><span>{totals.failed ? "ดูสาเหตุท้ายหน้า" : "ไม่มีข้อผิดพลาด"}</span></div>
+    </dl>
+    <div className="table-wrap"><table className="table-cards kn-table kn-source-table">
+      <thead><tr><th>แหล่งข้อมูล</th><th className="num">ค้นหาได้</th><th className="num">รอ</th><th className="num">ไม่สำเร็จ</th><th className="num">ไม่อยู่ในคลัง</th><th className="num">ช่วงข้อความ</th><th className="num">อัปเดตล่าสุด</th></tr></thead>
+      <tbody>{status.sources.map((s) => <tr key={s.sourceType}>
+        <td><span className="kn-source"><span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[s.sourceType]}</span>{sourceLabel[s.sourceType]}{s.sourceType === "CrmTicket" && status.crm?.enabled && <span className="kn-source-sub"><CrmMirrorIntervalEditor minutes={status.crm.mirrorIntervalMinutes ?? 15} onSaved={(minutes) => setStatus((current) => current?.crm ? { ...current, crm: { ...current.crm, mirrorIntervalMinutes: minutes } } : current)} /></span>}</span></td>
+        <td className="num">{s.indexed.toLocaleString("th-TH")}</td>
+        <td className={`num${s.pending ? " is-warning" : " is-zero"}`}>{s.pending.toLocaleString("th-TH")}</td>
+        <td className={`num${s.failed ? " is-danger" : " is-zero"}`}>{s.failed.toLocaleString("th-TH")}</td>
+        <td className={`num${s.excluded ? "" : " is-zero"}`}>{s.excluded.toLocaleString("th-TH")}</td>
+        <td className="num">{s.chunks.toLocaleString("th-TH")}</td>
+        <td className="num">{s.lastIndexedAt ? formatThaiDateTime(s.lastIndexedAt) : "—"}</td>
+      </tr>)}</tbody>
+    </table></div>
+    {(status.embedding || status.crm) && <div className="kn-status-pair">
     {status.embedding && <EmbeddingStatusBox status={status.embedding} />}
     {status.crm && <div className="kn-crm-status" role="note">
       <span className="material-symbols-outlined" aria-hidden="true">support_agent</span>
@@ -651,20 +672,7 @@ function StatusPanel() {
         <small>{status.crm.allowExternalAi ? "ผู้ดูแลอนุญาตส่งข้อมูล CRM (mask แล้ว) ให้ AI ภายนอก รวมถึง Claude" : "ไม่ส่งข้อมูล CRM ให้ AI ภายนอก — ใช้ได้กับ AI แบบ Local และการค้นหาเท่านั้น (เปลี่ยนได้ที่ Setting Center)"}</small>
       </div>
     </div>}
-    {!status.indexerEnabled && <div className="kn-notice" role="note"><span className="material-symbols-outlined" aria-hidden="true">pause_circle</span>เอกสารใหม่และที่แก้ไขจะยังไม่ถูกค้นเจอจนกว่าจะเปิดการสร้างดัชนี</div>}
-    <dl className="kn-totals">
-      <div><dt>ค้นหาได้</dt><dd>{totals.indexed.toLocaleString("th-TH")}</dd><small>เอกสาร · {totals.chunks.toLocaleString("th-TH")} ช่วงข้อความ</small></div>
-      <div><dt>รอสร้างดัชนี</dt><dd className={totals.pending ? "is-warning" : ""}>{totals.pending.toLocaleString("th-TH")}</dd><small>เอกสาร</small></div>
-      <div><dt>ไม่สำเร็จ</dt><dd className={totals.failed ? "is-danger" : ""}>{totals.failed.toLocaleString("th-TH")}</dd><small>เอกสาร</small></div>
-    </dl>
-    <div className="table-wrap"><table className="table-cards kn-table">
-      <thead><tr><th>แหล่งข้อมูล</th><th>ค้นหาได้</th><th>รอ</th><th>ไม่สำเร็จ</th><th>ไม่อยู่ในคลัง</th><th>ช่วงข้อความ</th><th>อัปเดตล่าสุด</th></tr></thead>
-      <tbody>{status.sources.map((s) => <tr key={s.sourceType}>
-        <td><span className="kn-source"><span className="material-symbols-outlined" aria-hidden="true">{sourceIcon[s.sourceType]}</span>{sourceLabel[s.sourceType]}{s.sourceType === "CrmTicket" && status.crm?.enabled && <span className="kn-source-sub"><CrmMirrorIntervalEditor minutes={status.crm.mirrorIntervalMinutes ?? 15} onSaved={(minutes) => setStatus((current) => current?.crm ? { ...current, crm: { ...current.crm, mirrorIntervalMinutes: minutes } } : current)} /></span>}</span></td>
-        <td>{s.indexed.toLocaleString("th-TH")}</td><td>{s.pending.toLocaleString("th-TH")}</td><td>{s.failed.toLocaleString("th-TH")}</td><td>{s.excluded.toLocaleString("th-TH")}</td><td>{s.chunks.toLocaleString("th-TH")}</td>
-        <td>{s.lastIndexedAt ? formatThaiDateTime(s.lastIndexedAt) : "—"}</td>
-      </tr>)}</tbody>
-    </table></div>
+    </div>}
     {status.failures.length > 0 && <div className="kn-failures">
       <h4>เอกสารที่สร้างดัชนีไม่สำเร็จ</h4>
       <ul>{status.failures.map((f) => <li key={f.knowledgeDocumentId}><b>{sourceLabel[f.sourceType]} · {f.title}</b><span>{f.error ?? "ไม่ทราบสาเหตุ"}</span>{f.attemptedAt && <small>{formatThaiDateTime(f.attemptedAt)}</small>}</li>)}</ul>

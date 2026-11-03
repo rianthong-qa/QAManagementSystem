@@ -1,16 +1,23 @@
-/* คลังความรู้ (pages/KnowledgePage.tsx) — prefix kn-, scope .kn-page / .modal-box.kn-* */
-.kn-page { display: grid; gap: 16px; min-width: 0; }
+/* คลังความรู้ (pages/KnowledgePage.tsx) — prefix kn-, scope .kn-page / .modal-box.kn-*
+   ปรับ 2026-11-02 (taste-skill, achromatic-ledger + สี/ฟอนต์ของแบรนด์): chrome เป็นหมึก/เทา สี primary อยู่บนข้อมูลหลัก
+   (เลขอ้างอิง, แถบความคืบหน้า) และปุ่มหลักหนึ่งปุ่มต่อมุมมองเท่านั้น — ไม่มีไอคอนในกรอบสี ไม่มีเงาบนของที่อยู่กับที่ */
+.kn-page { --kn-active: color-mix(in srgb, var(--muted) 13%, var(--card)); --kn-hover: color-mix(in srgb, var(--muted) 7%, var(--card)); --kn-control: color-mix(in srgb, var(--muted) 32%, var(--card)); display: grid; gap: 16px; min-width: 0; }
+/* หัวหน้าเพจ (h1 จาก App) อยู่ทุกแท็บ — แท็บแชทซ่อนเฉพาะคำอธิบายเพื่อเหลือพื้นที่ให้แชท */
+.content:has(.kn-page) > .page-head { margin-bottom: 12px; }
+.content:has(.kn-page.is-chat) > .page-head p { display: none; }
 
-/* แท็บ */
-.kn-page .kn-tabs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 4px; }
-.kn-page .kn-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; border: 0; border-radius: 9px; background: transparent; padding: 8px 14px; color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
-.kn-page .kn-tabs button:hover { background: color-mix(in srgb, var(--primary) 6%, var(--card)); color: var(--text); }
-.kn-page .kn-tabs button.active { background: var(--primary); color: #fff; }
-.kn-page .kn-tabs button:focus-visible { outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
-.kn-page .kn-tabs .material-symbols-outlined { font-size: 19px; }
-.kn-tab-status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 10px; color: var(--muted); font-size: 12px; }
+/* แท็บ: เส้นใต้ 2px สีหมึกบนเส้นเต็มแถว (ไม่ใช้พื้น primary) */
+.kn-page > section { min-width: 0; }
+.kn-page .kn-tabs { display: flex; align-items: flex-end; gap: 4px; border-bottom: 1px solid var(--line); }
+.kn-page .kn-tabs button { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-bottom: -1px; border: 0; border-radius: 8px 8px 0 0; background: transparent; padding: 8px 12px; color: var(--muted); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: color .15s ease, background-color .15s ease; }
+.kn-page .kn-tabs button:hover { background: var(--kn-hover); color: var(--text); }
+.kn-page .kn-tabs button.active { color: var(--text); font-weight: 600; }
+.kn-page .kn-tabs button.active::after { position: absolute; right: 8px; bottom: 0; left: 8px; height: 2px; border-radius: 2px 2px 0 0; background: var(--text); content: ""; }
+.kn-page .kn-tabs button:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 45%, transparent); outline-offset: -2px; }
+.kn-page .kn-tabs .material-symbols-outlined { font-size: 18px; }
+.kn-tab-status { display: inline-flex; align-items: center; gap: 6px; align-self: center; margin-left: auto; padding: 0 10px; color: var(--muted); font-size: 12px; }
 
-.kn-search, .kn-articles, .kn-status { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 18px; }
+.kn-search, .kn-articles, .kn-status { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 20px; }
 
 /* ช่องค้นหา */
 .kn-search-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; gap: 10px; }
@@ -21,40 +28,39 @@
 .kn-page select:focus { border-color: var(--primary); outline: 0; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
 .kn-search-bar .btn, .kn-toolbar .btn { min-height: 44px; }
 
+/* ชิปแหล่ง: เลือกแล้ว = กรอบหมึก + พื้นเทา (ไม่ใช้สี primary บน chrome) */
 .kn-page .kn-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
-.kn-page .kn-chips button { display: inline-flex; align-items: center; min-height: 32px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 4px 14px; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.kn-page .kn-chips button.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 9%, var(--card)); color: var(--primary); }
+.kn-page .kn-chips button { display: inline-flex; align-items: center; min-height: 32px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 4px 14px; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
+.kn-page .kn-chips button:hover { border-color: var(--kn-control); color: var(--text); }
+.kn-page .kn-chips button.active { border-color: var(--text); background: var(--kn-active); color: var(--text); font-weight: 600; }
+.kn-page .kn-chips button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: 1px; }
 
-/* สถานะว่าง / ผิดพลาด */
+/* สถานะว่าง / ผิดพลาด — ไอคอนเทา ประโยคเดียวบอกสิ่งที่ทำต่อ */
 .kn-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 40px 16px; color: var(--muted); font-size: 13px; text-align: center; }
-.kn-empty > .material-symbols-outlined { font-size: 38px; color: color-mix(in srgb, var(--primary) 55%, var(--muted)); }
-.kn-empty b { color: var(--text); font-size: 15px; }
+.kn-empty > .material-symbols-outlined { font-size: 32px; color: var(--muted); }
+.kn-empty b { color: var(--text); font-size: 15px; font-weight: 600; }
 .kn-empty .btn { margin-top: 6px; }
 .kn-error > .material-symbols-outlined { color: var(--red); }
 
-/* ผลการค้นหา */
-.kn-result-count { margin: 12px 0 10px; color: var(--muted); font-size: 12px; }
-.kn-results { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; transition: opacity .15s ease; }
+/* ผลการค้นหา: รายการคั่นด้วยเส้น (ไม่ใช่การ์ดต่อรายการ) — แถวบน = แหล่ง · Project, ชื่อ = ปุ่มเดียวที่คลุมทั้งแถว */
+.kn-result-count { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 16px 0 4px; color: var(--muted); font-size: 13px; }
+.kn-result-count b { color: var(--text); font-size: 14px; font-weight: 600; }
+.kn-results { margin: 0; padding: 0; list-style: none; transition: opacity .15s ease; }
 .kn-results.is-loading, .kn-status.is-loading { opacity: .5; pointer-events: none; }
-.kn-result { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: start; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
-.kn-result:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); }
-.kn-result-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; }
-.kn-result-icon .material-symbols-outlined { font-size: 22px; }
-.kn-result-icon.tone-red { background: color-mix(in srgb, var(--red) 11%, var(--card)); color: var(--red); }
-.kn-result-icon.tone-blue { background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); }
-.kn-result-icon.tone-green { background: color-mix(in srgb, var(--green) 11%, var(--card)); color: var(--green); }
-.kn-result-icon.tone-purple { background: #ede9fe; color: #6d28d9; }
-.kn-result-icon.tone-yellow { background: color-mix(in srgb, var(--yellow) 14%, var(--card)); color: var(--warning-text); }
-.kn-result-main { min-width: 0; }
-.kn-result-head { display: flex; align-items: flex-start; gap: 8px; }
-.kn-result-head .badge { flex: none; margin-top: 1px; }
-.kn-page .kn-result-title, .kn-page .kn-link { display: inline; border: 0; background: none; padding: 0; color: var(--text); font: inherit; font-size: 15px; font-weight: 700; line-height: 1.45; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.kn-result { position: relative; display: grid; gap: 4px; margin: 0 -12px; border-bottom: 1px solid var(--line); border-radius: 10px; padding: 14px 12px; transition: background-color .15s ease; }
+.kn-result:last-child { border-bottom: 0; }
+.kn-result:hover { background: var(--kn-hover); }
+.kn-result:has(.kn-result-title:focus-visible) { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.kn-result-source { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 0; color: var(--muted); font-size: 12px; }
+.kn-result-source .material-symbols-outlined { font-size: 16px; }
+.kn-page .kn-result-title, .kn-page .kn-link { display: inline; border: 0; background: none; padding: 0; color: var(--text); font: inherit; font-size: 15px; font-weight: 600; line-height: 1.45; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.kn-page .kn-result-title { display: block; justify-self: start; }
+.kn-page .kn-result-title:focus-visible { outline: 0; }
+.kn-page .kn-result-title::after { position: absolute; inset: 0; border-radius: inherit; content: ""; }
 .kn-page .kn-link { font-size: 14px; }
-.kn-page .kn-result-title:hover, .kn-page .kn-link:hover { color: var(--primary); text-decoration: underline; }
-.kn-result-snippet { display: -webkit-box; margin: 6px 0 8px; overflow: hidden; color: var(--text); font-size: 13px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
-.kn-result-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 12px; }
-.kn-page .kn-result-open { align-self: center; gap: 4px; }
-.kn-result-open .material-symbols-outlined { font-size: 18px; }
+.kn-page .kn-result-title:hover, .kn-page .kn-link:hover, .kn-result:hover .kn-result-title { color: var(--primary); text-decoration: underline; }
+.kn-result-snippet { display: -webkit-box; max-width: 900px; margin: 2px 0 0; overflow: hidden; color: var(--text); font-size: 14px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.kn-result-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 2px 0 0; color: var(--muted); font-size: 12px; }
 
 /* บทความ */
 .kn-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
@@ -63,6 +69,16 @@
 .kn-toolbar > .btn.primary { margin-left: auto; }
 /* sr-only ในหัวตารางต้องอยู่ใน scroll container ของตาราง (กฎเดียวกับ .performance-page .table-wrap) */
 .kn-page .table-wrap { position: relative; }
+/* ตารางในหน้านี้: หัวคอลัมน์เทา 12px ชิดซ้าย ไม่มีพื้นแถบ, ตัวเลขชิดขวาแบบ tabular, ปุ่มในแถวเป็นไอคอนโปร่งสีเทา */
+.kn-page .kn-table th { background: none; color: var(--muted); font-size: 12px; font-weight: 500; text-align: left; }
+.kn-page .kn-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.kn-page .kn-table td.is-zero { color: var(--muted); }
+.kn-page .kn-table td.is-warning { color: var(--warning-text); font-weight: 600; }
+.kn-page .kn-table td.is-danger { color: var(--red); font-weight: 600; }
+.kn-page .kn-row-actions .table-action { background: transparent; color: var(--muted); box-shadow: none; }
+.kn-page .kn-row-actions .table-action:hover { background: var(--kn-active); box-shadow: none; color: var(--text); }
+.kn-page .kn-row-actions .table-action.is-danger:hover { background: color-mix(in srgb, var(--red) 10%, var(--card)); color: var(--red); }
+.kn-page .kn-row-actions .table-action:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
 .kn-table td { vertical-align: top; }
 .kn-table td:first-child { width: 100%; min-width: 260px; white-space: normal; }
 .kn-excerpt { display: -webkit-box; margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -73,6 +89,9 @@
 .kn-row-actions { text-align: right; white-space: nowrap; }
 .kn-row-actions .table-action { margin-left: 4px; }
 .kn-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Badge กลางสีเขียว (3.9:1) / เหลือง (4.2:1) ไม่ผ่าน 4.5:1 — ในหน้านี้ใช้สีเข้มขึ้น (พื้นเดิม) */
+.kn-page .badge.green, .modal-box.kn-article-view .badge.green { color: color-mix(in srgb, var(--green) 72%, #000); }
+.kn-page .badge.yellow, .modal-box.kn-article-view .badge.yellow { color: color-mix(in srgb, var(--warning-text) 85%, #000); }
 
 /* หน้าต่างอ่าน/เขียนบทความ */
 .modal-box.kn-article-view { width: min(860px, 100%); max-height: 92vh; overflow-y: auto; }
@@ -92,11 +111,12 @@
 .kn-crm-answers li { border-left: 3px solid color-mix(in srgb, var(--primary) 45%, var(--line)); border-radius: 0 10px 10px 0; background: color-mix(in srgb, var(--muted) 4%, var(--card)); padding: 10px 14px; }
 .kn-crm-answers small { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; }
 .kn-crm-answers p { margin: 0; color: var(--text); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-.kn-crm-status { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-.kn-crm-status > .material-symbols-outlined { flex: none; color: var(--primary); font-size: 22px; }
-.kn-crm-status > div { display: grid; gap: 2px; min-width: 0; }
-.kn-crm-status b { font-size: 14px; }
-.kn-crm-status span, .kn-crm-status small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.kn-crm-status { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.kn-crm-status > .material-symbols-outlined { flex: none; color: var(--muted); font-size: 20px; }
+.kn-crm-status > div { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.kn-crm-status b { font-size: 14px; font-weight: 600; }
+.kn-crm-status span { color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
+.kn-crm-status small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .kn-embed-status .kn-embed-bar { display: block; overflow: hidden; height: 6px; margin: 4px 0 2px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 15%, var(--card)); }
 .kn-embed-status .kn-embed-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
 .kn-embed-status .kn-embed-error { color: var(--red); }
@@ -151,24 +171,29 @@
 .kn-ready { color: var(--green); }
 
 /* สถานะคลัง */
-.kn-status-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.kn-status-head h3 { margin: 0; font-size: 16px; }
-.kn-status-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+/* สถานะคลัง: หัว → ตัวเลข 3 ช่องในกรอบเดียวคั่นเส้น → ตารางต่อแหล่ง → Embedding | CRM คู่กัน → รายการที่ไม่สำเร็จ */
+.kn-status { display: grid; gap: 16px; }
+.kn-status-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.kn-status-head h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.kn-status-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .kn-status-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .kn-notice { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; border: 1px solid color-mix(in srgb, var(--yellow) 40%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--yellow) 10%, var(--card)); padding: 10px 12px; color: var(--warning-text); font-size: 13px; }
-.kn-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
-.kn-totals > div { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-.kn-totals dt { color: var(--muted); font-size: 12px; font-weight: 700; }
-.kn-totals dd { margin: 4px 0 2px; font-size: 26px; font-weight: 800; }
+.kn-status .kn-notice { margin: 0; }
+.kn-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border: 1px solid var(--line); border-radius: 12px; }
+.kn-totals > div { display: grid; gap: 4px; min-width: 0; padding: 14px 18px; }
+.kn-totals > div + div { border-left: 1px solid var(--line); }
+.kn-totals dt { color: var(--muted); font-size: 13px; font-weight: 500; }
+.kn-totals dd { display: flex; align-items: baseline; gap: 6px; margin: 0; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.kn-totals dd small { color: var(--muted); font-size: 13px; font-weight: 400; }
 .kn-totals dd.is-warning { color: var(--warning-text); }
 .kn-totals dd.is-danger { color: var(--red); }
-.kn-totals small { color: var(--muted); font-size: 12px; }
-.kn-source { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 700; }
+.kn-totals > div > span { color: var(--muted); font-size: 12px; }
+.kn-status-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.kn-source { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 600; }
 .kn-source .material-symbols-outlined { font-size: 18px; color: var(--muted); }
 .kn-source small { width: 100%; color: var(--muted); font-size: 11px; font-weight: 400; }
 .kn-source-sub { width: 100%; font-weight: 400; }
-.kn-failures { margin-top: 16px; }
-.kn-failures h4 { margin: 0 0 8px; font-size: 14px; }
+.kn-failures h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
 .kn-failures ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .kn-failures li { display: grid; gap: 2px; border-left: 3px solid var(--red); border-radius: 8px; background: color-mix(in srgb, var(--red) 5%, var(--card)); padding: 8px 12px; font-size: 13px; }
 .kn-failures li span { color: var(--text); overflow-wrap: anywhere; }
@@ -178,8 +203,17 @@
   .kn-search-bar { grid-template-columns: minmax(0, 1fr) auto; }
   .kn-search-bar select { grid-column: 1 / -1; grid-row: 2; }
 }
+/* Tablet: ตารางบทความต้องพอดีกรอบ (ไม่ดันปุ่มจัดการออกนอกจอ) — ชื่อแคบลงได้, Project ตัดบรรทัดได้ */
+@media (min-width: 761px) and (max-width: 1024px) {
+  .kn-table td:first-child { min-width: 200px; }
+  .kn-articles .kn-table td:nth-child(2) { min-width: 112px; white-space: normal; overflow-wrap: normal; }
+}
+@media (max-width: 900px) {
+  .kn-status-pair { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 760px) {
-  .kn-search, .kn-articles, .kn-status { padding: 14px; }
+  .kn-search, .kn-articles, .kn-status { padding: 16px; }
+  .content:has(.kn-page) > .page-head { margin-bottom: 8px; }
   /* แท็บเป็นแถวเดียวเลื่อนแนวนอนในตัว (เดิม grid 2×3 กินความสูง ~150px ทำให้แชทเหลือพื้นที่น้อย) */
   .kn-page .kn-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .kn-page .kn-tabs::-webkit-scrollbar { display: none; }
@@ -187,10 +221,11 @@
   .kn-tab-status { flex: none; margin: 0; }
   .kn-search-bar { grid-template-columns: 1fr; }
   .kn-search-bar select { grid-row: auto; }
-  .kn-page .kn-chips button { min-height: 40px; }
-  .kn-result { grid-template-columns: 36px minmax(0, 1fr); padding: 12px; }
-  .kn-result-icon { width: 36px; height: 36px; }
-  .kn-page .kn-result-open { grid-column: 1 / -1; justify-content: center; min-height: 44px; }
+  .kn-page .kn-chips { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; scrollbar-width: none; }
+  .kn-page .kn-chips::-webkit-scrollbar { display: none; }
+  .kn-page .kn-chips button { flex: none; min-height: 40px; }
+  .kn-result { margin: 0 -8px; padding: 14px 8px; }
+  .kn-totals > div { padding: 12px; }
   .kn-toolbar select, .kn-toolbar .kn-search-input, .kn-toolbar > .btn.primary { flex: 1 1 100%; width: 100%; margin-left: 0; }
   .kn-table td:first-child { min-width: 0; width: auto; }
   .kn-row-actions { text-align: left; }
@@ -209,15 +244,13 @@
   .modal-box.kn-editor .kn-link-button { min-height: 32px; }
 }
 @media (max-width: 520px) {
-  .kn-totals { gap: 8px; }
   .kn-totals > div { padding: 10px; }
-  .kn-totals dd { font-size: 22px; }
+  .kn-totals dd { flex-direction: column; gap: 0; font-size: 22px; }
 }
 
 /* บทความ HTML (นำเข้าไฟล์ → แสดงตามรูปแบบในไฟล์ผ่าน HtmlArticleFrame) + ลิงก์แชร์สาธารณะ */
 .kn-row-flags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: 2px; }
-.kn-row-flags > span { display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); padding: 1px 8px 1px 6px; color: var(--primary); font-size: 11px; font-weight: 700; white-space: nowrap; }
-.kn-row-flags > span.is-shared { background: color-mix(in srgb, var(--green) 11%, var(--card)); color: var(--green); }
+.kn-row-flags > span { display: inline-flex; flex: none; align-items: center; gap: 3px; border-radius: 4px; background: var(--kn-active); padding: 1px 6px 1px 4px; color: color-mix(in srgb, var(--text) 78%, var(--muted)); font-size: 11px; font-weight: 500; white-space: nowrap; }
 .kn-row-flags .material-symbols-outlined { font-size: 14px; }
 .kn-html-view { overflow: clip; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
 .kn-share { display: grid; gap: 10px; margin-top: 14px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); padding: 12px 14px; }

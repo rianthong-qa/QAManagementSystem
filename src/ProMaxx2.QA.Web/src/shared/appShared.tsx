@@ -59,10 +59,11 @@ export function buildModuleTree(modules: ModuleItem[]): ModuleTreeEntry[] {
   modules.forEach((m) => { if (!visited.has(m.moduleId)) { visited.add(m.moduleId); rows.push({ module: m, depth: 0 }); } });
   return rows;
 }
-export function renderModuleSelectOptions(modules: ModuleItem[]): ReactElement[] {
+// counts (ถ้าส่ง) = ตัวเลขต่อท้ายชื่อ Module เช่น "(3)" — Execution Workspace ใช้แสดงจำนวน Test Cycle ของแต่ละ Module
+export function renderModuleSelectOptions(modules: ModuleItem[], counts?: ReadonlyMap<string, number>): ReactElement[] {
   return buildModuleTree(modules).map(({ module, depth }) => (
     <option key={module.moduleId} value={module.moduleId} className={depth === 0 ? "module-root-option" : "module-child-option"}>
-      {depth ? `${"　".repeat(depth)}└ ` : "▾ "}{module.moduleCode ? `${module.moduleCode} · ` : ""}{module.moduleName}
+      {depth ? `${"　".repeat(depth)}└ ` : "▾ "}{module.moduleCode ? `${module.moduleCode} · ` : ""}{module.moduleName}{counts ? ` (${counts.get(module.moduleId) ?? 0})` : ""}
     </option>
   ));
 }

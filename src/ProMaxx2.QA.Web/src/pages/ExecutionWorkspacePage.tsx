@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { CyclePicker } from "../components/CyclePicker";
 import { type WorkspaceDefect, type WorkspaceDefectContext, ExecutionDefectEditor } from "../ExecutionDefectEditor";
 import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
@@ -6,6 +6,7 @@ import { type RemoveDeletedCasesResult, removeDeletedCasesMessage } from "../sha
 import { confirmDialog, notify } from "../components/dialogStore";
 import { type StepStatus, calculateOverallResult } from "../overallResult";
 import { Badge } from "../components/Badge";
+import { ActionMenu } from "../components/ActionMenu";
 import { ModalShell } from "../components/ModalShell";
 import { formatThaiDateTime } from "../dateTime";
 import { type ModuleItem, type SessionUser, type TestCycleItem, type TestCyclePlanLink, currentUserId, defectStatusTones, frozenPlanMessage, priorityTone, renderModuleSelectOptions } from "../shared/appShared";
@@ -32,6 +33,25 @@ function executionStatusTone(status: string): string {
     case "InProgress": return "blue";
     default: return "gray"; // NotRun
   }
+}
+// ชื่อสถานะที่แสดงบนจอ — ชุดเดียวกับชิปสถานะด้านบน (คิว/หัวเคส/ประวัติ/สถานะ Cycle เดิมแสดงรหัสดิบ "NotRun", "InProgress")
+const executionStatusLabels: Record<string, string> = { Pass: "Passed", Fail: "Failed", Blocked: "Blocked", Skipped: "Skipped", InProgress: "In Progress", NotRun: "Not Run" };
+const executionStatusText = (status: string) => executionStatusLabels[status] ?? status;
+// ตัวกรอง Module: "" = ยังไม่เลือก (ยังไม่เปิด Cycle ใด — ไม่โหลด Workspace/เคส/Defect จนกว่าผู้ใช้เลือก), allModules = ทุก Module
+const allModules = "*";
+const lastModuleKey = "qa.execution.lastModuleId";
+const readStored = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
+// Preconditions ยาว (> 2 บรรทัด) พับไว้ + ปุ่ม "ดูทั้งหมด" — key ตามเคส จึงกลับเป็นพับทุกครั้งที่เปลี่ยนเคส
+function PreconditionsNote({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 140 || text.split("\n").length > 2;
+  return (
+    <div className={`execution-info-row precondition${long && !open ? " is-clamped" : ""}`}>
+      <b>Preconditions</b>
+      <p>{text}</p>
+      {long && <button type="button" className="link-btn" aria-expanded={open} onClick={() => setOpen((x) => !x)}>{open ? "ย่อ" : "ดูทั้งหมด"}</button>}
+    </div>
+  );
 }
 // Resolved = รอตรวจซ้ำ ยังไม่จบ (DefectStatusGroups) — เคส Fail ซ้ำระบบ Reopen ตัวเดิม จึงไม่ชวนสร้าง Defect ใหม่
 const isOpenDefectStatus = (status: string) => !isDefectDone(status);
@@ -69,9 +89,9 @@ type ExecutionCase = {
 };
 // โหลด Cycle ที่ InProgress ทีละหน้า (server จำกัด size สูงสุด 500) จนครบ total — ใช้ทั้งตอนโหลดรายการและตอนรีเฟรช %
 const cyclePageSize = 500;
-async function loadInProgressCycles(moduleId: string): Promise<TestCycleItem[]> {
+async function loadInProgressCycles(): Promise<TestCycleItem[]> {
   const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
-  const query = `?status=InProgress&size=${cyclePageSize}${moduleId ? `&moduleId=${moduleId}` : ""}`;
+  const query = `?status=InProgress&size=${cyclePageSize}`;
   const loadPage = async (page: number, acc: TestCycleItem[]): Promise<TestCycleItem[]> => {
     const r = await fetch(`${apiUrl}/test-cycles${query}&page=${page}`, { headers: h });
     if (!r.ok) throw new Error(`โหลด Test Cycle ไม่สำเร็จ (${r.status})`);
@@ -113,7 +133,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     [cyclesLoaded, setCyclesLoaded] = useState(false),
     // Cycle ที่หน้าอื่นส่งมา (qa.targetCycleId) มาก่อน ไม่งั้นใช้ Cycle ล่าสุดที่เปิด — เริ่มโหลด workspace ได้ทันทีพร้อมรายการ Cycle
     // ไม่ต้องรอรายการเสร็จก่อน (ทุกคำขอผ่าน Cloudflare ~0.2–1 วินาที); ถ้า Cycle นั้นไม่อยู่ในรายการแล้ว effect ด้านล่างจะเปลี่ยนให้เอง
-    [cycleId, setCycleId] = useState(()=>{ try { return localStorage.getItem("qa.targetCycleId") ?? localStorage.getItem("qa.execution.lastCycleId") ?? ""; } catch { return ""; } }),
+    // ยังไม่เคยเลือก Module = ไม่เปิด Cycle ล่าสุดเอง (ผู้ใช้เลือก Module ก่อน); หน้าอื่นส่ง Cycle มา = เปิดเลยแบบทุก Module
+    [cycleId, setCycleId] = useState(() => readStored("qa.targetCycleId") ?? (readStored(lastModuleKey) ? readStored("qa.execution.lastCycleId") ?? "" : "")),
     [workspace, setWorkspace] = useState<ExecutionWorkspace | null>(null),
     [selectedId, setSelectedId] = useState(""),
     [caseDetail, setCaseDetail] = useState<ExecutionCase | null>(null),
@@ -123,7 +144,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     [comment, setComment] = useState(""),
     [caseSearch, setCaseSearch] = useState(""),
     [statusFilter, setStatusFilter] = useState("All"),
-    [cycleModuleFilter, setCycleModuleFilter] = useState(""),
+    [cycleModuleFilter, setCycleModuleFilter] = useState(() => readStored("qa.targetCycleId") ? allModules : readStored(lastModuleKey) ?? ""),
     [cycleModules, setCycleModules] = useState<ModuleItem[]>([]),
     // ปิดเป็นค่าเริ่มต้นเสมอ (ไม่กรอง) — Test Cycle ไม่มีช่องให้กำหนด "ผู้ดำเนินการ" (ownerUserId) ตอนสร้าง/แก้ไข
     // เลยเป็น null เสมอทุก Cycle ในระบบ ถ้า default เปิดไว้จะกรองจนไม่เหลือ Cycle ให้เลือกเลยสำหรับทุกคน
@@ -133,6 +154,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     // คิว: ซ่อนเคสที่ Test Case ถูกลบแล้ว — ค่าเริ่มต้นแสดง (ผลเดิมยังนับใน Cycle) ปุ่มแสดงเมื่อมีเคสที่ถูกลบ
     [hideDeletedCases, setHideDeletedCases] = useState(false),
     [restoringCase, setRestoringCase] = useState(false),
+    [restoringAllCases, setRestoringAllCases] = useState(false),
     [removingDeletedCases, setRemovingDeletedCases] = useState(false),
     [workspaceLoading, setWorkspaceLoading] = useState(false),
     [saving, setSaving] = useState(false),
@@ -175,7 +197,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     setCyclesLoaded(false);
     setCycleLoadError("");
     lastProgressRefresh.current = Date.now();
-    loadInProgressCycles(cycleModuleFilter)
+    loadInProgressCycles()
       .then((data: TestCycleItem[]) => {
         // Only offer cycles that are actively being executed — Draft hasn't started yet, and
         // Completed/Closed/Cancelled have no more work to do, so none of them belong in this dropdown.
@@ -186,7 +208,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         const openCycles = data.filter((x) => x.status === "InProgress" && (!myCyclesOnly || x.createdBy === myId));
         setCycles(openCycles);
         setCyclesLoaded(true);
-        setCycleId((current) => openCycles.some(x=>x.testCycleId===current)?current:(openCycles[0]?.testCycleId||""));
+        // ไม่เลือก Cycle แรกเอง — effect เลือก Cycle ด้านล่างเลือกจากรายการของ Module ที่เลือก (ยังไม่เลือก Module = ไม่เปิด)
+        setCycleId((current) => openCycles.some(x=>x.testCycleId===current)?current:"");
         localStorage.removeItem("qa.targetCycleId");
       })
       .catch((e) => {
@@ -198,13 +221,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     // % ของ Cycle อัปเดตแยกด้วย mergeCycleProgress (หลังโหลด workspace และตอนเปิด dropdown)
     // ไม่ผูกกับ reload — บันทึก/ลบผลไม่ได้เปลี่ยนรายการ Cycle แต่ถ้าโหลดใหม่ cycles จะเป็น array ใหม่ ทำให้โหลด Module
     // ของทุก Project ซ้ำและ effect เลือก Cycle ทำงานอีกรอบ ดูเหมือนหน้ารีโหลดเองทุกครั้งที่กดบันทึก
-  }, [cycleModuleFilter, myCyclesOnly]);
+  }, [myCyclesOnly]);
   useEffect(() => {
     const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
-    // Keep the filter options stable while the cycle list is being reloaded
-    // for the selected module; otherwise the selected result would empty the
-    // source used to build the Module dropdown and disable it.
-    if (cycleModuleFilter) return;
+    // โครง Module (ลำดับ/Parent) ของ Project — ตัวเลือกจริงกรองเหลือเฉพาะ Module ที่มี Test Cycle (moduleCycleCounts ด้านล่าง)
     const projectIds = contextProjectId ? [contextProjectId] : cycleProjectKey.split(",").filter(Boolean);
     if (!projectIds.length) { setCycleModules([]); return; }
     Promise.all(projectIds.map((id) => fetch(`${apiUrl}/projects/${id}/modules`, { headers: h }).then((r) => r.ok ? r.json() : [])))
@@ -213,7 +233,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         groups.flat().filter((m) => m.isActive).forEach((m) => { if (!seen.has(m.moduleId)) seen.set(m.moduleId, m); });
         setCycleModules([...seen.values()].sort((a, b) => a.moduleCode.localeCompare(b.moduleCode)));
       });
-  }, [contextProjectId, cycleProjectKey, cycleModuleFilter]);
+  }, [contextProjectId, cycleProjectKey]);
   // Cycle ที่ workspace ปัจจุบันเป็นของ — ใช้แยก "เปลี่ยน Cycle" (แสดงสถานะกำลังโหลด) ออกจาก
   // "reload หลังบันทึกผล" (refetch เงียบๆ คง Test Case ที่เลือกและตำแหน่ง scroll ไว้)
   // เปลี่ยน Cycle แล้วไม่ล้างหน้าจอ: คงข้อมูล Cycle เดิมไว้ (หรี่ลง) จนข้อมูลใหม่มาครบแล้วสลับทีเดียว — เดิมล้างเป็น spinner
@@ -263,31 +283,44 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   // generation กันผล prefetch ที่ค้างอยู่จากก่อนล้างแคชมาใส่ทับข้อมูลใหม่
   const detailCache = useRef(new Map<string, ExecutionCase>());
   const detailCacheGeneration = useRef(0);
-  useEffect(() => { detailCache.current.clear(); detailCacheGeneration.current += 1; }, [cycleId, reload]);
+  // คำขอรายละเอียดที่ยังไม่กลับ (ทั้งเคสที่เลือกและเคสถัดไปที่โหลดล่วงหน้า) — เคสเดียวกันใช้คำขอเดียว
+  // (เดิมกด "ถัดไป" ระหว่าง prefetch ยังไม่กลับ = ยิงซ้ำอีกครั้ง) และไม่ abort เมื่อเปลี่ยนเคส: ผลเก็บลงแคชไว้ใช้ตอนย้อนกลับ
+  const detailInflight = useRef(new Map<string, Promise<ExecutionCase>>());
+  const invalidateAllCases = () => { detailCache.current.clear(); detailInflight.current.clear(); detailCacheGeneration.current += 1; };
+  // บันทึกผล/ลบผล/กู้คืนรายเคส เปลี่ยนข้อมูลเฉพาะเคสนั้น — ล้างแคชเคสเดียว (เดิมล้างทั้งหมด เคสถัดไปที่โหลดล่วงหน้าไว้ต้องโหลดใหม่)
+  const invalidateCase = (cycleCaseId?: string) => { if (!cycleCaseId) return; detailCache.current.delete(cycleCaseId); detailInflight.current.delete(cycleCaseId); };
+  useEffect(() => { invalidateAllCases(); }, [cycleId]);
+  const loadCaseDetail = useCallback((cycleCaseId: string): Promise<ExecutionCase> => {
+    const cached = detailCache.current.get(cycleCaseId);
+    if (cached) return Promise.resolve(cached);
+    const pending = detailInflight.current.get(cycleCaseId);
+    if (pending) return pending;
+    const generation = detailCacheGeneration.current;
+    const request: Promise<ExecutionCase> = getJson<ExecutionCase>(`${apiUrl}/test-cycles/${cycleId}/cases/${cycleCaseId}`)
+      .then((data) => {
+        // ล้างแคช/ล้างเคสนี้ระหว่างรอ = ผลเก่า ไม่เก็บลงแคช
+        if (generation === detailCacheGeneration.current && detailInflight.current.get(cycleCaseId) === request) detailCache.current.set(cycleCaseId, data);
+        return data;
+      })
+      .finally(() => { if (detailInflight.current.get(cycleCaseId) === request) detailInflight.current.delete(cycleCaseId); });
+    detailInflight.current.set(cycleCaseId, request);
+    return request;
+  }, [cycleId]);
   useEffect(() => {
     if (!selectedId || !cycleId) { setCaseDetail(null); setCaseDetailLoadError(""); return; }
     const cached = detailCache.current.get(selectedId);
     if (cached) { setCaseDetail(cached); setCaseDetailLoadError(""); return; }
-    const h = { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` };
-    const controller = new AbortController();
-    const generation = detailCacheGeneration.current;
+    let active = true;
     setCaseDetailLoadError("");
-    fetch(`${apiUrl}/test-cycles/${cycleId}/cases/${selectedId}`, { headers: h, signal: controller.signal })
-      .then(r => {
-        if (!r.ok) throw new Error(`โหลดรายละเอียด Test Case ไม่สำเร็จ (${r.status})`);
-        return r.json();
-      })
-      .then((data: ExecutionCase) => {
-        if (generation === detailCacheGeneration.current) detailCache.current.set(selectedId, data);
-        if (!controller.signal.aborted) setCaseDetail(data);
-      })
+    loadCaseDetail(selectedId)
+      .then((data) => { if (active) setCaseDetail(data); })
       .catch((e) => {
-        if (controller.signal.aborted) return;
+        if (!active) return;
         setCaseDetail(null);
-        setCaseDetailLoadError(e instanceof Error ? e.message : "โหลดรายละเอียด Test Case ไม่สำเร็จ");
+        setCaseDetailLoadError(e instanceof Error ? `โหลดรายละเอียด Test Case ไม่สำเร็จ — ${e.message}` : "โหลดรายละเอียด Test Case ไม่สำเร็จ");
       });
-    return () => controller.abort();
-  }, [selectedId, cycleId, reload]);
+    return () => { active = false; };
+  }, [selectedId, cycleId, reload, loadCaseDetail]);
   useEffect(() => { if (cycleId) { try { localStorage.setItem("qa.execution.lastCycleId", cycleId); } catch { /* ไม่มี storage ก็แค่ไม่จำ */ } } }, [cycleId]);
   // testCaseId มีอยู่ในรายการเคสของ workspace แล้ว — โหลด Defect ที่เชื่อมโยงพร้อมกับรายละเอียดเคสได้เลย (เดิมรอรายละเอียดเคสโหลดเสร็จก่อน)
   const selectedTestCaseId = workspace?.cases.find((x) => x.testCycleCaseId === selectedId)?.testCaseId;
@@ -363,11 +396,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     const index = filteredCases.findIndex((x) => x.testCycleCaseId === selectedId);
     const next = index >= 0 ? filteredCases[index + 1] : undefined;
     if (!next || detailCache.current.has(next.testCycleCaseId)) return;
-    const generation = detailCacheGeneration.current;
-    getJson<ExecutionCase>(`${apiUrl}/test-cycles/${cycleId}/cases/${next.testCycleCaseId}`)
-      .then((data) => { if (generation === detailCacheGeneration.current) detailCache.current.set(next.testCycleCaseId, data); })
-      .catch(() => { /* prefetch ไม่สำเร็จ = ตอนเลือกเคสจะโหลดตามปกติ */ });
-  }, [cycleId, caseDetail, selectedId, filteredCases]);
+    loadCaseDetail(next.testCycleCaseId).catch(() => { /* prefetch ไม่สำเร็จ = ตอนเลือกเคสจะโหลดตามปกติ */ });
+  }, [cycleId, caseDetail, selectedId, filteredCases, loadCaseDetail]);
   useLayoutEffect(() => {
     if (selected) {
       // Restore the last saved values for this case instead of always resetting to blank — otherwise
@@ -387,17 +417,36 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     }
   }, [selected]);
   // กำลังสลับไปเคส/Cycle อื่น — หน้าจอยังแสดงของเดิม จึงต้องปิดการบันทึก/ปุ่มลัดไว้จนของใหม่พร้อม
-  const filteredCycles = useMemo(() => cycles.filter((x) =>
+  const contextCycles = useMemo(() => cycles.filter((x) =>
     (!contextProjectId || x.projectId === contextProjectId) &&
     (!contextReleaseId || x.releaseId === contextReleaseId) &&
     (!contextBuildId || x.buildId === contextBuildId)
   ), [cycles, contextProjectId, contextReleaseId, contextBuildId]);
+  // จำนวน Test Cycle ต่อ Module นับจาก Cycle ที่เลือกได้จริง (InProgress + Project/Release/Build + เฉพาะฉัน) —
+  // ตัวเลือก Module แสดงเฉพาะที่มี Cycle พร้อมตัวเลขนี้ (เดิมแสดงทุก Module ของ Project เลือกแล้วอาจไม่เหลือ Cycle เลย)
+  // ใช้ modules ของแต่ละ Cycle (Module ของ Test Case ใน Cycle) — เงื่อนไขเดียวกับ filter moduleId ของ API
+  const moduleCycleCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    contextCycles.forEach((c) => new Set((c.modules ?? []).map((m) => m.moduleId)).forEach((id) => counts.set(id, (counts.get(id) ?? 0) + 1)));
+    return counts;
+  }, [contextCycles]);
+  const moduleOptions = useMemo(() => cycleModules.filter((m) => moduleCycleCounts.has(m.moduleId)), [cycleModules, moduleCycleCounts]);
+  // กรองตาม Module ในหน้าเว็บ (Cycle InProgress โหลดมาครบแล้ว) — เปลี่ยน Module ไม่ต้องรอ API
+  const filteredCycles = useMemo(() => !cycleModuleFilter ? []
+    : cycleModuleFilter === allModules ? contextCycles
+    : contextCycles.filter((c) => c.modules?.some((m) => m.moduleId === cycleModuleFilter)), [contextCycles, cycleModuleFilter]);
+  // Module ที่เลือกไว้ไม่มี Cycle แล้ว (เปลี่ยน Release/Build หรือเปิด "เฉพาะฉัน") → กลับเป็นทุก Module ไม่ค้างตัวเลือกที่ไม่มีในรายการ
+  useEffect(() => { if (cyclesLoaded && cycleModuleFilter && cycleModuleFilter !== allModules && !moduleCycleCounts.has(cycleModuleFilter)) setCycleModuleFilter(""); }, [cyclesLoaded, cycleModuleFilter, moduleCycleCounts]);
+  const chooseModule = (value: string) => {
+    setCycleModuleFilter(value);
+    try { if (value) localStorage.setItem(lastModuleKey, value); else localStorage.removeItem(lastModuleKey); } catch { /* ไม่มี storage ก็แค่ไม่จำ */ }
+  };
   // เปิด dropdown = ดึง % ล่าสุดของทุก Cycle แบบเงียบ ๆ (รวมผลที่คนอื่นบันทึก) — เว้นอย่างน้อย 15 วินาทีต่อรอบและไม่ซ้อนกัน
   const refreshCycleProgress = () => {
     if (progressRefreshing.current || Date.now() - lastProgressRefresh.current < 15_000) return;
     progressRefreshing.current = true;
     lastProgressRefresh.current = Date.now();
-    loadInProgressCycles(cycleModuleFilter)
+    loadInProgressCycles()
       .then((rows) => setCycles((current) => mergeCycleProgress(current, new Map(rows.map((x) => [x.testCycleId, { executedCount: x.executedCount, caseCount: x.caseCount }])))))
       .catch(() => { /* ไม่สำเร็จ = คงตัวเลขเดิม เปิดครั้งหน้าค่อยลองใหม่ */ })
       .finally(() => { progressRefreshing.current = false; });
@@ -455,6 +504,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   useEffect(() => { queueListRef.current?.scrollTo({ top: 0 }); }, [workspace?.testCycleId]);
   // Mobile: คิว Test Case พับได้ (EXECUTION-WORKSPACE-RESPONSIVE-UI-SPEC §3.2) — Desktop แสดงตลอด
   const [queueOpen, setQueueOpen] = useState(false);
+  // ≤760px แถบเลือก Test Cycle/Module พับเป็นปุ่มสรุป (กดกางเพื่อเปลี่ยน) — จอใหญ่แสดงตลอด
+  const [toolbarOpen, setToolbarOpen] = useState(false);
   // Overall Result แบบ live พรีวิวจากสถานะ Step ปัจจุบันที่กำลังแก้ (test-case-execution-ui-spec.md §4-5)
   // — คำนวณด้วยฟังก์ชันเดียวกับที่ backend ใช้จริงตอนบันทึก (ดู overallResult.ts)
   const liveStepStatuses = useMemo(
@@ -504,7 +555,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       if (!response.ok) {
         const problem = await response.json().catch(() => null);
         // Test Case ถูกลบระหว่างที่หน้านี้เปิดอยู่ — โหลดใหม่ให้หน้าจอขึ้นสถานะ "ถูกลบแล้ว"
-        if (problem?.code === "TEST_CASE_DELETED") setReload((x) => x + 1);
+        if (problem?.code === "TEST_CASE_DELETED") { invalidateCase(selected.testCycleCaseId); setReload((x) => x + 1); }
         throw new Error(problem?.detail ?? "บันทึกผลไม่สำเร็จ");
       }
       // ExecutionHistoryDto.CreatedDefectCode/ExistingDefectCode/DefectAutoCreateError มีให้ "ครั้งเดียว"
@@ -520,6 +571,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       else if (result.existingDefectCode && result.existingDefectStatus === "Resolved") notify(`ไม่ได้ Reopen ${result.existingDefectCode} — Dev แก้ไว้ใน Build ที่ใหม่กว่า Build ของ Cycle นี้ ให้ตรวจซ้ำบน Fix Build`, "error");
       else if (result.existingDefectCode) notify(`ไม่ได้สร้าง Defect ใหม่ให้อัตโนมัติ เนื่องจากมี Defect ${result.existingDefectCode} ที่ยังเปิดอยู่ผูกกับ Test Case นี้อยู่แล้ว`, "error");
       else if (result.defectAutoCreateError) notify(`คำเตือน: ${result.defectAutoCreateError}`, "error");
+      invalidateCase(selected.testCycleCaseId);
       setReload((x) => x + 1);
       if (status === "Skipped") { setSkipModalOpen(false); setSkipReason(""); setSkipComment(""); }
     } catch (e) {
@@ -652,11 +704,36 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       // 404 = มีคนกู้คืนไปแล้ว — โหลดใหม่ก็ได้สถานะล่าสุดเหมือนกัน
       if (!response.ok && response.status !== 404) throw new Error();
       notify(`กู้คืน ${selected.testCaseCode} แล้ว บันทึกผลได้ตามปกติ`, "success");
+      invalidateCase(selected.testCycleCaseId);
       setReload((x) => x + 1);
     } catch {
       notify(`กู้คืน ${selected.testCaseCode} ไม่สำเร็จ กรุณาลองใหม่`, "error");
     } finally {
       setRestoringCase(false);
+    }
+  };
+  // กู้คืน Test Case ที่ถูกลบทั้งหมดใน Cycle นี้ (SYS_ADMIN) — API กู้คืนทีละรายการ จึงยิงขนานกันทีละ 6 (ไม่เรียงทีละคำขอ — ผ่าน Cloudflare ~0.5 วินาที/คำขอ)
+  const restoreAllDeletedCases = async () => {
+    if (!workspace || restoringAllCases || restoringCase) return;
+    const ids = [...new Set(workspace.cases.filter((x) => x.testCaseDeleted).map((x) => x.testCaseId))];
+    if (!ids.length) return;
+    if (!await confirmDialog({ title: `กู้คืน Test Case ที่ถูกลบทั้งหมด (${ids.length})?`, message: `Test Case ${ids.length} รายการใน ${workspace.cycleCode} จะกลับมาในหน้า Test Case และบันทึกผลใน Cycle นี้ได้ตามปกติ`, confirmLabel: "กู้คืนทั้งหมด" })) return;
+    setRestoringAllCases(true);
+    let restored = 0, failed = 0;
+    try {
+      for (let i = 0; i < ids.length; i += 6) {
+        const results = await Promise.allSettled(ids.slice(i, i + 6).map(async (id) => {
+          const response = await fetch(`${apiUrl}/recycle-bin/test-cases/${id}/restore`, { method: "POST", headers });
+          // 404 = มีคนกู้คืนไปแล้ว นับเป็นสำเร็จ
+          if (!response.ok && response.status !== 404) throw new Error(String(response.status));
+        }));
+        results.forEach((r) => { if (r.status === "fulfilled") restored++; else failed++; });
+      }
+      if (failed) notify(`กู้คืนแล้ว ${restored} รายการ · ไม่สำเร็จ ${failed} รายการ (เช่นรหัส Test Case ซ้ำกับรายการที่มีอยู่) — กู้คืนรายการที่เหลือทีละเคสเพื่อดูสาเหตุ`, "error");
+      else notify(`กู้คืน Test Case ${restored} รายการแล้ว บันทึกผลได้ตามปกติ`, "success");
+      if (restored) { invalidateAllCases(); setReload((x) => x + 1); }
+    } finally {
+      setRestoringAllCases(false);
     }
   };
   const removeDeletedCases = async () => {
@@ -671,6 +748,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     try {
       const result = await apiFetch<RemoveDeletedCasesResult>(`/test-cycles/${workspace.testCycleId}/remove-deleted-cases`, { method: "POST", fallbackMessage: "เอาเคสที่ถูกลบออกไม่สำเร็จ" });
       notify(removeDeletedCasesMessage(result), "success");
+      invalidateAllCases();
       setReload((x) => x + 1);
     } catch (e) {
       notify(e instanceof Error ? e.message : "เอาเคสที่ถูกลบออกไม่สำเร็จ", "error");
@@ -696,6 +774,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
         notify("ลบผลการทดสอบไม่สำเร็จ", "error");
         return;
       }
+      invalidateCase(selectedId);
       setReload((x) => x + 1);
     } finally {
       setDeletingHistoryId(null);
@@ -743,6 +822,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     : liveOverall === "Blocked" ? `มี Step ที่ Blocked จำนวน ${stepCounts.blocked} รายการ`
     : liveOverall === "InProgress" ? `ทดสอบแล้ว ${liveStepStatuses.length - stepCounts.notRun} จาก ${liveStepStatuses.length} Step`
     : liveOverall === "Pass" ? "ทุก Step ผ่าน" : "ยังไม่ได้บันทึกผล Step";
+  const selectedCycle = filteredCycles.find((x) => x.testCycleId === cycleId);
   const statusChips: { status: string; label: string; count: number }[] = [
     { status: "Pass", label: "Passed", count: executionStats.passed },
     { status: "Fail", label: "Failed", count: executionStats.failed },
@@ -754,20 +834,35 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   ];
   return (
     <div className="execution-page">
-      <div className="execution-toolbar card">
-        <div className="execution-toolbar-row">
+      {/* ยังไม่ได้เลือก Cycle = กางไว้ให้เลือก (ไม่ซ่อนตัวเลือกเดียวที่ทำต่อได้) */}
+      <div className={`execution-toolbar card${toolbarOpen || !selectedCycle ? " is-open" : ""}`}>
+        {/* ≤760px: ปุ่มสรุป Cycle ที่เลือก (CSS ซ่อนบนจอใหญ่) */}
+        {selectedCycle && (
+          <button type="button" className="execution-toolbar-toggle" aria-expanded={toolbarOpen} aria-controls="execution-toolbar-fields" onClick={() => setToolbarOpen((x) => !x)}>
+            <span>
+              <small>Test Cycle{workspaceSwitching && <span className="execution-switching"><span className="spinner inline" aria-hidden="true" /> กำลังโหลด</span>}</small>
+              <b><em>{selectedCycle.cycleCode}</em> {selectedCycle.cycleName}</b>
+              <small>{[workspace?.buildNumber, workspace?.environmentName, workspace ? executionStatusText(workspace.status) : ""].filter(Boolean).join(" · ") || "-"}{(cycleModuleFilter && cycleModuleFilter !== allModules) || myCyclesOnly ? " · มีตัวกรอง" : ""}</small>
+            </span>
+            <span className="material-symbols-outlined" aria-hidden="true">{toolbarOpen ? "expand_less" : "expand_more"}</span>
+            <span className="sr-only">{toolbarOpen ? "ซ่อนตัวเลือก Test Cycle" : "เปลี่ยน Test Cycle / Module"}</span>
+          </button>
+        )}
+        <div className="execution-toolbar-row" id="execution-toolbar-fields">
           {/* ไม่ห่อด้วย <label> — ในแผงมีช่องค้นหา การคลิกใน label จะไปกดปุ่มเปิด/ปิดซ้ำ */}
-          <div className="execution-cycle-field">
-            <span className="execution-field-label" aria-hidden="true">Test Cycle{workspaceSwitching && <span className="execution-switching"><span className="spinner inline" /> กำลังโหลด</span>}</span>
-            <CyclePicker cycles={filteredCycles} value={cycleId} onChange={setCycleId} onOpen={refreshCycleProgress} disabled={!cyclesLoaded && !filteredCycles.length} />
-          </div>
-          <label className="execution-module-field">
+          {/* Module ก่อน Test Cycle — ค่าเริ่มต้น "เลือก Module" (ไม่ใช่ทุก Module) ช่อง Test Cycle จึงแสดงเฉพาะ Cycle ของ Module นั้น */}
+          <label className={`execution-module-field${!cycleModuleFilter ? " is-unset" : ""}`}>
             <span className="execution-field-label">Module</span>
-            <select className="testcase-module-filter" value={cycleModuleFilter} onChange={(e) => setCycleModuleFilter(e.target.value)} disabled={!cycleModules.length}>
-              <option value="">ทุก Module</option>
-              {renderModuleSelectOptions(cycleModules)}
+            <select className="testcase-module-filter" value={cycleModuleFilter} onChange={(e) => chooseModule(e.target.value)} disabled={!cyclesLoaded || !contextCycles.length}>
+              <option value="" disabled>{cyclesLoaded ? "เลือก Module" : "กำลังโหลด..."}</option>
+              <option value={allModules}>ทุก Module ({contextCycles.length})</option>
+              {renderModuleSelectOptions(moduleOptions, moduleCycleCounts)}
             </select>
           </label>
+          <div className="execution-cycle-field">
+            <span className="execution-field-label" aria-hidden="true">Test Cycle{workspaceSwitching && <span className="execution-switching"><span className="spinner inline" /> กำลังโหลด</span>}</span>
+            <CyclePicker cycles={filteredCycles} value={cycleId} onChange={(id) => { setCycleId(id); setToolbarOpen(false); }} onOpen={refreshCycleProgress} placeholder={cycleModuleFilter ? "เลือก Test Cycle" : "เลือก Module ก่อน"} disabled={!cycleModuleFilter || (!cyclesLoaded && !filteredCycles.length)} />
+          </div>
           <label className={`execution-mine-toggle${myCyclesOnly ? " is-on" : ""}`} title="แสดงเฉพาะ Test Cycle ที่ฉันสร้าง">
             <input type="checkbox" checked={myCyclesOnly} onChange={(e) => setMyCyclesOnly(e.target.checked)} />
             <span className="material-symbols-outlined" aria-hidden="true">{myCyclesOnly ? "person_check" : "person"}</span>
@@ -777,7 +872,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
           <dl className="execution-context" aria-label="ข้อมูล Test Cycle">
             <div><dt><span className="material-symbols-outlined" aria-hidden="true">deployed_code</span>Build</dt><dd title={workspace?.buildNumber || undefined}>{workspace?.buildNumber || "-"}</dd></div>
             <div><dt><span className="material-symbols-outlined" aria-hidden="true">dns</span>Environment</dt><dd title={workspace?.environmentName || undefined}>{workspace?.environmentName || "-"}</dd></div>
-            <div><dt><span className="material-symbols-outlined" aria-hidden="true">flag</span>สถานะ</dt><dd>{workspace ? <Badge tone={workspace.status === "Closed" ? "green" : "yellow"}>{workspace.status}</Badge> : "-"}</dd></div>
+            <div><dt><span className="material-symbols-outlined" aria-hidden="true">flag</span>สถานะ</dt><dd>{workspace ? <Badge tone={workspace.status === "Closed" ? "green" : "yellow"}>{executionStatusText(workspace.status)}</Badge> : "-"}</dd></div>
           </dl>
         </div>
         {workspace?.plan && workspace.testCycleId === cycleId && (
@@ -831,8 +926,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
           </article>
         ) : (
           <article className="card empty">
-            <h3>{cycleId ? "ไม่พบข้อมูล Execution Workspace" : "เลือก Test Cycle เพื่อเริ่มทดสอบ"}</h3>
-            <p>{cycleId ? "Cycle นี้ยังไม่มีข้อมูลสำหรับการ Execute หรือข้อมูลถูกเปลี่ยนแปลงแล้ว" : cyclesLoaded && !filteredCycles.length ? "ยังไม่มี Test Cycle ที่สถานะ InProgress ตามตัวกรองนี้ — ลองเปลี่ยน Module/เฉพาะฉัน หรือเริ่ม Cycle จากหน้า Test Cycle" : "สร้าง Cycle และ Populate Test Case จาก Test Suite ก่อนเข้า Execution Workspace"}</p>
+            <h3>{cycleId ? "ไม่พบข้อมูล Execution Workspace" : !cycleModuleFilter ? "เลือก Module เพื่อเริ่มทดสอบ" : "เลือก Test Cycle เพื่อเริ่มทดสอบ"}</h3>
+            <p>{cycleId ? "Cycle นี้ยังไม่มีข้อมูลสำหรับการ Execute หรือข้อมูลถูกเปลี่ยนแปลงแล้ว" : !cycleModuleFilter ? (cyclesLoaded && !contextCycles.length ? "ยังไม่มี Test Cycle ที่สถานะ InProgress ใน Release/Build นี้ — เริ่ม Cycle จากหน้า Test Cycle" : "เลือก Module ด้านบน (ตัวเลขในวงเล็บ = จำนวน Test Cycle) แล้วเลือก Test Cycle — หรือเลือก \"ทุก Module\" เพื่อดูทุก Cycle") : cyclesLoaded && !filteredCycles.length ? "ยังไม่มี Test Cycle ที่สถานะ InProgress ตามตัวกรองนี้ — ลองเปลี่ยน Module/เฉพาะฉัน หรือเริ่ม Cycle จากหน้า Test Cycle" : "สร้าง Cycle และ Populate Test Case จาก Test Suite ก่อนเข้า Execution Workspace"}</p>
           </article>
         )
       ) : !workspace.cases.length ? (
@@ -856,10 +951,14 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                 </div>
               </div>
               <div className="case-queue-tools">
-                <input aria-label="ค้นหา Test Case" value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} placeholder="ค้นหารหัสหรือชื่อ Test Case" />
-                <select aria-label="กรองสถานะ" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                  {["All", "NotRun", "InProgress", "Pass", "Fail", "Blocked", "Skipped"].map((status) => <option key={status} value={status}>{status === "All" ? "ทุกสถานะ" : status}</option>)}
-                </select>
+                <input type="search" aria-label="ค้นหา Test Case" value={caseSearch} onChange={(e) => setCaseSearch(e.target.value)} placeholder="ค้นหารหัสหรือชื่อ Test Case" />
+                {/* กรองสถานะด้วยชิปด้านบนที่เดียว (เดิมมี dropdown ซ้ำในคิว) — บอกตรงนี้ว่ากรองอยู่และล้างได้ */}
+                {statusFilter !== "All" && (
+                  <p className="case-queue-filter" role="status">
+                    <span>แสดงเฉพาะ <b>{executionStatusText(statusFilter)}</b></span>
+                    <button type="button" className="link-btn" onClick={() => setStatusFilter("All")}>แสดงทั้งหมด</button>
+                  </p>
+                )}
                 {hasAssignedCases && (
                   <label className={`case-queue-mine${queueMineOnly ? " is-on" : ""}`}>
                     <input type="checkbox" checked={queueMineOnly} onChange={(e) => setQueueMineOnly(e.target.checked)} />
@@ -873,6 +972,13 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                     <span className="material-symbols-outlined" aria-hidden="true">visibility_off</span>
                     ซ่อนเคสที่ Test Case ถูกลบ ({deletedCaseCount})
                   </label>
+                )}
+                {canRestoreTestCase && deletedCaseCount > 0 && (
+                  <button type="button" className="case-queue-restore" disabled={restoringAllCases || restoringCase} onClick={() => void restoreAllDeletedCases()}>
+                    {restoringAllCases
+                      ? <><span className="spinner inline" aria-hidden="true" /> กำลังกู้คืน...</>
+                      : <><span className="material-symbols-outlined" aria-hidden="true">restore_from_trash</span> กู้คืน Test Case ที่ถูกลบทั้งหมด ({deletedCaseCount})</>}
+                  </button>
                 )}
                 {canManageCycle && removableDeletedCount > 0 && !frozenPlan && workspace.status !== "Closed" && workspace.status !== "Cancelled" && workspace.status !== "Completed" && (
                   <button type="button" className="case-queue-cleanup" disabled={removingDeletedCases} onClick={() => void removeDeletedCases()}>
@@ -895,7 +1001,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                       <span className="case-row-badges">
                         {x.testCaseDeleted && <Badge tone="gray">ถูกลบแล้ว</Badge>}
                         {x.priority && <Badge tone={priorityTone(x.priority)}>{x.priority}</Badge>}
-                        <Badge tone={executionStatusTone(x.currentStatus)}>{x.currentStatus}</Badge>
+                        <Badge tone={executionStatusTone(x.currentStatus)}>{executionStatusText(x.currentStatus)}</Badge>
                       </span>
                     </span>
                     <small>{x.title}</small>
@@ -920,7 +1026,10 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                 </div>
                 <div className="execution-case-nav">
                   {caseDeleted && <Badge tone="gray">ถูกลบแล้ว</Badge>}
-                  <Badge tone={executionStatusTone(selected.currentStatus)}>{selected.currentStatus}</Badge>
+                  {/* ผลที่บันทึกแล้ว — แยกจาก Overall Result ใต้แท็บซึ่งคำนวณจาก Step ที่กำลังแก้ (เดิมเป็นป้ายเปล่า 2 อันที่อาจขัดกัน) */}
+                  <span className="execution-saved-status" title="ผลที่บันทึกไว้ล่าสุดของ Test Case นี้ใน Cycle">
+                    {selected.currentStatus === "NotRun" ? "ยังไม่บันทึกผล" : <>บันทึกล่าสุด <Badge tone={executionStatusTone(selected.currentStatus)}>{executionStatusText(selected.currentStatus)}</Badge></>}
+                  </span>
                   <button type="button" className="btn" disabled={!prevCase} aria-label="Test Case ก่อนหน้า" title="Test Case ก่อนหน้า" onClick={() => prevCase && void selectCase(prevCase.testCycleCaseId)}><span className="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
                   <button type="button" className="btn" disabled={!nextCase} aria-label="Test Case ถัดไป" title="Test Case ถัดไป (N)" onClick={() => nextCase && void selectCase(nextCase.testCycleCaseId)}>ถัดไป <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
                 </div>
@@ -930,7 +1039,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                   <span className="material-symbols-outlined" aria-hidden="true">delete</span>
                   <span><b>Test Case นี้ถูกลบแล้ว — ดูผลเดิมได้อย่างเดียว</b> บันทึกผล ลบผล และแจ้ง Defect ใหม่ไม่ได้ (Defect ที่เชื่อมไว้ยังแก้ไขได้){canRestoreTestCase ? "" : " · ติดต่อผู้ดูแลระบบหากต้องการกู้คืน"}</span>
                   {canRestoreTestCase && (
-                    <button type="button" className="btn" disabled={restoringCase} onClick={() => void restoreTestCase()}>
+                    <button type="button" className="btn" disabled={restoringCase || restoringAllCases} onClick={() => void restoreTestCase()}>
                       {restoringCase ? <><span className="spinner inline" aria-hidden="true" /> กำลังกู้คืน...</> : <><span className="material-symbols-outlined" aria-hidden="true">restore_from_trash</span> กู้คืน Test Case</>}
                     </button>
                   )}
@@ -948,17 +1057,13 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
               </div>
               {mainTab === "steps" ? (
                 <div role="tabpanel" id="execution-panel-steps" aria-labelledby="execution-tab-steps" className="execution-steps-panel">
+                  {/* Preconditions + Defect ที่ผูกไว้ รวมเป็นกล่องเดียวแบบแถวหัวข้อซ้าย (เดิม 2 กล่องแยก ดัน Test Steps ลงไปมาก) */}
                   {(selected.preconditions || selectedDefects.length > 0 || selectedDefectsError) && (
                     <div className="execution-context-notes">
-                      {selected.preconditions && (
-                        <div className="precondition">
-                          <b>Preconditions</b>
-                          <p>{selected.preconditions}</p>
-                        </div>
-                      )}
+                      {selected.preconditions && <PreconditionsNote key={selected.testCycleCaseId} text={selected.preconditions} />}
                       {selectedDefectsError && <div className="inline-alert error" role="alert"><span>{selectedDefectsError}</span></div>}
                       {selectedDefects.length > 0 && (
-                        <div className="execution-linked-defects">
+                        <div className="execution-info-row execution-linked-defects">
                           <b>Linked Defects</b>
                           {selectedDefects.map((d) => (
                             <span className="execution-linked-defect" key={d.defectId}>
@@ -972,36 +1077,32 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                     </div>
                   )}
                   {/* Overall Result Summary (test-case-execution-ui-spec.md §4) — คำนวณจากผล Step ที่กำลังแก้ ผู้ใช้กำหนดเองไม่ได้ */}
+                  {/* แถบบรรทัดเดียว (เดิมเป็นกล่องสูงพร้อมกล่องตัวเลข 4 ช่อง) — ผลรวมที่คำนวณจาก Step บนจอ ยังไม่ใช่ผลที่บันทึก */}
                   <div className={`execution-overall is-${liveOverall.toLowerCase()}`} role="status" aria-live="polite">
-                    <div className="execution-overall-result">
-                      <small>Overall Result</small>
-                      <b><span className="material-symbols-outlined" aria-hidden="true">{liveOverall === "InProgress" ? "pending" : resultIcon(liveOverall)}</span> {liveOverall === "InProgress" ? "In Progress" : resultLabel(liveOverall)}</b>
-                      <span>{overallMessage}</span>
-                    </div>
-                    <dl className="execution-overall-counts">
-                      <div className="is-pass"><dt>Passed</dt><dd>{stepCounts.passed}</dd></div>
-                      <div className="is-fail"><dt>Failed</dt><dd>{stepCounts.failed}</dd></div>
-                      <div className="is-blocked"><dt>Blocked</dt><dd>{stepCounts.blocked}</dd></div>
-                      <div className="is-notrun"><dt>Not Run</dt><dd>{stepCounts.notRun}</dd></div>
-                    </dl>
+                    <small>Overall Result</small>
+                    <b><span className="material-symbols-outlined" aria-hidden="true">{liveOverall === "InProgress" ? "pending" : resultIcon(liveOverall)}</span> {executionStatusText(liveOverall)}</b>
+                    <span className="execution-overall-message">{overallMessage}</span>
+                    <span className="execution-overall-counts">
+                      <span className="is-pass">Passed <b>{stepCounts.passed}</b></span>
+                      <span className="is-fail">Failed <b>{stepCounts.failed}</b></span>
+                      <span className="is-blocked">Blocked <b>{stepCounts.blocked}</b></span>
+                      <span className="is-notrun">ยังไม่ทดสอบ <b>{stepCounts.notRun}</b></span>
+                    </span>
                   </div>
                   <div className="step-table">
                     <div className="step-bulk-actions">
                       <span>Test Steps <b>{selected.steps.length}</b></span>
-                      <div>{(["Pass", "Fail", "Blocked", "NotRun"] as const).map((status) => (
-                        <button
-                          type="button"
-                          key={status}
-                          className={`is-${status.toLowerCase()}`}
-                          disabled={caseDeleted}
-                          onClick={async () => {
-                            if (!await confirmDialog(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${resultLabel(status)} หรือไม่?`)) return;
-                            setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
-                          }}
-                        >
-                          <span className="material-symbols-outlined bulk-result-icon" aria-hidden="true">{resultIcon(status)}</span> Set All {resultLabel(status)}
-                        </button>
-                      ))}</div>
+                      {/* เดิมเป็นปุ่ม Set All 4 ปุ่ม — ใช้ไม่บ่อย รวมเป็นเมนูคำสั่งรอง (§8) */}
+                      <ActionMenu label="ตั้งทุก Step" icon="checklist" className="step-bulk-menu" disabled={caseDeleted} items={(["Pass", "Fail", "Blocked", "NotRun"] as const).map((status) => ({
+                        key: status,
+                        icon: resultIcon(status),
+                        label: status === "NotRun" ? "ล้างผลทุก Step (ยังไม่ทดสอบ)" : `ทุก Step เป็น ${resultLabel(status)}`,
+                        hint: status === "NotRun" ? "กลับเป็นยังไม่ทดสอบ" : `ปุ่มลัด ${status[0]} · ถามยืนยันก่อนเปลี่ยน`,
+                        onSelect: async () => {
+                          if (!await confirmDialog(`ต้องการเปลี่ยนผล Test Step ทั้งหมดเป็น ${status === "NotRun" ? "ยังไม่ทดสอบ" : resultLabel(status)} หรือไม่?`)) return;
+                          setStepStatuses(Object.fromEntries(selected.steps.map((step) => [step.stepNo, status])));
+                        },
+                      }))} />
                     </div>
                     <div className="step-row step-head" aria-hidden="true">
                       <span>#</span>
@@ -1039,14 +1140,14 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                                   type="button"
                                   key={opt}
                                   className={`step-result-btn ${opt.toLowerCase()}${status === opt ? " active" : ""}`}
-                                  title={resultLabel(opt)}
+                                  title={opt === "NotRun" ? "ยังไม่ทดสอบ" : resultLabel(opt)}
                                   aria-pressed={status === opt}
                                   disabled={caseDeleted}
-                                  aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${resultLabel(opt)}`}
+                                  aria-label={`ตั้งผล Step ${x.stepNo} เป็น ${opt === "NotRun" ? "ยังไม่ทดสอบ" : resultLabel(opt)}`}
                                   onClick={() => setStepStatuses((s) => ({ ...s, [x.stepNo]: opt }))}
                                 >
                                   <span className="material-symbols-outlined step-result-icon" aria-hidden="true">{resultIcon(opt)}</span>
-                                  <em>{opt === "NotRun" ? "—" : opt}</em>
+                                  <em>{opt === "NotRun" ? "ยังไม่ทดสอบ" : opt}</em>
                                 </button>
                               ))}
                             </span>
@@ -1099,7 +1200,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                   {selected.history.length ? selected.history.map((x) => (
                     <div className="history-item" key={x.testExecutionId}>
                       <div className="history-item-head">
-                        <Badge tone={executionStatusTone(x.status)}>{x.status}</Badge>
+                        <Badge tone={executionStatusTone(x.status)}>{executionStatusText(x.status)}</Badge>
                         <span className="history-run">Run #{x.executionNo}</span>
                         <small>{x.testerName} · {x.completedAt ? formatThaiDateTime(x.completedAt) : "-"}</small>
                       </div>
@@ -1116,7 +1217,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                       )}
                       <p>{x.actualResult || "-"}</p>
                       {x.stepResults?.filter((r) => (r.status === "Fail" || r.status === "Blocked") && r.actualResult).map((r) => (
-                        <p className={`history-step-note is-${r.status.toLowerCase()}`} key={r.stepNo}><b>Step {r.stepNo} · {r.status}</b> {r.actualResult}</p>
+                        <p className={`history-step-note is-${r.status.toLowerCase()}`} key={r.stepNo}><b>Step {r.stepNo} · {executionStatusText(r.status)}</b> {r.actualResult}</p>
                       ))}
                       {x.comment && <small className="history-comment">Comment: {x.comment}</small>}
                       {/* แยกตำแหน่งปุ่มลบออกจาก Run number (spec §3.3) ลดโอกาสกดพลาดบนมือถือ */}
@@ -1148,10 +1249,12 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                 )}
                 <span className={`execution-actions-overall is-${liveOverall.toLowerCase()}`}>
                   <span className="material-symbols-outlined" aria-hidden="true">{liveOverall === "InProgress" ? "pending" : resultIcon(liveOverall)}</span>
-                  <b>{liveOverall === "InProgress" ? "In Progress" : resultLabel(liveOverall)}</b>
-                  <small>P {stepCounts.passed} · F {stepCounts.failed} · B {stepCounts.blocked} · — {stepCounts.notRun}</small>
+                  <b>{executionStatusText(liveOverall)}</b>
                 </span>
-                <small className="execution-shortcut-hint">ปุ่มลัด: ↑/↓ เลือก Step · 1–4 = Pass/Fail/Blocked/Not Run · Enter = กรอกผล · P/F/B = ทุก Step · N = เคสถัดไป</small>
+                {/* ย่อเหลือบรรทัดเดียว — รายการปุ่มลัดเต็มอยู่ใน title */}
+                <small className="execution-shortcut-hint" title="ปุ่มลัด: ↑/↓ เลือก Step · 1–4 = Pass/Fail/Blocked/ยังไม่ทดสอบ · Enter = กรอกผล · P/F/B = ทุก Step · N = เคสถัดไป">
+                  <span className="material-symbols-outlined" aria-hidden="true">keyboard</span> 1–4 ตั้งผล · ↑/↓ เลือก Step · N เคสถัดไป
+                </small>
                 <button className="btn" disabled={saving || !!resultLockReason} title={resultLockReason} onClick={saveProgress}>
                   {saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">save</span> Save Progress</>}
                 </button>
