@@ -292,6 +292,15 @@
   .kn-html-file { flex-wrap: wrap; }
   .kn-html-file .btn { flex: 1 1 100%; justify-content: center; min-height: 44px; }
   .modal-box.kn-article-view .kn-share-link input { flex-basis: 100%; height: 44px; }
+  /* บทความ HTML: กรอบเต็มความกว้าง สูงพอดีช่องระหว่างหัว/ปุ่มที่ sticky แล้วเลื่อนอ่านในกรอบ — แถบเมนู/แท็บของไฟล์ (sticky) จึงอยู่ให้กดได้
+     ความสูงหัว/ปุ่มวัดจาก KnowledgePage (--kn-view-head / --kn-view-actions); snap ให้กรอบเข้าที่เมื่อเลื่อนหน้าต่าง */
+  .modal-box.kn-article-view.is-html { scroll-snap-type: y proximity; }
+  .modal-box.kn-article-view.is-html .kn-html-view {
+    height: calc(100dvh - var(--kn-view-head, 72px) - var(--kn-view-actions, 0px));
+    margin: 0 -16px; border-width: 1px 0; border-radius: 0;
+    scroll-snap-align: start; scroll-margin-top: var(--kn-view-head, 72px);
+  }
+  .modal-box.kn-article-view.is-html .html-article-frame { height: 100% !important; }
   .kn-share-link .btn, .kn-share > .btn { flex: 1 1 auto; justify-content: center; min-height: 44px; }
   .kn-share > .btn { justify-self: stretch; }
 }

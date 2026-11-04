@@ -3,20 +3,27 @@
 /** ขนาด HTML สูงสุด — ตรงกับ HtmlArticleContent.MaxLength */
 export const htmlArticleMaxLength = 3_000_000;
 
-// ไม่มี script-src = ห้ามสคริปต์ทุกชนิด (ซ้อนกับ sandbox ที่ไม่มี allow-scripts); รูป/สไตล์/ฟอนต์จากภายนอกยังโหลดได้ให้หน้าตาเหมือนไฟล์
-const csp = "default-src 'none'; img-src data: blob: https: http:; style-src 'unsafe-inline' https:; font-src data: https:; media-src data: https:";
+// สคริปต์ inline/จาก https (เช่น CDN) ทำงานได้ แต่ไม่มี connect-src = fetch/XHR/WebSocket ถูกบล็อก (default-src 'none'); รูป/สไตล์/ฟอนต์จากภายนอกโหลดได้ให้หน้าตาเหมือนไฟล์
+const csp = "default-src 'none'; script-src 'unsafe-inline' https:; img-src data: blob: https: http:; style-src 'unsafe-inline' https:; font-src data: https:; media-src data: https:";
 // ค่าตั้งต้นแบบเอกสารทั่วไป (พื้นขาว) — วางก่อนเนื้อหาเพื่อให้สไตล์ของไฟล์ต้นฉบับทับได้
 const baseStyle = "html{background:#fff;color:#1f2933}body{margin:20px;font-family:system-ui,-apple-system,'Segoe UI',Tahoma,sans-serif;line-height:1.6;overflow-wrap:anywhere}img,video{max-width:100%;height:auto}table{border-collapse:collapse;max-width:100%}pre{white-space:pre-wrap}";
 
+/** ชนิดข้อความที่เอกสารใน iframe ส่งความสูงเนื้อหามาให้หน้าแม่ (หน้าแม่อ่าน contentDocument ไม่ได้เพราะเป็น origin ทึบ) */
+export const htmlArticleHeightMessage = "qa-html-article-height";
+// รันก่อนสคริปต์ของบทความ — รายงานความสูงเมื่อโหลดเสร็จ รูปโหลดเสร็จ และเมื่อขนาดเปลี่ยน (สลับแท็บ/ข้อความตัดบรรทัดใหม่)
+// ใช้ความสูงกล่องของ <html> (ไม่ใช่ scrollHeight ที่ไม่ต่ำกว่าความสูงกรอบ) เพื่อให้กรอบหดลงได้เมื่อเนื้อหาสั้นลง
+const heightReporter = `(function(){var last=-1;function send(){var d=document.documentElement,b=document.body,h=Math.ceil(Math.max(d.getBoundingClientRect().height,b?b.scrollHeight:0));if(h!==last){last=h;parent.postMessage({type:"${htmlArticleHeightMessage}",height:h},"*");}}addEventListener("load",send,true);new ResizeObserver(send).observe(document.documentElement);})();`;
+
 /**
- * sandbox ของ iframe บทความ — **ห้ามเพิ่ม allow-scripts**: allow-same-origin มีไว้ให้หน้าแม่อ่าน contentDocument เพื่อวัดความสูง
- * ซึ่งปลอดภัยเฉพาะเมื่อไม่มีสคริปต์ใดรันใน iframe (ถ้ามีทั้งสองอย่าง สคริปต์ในบทความจะเข้าถึงหน้าแม่และ token ได้) — ล็อกด้วย htmlArticle.test.ts
+ * sandbox ของ iframe บทความ — สคริปต์ในบทความทำงานได้แต่ **ห้ามเพิ่ม allow-same-origin**: ไม่มีค่านี้เอกสารเป็น origin ทึบ
+ * เข้าถึงหน้าแม่ / localStorage / token ไม่ได้ (ถ้ามีทั้งสองอย่าง สคริปต์ในบทความถอด sandbox ตัวเองและอ่าน token ได้) — ล็อกด้วย htmlArticle.test.ts
+ * ไม่มี allow-top-navigation (เปลี่ยนหน้าแม่ไม่ได้) และ allow-forms (ส่งฟอร์มออกนอกระบบไม่ได้)
  */
-export const htmlArticleSandbox = "allow-same-origin allow-popups allow-popups-to-escape-sandbox";
+export const htmlArticleSandbox = "allow-scripts allow-popups allow-popups-to-escape-sandbox";
 
 /** เอกสารเต็มสำหรับ iframe srcDoc */
 export const htmlArticleDocument = (html: string) =>
-  `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><base target="_blank"><style>${baseStyle}</style></head><body>${html}</body></html>`;
+  `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><base target="_blank"><style>${baseStyle}</style><script>${heightReporter}</script></head><body>${html}</body></html>`;
 
 const parse = (html: string) => new DOMParser().parseFromString(html, "text/html");
 

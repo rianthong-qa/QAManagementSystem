@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { decodeHtmlBytes, htmlArticleDocument, htmlArticleSandbox } from "./htmlArticle";
 
-// iframe บทความ HTML ใช้ allow-same-origin เพื่อวัดความสูง — ปลอดภัยเฉพาะเมื่อไม่มีสคริปต์รันใน iframe
+// สคริปต์ในบทความ HTML ทำงานได้ — ปลอดภัยเฉพาะเมื่อ iframe เป็น origin ทึบ (ไม่มี allow-same-origin)
 describe("html article frame isolation", () => {
-  it("never allows scripts in the sandbox", () => {
-    expect(htmlArticleSandbox.split(/\s+/)).not.toContain("allow-scripts");
+  const flags = htmlArticleSandbox.split(/\s+/);
+  it("never combines allow-scripts with allow-same-origin", () => {
+    expect(flags).toContain("allow-scripts");
+    expect(flags).not.toContain("allow-same-origin");
+    expect(flags).not.toContain("allow-top-navigation");
+    expect(flags).not.toContain("allow-forms");
   });
-  it("blocks scripts with CSP inside the document", () => {
+  it("blocks network requests with CSP inside the document", () => {
     const doc = htmlArticleDocument("<p>x</p>");
     const csp = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(doc)?.[1] ?? "";
     expect(csp).toContain("default-src 'none'");
-    expect(csp).not.toMatch(/script-src/);
+    expect(csp).not.toMatch(/connect-src|frame-src|child-src/);
   });
 });
 

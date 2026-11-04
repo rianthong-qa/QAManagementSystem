@@ -7,11 +7,11 @@ namespace ProMaxx2.QA.Application.Knowledge;
 /// บทความที่นำเข้าจาก HTML (คลังความรู้ → บทความ → "นำเข้า HTML"): เก็บ HTML ไว้แสดงผลให้เหมือนไฟล์ต้นฉบับ
 /// และสกัดเป็นข้อความธรรมดา (เก็บใน BodyMarkdown) ให้การค้นหา/ผู้ช่วย AI/MCP ใช้เหมือนบทความทั่วไป
 ///
-/// ความปลอดภัย: หน้าเว็บแสดง HTML ใน iframe sandbox ที่**ไม่มี allow-scripts** (HtmlArticleFrame.tsx) + CSP ใน srcDoc ที่ห้ามสคริปต์ทุกชนิด
-/// — สองชั้นนี้คือสิ่งที่ปกป้องจริง: สคริปต์ใน HTML ไม่รันเลย; sandbox มี allow-same-origin เพื่อให้หน้าแม่วัดความสูงเนื้อหาได้
-/// ซึ่งปลอดภัยเฉพาะเมื่อไม่มี allow-scripts (test ใน htmlArticle.test.ts ล็อกค่า sandbox ไว้)
-/// <see cref="Sanitize"/> เป็นชั้นป้องกันเพิ่ม (defense in depth) ที่ตัดสคริปต์, event handler, ลิงก์ javascript: (รวมแบบเข้ารหัส entity)
-/// และ element ที่ฝังเนื้อหาภายนอก — เป็น regex ไม่ใช่ HTML parser จึงไม่ได้ออกแบบให้ปลอดภัยเมื่อแสดง HTML ตรง ๆ โดยไม่มี sandbox
+/// ความปลอดภัย: สคริปต์ในไฟล์ทำงานได้ (แท็บ/เครื่องคำนวณในคู่มือ) แต่หน้าเว็บแสดง HTML ใน iframe sandbox ที่**ไม่มี allow-same-origin**
+/// (HtmlArticleFrame.tsx) → เอกสารเป็น origin ทึบ เข้าถึงหน้าแม่ / localStorage / token ไม่ได้ และ CSP ใน srcDoc ไม่อนุญาต fetch/XHR
+/// (test ใน htmlArticle.test.ts ล็อกไว้ว่า sandbox ห้ามมี allow-scripts คู่กับ allow-same-origin)
+/// <see cref="Sanitize"/> เป็นชั้นป้องกันเพิ่ม (defense in depth) ที่ตัดลิงก์ javascript: (รวมแบบเข้ารหัส entity — ลิงก์เปิดแท็บใหม่นอก sandbox),
+/// meta/base และ element ที่ฝังเนื้อหาภายนอก — เป็น regex ไม่ใช่ HTML parser จึงไม่ได้ออกแบบให้ปลอดภัยเมื่อแสดง HTML ตรง ๆ โดยไม่มี sandbox
 /// </summary>
 public static partial class HtmlArticleContent
 {
@@ -22,10 +22,9 @@ public static partial class HtmlArticleContent
     {
         var s = DangerousBlocks().Replace(html, "");
         s = DangerousTags().Replace(s, "");
-        s = EventHandlers().Replace(s, "");
+        s = LinkTag().Replace(s, m => StylesheetRel().IsMatch(m.Value) ? m.Value : ""); // เก็บเฉพาะ stylesheet (เช่น Google Fonts)
         s = SrcDocAttribute().Replace(s, "");
         s = UrlAttributes().Replace(s, NeutralizeScriptUrl);
-        s = CssExpressions().Replace(s, "");
         return s.Trim();
     }
 
@@ -52,12 +51,14 @@ public static partial class HtmlArticleContent
         return title.Length == 0 ? null : title.Length > 300 ? title[..300] : title;
     }
 
-    [GeneratedRegex(@"<\s*(script|iframe|object|embed|applet|frameset|frame|noscript|template)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    [GeneratedRegex(@"<\s*(iframe|object|embed|applet|frameset|frame)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex DangerousBlocks();
-    [GeneratedRegex(@"<\s*/?\s*(script|iframe|object|embed|applet|frameset|frame|base|link|meta|portal)\b[^>]*>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<\s*/?\s*(iframe|object|embed|applet|frameset|frame|base|meta|portal)\b[^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex DangerousTags();
-    [GeneratedRegex(@"\s+on[a-z]+\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", RegexOptions.IgnoreCase)]
-    private static partial Regex EventHandlers();
+    [GeneratedRegex(@"<\s*link\b[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex LinkTag();
+    [GeneratedRegex(@"\brel\s*=\s*[""']?\s*stylesheet\b", RegexOptions.IgnoreCase)]
+    private static partial Regex StylesheetRel();
     [GeneratedRegex(@"\s+srcdoc\s*=\s*(""[^""]*""|'[^']*'|[^\s>]+)", RegexOptions.IgnoreCase)]
     private static partial Regex SrcDocAttribute();
     /// <summary>ค่า URL ที่ถอด entity (&amp;#x73; ฯลฯ) และตัดช่องว่าง/อักขระควบคุมแล้วขึ้นต้นด้วย javascript:/vbscript:/data:text/html → แทนด้วย "#"</summary>
@@ -93,8 +94,6 @@ public static partial class HtmlArticleContent
 
     [GeneratedRegex(@"(?<pre>\b(?:href|src|xlink:href|action|formaction|data|poster|background)\s*=\s*)(?:""(?<dq>[^""]*)""|'(?<sq>[^']*)'|(?<bare>[^\s>]+))", RegexOptions.IgnoreCase)]
     private static partial Regex UrlAttributes();
-    [GeneratedRegex(@"expression\s*\([^)]*\)|-moz-binding\s*:[^;""']*|behavior\s*:[^;""']*", RegexOptions.IgnoreCase)]
-    private static partial Regex CssExpressions();
     [GeneratedRegex(@"<\s*(head|style|script|noscript|template|svg)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex NonContentBlocks();
     [GeneratedRegex(@"<\s*h[1-6]\b[^>]*>", RegexOptions.IgnoreCase)]

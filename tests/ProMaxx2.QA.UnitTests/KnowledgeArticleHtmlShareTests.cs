@@ -19,22 +19,24 @@ public sealed class KnowledgeArticleHtmlShareTests
         new(db, new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["PublicWebBaseUrl"] = "https://example.test/" }).Build());
 
     [Fact]
-    public void Sanitize_removes_scripts_handlers_and_script_urls_but_keeps_layout()
+    public void Sanitize_keeps_scripts_and_stylesheets_but_removes_script_urls_and_embeds()
     {
+        // สคริปต์ทำงานใน iframe ที่เป็น origin ทึบ (htmlArticle.ts) จึงเก็บไว้ให้แท็บ/เครื่องคำนวณในไฟล์ใช้ได้
         const string html = """
-            <html><head><title>คู่มือ</title><meta http-equiv="refresh" content="0;url=https://evil"><link rel="stylesheet" href="https://x/y.css">
-            <style>.box{color:red;width:expression(alert(1))}</style><script>alert(1)</script></head>
-            <body onload="steal()"><div class="box" style="color:blue" onclick='x()'>สวัสดี</div>
-            <a href="javascript:alert(1)">a</a><a href=" JaVaScRiPt:alert(2)">b</a><img src="data:text/html;base64,AAA" onerror=hack()>
+            <html><head><title>คู่มือ</title><meta http-equiv="refresh" content="0;url=https://evil"><base href="https://evil/">
+            <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan"><link rel="preload" href="https://x/y.js">
+            <style>html{scroll-behavior:smooth}.box{color:red}</style><script>const e = parseExpression(1); tabs()</script></head>
+            <body onload="init()"><div class="box" style="color:blue" onclick='x()'>สวัสดี</div><template id="row"><b>x</b></template>
+            <a href="javascript:alert(1)">a</a><a href=" JaVaScRiPt:alert(2)">b</a><img src="data:text/html;base64,AAA">
             <img src="data:image/png;base64,iVBOR"><iframe src="https://evil"></iframe><object data="x.swf"></object><iframe srcdoc="<b>x</b>"></body></html>
             """;
         var clean = HtmlArticleContent.Sanitize(html);
-        foreach (var bad in new[] { "<script", "alert(1)</script>", "onload", "onclick", "onerror", "javascript:", "JaVaScRiPt", "data:text/html", "<iframe", "<object", "<meta", "<link", "expression(", "srcdoc" })
+        foreach (var bad in new[] { "javascript:", "JaVaScRiPt", "data:text/html", "<iframe", "<object", "<meta", "<base", "rel=\"preload\"", "srcdoc" })
             Assert.DoesNotContain(bad, clean, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("<style>", clean);
-        Assert.Contains("class=\"box\" style=\"color:blue\"", clean);
-        Assert.Contains("data:image/png;base64,iVBOR", clean);
-        Assert.Contains("<title>คู่มือ</title>", clean);
+        foreach (var kept in new[] { "<script>const e = parseExpression(1); tabs()</script>", "onload=\"init()\"", "onclick='x()'", "<template id=\"row\">",
+                     "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Anuphan\">", "html{scroll-behavior:smooth}",
+                     "class=\"box\" style=\"color:blue\"", "data:image/png;base64,iVBOR", "<title>คู่มือ</title>" })
+            Assert.Contains(kept, clean);
     }
 
     [Theory]

@@ -509,3 +509,9 @@ Technical debt / ข้อสังเกต:
 - หน้าจอ: คำตอบที่ไม่อ้างอิงแหล่งใดไม่แสดงรายการแหล่ง (UI_DESIGN_SYSTEM Change Log 2026-11-03)
 - ทดสอบ: backend 955 ผ่าน (เพิ่ม `Relevance_IdentifiersNeedDigitAndLength`, `Retrieve_DropsWeakDocumentsButKeepsIdentifierAndUnembedded`, `WeakMatches_BelowContextSimilarityOnly`; ปรับ `Ask_NoKnowledgeAsksAiWithoutReferences`); **ยังไม่ได้ทดสอบผ่านแชทจริงหลัง restart API**
 - ข้อจำกัด: คำถามกำกวมมาก (เช่น "เคสแก้หน่วย" 0.47) จะไม่ได้บริบท; "ทดสอบ" เฉย ๆ ยังผ่าน 1 เอกสาร (0.501); เปลี่ยน Embedding model ต้องวัดเกณฑ์ใหม่
+
+### 2026-11-04 — บทความ HTML: เปิดสคริปต์ใน iframe ที่เป็น origin ทึบ
+
+- **แทนที่กติกาเดิม (2026-10-28)** ที่ปิดสคริปต์ด้วย sandbox ไม่มี `allow-scripts` + `allow-same-origin`: ไฟล์คู่มือแบบโต้ตอบ (แท็บ/เครื่องจำลอง) แสดงไม่ครบ — ตอนนี้ `allow-scripts` **ไม่มี** `allow-same-origin` (test ใน `htmlArticle.test.ts` ห้ามมีคู่กัน), CSP ไม่มี `connect-src`, ความสูงผ่าน `postMessage`
+- `HtmlArticleContent.Sanitize` เก็บ `<script>`/event handler/`<template>`/`<link rel="stylesheet">`; ตัด iframe/object/embed/applet/frame/meta/base/portal, `srcdoc` และ URL `javascript:`/`vbscript:`/`data:text/html` (ลิงก์เปิดแท็บใหม่นอก sandbox); เอาตัวกรอง CSS `expression()`/`behavior:` ออก (IE เลิกใช้แล้ว และเสี่ยงตัดโค้ด JavaScript/`scroll-behavior`) — ข้อความสำหรับค้นหา (`ToText`) ยังไม่รวม script/style
+- ทดสอบ: backend 955 ผ่าน (ปรับ `Sanitize_keeps_scripts_and_stylesheets_but_removes_script_urls_and_embeds`), frontend 38 ผ่าน; render จริงด้วย headless Chrome (ดู UI_DESIGN_SYSTEM Change Log 2026-11-04); **บทความ "คู่มือโปรโมชั่น ProMaxx2" ที่มีอยู่ต้องนำเข้าไฟล์ใหม่** เพราะสคริปต์ถูกตัดไปตอนบันทึกครั้งก่อน

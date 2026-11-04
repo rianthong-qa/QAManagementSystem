@@ -60,6 +60,24 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [viewing, setViewing] = useState<Article | null>(null);
+  const viewingHtml = viewing?.contentFormat === "Html" && Boolean(viewing.bodyHtml);
+  // บทความ HTML บนมือถือ: กรอบสูงพอดีช่องระหว่างหัว/ปุ่มที่ sticky (Knowledge.css) — วัดความสูงจริงเพราะชื่อยาวตัดหลายบรรทัด
+  const viewHeadRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const head = viewHeadRef.current;
+    const box = head?.parentElement;
+    if (!viewingHtml || !head || !box) return;
+    const actions = box.querySelector<HTMLElement>(":scope > .modal-actions");
+    const update = () => {
+      box.style.setProperty("--kn-view-head", `${head.offsetHeight}px`);
+      box.style.setProperty("--kn-view-actions", `${actions?.offsetHeight ?? 0}px`);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(head);
+    if (actions) observer.observe(actions);
+    return () => observer.disconnect();
+  }, [viewingHtml, viewing]);
   const [viewLoading, setViewLoading] = useState(false);
   const [crmView, setCrmView] = useState<CrmTicketView | null>(null);
   const [draft, setDraft] = useState<ArticleDraft | null>(null);
@@ -192,8 +210,8 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
       {tab === "claude" && <KnowledgeMcp isSysAdmin={isSysAdmin} />}
       {tab === "status" && isSysAdmin && <StatusPanel />}
     </section>
-    {viewing && <ModalShell labelledBy="kn-article-title" className="kn-article-view" onDismiss={() => setViewing(null)}>
-      <div className="modal-head">
+    {viewing && <ModalShell labelledBy="kn-article-title" className={`kn-article-view${viewingHtml ? " is-html" : ""}`} onDismiss={() => setViewing(null)}>
+      <div className="modal-head" ref={viewHeadRef}>
         <div>
           <span className="kn-eyebrow">บทความ · {viewing.projectName ?? "ความรู้กลาง (ทุก Project)"}</span>
           <h2 id="kn-article-title">{viewing.title}</h2>
@@ -209,7 +227,7 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
         {viewing.tags && <span><span className="material-symbols-outlined" aria-hidden="true">sell</span>{viewing.tags}</span>}
         <span><span className="material-symbols-outlined" aria-hidden="true">edit_calendar</span>{viewing.updatedAt ? `แก้ไขล่าสุด ${formatThaiDateTime(viewing.updatedAt)}${viewing.updatedByName ? ` โดย ${viewing.updatedByName}` : ""}` : `สร้าง ${formatThaiDateTime(viewing.createdAt)}${viewing.createdByName ? ` โดย ${viewing.createdByName}` : ""}`}</span>
       </div>
-      {viewing.contentFormat === "Html" && viewing.bodyHtml
+      {viewingHtml && viewing.bodyHtml
         ? <div className="kn-html-view"><HtmlArticleFrame html={viewing.bodyHtml} title={`เนื้อหาบทความ ${viewing.title}`} /></div>
         : <div className="kn-article-body">{viewing.bodyMarkdown}</div>}
       {(viewing.shareUrl || (canEdit && viewing.status === "Published")) && <section className="kn-share" aria-labelledby="kn-share-title">
