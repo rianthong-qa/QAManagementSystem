@@ -34,7 +34,8 @@ export function ModalShell({ labelledBy, label, className, boxClassName, boxStyl
     modalStack.push(id);
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const box = boxRef.current;
-    const first = box?.querySelector<HTMLElement>("[autofocus]")
+    // data-autofocus ใช้กับ element ที่ไม่ใช่ช่องกรอก (เช่นหัวข้อ tabIndex=-1) เพราะ React ไม่ใส่ attribute autofocus ลง DOM
+    const first = box?.querySelector<HTMLElement>("[autofocus], [data-autofocus]")
       ?? box?.querySelector<HTMLElement>('input:not([disabled]):not([type="hidden"]):not([readonly]), select:not([disabled]), textarea:not([disabled]):not([readonly])')
       ?? box?.querySelector<HTMLElement>(MODAL_FOCUSABLE);
     first?.focus();

@@ -45,9 +45,9 @@
 .df-sev-track { height: 8px; overflow: hidden; border-radius: 999px; background: var(--bg); }
 .df-sev-track > span { display: block; height: 100%; border-radius: inherit; }
 .df-sev-track > .is-critical { background: var(--red); }
-.df-sev-track > .is-high { background: var(--yellow); }
-.df-sev-track > .is-medium { background: var(--info); }
-.df-sev-track > .is-low { background: color-mix(in srgb, var(--muted) 55%, var(--card)); }
+.df-sev-track > .is-high { background: var(--dj-high, var(--yellow)); }
+.df-sev-track > .is-medium { background: var(--warning-text); }
+.df-sev-track > .is-low { background: var(--info); }
 .df-sev-row b { font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
 .df-sev-row small { color: var(--muted); font-size: 11px; text-align: right; }
 
@@ -71,17 +71,13 @@
 .df-ov-toggle { margin-top: 4px; }
 .df-ov-empty { margin: 0; color: var(--muted); font-size: 13px; }
 
-/* รายการ: คอลัมน์ CRM + อายุที่ค้างนาน */
-.df-table .lp-col-crm { width: 124px; }
+/* รายการ: ปุ่มส่งไป CRM + อายุที่ค้างนาน */
 .df-page button.df-crm-send { display: inline-flex; align-items: center; gap: 3px; min-height: 26px; border: 1px dashed var(--line); border-radius: 999px; background: transparent; padding: 1px 9px 1px 6px; color: var(--muted); font: inherit; font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .df-page button.df-crm-send:hover { border-color: var(--primary); color: var(--primary); }
 .df-page button.df-crm-send .material-symbols-outlined { font-size: 15px; }
 .df-age-old { color: var(--warning-text); font-weight: 700; }
 
 @media (max-width: 1180px) {
-  /* อายุสำคัญกว่า CRM สำหรับ Defect — คงคอลัมน์อายุไว้ (ListPage ซ่อนวันที่ที่ ≤1180px) และซ่อน CRM แทน */
-  .lp-table.df-table .lp-col-date { display: table-cell; }
-  .lp-table.df-table .lp-col-crm { display: none; }
   .df-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .df-ov-modules { grid-column: 1 / -1; border-top: 1px solid var(--line); }
   .df-overview > div.df-ov-modules { border-left: 0; }
@@ -95,6 +91,350 @@
   .df-ov-legend li > span:nth-child(2) { white-space: nowrap; }
   .df-page .df-ov-module-list button { min-height: 44px; }
   .df-page button.df-ov-link { min-height: 40px; }
-  .lp-table.df-table .lp-col-crm { display: block; width: auto; }
-  .lp-table.df-table .lp-col-date { display: inline-flex; }
+}
+
+/* ===== หน้า Defect แบบ Jira (ปรับ 2026-11-04) — prefix dj-, ชิ้นส่วนใน pages/defectJira.tsx =====
+   สีสถานะตามหมวดของ Jira: Open = เทา (ยังไม่เริ่ม), In Progress = น้ำเงิน, Resolved/Closed = เขียว, Rejected = เทาอ่อน
+   Severity = ลูกศรสี (Critical ⇈ แดง, High ↑ ส้ม, Medium = เหลืองเข้ม, Low ↓ น้ำเงิน) + ชื่อระดับเสมอ */
+.df-page.dj-page { gap: 12px; --df-open: color-mix(in srgb, var(--muted) 70%, var(--card)); --df-inprogress: var(--primary); --df-resolved: color-mix(in srgb, var(--green) 65%, var(--card)); --df-closed: color-mix(in srgb, var(--green) 85%, var(--text)); --df-rejected: color-mix(in srgb, var(--muted) 30%, var(--card)); --dj-high: color-mix(in srgb, var(--red) 55%, var(--yellow)); --dj-hover: color-mix(in srgb, var(--muted) 7%, var(--card)); }
+.dj-muted { color: var(--muted); }
+.dj-count { display: inline-grid; min-width: 20px; height: 20px; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, var(--card)); padding: 0 6px; color: var(--text); font-size: 11px; font-weight: 700; }
+:is(.dj-page, .modal-box) button.dj-icon-btn { display: inline-grid; flex: none; width: 32px; height: 32px; min-height: 0; place-items: center; border: 0; border-radius: 6px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+:is(.dj-page, .modal-box) button.dj-icon-btn:hover { background: var(--dj-hover, var(--bg)); color: var(--text); }
+:is(.dj-page, .modal-box) button.dj-icon-btn .material-symbols-outlined { font-size: 19px; }
+
+/* ชิ้นส่วน: ป้ายสถานะ, Severity, ไอคอนประเภท, avatar */
+.dj-lozenge { display: inline-block; max-width: 100%; overflow: hidden; border: 1px solid transparent; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700; line-height: 18px; letter-spacing: .02em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; vertical-align: middle; }
+.dj-lozenge.is-open { background: color-mix(in srgb, var(--muted) 16%, var(--card)); color: var(--text); }
+.dj-lozenge.is-inprogress { background: color-mix(in srgb, var(--primary) 14%, var(--card)); color: var(--primary); }
+.dj-lozenge.is-resolved { background: color-mix(in srgb, var(--green) 16%, var(--card)); color: color-mix(in srgb, var(--green) 75%, var(--text)); }
+.dj-lozenge.is-closed { background: color-mix(in srgb, var(--green) 85%, var(--text)); color: var(--card); }
+.dj-lozenge.is-rejected { border-color: var(--line); background: transparent; color: var(--muted); }
+.dj-sev { display: inline-flex; align-items: center; gap: 3px; min-width: 0; color: var(--text); font-size: 13px; white-space: nowrap; }
+.dj-sev > .material-symbols-outlined { flex: none; font-size: 20px; font-weight: 700; }
+.dj-sev.is-critical > .material-symbols-outlined { color: var(--red); }
+.dj-sev.is-high > .material-symbols-outlined { color: var(--dj-high, var(--red)); }
+.dj-sev.is-medium > .material-symbols-outlined { color: var(--warning-text); }
+.dj-sev.is-low > .material-symbols-outlined { color: var(--info); }
+.dj-type { position: relative; display: inline-block; flex: none; width: 16px; height: 16px; border-radius: 3px; background: var(--red); vertical-align: middle; }
+.dj-type::after { position: absolute; inset: 5px; border-radius: 50%; background: var(--card); content: ""; }
+.dj-avatar { display: inline-grid; flex: none; place-items: center; border-radius: 50%; background: var(--primary); color: var(--card); font-weight: 700; line-height: 1; }
+.dj-avatar.tone-1 { background: color-mix(in srgb, var(--green) 85%, var(--text)); }
+.dj-avatar.tone-2 { background: color-mix(in srgb, var(--primary) 55%, var(--red)); }
+.dj-avatar.tone-3 { background: color-mix(in srgb, var(--info) 55%, var(--green)); }
+.dj-avatar.tone-4 { background: var(--warning-text); }
+.dj-avatar.tone-5 { background: color-mix(in srgb, var(--red) 80%, var(--text)); }
+.dj-avatar.is-empty { border: 1px dashed color-mix(in srgb, var(--muted) 60%, var(--card)); background: var(--card); color: var(--muted); }
+.dj-avatar.is-empty .material-symbols-outlined { font-size: 15px; }
+.dj-person { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; font-size: 13px; }
+.dj-person > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dj-key { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+
+/* ส่วนหัว: ขอบเขต + จำนวน | สร้าง → แท็บมุมมอง | เครื่องมือ */
+.dj-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; border-bottom: 1px solid var(--line); }
+.dj-header-start { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; min-width: 0; }
+.dj-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; margin: 0; color: var(--muted); font-size: 13px; }
+.dj-title b { color: var(--text); font-size: 14px; font-weight: 700; }
+.dj-title small { min-width: 0; max-width: 100%; overflow: hidden; border-left: 1px solid var(--line); padding-left: 8px; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.dj-views { display: flex; gap: 4px; align-self: stretch; }
+.dj-page .dj-views button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 6px 10px; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.dj-page .dj-views button:hover { color: var(--text); }
+.dj-page .dj-views button[aria-pressed="true"] { border-bottom-color: var(--primary); color: var(--primary); }
+.dj-page .dj-views button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.dj-views .material-symbols-outlined { font-size: 19px; }
+.dj-header-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 0; }
+.dj-header-tools .btn { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+.dj-header-tools .btn[aria-pressed="true"] { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); background: color-mix(in srgb, var(--primary) 7%, var(--card)); color: var(--primary); }
+
+/* ตัวกรอง + ตัวกรองด่วน */
+.dj-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dj-search { position: relative; display: block; flex: 0 1 260px; min-width: 200px; }
+.dj-search .material-symbols-outlined { position: absolute; top: 50%; left: 9px; color: var(--muted); font-size: 19px; transform: translateY(-50%); pointer-events: none; }
+.dj-filters input, .dj-filters select { width: 100%; height: 36px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background-color: var(--card); padding: 4px 10px; color: var(--text); font: inherit; font-size: 13px; }
+.dj-search input { padding-left: 34px; }
+.dj-filters > select { flex: 0 1 160px; width: auto; padding-right: 28px; }
+.dj-filters input:focus, .dj-filters select:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.dj-filters > select.dj-sort-mobile { display: none; }
+.dj-page .dj-clear { min-height: 36px; border-color: transparent; background: transparent; padding: 4px 10px; color: var(--primary); font-size: 13px; }
+/* แถบบนของการ์ดรายการ: ชิปสถานะ | แบ่งหน้า — ชิปเตี้ย 28px แบ่งหน้าไม่มีกรอบ/พื้นของตัวเอง */
+.dj-listbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; border-bottom: 1px solid var(--line); padding: 8px 14px 8px 16px; }
+.dj-listbar .suite-pagination.is-top { flex: 0 1 auto; gap: 8px; border: 0; background: transparent; padding: 0; }
+.dj-listbar .suite-pagination .btn { min-height: 30px; padding: 4px 8px; }
+.dj-listbar .suite-pagination :is(.page-size-input, .page-number) { height: 30px; min-width: 30px; }
+/* กว้างพอสำหรับ 3 หลัก + ลูกศร datalist ของ Chrome (68px เดิมตัดตัวเลขเหลือ "3(") */
+.dj-listbar .suite-pagination .page-size-input { width: 84px; padding: 4px 6px 4px 8px; }
+.dj-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.dj-page .dj-quick button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; border: 1px solid transparent; border-radius: 6px; background: transparent; padding: 2px 8px; color: var(--text); font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.dj-page .dj-quick button:hover { background: var(--dj-hover); }
+.dj-page .dj-quick button[aria-pressed="true"] { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); background: color-mix(in srgb, var(--primary) 8%, var(--card)); color: var(--primary); }
+.dj-page .dj-quick button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.dj-quick b { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* รายการ (Jira list): แถวบาง บรรทัดเดียว */
+.dj-list.lp-card { overflow: visible; }
+.dj-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.dj-table th { border-bottom: 2px solid var(--line); padding: 8px 10px; color: var(--muted); font-size: 12px; font-weight: 700; text-align: left; white-space: nowrap; }
+.dj-table td { height: 44px; border-bottom: 1px solid var(--line); padding: 4px 10px; vertical-align: middle; }
+.dj-table tbody tr:hover > td { background: var(--dj-hover); }
+.dj-table tbody tr.is-selected > td { background: color-mix(in srgb, var(--primary) 6%, var(--card)); }
+.dj-table tbody tr:last-child > td { border-bottom: 0; }
+.dj-table .dj-col-select { width: 44px; padding-left: 16px; padding-right: 0; }
+.dj-table .dj-col-select input { width: 16px; height: 16px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.dj-table .dj-col-key { width: 134px; }
+.dj-table .dj-col-status { width: 124px; }
+.dj-table .dj-col-sev { width: 106px; }
+.dj-table .dj-col-module { width: 15%; }
+.dj-table .dj-col-assignee { width: 176px; }
+.dj-table .dj-col-created { width: 116px; color: var(--muted); }
+.dj-table .dj-col-crm { width: 118px; }
+.dj-table .dj-col-menu { width: 52px; padding-right: 10px; text-align: right; }
+.dj-table:not(.is-selectable) .dj-col-key { padding-left: 16px; }
+.dj-page .dj-key button { min-width: 0; min-height: 0; overflow: hidden; border: 0; background: transparent; padding: 0; color: var(--primary); font: inherit; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.dj-page .dj-key button:hover { text-decoration: underline; }
+.dj-page .dj-key button.is-done { text-decoration: line-through; }
+.dj-page button.dj-summary { display: block; width: 100%; min-height: 0; overflow: hidden; border: 0; background: transparent; padding: 0; color: var(--text); font: inherit; font-size: 14px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.dj-page button.dj-summary:hover { color: var(--primary); }
+.dj-page :is(.dj-key button, button.dj-summary):focus-visible { border-radius: 4px; outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.dj-row-meta { display: block; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.dj-module { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dj-table .lp-empty { padding: 40px 16px; }
+.dj-table .dj-empty-row:hover > td { background: transparent; }
+.dj-page :is(.dj-row-menu, .dj-card-menu, .dj-more-menu) > .btn { display: inline-grid; width: 32px; height: 32px; min-height: 0; place-items: center; border-color: transparent; background: transparent; padding: 0; color: var(--muted); box-shadow: none; }
+.dj-page :is(.dj-row-menu, .dj-card-menu, .dj-more-menu) > .btn:hover, .dj-page :is(.dj-row-menu, .dj-card-menu, .dj-more-menu) > .btn[aria-expanded="true"] { background: color-mix(in srgb, var(--muted) 14%, var(--card)); color: var(--text); }
+.dj-row-menu { display: inline-block; }
+.dj-row-menu .action-menu-list { text-align: left; }
+
+/* Board (Kanban) */
+.dj-board-wrap { display: grid; gap: 8px; min-width: 0; }
+.dj-board-wrap:focus { outline: none; }
+.dj-board-note { display: flex; align-items: center; gap: 6px; margin: 0; border-radius: 8px; background: color-mix(in srgb, var(--info) 8%, var(--card)); padding: 8px 12px; color: var(--text); font-size: 13px; }
+.dj-board-note .material-symbols-outlined { color: var(--info); font-size: 18px; }
+.dj-board-hint { margin: 0; color: var(--muted); font-size: 12px; }
+.dj-board { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: start; gap: 10px; }
+.dj-col { display: grid; align-content: start; gap: 8px; min-width: 0; min-height: 320px; border: 2px solid transparent; border-radius: 10px; background: color-mix(in srgb, var(--muted) 8%, var(--card)); padding: 8px; transition: background .12s ease, border-color .12s ease; }
+.dj-col.is-over { border-color: color-mix(in srgb, var(--primary) 55%, var(--line)); border-style: dashed; background: color-mix(in srgb, var(--primary) 7%, var(--card)); }
+.dj-col-head { display: flex; align-items: center; gap: 8px; padding: 4px 4px 2px; }
+.dj-col-head h3 { margin: 0; overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .03em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.dj-col-head span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.dj-col.is-inprogress .dj-col-head h3 { color: var(--primary); }
+.dj-col.is-resolved .dj-col-head h3, .dj-col.is-closed .dj-col-head h3 { color: color-mix(in srgb, var(--green) 75%, var(--text)); }
+.dj-col-cards { display: grid; gap: 8px; }
+.dj-col-empty { margin: 0; border: 1px dashed color-mix(in srgb, var(--muted) 30%, var(--card)); border-radius: 8px; padding: 18px 8px; color: var(--muted); font-size: 12px; text-align: center; }
+.dj-card { position: relative; display: grid; gap: 6px; min-width: 0; border-radius: 8px; background: var(--card); padding: 10px 10px 8px; box-shadow: 0 1px 1px color-mix(in srgb, var(--text) 14%, transparent), 0 0 1px color-mix(in srgb, var(--text) 22%, transparent); }
+.dj-card[draggable="true"] { cursor: grab; }
+.dj-card:hover { background: color-mix(in srgb, var(--muted) 4%, var(--card)); }
+.dj-card.is-dragging { opacity: .45; }
+.dj-page button.dj-card-open { display: -webkit-box; min-height: 0; overflow: hidden; border: 0; background: transparent; padding: 0 30px 0 0; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; line-height: 1.45; text-align: left; white-space: normal; cursor: pointer; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
+.dj-page button.dj-card-open:hover { text-decoration: underline; }
+.dj-page button.dj-card-open:focus-visible { border-radius: 4px; outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.dj-card-module { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.dj-card footer { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dj-card-key { overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.dj-card-key.is-done { text-decoration: line-through; }
+.dj-card .dj-sev > .material-symbols-outlined { font-size: 18px; }
+.dj-card-crm { display: inline-flex; color: var(--muted); }
+.dj-card-crm .material-symbols-outlined { font-size: 16px; }
+.dj-card-end { display: inline-flex; margin-left: auto; }
+.dj-card .dj-card-menu { position: absolute; top: 4px; right: 4px; opacity: 0; }
+.dj-card:hover .dj-card-menu, .dj-card:focus-within .dj-card-menu, .dj-card .dj-card-menu:has([aria-expanded="true"]) { opacity: 1; }
+.dj-card-menu .action-menu-list { width: 220px; }
+@media (hover: none) { .dj-card .dj-card-menu { opacity: 1; } }
+
+/* รายละเอียด (Jira issue view) */
+.modal > .modal-box.dj-detail { display: flex; flex-direction: column; width: min(1240px, calc(100vw - 32px)); max-width: 1240px; height: calc(100dvh - 48px); max-height: calc(100dvh - 48px); overflow: hidden; padding: 0; }
+.dj-detail-top { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding: 10px 14px 10px 22px; }
+.dj-crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 13px; }
+.dj-crumb-project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dj-crumbs .dj-key b { color: var(--text); font-weight: 600; white-space: nowrap; }
+.dj-detail-top-actions { display: flex; flex: none; align-items: center; gap: 4px; }
+.dj-detail-alert { flex: none; margin: 10px 22px 0; }
+/* ซ้าย: ชื่อ (อยู่กับที่) + เนื้อหา (เลื่อนในตัว) | ขวา: สถานะ + รายละเอียด (ลำดับ DOM: ชื่อ → แผงขวา → เนื้อหา ให้มือถือเห็นสถานะต่อจากชื่อ) */
+.dj-detail-body { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.dj-detail-headline { grid-column: 1; grid-row: 1; min-width: 0; padding: 20px 28px 4px; }
+.dj-detail-main { grid-column: 1; grid-row: 2; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 28px 32px; }
+.dj-detail-headline h1 { margin: 0; color: var(--text); font-size: 22px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.dj-detail-headline h1:focus { outline: none; }
+.dj-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.dj-detail-actions .btn { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+.dj-section { margin-top: 24px; }
+.dj-section h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; color: var(--text); font-size: 14px; font-weight: 600; }
+.dj-section h3 .material-symbols-outlined { font-size: 18px; }
+.dj-text { margin: 0; color: var(--text); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dj-description > span { display: block; }
+.dj-description b { font-weight: 600; }
+.dj-result-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.dj-result-pair .dj-text { border-radius: 8px; background: color-mix(in srgb, var(--muted) 6%, var(--card)); padding: 10px 12px; }
+.dj-actual h3 .material-symbols-outlined { color: var(--red); }
+.dj-actual .dj-text { border-left: 3px solid color-mix(in srgb, var(--red) 55%, var(--card)); }
+.dj-expected h3 .material-symbols-outlined { color: var(--green); }
+.dj-expected .dj-text { border-left: 3px solid color-mix(in srgb, var(--green) 55%, var(--card)); }
+.dj-resolution .defect-resolution-edit { margin-top: 4px; }
+.dj-links { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.dj-links li { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px 4px 10px; font-size: 13px; }
+.dj-link-icon { color: var(--info); font-size: 18px; }
+.dj-links b { color: var(--primary); font-weight: 600; white-space: nowrap; }
+.dj-link-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dj-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.modal-box .dj-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 6px 10px; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.modal-box .dj-tabs [role="tab"]:hover { color: var(--text); }
+.modal-box .dj-tabs [role="tab"][aria-selected="true"] { border-bottom-color: var(--primary); color: var(--primary); }
+.modal-box .dj-tabs [role="tab"]:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.dj-panel { padding-top: 12px; }
+.dj-composer { margin-bottom: 14px; }
+.dj-history { display: grid; margin: 0; padding: 0; list-style: none; }
+.dj-history li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; border-bottom: 1px solid var(--line); padding: 10px 0; }
+.dj-history li:last-child { border-bottom: 0; }
+.dj-history p { margin: 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.dj-history-action { color: var(--muted); }
+.dj-history small { margin-left: 4px; color: var(--muted); font-size: 12px; }
+.dj-history-message { margin-top: 2px !important; color: var(--text); }
+.dj-history-thumbs { margin-top: 8px; }
+.dj-detail-side { display: grid; grid-column: 2; grid-row: 1 / span 2; align-content: start; gap: 14px; min-width: 0; overflow-y: auto; overscroll-behavior: contain; border-left: 1px solid var(--line); padding: 20px; }
+.dj-detail-side > .dj-lozenge { justify-self: start; font-size: 12px; line-height: 24px; }
+.dj-status-menu { justify-self: start; }
+.dj-status-menu > .btn { display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 4px; min-height: 36px; border: 0; border-radius: 6px; padding: 6px 10px 6px 14px; font-size: 13px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+.dj-status-menu > .btn .material-symbols-outlined { font-size: 20px; }
+.dj-status-menu.is-open > .btn { background: color-mix(in srgb, var(--muted) 16%, var(--card)); color: var(--text); }
+.dj-status-menu.is-inprogress > .btn { background: var(--primary); color: var(--card); }
+.dj-status-menu.is-resolved > .btn { background: color-mix(in srgb, var(--green) 85%, var(--text)); color: var(--card); }
+.dj-status-menu.is-closed > .btn { background: color-mix(in srgb, var(--green) 70%, var(--text)); color: var(--card); }
+.dj-status-menu.is-rejected > .btn { border: 1px solid var(--line); background: var(--card); color: var(--muted); }
+.dj-status-menu > .btn:hover:not(:disabled) { filter: brightness(.95); }
+.dj-status-menu .action-menu-list { right: auto; left: 0; }
+.dj-fields { border: 1px solid var(--line); border-radius: 10px; }
+.dj-fields h2 { display: flex; align-items: center; gap: 8px; margin: 0; border-bottom: 1px solid var(--line); padding: 10px 14px; color: var(--text); font-size: 14px; font-weight: 600; }
+.dj-fields dl { margin: 0; padding: 6px 14px 10px; }
+.dj-fields dl > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 38px; }
+.dj-fields dt { color: var(--muted); font-size: 13px; }
+.dj-fields dd { min-width: 0; margin: 0; color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
+.dj-fields dd small { margin-left: 6px; color: var(--muted); font-size: 11px; }
+.dj-fields dd a { color: var(--primary); font-weight: 600; }
+.dj-inline-field { display: flex; align-items: center; gap: 4px; min-width: 0; margin: -4px 0 -4px -8px; padding-left: 8px; }
+.dj-inline-field select { flex: 1; min-width: 0; height: 32px; border: 1px solid transparent; border-radius: 6px; background-color: transparent; padding: 2px 6px; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.dj-inline-field select:hover:not(:disabled) { border-color: var(--line); background-color: var(--card); }
+.dj-inline-field select:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.dj-inline-field .dj-sev > .material-symbols-outlined { font-size: 20px; }
+.dj-dates { display: grid; gap: 2px; margin: 0; color: var(--muted); font-size: 12px; }
+
+/* ฟอร์มสร้าง/แก้ไข = โครงเดียวกับหน้าต่างรายละเอียด (.dj-detail + .dj-editor): ชื่อเป็นช่องตัวใหญ่, เนื้อหาเป็น textarea ใต้หัวข้อแบบเดียวกับ .dj-section,
+   แผงขวาใช้ .dj-fields แต่ช่องมีกรอบเสมอ (เป็นฟอร์ม) และแถบปุ่มติดล่าง */
+.dj-editor-title { display: grid; gap: 6px; }
+.dj-editor-title > span { color: var(--text); font-size: 13px; font-weight: 600; }
+.dj-editor-title input { width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; color: var(--text); font: inherit; font-size: 18px; font-weight: 600 !important; }
+.dj-editor-title input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.dj-editor .defect-similar { margin: 12px 0 0; }
+.dj-editor .defect-similar li .dj-lozenge { justify-self: end; }
+.dj-editor .dj-detail-main { padding-top: 4px; }
+.dj-editor-field { display: grid; }
+.dj-editor-label { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; color: var(--text); font-size: 14px; font-weight: 600; }
+.dj-editor-label .material-symbols-outlined { font-size: 18px; }
+.dj-actual .dj-editor-label .material-symbols-outlined { color: var(--red); }
+.dj-expected .dj-editor-label .material-symbols-outlined { color: var(--green); }
+.dj-editor-field textarea { width: 100%; min-height: 80px; padding: 10px 12px; font-size: 14px; line-height: 1.6; resize: vertical; }
+.dj-editor-field textarea[rows="4"] { min-height: 104px; }
+.dj-editor-field textarea[rows="6"] { min-height: 150px; }
+.dj-editor .dj-actual textarea { border-color: color-mix(in srgb, var(--red) 28%, var(--line)); background: color-mix(in srgb, var(--red) 3%, var(--card)); }
+.dj-editor .dj-inline-field { margin: 0; padding: 0; gap: 8px; }
+.dj-editor .dj-inline-field select, .dj-editor-select { flex: 1; width: 100%; min-width: 0; height: 36px; border: 1px solid var(--line); border-radius: 6px; background-color: var(--card); padding: 2px 8px; color: var(--text); font: inherit; font-size: 13px; }
+.dj-editor-select:disabled { background-color: color-mix(in srgb, var(--muted) 7%, var(--card)); color: var(--muted); cursor: not-allowed; }
+.dj-editor-select:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+.dj-fields dl > div.dj-field-top { align-items: start; padding: 4px 0; }
+.dj-fields dl > div.dj-field-top > dt { padding-top: 8px; }
+.dj-field-hint { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.dj-editor-actions { position: sticky; bottom: 0; z-index: 3; display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--line); background: var(--card); padding: 12px 22px; }
+.dj-editor-actions .btn { min-height: 38px; }
+.dj-create-another { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
+.dj-form-status { margin-right: auto; color: var(--muted); font-size: 12px; }
+.dj-form-status.is-missing { color: var(--red); }
+
+@media (max-width: 1280px) {
+  .dj-table .dj-col-crm { display: none; }
+}
+@media (max-width: 1100px) {
+  .dj-table .dj-col-module { display: none; }
+  .dj-board { display: flex; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
+  .dj-col { flex: 0 0 260px; scroll-snap-align: start; }
+  .dj-detail-body { grid-template-columns: minmax(0, 1fr) 310px; }
+  .dj-detail-headline { padding: 18px 22px 4px; }
+  .dj-detail-main { padding: 0 22px 28px; }
+}
+@media (max-width: 900px) {
+  .dj-table .dj-col-created { display: none; }
+  .modal > .modal-box.dj-detail { overflow-y: auto; }
+  .dj-detail-top { position: sticky; top: 0; z-index: 3; background: var(--card); }
+  .dj-detail-body { display: block; flex: none; }
+  .dj-detail-main, .dj-detail-side { overflow: visible; }
+  .dj-detail-side { border-bottom: 1px solid var(--line); border-left: 0; padding-top: 12px; }
+  .dj-detail-main { padding-top: 4px; }
+}
+@media (max-width: 760px) {
+  .dj-header-start { flex: 1 1 100%; }
+  .dj-views { flex: 1 1 100%; }
+  .dj-page .dj-views button { flex: 1; justify-content: center; }
+  .dj-title { padding-bottom: 2px; }
+  /* ปุ่มสร้างเต็มแถวบนสุด ปุ่มรองแบ่งแถวล่างเท่ากัน (ปุ่ม "ลบแล้ว" แสดงเฉพาะเมื่อมีรายการที่ลบ) */
+  .dj-header-tools { flex: 1 1 100%; padding: 0 0 8px; }
+  .dj-header-tools > * { flex: 1 1 0; }
+  .dj-header-tools > .btn.primary { flex-basis: 100%; order: -1; }
+  .dj-header-tools .btn { width: 100%; min-height: 44px; justify-content: center; }
+  .dj-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dj-search, .dj-filters > .dj-clear { grid-column: 1 / -1; }
+  .dj-search { min-width: 0; }
+  .dj-filters input, .dj-filters select { height: 44px; }
+  .dj-filters > select { width: 100%; }
+  .dj-filters > select.dj-sort-mobile { display: block; }
+  .dj-listbar { padding: 8px 12px; }
+  .dj-quick { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .dj-page .dj-quick button { min-height: 36px; }
+  /* แบ่งหน้า (บน) บนมือถือเหลือแถวเดียว: ก่อนหน้า | [n] / ทั้งหมด | ถัดไป — จำนวนต่อหน้าและสรุปอยู่ที่แบ่งหน้าล่าง */
+  .dj-listbar .suite-pagination.is-top { flex: 1 1 100%; flex-wrap: nowrap; }
+  .dj-listbar .suite-pagination.is-top > :is(label, span) { display: none; }
+  .dj-listbar .suite-pagination .btn { flex: 1 1 0; min-height: 40px; }
+  /* รายการเป็นการ์ดต่อแถว: Key + สถานะ / ชื่อ 2 บรรทัด / Severity · ผู้รับผิดชอบ · สร้างเมื่อ */
+  .dj-table thead { display: none; }
+  .dj-table, .dj-table tbody { display: block; }
+  .dj-table tbody tr { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border-bottom: 1px solid var(--line); padding: 12px 52px 12px 16px; }
+  .dj-table.is-selectable tbody tr { padding-left: 46px; }
+  .dj-table tbody tr:hover > td { background: transparent; }
+  .dj-table tbody tr.is-selected { background: color-mix(in srgb, var(--primary) 6%, var(--card)); }
+  .dj-table td { display: block; width: auto !important; height: auto; border: 0; padding: 0; }
+  .dj-table .dj-col-select { position: absolute; top: 13px; left: 14px; padding: 0; }
+  .dj-table .dj-col-select input { width: 20px; height: 20px; }
+  .dj-table .dj-col-key { order: 1; padding-left: 0 !important; }
+  .dj-table .dj-col-status { order: 2; }
+  .dj-table .dj-col-summary { order: 3; flex: 1 1 100%; min-width: 0; }
+  .dj-page button.dj-summary { display: -webkit-box; font-size: 14px; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+  .dj-table .dj-col-sev { order: 4; }
+  .dj-table .dj-col-assignee { order: 5; min-width: 0; max-width: 60%; }
+  .dj-table .dj-col-created { order: 6; display: block; font-size: 12px; }
+  .dj-table .dj-col-module, .dj-table .dj-col-crm { display: none; }
+  .dj-table .dj-col-menu { position: absolute; top: 8px; right: 8px; }
+  .dj-page :is(.dj-row-menu, .dj-card-menu, .dj-more-menu) > .btn, :is(.dj-page, .modal-box) button.dj-icon-btn { width: 40px; height: 40px; }
+  .dj-table .dj-empty-row { display: block; padding: 0; }
+  .dj-col { flex-basis: min(82vw, 300px); }
+  .dj-card .dj-card-menu { top: 2px; right: 2px; }
+  .dj-page button.dj-card-open { padding-right: 40px; }
+  /* รายละเอียด/ฟอร์มเต็มจอ (กฎกลาง .modal-box ≤760px) */
+  .modal > .modal-box.dj-detail { height: 100dvh; max-height: 100dvh; }
+  .dj-detail-top { padding: 6px 8px 6px 16px; }
+  .dj-detail-headline { padding: 16px 16px 4px; }
+  .dj-detail-main { padding: 4px 16px 24px; }
+  .dj-detail-headline h1 { font-size: 20px; }
+  .dj-detail-actions .btn { flex: 1 1 0; min-height: 44px; justify-content: center; }
+  .dj-result-pair { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .dj-links li { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .dj-links .dj-link-icon { display: none; }
+  .dj-links .dj-link-title { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
+  .modal-box .dj-tabs [role="tab"] { flex: 1; justify-content: center; min-height: 44px; }
+  .dj-detail-side { padding: 16px; }
+  .dj-status-menu, .dj-status-menu > .btn { width: 100%; justify-content: center; }
+  .dj-status-menu > .btn { min-height: 44px; }
+  .dj-fields dl > div { min-height: 44px; }
+  .dj-inline-field select { height: 44px; }
+  .dj-editor-title input { height: 48px; font-size: 16px; }
+  .dj-editor .dj-inline-field select, .dj-editor-select { height: 44px; }
+  .dj-editor-actions { padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); }
+  .dj-create-another, .dj-form-status { flex: 1 1 100%; }
+  .dj-create-another { min-height: 32px; }
+  .dj-editor-actions .btn { flex: 1 1 0; min-height: 44px; justify-content: center; }
 }

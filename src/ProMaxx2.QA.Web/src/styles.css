@@ -2207,65 +2207,6 @@ textarea::placeholder {
 
 /* ===== DEFECT MANAGEMENT ===== */
 .defect-page { display: flex; flex-direction: column; gap: 16px; padding: 24px; max-width: 1400px; margin: 0 auto; }
-/* รายละเอียด Defect (2026-10-20): จัดการได้ในหน้าจอเดียว — หัว + แถบปุ่มดำเนินการอยู่กับที่, Desktop แบ่งซ้าย (ข้อมูล Defect
-   เลื่อนเฉพาะฝั่ง) / ขวา (แท็บ Comments | Activities + ช่องเขียนคอมเมนต์ติดล่าง); ≤900px เรียงคอลัมน์เดียวเลื่อนทั้ง modal */
-.modal-box.defect-detail { display: flex; flex-direction: column; width: min(1320px, calc(100vw - 32px)) !important; max-width: 1320px !important; height: calc(100dvh - 48px); max-height: calc(100dvh - 48px); padding: 0; overflow: hidden; }
-.modal-box.defect-detail > .modal-head { position: static; flex: none; gap: 14px; margin: 0; padding: 14px 20px 12px; border-bottom: 1px solid var(--line); background: var(--card); }
-.defect-detail .modal-head > .modal-head-title-group { flex: 1; }
-.defect-detail .modal-head h2 { display: flex; align-items: center; gap: 8px; margin-top: 2px; color: var(--primary); letter-spacing: .02em; }
-.defect-detail .modal-head h2 .defect-copy-btn { flex: none; width: 24px; min-width: 24px; height: 24px; margin: 0; padding: 0; border: 0; }
-.defect-detail .modal-head small { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; }
-.defect-detail-head-badges { display: flex; flex: none; flex-wrap: wrap; gap: 6px; }
-.defect-detail-toolbar { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: #fbfcfe; }
-.defect-detail-toolbar .btn { min-height: 36px; }
-.defect-detail-toolbar .material-symbols-outlined { font-size: 18px; line-height: 1; }
-.defect-detail-delete { margin-left: auto; }
-.defect-detail-alert { flex: none; margin: 10px 20px 0; }
-.defect-detail-body { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) minmax(340px, 420px); min-height: 0; }
-.defect-detail-main { min-width: 0; min-height: 0; overflow-y: auto; padding: 4px 20px 20px; }
-.defect-detail-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; }
-.defect-detail-meta > div { min-width: 0; }
-.defect-detail-meta dt { color: var(--muted); font-size: 11px; font-weight: 700; }
-.defect-detail-meta dd { margin: 2px 0 0; overflow-wrap: anywhere; color: var(--text); font-size: 14px; font-weight: 600; }
-.defect-detail-meta dd small { color: var(--muted); font-size: 12px; font-weight: 400; }
-.defect-detail-meta dd a { color: var(--primary); text-decoration: none; }
-.defect-detail-meta dd a:hover { text-decoration: underline; }
-.defect-detail-side { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: #fbfcfe; }
-.defect-detail-tabs { display: flex; flex: none; gap: 4px; padding: 8px 14px 0; border-bottom: 1px solid var(--line); background: var(--card); }
-.defect-detail-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px; padding: 9px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
-.defect-detail-tabs [role="tab"] .material-symbols-outlined { font-size: 19px; line-height: 1; }
-.defect-detail-tabs [role="tab"]:hover { color: var(--text); }
-.defect-detail-tabs [role="tab"][aria-selected="true"] { border-bottom-color: var(--primary); color: var(--primary); }
-.defect-detail-tabs [role="tab"]:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent); outline-offset: -3px; border-radius: 8px 8px 0 0; }
-.defect-detail-tab-count { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #eef3ff; color: var(--primary); font-size: 12px; text-align: center; }
-.defect-detail-side-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
-.defect-detail-side .defect-activity-list { max-height: none; overflow: visible; }
-.defect-detail-composer { flex: none; padding: 10px 14px 12px; border-top: 1px solid var(--line); background: var(--card); }
-@media (max-width: 1280px) {
-  .defect-detail-main .defect-detail-split { grid-template-columns: minmax(0, 1fr); gap: 0; }
-}
-@media (max-width: 900px) {
-  .modal-box.defect-detail { height: auto; overflow-y: auto; }
-  .modal-box.defect-detail > .modal-head { position: sticky; top: 0; z-index: 5; }
-  .defect-detail-body { display: block; }
-  .defect-detail-main { overflow: visible; padding: 4px 16px 16px; }
-  .defect-detail-side { border-top: 1px solid var(--line); border-left: 0; }
-  .defect-detail-side-scroll { overflow: visible; }
-  .defect-detail-tabs, .defect-detail-toolbar { padding-left: 16px; padding-right: 16px; }
-}
-@media (max-width: 760px) {
-  /* กฎ width/max-width ด้านบนเป็น !important และ specificity สูงกว่ามาตรฐาน Mobile กลาง จึงต้องคืนค่าเต็มจอที่นี่ */
-  .modal-box.defect-detail { width: 100% !important; max-width: 100% !important; height: 100dvh; max-height: 100dvh; border-radius: 0; }
-  .defect-detail .defect-linked-case { flex-wrap: wrap; }
-  .defect-detail .defect-linked-case > div:first-child { flex-basis: calc(100% - 60px); }
-  .defect-detail .defect-linked-case > .btn { flex: 1 1 100%; min-height: 44px; }
-  .modal-box.defect-detail > .modal-head { flex-wrap: wrap; padding: 12px 16px 10px; }
-  .defect-detail-head-badges { order: 3; flex-basis: 100%; }
-  .defect-detail-toolbar .btn { flex: 1 1 140px; min-height: 44px; }
-  .defect-detail-delete { margin-left: 0; }
-  .defect-detail-composer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
-}
-.defect-form-modal { width: min(1200px, calc(100vw - 32px)) !important; max-width: 1200px !important; }
 /* เตือน Defect ที่อาจซ้ำในฟอร์มสร้าง + ผลการปิดในรายละเอียด (คลังความรู้ Phase 6) */
 .defect-similar { margin: 4px 0 12px; border: 1px solid color-mix(in srgb, var(--yellow) 45%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--yellow) 8%, var(--card)); padding: 12px 14px; }
 .defect-similar h3 { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--warning-text); font-size: 14px; }
@@ -2290,22 +2231,9 @@ textarea::placeholder {
   .defect-resolution-view { grid-template-columns: minmax(0, 1fr); }
   .defect-resolution-edit { width: 100%; min-height: 44px; }
 }
-.defect-copy-btn { display: inline-grid; width: 22px; height: 22px; margin-left: 8px; place-items: center; border: 0; border-radius: 6px; background: #eef3ff; color: var(--primary); font-size: 11px; cursor: pointer; vertical-align: middle; }
-.defect-copy-btn:hover { background: #e0e9ff; }
 /* คอลัมน์ CRM ในตาราง Defect list — ถ้ายังไม่เคยส่งไป CRM (สถานะ None) ให้ badge กดได้ทันทีเพื่อเปิด
    dialog เลือกผู้รับผิดชอบแล้วส่งไป CRM เลย ไม่ต้องเปิด detail modal ก่อน (ปุ่มล้วนๆ ไม่มีกรอบ/พื้นหลัง
    ของตัวเอง ให้ badge ข้างในเป็นตัวรับผิดชอบหน้าตาแทน) */
-.defect-detail-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; }
-/* input/textarea ในหน้าสร้าง/แก้ไข Defect ที่วางอยู่ใต้ h3 ของ .cycle-detail-section โดยตรง (ไม่ผ่าน
-   label) ให้หน้าตาเหมือน .defect-detail-text แต่แก้ไขได้ — ค่าตัวเลขอ้างอิงจาก input มาตรฐานที่ใช้
-   ทั่วทั้งแอป (border-radius:10px, padding:11px 14px, focus ring สีฟ้าอ่อน) */
-.defect-form-field { width: 100%; border: 1.5px solid var(--line); border-radius: 10px; background: #fff; padding: 11px 14px; color: var(--text); font: inherit; font-size: 14px; transition: all .2s; }
-textarea.defect-form-field { resize: vertical; line-height: 1.6; }
-.defect-form-field:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(36,87,214,.1); }
-.defect-detail-text { margin: 0; border: 1px solid #e7ebf2; border-radius: 10px; background: #fbfcfe; padding: 12px 14px; color: #374151; font-size: 14px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
-.defect-description-text > span { display: block; font-weight: 400; }
-.defect-description-text > span > b { color: var(--text); font-weight: 800; }
-.defect-description-value { font-weight: 300; }
 /* ขั้นตอนการทำซ้ำแบบการ์ด (components/ReproSteps.tsx) — ใช้ใน Defect detail และหน้าแชร์ Defect */
 .defect-repro-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; min-width: 0; }
 .defect-repro-step { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; background: #fff; padding: 10px 12px; min-width: 0; }
@@ -2328,23 +2256,11 @@ textarea.defect-form-field { resize: vertical; line-height: 1.6; }
   .defect-repro-step { padding: 9px 10px; gap: 8px; }
   .defect-repro-fields > div { grid-template-columns: minmax(0, 1fr); gap: 1px; }
 }
-.defect-linked-cases { display: grid; gap: 7px; }
-.defect-linked-case { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 9px 11px; }
-.defect-linked-case > div:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.defect-linked-case b { color: var(--primary); font-size: 14px; }
-.defect-linked-case small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .quick-action-blue { border-color: #bcd0f7 !important; color: var(--primary) !important; }
 .quick-action-green { border-color: #b7e3cb !important; color: var(--green) !important; }
 .quick-action-purple { border-color: #d9c8f0 !important; color: #7c4dc4 !important; }
 .quick-action-red { border-color: #f3c6c6 !important; color: var(--red) !important; }
-.defect-activity-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
-.defect-activity-row { display: flex; gap: 9px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; padding: 9px 10px; }
-.defect-activity-row > div { flex: 1; min-width: 0; }
-.defect-activity-row p { margin: 0; font-size: 14px; color: var(--text); }
-.defect-activity-row small { color: var(--muted); font-size: 12px; }
 /* รูปย่อของ activity "แนบรูปภาพ" ใช้สไตล์ .defect-comment-thumbs (DefectComments.css) — เว้นระยะจากบรรทัดผู้ทำ/เวลา */
-.defect-activity-thumbs { margin-top: 8px; }
-@media (max-width: 760px) {  .defect-detail-split { grid-template-columns: 1fr; } }
 .defect-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .defect-form > label { min-width: 0; display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--text); }
 .defect-form > label.full { grid-column: 1 / -1; }

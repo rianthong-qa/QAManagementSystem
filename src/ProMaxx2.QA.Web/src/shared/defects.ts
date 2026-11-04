@@ -52,3 +52,6 @@ export type DefectResolution = { resolutionType: string; rootCauseCategory: stri
 /** ผลจากหน้าต่างผลการปิด = ผลการปิด + Build (Fix Build ตอน Resolved, Build ที่ตรวจซ้ำผ่านตอน Resolved → Closed) — Build ส่งแยกจาก resolution */
 export type DefectResolutionChoice = DefectResolution & { fixedInBuildId?: string | null; verifiedInBuildId?: string | null };
 export const splitResolutionChoice = ({ fixedInBuildId, verifiedInBuildId, ...resolution }: DefectResolutionChoice) => ({ resolution, fixedInBuildId: fixedInBuildId ?? null, verifiedInBuildId: verifiedInBuildId ?? null });
+
+/** สถานะ → class key (Open → open, In Progress → inprogress) ใช้กับป้ายสถานะ/คอลัมน์ Board ของหน้า Defect */
+export const defectStatusKey = (status: string) => status.toLowerCase().replace(/\s+/g, "");

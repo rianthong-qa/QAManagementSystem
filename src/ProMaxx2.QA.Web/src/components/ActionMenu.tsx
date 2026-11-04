@@ -4,7 +4,8 @@ import "./ActionMenu.css";
 /** เมนูคำสั่งรอง (UI_DESIGN_SYSTEM §8) — ใช้ในหน้าต่าง Test Plan ("จัดการแผน") และ Execution Workspace ("ตั้งทุก Step") */
 export type ActionMenuItem = { key: string; icon: string; label: string; hint?: string; danger?: boolean; disabled?: boolean; onSelect: () => void };
 
-export function ActionMenu({ label, items, disabled, icon = "more_horiz", className }: { label: string; items: ActionMenuItem[]; disabled: boolean; icon?: string; className?: string }) {
+/** `hideLabel` = ปุ่มไอคอนอย่างเดียว (ชื่อเป็น sr-only) เช่นเมนู ⋯ ในแถวตาราง/การ์ด Board ของหน้า Defect */
+export function ActionMenu({ label, items, disabled, icon = "more_horiz", className, hideLabel = false }: { label: string; items: ActionMenuItem[]; disabled: boolean; icon?: string; className?: string; hideLabel?: boolean }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -37,7 +38,7 @@ export function ActionMenu({ label, items, disabled, icon = "more_horiz", classN
     <div className={`action-menu${className ? ` ${className}` : ""}`} ref={rootRef}>
       <button ref={buttonRef} type="button" className="btn" disabled={disabled} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
         onClick={() => setOpen((x) => !x)} onKeyDown={(e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } }}>
-        <span className="material-symbols-outlined" aria-hidden="true">{icon}</span> {label}
+        <span className="material-symbols-outlined" aria-hidden="true">{icon}</span>{hideLabel ? <span className="sr-only">{label}</span> : <> {label}</>}
       </button>
       {open && <div id={menuId} className="action-menu-list" role="menu" aria-label={label} onKeyDown={onMenuKeyDown}>
         {items.map((item) => (
