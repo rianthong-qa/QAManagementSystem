@@ -13,7 +13,8 @@ import { KnowledgeDocuments } from "./KnowledgeDocuments";
 import { CrmMirrorIntervalEditor } from "../components/CrmMirrorIntervalEditor";
 import { CopyButton } from "../components/CopyButton";
 import { HtmlArticleFrame } from "../components/HtmlArticleFrame";
-import { decodeHtmlBytes, htmlArticleHasText, htmlArticleMaxLength, htmlArticleTitle } from "../shared/htmlArticle";
+import { HtmlArticleVisualEditor } from "../components/HtmlArticleVisualEditor";
+import { decodeHtmlBytes, externalizeHtmlAssets, htmlArticleHasText, htmlArticleLengthAfterAssets, htmlArticleMaxFileBytes, htmlArticleMaxLength, htmlArticleTitle } from "../shared/htmlArticle";
 import { downloadKnowledgeFile } from "./knowledgeFiles";
 import "./Knowledge.css";
 
@@ -43,6 +44,11 @@ const sourceBreakdown = (rows: { sourceType: SourceType }[]) => {
 };
 const indexStateInfo: Record<string, { label: string; tone: string }> = { Indexed: { label: "ค้นหาได้แล้ว", tone: "green" }, Stale: { label: "รอสร้างดัชนี", tone: "yellow" }, Failed: { label: "สร้างดัชนีไม่สำเร็จ", tone: "red" }, Excluded: { label: "ไม่อยู่ในคลัง", tone: "gray" } };
 const emptyDraft: ArticleDraft = { title: "", bodyMarkdown: "", projectId: "", tags: "", status: "Published", format: "Markdown", bodyHtml: "" };
+/** ฟอร์มแก้ไขจากบทความ — บทความ HTML: bodyMarkdown คือข้อความที่สกัดไว้ ใช้เป็นจุดเริ่มถ้าผู้ใช้สลับไป "เขียนเอง" */
+const draftOf = (a: Article): ArticleDraft => {
+  const isHtml = a.contentFormat === "Html" && Boolean(a.bodyHtml);
+  return { id: a.knowledgeArticleId, title: a.title, bodyMarkdown: a.bodyMarkdown ?? "", projectId: a.projectId ?? "", tags: a.tags ?? "", status: a.status, format: isHtml ? "Html" : "Markdown", bodyHtml: isHtml ? a.bodyHtml ?? "" : "" };
+};
 const errorText = (error: unknown, fallback: string) => error instanceof Error && error.message ? error.message : fallback;
 
 export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude, canViewCrm, onOpenDefect, onOpenTestCase }: { userName?: string; canEdit: boolean; isSysAdmin: boolean; canConnectClaude: boolean; canViewCrm: boolean; onOpenDefect: (defectId: string) => void; onOpenTestCase: (testCaseId: string) => void }) {
@@ -60,24 +66,9 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [viewing, setViewing] = useState<Article | null>(null);
+  // แก้ไขบทความ HTML บนหน้าตาจริงจากหน้าต่างอ่าน — บันทึกทันที (หัวข้อ/Project/Tag/สถานะคงเดิม)
+  const [visualEdit, setVisualEdit] = useState<Article | null>(null);
   const viewingHtml = viewing?.contentFormat === "Html" && Boolean(viewing.bodyHtml);
-  // บทความ HTML บนมือถือ: กรอบสูงพอดีช่องระหว่างหัว/ปุ่มที่ sticky (Knowledge.css) — วัดความสูงจริงเพราะชื่อยาวตัดหลายบรรทัด
-  const viewHeadRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const head = viewHeadRef.current;
-    const box = head?.parentElement;
-    if (!viewingHtml || !head || !box) return;
-    const actions = box.querySelector<HTMLElement>(":scope > .modal-actions");
-    const update = () => {
-      box.style.setProperty("--kn-view-head", `${head.offsetHeight}px`);
-      box.style.setProperty("--kn-view-actions", `${actions?.offsetHeight ?? 0}px`);
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(head);
-    if (actions) observer.observe(actions);
-    return () => observer.disconnect();
-  }, [viewingHtml, viewing]);
   const [viewLoading, setViewLoading] = useState(false);
   const [crmView, setCrmView] = useState<CrmTicketView | null>(null);
   const [draft, setDraft] = useState<ArticleDraft | null>(null);
@@ -140,14 +131,29 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
     else if (citation.sourceType === "TestCase") onOpenTestCase(citation.sourceKey);
   };
 
+  // รูป/ฟอนต์ที่ฝังเป็น data: base64 อัปโหลดแยกก่อน แล้วส่ง HTML ที่อ้างถึงด้วย qa-asset:{id} (ไฟล์ export จาก Word/Notion มักใหญ่เกินเพดานเพราะรูป)
+  const uploadHtmlAssets = async (files: Blob[]) => {
+    const form = new FormData();
+    files.forEach((file, i) => form.append("files", file, `asset-${i}`));
+    const result = await apiFetch<{ assetId?: string | null }[]>("/knowledge/assets", { method: "POST", form, fallbackMessage: "อัปโหลดรูปในไฟล์ HTML ไม่สำเร็จ" });
+    return result.map((x) => x.assetId ?? null);
+  };
+
   const saveDraft = async (value: ArticleDraft) => {
     const html = value.format === "Html";
-    const body = { title: value.title.trim(), bodyMarkdown: html ? null : value.bodyMarkdown, bodyHtml: html ? value.bodyHtml : null, projectId: value.projectId || null, tags: value.tags.trim() || null, status: value.status };
+    const bodyHtml = html ? (await externalizeHtmlAssets(value.bodyHtml, uploadHtmlAssets)).html : null;
+    if (bodyHtml && bodyHtml.length > htmlArticleMaxLength) throw new Error(`ไฟล์ยังใหญ่เกิน ${(htmlArticleMaxLength / 1_000_000).toLocaleString("th-TH")} ล้านตัวอักษรหลังแยกรูปออกแล้ว — ส่วนที่ใหญ่ไม่ใช่รูป (เช่น ข้อความ/สคริปต์) กรุณาแบ่งเป็นหลายบทความ`);
+    const body = { title: value.title.trim(), bodyMarkdown: html ? null : value.bodyMarkdown, bodyHtml, projectId: value.projectId || null, tags: value.tags.trim() || null, status: value.status };
     const saved = await apiFetch<Article>(value.id ? `/knowledge/articles/${value.id}` : "/knowledge/articles", { method: value.id ? "PUT" : "POST", json: body, fallbackMessage: "บันทึกบทความไม่สำเร็จ" });
     notify(value.status === "Published" ? "บันทึกบทความแล้ว — ค้นหาได้ภายในไม่กี่นาที" : "บันทึกฉบับร่างแล้ว (ยังไม่เข้าคลังความรู้)", "success");
     setDraft(null);
     setArticlesVersion((x) => x + 1);
     if (viewing?.knowledgeArticleId === saved.knowledgeArticleId) setViewing(saved);
+  };
+
+  const saveVisualEdit = async (article: Article, bodyHtml: string) => {
+    await saveDraft({ ...draftOf(article), bodyHtml });
+    setVisualEdit(null);
   };
 
   const deleteArticle = async (article: Article) => {
@@ -163,9 +169,7 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
   const editArticle = async (article: Article) => {
     try {
       const full = article.bodyMarkdown != null ? article : await apiFetch<Article>(`/knowledge/articles/${article.knowledgeArticleId}`);
-      const isHtml = full.contentFormat === "Html" && Boolean(full.bodyHtml);
-      // บทความ HTML: bodyMarkdown คือข้อความที่สกัดไว้ — ใช้เป็นจุดเริ่มถ้าผู้ใช้สลับไป "เขียนเอง"
-      setDraft({ id: full.knowledgeArticleId, title: full.title, bodyMarkdown: full.bodyMarkdown ?? "", projectId: full.projectId ?? "", tags: full.tags ?? "", status: full.status, format: isHtml ? "Html" : "Markdown", bodyHtml: isHtml ? full.bodyHtml ?? "" : "" });
+      setDraft(draftOf(full));
     } catch (error) { notify(errorText(error, "เปิดบทความเพื่อแก้ไขไม่สำเร็จ"), "error"); }
   };
 
@@ -211,7 +215,7 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
       {tab === "status" && isSysAdmin && <StatusPanel />}
     </section>
     {viewing && <ModalShell labelledBy="kn-article-title" className={`kn-article-view${viewingHtml ? " is-html" : ""}`} onDismiss={() => setViewing(null)}>
-      <div className="modal-head" ref={viewHeadRef}>
+      <div className="modal-head">
         <div>
           <span className="kn-eyebrow">บทความ · {viewing.projectName ?? "ความรู้กลาง (ทุก Project)"}</span>
           <h2 id="kn-article-title">{viewing.title}</h2>
@@ -227,9 +231,6 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
         {viewing.tags && <span><span className="material-symbols-outlined" aria-hidden="true">sell</span>{viewing.tags}</span>}
         <span><span className="material-symbols-outlined" aria-hidden="true">edit_calendar</span>{viewing.updatedAt ? `แก้ไขล่าสุด ${formatThaiDateTime(viewing.updatedAt)}${viewing.updatedByName ? ` โดย ${viewing.updatedByName}` : ""}` : `สร้าง ${formatThaiDateTime(viewing.createdAt)}${viewing.createdByName ? ` โดย ${viewing.createdByName}` : ""}`}</span>
       </div>
-      {viewingHtml && viewing.bodyHtml
-        ? <div className="kn-html-view"><HtmlArticleFrame html={viewing.bodyHtml} title={`เนื้อหาบทความ ${viewing.title}`} /></div>
-        : <div className="kn-article-body">{viewing.bodyMarkdown}</div>}
       {(viewing.shareUrl || (canEdit && viewing.status === "Published")) && <section className="kn-share" aria-labelledby="kn-share-title">
         <div className="kn-share-head">
           <span className="material-symbols-outlined" aria-hidden="true">{viewing.shareUrl ? "public" : "share"}</span>
@@ -245,11 +246,16 @@ export function KnowledgePage({ userName, canEdit, isSysAdmin, canConnectClaude,
           {canEdit && <button type="button" className="btn kn-danger" disabled={shareBusy} onClick={() => void revokeShare(viewing)}><span className="material-symbols-outlined" aria-hidden="true">link_off</span>ยกเลิกลิงก์</button>}
         </div> : <button type="button" className="btn primary" disabled={shareBusy} onClick={() => void createShare(viewing)}>{shareBusy ? <><span className="spinner inline" aria-hidden="true" /> กำลังสร้าง...</> : <><span className="material-symbols-outlined" aria-hidden="true">add_link</span>สร้างลิงก์แชร์</>}</button>}
       </section>}
+      <div className="kn-view-body">{viewingHtml && viewing.bodyHtml
+        ? <div className="kn-html-view"><HtmlArticleFrame html={viewing.bodyHtml} title={`เนื้อหาบทความ ${viewing.title}`} /></div>
+        : <div className="kn-article-body">{viewing.bodyMarkdown}</div>}</div>
       {canEdit && <div className="modal-actions">
         <button type="button" className="btn kn-danger" onClick={() => void deleteArticle(viewing)}><span className="material-symbols-outlined" aria-hidden="true">delete</span>ลบ</button>
+        {viewingHtml && <button type="button" className="btn" onClick={() => setVisualEdit(viewing)}><span className="material-symbols-outlined" aria-hidden="true">edit_document</span>แก้ไขบนหน้าตา</button>}
         <button type="button" className="btn primary" onClick={() => { void editArticle(viewing); setViewing(null); }}><span className="material-symbols-outlined" aria-hidden="true">edit</span>แก้ไข</button>
       </div>}
     </ModalShell>}
+    {visualEdit?.bodyHtml && <HtmlArticleVisualEditor html={visualEdit.bodyHtml} title={visualEdit.title} applyLabel="บันทึก" onCancel={() => setVisualEdit(null)} onApply={(html) => saveVisualEdit(visualEdit, html)} />}
     {crmView && <CrmTicketModal ticket={crmView} onClose={() => setCrmView(null)} />}
     {draft && <ArticleEditor draft={draft} projects={projects} onCancel={() => setDraft(null)} onSave={saveDraft} />}
   </div>;
@@ -496,19 +502,20 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
   ];
   // นำเข้าไฟล์ HTML: อ่านในเครื่อง (ถอด charset ตาม <meta>) → แสดงตัวอย่าง → ส่ง HTML ให้เซิร์ฟเวอร์ทำความสะอาดตอนบันทึก
   const [htmlFileName, setHtmlFileName] = useState<string | null>(null);
+  const [visualEditing, setVisualEditing] = useState(false);
   const [htmlError, setHtmlError] = useState("");
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const maxMillion = (htmlArticleMaxLength / 1_000_000).toLocaleString("th-TH");
+  const maxFileMb = (htmlArticleMaxFileBytes / 1_000_000).toLocaleString("th-TH");
   const loadHtmlFile = async (file: File | undefined) => {
     if (!file) return;
     if (!/\.html?$/i.test(file.name) && file.type !== "text/html") { setHtmlError(`"${file.name}" ไม่ใช่ไฟล์ HTML — รองรับเฉพาะ .html และ .htm`); return; }
-    const tooLarge = `ไฟล์ใหญ่เกิน ${maxMillion} ล้านตัวอักษร — มักเกิดจากรูปที่ฝังในไฟล์ ลองย่อรูปหรือใช้ลิงก์รูปแทน`;
-    // UTF-8 ใช้ไม่เกิน 4 ไบต์ต่อตัวอักษร — ไฟล์ใหญ่กว่านี้เกินแน่นอน ไม่ต้องอ่านทั้งไฟล์
-    if (file.size > htmlArticleMaxLength * 4) { setHtmlError(tooLarge); return; }
+    // รูป/ฟอนต์ที่ฝังในไฟล์แยกเก็บตอนบันทึก — เพดานตัวอักษรนับเฉพาะส่วนที่เหลือ
+    if (file.size > htmlArticleMaxFileBytes) { setHtmlError(`ไฟล์ใหญ่เกิน ${maxFileMb} MB`); return; }
     try {
       const html = decodeHtmlBytes(await file.arrayBuffer());
-      if (html.length > htmlArticleMaxLength) { setHtmlError(tooLarge); return; }
+      if (htmlArticleLengthAfterAssets(html) > htmlArticleMaxLength) { setHtmlError(`เนื้อหาที่ไม่ใช่รูปในไฟล์ (ข้อความ/สไตล์/สคริปต์) ใหญ่เกิน ${maxMillion} ล้านตัวอักษร — กรุณาแบ่งเป็นหลายบทความ`); return; }
       setHtmlError("");
       setHtmlFileName(file.name);
       setValue((current) => ({ ...current, bodyHtml: html, title: current.title.trim() ? current.title : htmlArticleTitle(html) }));
@@ -520,7 +527,7 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
     setSaving(true); setError("");
     try { await onSave(value); } catch (e) { setError(errorText(e, "บันทึกบทความไม่สำเร็จ")); } finally { setSaving(false); }
   };
-  return <ModalShell labelledBy="kn-editor-title" className="kn-editor" dirty={value !== draft} onDismiss={onCancel}>
+  return <><ModalShell labelledBy="kn-editor-title" className="kn-editor" dirty={value !== draft} onDismiss={onCancel}>
     <div className="modal-head">
       <div>
         <span className="kn-eyebrow">{value.id ? "แก้ไขบทความ" : isHtml ? "นำเข้าบทความจากไฟล์ HTML" : "เขียนบทความใหม่"}</span>
@@ -553,12 +560,15 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
           <div className={`kn-html-drop${dragging ? " is-dragging" : ""}${value.bodyHtml ? " is-compact" : ""}`} onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }} onDrop={onDropHtml}>
             <span className="material-symbols-outlined" aria-hidden="true">upload_file</span>
             <b>{value.bodyHtml ? "ลากไฟล์ใหม่มาวางเพื่อแทนที่" : "ลากไฟล์ .html มาวางที่นี่"}</b>
-            <span>หรือ <button type="button" className="kn-link-button" onClick={() => fileRef.current?.click()}>เลือกไฟล์</button> — .html / .htm · ไม่เกิน {maxMillion} ล้านตัวอักษร</span>
+            <span>หรือ <button type="button" className="kn-link-button" onClick={() => fileRef.current?.click()}>เลือกไฟล์</button> — .html / .htm · ไม่เกิน {maxFileMb} MB (รูปในไฟล์แยกเก็บให้อัตโนมัติ)</span>
             <input ref={fileRef} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => { void loadHtmlFile(e.target.files?.[0]); e.target.value = ""; }} />
           </div>
           {htmlError && <p className="kn-html-error" role="alert"><span className="material-symbols-outlined" aria-hidden="true">error</span>{htmlError}</p>}
           {value.bodyHtml && <>
-            <p className="kn-step-title"><span className="kn-step-no" aria-hidden="true">2</span>ตรวจหน้าตาก่อนบันทึก <small>ผู้อ่านจะเห็นแบบนี้</small></p>
+            <div className="kn-preview-head">
+              <p className="kn-step-title"><span className="kn-step-no" aria-hidden="true">2</span>ตรวจหน้าตาก่อนบันทึก <small>ผู้อ่านจะเห็นแบบนี้</small></p>
+              <button type="button" className="btn" onClick={() => setVisualEditing(true)}><span className="material-symbols-outlined" aria-hidden="true">edit_document</span>แก้ไขบนหน้าตา</button>
+            </div>
             <div className="kn-html-view is-preview"><HtmlArticleFrame html={value.bodyHtml} title="ตัวอย่างบทความ HTML" maxHeight={520} /></div>
           </>}
           <div className="kn-body-help">
@@ -600,7 +610,10 @@ function ArticleEditor({ draft, projects, onCancel, onSave }: { draft: ArticleDr
       <button type="button" className="btn" onClick={onCancel}>ยกเลิก</button>
       <button type="button" className="btn primary" disabled={saving || missing.length > 0} onClick={() => void save()}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : <><span className="material-symbols-outlined" aria-hidden="true">check</span>{value.status === "Published" ? "บันทึกและเผยแพร่" : "บันทึกฉบับร่าง"}</>}</button>
     </div>
-  </ModalShell>;
+  </ModalShell>
+  {visualEditing && <HtmlArticleVisualEditor html={value.bodyHtml} title={value.title.trim() || "บทความใหม่"} applyLabel="ใช้การแก้ไข" onCancel={() => setVisualEditing(false)}
+    onApply={(html) => { set({ bodyHtml: html }); setVisualEditing(false); }} />}
+  </>;
 }
 
 // ค้นตามความหมาย (Phase 5): ความคืบหน้าการสร้างเวกเตอร์ของช่วงข้อความ + ข้อผิดพลาดล่าสุดของ Embedding provider

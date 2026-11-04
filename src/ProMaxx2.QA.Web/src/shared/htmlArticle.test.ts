@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeHtmlBytes, htmlArticleDocument, htmlArticleSandbox } from "./htmlArticle";
+import { decodeHtmlBytes, externalizeHtmlAssets, htmlArticleDocument, htmlArticleLengthAfterAssets, htmlArticleSandbox } from "./htmlArticle";
 
 // สคริปต์ในบทความ HTML ทำงานได้ — ปลอดภัยเฉพาะเมื่อ iframe เป็น origin ทึบ (ไม่มี allow-same-origin)
 describe("html article frame isolation", () => {
@@ -32,5 +32,33 @@ describe("decodeHtmlBytes", () => {
   it("falls back to UTF-8 for an unknown charset", () => {
     const bytes = new TextEncoder().encode('<meta charset="x-unknown"><p>ok</p>');
     expect(decodeHtmlBytes(bytes)).toBe('<meta charset="x-unknown"><p>ok</p>');
+  });
+});
+
+describe("embedded image extraction", () => {
+  const big = (mime: string, char: string) => `data:${mime};base64,${char.repeat(4000)}`;
+  const png = big("image/png", "A"), font = big("font/woff2", "B"), icon = "data:image/png;base64,iVBOR";
+
+  it("uploads each large image/font once and leaves small icons inline", async () => {
+    const html = `<img src="${png}"><img src="${png}"><style>@font-face{src:url(${font})}</style><img src="${icon}">`;
+    const uploaded: number[] = [];
+    const result = await externalizeHtmlAssets(html, async (files) => { uploaded.push(files.length); return files.map((_, i) => `${i}`.padStart(32, "a")); });
+    expect(uploaded).toEqual([2]);
+    expect(result.moved).toBe(2);
+    expect(result.html).toBe(`<img src="qa-asset:${"0".padStart(32, "a")}"><img src="qa-asset:${"0".padStart(32, "a")}"><style>@font-face{src:url(qa-asset:${"1".padStart(32, "a")})}</style><img src="${icon}">`);
+    expect(htmlArticleLengthAfterAssets(html)).toBe(result.html.length);
+  });
+
+  it("keeps files the server rejected embedded", async () => {
+    const html = `<img src="${png}">`;
+    const result = await externalizeHtmlAssets(html, async (files) => files.map(() => null));
+    expect(result).toEqual({ html, moved: 0 });
+  });
+
+  it("rewrites asset references to the API and allows that origin in the CSP", () => {
+    const doc = htmlArticleDocument(`<img src="qa-asset:${"f".repeat(32)}">`);
+    expect(doc).toContain(`src="http://localhost/api/v1/knowledge/assets/${"f".repeat(32)}"`);
+    expect(doc).not.toContain("qa-asset:");
+    expect(/font-src [^;]*http:\/\/localhost/.test(doc)).toBe(true);
   });
 });

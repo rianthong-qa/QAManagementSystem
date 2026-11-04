@@ -15,8 +15,11 @@ namespace ProMaxx2.QA.Application.Knowledge;
 /// </summary>
 public static partial class HtmlArticleContent
 {
-    /// <summary>ขนาด HTML สูงสุด (ตัวอักษร) — รองรับรูปแบบ base64 ฝังในไฟล์ได้ระดับหนึ่ง</summary>
-    public const int MaxLength = 3_000_000;
+    /// <summary>ขนาด HTML สูงสุด (ตัวอักษร) — รองรับไฟล์ที่ฝังรูปแบบ base64 หลายรูป (ไฟล์ export จาก Word/Notion/Chrome)
+    /// คำขอบันทึกจึงใหญ่ได้หลายสิบ MB — KnowledgeController ตั้ง RequestSizeLimit ไว้ที่ MaxRequestBytes</summary>
+    public const int MaxLength = 20_000_000;
+    /// <summary>ขนาดคำขอ JSON สูงสุดของการบันทึกบทความ — ข้อความไทยใน UTF-8 ใช้ 3 ไบต์ต่อตัวอักษร + escape ของ JSON</summary>
+    public const long MaxRequestBytes = 80_000_000;
 
     public static string Sanitize(string html)
     {
@@ -31,7 +34,8 @@ public static partial class HtmlArticleContent
     /// <summary>ข้อความธรรมดาจาก HTML — หัวข้อ h1–h6 ขึ้นต้นด้วย "## " เพื่อให้ TextChunker แบ่งช่วงตามหัวข้อ</summary>
     public static string ToText(string html)
     {
-        var s = NonContentBlocks().Replace(html, " ");
+        var s = EmbeddedData().Replace(html, ""); // รูปฝัง base64 ยาวเกินกว่า AnyTag จะจับได้ — ถ้าไม่ตัดจะกลายเป็นข้อความขยะในคลังความรู้
+        s = NonContentBlocks().Replace(s, " ");
         s = HeadingOpen().Replace(s, "\n\n## ");
         s = CellBreak().Replace(s, " | ");
         s = ListItem().Replace(s, "\n- ");
@@ -40,6 +44,10 @@ public static partial class HtmlArticleContent
         s = WebUtility.HtmlDecode(s).Replace(' ', ' ');
         return TextChunker.Normalize(s);
     }
+
+    /// <summary>id ของรูป/ฟอนต์ที่แยกเก็บ (KnowledgeArticleAsset) ที่ HTML อ้างถึงด้วย <c>qa-asset:{id:N}</c> — หน้าเว็บแปลงเป็น URL ตอนแสดงผล</summary>
+    public static IReadOnlyList<Guid> AssetIds(string? html) => string.IsNullOrEmpty(html) ? []
+        : AssetReference().Matches(html).Select(m => Guid.ParseExact(m.Groups[1].Value, "N")).Distinct().ToList();
 
     /// <summary>ชื่อจาก &lt;title&gt; หรือ &lt;h1&gt; แรก — ใช้เติมหัวข้อบทความอัตโนมัติ</summary>
     public static string? ExtractTitle(string html)
@@ -94,6 +102,10 @@ public static partial class HtmlArticleContent
 
     [GeneratedRegex(@"(?<pre>\b(?:href|src|xlink:href|action|formaction|data|poster|background)\s*=\s*)(?:""(?<dq>[^""]*)""|'(?<sq>[^']*)'|(?<bare>[^\s>]+))", RegexOptions.IgnoreCase)]
     private static partial Regex UrlAttributes();
+    [GeneratedRegex(@"\bqa-asset:([0-9a-f]{32})\b")]
+    private static partial Regex AssetReference();
+    [GeneratedRegex(@"\bdata:[a-z]+/[\w.+-]+[;,][^""'\s>)]*", RegexOptions.IgnoreCase)]
+    private static partial Regex EmbeddedData();
     [GeneratedRegex(@"<\s*(head|style|script|noscript|template|svg)\b[^>]*>.*?<\s*/\s*\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex NonContentBlocks();
     [GeneratedRegex(@"<\s*h[1-6]\b[^>]*>", RegexOptions.IgnoreCase)]

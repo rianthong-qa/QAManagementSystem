@@ -77,6 +77,20 @@ public sealed class KnowledgeArticleHtmlShareTests
     }
 
     [Fact]
+    public void Large_file_with_embedded_images_is_accepted_and_image_data_is_not_indexed_as_text()
+    {
+        // รูปฝังแบบ base64 ทำให้แท็กยาวหลักล้านตัวอักษร — ข้อความที่สกัดต้องไม่มีข้อมูลรูปปน
+        var image = "<img alt=\"x\" src=\"data:image/png;base64," + new string('A', 4_000_000) + "\">";
+        var html = "<h1>เทียบระบบ</h1>" + image + "<p>ข้อสรุป metadata: ค่า</p>" + image;
+        Assert.True(html.Length <= HtmlArticleContent.MaxLength);
+        var text = HtmlArticleContent.ToText(HtmlArticleContent.Sanitize(html));
+        Assert.Contains("## เทียบระบบ", text);
+        Assert.Contains("ข้อสรุป metadata: ค่า", text);
+        Assert.DoesNotContain("AAAA", text);
+        Assert.DoesNotContain("<", text);
+    }
+
+    [Fact]
     public void ExtractTitle_prefers_title_then_first_h1()
     {
         Assert.Equal("คู่มือ & การใช้งาน", HtmlArticleContent.ExtractTitle("<title> คู่มือ &amp; การใช้งาน </title><h1>อื่น</h1>"));

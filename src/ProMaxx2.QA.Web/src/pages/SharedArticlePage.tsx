@@ -42,8 +42,20 @@ export default function SharedArticlePage({ code }: { code: string }) {
   const tags = (data.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean);
   const isHtml = data.contentFormat === "Html" && Boolean(data.bodyHtml);
   return (
-    <article className="shared-article">
-      <header className="card shared-article-hero">
+    <article className={`shared-article${isHtml ? " is-html" : ""}`}>
+      {isHtml ? <header className="shared-article-bar">
+        {/* บทความ HTML: แถบเดียวแทนแถบแอป + การ์ดชื่อ (แถบแอปของ shell ถูกซ่อนใน SharedArticle.css) — เหลือพื้นที่ให้เนื้อหา */}
+        <div className="logo" aria-hidden="true">QA</div>
+        <div className="shared-article-bar-text">
+          <h1 title={data.title}>{data.title}</h1>
+          <p className="shared-article-meta">
+            <span>ProMaxx2 QA Hub · บทความ · {data.projectName ?? "ความรู้กลาง"}</span>
+            <span><span className="material-symbols-outlined" aria-hidden="true">edit_calendar</span>อัปเดต {formatThaiDateTime(data.updatedAt)}</span>
+            {data.authorName && <span><span className="material-symbols-outlined" aria-hidden="true">person</span>{data.authorName}</span>}
+          </p>
+        </div>
+        <span className="shared-article-readonly" title="เปิดจากลิงก์แชร์ — แก้ไขข้อมูลจากหน้านี้ไม่ได้"><span className="material-symbols-outlined" aria-hidden="true">visibility</span>อ่านอย่างเดียว</span>
+      </header> : <header className="card shared-article-hero">
         <span className="shared-article-eyebrow">บทความ · {data.projectName ?? "ความรู้กลาง"}</span>
         <h1>{data.title}</h1>
         <p className="shared-article-meta">
@@ -51,7 +63,7 @@ export default function SharedArticlePage({ code }: { code: string }) {
           {data.authorName && <span><span className="material-symbols-outlined" aria-hidden="true">person</span>{data.authorName}</span>}
         </p>
         {tags.length > 0 && <ul className="shared-article-tags" aria-label="Tag">{tags.map((t) => <li key={t}>{t}</li>)}</ul>}
-      </header>
+      </header>}
       {isHtml
         ? <div className="card shared-article-html"><HtmlArticleFrame html={data.bodyHtml!} title={`เนื้อหาบทความ ${data.title}`} minHeight={320} /></div>
         : <div className="card shared-article-body">{data.bodyMarkdown}</div>}

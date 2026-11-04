@@ -94,7 +94,15 @@
 .kn-page .badge.yellow, .modal-box.kn-article-view .badge.yellow { color: color-mix(in srgb, var(--warning-text) 85%, #000); }
 
 /* หน้าต่างอ่าน/เขียนบทความ */
-.modal-box.kn-article-view { width: min(860px, 100%); max-height: 92vh; overflow-y: auto; }
+/* หน้าต่างอ่านบทความ: หัว → meta → แชร์ → ปุ่ม อยู่กับที่ เลื่อนเฉพาะเนื้อหา (.kn-view-body) — บทความ HTML สูงเต็มจอและเลื่อนในกรอบของไฟล์
+   (แถบเมนู/แท็บ sticky ของไฟล์จึงใช้ได้) */
+.modal-box.kn-article-view { display: flex; flex-direction: column; width: min(1280px, 100%); max-height: calc(100dvh - 48px); overflow: hidden; }
+.modal-box.kn-article-view > * { flex: none; }
+.modal-box.kn-article-view > .kn-view-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.modal-box.kn-article-view.is-html { height: calc(100dvh - 48px); }
+.modal-box.kn-article-view.is-html > .kn-view-body { overflow: hidden; }
+.modal-box.kn-article-view.is-html .kn-html-view { height: 100%; }
+.modal-box.kn-article-view.is-html .html-article-frame { height: 100% !important; }
 .modal-box.kn-editor { width: min(900px, 100%); max-height: 92vh; overflow-y: auto; }
 .kn-eyebrow { display: block; margin-bottom: 2px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .3px; }
 .modal-box.kn-article-view .modal-head h2, .modal-box.kn-editor .modal-head h2 { margin: 0 0 6px; overflow-wrap: anywhere; }
@@ -253,7 +261,7 @@
 .kn-row-flags > span { display: inline-flex; flex: none; align-items: center; gap: 3px; border-radius: 4px; background: var(--kn-active); padding: 1px 6px 1px 4px; color: color-mix(in srgb, var(--text) 78%, var(--muted)); font-size: 11px; font-weight: 500; white-space: nowrap; }
 .kn-row-flags .material-symbols-outlined { font-size: 14px; }
 .kn-html-view { overflow: clip; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
-.kn-share { display: grid; gap: 10px; margin-top: 14px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); padding: 12px 14px; }
+.kn-share { display: grid; gap: 10px; margin: 0 0 12px; border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--primary) 4%, var(--card)); padding: 12px 14px; }
 .kn-share-head { display: flex; align-items: flex-start; gap: 10px; }
 .kn-share-head > .material-symbols-outlined { flex: none; color: var(--primary); font-size: 22px; }
 .kn-share-head h3 { margin: 0; color: var(--text); font-size: 14px; }
@@ -292,15 +300,16 @@
   .kn-html-file { flex-wrap: wrap; }
   .kn-html-file .btn { flex: 1 1 100%; justify-content: center; min-height: 44px; }
   .modal-box.kn-article-view .kn-share-link input { flex-basis: 100%; height: 44px; }
-  /* บทความ HTML: กรอบเต็มความกว้าง สูงพอดีช่องระหว่างหัว/ปุ่มที่ sticky แล้วเลื่อนอ่านในกรอบ — แถบเมนู/แท็บของไฟล์ (sticky) จึงอยู่ให้กดได้
-     ความสูงหัว/ปุ่มวัดจาก KnowledgePage (--kn-view-head / --kn-view-actions); snap ให้กรอบเข้าที่เมื่อเลื่อนหน้าต่าง */
-  .modal-box.kn-article-view.is-html { scroll-snap-type: y proximity; }
-  .modal-box.kn-article-view.is-html .kn-html-view {
-    height: calc(100dvh - var(--kn-view-head, 72px) - var(--kn-view-actions, 0px));
-    margin: 0 -16px; border-width: 1px 0; border-radius: 0;
-    scroll-snap-align: start; scroll-margin-top: var(--kn-view-head, 72px);
-  }
-  .modal-box.kn-article-view.is-html .html-article-frame { height: 100% !important; }
+  /* เต็มจอ: บทความ HTML กรอบเต็มความกว้าง; แชร์ย่อเหลือหัวข้อ + ลิงก์ + ปุ่ม เพื่อเหลือที่ให้เนื้อหา */
+  .modal-box.kn-article-view { max-height: 100dvh; }
+  .modal-box.kn-article-view.is-html { height: 100dvh; }
+  .modal-box.kn-article-view.is-html > .kn-view-body { margin: 0 -16px; }
+  .modal-box.kn-article-view.is-html .kn-html-view { border-width: 1px 0; border-radius: 0; }
+  .kn-share { padding: 10px 12px; }
+  .kn-share-head p { display: none; }
   .kn-share-link .btn, .kn-share > .btn { flex: 1 1 auto; justify-content: center; min-height: 44px; }
   .kn-share > .btn { justify-self: stretch; }
 }
+/* หัวขั้น "ตรวจหน้าตาก่อนบันทึก" + ปุ่ม "แก้ไขบนหน้าตา" (HtmlArticleVisualEditor) */
+.kn-preview-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+@media (max-width: 760px) { .kn-preview-head .btn { width: 100%; min-height: 44px; justify-content: center; } }

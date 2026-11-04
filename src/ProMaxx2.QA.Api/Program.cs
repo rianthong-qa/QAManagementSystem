@@ -144,6 +144,7 @@ builder.Services.AddScoped<CrmFlowTrackingService>();
 builder.Services.AddScoped<CrmSendToCrmService>();
 builder.Services.AddScoped<DefectShareLinkService>();
 builder.Services.AddScoped<KnowledgeArticleShareService>(); // ลิงก์แชร์บทความความรู้ `/?ka=`
+builder.Services.AddScoped<KnowledgeAssetService>(); // รูป/ฟอนต์ที่แยกออกจากบทความ HTML (qa-asset:)
 builder.Services.AddScoped<DefectImageStorage>();
 builder.Services.AddScoped<EmailConfigurationService>();
 builder.Services.AddScoped<EmailSenderService>();
@@ -213,6 +214,9 @@ builder.Services.AddRateLimiter(options =>
     // ลิงก์แชร์ Defect (anonymous) — เปิดหน้าหนึ่งครั้งยิง 1 + จำนวนรูป (รูป Defect ≤5 + รูปคอมเมนต์ ≤5/คอมเมนต์) คำขอ
     options.AddPolicy("share", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
         _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 300, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // รูป/ฟอนต์ของบทความ HTML (anonymous) — บทความหนึ่งหน้าอาจมีรูปหลายร้อยรูป และ browser cache ไว้ถาวรหลังโหลดครั้งแรก
+    options.AddPolicy("knowledge-asset", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 1500, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     // OAuth ของ MCP — ผู้ใช้ claude.ai ทุกคนมาจากช่วง IP ของ Anthropic (160.79.104.0/21) จึงตั้งเพดานต่อ IP ให้สูงพอ
     options.AddPolicy("oauth", http => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ClientKey(http),
         _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));

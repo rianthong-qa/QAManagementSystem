@@ -116,6 +116,7 @@ public sealed class QaDbContext(DbContextOptions<QaDbContext> options) : DbConte
     public DbSet<KnowledgeChunk> KnowledgeChunks => Set<KnowledgeChunk>();
     public DbSet<KnowledgeArticle> KnowledgeArticles => Set<KnowledgeArticle>();
     public DbSet<KnowledgeArticleShareLink> KnowledgeArticleShareLinks => Set<KnowledgeArticleShareLink>();
+    public DbSet<KnowledgeArticleAsset> KnowledgeArticleAssets => Set<KnowledgeArticleAsset>();
     public DbSet<KnowledgeFile> KnowledgeFiles => Set<KnowledgeFile>();
     public DbSet<CrmTicketContent> CrmTicketContents => Set<CrmTicketContent>();
     public DbSet<CrmTicketAnswer> CrmTicketAnswers => Set<CrmTicketAnswer>();

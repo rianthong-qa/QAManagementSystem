@@ -77,6 +77,21 @@ public sealed class KnowledgeArticleShareLinkConfiguration : IEntityTypeConfigur
     }
 }
 
+public sealed class KnowledgeArticleAssetConfiguration : IEntityTypeConfiguration<KnowledgeArticleAsset>
+{
+    public void Configure(EntityTypeBuilder<KnowledgeArticleAsset> b)
+    {
+        b.ToTable("KnowledgeArticleAssets");
+        b.HasKey(x => x.KnowledgeArticleAssetId);
+        b.Property(x => x.KnowledgeArticleAssetId).ValueGeneratedNever();
+        b.Property(x => x.ContentType).HasMaxLength(50).IsRequired();
+        b.Property(x => x.ContentHash).HasMaxLength(64).IsRequired();
+        b.Property(x => x.UploadedAt).HasPrecision(0);
+        b.HasIndex(x => x.KnowledgeArticleId);
+        b.HasIndex(x => x.UploadedAt);
+    }
+}
+
 public sealed class KnowledgeFileConfiguration : IEntityTypeConfiguration<KnowledgeFile>
 {
     public void Configure(EntityTypeBuilder<KnowledgeFile> b)

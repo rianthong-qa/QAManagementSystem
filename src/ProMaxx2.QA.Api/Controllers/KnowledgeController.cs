@@ -26,7 +26,7 @@ public sealed record KnowledgeArticleShareDto(string Url);
 [ApiController, Route("api/v1/knowledge"), Authorize(Policy = "KnowledgeView")]
 public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService search, KnowledgeIndexService indexer, KnowledgeIndexTrigger trigger,
     ProjectAccessService projectAccess, IAuthorizationService authorization, IConfiguration configuration, KnowledgeFileService files, CrmKnowledgeFetcher crmKnowledge, KnowledgeEmbeddingService embedding,
-    KnowledgeArticleShareService shares) : ControllerBase
+    KnowledgeArticleShareService shares, KnowledgeAssetService assets) : ControllerBase
 {
     private const string AuditEntityType = "KnowledgeArticle";
 
@@ -67,7 +67,7 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
         return Ok((await MapAsync([article], includeBody: true, ct))[0]);
     }
 
-    [HttpPost("articles"), Authorize(Policy = "KnowledgeEdit")]
+    [HttpPost("articles"), Authorize(Policy = "KnowledgeEdit"), RequestSizeLimit(HtmlArticleContent.MaxRequestBytes)]
     public async Task<ActionResult<KnowledgeArticleDto>> CreateArticle(SaveKnowledgeArticleRequest request, CancellationToken ct)
     {
         if (UserId() is not { } userId) return Unauthorized();
@@ -77,13 +77,14 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
         try { article = new KnowledgeArticle(request.Title, body.Text, request.ProjectId, request.Tags, request.Status, userId, body.Html); }
         catch (ArgumentException ex) { return BadRequest(new ProblemDetails { Detail = ex.Message }); }
         db.KnowledgeArticles.Add(article);
+        await assets.AttachAsync(article.KnowledgeArticleId, body.Html, ct);
         db.AuditLogs.Add(new AuditLog(userId, "Created", AuditEntityType, article.KnowledgeArticleId.ToString(), $"สร้างบทความความรู้ \"{article.Title}\" ({article.Status})", null, Snapshot(article), ClientIp()));
         await db.SaveChangesAsync(ct);
         trigger.Signal();
         return Ok((await MapAsync([article], includeBody: true, ct))[0]);
     }
 
-    [HttpPut("articles/{id:guid}"), Authorize(Policy = "KnowledgeEdit")]
+    [HttpPut("articles/{id:guid}"), Authorize(Policy = "KnowledgeEdit"), RequestSizeLimit(HtmlArticleContent.MaxRequestBytes)]
     public async Task<ActionResult<KnowledgeArticleDto>> UpdateArticle(Guid id, SaveKnowledgeArticleRequest request, CancellationToken ct)
     {
         if (UserId() is not { } userId) return Unauthorized();
@@ -95,6 +96,7 @@ public sealed class KnowledgeController(QaDbContext db, KnowledgeSearchService s
         var before = Snapshot(article);
         try { article.Update(request.Title, body.Text, request.ProjectId, request.Tags, request.Status, userId, body.Html); }
         catch (ArgumentException ex) { return BadRequest(new ProblemDetails { Detail = ex.Message }); }
+        await assets.AttachAsync(id, body.Html, ct);
         db.AuditLogs.Add(new AuditLog(userId, "Updated", AuditEntityType, id.ToString(), $"แก้ไขบทความความรู้ \"{article.Title}\" ({article.Status})", before, Snapshot(article), ClientIp()));
         await db.SaveChangesAsync(ct);
         trigger.Signal();

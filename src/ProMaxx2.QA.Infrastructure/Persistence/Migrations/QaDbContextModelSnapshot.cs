@@ -3661,6 +3661,43 @@ namespace ProMaxx2.QA.Infrastructure.Persistence.Migrations
                     b.ToTable("KnowledgeArticles", (string)null);
                 });
 
+            modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeArticleAsset", b =>
+                {
+                    b.Property<Guid>("KnowledgeArticleAssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid?>("KnowledgeArticleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<Guid?>("UploadedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("KnowledgeArticleAssetId");
+
+                    b.HasIndex("KnowledgeArticleId");
+
+                    b.HasIndex("UploadedAt");
+
+                    b.ToTable("KnowledgeArticleAssets", (string)null);
+                });
+
             modelBuilder.Entity("ProMaxx2.QA.Domain.Knowledge.KnowledgeArticleShareLink", b =>
                 {
                     b.Property<Guid>("KnowledgeArticleShareLinkId")

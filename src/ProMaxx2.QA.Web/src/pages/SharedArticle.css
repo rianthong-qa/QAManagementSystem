@@ -13,6 +13,27 @@
 .shared-article-tags li { border-radius: 999px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); padding: 3px 10px; color: var(--primary); font-size: 12px; font-weight: 600; }
 /* บทความ HTML: กรอบไม่มี padding ให้เนื้อหาในไฟล์เต็มการ์ดเหมือนหน้าเว็บต้นฉบับ (overflow: clip ให้มุมโค้งตัด iframe) */
 .shared-article-html { overflow: clip; padding: 0; }
+/* บทความ HTML: ทั้งหน้าพอดีจอ (ไม่เลื่อนหน้า) — แถบหัวของบทความ → กรอบบทความยืดเต็มที่เหลือและเลื่อนอ่านในกรอบ
+   ปุ่มที่ไฟล์ตรึงกับจอ (position: fixed เช่น "สารบัญ", "กลับด้านบน") และแถบเมนู sticky จึงอยู่ในจอเสมอ
+   (ถ้าให้หน้าเลื่อนได้ บนมือถือการปัดบนกรอบจะเลื่อนในกรอบแทนหน้า กรอบที่ล้นจอจึงไม่เคยเข้าที่) */
+.shared-dashboard.shared-article-shell:has(.shared-article.is-html) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; overflow: hidden; }
+/* กว้างเต็มจอ (ไม่จำกัด 1100px แบบบทความ Markdown) — ไฟล์ HTML ส่วนใหญ่มีแถบสารบัญ + เนื้อหาหลายคอลัมน์ */
+.shared-dashboard.shared-article-shell:has(.shared-article.is-html) > main { display: flex; flex: 1 1 auto; flex-direction: column; width: 100%; max-width: none; min-height: 0; margin: 0; padding: 0 0 12px; }
+.shared-article.is-html { display: flex; flex: 1 1 auto; flex-direction: column; gap: 12px; min-height: 0; }
+/* แถบหัวเดียวของบทความ HTML (แทนแถบแอป + การ์ดชื่อ): โลโก้ | ชื่อ (บรรทัดเดียว ตัด …) + หมวด · อัปเดต · ผู้เขียน | ป้ายอ่านอย่างเดียว */
+.shared-article-shell:has(.shared-article.is-html) > header, .shared-article-shell:has(.shared-article.is-html) > footer { display: none; }
+.shared-article.is-html > .shared-article-html { margin: 0 16px; width: auto; }
+.shared-article-bar { display: flex; flex: none; align-items: center; gap: 12px; min-width: 0; border-bottom: 1px solid var(--line); background: var(--card); padding: 8px 16px; }
+.shared-article-bar .logo { flex: none; width: 36px; height: 36px; border-radius: 10px; font-size: 13px; }
+.shared-article-bar-text { flex: 1 1 auto; min-width: 0; }
+.shared-article-bar h1 { margin: 0; overflow: hidden; color: var(--text); font-size: 17px; font-weight: 700; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.shared-article-bar .shared-article-meta { flex-wrap: nowrap; gap: 0 14px; overflow: hidden; font-size: 12px; white-space: nowrap; }
+.shared-article-bar .shared-article-meta > span { flex: none; }
+.shared-article-bar .shared-article-meta .material-symbols-outlined { font-size: 15px; }
+.shared-article-readonly { display: inline-flex; flex: none; align-items: center; gap: 4px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 9%, var(--card)); padding: 4px 10px; color: var(--primary); font-size: 12px; font-weight: 700; }
+.shared-article-readonly .material-symbols-outlined { font-size: 16px; }
+.shared-article.is-html > .shared-article-html { flex: 1 1 auto; min-height: 0; }
+.shared-article-html .html-article-frame { height: 100% !important; }
 .shared-article-body { padding: 20px 24px; color: var(--text); font-size: 15px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .shared-article-state { display: grid; justify-items: center; gap: 8px; padding: 48px 20px; color: var(--muted); text-align: center; }
@@ -22,5 +43,15 @@
 @media (max-width: 760px) {
   .shared-article-hero, .shared-article-body { padding: 16px; }
   .shared-article-hero h1 { font-size: 20px; }
+  /* บทความ HTML บนมือถือ: กรอบเต็มความกว้างติดแถบหัว, แถบหัวเหลือชื่อ + อัปเดต และป้ายเป็นไอคอน
+     (.card ≤900px ถูกตั้ง width: 100% ใน styles.css — การ์ดที่มี margin ต้องตั้ง width: auto ไม่งั้นล้นขอบ) */
+  .shared-dashboard.shared-article-shell:has(.shared-article.is-html) > main { padding: 0; }
+  .shared-article.is-html { gap: 0; }
+  .shared-article.is-html > .shared-article-html { margin: 0; border-width: 0; border-radius: 0; }
+  .shared-article-bar { gap: 10px; padding: 8px 12px; }
+  .shared-article-bar .logo { width: 32px; height: 32px; }
+  .shared-article-bar h1 { font-size: 15px; }
+  .shared-article-bar .shared-article-meta > span:first-child { display: none; }
+  .shared-article-readonly { padding: 6px; font-size: 0; }
   .shared-article-state .btn { min-height: 44px; }
 }
