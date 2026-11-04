@@ -1,0 +1,20 @@
+/* ชิ้นส่วนแบบ Jira ที่หลายหน้าใช้ร่วม (components/JiraParts.tsx) — หน้า Defect และ CRM */
+.dj-muted { color: var(--muted); }
+.dj-lozenge { display: inline-block; max-width: 100%; overflow: hidden; border: 1px solid transparent; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700; line-height: 18px; letter-spacing: .02em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; vertical-align: middle; }
+.dj-avatar { display: inline-grid; flex: none; place-items: center; border-radius: 50%; background: var(--primary); color: var(--card); font-weight: 700; line-height: 1; }
+.dj-avatar.tone-1 { background: color-mix(in srgb, var(--green) 85%, var(--text)); }
+.dj-avatar.tone-2 { background: color-mix(in srgb, var(--primary) 55%, var(--red)); }
+.dj-avatar.tone-3 { background: color-mix(in srgb, var(--info) 55%, var(--green)); }
+.dj-avatar.tone-4 { background: var(--warning-text); }
+.dj-avatar.tone-5 { background: color-mix(in srgb, var(--red) 80%, var(--text)); }
+.dj-avatar.is-empty { border: 1px dashed color-mix(in srgb, var(--muted) 60%, var(--card)); background: var(--card); color: var(--muted); }
+.dj-avatar.is-empty .material-symbols-outlined { font-size: 15px; }
+.dj-person { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; font-size: 13px; }
+.dj-person > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dj-lozenge.tone-gray { background: color-mix(in srgb, var(--muted) 16%, var(--card)); color: var(--text); }
+.dj-lozenge.tone-blue { background: color-mix(in srgb, var(--primary) 14%, var(--card)); color: var(--primary); }
+.dj-lozenge.tone-green { background: color-mix(in srgb, var(--green) 16%, var(--card)); color: color-mix(in srgb, var(--green) 75%, var(--text)); }
+.dj-lozenge.tone-green-solid { background: color-mix(in srgb, var(--green) 85%, var(--text)); color: var(--card); }
+.dj-lozenge.tone-purple { background: #ede9fe; color: #6d28d9; } /* สีเดียวกับ .badge.purple (Testing/รอทดสอบ) */
+.dj-lozenge.tone-red { background: color-mix(in srgb, var(--red) 13%, var(--card)); color: color-mix(in srgb, var(--red) 85%, var(--text)); }
+.dj-lozenge.tone-outline { border-color: var(--line); background: transparent; color: var(--muted); }

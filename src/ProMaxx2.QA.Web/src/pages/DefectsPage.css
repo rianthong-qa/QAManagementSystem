@@ -97,14 +97,12 @@
    สีสถานะตามหมวดของ Jira: Open = เทา (ยังไม่เริ่ม), In Progress = น้ำเงิน, Resolved/Closed = เขียว, Rejected = เทาอ่อน
    Severity = ลูกศรสี (Critical ⇈ แดง, High ↑ ส้ม, Medium = เหลืองเข้ม, Low ↓ น้ำเงิน) + ชื่อระดับเสมอ */
 .df-page.dj-page { gap: 12px; --df-open: color-mix(in srgb, var(--muted) 70%, var(--card)); --df-inprogress: var(--primary); --df-resolved: color-mix(in srgb, var(--green) 65%, var(--card)); --df-closed: color-mix(in srgb, var(--green) 85%, var(--text)); --df-rejected: color-mix(in srgb, var(--muted) 30%, var(--card)); --dj-high: color-mix(in srgb, var(--red) 55%, var(--yellow)); --dj-hover: color-mix(in srgb, var(--muted) 7%, var(--card)); }
-.dj-muted { color: var(--muted); }
 .dj-count { display: inline-grid; min-width: 20px; height: 20px; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, var(--card)); padding: 0 6px; color: var(--text); font-size: 11px; font-weight: 700; }
 :is(.dj-page, .modal-box) button.dj-icon-btn { display: inline-grid; flex: none; width: 32px; height: 32px; min-height: 0; place-items: center; border: 0; border-radius: 6px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
 :is(.dj-page, .modal-box) button.dj-icon-btn:hover { background: var(--dj-hover, var(--bg)); color: var(--text); }
 :is(.dj-page, .modal-box) button.dj-icon-btn .material-symbols-outlined { font-size: 19px; }
 
 /* ชิ้นส่วน: ป้ายสถานะ, Severity, ไอคอนประเภท, avatar */
-.dj-lozenge { display: inline-block; max-width: 100%; overflow: hidden; border: 1px solid transparent; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700; line-height: 18px; letter-spacing: .02em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; vertical-align: middle; }
 .dj-lozenge.is-open { background: color-mix(in srgb, var(--muted) 16%, var(--card)); color: var(--text); }
 .dj-lozenge.is-inprogress { background: color-mix(in srgb, var(--primary) 14%, var(--card)); color: var(--primary); }
 .dj-lozenge.is-resolved { background: color-mix(in srgb, var(--green) 16%, var(--card)); color: color-mix(in srgb, var(--green) 75%, var(--text)); }
@@ -118,16 +116,6 @@
 .dj-sev.is-low > .material-symbols-outlined { color: var(--info); }
 .dj-type { position: relative; display: inline-block; flex: none; width: 16px; height: 16px; border-radius: 3px; background: var(--red); vertical-align: middle; }
 .dj-type::after { position: absolute; inset: 5px; border-radius: 50%; background: var(--card); content: ""; }
-.dj-avatar { display: inline-grid; flex: none; place-items: center; border-radius: 50%; background: var(--primary); color: var(--card); font-weight: 700; line-height: 1; }
-.dj-avatar.tone-1 { background: color-mix(in srgb, var(--green) 85%, var(--text)); }
-.dj-avatar.tone-2 { background: color-mix(in srgb, var(--primary) 55%, var(--red)); }
-.dj-avatar.tone-3 { background: color-mix(in srgb, var(--info) 55%, var(--green)); }
-.dj-avatar.tone-4 { background: var(--warning-text); }
-.dj-avatar.tone-5 { background: color-mix(in srgb, var(--red) 80%, var(--text)); }
-.dj-avatar.is-empty { border: 1px dashed color-mix(in srgb, var(--muted) 60%, var(--card)); background: var(--card); color: var(--muted); }
-.dj-avatar.is-empty .material-symbols-outlined { font-size: 15px; }
-.dj-person { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; font-size: 13px; }
-.dj-person > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dj-key { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 
 /* ส่วนหัว: ขอบเขต + จำนวน | สร้าง → แท็บมุมมอง | เครื่องมือ */

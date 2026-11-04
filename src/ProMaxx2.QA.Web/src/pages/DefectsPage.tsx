@@ -19,7 +19,8 @@ import { useDebounced } from "../components/useDebounced";
 import { ReproSteps } from "../components/ReproSteps";
 import { ModalShell } from "../components/ModalShell";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
-import { AssigneeCell, Avatar, DefectBoard, DefectTypeIcon, SeverityMark, StatusLozenge } from "./defectJira";
+import { DefectBoard, DefectTypeIcon, SeverityMark, StatusLozenge } from "./defectJira";
+import { AssigneeCell, Avatar } from "../components/JiraParts";
 import { DeletedItemsButton } from "../components/DeletedItemsModal";
 import { type ModuleItem, copyText, renderModuleSelectOptions, useMasterOptions } from "../shared/appShared";
 

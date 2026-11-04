@@ -1,0 +1,251 @@
+/* หน้า CRM แบบ Jira (ปรับ 2026-11-04) — prefix cj-, ชิ้นส่วนกลาง (avatar, ป้ายสถานะ) อยู่ใน components/JiraParts
+   โหลดหลัง Crm.css จึงทับกฎเดิมของหน้าต่างรายละเอียดได้; สีใช้ token ทั้งหมด */
+.crm-page.cj-page { display: grid; gap: 12px; min-width: 0; --cj-hover: color-mix(in srgb, var(--muted) 7%, var(--card)); --cj-open: color-mix(in srgb, var(--muted) 70%, var(--card)); --cj-progress: var(--primary); --cj-closed: color-mix(in srgb, var(--green) 85%, var(--text)); }
+.cj-page .crm-inline-alert, .cj-page .crm-custom-range, .cj-page .crm-stale-alert { margin: 0; }
+.cj-count { display: inline-grid; min-width: 20px; height: 20px; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, var(--card)); padding: 0 6px; color: var(--text); font-size: 11px; font-weight: 700; }
+.cj-page button.cj-icon-btn { display: inline-grid; flex: none; width: 32px; height: 32px; min-height: 0; place-items: center; border: 0; border-radius: 6px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+.cj-page button.cj-icon-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--muted) 12%, var(--card)); color: var(--text); }
+.cj-page button.cj-icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+.cj-page button.cj-icon-btn .material-symbols-outlined { font-size: 19px; }
+.cj-type { position: relative; display: inline-block; flex: none; width: 16px; height: 16px; border-radius: 3px; background: var(--info); vertical-align: middle; }
+.cj-type::after { position: absolute; inset: 4px 3px; border-radius: 1px; background: var(--card); content: ""; }
+.cj-key { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.cj-age { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cj-age .material-symbols-outlined { font-size: 15px; }
+.cj-age.is-warn { color: var(--warning-text); }
+.cj-age.is-late { color: var(--red); }
+
+/* ส่วนหัวแถวเดียว */
+.cj-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; border-bottom: 1px solid var(--line); }
+.cj-tabs { display: flex; flex-wrap: wrap; gap: 4px; align-self: stretch; }
+.cj-page .cj-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 6px 10px; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.cj-page .cj-tabs button:hover { color: var(--text); }
+.cj-page .cj-tabs button[aria-pressed="true"] { border-bottom-color: var(--primary); color: var(--primary); }
+.cj-page .cj-tabs button[aria-pressed="true"] .cj-count { background: color-mix(in srgb, var(--primary) 14%, var(--card)); color: var(--primary); }
+.cj-page .cj-tabs button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.cj-tabs .material-symbols-outlined { font-size: 19px; }
+.cj-header-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 0; }
+.cj-account { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.cj-account-text { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; font-size: 13px; }
+.cj-account-text b { overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.cj-probe { font-size: 12px; }
+.cj-probe.is-ok { color: var(--green); }
+.cj-probe.is-error { color: var(--red); }
+.cj-divider { width: 1px; height: 22px; margin: 0 2px; background: var(--line); }
+.cj-fetched { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.cj-views { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 2px; }
+.cj-page .cj-views button { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; border: 0; border-radius: 6px; background: transparent; padding: 2px 10px; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.cj-page .cj-views button[aria-pressed="true"] { background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); }
+.cj-page .cj-views button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.cj-views .material-symbols-outlined { font-size: 18px; }
+.cj-page .cj-create { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+
+/* ตัวกรองแถวเดียว สูง 36px */
+.cj-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cj-range { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.cj-range > span { color: var(--muted); font-size: 12px; font-weight: 600; }
+.cj-range > small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.cj-range-presets { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 2px; }
+.cj-page .cj-range-presets button { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; border: 0; border-radius: 6px; background: transparent; padding: 2px 9px; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.cj-page .cj-range-presets button:hover { color: var(--text); }
+.cj-page .cj-range-presets button[aria-pressed="true"] { background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); }
+.cj-page .cj-range-presets button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.cj-range-presets .material-symbols-outlined { font-size: 16px; }
+.cj-jobno { position: relative; display: flex; flex: 0 1 240px; flex-wrap: wrap; align-items: center; min-width: 190px; }
+.cj-jobno > .material-symbols-outlined { position: absolute; top: 18px; left: 9px; color: var(--muted); font-size: 19px; transform: translateY(-50%); pointer-events: none; }
+.cj-jobno input { flex: 1; width: 100%; height: 36px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 4px 36px 4px 34px; color: var(--text); font: inherit; font-size: 13px; }
+.cj-page .cj-jobno button.cj-icon-btn { position: absolute; top: 2px; right: 2px; }
+.cj-jobno-error { display: flex; flex-basis: 100%; align-items: center; gap: 4px; margin-top: 4px; color: var(--red); font-size: 12px; }
+.cj-jobno-error .material-symbols-outlined { font-size: 15px; }
+.cj-filters > select { flex: 0 1 150px; height: 36px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background-color: var(--card); padding: 4px 28px 4px 10px; color: var(--text); font: inherit; font-size: 13px; }
+.cj-filters > select.cj-size { flex-basis: 116px; }
+.cj-filters :is(input, select):focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+
+/* การ์ดรายการ: แถบสรุป | จำนวน → ตาราง/Board → แบ่งหน้า */
+.cj-list { overflow: clip; padding: 0; }
+.cj-listbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; border-bottom: 1px solid var(--line); padding: 9px 16px; }
+.cj-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0; color: var(--muted); font-size: 12px; }
+.cj-summary > b { color: var(--text); font-size: 13px; }
+.cj-summary span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.cj-summary span b { color: var(--text); font-variant-numeric: tabular-nums; }
+.cj-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.cj-dot.is-open { background: var(--cj-open); }
+.cj-dot.is-progress { background: var(--cj-progress); }
+.cj-dot.is-closed { background: var(--cj-closed); }
+.cj-count-text { margin: 0; color: var(--muted); font-size: 12px; }
+.cj-list .crm-state { margin: 0; border: 0; border-radius: 0; }
+
+.cj-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.cj-table th { border-bottom: 2px solid var(--line); background: transparent; padding: 8px 10px; color: var(--muted); font-size: 12px; font-weight: 700; text-align: left; white-space: nowrap; }
+.cj-table td { height: 50px; border-bottom: 1px solid var(--line); padding: 5px 10px; vertical-align: middle; }
+.cj-table tbody tr:hover > td { background: var(--cj-hover); }
+.cj-table tbody tr:last-child > td { border-bottom: 0; }
+/* Job No. จริงยาว 15 ตัว (BHD691005000008) — กว้างพอแสดงเต็มไม่ตัด; เกินจริงตัดด้วย ellipsis ไม่ล้นทับคอลัมน์ถัดไป */
+.cj-table .cj-col-key { width: 184px; padding-left: 16px; }
+.cj-table td.cj-col-key { overflow: hidden; }
+.cj-table .cj-col-key .cj-key { display: flex; }
+.cj-table .cj-col-status { width: 112px; }
+.cj-table .cj-col-reporter { width: 17%; }
+.cj-table .cj-col-holder { width: 21%; }
+.cj-table .cj-col-age { width: 128px; padding-right: 16px; }
+.cj-page .cj-key button { min-width: 0; min-height: 0; overflow: hidden; border: 0; background: transparent; padding: 0; color: var(--primary); font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cj-page .cj-key button:hover { text-decoration: underline; }
+.cj-page button.cj-subject { display: block; width: 100%; min-height: 0; overflow: hidden; border: 0; background: transparent; padding: 0; color: var(--text); font: inherit; font-size: 14px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cj-page button.cj-subject:hover { color: var(--primary); }
+.cj-page :is(.cj-key button, button.cj-subject):focus-visible { border-radius: 4px; outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.cj-row-meta { display: block; overflow: hidden; margin-top: 1px; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.cj-col-reporter .dj-person, .cj-col-holder .dj-person { display: flex; }
+.cj-done { display: inline-flex; align-items: center; gap: 4px; color: color-mix(in srgb, var(--green) 80%, var(--text)); font-size: 13px; font-weight: 600; }
+.cj-done .material-symbols-outlined { font-size: 17px; }
+.cj-col-age .cj-age { font-size: 13px; }
+
+.cj-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 10px; padding: 12px; }
+.cj-board.is-closed { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cj-col { display: grid; align-content: start; gap: 8px; min-width: 0; min-height: 240px; border-radius: 10px; background: color-mix(in srgb, var(--muted) 8%, var(--card)); padding: 8px; }
+.cj-col-head { display: flex; align-items: center; gap: 8px; padding: 4px 4px 2px; }
+.cj-col-head h3 { margin: 0; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.cj-col-head span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.cj-col.is-continue .cj-col-head h3 { color: var(--primary); }
+.cj-col.is-test .cj-col-head h3 { color: #6d28d9; }
+.cj-col.is-closed .cj-col-head h3 { color: color-mix(in srgb, var(--green) 75%, var(--text)); }
+.cj-col-cards { display: grid; gap: 8px; }
+.cj-col-empty { margin: 0; border: 1px dashed color-mix(in srgb, var(--muted) 30%, var(--card)); border-radius: 8px; padding: 18px 8px; color: var(--muted); font-size: 12px; text-align: center; }
+.cj-page button.cj-card { display: grid; gap: 6px; width: 100%; min-height: 0; border: 0; border-radius: 8px; background: var(--card); padding: 10px 10px 8px; color: var(--text); font: inherit; text-align: left; white-space: normal; cursor: pointer; box-shadow: 0 1px 1px color-mix(in srgb, var(--text) 14%, transparent), 0 0 1px color-mix(in srgb, var(--text) 22%, transparent); }
+.cj-page button.cj-card:hover { background: color-mix(in srgb, var(--muted) 4%, var(--card)); }
+.cj-page button.cj-card:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.cj-card-subject { display: -webkit-box; overflow: hidden; font-size: 13px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
+.cj-card-meta { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.cj-card-foot { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cj-card-foot > b { overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.cj-card-foot .dj-lozenge { font-size: 10px; line-height: 16px; }
+.cj-card-end { display: inline-flex; margin-left: auto; }
+
+.cj-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding: 8px 16px; }
+.cj-pagination small { color: var(--muted); font-size: 12px; }
+.cj-pagination > div { display: flex; gap: 6px; }
+.cj-pagination .btn { min-height: 32px; padding: 4px 10px; font-size: 12px; }
+.cj-pagination .material-symbols-outlined { font-size: 17px; }
+
+/* หน้าต่างรายละเอียด Ticket: แถบบนแบบ issue view */
+.modal-box.crm-ticket-modal > .modal-head.cj-ticket-head { display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; gap: 10px; padding: 10px 14px 14px 22px; }
+.cj-ticket-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.cj-crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 13px; }
+.cj-crumbs b { color: var(--text); font-weight: 600; white-space: nowrap; }
+.cj-ticket-head .crm-ticket-head-actions .crm-source-link { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+.modal-box.crm-ticket-modal .cj-ticket-head .crm-ticket-head-actions button.crm-ticket-close { width: 32px; height: 32px; border-color: transparent; }
+.cj-ticket-head .crm-ticket-head-main { padding-right: 8px; }
+.cj-ticket-head .crm-subject-view > p { font-size: 20px; font-weight: 600; }
+.cj-ticket-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.cj-ticket-meta .dj-lozenge { font-size: 12px; line-height: 22px; }
+.cj-ticket-meta .cj-age { font-size: 13px; }
+.cj-ticket-meta .crm-ticket-flow .crm-flow-text { padding: 4px 10px; }
+
+@media (max-width: 1100px) {
+  .cj-table .cj-col-reporter { display: none; }
+  .cj-fetched { display: none; }
+}
+@media (max-width: 900px) {
+  .cj-board, .cj-board.is-closed { display: flex; overflow-x: auto; scroll-snap-type: x proximity; }
+  .cj-col { flex: 0 0 260px; scroll-snap-align: start; }
+}
+@media (max-width: 760px) {
+  .cj-tabs { flex: 1 1 100%; flex-wrap: nowrap; }
+  .cj-page .cj-tabs button { flex: 1; justify-content: center; padding: 6px 4px; font-size: 13px; }
+  .cj-tabs .material-symbols-outlined { display: none; }
+  .cj-header-tools { flex: 1 1 100%; padding: 0 0 8px; }
+  .cj-account { flex: 1 1 100%; }
+  .cj-divider { display: none; }
+  .cj-views { flex: 1 1 auto; }
+  .cj-page .cj-views button { flex: 1; justify-content: center; min-height: 40px; }
+  .cj-page .cj-create { flex: 1 1 auto; min-height: 44px; justify-content: center; }
+  .cj-page button.cj-icon-btn { width: 40px; height: 40px; }
+  .cj-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cj-range, .cj-jobno { grid-column: 1 / -1; }
+  .cj-range-presets { flex: 1 1 100%; }
+  .cj-page .cj-range-presets button { flex: 1; justify-content: center; min-height: 40px; }
+  .cj-range-custom-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .cj-jobno input, .cj-filters > select { height: 44px; }
+  .cj-jobno > .material-symbols-outlined { top: 22px; }
+  .cj-page .cj-jobno button.cj-icon-btn { top: 2px; }
+  .cj-filters > select { width: 100%; }
+  /* ตารางเป็นการ์ดต่อแถว: Job No. + สถานะ / เรื่อง 2 บรรทัด / อยู่กับ · อายุงาน */
+  .cj-table thead { display: none; }
+  .cj-table, .cj-table tbody { display: block; }
+  .cj-table tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border-bottom: 1px solid var(--line); padding: 12px 16px; }
+  .cj-table tbody tr:hover > td { background: transparent; }
+  .cj-table td { display: block; width: auto !important; height: auto; border: 0; padding: 0 !important; }
+  .cj-table .cj-col-key { order: 1; }
+  .cj-table .cj-col-status { order: 2; }
+  .cj-table .cj-col-subject { order: 3; flex: 1 1 100%; min-width: 0; }
+  .cj-page button.cj-subject { display: -webkit-box; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+  .cj-table .cj-col-holder { order: 4; flex: 1 1 0; min-width: 0; }
+  .cj-table .cj-col-age { order: 5; text-align: right; }
+  .cj-table .cj-col-reporter { display: none; }
+  .cj-col { flex-basis: min(82vw, 300px); }
+  .cj-pagination .btn { min-height: 40px; }
+  .modal-box.crm-ticket-modal > .modal-head.cj-ticket-head { padding: 6px 8px 12px 16px; }
+  .cj-ticket-head .crm-ticket-head-actions { flex-direction: row; align-items: center; }
+  .cj-ticket-head .crm-ticket-head-actions .crm-source-link { width: 40px; min-height: 40px; }
+  .modal-box.crm-ticket-modal .cj-ticket-head .crm-ticket-head-actions button.crm-ticket-close { width: 40px; height: 40px; }
+  .cj-ticket-head .crm-subject-view > p { font-size: 17px; }
+}
+
+/* เนื้อหาหน้าต่างรายละเอียดแบบ Jira issue view (2026-11-04): ซ้าย = รายละเอียด (ข้อความเรียบ ไม่มีกล่อง) → Activity
+   (แท็บ + ช่องอัปเดต Ticket บนสุดของแท็บประวัติการติดต่อ + รายการ avatar · ชื่อ · เวลา ไม่มีกรอบ); ขวา = Defect ที่เชื่อมโยง → การ์ด "รายละเอียด" → ประวัติ Flow */
+.cj-ticket-body .crm-ticket-main { gap: 24px; padding: 18px 28px 28px; }
+.cj-ticket-body .crm-detail-section h3 { color: var(--text); font-size: 14px; font-weight: 600; }
+.cj-ticket-body .crm-detail-section h3 .material-symbols-outlined { display: none; }
+.cj-ticket-body .crm-ticket-problem .crm-detail-description { max-height: none; overflow: visible; border: 0; border-radius: 0; background: transparent; padding: 0; color: var(--text); font-size: 14px; line-height: 1.7; }
+.cj-activity { gap: 12px; }
+.cj-activity .crm-detail-section-heading { display: grid; gap: 8px; }
+.cj-activity .crm-detail-section-heading > div:first-child { display: flex; align-items: baseline; gap: 8px; }
+.cj-activity .crm-detail-section-heading small { color: var(--muted); font-size: 12px; }
+.cj-activity .crm-history-tabs { display: flex; gap: 4px; width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 0; }
+.modal-box .cj-activity .crm-history-tabs button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 38px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 6px 10px; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; box-shadow: none; cursor: pointer; }
+.modal-box .cj-activity .crm-history-tabs button:hover { color: var(--text); }
+.modal-box .cj-activity .crm-history-tabs button.active { border-bottom-color: var(--primary); background: transparent; color: var(--primary); }
+.cj-activity .crm-history-tabs button > span { display: inline-grid; min-width: 20px; height: 20px; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, var(--card)); padding: 0 6px; color: var(--text); font-size: 11px; font-weight: 700; }
+/* ช่องอัปเดต Ticket = ช่องเขียนคอมเมนต์ของ Jira: กรอบเรียบ ไม่มีพื้นสี หัวข้อซ่อน (คงไว้ให้ screen reader) */
+.cj-ticket-body .crm-reply { gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 12px; }
+.cj-ticket-body .crm-reply-head h3 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cj-ticket-body .crm-reply-head small { font-size: 12px; }
+.cj-ticket-body .crm-reply-text textarea { min-height: 72px; border-radius: 8px; font-size: 14px; }
+.cj-ticket-body .crm-reply-status select { height: 34px; border-radius: 8px; }
+.cj-ticket-body .crm-reply-submit .btn { min-height: 36px; }
+.cj-ticket-body .crm-answer-list { display: grid; gap: 0; }
+.cj-ticket-body .crm-ticket-main .crm-answer { grid-template-columns: 32px minmax(0, 1fr); gap: 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 12px 0; box-shadow: none; }
+.cj-ticket-body .crm-ticket-main .crm-answer:last-child { border-bottom: 0; }
+.cj-ticket-body .crm-answer-avatar { width: 32px; height: 32px; background: var(--primary); color: var(--card); font-size: 12px; font-weight: 700; }
+.cj-ticket-body .crm-answer-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-start; gap: 4px 8px; }
+.cj-ticket-body .crm-answer-meta strong { font-size: 13px; font-weight: 600; }
+.cj-ticket-body .crm-answer-meta small { color: var(--muted); font-size: 12px; }
+.cj-ticket-body .crm-answer p { margin: 0; color: var(--text); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cj-ticket-body .crm-detail-empty { border: 0; background: transparent; padding: 12px 0; color: var(--muted); text-align: left; }
+/* แผงขวา */
+.cj-ticket-body .crm-ticket-aside { gap: 14px; background: var(--card); padding: 18px 20px; }
+.cj-ticket-body .crm-link-panel { gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 12px 14px; }
+.cj-ticket-body .crm-link-panel small { color: var(--muted); font-size: 12px; font-weight: 600; }
+.cj-ticket-body .crm-link-panel strong { font-size: 13px; font-weight: 600; }
+.cj-ticket-body .crm-link-actions .btn { min-height: 34px; font-size: 13px; }
+.cj-fields { border: 1px solid var(--line); border-radius: 10px; }
+.cj-fields > h3 { margin: 0; border-bottom: 1px solid var(--line); padding: 10px 14px; color: var(--text); font-size: 14px; font-weight: 600; }
+.cj-fields .crm-fact-group { gap: 0; padding: 6px 14px 4px; }
+.cj-fields .crm-fact-group + .crm-fact-group { border-top: 1px dashed var(--line); }
+.cj-fields .crm-fact-group h4 { padding: 6px 0 2px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.cj-ticket-body .cj-fields .crm-ticket-facts { border: 0; border-radius: 0; background: transparent; }
+.cj-ticket-body .cj-fields .crm-ticket-facts > div { grid-template-columns: 104px minmax(0, 1fr); align-items: center; min-height: 36px; border: 0; padding: 2px 0; }
+.cj-ticket-body .cj-fields .crm-ticket-facts dt { color: var(--muted); font-size: 13px; font-weight: 400; }
+.cj-ticket-body .cj-fields .crm-ticket-facts dt .material-symbols-outlined { display: none; }
+.cj-ticket-body .cj-fields .crm-ticket-facts dd { font-size: 13px; font-weight: 400; }
+/* ช่องที่แก้ได้ (Assignee / Service / Product) = แก้ในแถวแบบ Jira: ไม่มีกรอบจนกว่าจะ hover/focus */
+.cj-ticket-body .cj-fields .crm-fact-search { height: 32px; border-color: transparent; border-radius: 6px; background: transparent; padding: 4px 6px; margin-left: -6px; font-size: 13px; }
+.cj-ticket-body .cj-fields .crm-fact-search:hover:not(:disabled) { border-color: var(--line); background: var(--card); }
+.cj-ticket-body .cj-fields .crm-fact-search:focus { border-color: var(--primary); background: var(--card); }
+.cj-ticket-body .crm-flow-history { border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+@media (max-width: 760px) {
+  .cj-ticket-body .crm-ticket-main { padding: 14px 16px 20px; }
+  .cj-ticket-body .crm-ticket-aside { padding: 14px 16px; }
+  .modal-box .cj-activity .crm-history-tabs button { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .cj-ticket-body .cj-fields .crm-ticket-facts > div { min-height: 44px; }
+  .cj-ticket-body .cj-fields .crm-fact-search { height: 40px; border-color: var(--line); }
+}

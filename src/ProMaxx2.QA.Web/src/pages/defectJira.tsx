@@ -2,9 +2,10 @@ import { useState } from "react";
 import type { DefectItem } from "../shared/types";
 import { ActionMenu } from "../components/ActionMenu";
 import { defectStatusKey } from "../shared/defects";
+import { Avatar } from "../components/JiraParts";
 
 /* ชิ้นส่วนหน้า Defect แบบ Jira (ปรับ 2026-11-04, prefix dj- ใน DefectsPage.css):
-   ป้ายสถานะ (lozenge), ไอคอน Severity แบบลูกศร, ไอคอนประเภท Defect, avatar ผู้ใช้ และ Board ตามสถานะ */
+   ป้ายสถานะ (lozenge), ไอคอน Severity แบบลูกศร, ไอคอนประเภท Defect และ Board ตามสถานะ — avatar / ป้ายแบบกลางอยู่ใน components/JiraParts */
 
 const severityIcons: Record<string, string> = { Critical: "keyboard_double_arrow_up", High: "keyboard_arrow_up", Medium: "drag_handle", Low: "keyboard_arrow_down" };
 
@@ -22,19 +23,6 @@ export function SeverityMark({ severity, showLabel = true }: { severity: string;
 
 export function DefectTypeIcon() {
   return <span className="dj-type" aria-hidden="true" title="Defect" />;
-}
-
-// ตัวอักษรแรกของชื่อ (ข้ามสระหน้าภาษาไทย เ แ โ ใ ไ) สูงสุด 2 คำ; สีเลือกจากชื่อให้คนเดิมได้สีเดิมเสมอ
-const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((word) => word.replace(/^[เแโใไ]/, "").charAt(0)).join("").toUpperCase();
-const avatarTone = (name: string) => [...name].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 6;
-
-export function Avatar({ name, size = 24 }: { name?: string | null; size?: number }) {
-  if (!name) return <span className="dj-avatar is-empty" style={{ width: size, height: size }} title="ยังไม่มอบหมาย" aria-hidden="true"><span className="material-symbols-outlined">person</span></span>;
-  return <span className={`dj-avatar tone-${avatarTone(name)}`} style={{ width: size, height: size, fontSize: Math.max(11, Math.round(size * 0.42)) }} title={name} aria-hidden="true">{initials(name) || "?"}</span>;
-}
-
-export function AssigneeCell({ name }: { name?: string | null }) {
-  return <span className="dj-person"><Avatar name={name} /><span className={name ? undefined : "dj-muted"}>{name ?? "ยังไม่มอบหมาย"}</span></span>;
 }
 
 /** Board ตามสถานะ — ลากการ์ดไปคอลัมน์อื่นเพื่อเปลี่ยนสถานะ (onMove ใช้ flow เดียวกับปุ่มเปลี่ยนสถานะ: ผลการปิด/ยืนยัน Reopen);
