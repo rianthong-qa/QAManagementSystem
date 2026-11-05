@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { CyclePicker } from "../components/CyclePicker";
+import { isCycleFullyExecuted } from "../shared/cycles";
 import { type WorkspaceDefect, type WorkspaceDefectContext, ExecutionDefectEditor } from "../ExecutionDefectEditor";
 import { apiFetch, apiUrl, getJson, isAbortError } from "../api";
 import { type RemoveDeletedCasesResult, removeDeletedCasesMessage } from "../shared/recycleBin";
@@ -156,6 +157,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     [restoringCase, setRestoringCase] = useState(false),
     [restoringAllCases, setRestoringAllCases] = useState(false),
     [removingDeletedCases, setRemovingDeletedCases] = useState(false),
+    [closingCycle, setClosingCycle] = useState(false),
     [workspaceLoading, setWorkspaceLoading] = useState(false),
     [saving, setSaving] = useState(false),
     [reload, setReload] = useState(0),
@@ -756,6 +758,29 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       setRemovingDeletedCases(false);
     }
   };
+  // ทดสอบครบทุกเคสแล้ว (100%) — ปิด Cycle จากหน้านี้ได้เลย (endpoint เดียวกับปุ่มปิด Cycle หน้า Test Cycles)
+  // ปิดแล้ว Cycle หายจาก dropdown (แสดงเฉพาะ InProgress) และ effect เลือก Cycle เปิด Cycle ที่ยังไม่ครบถัดไปให้
+  const closeCycle = async () => {
+    if (!workspace || closingCycle) return;
+    const failed = executionStats.failed + executionStats.blocked;
+    if (!await confirmDialog({
+      title: `ปิด ${workspace.cycleCode}?`,
+      message: `ทดสอบครบ ${executionStats.total} เคสแล้ว — ปิดแล้วบันทึกหรือแก้ผลใน Cycle นี้ไม่ได้อีก`
+        + (failed ? `\n\nยังมี Fail/Blocked ${failed} เคส หากต้อง Retest ให้สร้าง Retest Cycle แทนการบันทึกซ้ำใน Cycle นี้` : "")
+        + (hasUnsavedResults ? "\n\nผลที่กรอกไว้แต่ยังไม่บันทึกของเคสที่เปิดอยู่จะหาย" : ""),
+      confirmLabel: "ปิด Cycle",
+    })) return;
+    setClosingCycle(true);
+    try {
+      await apiFetch(`/test-cycles/${workspace.testCycleId}/status`, { method: "POST", json: { status: "Closed" }, fallbackMessage: "ปิด Cycle ไม่สำเร็จ" });
+      notify(`ปิด ${workspace.cycleCode} แล้ว`, "success");
+      setCycles((current) => current.filter((x) => x.testCycleId !== workspace.testCycleId));
+    } catch (e) {
+      notify(e instanceof Error ? e.message : "ปิด Cycle ไม่สำเร็จ", "error");
+    } finally {
+      setClosingCycle(false);
+    }
+  };
   const removeExecution = async (execution: ExecutionCase["history"][number]) => {
     if (frozenPlan) { notify(frozenPlanMessage(frozenPlan), "error"); return; }
     if (caseDeleted) { notify(deletedCaseMessage, "error"); return; }
@@ -785,7 +810,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
     if (!filteredCycles.length) {
       setCycleId("");
     } else if (!filteredCycles.some((x) => x.testCycleId === cycleId)) {
-      setCycleId(filteredCycles[0].testCycleId);
+      // เปิด Cycle ที่ยังทดสอบไม่ครบก่อน — Cycle 100% อยู่กลุ่มท้ายของ CyclePicker (รอปิด) ไม่ใช่งานถัดไป
+      setCycleId((filteredCycles.find((x) => !isCycleFullyExecuted(x)) ?? filteredCycles[0]).testCycleId);
     }
   }, [filteredCycles, cycleId, cyclesLoaded]);
   // Generate Summary (spec §13) — สร้าง Actual Result สรุปจากผล Step ปัจจุบัน: เน้น Step ที่ Fail/Blocked พร้อมผลที่ได้จริง
@@ -817,6 +843,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   const nextCase = caseIndex >= 0 ? filteredCases[caseIndex + 1] : undefined;
   const executedCount = executionStats.total - executionStats.pending;
   const executedPercent = executionStats.total ? Math.round((executedCount / executionStats.total) * 100) : 0;
+  // ปุ่ม "ปิด Cycle" — เฉพาะ Cycle InProgress ที่ไม่เหลือเคส Not Run และไม่ถูกล็อกด้วย Test Plan ที่ Freeze
+  const cycleFullyExecuted = workspace?.status === "InProgress" && executionStats.total > 0 && executionStats.pending === 0 && !frozenPlan;
   // ข้อความอธิบาย Overall Result (test-case-execution-ui-spec.md §4)
   const overallMessage = liveOverall === "Fail" ? `มี Step ที่ Fail จำนวน ${stepCounts.failed} รายการ`
     : liveOverall === "Blocked" ? `มี Step ที่ Blocked จำนวน ${stepCounts.blocked} รายการ`
@@ -1238,7 +1266,7 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                   )) : <p className="muted-text">ยังไม่มีประวัติการทดสอบของ {selected.testCaseCode}</p>}
                 </div>
               )}
-              {/* Action Bar (§14) — 3 ปุ่มเท่านั้น ติดล่างจอ พร้อม Overall Result ย่อให้เห็นตลอดระหว่างเลื่อน Step */}
+              {/* Action Bar (§14) — 3 ปุ่มหลัก (+ ปิด Cycle เมื่อทดสอบครบทุกเคส) ติดล่างจอ พร้อม Overall Result ย่อให้เห็นตลอดระหว่างเลื่อน Step */}
               <div className="execution-actions">
                 {failedStepsWithoutDefect.length > 0 && !caseDeleted && (
                   <div className="execution-defect-warning" role="status">
@@ -1260,6 +1288,11 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
                 </button>
                 <button className="result-btn skip" disabled={saving || !!resultLockReason} title={resultLockReason} onClick={openSkipModal}><span className="material-symbols-outlined" aria-hidden="true">skip_next</span> Skip Test Case</button>
                 <button className="result-btn pass" disabled={saving || !!resultLockReason} title={resultLockReason} onClick={completeTest}><span className="material-symbols-outlined" aria-hidden="true">task_alt</span> Complete Test</button>
+                {cycleFullyExecuted && (
+                  <button type="button" className="btn execution-close-cycle" disabled={closingCycle || saving} title="ทดสอบครบทุกเคสแล้ว — ปิด Cycle นี้" onClick={closeCycle}>
+                    {closingCycle ? <span className="spinner inline" aria-hidden="true" /> : <span className="material-symbols-outlined" aria-hidden="true">stop_circle</span>} ปิด Cycle
+                  </button>
+                )}
               </div>
               {skipModalOpen && (
                 <ModalShell labelledBy="skip-test-case-title" onDismiss={() => setSkipModalOpen(false)}>

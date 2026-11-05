@@ -19,6 +19,11 @@
 .cycle-picker-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 6px; }
 .cycle-picker-group { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 7px 14px 5px; background: #f8fafc; color: #344054; font-size: 11px; font-weight: 800; letter-spacing: .02em; border-bottom: 1px solid #eef1f5; }
 .cycle-picker-group span { padding: 0 7px; border-radius: 999px; background: #eef3ff; color: var(--primary); font-size: 11px; }
+/* กลุ่ม "ทดสอบครบแล้ว — รอปิด Cycle" (ท้ายรายการ) — หัวกลุ่ม/แถบความคืบหน้าสีเขียว แยกจาก Cycle ที่ยังต้องทดสอบ */
+.cycle-picker-list .is-done .cycle-picker-group { color: var(--green); }
+.cycle-picker-list .is-done .cycle-picker-group span { background: #ecfdf3; color: var(--green); }
+.cycle-picker-list .is-done .cycle-picker-group .material-symbols-outlined { padding: 0; background: none; font-size: 15px; line-height: 1; }
+.cycle-picker-list .is-done .cycle-picker-track > span { background: var(--green); }
 .cycle-picker-option { display: grid; grid-template-columns: minmax(0, 1fr) 128px; align-items: center; gap: 12px; padding: 8px 14px; border-left: 3px solid transparent; cursor: pointer; }
 .cycle-picker-option.is-active { background: #f2f6ff; }
 .cycle-picker-option.is-selected { border-left-color: var(--primary); background: #eaf1ff; }

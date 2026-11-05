@@ -1,9 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { TestCycleItem } from "../shared/appShared";
+import { isCycleFullyExecuted } from "../shared/cycles";
 import "./CyclePicker.css";
 
 /** ช่องเลือก Test Cycle แบบค้นหาได้ (แทน <select> ที่มีหลายร้อยรายการเรียงยาว) — จัดกลุ่มตาม Module แรกของ Cycle,
- * ในกลุ่มเรียงรหัสใหม่ → เก่า, แต่ละรายการแสดงรหัส/ชื่อ/Release·Build·Environment และความคืบหน้า
+ * ในกลุ่มเรียงรหัสใหม่ → เก่า, Cycle ที่ทดสอบครบแล้ว (100%) รวมเป็นกลุ่ม "ทดสอบครบแล้ว" ไว้ท้ายสุด,
+ * แต่ละรายการแสดงรหัส/ชื่อ/Release·Build·Environment และความคืบหน้า
  * คีย์บอร์ด: พิมพ์เพื่อค้นหา, ↑/↓ เลื่อน, Enter เลือก, Esc ปิด (ARIA combobox + listbox) */
 export function CyclePicker({ cycles, value, onChange, onOpen, placeholder = "เลือก Test Cycle", label = "Test Cycle", disabled }: {
   cycles: TestCycleItem[];
@@ -31,13 +33,17 @@ export function CyclePicker({ cycles, value, onChange, onOpen, placeholder = "�
     const matches = cycles.filter((x) => !q || [x.cycleCode, x.cycleName, x.suiteName, x.releaseCode, x.buildNumber, x.environmentName, ...(x.modules ?? []).map((m) => `${m.moduleCode} ${m.moduleName}`)]
       .filter(Boolean).join(" ").toLowerCase().includes(q));
     const byModule = new Map<string, TestCycleItem[]>();
+    const done: TestCycleItem[] = [];
     for (const x of matches) {
+      if (isCycleFullyExecuted(x)) { done.push(x); continue; }
       const key = x.modules?.[0]?.moduleName ?? "ไม่ระบุ Module";
       byModule.set(key, [...(byModule.get(key) ?? []), x]);
     }
-    return [...byModule.entries()]
+    const newestFirst = (items: TestCycleItem[]) => items.sort((a, b) => b.cycleCode.localeCompare(a.cycleCode, undefined, { numeric: true }));
+    const active = [...byModule.entries()]
       .sort(([a], [b]) => a.localeCompare(b, "th"))
-      .map(([name, items]) => ({ name, items: items.sort((a, b) => b.cycleCode.localeCompare(a.cycleCode, undefined, { numeric: true })) }));
+      .map(([name, items]) => ({ name, done: false, items: newestFirst(items) }));
+    return done.length ? [...active, { name: "ทดสอบครบแล้ว — รอปิด Cycle", done: true, items: newestFirst(done) }] : active;
   }, [cycles, query]);
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 
@@ -98,8 +104,10 @@ export function CyclePicker({ cycles, value, onChange, onOpen, placeholder = "�
           </div>
           <div className="cycle-picker-list" role="listbox" id={`${id}-list`} aria-label="Test Cycle" ref={listRef}>
             {groups.length ? groups.map((g) => (
-              <div key={g.name} role="group" aria-label={g.name}>
-                <div className="cycle-picker-group" aria-hidden="true">{g.name}<span>{g.items.length}</span></div>
+              <div key={g.name} role="group" aria-label={g.name} className={g.done ? "is-done" : undefined}>
+                <div className="cycle-picker-group" aria-hidden="true">
+                  {g.done && <span className="material-symbols-outlined">task_alt</span>}{g.name}<span>{g.items.length}</span>
+                </div>
                 {g.items.map((x) => {
                   index += 1;
                   const i = index;
