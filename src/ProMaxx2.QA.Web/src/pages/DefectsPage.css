@@ -248,8 +248,22 @@
 .dj-section h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; color: var(--text); font-size: 14px; font-weight: 600; }
 .dj-section h3 .material-symbols-outlined { font-size: 18px; }
 .dj-text { margin: 0; color: var(--text); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-.dj-description > span { display: block; }
-.dj-description b { font-weight: 600; }
+/* รายละเอียด (components/DefectDescription.tsx): ค่าสั้น = grid ข้อมูลย่อพื้นเทาอ่อน → ค่ายาว = แถว ป้าย 150px | ข้อความ → รายการ (ขั้นที่ Fail) เป็นการ์ดเส้นซ้ายแดง */
+.dj-desc { display: grid; gap: 12px; color: var(--text); font-size: 14px; line-height: 1.65; }
+.dj-desc p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.dj-desc-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px 16px; margin: 0; border-radius: 8px; background: color-mix(in srgb, var(--muted) 6%, var(--card)); padding: 12px 14px; }
+.dj-desc-facts > div { min-width: 0; }
+.dj-desc-facts dt { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.dj-desc-facts dd { margin: 2px 0 0; color: var(--text); font-size: 13px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
+.dj-desc-field { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 4px 16px; align-items: start; }
+.dj-desc-label { padding-top: 2px; color: var(--muted); font-size: 13px; font-weight: 600; line-height: 1.5; }
+.dj-desc-text { color: var(--text); }
+.dj-desc-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.dj-desc-list li { display: flex; align-items: flex-start; gap: 10px; border: 1px solid color-mix(in srgb, var(--red) 20%, var(--line)); border-left: 3px solid color-mix(in srgb, var(--red) 60%, var(--card)); border-radius: 8px; background: color-mix(in srgb, var(--red) 3%, var(--card)); padding: 8px 12px; }
+.dj-desc-list li > div { display: grid; gap: 4px; min-width: 0; }
+.dj-desc-step { flex: none; border-radius: 4px; background: color-mix(in srgb, var(--red) 12%, var(--card)); padding: 1px 8px; color: var(--red); font-size: 12px; font-weight: 700; line-height: 1.6; white-space: nowrap; }
+.dj-desc-sub { color: var(--muted); font-size: 13px; }
+.dj-desc-sub b { color: var(--text); font-weight: 600; }
 .dj-result-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .dj-result-pair .dj-text { border-radius: 8px; background: color-mix(in srgb, var(--muted) 6%, var(--card)); padding: 10px 12px; }
 .dj-actual h3 .material-symbols-outlined { color: var(--red); }
@@ -334,6 +348,48 @@
 .dj-create-another { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; cursor: pointer; }
 .dj-form-status { margin-right: auto; color: var(--muted); font-size: 12px; }
 .dj-form-status.is-missing { color: var(--red); }
+/* ฟอร์มสร้าง (.dj-editor.is-create) แบบ Jira กระชับ — ทั้งฟอร์มอยู่ในจอเดียว (Desktop ~1250×880 ไม่ต้องเลื่อน):
+   ชื่อ → แถว Module* | เงื่อนไขก่อนทดสอบ → รายละเอียด → ผลจริง | คาดหวัง → ตาราง Step (.tce-step-* จาก TestManagement.css)
+   ช่องสูงตามเนื้อหา (field-sizing) แทนความสูงคงที่; แผงขวา = รายละเอียด + "Test Case ที่จะสร้างให้" */
+.dj-editor.is-create .dj-detail-headline { padding: 14px 24px 0; }
+.dj-editor.is-create .dj-detail-main { padding: 0 24px 16px; }
+.dj-editor.is-create .dj-editor-title { gap: 4px; }
+.dj-editor.is-create .dj-editor-title input { height: 40px; font-size: 16px; }
+.dj-editor.is-create .dj-section { margin-top: 12px; }
+.dj-editor.is-create .dj-editor-label { margin: 0 0 4px; font-size: 13px; }
+.dj-editor.is-create .dj-editor-field textarea { min-height: 38px; max-height: 160px; padding: 7px 10px; font-size: 13px; line-height: 1.5; field-sizing: content; }
+.dj-editor.is-create .dj-editor-field textarea[rows="2"] { min-height: 58px; }
+.dj-editor.is-create .dj-result-pair { gap: 12px; }
+.dj-create-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 10px; }
+.dj-create-row > label { margin: 0; }
+.dj-create-row .dj-editor-select { height: 38px; font-size: 13px; }
+.dj-create-row select:invalid, .dj-create-row select:has(option[value=""]:checked) { color: var(--muted); }
+.dj-steps { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dj-steps-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.dj-steps-head .dj-editor-label { margin: 0; }
+/* หัวคอลัมน์กับแถวใช้ grid เดียวกัน (คอลัมน์ปุ่มกว้างคงที่ 3 × 28px) ให้หัวข้อตรงกับช่อง */
+.dj-steps :is(.tce-step-header, .tce-step) { grid-template-columns: 24px minmax(0, 1.15fr) minmax(0, .85fr) minmax(0, 1.15fr) 92px; }
+.dj-steps .tce-step-header { padding: 0 7px; }
+.dj-steps .tce-step-list { gap: 6px; }
+.dj-steps .tce-step { gap: 8px; padding: 6px; border-radius: 8px; }
+.dj-steps .tce-step-no { width: 24px; height: 24px; margin-top: 6px; border-radius: 6px; font-size: 11px; }
+.dj-steps .tce-step-actions { grid-template-columns: repeat(3, 28px); padding-top: 4px; }
+.dj-steps .tce-step-actions button { width: 28px; height: 28px; border-color: transparent; background: transparent; }
+.dj-steps .tce-step-actions button .material-symbols-outlined { font-size: 18px; }
+.dj-steps .tce-step textarea { width: 100%; min-width: 0; min-height: 36px; max-height: 120px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font: inherit; font-size: 13px; font-weight: 400; line-height: 1.5; resize: vertical; field-sizing: content; }
+.dj-steps .tce-step textarea:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
+.dj-steps .tce-step textarea[aria-invalid="true"] { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); background: color-mix(in srgb, var(--red) 3%, var(--card)); }
+.dj-editor .dj-add-step { display: inline-flex; align-self: flex-start; align-items: center; gap: 4px; min-height: 32px; border: 0; border-radius: 6px; background: transparent; padding: 4px 8px; color: var(--primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.dj-editor .dj-add-step:hover { background: color-mix(in srgb, var(--primary) 8%, var(--card)); }
+.dj-editor .dj-add-step .material-symbols-outlined { font-size: 18px; }
+.dj-editor.is-create .dj-detail-side { gap: 10px; padding: 14px 16px; }
+.dj-editor.is-create .dj-fields h2 { padding: 8px 12px; font-size: 13px; }
+.dj-editor.is-create .dj-fields dl { padding: 4px 12px 8px; }
+.dj-editor.is-create .dj-fields dl > div { grid-template-columns: 96px minmax(0, 1fr); min-height: 34px; }
+.dj-tc-preview h2 .material-symbols-outlined { color: var(--primary); font-size: 18px; }
+.dj-editor.is-create .dj-tc-preview dl > div { min-height: 28px; }
+.dj-tc-preview > .dj-field-hint { margin: 0; border-top: 1px solid var(--line); padding: 6px 12px 8px; }
+.dj-editor.is-create .dj-editor-actions { padding: 10px 22px; }
 
 @media (max-width: 1280px) {
   .dj-table .dj-col-crm { display: none; }
@@ -410,6 +466,8 @@
   .dj-detail-headline h1 { font-size: 20px; }
   .dj-detail-actions .btn { flex: 1 1 0; min-height: 44px; justify-content: center; }
   .dj-result-pair { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .dj-desc-field { grid-template-columns: minmax(0, 1fr); }
+  .dj-desc-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dj-links li { grid-template-columns: auto minmax(0, 1fr) auto; }
   .dj-links .dj-link-icon { display: none; }
   .dj-links .dj-link-title { grid-column: 1 / -1; grid-row: 2; white-space: normal; }
@@ -425,4 +483,24 @@
   .dj-create-another, .dj-form-status { flex: 1 1 100%; }
   .dj-create-another { min-height: 32px; }
   .dj-editor-actions .btn { flex: 1 1 0; min-height: 44px; justify-content: center; }
+  .dj-create-row { grid-template-columns: minmax(0, 1fr); }
+  .dj-create-row .dj-editor-select { height: 44px; }
+  .dj-editor.is-create .dj-detail-headline { padding: 14px 16px 0; }
+  .dj-editor.is-create .dj-detail-main { padding: 0 16px 20px; }
+  .dj-editor.is-create .dj-editor-title input { height: 44px; }
+  .dj-editor.is-create .dj-detail-side { padding: 12px 16px; }
+  .dj-steps .tce-step { grid-template-columns: 28px minmax(0, 1fr); }
+  .dj-steps .tce-step-actions { grid-template-columns: repeat(3, 40px); }
+  .dj-steps .tce-step-actions button { width: 40px; height: 40px; border-color: var(--line); }
+  .dj-steps .tce-step-no { grid-row: 1 / span 4; }
+  .dj-editor .dj-add-step { min-height: 44px; }
 }
+/* Defect ที่อาจซ้ำในฟอร์มสร้าง: แถวเดียวพับได้ (<details>) — เปิดแล้วรายการเลื่อนในตัวสูงสุด 180px */
+.dj-editor .dj-similar { margin: 10px 0 0; padding: 0; }
+.dj-similar > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 36px; padding: 6px 12px; color: var(--warning-text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.dj-similar > summary .material-symbols-outlined { font-size: 18px; }
+.dj-similar > summary small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.dj-similar > summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); border-radius: 12px; }
+.dj-similar[open] > summary { border-bottom: 1px solid color-mix(in srgb, var(--yellow) 30%, var(--line)); }
+.dj-similar > ul { max-height: 180px; overflow-y: auto; padding: 8px 10px 10px; }
+@media (max-width: 760px) { .dj-similar > summary { min-height: 44px; } }

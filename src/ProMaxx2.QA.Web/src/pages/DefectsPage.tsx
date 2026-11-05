@@ -17,6 +17,7 @@ import { defectAgeDays, defectClosingStatuses, defectStatusKey, isDefectDone, de
 import { DefectResolutionModal } from "../components/DefectResolutionModal";
 import { useDebounced } from "../components/useDebounced";
 import { ReproSteps } from "../components/ReproSteps";
+import { DefectDescription } from "../components/DefectDescription";
 import { ModalShell } from "../components/ModalShell";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
 import { DefectBoard, DefectTypeIcon, SeverityMark, StatusLozenge } from "./defectJira";
@@ -39,6 +40,21 @@ const defectSeverityOptions = [
   { value: "Low", tone: "green", hint: "เล็กน้อย เช่น ข้อความ การจัดวาง หรือความสวยงาม" },
 ];
 const defectStatuses = ["Open", "In Progress", "Resolved", "Closed", "Rejected"];
+// ฟอร์มสร้าง Defect สร้าง Test Case (Draft) ให้ด้วย — ขั้นตอนการทำซ้ำจึงกรอกเป็น Step แบบ Test Case และ Priority ตาม Severity (ต้องตรงกับ DefectsController)
+type DefectFormStep = { action: string; testData: string; expectedResult: string };
+const emptyDefectStep = (): DefectFormStep => ({ action: "", testData: "", expectedResult: "" });
+const defectStepStarted = (step: DefectFormStep) => !!(step.action.trim() || step.testData.trim() || step.expectedResult.trim());
+const severityTestCasePriority: Record<string, string> = { Critical: "P0", High: "P1", Medium: "P2", Low: "P3" };
+const stepsToReproduceMax = 4000;
+// ข้อความขั้นตอนการทำซ้ำของ Defect ใช้รูปแบบเดียวกับ Defect จาก Execution ("1. การกระทำ | ข้อมูล: … | คาดหวัง: …") — parseReproSteps แสดงเป็นการ์ดได้
+// Release แสดงเป็น "รหัส · เวอร์ชัน" เช่น PMX2-REL-008 · 1.5.0
+const releaseText = (x: { releaseCode?: string | null; releaseVersion?: string | null }) => [x.releaseCode, x.releaseVersion].filter(Boolean).join(" · ") || null;
+const flattenStepText = (text: string) => text.trim().replace(/\s*\r?\n\s*/g, " ").replace(/\|/g, "/");
+const composeReproSteps = (steps: DefectFormStep[]) => steps.map((step, index) => [
+  `${index + 1}. ${flattenStepText(step.action)}`,
+  ...(step.testData.trim() ? [`ข้อมูล: ${flattenStepText(step.testData)}`] : []),
+  `คาดหวัง: ${flattenStepText(step.expectedResult)}`,
+].join(" | ")).join("\n");
 type DefectModuleCount = { moduleId: string | null; moduleCode: string | null; moduleName: string; count: number };
 const emptyDefectStats = { total: 0, open: 0, inProgress: 0, resolved: 0, closed: 0, rejected: 0, critical: 0, high: 0, medium: 0, low: 0, oldestOpenAgeDays: 0, unassignedActive: 0, closureRate: 0, modules: [] as DefectModuleCount[] };
 const defectPct = (count: number, total: number): number => total > 0 ? Math.round((count / total) * 100) : 0;
@@ -114,9 +130,10 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [statusFilter, setStatusFilter] = useState("");
   // เลือก Build ที่ topbar: foundIn = Defect ที่เจอใน Build นี้, openAsOf = ยังไม่ปิด ณ Build นี้ (รวมที่ค้างจาก Build ก่อนของ Release เดียวกัน)
   const [buildMode, setBuildMode] = useState<"foundIn" | "openAsOf">("foundIn");
-  const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState(""); // เจ้าของเรื่อง = ผู้สร้าง Defect
   const [modules, setModules] = useState<ModuleItem[]>([]);
   const [users, setUsers] = useState<UserLookup[]>([]);
+  const userName = (userId?: string | null) => (userId && users.find(u => u.userId === userId)?.displayName) || null;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);  const [activities, setActivities] = useState<DefectActivityItem[]>([]);
   const [detail, setDetail] = useState<DefectItem | null>(null);
   const [linkedCases, setLinkedCases] = useState<DefectTestCaseItem[]>([]);
@@ -143,6 +160,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [formModuleId, setFormModuleId] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formStepsToReproduce, setFormStepsToReproduce] = useState("");
+  const [formSteps, setFormSteps] = useState<DefectFormStep[]>([emptyDefectStep()]);
+  const [formPreconditions, setFormPreconditions] = useState("");
   const [formExpectedResult, setFormExpectedResult] = useState("");
   const [formActualResult, setFormActualResult] = useState("");
   const [formAssigneeUserId, setFormAssigneeUserId] = useState("");
@@ -175,7 +194,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     const requestVersion = ++defectRequestVersion.current;
     if (!projectId) { setItems([]); setTotalCount(0); setLoading(false); return; }
     setLoading(true); setError("");
-    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(buildId && buildMode === "openAsOf" && { buildMode }), ...(search && { search }), ...(moduleFilter && moduleFilter !== "unassigned" && { moduleId: moduleFilter }), ...(moduleFilter === "unassigned" && { unassignedModule: "true" }), ...(severityFilter && { severity: severityFilter }), ...(priorityFilter && { priority: priorityFilter }), ...(statusFilter && view === "list" && { status: statusFilter }), ...(assigneeFilter && { assigneeUserId: assigneeFilter }), page: String(view === "board" ? 1 : page), size: String(view === "board" ? boardLimit : pageSize) });
+    const q = new URLSearchParams({ projectId, ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(buildId && buildMode === "openAsOf" && { buildMode }), ...(search && { search }), ...(moduleFilter && moduleFilter !== "unassigned" && { moduleId: moduleFilter }), ...(moduleFilter === "unassigned" && { unassignedModule: "true" }), ...(severityFilter && { severity: severityFilter }), ...(priorityFilter && { priority: priorityFilter }), ...(statusFilter && view === "list" && { status: statusFilter }), ...(ownerFilter && { createdByUserId: ownerFilter }), page: String(view === "board" ? 1 : page), size: String(view === "board" ? boardLimit : pageSize) });
     q.set("sortBy", listSortBy);
     fetch(`${apiUrl}/defects?${q}`, { headers }).then(async r => {
       if (!r.ok) throw new Error("โหลด Defect ไม่สำเร็จ");
@@ -192,7 +211,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       setItems(rows as DefectItem[]);
       setTotalCount(Number.isFinite(total) ? total : rows.length);
     }).catch(e => { if (requestVersion === defectRequestVersion.current) setError(e instanceof Error ? e.message : "โหลด Defect ไม่สำเร็จ"); }).finally(() => { if (requestVersion === defectRequestVersion.current) setLoading(false); });
-  }, [projectId, releaseId, buildId, buildMode, search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter, listSortBy, page, pageSize, view, headers, reload]);
+  }, [projectId, releaseId, buildId, buildMode, search, moduleFilter, severityFilter, priorityFilter, statusFilter, ownerFilter, listSortBy, page, pageSize, view, headers, reload]);
   useEffect(load, [load]);
   // การ์ดสรุปด้านบน — ขอบเขตตาม Project/Release/Build ที่เลือก (ไม่ผูกกับตัวกรองของตารางด้านล่าง) เพื่อให้เห็น
   // ภาพรวมทั้งหมดของบริบทนั้นเสมอ ไม่ว่าจะกรอง/ค้นหาตารางด้วยอะไรอยู่
@@ -222,7 +241,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     ]).then(([m, u]) => { setModules(m.filter(x => x.isActive)); setUsers(u); })
       .catch(() => setError("โหลดรายการ Module / ผู้ใช้สำหรับตัวกรองและฟอร์มไม่สำเร็จ — ตัวเลือกอาจว่าง"));
   }, [projectId]);
-  useEffect(() => { setPage(1); }, [search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter]);
+  useEffect(() => { setPage(1); }, [search, moduleFilter, severityFilter, priorityFilter, statusFilter, ownerFilter]);
   useEffect(() => {
     if (!jumpToList || loading) return;
     const target = document.getElementById("defect-list-results");
@@ -236,7 +255,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     setSeverityFilter("");
     setPriorityFilter("");
     setStatusFilter("");
-    setAssigneeFilter("");
+    setOwnerFilter("");
     setPage(1);
     setJumpToList(true);
   };
@@ -248,6 +267,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     setFormModuleId(item?.moduleId ?? "");
     setFormDescription(item?.description ?? "");
     setFormStepsToReproduce(item?.stepsToReproduce ?? "");
+    setFormSteps([emptyDefectStep()]);
+    setFormPreconditions("");
     setFormExpectedResult(item?.expectedResult ?? "");
     setFormActualResult(item?.actualResult ?? "");
     setFormAssigneeUserId(item?.assigneeUserId ?? "");
@@ -259,14 +280,18 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     const picked = choice ? splitResolutionChoice(choice) : null;
     setSaving(true); setError("");
     try {
-      const body = { moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: formStepsToReproduce || null, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null, resolution: picked?.resolution ?? null, fixedInBuildId: picked?.fixedInBuildId ?? null, verifiedInBuildId: picked?.verifiedInBuildId ?? null };
+      // สร้างใหม่: ขั้นตอนมาจากตาราง Step และส่ง testCase ให้ API สร้าง Test Case พร้อมกัน; แก้ไข: ข้อความเดิม (Test Case สร้างไปแล้วตอนสร้าง)
+      const filledSteps = formSteps.filter(defectStepStarted);
+      const testCase = editing ? null : { preconditions: formPreconditions.trim() || null, steps: filledSteps.map(x => ({ action: x.action.trim(), testData: x.testData.trim() || null, expectedResult: x.expectedResult.trim() })) };
+      const stepsToReproduce = editing ? formStepsToReproduce : composeReproSteps(filledSteps);
+      const body = { projectId: editing?.projectId ?? projectId ?? null, moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: stepsToReproduce || null, testCase, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null, resolution: picked?.resolution ?? null, fixedInBuildId: picked?.fixedInBuildId ?? null, verifiedInBuildId: picked?.verifiedInBuildId ?? null };
       const response = await fetch(editing ? `${apiUrl}/defects/${editing.defectId}` : `${apiUrl}/defects`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
       if (!response.ok) throw new Error(await readError(response, "บันทึก Defect ไม่สำเร็จ"));
       // "สร้างต่ออีกรายการ" (แบบ Jira): คง Module / Severity / ผู้รับผิดชอบ ล้างเฉพาะเนื้อหา แล้วเปิดฟอร์มค้างไว้
       if (!editing && createAnother) {
         const created = await response.json().catch(() => null) as DefectItem | null;
-        setFormTitle(""); setFormDescription(""); setFormStepsToReproduce(""); setFormExpectedResult(""); setFormActualResult(""); setFormStatus("Open");
-        notify(created?.defectCode ? `สร้าง ${created.defectCode} แล้ว — กรอก Defect ถัดไปได้เลย` : "สร้าง Defect แล้ว — กรอก Defect ถัดไปได้เลย", "success");
+        setFormTitle(""); setFormDescription(""); setFormStepsToReproduce(""); setFormSteps([emptyDefectStep()]); setFormPreconditions(""); setFormExpectedResult(""); setFormActualResult(""); setFormStatus("Open");
+        notify(created?.defectCode ? `สร้าง ${created.defectCode} พร้อม Test Case แล้ว — กรอก Defect ถัดไปได้เลย` : "สร้าง Defect พร้อม Test Case แล้ว — กรอก Defect ถัดไปได้เลย", "success");
         setReload(x => x + 1);
         return;
       }
@@ -275,7 +300,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
         void openDetail({ ...detail, ...saved, assigneeName: users.find(u => u.userId === formAssigneeUserId)?.displayName ?? null, ...(saved?.assigneeName !== undefined && { assigneeName: saved.assigneeName }) }, true);
       }
       setFormOpen(false);
-      setNotice(editing ? "แก้ไข Defect แล้ว" : "สร้าง Defect แล้ว");
+      setNotice(editing ? "แก้ไข Defect แล้ว" : "สร้าง Defect และ Test Case (Draft) แล้ว");
       setReload(x => x + 1);
     } catch (e) { setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ"); } finally { setSaving(false); }
   };
@@ -449,14 +474,14 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   };
   const toggleSelectAll = () => { setSelectedIds(selectedIds.length === items.length ? [] : items.map(x => x.defectId)); };
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
-  const activeDefectFilterCount = [search, moduleFilter, severityFilter, priorityFilter, statusFilter, assigneeFilter].filter(Boolean).length;
+  const activeDefectFilterCount = [search, moduleFilter, severityFilter, priorityFilter, statusFilter, ownerFilter].filter(Boolean).length;
   const clearDefectFilters = () => {
     onClearSearch?.();
     setModuleFilter("");
     setSeverityFilter("");
     setPriorityFilter("");
     setStatusFilter("");
-    setAssigneeFilter("");
+    setOwnerFilter("");
     setPage(1);
   };
   const visibleModuleRanking = showAllModules ? summaryStats.modules : summaryStats.modules.slice(0, moduleRankingLimit);
@@ -558,7 +583,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       <select aria-label="Module" value={moduleFilter} onChange={e => setModuleFilter(e.target.value)}><option value="">ทุก Module</option>{renderModuleSelectOptions(modules)}{summaryStats.modules.some(x => x.moduleId === null) && <option value="unassigned">ไม่ระบุโมดูล</option>}</select>
       <select aria-label="Severity" value={severityFilter} onChange={e => setSeverityFilter(e.target.value)}><option value="">ทุก Severity</option>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select>
       <select aria-label="Priority ของ Test Case ที่เชื่อมโยง" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}><option value="">ทุก Priority</option>{["P0", "P1", "P2", "P3"].map(priority => <option key={priority}>{priority}</option>)}</select>
-      <select aria-label="ผู้รับผิดชอบ" value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}><option value="">ทุกผู้รับผิดชอบ</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
+      <select aria-label="เจ้าของเรื่อง" value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}><option value="">ทุกเจ้าของเรื่อง</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select>
       {buildId && <select aria-label="Defect ของ Build ที่เลือก" title="เจอใน Build นี้ = แจ้งบน Build นี้ทุกสถานะ · ยังไม่ปิด = Open / In Progress / Resolved ที่เจอใน Build นี้หรือ Build ก่อนหน้าของ Release เดียวกัน" value={buildMode} onChange={(e) => { setBuildMode(e.target.value as "foundIn" | "openAsOf"); setPage(1); }}>
         <option value="foundIn">เจอใน Build นี้</option>
         <option value="openAsOf">ยังไม่ปิด ณ Build นี้ (รวมของค้าง)</option>
@@ -602,7 +627,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
           <SortHeader label="สถานะ" sortKey="status" sort={listSort} onSort={setListSort} className="dj-col-status" />
           <SortHeader label="Severity" sortKey="severity" sort={listSort} onSort={setListSort} className="dj-col-sev" />
           <th className="dj-col-module">Module</th>
-          <th className="dj-col-assignee">ผู้รับผิดชอบ</th>
+          <th className="dj-col-assignee">เจ้าของเรื่อง</th>
           <SortHeader label="สร้างเมื่อ" sortKey="createdAt" sort={listSort} onSort={setListSort} className="dj-col-created" defaultDir="asc" />
           <th className="dj-col-crm">CRM</th>
           <th className="dj-col-menu"><span className="sr-only">จัดการ</span></th>
@@ -617,11 +642,12 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
               {canEditDefects && <td className="dj-col-select"><input type="checkbox" aria-label={`เลือก ${x.defectCode}`} checked={selected} onChange={() => setSelectedIds(prev => prev.includes(x.defectId) ? prev.filter(id => id !== x.defectId) : [...prev, x.defectId])} /></td>}
               <td className="dj-col-key"><span className="dj-key"><DefectTypeIcon /><button type="button" className={x.status === "Closed" ? "is-done" : undefined} onClick={() => void openDetail(x)} aria-label={`เปิด ${x.defectCode}`}>{x.defectCode}</button></span></td>
               <td className="dj-col-summary"><button type="button" className="dj-summary" onClick={() => void openDetail(x)} title={x.title}>{x.title}</button>
-                {(x.releaseCode || x.buildNumber) && <small className="dj-row-meta">{[x.releaseCode, x.buildNumber && `Build ${x.buildNumber}`].filter(Boolean).join(" · ")}</small>}</td>
+                {(x.releaseCode || x.buildNumber) && <small className="dj-row-meta">{[releaseText(x), x.buildNumber && `Build ${x.buildNumber}`].filter(Boolean).join(" · ")}</small>}</td>
               <td className="dj-col-status" data-label="สถานะ"><StatusLozenge status={x.status} /></td>
               <td className="dj-col-sev" data-label="Severity"><SeverityMark severity={x.severity} /></td>
               <td className="dj-col-module" data-label="Module">{module ? <span className="dj-module" title={`${module.moduleCode} · ${module.moduleName}`}>{module.moduleName}</span> : <span className="dj-muted">ไม่ระบุ</span>}</td>
-              <td className="dj-col-assignee" data-label="ผู้รับผิดชอบ"><AssigneeCell name={x.assigneeName} /></td>
+              {/* เจ้าของเรื่อง = ผู้สร้าง Defect (API ส่งแค่ createdByUserId — ชื่อจากรายชื่อผู้ใช้ที่โหลดไว้แล้ว) */}
+              <td className="dj-col-assignee" data-label="เจ้าของเรื่อง"><AssigneeCell name={userName(x.createdByUserId)} empty="ไม่ทราบผู้สร้าง" /></td>
               <td className="dj-col-created" data-label="สร้างเมื่อ" title={formatThaiDateTime(x.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}><span className={age > 30 && !isDefectDone(x.status) ? "df-age-old" : undefined}>{fmtAgo(x.createdAt)}</span></td>
               <td className="dj-col-crm" data-label="CRM">
                 {canEditDefects && crmStatus === "None"
@@ -695,12 +721,12 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                   <div><dt>ผู้รับผิดชอบ</dt><dd>{canEditDefects
                     ? <label className="dj-inline-field"><Avatar name={detail.assigneeName} /><select aria-label="ผู้รับผิดชอบ" value={detail.assigneeUserId ?? ""} disabled={detailSaving} onChange={(e) => void updateDetailField({ assigneeUserId: e.target.value || null })}><option value="">ยังไม่มอบหมาย</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>
                     : <AssigneeCell name={detail.assigneeName} />}</dd></div>
-                  <div><dt>ผู้แจ้ง</dt><dd><AssigneeCell name={detail.createdByName ?? null} /></dd></div>
+                  <div><dt>ผู้แจ้ง</dt><dd><AssigneeCell name={detail.createdByName ?? userName(detail.createdByUserId)} empty="ไม่ทราบผู้สร้าง" /></dd></div>
                   <div><dt>Severity</dt><dd>{canEditDefects
                     ? <label className="dj-inline-field"><SeverityMark severity={detail.severity} showLabel={false} /><select aria-label="Severity" value={detail.severity} disabled={detailSaving} onChange={(e) => void updateDetailField({ severity: e.target.value })}>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select></label>
                     : <SeverityMark severity={detail.severity} />}</dd></div>
                   <div><dt>Module</dt><dd>{module ? <span title={`${module.moduleCode} · ${module.moduleName}`}>{module.moduleName}<small>{module.moduleCode}</small></span> : <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
-                  <div><dt>Release</dt><dd>{detail.releaseCode ?? <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
+                  <div><dt>Release</dt><dd>{releaseText(detail) ?? <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
                   <div><dt>เจอใน Build</dt><dd>{detail.buildNumber ?? <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
                   {(detail.fixedInBuildId || detail.status === "Resolved" || detail.status === "Closed") && <div><dt>Fix Build</dt><dd>{detail.fixedInBuildNumber ?? <span className="dj-muted">ไม่ระบุ Build</span>}</dd></div>}
                   {detail.verifiedInBuildNumber && <div><dt>ตรวจซ้ำผ่านใน</dt><dd>{detail.verifiedInBuildNumber}</dd></div>}
@@ -720,12 +746,9 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
             <div className="dj-detail-main">
               <section className="dj-section">
                 <h3>รายละเอียด</h3>
-                <div className="dj-text dj-description">
-                  {detail.description ? detail.description.split(/\r?\n/).map((line, index) => {
-                    const labeledLine = line.match(/^(.{2,40}):\s*(.*)$/);
-                    return <span key={`${index}-${line}`}>{labeledLine ? <><b>{labeledLine[1]}:</b>{labeledLine[2] && <> {labeledLine[2]}</>}</> : (line || " ")}</span>;
-                  }) : <span className="dj-muted">ไม่มีรายละเอียด</span>}
-                </div>
+                {detail.description
+                  ? <DefectDescription text={detail.description} hide={[detail.actualResult ?? "", detail.expectedResult ?? ""]} />
+                  : <p className="dj-text dj-muted">ไม่มีรายละเอียด</p>}
               </section>
               {(detail.actualResult || detail.expectedResult) && <div className="dj-result-pair">
                 <section className="dj-section dj-actual"><h3><span className="material-symbols-outlined" aria-hidden="true">close</span>ผลที่เกิดขึ้นจริง</h3><p className="dj-text">{detail.actualResult || <span className="dj-muted">ไม่ระบุ</span>}</p></section>
@@ -799,7 +822,20 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     {formOpen && (() => {
       const severityHint = defectSeverityOptions.find(x => x.value === formSeverity)?.hint;
       const assigneeName = users.find(u => u.userId === formAssigneeUserId)?.displayName ?? null;
-      return <ModalShell labelledBy="dj-form-title" className="dj-detail dj-editor" onDismiss={() => setFormOpen(false)}>
+      const filledSteps = formSteps.filter(defectStepStarted);
+      const incompleteSteps = filledSteps.filter(x => !x.action.trim() || !x.expectedResult.trim()).length;
+      const stepsTooLong = !editing && composeReproSteps(filledSteps).length > stepsToReproduceMax;
+      const missing = [
+        !formTitle.trim() && "ชื่อ Defect",
+        !editing && !formModuleId && "Module",
+        !editing && filledSteps.length === 0 && "ขั้นตอนการทำซ้ำอย่างน้อย 1 ขั้น",
+        !editing && incompleteSteps > 0 && `การกระทำ/ผลที่คาดหวังของ ${incompleteSteps} ขั้น`,
+      ].filter(Boolean) as string[];
+      const formStatusText = missing.length ? `ยังขาด: ${missing.join(", ")}` : stepsTooLong ? `ขั้นตอนรวมยาวเกิน ${stepsToReproduceMax.toLocaleString()} ตัวอักษร` : "";
+      const selectedModule = modules.find(m => m.moduleId === formModuleId);
+      const updateStep = (index: number, field: keyof DefectFormStep, value: string) => setFormSteps(current => current.map((x, i) => i === index ? { ...x, [field]: value } : x));
+      const moveStep = (index: number, delta: number) => setFormSteps(current => { const next = [...current]; [next[index], next[index + delta]] = [next[index + delta], next[index]]; return next; });
+      return <ModalShell labelledBy="dj-form-title" className={`dj-detail dj-editor${editing ? "" : " is-create"}`} onDismiss={() => setFormOpen(false)}>
         <div className="dj-detail-top">
           <nav className="dj-crumbs" aria-label="ตำแหน่ง">
             <span className="dj-crumb-project">{projectName || "Project"}</span>
@@ -815,15 +851,24 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
             <label className="dj-editor-title"><span>ชื่อ Defect <span className="required" aria-hidden="true">*</span></span>
               <input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="สรุปปัญหาสั้น ๆ เช่น บันทึกใบสั่งซื้อแล้วยอดรวมไม่ถูกต้อง" aria-required="true" />
             </label>
-            {!editing && similar.length > 0 && <section className="defect-similar" aria-label="Defect ที่อาจซ้ำ">
-              <h3><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> อาจซ้ำกับ Defect ที่มีอยู่ ({similar.length})</h3>
-              <p>ตรวจก่อนสร้าง — ถ้าเป็นปัญหาเดียวกัน ให้คอมเมนต์ใน Defect เดิมแทนการสร้างใหม่</p>
+            {/* ตอนสร้าง: Module (บังคับ — Test Case อยู่ใน Module นี้) + เงื่อนไขก่อนทดสอบ อยู่แถวเดียวใต้ชื่อ */}
+            {!editing && <div className="dj-create-row">
+              <label className="dj-editor-field"><span className="dj-editor-label">Module <span className="required" aria-hidden="true">*</span></span>
+                <select className="dj-editor-select" aria-required="true" value={formModuleId} onChange={e => setFormModuleId(e.target.value)}><option value="">เลือก Module — Test Case จะอยู่ใน Module นี้</option>{renderModuleSelectOptions(modules)}</select>
+              </label>
+              <label className="dj-editor-field"><span className="dj-editor-label">เงื่อนไขก่อนทดสอบ</span>
+                <textarea rows={1} value={formPreconditions} onChange={e => setFormPreconditions(e.target.value)} placeholder="เช่น Login ด้วยสิทธิ์พนักงานขาย, มีสินค้าในสต็อก" />
+              </label>
+            </div>}
+            {/* พับไว้เป็นแถวเดียวในฟอร์มสร้าง (กดเปิดดูรายการ) — กล่องเต็มดันฟอร์มลงจนต้องเลื่อน */}
+            {!editing && similar.length > 0 && <details className="defect-similar dj-similar">
+              <summary><span className="material-symbols-outlined" aria-hidden="true">content_copy</span> อาจซ้ำกับ Defect ที่มีอยู่ ({similar.length}) <small>ตรวจก่อนสร้าง — ถ้าเป็นปัญหาเดียวกัน ให้คอมเมนต์ใน Defect เดิม</small></summary>
               <ul>{similar.map(s => <li key={s.defectId}>
                 <a href={`#/defects?defectId=${s.defectId}`} target="_blank" rel="noreferrer" title={`${s.defectCode} ${s.title} — เปิดในแท็บใหม่`}><b>{s.defectCode}</b><span>{s.title}</span></a>
                 <StatusLozenge status={s.status} />
                 {s.resolutionType && <small>{defectResolutionLabel(s.resolutionType)}</small>}
               </li>)}</ul>
-            </section>}
+            </details>}
           </div>
           <aside className="dj-detail-side" aria-label="รายละเอียด">
             <section className="dj-fields" aria-labelledby="dj-editor-fields-title">
@@ -832,28 +877,65 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                 {editing && <div><dt>สถานะ</dt><dd><label className="dj-inline-field"><select aria-label="สถานะ" value={formStatus} onChange={e => setFormStatus(e.target.value)}>{defectStatuses.map(s => <option key={s}>{s}</option>)}</select></label></dd></div>}
                 <div><dt>ผู้รับผิดชอบ</dt><dd><label className="dj-inline-field"><Avatar name={assigneeName} /><select aria-label="ผู้รับผิดชอบ" value={formAssigneeUserId} onChange={e => setFormAssigneeUserId(e.target.value)}><option value="">ยังไม่มอบหมาย</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label></dd></div>
                 <div className="dj-field-top"><dt>Severity</dt><dd><label className="dj-inline-field"><SeverityMark severity={formSeverity} showLabel={false} /><select aria-label="Severity" aria-describedby="dj-editor-sev-hint" value={formSeverity} onChange={e => setFormSeverity(e.target.value)}>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select></label><small id="dj-editor-sev-hint" className="dj-field-hint">{severityHint}</small></dd></div>
-                <div className="dj-field-top"><dt>Module</dt><dd><select className="dj-editor-select" aria-label="Module" value={formModuleId} disabled={!!editing} onChange={e => setFormModuleId(e.target.value)}><option value="">ไม่ระบุ Module</option>{renderModuleSelectOptions(modules)}</select>{editing && <small className="dj-field-hint">เปลี่ยน Module ได้ตอนสร้างเท่านั้น</small>}</dd></div>
-                <div><dt>Release</dt><dd>{(editing ? editing.releaseCode : releaseLabel) || <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
+                {editing && <div className="dj-field-top"><dt>Module</dt><dd><select className="dj-editor-select" aria-label="Module" value={formModuleId} disabled onChange={e => setFormModuleId(e.target.value)}><option value="">ไม่ระบุ Module</option>{renderModuleSelectOptions(modules)}</select><small className="dj-field-hint">เปลี่ยน Module ได้ตอนสร้างเท่านั้น</small></dd></div>}
+                <div><dt>Release</dt><dd>{(editing ? releaseText(editing) : releaseLabel) || <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
                 <div><dt>เจอใน Build</dt><dd>{(editing ? editing.buildNumber : buildLabel) || <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
               </dl>
             </section>
+            {!editing && <section className="dj-fields dj-tc-preview" aria-labelledby="dj-tc-preview-title">
+              <h2 id="dj-tc-preview-title"><span className="material-symbols-outlined" aria-hidden="true">fact_check</span>Test Case ที่จะสร้างให้</h2>
+              <dl>
+                <div><dt>ชื่อ</dt><dd>{formTitle.trim() || <span className="dj-muted">ตามชื่อ Defect</span>}</dd></div>
+                <div><dt>Module</dt><dd>{selectedModule ? `${selectedModule.moduleCode} · ${selectedModule.moduleName}` : <span className="dj-muted">ยังไม่เลือก</span>}</dd></div>
+                <div><dt>Priority</dt><dd>{severityTestCasePriority[formSeverity] ?? "P2"} <span className="dj-muted">(ตาม Severity)</span></dd></div>
+                <div><dt>Step</dt><dd>{filledSteps.length} ขั้น</dd></div>
+                <div><dt>สถานะ</dt><dd>Draft</dd></div>
+              </dl>
+              <p className="dj-field-hint">เชื่อมโยงกับ Defect นี้ และนำไปใช้ทดสอบซ้ำ / ใส่ Test Suite ได้ภายหลัง</p>
+            </section>}
             {!editing && <p className="dj-dates">Release / Build มาจากตัวเลือกด้านบนของหน้า</p>}
           </aside>
           <div className="dj-detail-main">
-            <div className="dj-section dj-editor-field"><label htmlFor="dj-f-description" className="dj-editor-label">รายละเอียด</label><textarea id="dj-f-description" rows={4} value={formDescription} onChange={e => setFormDescription(e.target.value)} placeholder="ข้อมูลทดสอบ, Environment, ความถี่ที่เกิด ฯลฯ" /></div>
+            <div className="dj-section dj-editor-field"><label htmlFor="dj-f-description" className="dj-editor-label">รายละเอียด</label><textarea id="dj-f-description" rows={editing ? 4 : 2} value={formDescription} onChange={e => setFormDescription(e.target.value)} placeholder="ข้อมูลทดสอบ, Environment, ความถี่ที่เกิด ฯลฯ" /></div>
             <div className="dj-result-pair">
-              <div className="dj-section dj-editor-field dj-actual"><label htmlFor="dj-f-actual" className="dj-editor-label"><span className="material-symbols-outlined" aria-hidden="true">close</span>ผลที่เกิดขึ้นจริง</label><textarea id="dj-f-actual" rows={3} value={formActualResult} onChange={e => setFormActualResult(e.target.value)} placeholder="ระบบแสดง / ทำอะไร" /></div>
-              <div className="dj-section dj-editor-field dj-expected"><label htmlFor="dj-f-expected" className="dj-editor-label"><span className="material-symbols-outlined" aria-hidden="true">check</span>ผลที่คาดหวัง</label><textarea id="dj-f-expected" rows={3} value={formExpectedResult} onChange={e => setFormExpectedResult(e.target.value)} placeholder="ควรแสดง / ทำอะไร" /></div>
+              <div className="dj-section dj-editor-field dj-actual"><label htmlFor="dj-f-actual" className="dj-editor-label"><span className="material-symbols-outlined" aria-hidden="true">close</span>ผลที่เกิดขึ้นจริง</label><textarea id="dj-f-actual" rows={editing ? 3 : 2} value={formActualResult} onChange={e => setFormActualResult(e.target.value)} placeholder="ระบบแสดง / ทำอะไร" /></div>
+              <div className="dj-section dj-editor-field dj-expected"><label htmlFor="dj-f-expected" className="dj-editor-label"><span className="material-symbols-outlined" aria-hidden="true">check</span>ผลที่คาดหวัง</label><textarea id="dj-f-expected" rows={editing ? 3 : 2} value={formExpectedResult} onChange={e => setFormExpectedResult(e.target.value)} placeholder="ควรแสดง / ทำอะไร" /></div>
             </div>
-            <div className="dj-section dj-editor-field"><label htmlFor="dj-f-steps" className="dj-editor-label">ขั้นตอนการทำซ้ำ</label><textarea id="dj-f-steps" rows={6} value={formStepsToReproduce} onChange={e => setFormStepsToReproduce(e.target.value)} placeholder={"1. เปิดหน้า …\n2. กรอก …\n3. กดบันทึก"} /></div>
+            {editing
+              ? <div className="dj-section dj-editor-field"><label htmlFor="dj-f-steps" className="dj-editor-label">ขั้นตอนการทำซ้ำ</label><textarea id="dj-f-steps" rows={6} value={formStepsToReproduce} onChange={e => setFormStepsToReproduce(e.target.value)} placeholder={"1. เปิดหน้า …\n2. กรอก …\n3. กดบันทึก"} /></div>
+              : <>
+                <section className="dj-section dj-steps" aria-labelledby="dj-steps-title">
+                  <div className="dj-steps-head">
+                    <h3 id="dj-steps-title" className="dj-editor-label">ขั้นตอนการทำซ้ำ <span className="required" aria-hidden="true">*</span> <span className="tce-count">{filledSteps.length}</span></h3>
+                    {incompleteSteps > 0 && <small className="tce-steps-warning"><span className="material-symbols-outlined" aria-hidden="true">error</span> ยังกรอกไม่ครบ {incompleteSteps} ขั้น</small>}
+                  </div>
+                  <div className="tce-step-header" aria-hidden="true"><span>#</span><span>การกระทำ <b className="required-mark">*</b></span><span>ข้อมูลที่ใช้</span><span>ผลที่คาดหวัง <b className="required-mark">*</b></span><span /></div>
+                  <ol className="tce-step-list">
+                    {formSteps.map((step, index) => (
+                      <li className="tce-step" key={index}>
+                        <span className="tce-step-no">{index + 1}</span>
+                        <label><small>การกระทำ</small><textarea rows={1} placeholder="เช่น เปิดหน้าขาย แล้วสแกนสินค้า" value={step.action} aria-label={`การกระทำของขั้นที่ ${index + 1}`} aria-invalid={defectStepStarted(step) && !step.action.trim()} onChange={e => updateStep(index, "action", e.target.value)} /></label>
+                        <label><small>ข้อมูลที่ใช้</small><textarea rows={1} placeholder="ถ้ามี เช่น รหัสสินค้า" value={step.testData} aria-label={`ข้อมูลที่ใช้ของขั้นที่ ${index + 1}`} onChange={e => updateStep(index, "testData", e.target.value)} /></label>
+                        <label><small>ผลที่คาดหวัง</small><textarea rows={1} placeholder="ระบบควรแสดง / ทำอะไร" value={step.expectedResult} aria-label={`ผลที่คาดหวังของขั้นที่ ${index + 1}`} aria-invalid={defectStepStarted(step) && !step.expectedResult.trim()} onChange={e => updateStep(index, "expectedResult", e.target.value)} /></label>
+                        <div className="tce-step-actions">
+                          <button type="button" title="เลื่อนขึ้น" aria-label={`เลื่อนขั้นที่ ${index + 1} ขึ้น`} disabled={index === 0} onClick={() => moveStep(index, -1)}><span className="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button>
+                          <button type="button" title="เลื่อนลง" aria-label={`เลื่อนขั้นที่ ${index + 1} ลง`} disabled={index === formSteps.length - 1} onClick={() => moveStep(index, 1)}><span className="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button>
+                          <button type="button" className="tce-step-remove" title="ลบขั้น" aria-label={`ลบขั้นที่ ${index + 1}`} disabled={formSteps.length <= 1} onClick={() => setFormSteps(current => current.filter((_, i) => i !== index))}><span className="material-symbols-outlined" aria-hidden="true">delete</span></button>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  <button type="button" className="dj-add-step" onClick={() => setFormSteps(current => [...current, emptyDefectStep()])}><span className="material-symbols-outlined" aria-hidden="true">add</span> เพิ่มขั้นตอน</button>
+                </section>
+              </>}
             {error && <div className="inline-alert error dj-section" role="alert"><span>{error}</span></div>}
           </div>
         </div>
         <div className="dj-editor-actions">
           {!editing && <label className="dj-create-another"><input type="checkbox" checked={createAnother} onChange={e => setCreateAnother(e.target.checked)} />สร้างต่ออีกรายการ</label>}
-          <span className={`dj-form-status${formTitle.trim() ? "" : " is-missing"}`} role="status">{formTitle.trim() ? "" : "ยังขาด: ชื่อ Defect"}</span>
+          <span className={`dj-form-status${formStatusText ? " is-missing" : ""}`} role="status">{formStatusText}</span>
           <button className="btn" onClick={() => setFormOpen(false)}>ยกเลิก</button>
-          <button className="btn primary" disabled={saving || !formTitle.trim()} onClick={() => void saveForm()}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : editing ? "บันทึก" : "สร้าง Defect"}</button>
+          <button className="btn primary" disabled={saving || !!formStatusText} onClick={() => void saveForm()}>{saving ? <><span className="spinner inline" aria-hidden="true" /> กำลังบันทึก...</> : editing ? "บันทึก" : "สร้าง Defect + Test Case"}</button>
         </div>
       </ModalShell>;
     })()}

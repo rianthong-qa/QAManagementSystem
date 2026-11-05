@@ -566,10 +566,17 @@ Filter:
 - status
 - assignee
 - reporter
+- createdByUserId (เพิ่ม 2026-11-05 — ตัวกรอง "เจ้าของเรื่อง" ของหน้า Defect = ผู้สร้าง)
 - search
 
 ### POST `/defects`
+
+`testCase?: { preconditions?, steps: [{ action, testData?, expectedResult }] }` (เพิ่ม 2026-11-05) — ฟอร์มสร้างของหน้า Defect ส่งมาเพื่อสร้าง **Test Case สถานะ Draft** ใน Module ของ Defect พร้อมกัน (รหัส `<Project>-<Module>-TC-nnn`, ชื่อ = ชื่อ Defect, Objective = "สร้างจาก Defect <รหัส>", Priority ตาม Severity: Critical→P0, High→P1, Medium→P2, Low→P3) และเชื่อมโยงผ่าน `DefectTestCaseLinks` + Activity `TestLinked` — บันทึกใน `SaveChanges` เดียวกับ Defect; ไม่มี `moduleId` / ไม่มีขั้นที่กรอก / ขั้นที่ขาด action หรือ expectedResult = `400` และไม่สร้างทั้งคู่ (แถวที่ว่างทั้งแถวไม่นับ) — ไม่ส่ง `testCase` = พฤติกรรมเดิม (Defect จาก Execution / Automation / CRM)
+
 ### GET `/defects/{defectId}`
+
+`DefectDto` (รายการ, รายละเอียด, `by-test-case`) มี `releaseCode`, `releaseVersion` และ `buildNumber` (Build ที่เจอ) — เพิ่ม 2026-11-05; เดิมส่งแค่ `releaseId`/`buildId` หน้า Defect จึงแสดง Release / เจอใน Build เป็น "ไม่ระบุ"
+
 ### PUT `/defects/{defectId}`
 ### POST `/defects/{defectId}/transition`
 ### POST `/defects/{defectId}/resolution`

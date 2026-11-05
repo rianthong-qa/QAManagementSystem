@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Domain.Defects;
+using ProMaxx2.QA.Domain.TestManagement;
 using ProMaxx2.QA.Infrastructure.Persistence;
 using ProMaxx2.QA.Api.Services;
 using ProMaxx2.QA.Application.Common;
@@ -13,7 +14,7 @@ namespace ProMaxx2.QA.Api.Controllers;
 [ApiController,Route("api/v1/defects"),Authorize(Policy="DefectView"),RequireProjectAccess]
 public sealed class DefectsController(QaDbContext db,ProjectAccessContext projectCtx,DefectActivityService activityService,CrmSendToCrmService crmSendService,DefectImageStorage imageStorage,ILogger<DefectsController> logger,KnowledgeSearchService? knowledgeSearch=null):ControllerBase
 {
- [HttpGet,Authorize(Policy="DefectView")]public async Task<ActionResult<DefectListResultDto>>List([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,[FromQuery]Guid?moduleId,[FromQuery]bool unassignedModule,[FromQuery]Guid?assigneeUserId,[FromQuery]string?severity,[FromQuery]string?priority,[FromQuery]string?status,[FromQuery]string?search,[FromQuery]string?sortBy,[FromQuery]int page=1,[FromQuery]int size=20,[FromQuery]string?buildMode=null,CancellationToken ct=default){var q=db.Defects.AsNoTracking().Where(x=>!x.IsDeleted);if(projectId.HasValue)q=q.Where(x=>x.ProjectId==projectId);else if(projectCtx.AllowedProjectIds.Length>0)q=q.Where(x=>projectCtx.AllowedProjectIds.Contains(x.ProjectId));else q=q.Where(_=>false);if(releaseId.HasValue)q=q.Where(x=>x.ReleaseId==releaseId);q=await BuildFilterAsync(q,buildId,buildMode,ct);var scope=q;if(unassignedModule)q=q.Where(x=>x.ModuleId==null);else if(moduleId.HasValue)q=q.Where(x=>x.ModuleId==moduleId);if(assigneeUserId.HasValue)q=q.Where(x=>x.AssigneeUserId==assigneeUserId);if(!string.IsNullOrWhiteSpace(severity))q=q.Where(x=>x.Severity==severity);if(!string.IsNullOrWhiteSpace(priority))q=q.Where(x=>db.DefectTestCaseLinks.Any(link=>link.DefectId==x.DefectId&&db.TestCases.Any(testCase=>testCase.TestCaseId==link.TestCaseId&&!testCase.IsDeleted&&testCase.Priority==priority)));if(!string.IsNullOrWhiteSpace(status))q=q.Where(x=>x.Status==status);if(!string.IsNullOrWhiteSpace(search))q=q.Where(x=>x.DefectCode.Contains(search)||x.Title.Contains(search));var total=await q.CountAsync(ct);page=Math.Max(1,page);size=Math.Clamp(size,1,500);/* หน้า Defect ให้ผู้ใช้กรอกจำนวนต่อหน้าเอง 1–500 */var rows=await DefectListSort.Apply(q,sortBy).Skip((page-1)*size).Take(size).Select(x=>new DefectDto(x.DefectId,x.ProjectId,x.ReleaseId,x.BuildId,x.ModuleId,x.DefectCode,x.Title,x.Description,x.StepsToReproduce,x.ExpectedResult,x.ActualResult,x.Severity,x.Status,x.AssigneeUserId,x.CreatedBy,x.CreatedAt,x.UpdatedAt,x.CrmTicketId,x.CrmSyncStatus,x.CrmLastSyncedAt,x.ResolutionType,x.RootCauseCategory,x.RootCauseNote,x.ResolutionNote,x.DuplicateOfDefectId,null,x.FixedInBuildId,null,x.VerifiedInBuildId,null,x.ResolvedAt,x.ClosedAt,x.ReopenCount,x.LastRetestAt,x.LastRetestResult,x.RegressionOfDefectId,null)).ToListAsync(ct);rows=await WithBuildNumbersAsync(rows,ct);var open=await scope.CountAsync(x=>x.Status=="Open",ct);var inProgress=await scope.CountAsync(x=>x.Status=="In Progress",ct);var closed=await scope.CountAsync(x=>x.Status=="Closed",ct);return Ok(new DefectListResultDto(rows,total,open,inProgress,closed));}
+ [HttpGet,Authorize(Policy="DefectView")]public async Task<ActionResult<DefectListResultDto>>List([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,[FromQuery]Guid?moduleId,[FromQuery]bool unassignedModule,[FromQuery]Guid?assigneeUserId,[FromQuery]string?severity,[FromQuery]string?priority,[FromQuery]string?status,[FromQuery]string?search,[FromQuery]string?sortBy,[FromQuery]int page=1,[FromQuery]int size=20,[FromQuery]string?buildMode=null,[FromQuery]Guid?createdByUserId=null,CancellationToken ct=default){var q=db.Defects.AsNoTracking().Where(x=>!x.IsDeleted);if(projectId.HasValue)q=q.Where(x=>x.ProjectId==projectId);else if(projectCtx.AllowedProjectIds.Length>0)q=q.Where(x=>projectCtx.AllowedProjectIds.Contains(x.ProjectId));else q=q.Where(_=>false);if(releaseId.HasValue)q=q.Where(x=>x.ReleaseId==releaseId);q=await BuildFilterAsync(q,buildId,buildMode,ct);var scope=q;if(unassignedModule)q=q.Where(x=>x.ModuleId==null);else if(moduleId.HasValue)q=q.Where(x=>x.ModuleId==moduleId);if(assigneeUserId.HasValue)q=q.Where(x=>x.AssigneeUserId==assigneeUserId);if(createdByUserId.HasValue)q=q.Where(x=>x.CreatedBy==createdByUserId);/* ตัวกรอง "เจ้าของเรื่อง" ของหน้า Defect = ผู้สร้าง */if(!string.IsNullOrWhiteSpace(severity))q=q.Where(x=>x.Severity==severity);if(!string.IsNullOrWhiteSpace(priority))q=q.Where(x=>db.DefectTestCaseLinks.Any(link=>link.DefectId==x.DefectId&&db.TestCases.Any(testCase=>testCase.TestCaseId==link.TestCaseId&&!testCase.IsDeleted&&testCase.Priority==priority)));if(!string.IsNullOrWhiteSpace(status))q=q.Where(x=>x.Status==status);if(!string.IsNullOrWhiteSpace(search))q=q.Where(x=>x.DefectCode.Contains(search)||x.Title.Contains(search));var total=await q.CountAsync(ct);page=Math.Max(1,page);size=Math.Clamp(size,1,500);/* หน้า Defect ให้ผู้ใช้กรอกจำนวนต่อหน้าเอง 1–500 */var rows=await DefectListSort.Apply(q,sortBy).Skip((page-1)*size).Take(size).Select(x=>new DefectDto(x.DefectId,x.ProjectId,x.ReleaseId,x.BuildId,x.ModuleId,x.DefectCode,x.Title,x.Description,x.StepsToReproduce,x.ExpectedResult,x.ActualResult,x.Severity,x.Status,x.AssigneeUserId,x.CreatedBy,x.CreatedAt,x.UpdatedAt,x.CrmTicketId,x.CrmSyncStatus,x.CrmLastSyncedAt,x.ResolutionType,x.RootCauseCategory,x.RootCauseNote,x.ResolutionNote,x.DuplicateOfDefectId,null,x.FixedInBuildId,null,x.VerifiedInBuildId,null,x.ResolvedAt,x.ClosedAt,x.ReopenCount,x.LastRetestAt,x.LastRetestResult,x.RegressionOfDefectId,null)).ToListAsync(ct);rows=await WithBuildNumbersAsync(rows,ct);var open=await scope.CountAsync(x=>x.Status=="Open",ct);var inProgress=await scope.CountAsync(x=>x.Status=="In Progress",ct);var closed=await scope.CountAsync(x=>x.Status=="Closed",ct);return Ok(new DefectListResultDto(rows,total,open,inProgress,closed));}
  // สรุปข้อมูล Defect สำหรับการ์ดด้านบนหน้า Defect — ขอบเขตตาม Project/Release/Build ที่เลือกด้านบน (ไม่ผูกกับ
  // ตัวกรองของตารางด้านล่าง เช่น module/severity/status/assignee/search) เพื่อให้เห็นภาพรวมทั้งหมดเสมอ
  [HttpGet("stats"),Authorize(Policy="DefectView")]public async Task<ActionResult<DefectStatsDto>>Stats([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,CancellationToken ct,[FromQuery]string?buildMode=null){var q=db.Defects.AsNoTracking().Where(x=>!x.IsDeleted);if(projectId.HasValue)q=q.Where(x=>x.ProjectId==projectId);else if(projectCtx.AllowedProjectIds.Length>0)q=q.Where(x=>projectCtx.AllowedProjectIds.Contains(x.ProjectId));else q=q.Where(_=>false);if(releaseId.HasValue)q=q.Where(x=>x.ReleaseId==releaseId);q=await BuildFilterAsync(q,buildId,buildMode,ct);var statusCounts=await q.GroupBy(x=>x.Status).Select(g=>new{Status=g.Key,Count=g.Count()}).ToListAsync(ct);var severityCounts=await q.GroupBy(x=>x.Severity).Select(g=>new{Severity=g.Key,Count=g.Count()}).ToListAsync(ct);var moduleCounts=await q.GroupBy(x=>x.ModuleId).Select(g=>new{ModuleId=g.Key,Count=g.Count()}).ToListAsync(ct);var moduleIds=moduleCounts.Where(x=>x.ModuleId.HasValue).Select(x=>x.ModuleId!.Value).ToArray();var moduleNames=await db.Modules.AsNoTracking().Where(x=>moduleIds.Contains(x.ModuleId)).Select(x=>new{x.ModuleId,x.ModuleCode,x.ModuleName}).ToDictionaryAsync(x=>x.ModuleId,ct);var moduleBreakdown=moduleCounts.Select(x=>{var module=x.ModuleId.HasValue?moduleNames.GetValueOrDefault(x.ModuleId.Value):null;return new DefectModuleCountDto(x.ModuleId,module?.ModuleCode,module?.ModuleName??(x.ModuleId.HasValue?"โมดูลที่ถูกลบ":"ไม่ระบุโมดูล"),x.Count);}).OrderByDescending(x=>x.Count).ThenBy(x=>x.ModuleCode??x.ModuleName,StringComparer.OrdinalIgnoreCase).ToArray();int ByStatus(string s)=>statusCounts.FirstOrDefault(x=>x.Status==s)?.Count??0;int BySeverity(string s)=>severityCounts.FirstOrDefault(x=>x.Severity==s)?.Count??0;var total=statusCounts.Sum(x=>x.Count);var resolved=ByStatus("Resolved");var closed=ByStatus("Closed");var oldestOpenCreatedAt=await q.Where(x=>DefectStatusGroups.Unresolved.Contains(x.Status)).OrderBy(x=>x.CreatedAt).Select(x=>(DateTime?)x.CreatedAt).FirstOrDefaultAsync(ct);var oldestOpenAgeDays=oldestOpenCreatedAt.HasValue?(int)(DateTime.UtcNow-oldestOpenCreatedAt.Value).TotalDays:0;var unassignedActive=await q.Where(x=>DefectStatusGroups.Unresolved.Contains(x.Status)&&x.AssigneeUserId==null).CountAsync(ct);var closureRate=total>0?Math.Round((closed+ByStatus("Rejected"))*100.0/total,1):0;return Ok(new DefectStatsDto(total,ByStatus("Open"),ByStatus("In Progress"),resolved,closed,ByStatus("Rejected"),BySeverity("Critical"),BySeverity("High"),BySeverity("Medium"),BySeverity("Low"),oldestOpenAgeDays,unassignedActive,closureRate,moduleBreakdown));}
@@ -70,7 +71,7 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
    .Join(db.Defects.AsNoTracking().Where(x=>!x.IsDeleted&&allowed.Contains(x.ProjectId)),link=>link.DefectId,defect=>defect.DefectId,(link,defect)=>defect)
    .OrderByDescending(x=>x.CreatedAt).Take(200)
    .Select(x=>new DefectDto(x.DefectId,x.ProjectId,x.ReleaseId,x.BuildId,x.ModuleId,x.DefectCode,x.Title,x.Description,x.StepsToReproduce,x.ExpectedResult,x.ActualResult,x.Severity,x.Status,x.AssigneeUserId,x.CreatedBy,x.CreatedAt,x.UpdatedAt,x.CrmTicketId,x.CrmSyncStatus,x.CrmLastSyncedAt)).ToListAsync(ct);
-  return Ok(rows);
+  return Ok(await WithBuildNumbersAsync(rows,ct));
  }
  [HttpGet("{id:guid}/attachments"),Authorize(Policy="DefectView")]
  public async Task<ActionResult<IReadOnlyList<DefectAttachmentDto>>>Attachments(Guid id,CancellationToken ct)
@@ -202,9 +203,39 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   var entity=new Defect(r.ProjectId,r.ReleaseId,r.BuildId,r.ModuleId,code,r.Title,r.Severity,"Open",UserId(),r.Description,r.StepsToReproduce,r.ExpectedResult,r.ActualResult,r.AssigneeUserId);
   if(r.Resolution is not null&&await ApplyResolutionAsync(entity,r.Resolution,ct) is {} createError)return BadRequest(createError);
   if(await TransitionAsync(entity,r.Status,r.FixedInBuildId,r.VerifiedInBuildId,ct) is {} statusError)return BadRequest(statusError);
-  await db.Defects.AddAsync(entity,ct);await db.SaveChangesAsync(ct);
+  await db.Defects.AddAsync(entity,ct);
+  string?testCaseCode=null;
+  if(r.TestCase is not null)
+  {
+   // บันทึกพร้อม Defect ใน SaveChanges เดียว — Test Case สร้างไม่ได้ = ไม่สร้าง Defect ด้วย
+   var created=await AddTestCaseForNewDefectAsync(entity,r.TestCase,projectCode,ct);
+   if(created.Error is not null)return BadRequest(created.Error);
+   testCaseCode=created.Code;
+  }
+  await db.SaveChangesAsync(ct);
   await activityService.LogAsync(entity.DefectId,"Created","Defect created",UserId(),ct);
+  if(testCaseCode is not null)await activityService.LogAsync(entity.DefectId,"TestLinked",$"สร้างและเชื่อมโยง Test Case {testCaseCode}",UserId(),ct);
   return Ok(await MapAsync(entity,ct));
+ }
+ private async Task<(string?Code,string?Error)>AddTestCaseForNewDefectAsync(Defect defect,NewDefectTestCaseRequest r,string projectCode,CancellationToken ct)
+ {
+  if(defect.ModuleId is not {} moduleId)return(null,"เลือก Module ก่อน — Test Case ต้องอยู่ใน Module");
+  var moduleCode=await db.Modules.Where(x=>x.ModuleId==moduleId&&x.ProjectId==defect.ProjectId).Select(x=>x.ModuleCode).SingleOrDefaultAsync(ct);
+  if(moduleCode is null)return(null,"Module not found.");
+  // แถวที่ว่างทั้งแถวไม่นับ; แถวที่กรอกแล้วต้องมีทั้ง Action และผลที่คาดหวังตามกฎของ Test Case
+  var rows=(r.Steps??[]).Where(x=>!string.IsNullOrWhiteSpace(x.Action)||!string.IsNullOrWhiteSpace(x.TestData)||!string.IsNullOrWhiteSpace(x.ExpectedResult)).ToList();
+  if(rows.Count==0)return(null,"ใส่ขั้นตอนการทำซ้ำอย่างน้อย 1 ขั้น");
+  if(rows.Any(x=>string.IsNullOrWhiteSpace(x.Action)||string.IsNullOrWhiteSpace(x.ExpectedResult)))return(null,"ทุกขั้นตอนต้องมีทั้งการกระทำและผลที่คาดหวัง");
+  var prefix=BusinessCodeGenerator.ContextualPrefix(projectCode,moduleCode,"TC");
+  // รวมเคสที่ถูกลบด้วย — unique index (ProjectId, TestCaseCode) ไม่สนใจ IsDeleted
+  var existing=await db.TestCases.Where(x=>x.ProjectId==defect.ProjectId&&x.TestCaseCode.StartsWith(prefix)).Select(x=>x.TestCaseCode).ToListAsync(ct);
+  var code=BusinessCodeGenerator.NextAvailable(prefix,existing);
+  var priority=defect.Severity switch{"Critical"=>"P0","High"=>"P1","Low"=>"P3",_=>"P2"};
+  var testCase=new TestCase(defect.ProjectId,moduleId,code,defect.Title,$"สร้างจาก Defect {defect.DefectCode}",r.Preconditions,priority,null,false,null,
+   rows.Select((x,i)=>new TestStepInput(i+1,x.Action!,x.TestData,x.ExpectedResult!)),UserId());
+  await db.TestCases.AddAsync(testCase,ct);
+  db.DefectTestCaseLinks.Add(new DefectTestCaseLink(defect.DefectId,testCase.TestCaseId,UserId()));
+  return(code,null);
  }
  [HttpPut("{id:guid}"),Authorize(Policy="DefectEdit")]
  public async Task<ActionResult<DefectDto>>Update(Guid id,SaveDefectRequest r,CancellationToken ct)
@@ -235,13 +266,15 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   if(r.Resolution is not null)await LogResolutionAsync(entity,ct);
   return Ok(await MapAsync(entity,ct));
  }
- /// <summary>เลข Fix/Verified Build ของทั้งหน้าใน query เดียว</summary>
+ /// <summary>รหัส Release + เลข Build ที่เจอ / Fix / Verified ของทั้งหน้าใน query เดียว (หน้าเว็บแสดง releaseCode / buildNumber — เดิมไม่ส่ง จึงขึ้น "ไม่ระบุ" เสมอ)</summary>
  private async Task<List<DefectDto>>WithBuildNumbersAsync(List<DefectDto> rows,CancellationToken ct)
  {
-  var ids=rows.SelectMany(x=>new[]{x.FixedInBuildId,x.VerifiedInBuildId}).Where(x=>x.HasValue).Select(x=>x!.Value).Distinct().ToList();
-  if(ids.Count==0)return rows;
-  var numbers=await db.Builds.AsNoTracking().Where(b=>ids.Contains(b.BuildId)).ToDictionaryAsync(b=>b.BuildId,b=>b.BuildNumber,ct);
-  return rows.Select(x=>x with{FixedInBuildNumber=x.FixedInBuildId is {} f?numbers.GetValueOrDefault(f):null,VerifiedInBuildNumber=x.VerifiedInBuildId is {} v?numbers.GetValueOrDefault(v):null}).ToList();
+  var ids=rows.SelectMany(x=>new[]{x.BuildId,x.FixedInBuildId,x.VerifiedInBuildId}).Where(x=>x.HasValue).Select(x=>x!.Value).Distinct().ToList();
+  var releaseIds=rows.Where(x=>x.ReleaseId.HasValue).Select(x=>x.ReleaseId!.Value).Distinct().ToList();
+  if(ids.Count==0&&releaseIds.Count==0)return rows;
+  var numbers=ids.Count==0?new Dictionary<Guid,string>():await db.Builds.AsNoTracking().Where(b=>ids.Contains(b.BuildId)).ToDictionaryAsync(b=>b.BuildId,b=>b.BuildNumber,ct);
+  var releases=releaseIds.Count==0?new Dictionary<Guid,(string Code,string Version)>():await db.Releases.AsNoTracking().Where(r=>releaseIds.Contains(r.ReleaseId)).ToDictionaryAsync(r=>r.ReleaseId,r=>(Code:r.ReleaseCode,Version:r.Version),ct);
+  return rows.Select(x=>x with{ReleaseCode=x.ReleaseId is {} r&&releases.TryGetValue(r,out var rel)?rel.Code:null,ReleaseVersion=x.ReleaseId is {} rv&&releases.TryGetValue(rv,out var relv)?relv.Version:null,BuildNumber=x.BuildId is {} b?numbers.GetValueOrDefault(b):null,FixedInBuildNumber=x.FixedInBuildId is {} f?numbers.GetValueOrDefault(f):null,VerifiedInBuildNumber=x.VerifiedInBuildId is {} v?numbers.GetValueOrDefault(v):null}).ToList();
  }
  /// <summary>ผลตรวจซ้ำ Defect ที่ Resolved บน Build — ผ่าน = Closed (Verified Build = Build นี้), ไม่ผ่าน = Reopen; หมายเหตุเก็บใน Activity</summary>
  [HttpPost("{id:guid}/retest"),Authorize(Policy="DefectEdit")]
@@ -390,7 +423,7 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   catch(CrmIntegrationException ex){logger.LogError(ex,"โหลดรายชื่อผู้รับผิดชอบฝั่ง CRM ไม่สำเร็จ");return BadRequest(new{detail=ex.Message});}
   catch(CrmNotConfiguredException ex){logger.LogError(ex,"โหลดรายชื่อผู้รับผิดชอบฝั่ง CRM ไม่สำเร็จ (ยังไม่ได้ตั้งค่า)");return BadRequest(new{detail=ex.Message});}
  }
- private async Task<DefectDto>MapAsync(Defect x,CancellationToken ct){var duplicateCode=x.DuplicateOfDefectId is {} dupId?await db.Defects.AsNoTracking().Where(d=>d.DefectId==dupId).Select(d=>d.DefectCode).FirstOrDefaultAsync(ct):null;var regressionCode=x.RegressionOfDefectId is {} regId?await db.Defects.AsNoTracking().Where(d=>d.DefectId==regId).Select(d=>d.DefectCode).FirstOrDefaultAsync(ct):null;var buildIds=new[]{x.FixedInBuildId,x.VerifiedInBuildId}.Where(b=>b.HasValue).Select(b=>b!.Value).ToList();var buildNumbers=buildIds.Count==0?new Dictionary<Guid,string>():await db.Builds.AsNoTracking().Where(b=>buildIds.Contains(b.BuildId)).ToDictionaryAsync(b=>b.BuildId,b=>b.BuildNumber,ct);return new DefectDto(x.DefectId,x.ProjectId,x.ReleaseId,x.BuildId,x.ModuleId,x.DefectCode,x.Title,x.Description,x.StepsToReproduce,x.ExpectedResult,x.ActualResult,x.Severity,x.Status,x.AssigneeUserId,x.CreatedBy,x.CreatedAt,x.UpdatedAt,x.CrmTicketId,x.CrmSyncStatus,x.CrmLastSyncedAt,x.ResolutionType,x.RootCauseCategory,x.RootCauseNote,x.ResolutionNote,x.DuplicateOfDefectId,duplicateCode,x.FixedInBuildId,x.FixedInBuildId is {} f?buildNumbers.GetValueOrDefault(f):null,x.VerifiedInBuildId,x.VerifiedInBuildId is {} v?buildNumbers.GetValueOrDefault(v):null,x.ResolvedAt,x.ClosedAt,x.ReopenCount,x.LastRetestAt,x.LastRetestResult,x.RegressionOfDefectId,regressionCode);}
+ private async Task<DefectDto>MapAsync(Defect x,CancellationToken ct){var duplicateCode=x.DuplicateOfDefectId is {} dupId?await db.Defects.AsNoTracking().Where(d=>d.DefectId==dupId).Select(d=>d.DefectCode).FirstOrDefaultAsync(ct):null;var regressionCode=x.RegressionOfDefectId is {} regId?await db.Defects.AsNoTracking().Where(d=>d.DefectId==regId).Select(d=>d.DefectCode).FirstOrDefaultAsync(ct):null;var dto=new DefectDto(x.DefectId,x.ProjectId,x.ReleaseId,x.BuildId,x.ModuleId,x.DefectCode,x.Title,x.Description,x.StepsToReproduce,x.ExpectedResult,x.ActualResult,x.Severity,x.Status,x.AssigneeUserId,x.CreatedBy,x.CreatedAt,x.UpdatedAt,x.CrmTicketId,x.CrmSyncStatus,x.CrmLastSyncedAt,x.ResolutionType,x.RootCauseCategory,x.RootCauseNote,x.ResolutionNote,x.DuplicateOfDefectId,duplicateCode,x.FixedInBuildId,null,x.VerifiedInBuildId,null,x.ResolvedAt,x.ClosedAt,x.ReopenCount,x.LastRetestAt,x.LastRetestResult,x.RegressionOfDefectId,regressionCode);return(await WithBuildNumbersAsync([dto],ct))[0];}
  public const string RootCauseCategory="DefectRootCause";
  /// <summary>ตรวจหมวดสาเหตุกับ Master Option (หมวด DefectRootCause ที่เปิดใช้) และ Defect ต้นฉบับ (Project เดียวกัน) แล้วบันทึก — คืนข้อความผิดพลาด หรือ null</summary>
  private async Task<string?>ApplyResolutionAsync(Defect entity,DefectResolutionRequest r,CancellationToken ct)
@@ -406,7 +439,10 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
  private bool CanAccess(Guid projectId)=>projectCtx.AllowedProjectIds.Length==0||projectCtx.AllowedProjectIds.Contains(projectId);
  private Guid?UserId()=>Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier)??User.FindFirstValue("sub"),out var id)?id:null;
 }
-public sealed record SaveDefectRequest(Guid ProjectId,Guid?ReleaseId,Guid?BuildId,Guid?ModuleId,string Title,string Severity="Medium",string Status="Open",string?Description=null,string?StepsToReproduce=null,string?ExpectedResult=null,string?ActualResult=null,Guid?AssigneeUserId=null,DefectResolutionRequest?Resolution=null,Guid?FixedInBuildId=null,Guid?VerifiedInBuildId=null);
+public sealed record SaveDefectRequest(Guid ProjectId,Guid?ReleaseId,Guid?BuildId,Guid?ModuleId,string Title,string Severity="Medium",string Status="Open",string?Description=null,string?StepsToReproduce=null,string?ExpectedResult=null,string?ActualResult=null,Guid?AssigneeUserId=null,DefectResolutionRequest?Resolution=null,Guid?FixedInBuildId=null,Guid?VerifiedInBuildId=null,NewDefectTestCaseRequest?TestCase=null);
+/// <summary>ฟอร์มสร้าง Defect ของหน้า Defect ส่งมาเพื่อสร้าง Test Case (Draft) จากขั้นตอนการทำซ้ำพร้อมกัน — Defect จาก Execution/Automation/CRM ไม่ส่ง</summary>
+public sealed record NewDefectTestCaseRequest(string?Preconditions,IReadOnlyList<NewDefectTestStepRequest>?Steps);
+public sealed record NewDefectTestStepRequest(string?Action,string?TestData,string?ExpectedResult);
 public sealed record DefectResolutionRequest(string ResolutionType,string?RootCauseCategory=null,string?RootCauseNote=null,string?ResolutionNote=null,Guid?DuplicateOfDefectId=null);
 public sealed record SimilarDefectDto(Guid DefectId,string DefectCode,string Title,string Status,string Severity,string?ResolutionType,string Snippet);
 /// <summary>FixedInBuildId = Build ที่แก้ (ตอนเป็น Resolved, ไม่ระบุ = Build ล่าสุดของ Release); VerifiedInBuildId = Build ที่ QA ตรวจซ้ำผ่าน (ตอน Resolved → Closed, ไม่ระบุ = Fix Build)</summary>
@@ -417,7 +453,7 @@ public sealed record LinkDefectTestCaseRequest(Guid TestCaseId);
 public sealed record BulkDefectRequest(IReadOnlyList<Guid>?Ids,string?Status=null,string?Severity=null,Guid?AssigneeUserId=null,bool?Delete=null,DefectResolutionRequest?Resolution=null,Guid?FixedInBuildId=null);
 public sealed record BulkDefectFailure(Guid DefectId,string DefectCode,string Error);
 public sealed record RetestDefectRequest(Guid BuildId,bool Passed,string?Note=null);
-public sealed record DefectDto(Guid DefectId,Guid ProjectId,Guid?ReleaseId,Guid?BuildId,Guid?ModuleId,string DefectCode,string Title,string?Description,string?StepsToReproduce,string?ExpectedResult,string?ActualResult,string Severity,string Status,Guid?AssigneeUserId,Guid?CreatedByUserId,DateTime CreatedAt,DateTime?UpdatedAt,string?CrmTicketId,string CrmSyncStatus,DateTime?CrmLastSyncedAt,string?ResolutionType=null,string?RootCauseCategory=null,string?RootCauseNote=null,string?ResolutionNote=null,Guid?DuplicateOfDefectId=null,string?DuplicateOfDefectCode=null,Guid?FixedInBuildId=null,string?FixedInBuildNumber=null,Guid?VerifiedInBuildId=null,string?VerifiedInBuildNumber=null,DateTime?ResolvedAt=null,DateTime?ClosedAt=null,int ReopenCount=0,DateTime?LastRetestAt=null,string?LastRetestResult=null,Guid?RegressionOfDefectId=null,string?RegressionOfDefectCode=null);
+public sealed record DefectDto(Guid DefectId,Guid ProjectId,Guid?ReleaseId,Guid?BuildId,Guid?ModuleId,string DefectCode,string Title,string?Description,string?StepsToReproduce,string?ExpectedResult,string?ActualResult,string Severity,string Status,Guid?AssigneeUserId,Guid?CreatedByUserId,DateTime CreatedAt,DateTime?UpdatedAt,string?CrmTicketId,string CrmSyncStatus,DateTime?CrmLastSyncedAt,string?ResolutionType=null,string?RootCauseCategory=null,string?RootCauseNote=null,string?ResolutionNote=null,Guid?DuplicateOfDefectId=null,string?DuplicateOfDefectCode=null,Guid?FixedInBuildId=null,string?FixedInBuildNumber=null,Guid?VerifiedInBuildId=null,string?VerifiedInBuildNumber=null,DateTime?ResolvedAt=null,DateTime?ClosedAt=null,int ReopenCount=0,DateTime?LastRetestAt=null,string?LastRetestResult=null,Guid?RegressionOfDefectId=null,string?RegressionOfDefectCode=null,string?ReleaseCode=null,string?BuildNumber=null,string?ReleaseVersion=null);
 public sealed record SendToCrmRequest(string AssignToStaffCode,bool Relink=false);
 public sealed record SendToCrmResponse(string CrmTicketId,string CrmSyncStatus,DateTime?CrmLastSyncedAt);
 public sealed record CrmReassignRequest(string AssignToStaffCode);
