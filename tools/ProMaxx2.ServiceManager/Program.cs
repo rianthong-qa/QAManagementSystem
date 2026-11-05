@@ -17,8 +17,36 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        // error ที่ไม่ได้ดักบน UI thread: เขียนรายละเอียดลง crash.log แล้วทำงานต่อ (แทนกล่อง "Unhandled exception" ของ .NET ที่ค้างรอคลิก
+        // และไม่บอกต้นเหตุ) — โปรแกรมนี้ดูแล API/Web อยู่ จึงไม่ควรปิดตัวเพราะ error ระหว่างวาดหน้าจอครั้งเดียว
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => CrashLog.Write("UI thread", e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => CrashLog.Write("background (โปรแกรมปิด)", e.ExceptionObject as Exception);
         // --tray = เปิดพร้อม Windows: เริ่มแบบซ่อนไว้ใน tray
         Application.Run(new MainForm(args.Contains("--tray", StringComparer.OrdinalIgnoreCase)));
+    }
+}
+
+/// <summary>บันทึก error ที่ไม่ได้ดัก (ทั้ง stack + inner exception) ที่ %LOCALAPPDATA%\ProMaxx2.ServiceManager\crash.log — เก็บไม่เกิน ~1 MB</summary>
+internal static class CrashLog
+{
+    public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProMaxx2.ServiceManager", "crash.log");
+
+    /// <summary>แจ้ง MainForm ให้เขียนสรุปลง Activity Log (เรียกบน thread ที่เกิด error)</summary>
+    public static event Action<string>? Written;
+
+    public static void Write(string where, Exception? ex)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+            if (File.Exists(FilePath) && new FileInfo(FilePath).Length > 1_000_000) File.Delete(FilePath);
+            File.AppendAllText(FilePath, $"==== {DateTime.Now:yyyy-MM-dd HH:mm:ss} [{where}]{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        try { Written?.Invoke($"{ex?.GetType().Name}: {ex?.Message}"); }
+        catch (Exception) { } // ห้าม error ซ้อนจากตัวบันทึก error เอง
     }
 }
 
@@ -351,6 +379,14 @@ internal sealed class MainForm : Form
         clearLog.Click += (_, _) => ClearLog();
 
         SetupTray();
+        // แจ้งใน Activity Log ไม่เกินนาทีละครั้ง — ถ้า error เกิดในการวาด log เอง การเขียน log ทุกครั้งจะวนเกิด error ซ้ำไม่จบ
+        var lastCrashNote = DateTime.MinValue;
+        CrashLog.Written += summary =>
+        {
+            if (DateTime.UtcNow - lastCrashNote < TimeSpan.FromMinutes(1)) return;
+            lastCrashNote = DateTime.UtcNow;
+            Log($"เกิด error ในโปรแกรม (ทำงานต่อ) — {summary} · รายละเอียดใน {CrashLog.FilePath}", LogLevel.Error);
+        };
         _statusTimer.Tick += async (_, _) => await RefreshStatus();
         _logTimer.Tick += (_, _) => DrainLogs();
         _tickTimer.Tick += (_, _) => Tick();
@@ -809,7 +845,19 @@ internal sealed class MainForm : Form
         finally { _envRefreshing = false; }
     }
 
+    // ลองซ้ำ 1 ครั้งหลัง 2 วินาทีเมื่อต่อไม่ได้ — DNS/การเชื่อมต่อผ่าน Cloudflare สะดุดชั่วครู่ได้บ่อย ไม่ควรขึ้นสีแดงจากครั้งเดียว
     private async Task<ProbeResult> Probe(string url)
+    {
+        var first = await ProbeOnce(url);
+        if (first.Ok) return first;
+        await Task.Delay(2000);
+        var second = await ProbeOnce(url);
+        if (second.Ok) return second with { Detail = second.Detail + " · ลองซ้ำ" };
+        Log($"ตรวจ {url} ไม่ผ่าน 2 ครั้งติด: {first.Detail} / {second.Detail}", LogLevel.Warning);
+        return second;
+    }
+
+    private async Task<ProbeResult> ProbeOnce(string url)
     {
         var watch = Stopwatch.StartNew();
         try
@@ -818,7 +866,24 @@ internal sealed class MainForm : Form
             return new ProbeResult(response.IsSuccessStatusCode, $"HTTP {(int)response.StatusCode} · {watch.Elapsed.TotalSeconds:0.00} วินาที");
         }
         catch (TaskCanceledException) { return new ProbeResult(false, "ไม่ตอบภายใน 8 วินาที"); }
-        catch (HttpRequestException) { return new ProbeResult(false, "เชื่อมต่อไม่ได้"); }
+        catch (HttpRequestException ex) { return new ProbeResult(false, ProbeFailure(ex)); }
+    }
+
+    // แสดงสาเหตุจริง (DNS / ถูกตัดการเชื่อมต่อ / SSL) แทน "เชื่อมต่อไม่ได้" เฉย ๆ เพื่อแยกปัญหาเครื่องนี้กับ Tunnel
+    private static string ProbeFailure(HttpRequestException ex)
+    {
+        Exception root = ex;
+        while (root.InnerException is not null) root = root.InnerException;
+        var reason = root switch
+        {
+            System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.HostNotFound or System.Net.Sockets.SocketError.TryAgain or System.Net.Sockets.SocketError.NoData } => "หา DNS ไม่เจอ",
+            System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.ConnectionReset or System.Net.Sockets.SocketError.ConnectionAborted } => "ถูกตัดการเชื่อมต่อ",
+            System.Net.Sockets.SocketException { SocketErrorCode: System.Net.Sockets.SocketError.TimedOut } => "เชื่อมต่อหมดเวลา",
+            System.Security.Authentication.AuthenticationException => "SSL ผิดพลาด",
+            System.IO.IOException => "ถูกตัดการเชื่อมต่อ",
+            _ => "เชื่อมต่อไม่ได้",
+        };
+        return $"{reason} ({root.Message.Trim().TrimEnd('.')})";
     }
 
     private EnvSnapshot CollectLocal()
