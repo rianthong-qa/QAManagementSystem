@@ -358,6 +358,8 @@
 .db-module-pct { display: grid; flex: none; justify-items: end; gap: 0; width: 92px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .db-module-pct span { color: var(--c, var(--muted)); }
 .db-module-pct .none { color: var(--muted); font-weight: 400; }
+/* ยังไม่มีผลทดสอบแต่มี Defect เปิด (เช่น Defect ที่คีย์เอง) — เตือนสีแดงโดยไม่ปนกับตัวเลข Pass/Fail */
+.db-module-pct .defect { --c: var(--red); font-weight: 700; }
 
 /* สิ่งที่ต้องติดตาม */
 .db-followup ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -536,6 +538,9 @@
 .executive-dashboard .db-segment button:disabled { opacity: .5; cursor: not-allowed; }
 .executive-dashboard .db-segment button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
 .executive-dashboard .db-segment .material-symbols-outlined { font-size: 16px; }
+/* ขอบเขต "มี Cycle" ไม่เหลือโมดูล — ลิงก์สลับไปดูทุกโมดูล */
+.executive-dashboard .db-modules .muted-row .link-btn { border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; cursor: pointer; }
+.executive-dashboard .db-modules .muted-row .link-btn:hover { text-decoration: underline; }
 .executive-dashboard .db-modules-actions .btn { width: 36px; padding: 0; justify-content: center; }
 .db-module-num { display: grid; flex: none; justify-items: end; width: 56px; }
 .db-module-num b { color: var(--text); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -583,6 +588,8 @@
   .db-module-num { order: 6; grid-auto-flow: column; align-items: baseline; gap: 3px; min-width: 0; }
   .db-module-links { order: 7; margin-left: 0; }
   .db-module-pct .fail, .db-module-pct .blocked { display: none; }
+  /* แถบว่างบอกอยู่แล้วว่ายังไม่มีผล — เหลือ "Defect เปิด n" อย่างเดียวให้แถวไม่ตกบรรทัด */
+  .db-module-pct:has(.defect) .none { display: none; }
 }
 
 /* ===== Dashboard รอบ 4 (2026-10-21) — เวลาข้อมูล + รีเฟรช, tooltip บนแถบ, การ์ดรองพับได้, ลำดับบนมือถือ, ตัวอักษรขั้นต่ำ 12px ในส่วนที่อ่านยาก ===== */

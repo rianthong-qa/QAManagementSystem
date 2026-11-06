@@ -13,7 +13,7 @@ namespace ProMaxx2.QA.Api.Services;
 //
 // Every method takes an `actingUserId` — CRM tracks work by whoever is actually logged in, so every call talks to
 // CRM as the QA Hub user who clicked the button (their own CrmConfiguration row), never a shared Service Account.
-public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, CrmConfigurationService crmConfig, CrmTokenService tokenService, EmailSenderService emailSender, DefectShareLinkService shareLinks, ILogger<CrmSendToCrmService> logger)
+public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, CrmConfigurationService crmConfig, CrmTokenService tokenService, EmailSenderService emailSender, DefectShareLinkService shareLinks, DefectImageStorage imageStorage, ILogger<CrmSendToCrmService> logger)
 {
     // BlueID's user directory (DWUserAccountSeniorV2) returns the whole company, most of whom are irrelevant to
     // CRM ticket assignment — จำกัดรายชื่อ "ผู้รับผิดชอบ (Dev)" ให้เหลือแค่ทีม Dev/QA ที่เกี่ยวข้องจริง (รหัสพนักงาน)
@@ -28,7 +28,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     private const int CrmDescriptionMaxLength = 1000;
     private static readonly CultureInfo ThaiCulture = CultureInfo.GetCultureInfo("th-TH");
 
-    public async Task<string> SendAsync(Defect defect, Guid actingUserId, string actingDisplayName, string assignToStaffCode, CancellationToken ct)
+    public async Task<CrmSendResult> SendAsync(Defect defect, Guid actingUserId, string actingDisplayName, string assignToStaffCode, CancellationToken ct)
     {
         var mapping = await db.CrmProjectMappings.AsNoTracking().SingleOrDefaultAsync(x => x.ProjectId == defect.ProjectId, ct)
             ?? throw new CrmIntegrationException("โปรเจกต์นี้ยังไม่ได้ตั้งค่า CRM Product/Version Mapping กรุณาตั้งค่าใน Setting Center ก่อนส่งไป CRM");
@@ -39,7 +39,13 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         // cache ไว้แล้ว — เรียกซ้ำตรงนี้แค่เพื่อดึง BranchId ออกมา ไม่ได้ยิง login ใหม่ (cache hit)
         var (_, branchId) = await tokenService.GetTokenAsync(actingUserId, cfg.MerchantId, cfg.Username, password, ct);
         var shareUrl = await shareLinks.GetOrCreateUrlAsync(defect.DefectId, ct);
-        var description = BuildCrmDescription(string.Join("\n\n", new[] { defect.Description, defect.StepsToReproduce, defect.ExpectedResult, defect.ActualResult }.Where(x => !string.IsNullOrWhiteSpace(x))), shareUrl);
+        var (images, skippedImages) = await LoadCrmImagesAsync(defect.DefectId, ct);
+        var moduleName = defect.ModuleId.HasValue ? await db.Modules.AsNoTracking().Where(x => x.ModuleId == defect.ModuleId).Select(x => x.ModuleName).SingleOrDefaultAsync(ct) : null;
+        var buildNumber = defect.BuildId.HasValue ? await db.Builds.AsNoTracking().Where(x => x.BuildId == defect.BuildId).Select(x => x.BuildNumber).SingleOrDefaultAsync(ct) : null;
+        var testCaseCode = await db.DefectTestCaseLinks.AsNoTracking().Where(x => x.DefectId == defect.DefectId)
+            .Join(db.TestCases, l => l.TestCaseId, t => t.TestCaseId, (l, t) => t.TestCaseCode).OrderBy(x => x).FirstOrDefaultAsync(ct);
+        var description = CrmDefectDescription.Build(new CrmDescriptionInput(defect.DefectCode, defect.Severity, moduleName, buildNumber,
+            defect.Description, defect.StepsToReproduce, defect.ExpectedResult, defect.ActualResult, testCaseCode, images.Count, skippedImages, shareUrl));
         // CRM ไม่มีค่า default ให้ฟิลด์นี้ (ไม่เคยส่งมาก่อนจะกลาย epoch 0 → โชว์เป็น 01/01/2513) ต้องส่งเวลาปัจจุบัน
         // เสมอ — ใช้เวลาไทย (UTC+7) ตรงกับ format ที่หน้า CRM เองส่ง (yyyy-M-d'T'HH:mm ปีเป็น ค.ศ. ไม่ padding เดือน/วัน)
         // ต้อง format ด้วย InvariantCulture — เครื่อง server เป็น th-TH ถ้าใช้ culture ปัจจุบัน "yyyy" จะได้ปี พ.ศ.
@@ -83,7 +89,7 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
             ContactDate: contactDate,
             Duedate: dueDate);
 
-        var jobNo = await crmApi.CreateSupportJobAsync(actingUserId, payload, ct);
+        var jobNo = await crmApi.CreateSupportJobAsync(actingUserId, payload, images, ct);
 
         // Phase 3 trigger #1: แจ้ง Dev ที่ถูก assign ทางอีเมล — best-effort เท่านั้น ห้ามทำให้การสร้าง ticket ที่
         // สำเร็จไปแล้วกลายเป็นล้มเหลวเพราะ SMTP มีปัญหา (ดู EmailSenderService — เมล์ไม่ได้ตั้งค่าไว้ก็แค่ throw
@@ -95,9 +101,6 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
             {
                 var link = $"https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo={jobNo}&JobType=HD";
                 var projectName = await db.Projects.AsNoTracking().Where(x => x.ProjectId == defect.ProjectId).Select(x => x.ProjectName).SingleOrDefaultAsync(ct) ?? "-";
-                var moduleName = defect.ModuleId.HasValue
-                    ? await db.Modules.AsNoTracking().Where(x => x.ModuleId == defect.ModuleId).Select(x => x.ModuleName).SingleOrDefaultAsync(ct)
-                    : null;
                 var html = EmailTemplates.DefectAssignedViaCrm(defect.DefectCode, defect.Title, defect.Severity, defect.Status, projectName, moduleName,
                     defect.Description, defect.StepsToReproduce, defect.ExpectedResult, defect.ActualResult, dev.Name, dev.StaffCode, jobNo, link, shareUrl);
                 await emailSender.SendAsync(email, $"[QA Hub] มอบหมายงานใหม่ผ่าน CRM Ticket #{jobNo}", html, ct, isHtml: true);
@@ -105,7 +108,40 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         }
         catch (Exception ex) { logger.LogError(ex, "Failed to send CRM-assignment email for defect {DefectId} ticket {TicketId}", defect.DefectId, jobNo); }
 
-        return jobNo;
+        return new(jobNo, images.Count, skippedImages);
+    }
+
+    // รูปประกอบของ Defect (ไม่รวมรูปในคอมเมนต์) แนบไปเป็นรูปของ Ticket แทนการให้ Dev กดลิงก์ไปดู — ไฟล์ที่ CRM ไม่รับ
+    // (เช่น .webp) หรือหาไฟล์บนดิสก์ไม่เจอ นับเป็น skipped แล้วบอกใน Description ว่าดูได้ที่ลิงก์ QA Hub
+    private async Task<(List<CrmAttachment> Images, int Skipped)> LoadCrmImagesAsync(Guid defectId, CancellationToken ct)
+    {
+        var rows = await db.DefectAttachments.AsNoTracking().Where(x => x.DefectId == defectId && x.CommentId == null)
+            .OrderBy(x => x.UploadedAt).ThenBy(x => x.FileName).ToListAsync(ct);
+        var (send, skipped) = PickCrmImages(rows);
+        var images = new List<CrmAttachment>();
+        foreach (var row in send)
+        {
+            var path = imageStorage.PathOf(defectId, row.StoredFileName);
+            if (!File.Exists(path)) { skipped++; continue; }
+            images.Add(new CrmAttachment(row.FileName, CrmAttachmentRules.ContentTypes[Path.GetExtension(row.FileName)], await File.ReadAllBytesAsync(path, ct)));
+        }
+        return (images, skipped);
+    }
+
+    /// <summary>เลือกรูปที่ส่งเป็นไฟล์แนบของ CRM ได้ตามกติกาฟอร์ม CRM (.jpg/.jpeg/.png, ไฟล์ละ ≤5 MB, ≤10 ไฟล์, รวม ≤25 MB) เรียงตามลำดับเดิม</summary>
+    public static (List<DefectAttachment> Send, int Skipped) PickCrmImages(IReadOnlyList<DefectAttachment> rows)
+    {
+        var send = new List<DefectAttachment>();
+        long total = 0;
+        foreach (var row in rows)
+        {
+            var fits = CrmAttachmentRules.ContentTypes.TryGetValue(Path.GetExtension(row.FileName), out var type) && type.StartsWith("image/", StringComparison.Ordinal)
+                && row.SizeBytes <= CrmAttachmentRules.MaxFileBytes && send.Count < CrmAttachmentRules.MaxFiles && total + row.SizeBytes <= CrmAttachmentRules.MaxTotalBytes;
+            if (!fits) continue;
+            send.Add(row);
+            total += row.SizeBytes;
+        }
+        return (send, rows.Count - send.Count);
     }
 
     // "สร้าง Ticket ใหม่" จากหน้า CRM ของ QA Hub (ไม่ผูก Defect) — ช่องตามฟอร์ม New Job ของ CRM; ผู้รับเรื่อง (RecipientId) และ
@@ -377,17 +413,6 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         await crmApi.UpdateSupportJobAsync(actingUserId, payload, ct);
     }
 
-    // ต่อท้ายลิงก์อ่านอย่างเดียว (ไม่ต้อง login) เสมอ — CRM ไม่ได้รับรูปแนบ และข้อความยาวเกินลิมิตจะถูกตัด; ลิงก์ต้องอยู่ครบ
-    // ภายใน 1000 ตัวอักษรเสมอ จึงตัดเนื้อหาก่อนแล้วค่อยต่อท้าย
-    public static string BuildCrmDescription(string text, string shareUrl)
-    {
-        var footer = $"\n\nดูรายละเอียดเต็มและรูปภาพที่ QA Hub: {shareUrl}";
-        if (text.Length + footer.Length <= CrmDescriptionMaxLength) return text + footer;
-        var truncatedFooter = $"\n\n[...ตัดข้อความ] ดูรายละเอียดเต็มและรูปภาพที่ QA Hub: {shareUrl}";
-        var keep = Math.Max(0, CrmDescriptionMaxLength - truncatedFooter.Length);
-        return text[..Math.Min(keep, text.Length)] + truncatedFooter;
-    }
-
     /// <summary>
     /// ข้อความตอบที่ส่งเป็น Description ของการ Update (CRM บันทึกเป็นแถวใหม่ในประวัติการติดต่อ):
     /// `[QA Hub] {ชื่อ} (dd/MM/yyyy HH:mm พ.ศ.): {ข้อความ}{ท้าย}` — ปี พ.ศ. แบบตายตัว (ไม่ขึ้นกับ culture ของเครื่องที่รัน API)
@@ -401,6 +426,8 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         return prefix + (body.Length > room ? body[..room] : body) + suffix;
     }
 }
+
+public sealed record CrmSendResult(string JobNo, int ImageCount, int SkippedImages);
 
 public sealed record CrmTicketMutationResult(string Status, string Assignee, string? Subject = null);
 

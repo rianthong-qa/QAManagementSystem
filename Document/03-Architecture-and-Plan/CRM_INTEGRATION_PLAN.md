@@ -129,12 +129,13 @@ Flow เดิมเมื่อเจอ bug (manual, หลายขั้น�
 | SysProductId | map จาก QA Hub `Project` → CRM Product จริง (ต้องมี mapping table ดูหัวข้อ 7) |
 | SysVersionId | map จาก QA Hub Release/Build → CRM Version (ต้องมี mapping table) |
 | SysOsId | ว่าง |
-| Description | รวม `Description` + `StepsToReproduce` + `ExpectedResult` + `ActualResult` เป็นก้อนเดียว |
+| Description | **(เปลี่ยน 2026-11-06)** `CrmDefectDescription.Build` จัดเป็นหัวข้อตามสิ่งที่ Dev ต้องรู้ก่อน: หัว (รหัส · ความรุนแรง / โมดูล · Build · Environment) → `[ปัญหาที่พบ]` → `[ผลที่ควรเป็น]` → `[ขั้นตอนทำซ้ำ]` (ก่อนเริ่ม, ชื่อขั้น + "← Fail", ข้อมูลทดสอบ) → `[อ้างอิง]` (Test Case · Cycle Run, ผู้ทดสอบ/เวลา, จำนวนรูปแนบ) → ลิงก์ QA Hub; ไม่ส่งประเภท Cycle/วัตถุประสงค์/Priority/คาดหวังรายขั้น (ดูผ่านลิงก์). เกิน 1000 ตัวอักษร: ย่อขั้นตอนเหลือขั้นที่ Fail + ขั้นก่อนหน้า → ตัดข้อมูลประกอบ → ตัดขั้นตอน → ตัดท้ายปัญหา/ผลที่ควรเป็น; ลิงก์อยู่ครบเสมอ ("บางส่วนถูกย่อ — ดูฉบับเต็ม") — ตรวจกับ Defect จริง 2,247 รายการ ยาวสุด 995 ตัวอักษร ถูกย่อ 148 รายการ |
 | Posted | seniorSoftID เดียวกับ Service Account (RecipientId) |
 | JobType | `HD` |
 | RefJobNo | ว่าง |
 | Duedate | ว่าง |
 | BuildDetail | ว่าง (หรือใส่ Build label ของ Defect ถ้ามี) |
+| Images1..N | **(2026-11-06)** รูปประกอบของ Defect (ไม่รวมรูปในคอมเมนต์) แนบเป็นไฟล์ของ Ticket ตามลำดับที่อัปโหลด — เฉพาะ .jpg/.jpeg/.png ไฟล์ละ ≤5 MB (≤10 ไฟล์, รวม ≤25 MB ตาม `CrmAttachmentRules`); รูปที่ไม่ผ่าน (เช่น .webp) ไม่ส่ง และท้าย Description บอกจำนวนให้ดูผ่านลิงก์ QA Hub แทน (`CrmSendToCrmService.PickCrmImages`) |
 
 ---
 

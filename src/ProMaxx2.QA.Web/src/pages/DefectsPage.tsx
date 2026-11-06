@@ -1,7 +1,7 @@
 import { toUtcDate, formatThaiDateTime } from "../dateTime";
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import type { DefectItem, UserLookup } from "../shared/types";
-import { apiUrl, authHeaders, getJson, isAbortError } from "../api";
+import { apiFetch, apiUrl, authHeaders, getJson, isAbortError } from "../api";
 import { DefectCommentComposer, DefectCommentList } from "../components/DefectComments";
 import { type DefectComment, type DefectCommentAttachment, toLightboxImages, useAuthedAttachmentUrls } from "../components/defectCommentUtils";
 import { ImageLightbox } from "../components/ImageLightbox";
@@ -183,6 +183,24 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [crmDevUsers, setCrmDevUsers] = useState<{ staffCode: string; name: string; email?: string | null }[]>([]);
   const [crmDevUsersLoading, setCrmDevUsersLoading] = useState(false);
   const [crmDevUsersError, setCrmDevUsersError] = useState("");
+  // Dev ที่รับงานใน CRM (CrmLastKnownAssignto — ตั้งตอนส่ง/เปลี่ยนผู้รับผิดชอบ และ poller อัปเดตตาม CRM) — Dev ส่วนใหญ่ไม่มีบัญชี QA Hub
+  // จึงแสดงคู่กับช่องผู้รับผิดชอบ ไม่บันทึกลงช่องนั้น; ชื่อจาก BlueID directory (/crm/staff) ผู้ใช้ที่ไม่มีบัญชี CRM เห็นเป็นรหัส
+  const [crmStaffNames, setCrmStaffNames] = useState<Record<string, string>>({});
+  const needCrmNames = items.some(x => x.crmSyncStatus === "Linked" && x.crmAssigneeCode) || !!(detail?.crmSyncStatus === "Linked" && detail.crmAssigneeCode);
+  const crmStaffLoaded = useRef(false);
+  useEffect(() => {
+    if (!needCrmNames || crmStaffLoaded.current) return;
+    crmStaffLoaded.current = true;
+    apiFetch<{ staffCode: string; name: string }[]>("/crm/staff")
+      .then(rows => setCrmStaffNames(Object.fromEntries((Array.isArray(rows) ? rows : []).map(r => [r.staffCode, r.name]))))
+      .catch(() => undefined); // โหลดชื่อไม่ได้ (ไม่มีบัญชี CRM) = แสดงรหัสแทน
+  }, [needCrmNames]);
+  const crmDevName = (x?: Pick<DefectItem, "crmSyncStatus" | "crmAssigneeCode"> | null) => {
+    const code = x?.crmSyncStatus === "Linked" ? x.crmAssigneeCode?.trim() : "";
+    if (!code) return null;
+    const name = crmStaffNames[code] ?? crmDevUsers.find(u => u.staffCode === code)?.name;
+    return name ? `${name} (${code})` : code;
+  };
   const [crmAssignTo, setCrmAssignTo] = useState("");
   const [crmSending, setCrmSending] = useState(false);
   const defectRequestVersion = useRef(0);
@@ -389,7 +407,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       const response = await fetch(url, { method: "POST", headers, body: JSON.stringify({ assignToStaffCode: crmAssignTo }) });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.detail ?? (crmMode === "reassign" ? "เปลี่ยนผู้รับผิดชอบใน CRM ไม่สำเร็จ" : "ส่งไป CRM ไม่สำเร็จ"));
-      setNotice(crmMode === "reassign" ? `เปลี่ยนผู้รับผิดชอบใน CRM Ticket #${item.crmTicketId} สำเร็จ` : `ส่งไป CRM สำเร็จ Ticket #${body.crmTicketId}`);
+      setNotice(crmMode === "reassign" ? `เปลี่ยนผู้รับผิดชอบใน CRM Ticket #${item.crmTicketId} สำเร็จ` : `ส่งไป CRM สำเร็จ Ticket #${body.crmTicketId}${body.imageCount ? ` · แนบรูป ${body.imageCount} รูป` : ""}${body.skippedImages ? ` · รูปที่ CRM ไม่รับ ${body.skippedImages} รูป ดูผ่านลิงก์ใน Ticket` : ""}`);
       setCrmDialogOpen(false);
       setReload(x => x + 1);
       // เปิด/รีเฟรช detail modal ต่อให้เห็น badge/activity อัปเดตทันที เฉพาะกรณีเปิด dialog นี้มาจาก detail
@@ -596,7 +614,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     {view === "board" ? <section className="dj-board-wrap" id="defect-list-results" tabIndex={-1} aria-label="Board Defect ตามสถานะ" aria-busy={loading}>
       {totalCount > items.length && <p className="dj-board-note" role="status"><span className="material-symbols-outlined" aria-hidden="true">info</span>แสดง {items.length.toLocaleString()} จาก {totalCount.toLocaleString()} รายการ — ใช้ตัวกรองให้แคบลง หรือดูทั้งหมดในมุมมองรายการ</p>}
       {canEditDefects && items.length > 0 && <p className="dj-board-hint">ลากการ์ดไปคอลัมน์อื่นเพื่อเปลี่ยนสถานะ หรือใช้เมนู ⋯ บนการ์ด</p>}
-      <DefectBoard items={items} statuses={defectStatuses} canEdit={canEditDefects} onOpen={(x) => void openDetail(x)} onMove={(x, status) => void quickStatus(x, status)}
+      <DefectBoard items={items} crmDevName={crmDevName} statuses={defectStatuses} canEdit={canEditDefects} onOpen={(x) => void openDetail(x)} onMove={(x, status) => void quickStatus(x, status)}
         moduleLabel={(x) => { const m = moduleOf(x); return m ? `${m.moduleCode} · ${m.moduleName}` : null; }} />
     </section> : <article className="card lp-card dj-list" id="defect-list-results" tabIndex={-1} aria-label="รายการ Defect">
       {canEditDefects && selectedIds.length > 0 && (
@@ -653,6 +671,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                 {canEditDefects && crmStatus === "None"
                   ? <button type="button" className="df-crm-send" title={`ส่ง ${x.defectCode} ไป CRM`} aria-label={`ส่ง ${x.defectCode} ไป CRM`} onClick={() => openCrmDialog("send", x)}><span className="material-symbols-outlined" aria-hidden="true">upload</span>ส่งไป CRM</button>
                   : <Badge tone={defectCrmSyncTones[crmStatus] ?? "gray"}>{defectCrmSyncLabels[crmStatus] ?? "ยังไม่ส่ง"}</Badge>}
+                {crmDevName(x) && <small className="dj-row-meta" title={`Dev ที่รับงานใน CRM: ${crmDevName(x)}`}>Dev {crmDevName(x)}</small>}
               </td>
               <td className="dj-col-menu">{canEditDefects
                 ? <ActionMenu className="dj-row-menu" label={`จัดการ ${x.defectCode}`} hideLabel disabled={false} items={rowMenuItems(x)} />
@@ -718,9 +737,14 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
               <section className="dj-fields" aria-labelledby="dj-fields-title">
                 <h2 id="dj-fields-title">รายละเอียด {detailSaving && <span className="spinner inline" aria-label="กำลังบันทึก" />}</h2>
                 <dl>
-                  <div><dt>ผู้รับผิดชอบ</dt><dd>{canEditDefects
-                    ? <label className="dj-inline-field"><Avatar name={detail.assigneeName} /><select aria-label="ผู้รับผิดชอบ" value={detail.assigneeUserId ?? ""} disabled={detailSaving} onChange={(e) => void updateDetailField({ assigneeUserId: e.target.value || null })}><option value="">ยังไม่มอบหมาย</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>
-                    : <AssigneeCell name={detail.assigneeName} />}</dd></div>
+                  <div><dt>ผู้รับผิดชอบ</dt><dd>{(() => {
+                    const crmDev = crmDevName(detail);
+                    // ยังไม่มอบหมายใน QA Hub แต่ CRM มี Dev รับงานแล้ว = แสดง Dev จาก CRM แทน "ยังไม่มอบหมาย"; มอบหมายทั้งสองฝั่ง = Dev ใน CRM เป็นบรรทัดรอง
+                    const crmLine = crmDev && <span className="dj-crm-dev" title="Dev ที่รับงานใน CRM Ticket — เปลี่ยนได้จากเมนู ⋯ › เปลี่ยนผู้รับผิดชอบ CRM"><AssigneeCell name={crmDev} /><span className="dj-crm-tag">CRM</span></span>;
+                    if (!canEditDefects) return detail.assigneeName || !crmLine ? <><AssigneeCell name={detail.assigneeName} />{crmLine}</> : crmLine;
+                    const select = <label className="dj-inline-field"><Avatar name={detail.assigneeName} /><select aria-label="ผู้รับผิดชอบใน QA Hub" value={detail.assigneeUserId ?? ""} disabled={detailSaving} onChange={(e) => void updateDetailField({ assigneeUserId: e.target.value || null })}><option value="">{crmDev ? "ไม่ระบุใน QA Hub" : "ยังไม่มอบหมาย"}</option>{users.map(u => <option key={u.userId} value={u.userId}>{u.displayName}</option>)}</select></label>;
+                    return detail.assigneeUserId || !crmLine ? <>{select}{crmLine}</> : <>{crmLine}{select}</>;
+                  })()}</dd></div>
                   <div><dt>ผู้แจ้ง</dt><dd><AssigneeCell name={detail.createdByName ?? userName(detail.createdByUserId)} empty="ไม่ทราบผู้สร้าง" /></dd></div>
                   <div><dt>Severity</dt><dd>{canEditDefects
                     ? <label className="dj-inline-field"><SeverityMark severity={detail.severity} showLabel={false} /><select aria-label="Severity" value={detail.severity} disabled={detailSaving} onChange={(e) => void updateDetailField({ severity: e.target.value })}>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select></label>

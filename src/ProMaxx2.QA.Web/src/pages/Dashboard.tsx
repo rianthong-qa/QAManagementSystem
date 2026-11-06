@@ -7,7 +7,7 @@ type DashboardSummary = {
   totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
   openP0: number; openP1: number; overallScore?: number; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string;
   totalTestCaseCount: number; testedTestCaseCount: number; testCaseProgress: number; totalExecutionCount: number; generatedAt: string;
-  modules: { moduleId: string; parentModuleId?: string; moduleCode?: string; moduleName: string; sortOrder?: number; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string; openDefects?: number }[];
+  modules: { moduleId: string; parentModuleId?: string; moduleCode?: string; moduleName: string; sortOrder?: number; requirements: number; coveredRequirements: number; testCases: number; executed: number; passed: number; failed: number; blocked: number; coveragePercent: number; executionPercent: number; passRate: number; health: string; openDefects?: number; cycleCases?: number }[];
   users: { userId: string; displayName: string; executions: number; passed: number; failed: number; blocked: number; passRate: number; lastExecutedAt?: string }[];
   statusDistribution: { status: string; count: number; color: string }[];
   defectSeverityDistribution: { severity: string; count: number; color: string }[];
@@ -95,12 +95,14 @@ function DefectSeverityChart({ data }: { data: DashboardSummary }) {
 }
 
 /** สิ่งที่ต้องติดตามนอกเหนือจากเกณฑ์ปล่อย Release (Critical/P0/Coverage/Pass Rate อยู่ในส่วนหัวแล้ว) */
-function FollowUpList({ data, notStarted }: { data: DashboardSummary; notStarted: Module[] }) {
+function FollowUpList({ data, notStarted, noCycle }: { data: DashboardSummary; notStarted: Module[]; noCycle: Module[] }) {
   const lowCoverage = data.modules.filter(x => !x.parentModuleId && x.requirements > 0 && x.coveragePercent < 50);
   const items: { tone: "danger" | "warning" | "info"; icon: string; title: string; detail: string }[] = [];
   if (data.highDefects > 0) items.push({ tone: "warning", icon: "bug_report", title: `Defect High ค้าง ${data.highDefects} รายการ`, detail: "ควรตรวจสอบและจัดลำดับการแก้ไข" });
   if (data.openP1 > 0) items.push({ tone: "warning", icon: "priority_high", title: `P1 ที่ Fail/Blocked ${data.openP1} รายการ`, detail: "ตรวจสอบว่าต้องแก้ก่อน Release หรือไม่" });
   if (lowCoverage.length) items.push({ tone: "info", icon: "fact_check", title: `Coverage ต่ำกว่า 50% · ${lowCoverage.length} โมดูล`, detail: lowCoverage.map(x => x.moduleName).join(", ") });
+  // มี Requirement ในขอบเขตแต่ไม่มีเคสใน Test Cycle เลย (รวมโมดูลย่อย) = ยังไม่ได้วางแผนทดสอบ — รายการโมดูลค่าเริ่มต้นซ่อนโมดูลเหล่านี้ จึงต้องเตือนตรงนี้
+  if (noCycle.length) items.push({ tone: "warning", icon: "event_busy", title: `มี Requirement แต่ยังไม่มี Cycle · ${noCycle.length} โมดูล`, detail: noCycle.map(x => x.moduleName).join(", ") });
   if (notStarted.length) items.push({ tone: "info", icon: "pending_actions", title: `ยังไม่เริ่มทดสอบ · ${notStarted.length} โมดูล`, detail: notStarted.map(x => x.moduleName).join(", ") });
   const gateFailing = data.criticalDefects > 0 || data.openP0 > 0;
 
@@ -135,6 +137,8 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
   const onOpenModule = shareCode || shareToken ? undefined : onOpenModuleProp;
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [moduleSort, setModuleSort] = useState<"tree" | "defects">("tree");
+  // ค่าเริ่มต้นแสดงเฉพาะโมดูลที่มีเคสใน Test Cycle ของขอบเขต Project/Release/Build (โมดูลแม่ของโมดูลเหล่านั้นแสดงด้วย) — สลับดูทุกโมดูลได้
+  const [moduleScope, setModuleScope] = useState<"cycle" | "all">("cycle");
   const [data, setData] = useState<DashboardSummary | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(""), [retryKey, setRetryKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false), [now, setNow] = useState(() => Date.now());
   const [scope, setScope] = useState("");
@@ -177,28 +181,32 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
   const rootModules = sortModules(data.modules.filter(x => !x.parentModuleId));
   const childModules = new Map<string, Module[]>();
   for (const m of data.modules) if (m.parentModuleId) { const list = childModules.get(m.parentModuleId) ?? []; list.push(m); childModules.set(m.parentModuleId, list); }
-  type ModuleRoll = { cases: number; executed: number; passed: number; failed: number; blocked: number; defects: number; subs: number };
+  type ModuleRoll = { cases: number; cycleCases: number; executed: number; passed: number; failed: number; blocked: number; defects: number; subs: number };
   const rollup = new Map<string, ModuleRoll>();
   const rollOf = (id: string): ModuleRoll => {
     const cached = rollup.get(id);
     if (cached) return cached;
     const m = data.modules.find(x => x.moduleId === id);
-    const acc: ModuleRoll = { cases: m?.testCases ?? 0, executed: m?.executed ?? 0, passed: m?.passed ?? 0, failed: m?.failed ?? 0, blocked: m?.blocked ?? 0, defects: m?.openDefects ?? 0, subs: 0 };
-    for (const c of childModules.get(id) ?? []) { const r = rollOf(c.moduleId); acc.cases += r.cases; acc.executed += r.executed; acc.passed += r.passed; acc.failed += r.failed; acc.blocked += r.blocked; acc.defects += r.defects; acc.subs += 1 + r.subs; }
+    const acc: ModuleRoll = { cases: m?.testCases ?? 0, cycleCases: m?.cycleCases ?? 0, executed: m?.executed ?? 0, passed: m?.passed ?? 0, failed: m?.failed ?? 0, blocked: m?.blocked ?? 0, defects: m?.openDefects ?? 0, subs: 0 };
+    for (const c of childModules.get(id) ?? []) { const r = rollOf(c.moduleId); acc.cases += r.cases; acc.cycleCases += r.cycleCases; acc.executed += r.executed; acc.passed += r.passed; acc.failed += r.failed; acc.blocked += r.blocked; acc.defects += r.defects; acc.subs += 1 + r.subs; }
     rollup.set(id, acc);
     return acc;
   };
   data.modules.forEach(m => rollOf(m.moduleId));
-  const totalCasesAll = data.modules.reduce((s, m) => s + m.testCases, 0);
-  const parentIds = [...childModules.keys()];
+  const hasCycle = (m: Module) => rollOf(m.moduleId).cycleCases > 0;
+  const inScope = (m: Module) => moduleScope === "all" || hasCycle(m);
+  const scopedModules = data.modules.filter(inScope);
+  const scopedRoots = rootModules.filter(inScope);
+  const totalCasesAll = scopedModules.reduce((s, m) => s + m.testCases, 0);
+  const parentIds = [...childModules.keys()].filter(id => (childModules.get(id) ?? []).some(inScope));
   const modulesWithDefects = data.modules.filter(m => (m.openDefects ?? 0) > 0).sort((a, b) => (b.openDefects ?? 0) - (a.openDefects ?? 0) || a.moduleName.localeCompare(b.moduleName));
   const toggleModule = (id: string) => setExpandedModules(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   /** แถวโมดูล — โหมด tree ใช้ตัวเลขรวมโมดูลย่อย; โหมดเรียงตาม Defect เป็นรายการแบน ใช้ตัวเลขของโมดูลนั้นเอง (ตรงกับหน้า Defect ที่กรองทีละโมดูล) */
   const renderModule = (m: Module, depth: number, flat = false): ReactElement => {
-    const children = flat ? [] : sortModules(childModules.get(m.moduleId) ?? []);
+    const children = flat ? [] : sortModules((childModules.get(m.moduleId) ?? []).filter(inScope));
     const hasChildren = children.length > 0;
     const isExpanded = expandedModules.has(m.moduleId);
-    const agg: ModuleRoll = flat ? { cases: m.testCases, executed: m.executed, passed: m.passed, failed: m.failed, blocked: m.blocked, defects: m.openDefects ?? 0, subs: 0 } : rollOf(m.moduleId);
+    const agg: ModuleRoll = flat ? { cases: m.testCases, cycleCases: m.cycleCases ?? 0, executed: m.executed, passed: m.passed, failed: m.failed, blocked: m.blocked, defects: m.openDefects ?? 0, subs: 0 } : rollOf(m.moduleId);
     const childCases = Math.max(0, agg.cases - m.testCases);
     const den = Math.max(1, agg.executed);
     const pPct = Math.round(agg.passed / den * 100);
@@ -215,11 +223,11 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
           : <span className="db-module-toggle-spacer" aria-hidden="true" />}
         <span className="db-module-main">
           <span className="db-module-name"><b>{m.moduleName}</b>{m.moduleCode && <code>{m.moduleCode}</code>}{!(m.health === "No Data" && agg.executed > 0) && <span className={`health-badge health-${healthClass}`}>{healthLabelTH[m.health] ?? m.health}</span>}</span>
-          <span className="db-module-bar" role="img" aria-label={agg.executed > 0 ? `Pass ${pPct}% Fail ${fPct}% Blocked ${bPct}%` : "ยังไม่มีผล Execution"}>
+          <span className="db-module-bar" role="img" aria-label={agg.executed > 0 ? `Pass ${pPct}% Fail ${fPct}% Blocked ${bPct}%` : `ยังไม่มีผล Execution${agg.defects ? ` · Defect เปิดอยู่ ${agg.defects}` : ""}`}>
             {agg.executed > 0 && <><span className="pass" style={{ width: `${pPct}%` }} /><span className="fail" style={{ width: `${fPct}%` }} /><span className="blocked" style={{ width: `${bPct}%` }} /></>}
           </span>
         </span>
-        <span className="db-module-pct">{agg.executed > 0 ? <><span className="pass">Pass {pPct}%</span><span className="fail">Fail {fPct}%</span>{bPct > 0 && <span className="blocked">Blocked {bPct}%</span>}</> : <span className="none">ยังไม่มีผล</span>}</span>
+        <span className="db-module-pct">{agg.executed > 0 ? <><span className="pass">Pass {pPct}%</span><span className="fail">Fail {fPct}%</span>{bPct > 0 && <span className="blocked">Blocked {bPct}%</span>}</> : <><span className="none">ยังไม่มีผล</span>{agg.defects > 0 && <span className="defect" title={`ยังไม่มีผลทดสอบ แต่มี Defect เปิดอยู่${sub} (แจ้งเองหรือจากแหล่งอื่น)`}>Defect เปิด {agg.defects.toLocaleString()}</span>}</>}</span>
         <span className="db-module-num" title={hasSub ? `${m.testCases.toLocaleString()} ในโมดูลนี้ + ${childCases.toLocaleString()} จาก ${agg.subs} โมดูลย่อย` : undefined}><b>{agg.cases.toLocaleString()}</b><small>เคส</small></span>
         <span className={`db-module-num defects${agg.defects ? " has" : ""}`} title={`Open Defect${sub}`}><b>{agg.defects.toLocaleString()}</b><small>Defect</small></span>
         {onOpenModule && <span className="db-module-links">
@@ -306,13 +314,19 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
         <div className="db-card-head db-modules-head">
           <div>
             <h3>โมดูล</h3>
-            <p>{totalCasesAll.toLocaleString()} Test Case · {data.modules.length} โมดูล ({rootModules.length} โมดูลหลัก){moduleSort === "tree" ? " · ตัวเลขรวมโมดูลย่อย" : " · ตัวเลขของโมดูลนั้นเอง"}</p>
+            <p>{moduleSort === "tree" && moduleScope === "cycle"
+              ? <>{totalCasesAll.toLocaleString()} Test Case · {scopedModules.length} โมดูลที่มี Cycle (จากทั้งหมด {data.modules.length})</>
+              : <>{data.modules.reduce((s, m) => s + m.testCases, 0).toLocaleString()} Test Case · {data.modules.length} โมดูล ({rootModules.length} โมดูลหลัก)</>}{moduleSort === "tree" ? " · ตัวเลขรวมโมดูลย่อย" : " · ตัวเลขของโมดูลนั้นเอง"}</p>
           </div>
           <div className="db-modules-actions">
             <div className="db-segment" role="group" aria-label="มุมมองโมดูล">
               <button type="button" aria-pressed={moduleSort === "tree"} onClick={() => setModuleSort("tree")}><span className="material-symbols-outlined" aria-hidden="true">account_tree</span>ตามโครงสร้าง</button>
               <button type="button" aria-pressed={moduleSort === "defects"} onClick={() => setModuleSort("defects")} disabled={!modulesWithDefects.length}><span className="material-symbols-outlined" aria-hidden="true">bug_report</span>Defect มากสุด</button>
             </div>
+            {moduleSort === "tree" && <div className="db-segment" role="group" aria-label="ขอบเขตโมดูล">
+              <button type="button" aria-pressed={moduleScope === "cycle"} onClick={() => setModuleScope("cycle")}><span className="material-symbols-outlined" aria-hidden="true">event_repeat</span>มี Cycle</button>
+              <button type="button" aria-pressed={moduleScope === "all"} onClick={() => setModuleScope("all")}><span className="material-symbols-outlined" aria-hidden="true">apps</span>ทุกโมดูล</button>
+            </div>}
             {moduleSort === "tree" && parentIds.length > 0 && <>
               <button className="btn" type="button" onClick={() => setExpandedModules(new Set(parentIds))} aria-label="ขยายทั้งหมด" title="ขยายทั้งหมด"><span className="material-symbols-outlined" aria-hidden="true">unfold_more</span></button>
               <button className="btn" type="button" onClick={() => setExpandedModules(new Set())} aria-label="ย่อทั้งหมด" title="ย่อทั้งหมด"><span className="material-symbols-outlined" aria-hidden="true">unfold_less</span></button>
@@ -321,9 +335,14 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
         </div>
         {moduleSort === "defects"
           ? <ul className="db-module-tree" aria-label="โมดูลเรียงตาม Open Defect">{modulesWithDefects.map(m => renderModule(m, 0, true))}</ul>
-          : rootModules.length ? <ul className="db-module-tree" role="tree" aria-label="สถานะการทดสอบแต่ละโมดูล">{rootModules.map(m => renderModule(m, 0))}</ul> : <p className="muted-row">ยังไม่มีโมดูลในขอบเขตนี้</p>}
+          : scopedRoots.length ? <ul className="db-module-tree" role="tree" aria-label="สถานะการทดสอบแต่ละโมดูล">{scopedRoots.map(m => renderModule(m, 0))}</ul>
+          : rootModules.length ? <p className="muted-row">ยังไม่มีโมดูลที่อยู่ใน Test Cycle ของขอบเขตนี้ · <button type="button" className="link-btn" onClick={() => setModuleScope("all")}>แสดงทุกโมดูล ({data.modules.length})</button></p>
+          : <p className="muted-row">ยังไม่มีโมดูลในขอบเขตนี้</p>}
       </article>
-      <FollowUpList data={data} notStarted={rootModules.filter(m => { const r = rollOf(m.moduleId); return r.cases > 0 && r.executed === 0; })} />
+      {/* ยังไม่เริ่มทดสอบ = อยู่ใน Cycle แล้วแต่ยังไม่มีผล (เดิมนับทุกโมดูลที่มีเคส รวมโมดูลที่ไม่ได้ทดสอบใน Release นี้) */}
+      <FollowUpList data={data}
+        notStarted={rootModules.filter(m => { const r = rollOf(m.moduleId); return r.cycleCases > 0 && r.executed === 0; })}
+        noCycle={sortModules(data.modules.filter(m => m.requirements > 0 && !hasCycle(m)))} />
     </div>
     <FoldCard className="db-qa" title="งาน QA รายคน" subtitle={`รวม ${data.totalExecutionCount.toLocaleString()} Execution · เรียงตามจำนวน Execution ไม่ใช่การจัดอันดับผลงาน`}>
       {data.users.length ? <div className="table-wrap">

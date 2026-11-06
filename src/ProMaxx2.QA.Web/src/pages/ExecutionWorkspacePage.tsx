@@ -341,13 +341,17 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   // เดิมแสดงเคสใหม่แบบไม่มี Step ก่อน แล้ว Step/Defect ค่อยตามมา ความสูงพื้นที่ทดสอบยุบแล้วขยาย หน้าเด้ง
   // Linked Defects สลับพร้อมเคสในชุดเดียวกัน — ไม่งั้นช่วงที่ Defect ของเคสใหม่มาก่อน เคสเดิมบนจอจะแสดง Defect ของเคสใหม่
   // โหลดรายละเอียดเคสใหม่ไม่สำเร็จ = เลิกแสดงเคสเดิม (แสดงข้อความ error แทน) ไม่ให้ค้างเคสเก่าที่ยังกดแก้ผลได้แต่บันทึกไม่ได้
-  type ShownCase = { item?: ExecutionCase; defects: WorkspaceDefect[]; defectsError: string };
+  // item คง reference เดิมเมื่อเปลี่ยนแค่ Linked Defects (เช่น เพิ่งสร้าง Defect จาก Step) — effect คืนค่าผลที่บันทึกล่าสุดผูกกับ selected
+  // ถ้าสร้าง item ใหม่ ผล Step ที่กรอกแต่ยังไม่บันทึกจะถูกล้างทิ้งหลังบันทึก Defect
+  type ShownCase = { item?: ExecutionCase; base?: ExecutionCase; detail?: ExecutionCase; defects: WorkspaceDefect[]; defectsError: string };
   const shownCaseRef = useRef<ShownCase>({ defects: [], defectsError: "" });
   const shown = useMemo(
     () => {
       const base = workspace?.cases.find((x) => x.testCycleCaseId === selectedId);
       if (base && caseDetail && caseDetail.testCycleCaseId === selectedId && linkedDefectsFor === base.testCaseId) {
-        shownCaseRef.current = { item: { ...base, ...caseDetail }, defects: linkedDefects, defectsError: linkedDefectsError };
+        const prev = shownCaseRef.current;
+        const item = prev.item && prev.base === base && prev.detail === caseDetail ? prev.item : { ...base, ...caseDetail };
+        shownCaseRef.current = { item, base, detail: caseDetail, defects: linkedDefects, defectsError: linkedDefectsError };
       } else if (!workspace?.cases.length || caseDetailLoadError) {
         shownCaseRef.current = { defects: [], defectsError: "" };
       }
@@ -427,16 +431,28 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
   // จำนวน Test Cycle ต่อ Module นับจาก Cycle ที่เลือกได้จริง (InProgress + Project/Release/Build + เฉพาะฉัน) —
   // ตัวเลือก Module แสดงเฉพาะที่มี Cycle พร้อมตัวเลขนี้ (เดิมแสดงทุก Module ของ Project เลือกแล้วอาจไม่เหลือ Cycle เลย)
   // ใช้ modules ของแต่ละ Cycle (Module ของ Test Case ใน Cycle) — เงื่อนไขเดียวกับ filter moduleId ของ API
+  // นับขึ้นไปถึง Module หลักทุกชั้น (ไม่ซ้ำ Cycle) — เดิมนับเฉพาะ Module ที่มี Cycle เอง Module หลักที่ไม่มี Cycle ของตัวเองจึงหายจากรายการ
+  // และ Module ย่อยแสดงเป็นระดับบนสุดจนไม่รู้ว่าอยู่ใต้ Module หลักไหน; เลือก Module หลัก = Cycle ของ Module ย่อยทั้งหมด
+  const moduleParent = useMemo(() => new Map(cycleModules.map((m) => [m.moduleId, m.parentModuleId || undefined])), [cycleModules]);
+  const moduleAndAncestors = useCallback((moduleId: string) => {
+    const ids: string[] = [];
+    for (let id: string | undefined = moduleId; id && !ids.includes(id); id = moduleParent.get(id)) ids.push(id);
+    return ids;
+  }, [moduleParent]);
   const moduleCycleCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    contextCycles.forEach((c) => new Set((c.modules ?? []).map((m) => m.moduleId)).forEach((id) => counts.set(id, (counts.get(id) ?? 0) + 1)));
-    return counts;
-  }, [contextCycles]);
+    const cyclesByModule = new Map<string, Set<string>>();
+    contextCycles.forEach((c) => (c.modules ?? []).forEach((m) => moduleAndAncestors(m.moduleId).forEach((id) => {
+      const set = cyclesByModule.get(id) ?? new Set<string>();
+      set.add(c.testCycleId);
+      cyclesByModule.set(id, set);
+    })));
+    return new Map([...cyclesByModule].map(([id, set]) => [id, set.size]));
+  }, [contextCycles, moduleAndAncestors]);
   const moduleOptions = useMemo(() => cycleModules.filter((m) => moduleCycleCounts.has(m.moduleId)), [cycleModules, moduleCycleCounts]);
   // กรองตาม Module ในหน้าเว็บ (Cycle InProgress โหลดมาครบแล้ว) — เปลี่ยน Module ไม่ต้องรอ API
   const filteredCycles = useMemo(() => !cycleModuleFilter ? []
     : cycleModuleFilter === allModules ? contextCycles
-    : contextCycles.filter((c) => c.modules?.some((m) => m.moduleId === cycleModuleFilter)), [contextCycles, cycleModuleFilter]);
+    : contextCycles.filter((c) => c.modules?.some((m) => moduleAndAncestors(m.moduleId).includes(cycleModuleFilter))), [contextCycles, cycleModuleFilter, moduleAndAncestors]);
   // Module ที่เลือกไว้ไม่มี Cycle แล้ว (เปลี่ยน Release/Build หรือเปิด "เฉพาะฉัน") → กลับเป็นทุก Module ไม่ค้างตัวเลือกที่ไม่มีในรายการ
   useEffect(() => { if (cyclesLoaded && cycleModuleFilter && cycleModuleFilter !== allModules && !moduleCycleCounts.has(cycleModuleFilter)) setCycleModuleFilter(""); }, [cyclesLoaded, cycleModuleFilter, moduleCycleCounts]);
   const chooseModule = (value: string) => {
@@ -571,6 +587,8 @@ export function ExecutionWorkspacePage({ contextProjectId, contextReleaseId, con
       else if (result.createdDefectCode && result.regressionOfDefectCode) notify(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ — ปัญหาเดิมของ ${result.regressionOfDefectCode} ที่ปิดไปแล้วกลับมาอีก`, "success");
       else if (result.createdDefectCode) notify(`ระบบสร้าง Defect ${result.createdDefectCode} ให้อัตโนมัติ เนื่องจากผลเป็น Fail`, "success");
       else if (result.existingDefectCode && result.existingDefectStatus === "Resolved") notify(`ไม่ได้ Reopen ${result.existingDefectCode} — Dev แก้ไว้ใน Build ที่ใหม่กว่า Build ของ Cycle นี้ ให้ตรวจซ้ำบน Fix Build`, "error");
+      // Defect ที่เพิ่งสร้างจาก Step ของเคสนี้ = ตั้งใจให้ไม่สร้างซ้ำ ไม่ใช่ข้อผิดพลาด
+      else if (result.existingDefectCode && Object.values(stepDefectCodes).includes(result.existingDefectCode)) notify(`บันทึกผลแล้ว — ใช้ Defect ${result.existingDefectCode} ที่สร้างจาก Step ไว้ ไม่สร้างซ้ำ`, "success");
       else if (result.existingDefectCode) notify(`ไม่ได้สร้าง Defect ใหม่ให้อัตโนมัติ เนื่องจากมี Defect ${result.existingDefectCode} ที่ยังเปิดอยู่ผูกกับ Test Case นี้อยู่แล้ว`, "error");
       else if (result.defectAutoCreateError) notify(`คำเตือน: ${result.defectAutoCreateError}`, "error");
       invalidateCase(selected.testCycleCaseId);

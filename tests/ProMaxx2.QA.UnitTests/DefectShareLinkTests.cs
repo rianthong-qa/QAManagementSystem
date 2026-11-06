@@ -95,6 +95,13 @@ public sealed class DefectShareLinkTests
   Assert.DoesNotContain("ดูรายละเอียด Defect และรูปภาพ",EmailTemplates.DefectAssignedViaCrm("DEF-1","t","High","Open","P",null,null,null,null,null,"Dev","5640","BHD1","https://crm/x"));
   Assert.Contains("href=\"https://x/?d=a&amp;b\"",EmailTemplates.ShareButton("https://x/?d=a&b"));
  }
- [Fact]public void Short_description_keeps_full_text_and_appends_link(){var d=CrmSendToCrmService.BuildCrmDescription("สั้น","https://x/?d=abc");Assert.StartsWith("สั้น",d);Assert.EndsWith("https://x/?d=abc",d);Assert.DoesNotContain("ตัดข้อความ",d);}
- [Fact]public void Long_description_is_cut_but_link_survives_within_crm_limit(){var url="https://promaxx2.qahub.store/?d=Ab3kZ9xQ";var d=CrmSendToCrmService.BuildCrmDescription(new string('ก',2000),url);Assert.Equal(1000,d.Length);Assert.EndsWith(url,d);Assert.Contains("[...ตัดข้อความ]",d);}
+ [Fact]public void Crm_images_keep_order_and_skip_formats_crm_rejects()
+ {
+  // รูปประกอบส่งเป็นไฟล์แนบของ Ticket — CRM รับเฉพาะ .jpg/.jpeg/.png ไฟล์ละ ≤5 MB; รูปในคอมเมนต์ไม่ถูกเลือกตั้งแต่ query
+  var defectId=Guid.NewGuid();
+  DefectAttachment Img(string name,long size)=>new(Guid.NewGuid(),defectId,name,$"x_{name}",size,"image/png",null,DateTime.UtcNow);
+  var (send,skipped)=CrmSendToCrmService.PickCrmImages([Img("a.png",1000),Img("b.webp",1000),Img("c.JPG",2000),Img("big.png",CrmAttachmentRules.MaxFileBytes+1)]);
+  Assert.Equal(["a.png","c.JPG"],send.Select(x=>x.FileName));
+  Assert.Equal(2,skipped);
+ }
 }

@@ -504,3 +504,9 @@
 .dj-similar[open] > summary { border-bottom: 1px solid color-mix(in srgb, var(--yellow) 30%, var(--line)); }
 .dj-similar > ul { max-height: 180px; overflow-y: auto; padding: 8px 10px 10px; }
 @media (max-width: 760px) { .dj-similar > summary { min-height: 44px; } }
+
+/* Dev ที่รับงานใน CRM ในแถวผู้รับผิดชอบ (2026-11-06) — Dev ส่วนใหญ่ไม่มีบัญชี QA Hub จึงแสดงคู่กับช่องผู้รับผิดชอบ ไม่บันทึกลงช่องนั้น */
+.dj-crm-dev { display: flex; align-items: flex-start; gap: 6px; min-width: 0; padding: 2px 0; }
+.dj-crm-dev .dj-person { min-width: 0; }
+.dj-crm-dev .dj-person > span:last-child { white-space: normal; overflow-wrap: anywhere; } /* ชื่อ + รหัสห้ามถูกตัด — แถบข้างแคบให้ขึ้นบรรทัดใหม่ */
+.dj-crm-tag { flex: none; padding: 0 6px; border-radius: 4px; background: #eef3ff; color: var(--primary); font-size: 10px; font-weight: 800; letter-spacing: .03em; line-height: 18px; }

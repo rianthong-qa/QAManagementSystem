@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Domain.Defects;
+using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Projects;
 using ProMaxx2.QA.Domain.Requirements;
 using ProMaxx2.QA.Domain.TestManagement;
@@ -31,6 +32,49 @@ public sealed class DashboardHiddenModuleTests
         Assert.Equal(1, summary.TotalTestCaseCount);
         Assert.Equal(2, summary.TotalDefects);
         Assert.Equal([visible.ModuleId], summary.Modules.Select(x => x.ModuleId));
+    }
+
+    [Fact]
+    public async Task Module_rows_count_cycle_cases_in_scope()
+    {
+        // หน้า Dashboard ใช้ CycleCases แยกโมดูลที่มี Cycle ในขอบเขต Release/Build ออกจากโมดูลที่ไม่ได้ทดสอบ
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var seed = await AutomationTestFixtures.SeedBaselineAsync(db);
+        var idle = new ProductModule(seed.Project.ProjectId, "MOD-IDLE", "Idle", null, null, null, null);
+        db.Modules.Add(idle);
+        var cycle = new TestCycle(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, seed.Environment.TestEnvironmentId, null, "CYC-001", "Cycle", null, null, null, null, null, null);
+        db.TestCycles.Add(cycle);
+        db.TestCycleCases.Add(new TestCycleCase(cycle.TestCycleId, seed.TestCase.TestCaseId, seed.TestCase.RevisionNo, "P1", 1));
+        await db.SaveChangesAsync();
+
+        var summary = await new DashboardRepository(db, new ProjectAccessContext()).GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, null, CancellationToken.None);
+
+        Assert.Equal(1, summary.Modules.Single(x => x.ModuleId == seed.Module.ModuleId).CycleCases);
+        Assert.Equal(0, summary.Modules.Single(x => x.ModuleId == idle.ModuleId).CycleCases);
+    }
+
+    [Fact]
+    public async Task Module_test_case_count_follows_release_scope()
+    {
+        // เลือก Release = นับเฉพาะ Test Case ที่อยู่ใน Cycle (ไม่ซ้ำแม้อยู่หลาย Cycle) ให้ตรงกับตัวเลขรวมของหน้า; ไม่เลือก = ทั้ง Project
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var seed = await AutomationTestFixtures.SeedBaselineAsync(db);
+        db.TestCases.Add(new TestCase(seed.Project.ProjectId, seed.Module.ModuleId, "TC-SALE-900", "Not planned", null, null, "P1", null, false, null, [new TestStepInput(1, "Action", null, "Expected")], null));
+        foreach (var code in new[] { "CYC-001", "CYC-002" })
+        {
+            var cycle = new TestCycle(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, seed.Environment.TestEnvironmentId, null, code, code, null, null, null, null, null, null);
+            db.TestCycles.Add(cycle);
+            db.TestCycleCases.Add(new TestCycleCase(cycle.TestCycleId, seed.TestCase.TestCaseId, seed.TestCase.RevisionNo, "P1", 1));
+        }
+        await db.SaveChangesAsync();
+        var repository = new DashboardRepository(db, new ProjectAccessContext());
+
+        var byRelease = await repository.GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, null, CancellationToken.None);
+        var byProject = await repository.GetAsync(seed.Project.ProjectId, null, null, CancellationToken.None);
+
+        Assert.Equal(1, byRelease.Modules.Single(x => x.ModuleId == seed.Module.ModuleId).TestCases);
+        Assert.Equal(byRelease.TotalTestCaseCount, byRelease.Modules.Sum(x => x.TestCases));
+        Assert.Equal(2, byProject.Modules.Single(x => x.ModuleId == seed.Module.ModuleId).TestCases);
     }
 
     [Fact]

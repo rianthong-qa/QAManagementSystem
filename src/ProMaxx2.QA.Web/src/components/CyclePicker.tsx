@@ -4,7 +4,7 @@ import { isCycleFullyExecuted } from "../shared/cycles";
 import "./CyclePicker.css";
 
 /** ช่องเลือก Test Cycle แบบค้นหาได้ (แทน <select> ที่มีหลายร้อยรายการเรียงยาว) — จัดกลุ่มตาม Module แรกของ Cycle,
- * ในกลุ่มเรียงรหัสใหม่ → เก่า, Cycle ที่ทดสอบครบแล้ว (100%) รวมเป็นกลุ่ม "ทดสอบครบแล้ว" ไว้ท้ายสุด,
+ * ในกลุ่มเรียงรหัสน้อย → มาก, Cycle ที่ทดสอบครบแล้ว (100%) รวมเป็นกลุ่ม "ทดสอบครบแล้ว" ไว้ท้ายสุด,
  * แต่ละรายการแสดงรหัส/ชื่อ/Release·Build·Environment และความคืบหน้า
  * คีย์บอร์ด: พิมพ์เพื่อค้นหา, ↑/↓ เลื่อน, Enter เลือก, Esc ปิด (ARIA combobox + listbox) */
 export function CyclePicker({ cycles, value, onChange, onOpen, placeholder = "เลือก Test Cycle", label = "Test Cycle", disabled }: {
@@ -39,11 +39,11 @@ export function CyclePicker({ cycles, value, onChange, onOpen, placeholder = "�
       const key = x.modules?.[0]?.moduleName ?? "ไม่ระบุ Module";
       byModule.set(key, [...(byModule.get(key) ?? []), x]);
     }
-    const newestFirst = (items: TestCycleItem[]) => items.sort((a, b) => b.cycleCode.localeCompare(a.cycleCode, undefined, { numeric: true }));
+    const byCode = (items: TestCycleItem[]) => items.sort((a, b) => a.cycleCode.localeCompare(b.cycleCode, undefined, { numeric: true }));
     const active = [...byModule.entries()]
       .sort(([a], [b]) => a.localeCompare(b, "th"))
-      .map(([name, items]) => ({ name, done: false, items: newestFirst(items) }));
-    return done.length ? [...active, { name: "ทดสอบครบแล้ว — รอปิด Cycle", done: true, items: newestFirst(done) }] : active;
+      .map(([name, items]) => ({ name, done: false, items: byCode(items) }));
+    return done.length ? [...active, { name: "ทดสอบครบแล้ว — รอปิด Cycle", done: true, items: byCode(done) }] : active;
   }, [cycles, query]);
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 

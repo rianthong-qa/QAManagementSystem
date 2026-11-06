@@ -1,6 +1,6 @@
 namespace ProMaxx2.QA.Application.Dashboard;
 
-public sealed record DashboardModuleHealth(Guid ModuleId,Guid? ParentModuleId,string ModuleCode,string ModuleName,int SortOrder,int Requirements,int CoveredRequirements,int TestCases,int Executed,int Passed,int Failed,int Blocked,decimal CoveragePercent,decimal ExecutionPercent,decimal PassRate,string Health,int OpenDefects = 0);
+public sealed record DashboardModuleHealth(Guid ModuleId,Guid? ParentModuleId,string ModuleCode,string ModuleName,int SortOrder,int Requirements,int CoveredRequirements,int TestCases,int Executed,int Passed,int Failed,int Blocked,decimal CoveragePercent,decimal ExecutionPercent,decimal PassRate,string Health,int OpenDefects = 0,int CycleCases = 0);
 public sealed record DashboardUserPerformance(Guid UserId,string DisplayName,int Executions,int Passed,int Failed,int Blocked,decimal PassRate,DateTime?LastExecutedAt);
 public sealed record DashboardStatusSlice(string Status,int Count,string Color);
 public sealed record DashboardSeveritySlice(string Severity,int Count,string Color);
