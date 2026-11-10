@@ -661,3 +661,160 @@ details.db-fold[open] .db-fold-icon { transform: rotate(180deg); }
 @media (max-width: 760px) {
   .db-results-figures { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ===== มุมมองผู้บริหาร / Dev (pages/DashboardViews.tsx, prefix dbv-) — 2026-11-10 ===== */
+.dbv-switch { display: flex; justify-content: flex-end; }
+.executive-dashboard .dbv-link { display: inline; padding: 0; border: 0; background: none; color: var(--primary); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.executive-dashboard .dbv-link:hover { text-decoration: underline; }
+.executive-dashboard .dbv-link:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); border-radius: 4px; }
+.dbv-grid { display: grid; gap: 16px; min-width: 0; }
+.dbv-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dbv-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.dbv-grid.kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.dbv-grid > .card, .dbv-stack > .card { min-width: 0; padding: 20px; }
+.dbv-stack { display: grid; gap: 16px; min-width: 0; }
+
+/* คำตัดสิน + เกณฑ์แบบ Quality Gate (ค่าจริง เทียบ เกณฑ์ / ยังวัดไม่ได้ = เทา) */
+.executive-dashboard .card.dbv-verdict { --tone: var(--muted); padding: 0; overflow: hidden; border-top: 4px solid var(--tone); }
+.executive-dashboard .card.dbv-verdict.decision-go { --tone: var(--green); }
+.executive-dashboard .card.dbv-verdict.decision-no-go { --tone: var(--red); }
+.executive-dashboard .card.dbv-verdict.decision-conditional-go { --tone: var(--warning-text); }
+.dbv-verdict-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+.dbv-verdict-main { display: grid; align-content: start; gap: 8px; padding: 22px 24px; background: color-mix(in srgb, var(--tone) 7%, var(--card)); }
+.dbv-verdict-main > small { color: var(--muted); font-size: 12px; }
+.dbv-verdict-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0; color: var(--tone); font-size: 28px; font-weight: 700; line-height: 1.2; }
+.dbv-verdict-title .material-symbols-outlined { font-size: 34px; }
+.dbv-code { padding: 2px 8px; border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent); border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.dbv-verdict-reason { margin: 0; color: var(--text); font-size: 15px; line-height: 1.6; }
+.dbv-todo { margin-top: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 13px; }
+.dbv-todo b { display: block; margin-bottom: 4px; }
+.dbv-todo ul { display: grid; gap: 2px; margin: 0; padding-left: 18px; color: var(--text); line-height: 1.6; }
+.dbv-gate { padding: 18px 24px; }
+.dbv-gate-head { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+.dbv-gate ul { margin: 0; padding: 0; list-style: none; }
+.dbv-gate li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.dbv-gate li:first-child { border-top: 0; }
+.dbv-gate li .material-symbols-outlined { font-size: 22px; }
+.dbv-gate li.is-pass .material-symbols-outlined { color: var(--green); }
+.dbv-gate li.is-fail .material-symbols-outlined, .dbv-gate li.is-fail b { color: var(--red); }
+.dbv-gate li.is-na .material-symbols-outlined, .dbv-gate li.is-na b, .dbv-gate li.is-na .dbv-gate-label { color: var(--muted); }
+.dbv-gate-label { display: grid; gap: 1px; font-size: 14px; font-weight: 500; }
+.dbv-gate-label small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.dbv-gate li b { font-size: 16px; white-space: nowrap; }
+
+/* ตัวเลขหลัก */
+.dbv-kpi { display: grid; align-content: start; gap: 4px; }
+.dbv-kpi > small { color: var(--muted); font-size: 12px; }
+.dbv-big { margin: 0; color: var(--text); font-size: 32px; font-weight: 700; line-height: 1.15; }
+.dbv-kpi.small .dbv-big { font-size: 26px; }
+.dbv-big.na { color: var(--muted); }
+.dbv-sub { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+.dbv-more { margin: 8px 0 0; font-size: 13px; }
+.dbv-bar { display: flex; height: 12px; overflow: hidden; border-radius: 999px; background: var(--bg); }
+.dbv-bar > span { height: 100%; }
+.dbv-bar .empty { width: 100%; background: var(--line); }
+.dbv-bar .sev-critical { background: var(--red); }
+.dbv-bar .sev-high { background: var(--yellow); }
+.dbv-bar .sev-medium { background: var(--info); }
+.dbv-bar .sev-low { background: var(--muted); }
+.dbv-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; padding: 0; list-style: none; color: var(--text); font-size: 12px; }
+.dbv-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 3px; vertical-align: -1px; }
+.dbv-legend i.in, .dbv-trend i.in { background: var(--yellow); }
+.dbv-legend i.out, .dbv-trend i.out { background: var(--green); }
+.dbv-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 6px 0 0; }
+.dbv-stats div { display: flex; flex-direction: column-reverse; gap: 2px; }
+.dbv-stats dt { color: var(--muted); font-size: 12px; }
+.dbv-stats dd { margin: 0; color: var(--text); font-size: 24px; font-weight: 700; }
+.dbv-stats dd small { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+/* แนวโน้ม 30 วัน */
+.dbv-trend-sum { margin: 0 0 10px; color: var(--text); font-size: 13px; }
+.dbv-warn { color: var(--warning-text); font-weight: 600; }
+.dbv-trend { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 3px; height: 160px; padding-bottom: 2px; border-bottom: 1px solid var(--line); }
+.dbv-trend-day { display: flex; align-items: flex-end; gap: 1px; height: 100%; }
+.dbv-trend i { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; }
+.dbv-trend-axis { display: flex; justify-content: space-between; margin-top: 4px; color: var(--muted); font-size: 11px; }
+
+/* ความเสี่ยงหลัก */
+.dbv-risks { margin: 0; padding: 0; list-style: none; }
+.dbv-risks li { display: grid; grid-template-columns: minmax(56px, auto) minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.dbv-risks li:first-child { border-top: 0; }
+.dbv-risks li > b { color: var(--text); font-size: 20px; }
+.dbv-risks li.tone-danger > b { color: var(--red); }
+.dbv-risks li.tone-warning > b { color: var(--warning-text); }
+.dbv-risks li.tone-muted > b { color: var(--muted); }
+.dbv-risks li > span { display: grid; gap: 1px; font-size: 14px; font-weight: 500; }
+.dbv-risks small { color: var(--muted); font-size: 12px; font-weight: 400; }
+
+/* โมดูลที่มี Defect ค้างมากสุด */
+.dbv-modules { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.dbv-modules li { display: grid; grid-template-columns: minmax(120px, 240px) minmax(0, 1fr) 44px; align-items: center; gap: 12px; font-size: 14px; }
+.dbv-modules li b { text-align: right; }
+.dbv-module-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbv-module-track { height: 10px; overflow: hidden; border-radius: 999px; background: var(--bg); }
+.dbv-module-track span { display: block; height: 100%; border-radius: 999px; background: var(--yellow); }
+.executive-dashboard .card.dbv-glossary { padding: 16px 20px; font-size: 13px; }
+.dbv-glossary summary { min-height: 24px; font-weight: 600; cursor: pointer; }
+.dbv-glossary ul { margin: 10px 0 0; padding-left: 20px; color: var(--muted); line-height: 1.8; }
+.dbv-glossary b { color: var(--text); }
+
+/* Dev: ส่วนหัว + ตารางโมดูล × ความรุนแรง + รายการ */
+.executive-dashboard .card.dbv-devhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 10px; padding: 0 20px 0 0; overflow: hidden; }
+.dbv-devhead .db-hero-scope { flex: 1 1 520px; border-bottom: 0; }
+.dbv-devhead .db-segment { margin: 10px 0 10px 20px; }
+.dbv-matrix { width: 100%; border-collapse: collapse; font-size: 14px; }
+.dbv-matrix th { color: var(--muted); font-size: 12px; font-weight: 600; background: var(--bg); border-bottom: 1px solid var(--line); }
+.dbv-matrix td { border-bottom: 1px solid var(--line); }
+.dbv-matrix th.dbv-matrix-name { text-align: left; }
+.dbv-matrix th, .dbv-matrix td { padding: 10px 12px; }
+.dbv-matrix .num { text-align: right; }
+.dbv-matrix tfoot td { border-top: 2px solid var(--line); background: var(--bg); }
+.dbv-cell, .dbv-sev { display: inline-block; border-radius: 6px; font-weight: 600; white-space: nowrap; }
+.dbv-cell { min-width: 28px; padding: 1px 8px; text-align: center; }
+.dbv-sev { padding: 2px 8px; font-size: 12px; }
+.dbv-cell.sev-critical, .dbv-sev.sev-critical { background: color-mix(in srgb, var(--red) 14%, var(--card)); color: var(--red); }
+.dbv-cell.sev-high, .dbv-sev.sev-high { background: color-mix(in srgb, var(--yellow) 18%, var(--card)); color: var(--warning-text); }
+.dbv-cell.sev-medium, .dbv-sev.sev-medium { background: color-mix(in srgb, var(--info) 12%, var(--card)); color: var(--info); }
+.dbv-cell.sev-low, .dbv-sev.sev-low { background: var(--bg); color: var(--text); }
+.dbv-zero, .dbv-matrix .muted { color: var(--muted); }
+.dbv-items { margin: 0; padding: 0; list-style: none; }
+.dbv-items li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.dbv-items li:first-child { border-top: 0; }
+.dbv-item-body { display: grid; gap: 2px; min-width: 0; }
+.dbv-item-code { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.dbv-item-title { overflow: hidden; color: var(--text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.dbv-item-body small, .dbv-age { color: var(--muted); font-size: 12px; }
+.dbv-age { white-space: nowrap; }
+.dbv-chip { padding: 1px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); font-size: 11px; white-space: nowrap; }
+.dbv-chip.new { background: color-mix(in srgb, var(--primary) 12%, var(--card)); color: var(--primary); font-weight: 600; }
+.dbv-age-chart { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; height: 140px; }
+.dbv-age-chart span { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; text-align: center; }
+.dbv-age-chart b { font-size: 14px; }
+.dbv-age-chart i { align-self: end; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--info); }
+.dbv-age-chart .age-2 i { background: var(--yellow); }
+.dbv-age-chart .age-3 i { background: var(--red); }
+.dbv-age-chart small { padding-top: 4px; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 1100px) {
+  .dbv-grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .dbv-verdict-body, .dbv-grid.two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .dbv-switch { justify-content: stretch; }
+  .dbv-grid.three { grid-template-columns: minmax(0, 1fr); }
+  .dbv-grid.kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dbv-verdict-main, .dbv-gate { padding: 16px; }
+  .dbv-verdict-title { font-size: 22px; }
+  .dbv-trend { gap: 1px; height: 120px; }
+  .dbv-modules li { grid-template-columns: minmax(0, 1fr) 36px; }
+  .dbv-module-track { grid-column: 1 / -1; grid-row: 2; }
+  .executive-dashboard .card.dbv-devhead { padding: 0 0 12px; }
+  .dbv-devhead .db-segment { margin: 0 14px; }
+  .dbv-items li { grid-template-columns: minmax(0, 1fr) auto; }
+  .dbv-items .dbv-sev { grid-column: 1 / -1; justify-self: start; }
+  .dbv-matrix { font-size: 13px; }
+  .dbv-matrix th, .dbv-matrix td { padding: 8px 6px; }
+  .dbv-cell { min-width: 22px; padding: 1px 4px; }
+}

@@ -735,6 +735,14 @@ Response:
 }
 ```
 
+### GET `/dashboard/defect-insights?projectId=&releaseId=&buildId=&mine=` (เพิ่ม 2026-11-10)
+
+ข้อมูล Defect ของมุมมองผู้บริหาร/Dev ในหน้า Dashboard — สิทธิ์ `ProjectView`; ขอบเขตเดียวกับการ์ด Defect ของ `/dashboard/summary` (เลือก Build = เจอใน Build นี้หรือ Build ก่อนหน้าของ Release, ไม่รวม Module ที่ซ่อน); `mine=true` = เฉพาะ Defect ที่ผู้ใช้เป็นผู้รับผิดชอบ
+
+ตอบ `DashboardDefectInsights`: `open` (Open/In Progress/Resolved), `unresolved`, `inProgress`, `awaitingRetest`, จำนวนตามความรุนแรง, `newInBuild`/`newInBuildHigh` (เจอใน Build ที่เลือก ทุกสถานะ; ไม่เลือก Build = null), `closed`, `rejected`, `reopened`, `crmLinked`, `averageAgeDays` + `ageBuckets` [≤3, 4–7, 8–14, >14 วัน] ของที่ยังไม่ได้แก้, `modules` (โมดูล × ความรุนแรง), `trend` 30 วัน (เวลาไทย: `created` ตามวันที่แจ้ง, `closed` ตาม `ResolvedAt ?? ClosedAt`), `attention` (≤ 8: พบใหม่ใน Build นี้ → ความรุนแรง → ค้างนานสุด) และ `awaitingRetestItems` (≤ 10 Resolved รอนานสุด)
+
+`GET /dashboard/shared/{code}/defect-insights` (anonymous ตามลิงก์แชร์) คืนตัวเลขชุดเดียวกันแต่ `attention`/`awaitingRetestItems` ว่างเสมอ — ไม่ส่งชื่อเรื่อง Defect ให้คนที่ถือลิงก์; `/dashboard/summary` เพิ่ม `defectBlockersWithoutRisk`/`defectBlockersWithRisk` (ชุดเดียวกับคำตัดสิน)
+
 ### GET `/dashboard/module-health`
 ### GET `/dashboard/defect-trend`
 ### GET `/dashboard/tester-workload`

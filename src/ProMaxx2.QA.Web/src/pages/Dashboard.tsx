@@ -1,8 +1,9 @@
 import { useState, useEffect, type ReactElement, type ReactNode, Fragment as _F } from "react";
 import { apiUrl, isAbortError } from "../api";
 import { formatThaiDateTime } from "../dateTime";
+import { DevView, ExecutiveView, type DefectInsights } from "./DashboardViews";
 
-type DashboardSummary = {
+export type DashboardSummary = {
   totalRequirements: number; coveredRequirements: number; requirementCoverage: number;
   totalCases: number; executedCases: number; executionProgress: number; passedCases: number; passRate: number;
   openP0: number; openP1: number; overallScore?: number; totalDefects: number; openDefects: number; criticalDefects: number; highDefects: number; defectQuality: number; recommendedDecision: string;
@@ -15,6 +16,10 @@ type DashboardSummary = {
   releaseCode?: string; releaseVersion?: string; buildNumber?: string;
   /** เหตุผลของคำตัดสินจาก ReleaseGate (กฎเดียวกับ Release Sign-off) — null = ไม่มีข้อมูลให้ประเมิน */
   decisionReason?: string | null;
+  /** เลือก Build = Defect ที่เจอใน Build นี้ (Found in Build) ทุกสถานะ; ไม่เลือก Build = null — การ์ด Defect นับ "ค้าง ณ Build นี้" (รวม Build ก่อนหน้า) */
+  newDefectsInBuild?: number | null;
+  /** High ค้าง/รอตรวจซ้ำที่ยังไม่มี / มี Risk Acceptance (ทั้ง Release) — ชุดเดียวกับคำตัดสิน */
+  defectBlockersWithoutRisk?: number; defectBlockersWithRisk?: number;
 };
 type Module = DashboardSummary["modules"][number];
 
@@ -80,8 +85,12 @@ function DefectSeverityChart({ data }: { data: DashboardSummary }) {
   const openTotal = sevCounts.reduce((s, x) => s + x.count, 0);
   const maxSev = Math.max(1, ...sevCounts.map(x => x.count));
   const closed = Math.max(0, data.totalDefects - openTotal);
+  // เลือก Build: นับ Defect ที่ค้าง ณ Build นี้ (เจอใน Build นี้หรือ Build ก่อนหน้าของ Release) แบบ Jira/TestRail + ตัวเลขรอง "พบใหม่ใน Build นี้"
+  const byBuild = data.newDefectsInBuild != null;
+  const subtitle = `เปิดอยู่ ${openTotal.toLocaleString()} จากทั้งหมด ${data.totalDefects.toLocaleString()} รายการ`
+    + (byBuild ? ` · รวม Build ก่อนหน้า · พบใหม่ใน Build นี้ ${(data.newDefectsInBuild ?? 0).toLocaleString()}` : "");
 
-  return <FoldCard className="db-defects" title="Defect ที่เปิดอยู่ตามความรุนแรง" subtitle={`เปิดอยู่ ${openTotal.toLocaleString()} จากทั้งหมด ${data.totalDefects.toLocaleString()} รายการ`}>
+  return <FoldCard className="db-defects" title="Defect ที่เปิดอยู่ตามความรุนแรง" subtitle={subtitle}>
     {openTotal === 0 ? <p className="muted-row">ไม่มี Defect ที่เปิดอยู่</p> : <ul className="db-sev">
       {sevCounts.map(x => <li key={x.sev}>
         <span className="db-sev-label">{x.sev}</span>
@@ -126,15 +135,27 @@ function DashboardSkeleton() {
 
 /** ปลายทางเมื่อกดโมดูล — ไม่ส่งมา (หน้าลิงก์แชร์ที่อ่านอย่างเดียว) = กดไม่ได้ */
 type OpenModule = (moduleId: string, target: "defects" | "test-cases") => void;
+/** มุมมองของ Dashboard: ผู้บริหาร / Dev / QA Lead (หน้าเดิม) — ลิงก์แชร์มีเฉพาะผู้บริหารและ QA Lead (ไม่ส่งรายการ Defect ให้คนนอก) */
+type DashboardView = "executive" | "dev" | "qa";
+const viewKey = "qa.dashboardView";
+const readView = (): DashboardView => { try { const v = localStorage.getItem(viewKey); return v === "executive" || v === "dev" ? v : "qa"; } catch { return "qa"; } };
 
 const healthLabelTH: Record<string, string> = { Healthy: "ปกติ", Watch: "เฝ้าระวัง", Risk: "เสี่ยง", "No Data": "ไม่มีข้อมูล" };
 const decisionInfo: Record<string, { icon: string; label: string }> = {
   GO: { icon: "check_circle", label: "พร้อมปล่อย" }, "NO-GO": { icon: "cancel", label: "ยังไม่พร้อมปล่อย" },
   "CONDITIONAL GO": { icon: "error", label: "ปล่อยได้แบบมีเงื่อนไข" }, "NO DATA": { icon: "help", label: "ยังประเมินไม่ได้" },
 };
-export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, projectName, releaseLabel, buildLabel, onOpenModule: onOpenModuleProp }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string; projectName?: string; releaseLabel?: string; buildLabel?: string; onOpenModule?: OpenModule }) {
+export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken, projectName, releaseLabel, buildLabel, onOpenModule: onOpenModuleProp, onOpenDefect: onOpenDefectProp, onOpenDefects: onOpenDefectsProp }: { projectId?: string; releaseId?: string; buildId?: string; shareCode?: string; shareToken?: string; projectName?: string; releaseLabel?: string; buildLabel?: string; onOpenModule?: OpenModule; onOpenDefect?: (defectId: string) => void; onOpenDefects?: () => void }) {
   // หน้าลิงก์แชร์เป็นอ่านอย่างเดียว — ไม่มีหน้าปลายทางให้ไป จึงปิดการกดแม้ผู้เรียกจะส่งมา
-  const onOpenModule = shareCode || shareToken ? undefined : onOpenModuleProp;
+  const shared = Boolean(shareCode || shareToken);
+  const onOpenModule = shared ? undefined : onOpenModuleProp;
+  const onOpenDefect = shared ? undefined : onOpenDefectProp;
+  const onOpenDefects = shared ? undefined : onOpenDefectsProp;
+  // ลิงก์แชร์เปิดที่มุมมองผู้บริหารเสมอ; ในแอปจำมุมมองล่าสุดของผู้ใช้ (ค่าเริ่มต้น QA Lead = หน้าเดิม)
+  const [view, setViewState] = useState<DashboardView>(() => shared ? "executive" : readView());
+  const setView = (next: DashboardView) => { setViewState(next); if (!shared) { try { localStorage.setItem(viewKey, next); } catch { /* storage ใช้ไม่ได้ — จำเฉพาะหน้านี้ */ } } };
+  const [mine, setMine] = useState(false);
+  const [insights, setInsights] = useState<DefectInsights | null>(null), [insightsError, setInsightsError] = useState("");
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [moduleSort, setModuleSort] = useState<"tree" | "defects">("tree");
   // ค่าเริ่มต้นแสดงเฉพาะโมดูลที่มีเคสใน Test Cycle ของขอบเขต Project/Release/Build (โมดูลแม่ของโมดูลเหล่านั้นแสดงด้วย) — สลับดูทุกโมดูลได้
@@ -159,6 +180,23 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
     return () => ctrl.abort();
     // scope ใช้แค่เทียบว่าเปลี่ยนขอบเขตหรือไม่ — ไม่ต้องยิงซ้ำเมื่อ scope ถูกตั้งค่า
   }, [projectId, releaseId, buildId, shareCode, shareToken, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ข้อมูล Defect ของมุมมองผู้บริหาร/Dev โหลดแยกเฉพาะเมื่อเปิดมุมมองนั้น (หน้า QA Lead ไม่ต้องใช้)
+  const insightsKey = [scopeKey, mine].join("|");
+  const [insightsScope, setInsightsScope] = useState("");
+  useEffect(() => {
+    if (view === "qa") return;
+    if (insightsScope !== insightsKey) { setInsightsScope(insightsKey); setInsights(null); }
+    setInsightsError("");
+    if (shareToken) { setInsightsError("ลิงก์แชร์แบบเดิมไม่มีข้อมูล Defect เพิ่มเติม — สร้างลิงก์แชร์ใหม่เพื่อดูส่วนนี้"); return; }
+    const params = new URLSearchParams({ ...(projectId && { projectId }), ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(mine && { mine: "true" }) });
+    const url = shareCode ? `${apiUrl}/dashboard/shared/${encodeURIComponent(shareCode)}/defect-insights` : `${apiUrl}/dashboard/defect-insights?${params}`;
+    const ctrl = new AbortController();
+    fetch(url, shareCode ? { signal: ctrl.signal } : { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, signal: ctrl.signal })
+      .then(async r => { if (!r.ok) throw new Error("โหลดข้อมูล Defect ไม่สำเร็จ — กดรีเฟรชเพื่อลองใหม่"); return r.json(); })
+      .then(d => setInsights(d)).catch(e => { if (!isAbortError(e)) setInsightsError(e.message); });
+    return () => ctrl.abort();
+    // insightsScope ใช้แค่เทียบว่าเปลี่ยนขอบเขตหรือไม่
+  }, [view, projectId, releaseId, buildId, shareCode, shareToken, mine, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = () => { setRefreshing(true); setRetryKey(k => k + 1); };
   if (loading && !data) return <DashboardSkeleton />;
   if (!data) return <div className="executive-error" role="alert">
@@ -168,8 +206,8 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
     <button className="btn" type="button" onClick={() => setRetryKey(k => k + 1)}><span className="material-symbols-outlined" aria-hidden="true">refresh</span>ลองใหม่</button>
   </div>;
   // เหตุผลมาจาก Server (ReleaseGate ชุดเดียวกับ Release Sign-off) — ด้านล่างเป็น fallback เมื่อ API รุ่นเก่ายังไม่ส่งมา
-  const decisionReason = data.recommendedDecision === "NO DATA" ? "ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน"
-    : data.decisionReason ? data.decisionReason
+  const decisionReason = data.decisionReason ? data.decisionReason
+    : data.recommendedDecision === "NO DATA" ? "ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน"
     : data.criticalDefects > 0 ? `พบ Critical Defect ค้าง ${data.criticalDefects} รายการ`
     : data.openP0 > 0 ? `พบ P0 ค้าง ${data.openP0} รายการ`
     : data.highDefects > 0 ? `พบ High Defect ค้าง ${data.highDefects} รายการ`
@@ -194,7 +232,8 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
   };
   data.modules.forEach(m => rollOf(m.moduleId));
   const hasCycle = (m: Module) => rollOf(m.moduleId).cycleCases > 0;
-  const inScope = (m: Module) => moduleScope === "all" || hasCycle(m);
+  // โหมด "มี Cycle" รวมโมดูลที่มี Defect เปิดด้วย — Defect ที่สร้างเองจากหน้า Defect ไม่ผูก Cycle โมดูลของมันจึงเคยหายจากการ์ด
+  const inScope = (m: Module) => moduleScope === "all" || hasCycle(m) || rollOf(m.moduleId).defects > 0;
   const scopedModules = data.modules.filter(inScope);
   const scopedRoots = rootModules.filter(inScope);
   const totalCasesAll = scopedModules.reduce((s, m) => s + m.testCases, 0);
@@ -252,18 +291,34 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
   const noDataCount = criteria.filter(x => x.noData).length;
   const remaining = Math.round((100 - data.testCaseProgress) * 10) / 10;
   const hasCases = data.totalTestCaseCount > 0;
+  const scopeBar = (
+  <div className="db-hero-scope">
+    <b>{projectName || data.projectName || "ทุก Project"}</b>
+    <span>Release {data.releaseCode ? `${data.releaseCode}${data.releaseVersion ? ` · ${data.releaseVersion}` : ""}` : releaseLabel || "ทุก Release"}</span>
+    <span>Build {data.buildNumber || buildLabel || "ทุก Build"}</span>
+    <span className="db-hero-time" title={`ข้อมูล ณ ${formatThaiDateTime(data.generatedAt, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`}>
+      ข้อมูล ณ {formatThaiDateTime(data.generatedAt, { hour: "2-digit", minute: "2-digit" })} น. · {ago(data.generatedAt, now)}
+      <button type="button" className={`db-refresh${refreshing ? " spinning" : ""}`} onClick={refresh} disabled={refreshing} aria-label="โหลดข้อมูลล่าสุด" title="โหลดข้อมูลล่าสุด"><span className="material-symbols-outlined" aria-hidden="true">refresh</span></button>
+    </span>
+    {error && <span className="db-hero-error" role="alert">{error} — แสดงข้อมูลชุดก่อนหน้า</span>}
+  </div>
+  );
+  const views: { key: DashboardView; label: string; icon: string }[] = [
+    { key: "executive", label: "ผู้บริหาร", icon: "insights" },
+    ...(shared ? [] : [{ key: "dev" as const, label: "Dev", icon: "code" }]),
+    { key: "qa", label: "QA Lead", icon: "fact_check" },
+  ];
   return <div className="executive-dashboard">
-    <section className={`card db-hero decision-${decisionKey}`} aria-label="ความพร้อมปล่อย Release">
-      <div className="db-hero-scope">
-        <b>{projectName || data.projectName || "ทุก Project"}</b>
-        <span>Release {data.releaseCode ? `${data.releaseCode}${data.releaseVersion ? ` · ${data.releaseVersion}` : ""}` : releaseLabel || "ทุก Release"}</span>
-        <span>Build {data.buildNumber || buildLabel || "ทุก Build"}</span>
-        <span className="db-hero-time" title={`ข้อมูล ณ ${formatThaiDateTime(data.generatedAt, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`}>
-          ข้อมูล ณ {formatThaiDateTime(data.generatedAt, { hour: "2-digit", minute: "2-digit" })} น. · {ago(data.generatedAt, now)}
-          <button type="button" className={`db-refresh${refreshing ? " spinning" : ""}`} onClick={refresh} disabled={refreshing} aria-label="โหลดข้อมูลล่าสุด" title="โหลดข้อมูลล่าสุด"><span className="material-symbols-outlined" aria-hidden="true">refresh</span></button>
-        </span>
-        {error && <span className="db-hero-error" role="alert">{error} — แสดงข้อมูลชุดก่อนหน้า</span>}
+    <div className="dbv-switch">
+      <div className="db-segment" role="group" aria-label="มุมมอง Dashboard">
+        {views.map(v => <button key={v.key} type="button" aria-pressed={view === v.key} onClick={() => setView(v.key)}><span className="material-symbols-outlined" aria-hidden="true">{v.icon}</span>{v.label}</button>)}
       </div>
+    </div>
+    {view === "executive" ? <ExecutiveView data={data} insights={insights} insightsError={insightsError} scope={scopeBar} onOpenModule={onOpenModule} onOpenDefects={onOpenDefects} />
+    : view === "dev" ? <DevView insights={insights} insightsError={insightsError} scope={scopeBar} mine={mine} onMineChange={setMine} buildNumber={data.buildNumber || buildLabel} onOpenModule={onOpenModule} onOpenDefect={onOpenDefect} onOpenDefects={onOpenDefects} />
+    : <>
+    <section className={`card db-hero decision-${decisionKey}`} aria-label="ความพร้อมปล่อย Release">
+      {scopeBar}
       <div className="db-hero-body">
         <div className="db-decision">
           <span className="material-symbols-outlined" aria-hidden="true">{decision.icon}</span>
@@ -315,7 +370,7 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
           <div>
             <h3>โมดูล</h3>
             <p>{moduleSort === "tree" && moduleScope === "cycle"
-              ? <>{totalCasesAll.toLocaleString()} Test Case · {scopedModules.length} โมดูลที่มี Cycle (จากทั้งหมด {data.modules.length})</>
+              ? <>{totalCasesAll.toLocaleString()} Test Case · {scopedModules.length} โมดูลที่มี Cycle หรือ Defect เปิด (จากทั้งหมด {data.modules.length})</>
               : <>{data.modules.reduce((s, m) => s + m.testCases, 0).toLocaleString()} Test Case · {data.modules.length} โมดูล ({rootModules.length} โมดูลหลัก)</>}{moduleSort === "tree" ? " · ตัวเลขรวมโมดูลย่อย" : " · ตัวเลขของโมดูลนั้นเอง"}</p>
           </div>
           <div className="db-modules-actions">
@@ -324,7 +379,7 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
               <button type="button" aria-pressed={moduleSort === "defects"} onClick={() => setModuleSort("defects")} disabled={!modulesWithDefects.length}><span className="material-symbols-outlined" aria-hidden="true">bug_report</span>Defect มากสุด</button>
             </div>
             {moduleSort === "tree" && <div className="db-segment" role="group" aria-label="ขอบเขตโมดูล">
-              <button type="button" aria-pressed={moduleScope === "cycle"} onClick={() => setModuleScope("cycle")}><span className="material-symbols-outlined" aria-hidden="true">event_repeat</span>มี Cycle</button>
+              <button type="button" aria-pressed={moduleScope === "cycle"} onClick={() => setModuleScope("cycle")} title="โมดูลที่มีเคสใน Test Cycle หรือมี Defect เปิดในขอบเขตนี้"><span className="material-symbols-outlined" aria-hidden="true">event_repeat</span>มี Cycle</button>
               <button type="button" aria-pressed={moduleScope === "all"} onClick={() => setModuleScope("all")}><span className="material-symbols-outlined" aria-hidden="true">apps</span>ทุกโมดูล</button>
             </div>}
             {moduleSort === "tree" && parentIds.length > 0 && <>
@@ -336,7 +391,7 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
         {moduleSort === "defects"
           ? <ul className="db-module-tree" aria-label="โมดูลเรียงตาม Open Defect">{modulesWithDefects.map(m => renderModule(m, 0, true))}</ul>
           : scopedRoots.length ? <ul className="db-module-tree" role="tree" aria-label="สถานะการทดสอบแต่ละโมดูล">{scopedRoots.map(m => renderModule(m, 0))}</ul>
-          : rootModules.length ? <p className="muted-row">ยังไม่มีโมดูลที่อยู่ใน Test Cycle ของขอบเขตนี้ · <button type="button" className="link-btn" onClick={() => setModuleScope("all")}>แสดงทุกโมดูล ({data.modules.length})</button></p>
+          : rootModules.length ? <p className="muted-row">ยังไม่มีโมดูลที่อยู่ใน Test Cycle หรือมี Defect เปิดในขอบเขตนี้ · <button type="button" className="link-btn" onClick={() => setModuleScope("all")}>แสดงทุกโมดูล ({data.modules.length})</button></p>
           : <p className="muted-row">ยังไม่มีโมดูลในขอบเขตนี้</p>}
       </article>
       {/* ยังไม่เริ่มทดสอบ = อยู่ใน Cycle แล้วแต่ยังไม่มีผล (เดิมนับทุกโมดูลที่มีเคส รวมโมดูลที่ไม่ได้ทดสอบใน Release นี้) */}
@@ -362,5 +417,6 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
         </table>
       </div> : <p className="muted-row">ยังไม่มีข้อมูลการทดสอบ</p>}
     </FoldCard>
+    </>}
   </div>;
 }

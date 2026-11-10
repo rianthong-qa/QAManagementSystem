@@ -25,7 +25,13 @@ public sealed class DashboardRepository(QaDbContext db,ProjectAccessContext proj
   var cases=await db.TestCases.AsNoTracking().Where(x=>!x.IsDeleted&&!hiddenModules.Any(m=>m.ModuleId==x.ModuleId)&&(byProject?x.ProjectId==pf:noFilter||allowed.Contains(x.ProjectId))).Select(x=>new{x.TestCaseId,x.ModuleId,x.Priority}).ToListAsync(ct);
   var cycleCases=await db.TestCycleCases.AsNoTracking().Where(x=>!x.Cycle.IsDeleted&&!x.TestCase.IsDeleted&&!hiddenModules.Any(m=>m.ModuleId==x.TestCase.ModuleId)&&(byProject?x.Cycle.ProjectId==pf:noFilter||allowed.Contains(x.Cycle.ProjectId))&&(!releaseId.HasValue||x.Cycle.ReleaseId==releaseId)&&(!buildId.HasValue||x.Cycle.BuildId==buildId)).Select(x=>new{x.TestCycleCaseId,x.TestCaseId,x.TestCase.ModuleId,x.Priority,x.CurrentStatus}).ToListAsync(ct);
   var executions=await db.TestExecutions.AsNoTracking().Where(x=>!x.IsDeleted&&!x.CycleCase.Cycle.IsDeleted&&!x.CycleCase.TestCase.IsDeleted&&!hiddenModules.Any(m=>m.ModuleId==x.CycleCase.TestCase.ModuleId)&&(byProject?x.CycleCase.Cycle.ProjectId==pf:noFilter||allowed.Contains(x.CycleCase.Cycle.ProjectId))&&(!releaseId.HasValue||x.CycleCase.Cycle.ReleaseId==releaseId)&&(!buildId.HasValue||x.BuildId==buildId)).Select(x=>new{x.TesterUserId,x.Status,x.CompletedAt,DisplayName=db.Users.Where(u=>u.UserId==x.TesterUserId).Select(u=>u.DisplayName).First()}).ToListAsync(ct);
-  var defects=await db.Defects.AsNoTracking().Where(x=>!x.IsDeleted&&!hiddenModules.Any(m=>m.ModuleId==x.ModuleId)&&(byProject?x.ProjectId==pf:noFilter||allowed.Contains(x.ProjectId))&&(!releaseId.HasValue||x.ReleaseId==releaseId)&&(!buildId.HasValue||x.BuildId==buildId)).Select(x=>new{x.Severity,x.Status,x.ModuleId}).ToListAsync(ct);
+  // Defect เมื่อเลือก Build = "ค้าง ณ Build นี้" (แบบ Jira Affects Version / TestRail): เจอใน Build นี้หรือ Build ก่อนหน้าของ Release
+  // เดียวกัน — Defect ที่เจอใน beta.1 แล้วยังไม่แก้ยังอยู่ใน beta.2 (เดิมนับเฉพาะ Found in Build จึงหายเมื่อสลับไป Build ใหม่);
+  // ลำดับ Build เดียวกับ DefectBuilds.ReleaseOrderAsync และตัวเลือก "ยังไม่ปิด" ของหน้า Defect
+  var buildsUpTo=buildId.HasValue?await BuildsUpToAsync(buildId.Value,ct):[];
+  var defects=await ScopedDefects(projectId,releaseId,buildId.HasValue?buildsUpTo:null).Select(x=>new{x.Severity,x.Status,x.ModuleId,x.BuildId}).ToListAsync(ct);
+  // พบใหม่ใน Build นี้ (Found in Build) = ตัวชี้วัดคุณภาพของ Build นั้น — แสดงเป็นตัวเลขรองของการ์ด Defect เท่านั้น
+  int? newDefectsInBuild=buildId.HasValue?defects.Count(x=>x.BuildId==buildId):null;
   decimal Pct(int value,int total)=>total==0?0:Math.Round(value*100m/total,1);
   var coveredSet=coveredIds.ToHashSet();var executed=cycleCases.Count(x=>x.CurrentStatus!="NotRun");var passed=cycleCases.Count(x=>x.CurrentStatus=="Pass");var failed=cycleCases.Count(x=>x.CurrentStatus=="Fail");var blocked=cycleCases.Count(x=>x.CurrentStatus=="Blocked");var skipped=cycleCases.Count(x=>x.CurrentStatus=="Skipped");var inProgress=cycleCases.Count(x=>x.CurrentStatus=="InProgress");
   // ความคืบหน้าการทดสอบ = จำนวน Test Case (จากหน้า Test Case) ที่ถูกทดสอบจริงอย่างน้อย 1 ครั้ง หารด้วยจำนวน Test Case ทั้งหมด
@@ -49,11 +55,77 @@ public sealed class DashboardRepository(QaDbContext db,ProjectAccessContext proj
    var smoke=smokeProjectId is {} sp?await ReleaseReadinessQueries.SmokeAsync(db,sp,buildId,ct):new SmokeCheck(ReleaseReadinessQueries.SmokeNotConfigured,true);
    var gate=ProMaxx2.QA.Domain.Governance.ReleaseGate.Assess(new(openP0,openP1,hasApprovedRisk,smoke.Passed,gateDefects,requirements.Count==0?null:coverage,executed==0?null:passRate,defectGate?.CurrentValue.GateEnabled??false));
    var noData=requirements.Count==0&&cycleCases.Count==0;
-   var decision=noData?"NO DATA":gate.Decision switch{ProMaxx2.QA.Domain.Governance.ReleaseDecision.Go=>"GO",ProMaxx2.QA.Domain.Governance.ReleaseDecision.ConditionalGo=>"CONDITIONAL GO",_=>"NO-GO"};
+   // ไม่มีผลทดสอบ = ยังประเมินไม่ได้ (ไม่ให้ GO โดยไม่มีหลักฐาน) แต่ Defect ทำให้ผลแย่ลงได้เสมอ: Critical ค้าง = NO-GO แม้ยังไม่มี Cycle
+   var noDataCritical=noData&&gateDefects.OpenCritical>0;
+   var decision=noDataCritical?"NO-GO":noData?"NO DATA":gate.Decision switch{ProMaxx2.QA.Domain.Governance.ReleaseDecision.Go=>"GO",ProMaxx2.QA.Domain.Governance.ReleaseDecision.ConditionalGo=>"CONDITIONAL GO",_=>"NO-GO"};
    var projectName=projectId.HasValue?await db.Projects.AsNoTracking().Where(x=>x.ProjectId==projectId.Value).Select(x=>x.ProjectName).FirstOrDefaultAsync(ct):null;
    var releaseInfo=releaseId.HasValue?await db.Releases.AsNoTracking().Where(x=>x.ReleaseId==releaseId.Value).Select(x=>new{x.ReleaseCode,x.Version}).FirstOrDefaultAsync(ct):null;
    var buildNumber=buildId.HasValue?await db.Builds.AsNoTracking().Where(x=>x.BuildId==buildId.Value).Select(x=>x.BuildNumber).FirstOrDefaultAsync(ct):null;
-   return new(requirements.Count,coveredSet.Count,coverage,cycleCases.Count,executed,progress,passed,passRate,openP0,openP1,overall,defects.Count,openDefects.Count,criticalDefects,highDefects,defectQuality,decision,moduleRows,users,[new("Pass",passed,"#16a36a"),new("Fail",failed,"#e5484d"),new("Blocked",blocked,"#f59e0b"),new("Skipped",skipped,"#8b5cf6"),new("In Progress",inProgress,"#2563eb"),new("Not Run",cycleCases.Count-executed,"#94a3b8")],severityDist,totalTestCaseCount,testedTestCaseCount,testCaseProgress,executions.Count,DateTime.UtcNow,projectName,releaseInfo?.ReleaseCode,releaseInfo?.Version,buildNumber,noData?null:gate.Reason);
+   return new(requirements.Count,coveredSet.Count,coverage,cycleCases.Count,executed,progress,passed,passRate,openP0,openP1,overall,defects.Count,openDefects.Count,criticalDefects,highDefects,defectQuality,decision,moduleRows,users,[new("Pass",passed,"#16a36a"),new("Fail",failed,"#e5484d"),new("Blocked",blocked,"#f59e0b"),new("Skipped",skipped,"#8b5cf6"),new("In Progress",inProgress,"#2563eb"),new("Not Run",cycleCases.Count-executed,"#94a3b8")],severityDist,totalTestCaseCount,testedTestCaseCount,testCaseProgress,executions.Count,DateTime.UtcNow,projectName,releaseInfo?.ReleaseCode,releaseInfo?.Version,buildNumber,noDataCritical?$"พบ Critical Defect ที่ยังไม่ได้แก้ {gateDefects.OpenCritical} รายการ · ยังไม่มีผลทดสอบ":noData?NoDataReason(openDefects.Count,openDefects.Count(x=>x.Severity=="Critical"),openDefects.Count(x=>x.Severity=="High")):gate.Reason,newDefectsInBuild,gateDefects.BlockersWithoutRisk,gateDefects.BlockersWithRisk);
+  }
+  /// <summary>Defect ในขอบเขต Dashboard: ไม่ลบ, ไม่อยู่ใน Module ที่ซ่อน, Project ที่เข้าถึงได้, Release และ (เลือก Build) เจอใน Build นี้หรือก่อนหน้า</summary>
+  private IQueryable<Defect>ScopedDefects(Guid?projectId,Guid?releaseId,List<Guid>?buildsUpTo)
+  {
+   bool byProject=projectId.HasValue;Guid pf=projectId??Guid.Empty;bool noFilter=projectCtx.AllowedProjectIds.Length==0;Guid[] allowed=projectCtx.AllowedProjectIds;
+   var hiddenModules=db.Modules.Where(m=>!m.IsActive);
+   var q=db.Defects.AsNoTracking().Where(x=>!x.IsDeleted&&!hiddenModules.Any(m=>m.ModuleId==x.ModuleId)&&(byProject?x.ProjectId==pf:noFilter||allowed.Contains(x.ProjectId))&&(!releaseId.HasValue||x.ReleaseId==releaseId));
+   return buildsUpTo is null?q:q.Where(x=>x.BuildId.HasValue&&buildsUpTo.Contains(x.BuildId.Value));
+  }
+  /// <summary>มุมมองผู้บริหาร/Dev: สถานะ, อายุ, โมดูล × ความรุนแรง, แนวโน้ม 30 วัน และ (includeItems) รายการที่ต้องดูก่อน/รอตรวจซ้ำ — ลิงก์แชร์ไม่ส่งรายการ</summary>
+  public async Task<DashboardDefectInsights>GetDefectInsightsAsync(Guid?projectId,Guid?releaseId,Guid?buildId,Guid?assigneeUserId,bool includeItems,CancellationToken ct)
+  {
+   var scope=ScopedDefects(projectId,releaseId,buildId.HasValue?await BuildsUpToAsync(buildId.Value,ct):null);
+   if(assigneeUserId.HasValue)scope=scope.Where(x=>x.AssigneeUserId==assigneeUserId);
+   var rows=await scope.Select(x=>new{x.Severity,x.Status,x.ModuleId,x.BuildId,x.CreatedAt,x.ResolvedAt,x.ClosedAt,x.ReopenCount,Crm=x.CrmTicketId!=null}).ToListAsync(ct);
+   var now=DateTime.UtcNow;
+   var open=rows.Where(x=>DefectStatusGroups.NotDone.Contains(x.Status)).ToList();
+   var unresolved=open.Where(x=>DefectStatusGroups.Unresolved.Contains(x.Status)).ToList();
+   // อายุ = วันนับจากแจ้ง ของ Defect ที่ Dev ยังไม่ได้แก้ (Open/In Progress)
+   var ages=unresolved.Select(x=>Math.Max(0,(int)(now-x.CreatedAt).TotalDays)).ToList();
+   decimal? averageAge=ages.Count==0?null:Math.Round((decimal)ages.Average(),1);
+   int[] ageBuckets=[ages.Count(a=>a<=3),ages.Count(a=>a is >=4 and <=7),ages.Count(a=>a is >=8 and <=14),ages.Count(a=>a>14)];
+   var newRows=buildId.HasValue?rows.Where(x=>x.BuildId==buildId).ToList():null;
+   var moduleIds=open.Where(x=>x.ModuleId.HasValue).Select(x=>x.ModuleId!.Value).Distinct().ToList();
+   var moduleInfo=await db.Modules.AsNoTracking().Where(m=>moduleIds.Contains(m.ModuleId)).Select(m=>new{m.ModuleId,m.ModuleCode,m.ModuleName}).ToDictionaryAsync(m=>m.ModuleId,ct);
+   var modules=open.GroupBy(x=>x.ModuleId).Select(g=>{var info=g.Key is {} id&&moduleInfo.TryGetValue(id,out var mi)?mi:null;return new DashboardModuleDefects(g.Key,info?.ModuleCode,info?.ModuleName??"ไม่ระบุโมดูล",g.Count(x=>x.Severity=="Critical"),g.Count(x=>x.Severity=="High"),g.Count(x=>x.Severity=="Medium"),g.Count(x=>x.Severity=="Low"),g.Count());})
+    .OrderByDescending(x=>x.Total).ThenByDescending(x=>x.Critical).ThenByDescending(x=>x.High).ThenBy(x=>x.ModuleName,StringComparer.Ordinal).ToList();
+   // แนวโน้ม 30 วัน (เวลาไทย): เข้าใหม่ = วันที่แจ้ง, แก้แล้ว/ปิด = ResolvedAt (Resolved/Closed) หรือ ClosedAt (Rejected) — Reopen ล้างค่าเหล่านี้จึงไม่นับซ้ำ
+   static DateOnly Day(DateTime utc)=>DateOnly.FromDateTime(utc.AddHours(7));
+   var today=Day(now);
+   var created=rows.GroupBy(x=>Day(x.CreatedAt)).ToDictionary(g=>g.Key,g=>g.Count());
+   var closed=rows.Where(x=>(x.ResolvedAt??x.ClosedAt).HasValue).GroupBy(x=>Day((x.ResolvedAt??x.ClosedAt)!.Value)).ToDictionary(g=>g.Key,g=>g.Count());
+   var trend=Enumerable.Range(0,30).Select(i=>today.AddDays(i-29)).Select(d=>new DashboardDefectTrendPoint(d,created.GetValueOrDefault(d),closed.GetValueOrDefault(d))).ToList();
+   List<DashboardDefectItem>attention=[],retest=[];
+   if(includeItems)
+   {
+    var newBuild=buildId??Guid.Empty;
+    IQueryable<ItemRow>Project(IQueryable<Defect>q)=>q.Select(x=>new ItemRow(x.DefectId,x.DefectCode,x.Title,x.Severity,x.Status,db.Modules.Where(m=>m.ModuleId==x.ModuleId).Select(m=>m.ModuleName).FirstOrDefault(),db.Builds.Where(b=>b.BuildId==x.BuildId).Select(b=>b.BuildNumber).FirstOrDefault(),x.CreatedAt,x.BuildId==newBuild,x.CrmTicketId!=null,x.ReopenCount,x.ResolvedAt));
+    DashboardDefectItem Map(ItemRow x)=>new(x.DefectId,x.DefectCode,x.Title,x.Severity,x.Status,x.ModuleName,x.FoundIn,x.CreatedAt,Math.Max(0,(int)(now-x.CreatedAt).TotalDays),x.IsNew,x.Crm,x.ReopenCount,x.ResolvedAt);
+    // ต้องดูก่อน: พบใหม่ใน Build นี้ → ความรุนแรง → ค้างนานสุด (เฉพาะที่ Dev ยังไม่ได้แก้)
+    attention=(await Project(scope.Where(x=>DefectStatusGroups.Unresolved.Contains(x.Status)).OrderByDescending(x=>x.BuildId==newBuild).ThenBy(x=>x.Severity=="Critical"?0:x.Severity=="High"?1:x.Severity=="Medium"?2:3).ThenBy(x=>x.CreatedAt).Take(8)).ToListAsync(ct)).Select(Map).ToList();
+    retest=(await Project(scope.Where(x=>DefectStatusGroups.AwaitingVerification.Contains(x.Status)).OrderBy(x=>x.ResolvedAt).Take(10)).ToListAsync(ct)).Select(Map).ToList();
+   }
+   return new(open.Count,unresolved.Count,open.Count(x=>x.Status=="In Progress"),open.Count(x=>DefectStatusGroups.AwaitingVerification.Contains(x.Status)),
+    open.Count(x=>x.Severity=="Critical"),open.Count(x=>x.Severity=="High"),open.Count(x=>x.Severity=="Medium"),open.Count(x=>x.Severity=="Low"),
+    newRows?.Count,newRows?.Count(x=>x.Severity is "High" or "Critical"),rows.Count(x=>x.Status=="Closed"),rows.Count(x=>x.Status=="Rejected"),
+    open.Count(x=>x.ReopenCount>0),open.Count(x=>x.Crm),averageAge,ageBuckets,modules,trend,attention,retest,now);
+  }
+  private sealed record ItemRow(Guid DefectId,string DefectCode,string Title,string Severity,string Status,string? ModuleName,string? FoundIn,DateTime CreatedAt,bool IsNew,bool Crm,int ReopenCount,DateTime? ResolvedAt);
+  /// <summary>Build ที่เลือกและ Build ก่อนหน้าใน Release เดียวกัน เรียงตาม BuildDate (ไม่มี = วันที่ลงทะเบียน) — กฎเดียวกับ DefectBuilds.ReleaseOrderAsync</summary>
+  private async Task<List<Guid>>BuildsUpToAsync(Guid buildId,CancellationToken ct)
+  {
+   var releaseId=await db.Builds.AsNoTracking().Where(b=>b.BuildId==buildId).Select(b=>(Guid?)b.ReleaseId).SingleOrDefaultAsync(ct);
+   if(releaseId is null)return [buildId];
+   var ordered=await db.Builds.AsNoTracking().Where(b=>b.ReleaseId==releaseId).OrderBy(b=>b.BuildDate??b.CreatedAt).ThenBy(b=>b.CreatedAt).Select(b=>b.BuildId).ToListAsync(ct);
+   return ordered.Take(ordered.IndexOf(buildId)+1).ToList();
+  }
+  /// <summary>เหตุผลของ NO DATA — บอก Defect ที่ค้างในขอบเขตด้วย ผู้ดูจะได้ไม่เข้าใจว่าไม่มีปัญหา</summary>
+  public static string NoDataReason(int open,int critical,int high)
+  {
+   const string baseReason="ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน";
+   if(open==0)return baseReason;
+   var parts=string.Join(", ",new[]{critical>0?$"Critical {critical}":null,high>0?$"High {high}":null}.Where(x=>x is not null));
+   return $"{baseReason} · มี Defect ค้าง {open} รายการ{(parts.Length>0?$" ({parts})":"")}";
   }
   public async Task<DashboardTimeline>GetTimelineAsync(Guid?projectId,Guid?releaseId,Guid?buildId,CancellationToken ct)
   {

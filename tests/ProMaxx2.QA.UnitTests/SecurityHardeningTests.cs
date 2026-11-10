@@ -118,6 +118,7 @@ public sealed class SecurityHardeningTests : IDisposable
     {
         public Task<DashboardSummary> GetAsync(Guid? projectId, Guid? releaseId, Guid? buildId, CancellationToken ct) => throw new InvalidOperationException("dashboard data must not be read");
         public Task<DashboardTimeline> GetTimelineAsync(Guid? projectId, Guid? releaseId, Guid? buildId, CancellationToken ct) => throw new InvalidOperationException("dashboard data must not be read");
+        public Task<DashboardDefectInsights> GetDefectInsightsAsync(Guid? projectId, Guid? releaseId, Guid? buildId, Guid? assigneeUserId, bool includeItems, CancellationToken ct) => throw new InvalidOperationException("dashboard data must not be read");
         public Task<DashboardShareScope> CreateShareAsync(Guid? projectId, Guid? releaseId, Guid? buildId, DateTime expiresAt, CancellationToken ct) => Task.FromResult(new DashboardShareScope("ABCDEFGH", projectId, releaseId, buildId, expiresAt));
         public Task<DashboardShareScope?> FindShareAsync(string code, CancellationToken ct) => Task.FromResult(share);
         public Task<bool> RevokeShareAsync(string code, IReadOnlyCollection<Guid> allowedProjectIds, CancellationToken ct) => Task.FromResult(share?.ProjectId is { } p && allowedProjectIds.Contains(p));

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -17,6 +18,16 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
     [Authorize(Policy = "ProjectView")]
     [ProducesResponseType<DashboardSummary>(StatusCodes.Status200OK)]
     public Task<DashboardSummary> GetSummary([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,CancellationToken ct) => dashboard.GetAsync(projectId,releaseId,buildId,ct);
+
+    /// <summary>ข้อมูล Defect ของมุมมองผู้บริหาร/Dev — mine=true = เฉพาะ Defect ที่ผู้ใช้เป็นผู้รับผิดชอบ</summary>
+    [HttpGet("defect-insights")]
+    [Authorize(Policy = "ProjectView")]
+    public Task<DashboardDefectInsights> GetDefectInsights([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,[FromQuery]bool mine,CancellationToken ct)
+    {
+        // ไม่มี user id ใน token (ไม่ควรเกิด) + mine = ไม่คืนของใคร แทนที่จะคืนทั้งทีม
+        Guid? assignee = mine ? (Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id) ? id : Guid.Empty) : null;
+        return dashboard.GetDefectInsightsAsync(projectId,releaseId,buildId,assignee,true,ct);
+    }
 
     [HttpPost("share")]
     [Authorize(Policy = "ProjectView")]
@@ -56,6 +67,16 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
         var share=await dashboard.FindShareAsync(code,ct);
         if(share?.ProjectId is null)return Unauthorized(new ProblemDetails{Title="Dashboard share link is invalid or expired."});
         return Ok(await dashboard.GetTimelineAsync(share.ProjectId,share.ReleaseId,share.BuildId,ct));
+    }
+
+    /// <summary>ลิงก์แชร์ (anonymous) ได้เฉพาะตัวเลขรวม — ไม่ส่งรายการ Defect (ชื่อเรื่อง) ให้คนที่ถือลิงก์</summary>
+    [HttpGet("shared/{code}/defect-insights")]
+    [AllowAnonymous]
+    public async Task<ActionResult<DashboardDefectInsights>> GetShortSharedDefectInsights(string code,CancellationToken ct)
+    {
+        var share=await dashboard.FindShareAsync(code,ct);
+        if(share?.ProjectId is null)return Unauthorized(new ProblemDetails{Title="Dashboard share link is invalid or expired."});
+        return Ok(await dashboard.GetDefectInsightsAsync(share.ProjectId,share.ReleaseId,share.BuildId,null,false,ct));
     }
 
     [HttpGet("shared/timeline")]

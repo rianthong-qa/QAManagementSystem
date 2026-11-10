@@ -3,6 +3,7 @@ using ProMaxx2.QA.Application.Common;
 using ProMaxx2.QA.Domain.Defects;
 using ProMaxx2.QA.Domain.Execution;
 using ProMaxx2.QA.Domain.Projects;
+using ProMaxx2.QA.Domain.Releases;
 using ProMaxx2.QA.Domain.Requirements;
 using ProMaxx2.QA.Domain.TestManagement;
 using ProMaxx2.QA.Infrastructure.Persistence;
@@ -75,6 +76,84 @@ public sealed class DashboardHiddenModuleTests
         Assert.Equal(1, byRelease.Modules.Single(x => x.ModuleId == seed.Module.ModuleId).TestCases);
         Assert.Equal(byRelease.TotalTestCaseCount, byRelease.Modules.Sum(x => x.TestCases));
         Assert.Equal(2, byProject.Modules.Single(x => x.ModuleId == seed.Module.ModuleId).TestCases);
+    }
+
+    [Fact]
+    public async Task Build_scope_counts_defects_still_open_as_of_that_build()
+    {
+        // เลือก Build = Defect ที่ค้าง ณ Build นี้ (เจอใน Build นี้หรือก่อนหน้า) แบบ Jira Affects Version; "พบใหม่" = เจอใน Build นี้เท่านั้น
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var seed = await AutomationTestFixtures.SeedBaselineAsync(db);
+        var later = new Build(seed.Release.ReleaseId, "2", "1.0", null, null, DateTime.UtcNow.AddDays(1), null, null, null);
+        db.Builds.Add(later);
+        Defect Found(Guid buildId, string code, string severity) => new(seed.Project.ProjectId, seed.Release.ReleaseId, buildId, seed.Module.ModuleId, code, code, severity, "Open", null, null, null, null, null, null);
+        db.Defects.AddRange(Found(seed.Build.BuildId, "DF-OLD", "Medium"), Found(later.BuildId, "DF-NEW", "High"));
+        await db.SaveChangesAsync();
+        var repository = new DashboardRepository(db, new ProjectAccessContext());
+
+        var onLater = await repository.GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, later.BuildId, CancellationToken.None);
+        var onFirst = await repository.GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, CancellationToken.None);
+        var byRelease = await repository.GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, null, CancellationToken.None);
+
+        Assert.Equal(2, onLater.OpenDefects);
+        Assert.Equal(1, onLater.NewDefectsInBuild);
+        Assert.Equal(2, onLater.Modules.Single(x => x.ModuleId == seed.Module.ModuleId).OpenDefects);
+        Assert.Equal(1, onFirst.OpenDefects);
+        Assert.Null(byRelease.NewDefectsInBuild);
+        // ไม่มี Cycle = NO DATA แต่เหตุผลบอก Defect ที่ค้าง
+        Assert.Equal("NO DATA", onLater.RecommendedDecision);
+        Assert.Contains("มี Defect ค้าง 2 รายการ (High 1)", onLater.DecisionReason);
+    }
+
+    [Fact]
+    public async Task Defect_insights_follow_build_scope_and_hide_items_for_share_links()
+    {
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var seed = await AutomationTestFixtures.SeedBaselineAsync(db);
+        var later = new Build(seed.Release.ReleaseId, "2", "1.0", null, null, DateTime.UtcNow.AddDays(1), null, null, null);
+        db.Builds.Add(later);
+        Defect Found(Guid buildId, string code, string severity, string status) => new(seed.Project.ProjectId, seed.Release.ReleaseId, buildId, seed.Module.ModuleId, code, code, severity, status, null, null, null, null, null, null);
+        var mine = Found(seed.Build.BuildId, "DF-OLD", "Medium", "Open");
+        var me = Guid.NewGuid();
+        mine.Assign(me, null);
+        db.Defects.AddRange(mine, Found(later.BuildId, "DF-NEW", "High", "Open"), Found(seed.Build.BuildId, "DF-FIXED", "High", "Resolved"), Found(seed.Build.BuildId, "DF-DONE", "Low", "Closed"));
+        await db.SaveChangesAsync();
+        var repository = new DashboardRepository(db, new ProjectAccessContext());
+
+        var team = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, later.BuildId, null, true, CancellationToken.None);
+        var shared = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, later.BuildId, null, false, CancellationToken.None);
+        var mineOnly = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, later.BuildId, me, true, CancellationToken.None);
+
+        Assert.Equal(3, team.Open);
+        Assert.Equal(2, team.Unresolved);
+        Assert.Equal(1, team.AwaitingRetest);
+        Assert.Equal(1, team.NewInBuild);
+        Assert.Equal(1, team.NewInBuildHigh);
+        Assert.Equal(1, team.Closed);
+        // ต้องดูก่อน: พบใหม่ใน Build นี้ขึ้นก่อน; รอตรวจซ้ำ = Resolved
+        Assert.Equal(["DF-NEW", "DF-OLD"], team.Attention.Select(x => x.DefectCode));
+        Assert.True(team.Attention[0].NewInBuild);
+        Assert.Equal("DF-FIXED", Assert.Single(team.AwaitingRetestItems).DefectCode);
+        Assert.Equal(3, Assert.Single(team.Modules).Total);
+        Assert.Equal(30, team.Trend.Count);
+        Assert.Equal(4, team.Trend[^1].Created);
+        Assert.Empty(shared.Attention);
+        Assert.Empty(shared.AwaitingRetestItems);
+        Assert.Equal("DF-OLD", Assert.Single(mineOnly.Attention).DefectCode);
+    }
+
+    [Fact]
+    public async Task Open_critical_defect_is_no_go_even_without_test_cycles()
+    {
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var seed = await AutomationTestFixtures.SeedBaselineAsync(db);
+        db.Defects.Add(new Defect(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, seed.Module.ModuleId, "DF-1", "DF-1", "Critical", "Open", null, null, null, null, null, null));
+        await db.SaveChangesAsync();
+
+        var summary = await new DashboardRepository(db, new ProjectAccessContext()).GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, CancellationToken.None);
+
+        Assert.Equal("NO-GO", summary.RecommendedDecision);
+        Assert.Contains("Critical Defect", summary.DecisionReason);
     }
 
     [Fact]
