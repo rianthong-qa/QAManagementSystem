@@ -50,7 +50,7 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
    var me=await db.Users.AsNoTracking().SingleOrDefaultAsync(x=>x.UserId==UserId(),ct);
    if(me is not null)
    {
-    try{await crmSendService.AppendCommentAsync(entity,me.UserId,commentBody,me.DisplayName,ct,images.Count);}
+    try{await crmSendService.AppendCommentAsync(entity,me.UserId,commentBody,me.DisplayName,ct,images);}
     catch(CrmIntegrationException ex){logger.LogError(ex,"Sync คอมเมนต์ไป CRM ticket {TicketId} ไม่สำเร็จ สำหรับ Defect {DefectId}",entity.CrmTicketId,id);}
     catch(CrmNotConfiguredException ex){logger.LogError(ex,"Sync คอมเมนต์ไป CRM ไม่สำเร็จ (ยังไม่ได้ตั้งค่า) สำหรับ Defect {DefectId}",id);}
    }

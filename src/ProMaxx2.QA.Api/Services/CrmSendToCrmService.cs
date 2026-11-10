@@ -111,12 +111,14 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
         return new(jobNo, images.Count, skippedImages);
     }
 
-    // รูปประกอบของ Defect (ไม่รวมรูปในคอมเมนต์) แนบไปเป็นรูปของ Ticket แทนการให้ Dev กดลิงก์ไปดู — ไฟล์ที่ CRM ไม่รับ
-    // (เช่น .webp) หรือหาไฟล์บนดิสก์ไม่เจอ นับเป็น skipped แล้วบอกใน Description ว่าดูได้ที่ลิงก์ QA Hub
+    // รูปประกอบของ Defect + รูปในคอมเมนต์ แนบไปเป็นรูปของ Ticket แทนการให้ Dev กดลิงก์ไปดู — รูปของ Defect มาก่อน
+    // แล้วตามด้วยรูปในคอมเมนต์ตามเวลา (Defect ที่สร้างแบบด่วนมักมีรูปอยู่ในคอมเมนต์อย่างเดียว เดิมกรองทิ้งจนไม่มีรูปไป CRM
+    // เลย — แก้ 2026-11-10); ไฟล์ที่ CRM ไม่รับ (เช่น .webp), เกินโควตา หรือหาไฟล์บนดิสก์ไม่เจอ นับเป็น skipped แล้วบอกใน
+    // Description ว่าดูได้ที่ลิงก์ QA Hub
     private async Task<(List<CrmAttachment> Images, int Skipped)> LoadCrmImagesAsync(Guid defectId, CancellationToken ct)
     {
-        var rows = await db.DefectAttachments.AsNoTracking().Where(x => x.DefectId == defectId && x.CommentId == null)
-            .OrderBy(x => x.UploadedAt).ThenBy(x => x.FileName).ToListAsync(ct);
+        var rows = await db.DefectAttachments.AsNoTracking().Where(x => x.DefectId == defectId)
+            .OrderBy(x => x.CommentId == null ? 0 : 1).ThenBy(x => x.UploadedAt).ThenBy(x => x.FileName).ToListAsync(ct);
         var (send, skipped) = PickCrmImages(rows);
         var images = new List<CrmAttachment>();
         foreach (var row in send)
@@ -202,15 +204,19 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
     // field เดิมกลับไป; Description ของการ Update คือข้อความตอบ ซึ่ง CRM บันทึกเป็น "แถวใหม่ในประวัติการติดต่อ"
     // (ยืนยันกับผู้ใช้ 2026-10-03) จึงส่งเฉพาะคอมเมนต์ใหม่ — เดิมต่อท้ายข้อความสะสม ทำให้ทุกคอมเมนต์สร้างแถวที่มีข้อความ
     // เก่าซ้ำมาด้วย. เรียกจาก DefectsController.AddComment แบบ best-effort (ล้มเหลวได้โดยไม่ทำให้คอมเมนต์ใน QA Hub หาย)
-    public async Task AppendCommentAsync(Defect defect, Guid actingUserId, string commentBody, string commentAuthorDisplayName, CancellationToken ct, int imageCount = 0)
+    public async Task AppendCommentAsync(Defect defect, Guid actingUserId, string commentBody, string commentAuthorDisplayName, CancellationToken ct, IReadOnlyList<DefectImageStorage.PendingImage>? images = null)
     {
         var ticketId = defect.CrmTicketId;
         if (string.IsNullOrWhiteSpace(ticketId)) return;
         var (cfg, _) = await crmConfig.GetRuntimeAsync(actingUserId, ct);
         var job = await crmApi.GetJobDetailAsync(actingUserId, ticketId, "HD", ct);
         var nowThai = DateTime.UtcNow.AddHours(7);
-        // CRM ไม่ได้รับรูปของคอมเมนต์ — บอกจำนวนรูปพร้อมลิงก์หน้าแชร์ (ซึ่งแสดงคอมเมนต์และรูปทั้งหมด) แทน
-        var imageNote = imageCount > 0 ? $" [แนบรูป {imageCount} รูป ดูได้ที่ {await shareLinks.GetOrCreateUrlAsync(defect.DefectId, ct)}]" : "";
+        // รูปของคอมเมนต์แนบไปกับการ Update เป็น Images1..N (แบบเดียวกับ UpdateTicketAsync) — รูปที่ CRM ไม่รับ (.webp/เกินขนาด)
+        // บอกจำนวนพร้อมลิงก์หน้าแชร์ (ซึ่งแสดงคอมเมนต์และรูปทั้งหมด) แทน
+        var (attachments, skipped) = PickCrmCommentImages(images ?? []);
+        var imageNote = skipped > 0
+            ? $" [{(attachments.Count > 0 ? $"แนบรูป {attachments.Count} รูป · " : "")}รูปอีก {skipped} รูปดูได้ที่ {await shareLinks.GetOrCreateUrlAsync(defect.DefectId, ct)}]"
+            : attachments.Count > 0 ? $" [แนบรูป {attachments.Count} รูป]" : "";
         var newDescription = BuildReplyNote(commentAuthorDisplayName, nowThai, commentBody.Trim(), imageNote);
 
         var payload = new CrmUpdateJobPayload(
@@ -247,7 +253,23 @@ public sealed class CrmSendToCrmService(QaDbContext db, CrmApiClient crmApi, Crm
             Posted: cfg.Username,
             JobType: "HD");
 
-        await crmApi.UpdateSupportJobAsync(actingUserId, payload, ct);
+        await crmApi.UpdateSupportJobAsync(actingUserId, payload, attachments, ct);
+    }
+
+    /// <summary>รูปของคอมเมนต์ที่แนบไป CRM ได้ (กติกาเดียวกับ <see cref="PickCrmImages"/>) — คืนไฟล์ที่ส่งและจำนวนที่ข้าม</summary>
+    public static (List<CrmAttachment> Send, int Skipped) PickCrmCommentImages(IReadOnlyList<DefectImageStorage.PendingImage> images)
+    {
+        var send = new List<CrmAttachment>();
+        long total = 0;
+        foreach (var image in images)
+        {
+            var fits = CrmAttachmentRules.ContentTypes.TryGetValue(Path.GetExtension(image.DisplayName), out var type) && type.StartsWith("image/", StringComparison.Ordinal)
+                && image.Data.LongLength <= CrmAttachmentRules.MaxFileBytes && send.Count < CrmAttachmentRules.MaxFiles && total + image.Data.LongLength <= CrmAttachmentRules.MaxTotalBytes;
+            if (!fits) continue;
+            send.Add(new CrmAttachment(image.DisplayName, type!, image.Data));
+            total += image.Data.LongLength;
+        }
+        return (send, images.Count - send.Count);
     }
 
     // อัปเดต Ticket จากหน้า CRM ของ QA Hub (ไม่ต้องผูก Defect): เพิ่มประวัติการติดต่อ / เปลี่ยนสถานะ / ส่งกลับเจ้าของเรื่อง

@@ -97,11 +97,19 @@ public sealed class DefectShareLinkTests
  }
  [Fact]public void Crm_images_keep_order_and_skip_formats_crm_rejects()
  {
-  // รูปประกอบส่งเป็นไฟล์แนบของ Ticket — CRM รับเฉพาะ .jpg/.jpeg/.png ไฟล์ละ ≤5 MB; รูปในคอมเมนต์ไม่ถูกเลือกตั้งแต่ query
+  // รูปประกอบ (รวมรูปในคอมเมนต์) ส่งเป็นไฟล์แนบของ Ticket — CRM รับเฉพาะ .jpg/.jpeg/.png ไฟล์ละ ≤5 MB
   var defectId=Guid.NewGuid();
   DefectAttachment Img(string name,long size)=>new(Guid.NewGuid(),defectId,name,$"x_{name}",size,"image/png",null,DateTime.UtcNow);
   var (send,skipped)=CrmSendToCrmService.PickCrmImages([Img("a.png",1000),Img("b.webp",1000),Img("c.JPG",2000),Img("big.png",CrmAttachmentRules.MaxFileBytes+1)]);
   Assert.Equal(["a.png","c.JPG"],send.Select(x=>x.FileName));
   Assert.Equal(2,skipped);
+ }
+ [Fact]public void Crm_comment_images_become_attachments_and_skip_formats_crm_rejects()
+ {
+  DefectImageStorage.PendingImage Img(string name,int size)=>new(Guid.NewGuid(),name,$"x_{name}","image/png",new byte[size]);
+  var (send,skipped)=CrmSendToCrmService.PickCrmCommentImages([Img("shot.png",1000),Img("b.webp",1000),Img("c.jpg",2000)]);
+  Assert.Equal(["shot.png","c.jpg"],send.Select(x=>x.FileName));
+  Assert.Equal(["image/png","image/jpeg"],send.Select(x=>x.ContentType));
+  Assert.Equal(1,skipped);
  }
 }
