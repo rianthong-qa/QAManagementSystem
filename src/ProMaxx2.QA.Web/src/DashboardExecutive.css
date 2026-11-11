@@ -786,7 +786,6 @@ details.db-fold[open] .db-fold-icon { transform: rotate(180deg); }
 .dbv-item-body small, .dbv-age { color: var(--muted); font-size: 12px; }
 .dbv-age { white-space: nowrap; }
 .dbv-chip { padding: 1px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); font-size: 11px; white-space: nowrap; }
-.dbv-chip.new { background: color-mix(in srgb, var(--primary) 12%, var(--card)); color: var(--primary); font-weight: 600; }
 .dbv-age-chart { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; height: 140px; }
 .dbv-age-chart span { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; text-align: center; }
 .dbv-age-chart b { font-size: 14px; }

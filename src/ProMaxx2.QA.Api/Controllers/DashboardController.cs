@@ -17,7 +17,13 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
     [HttpGet("summary")]
     [Authorize(Policy = "ProjectView")]
     [ProducesResponseType<DashboardSummary>(StatusCodes.Status200OK)]
-    public Task<DashboardSummary> GetSummary([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,CancellationToken ct) => dashboard.GetAsync(projectId,releaseId,buildId,ct);
+    public async Task<DashboardSummary> GetSummary([FromQuery]Guid?projectId,[FromQuery]Guid?releaseId,[FromQuery]Guid?buildId,[FromQuery]bool includeInsights,CancellationToken ct)
+    {
+        // includeInsights: รวมข้อมูล Defect ของมุมมองผู้บริหาร/Dev มาในคำขอเดียว — ฝั่ง server เพิ่ม ~10 ms แต่ประหยัด round trip
+        // ผ่าน Cloudflare (~0.5–1.5 วินาที/คำขอ + CORS preflight ของ URL ใหม่)
+        var summary=await dashboard.GetAsync(projectId,releaseId,buildId,ct);
+        return includeInsights?summary with{Insights=await dashboard.GetDefectInsightsAsync(projectId,releaseId,buildId,null,true,ct)}:summary;
+    }
 
     /// <summary>ข้อมูล Defect ของมุมมองผู้บริหาร/Dev — mine=true = เฉพาะ Defect ที่ผู้ใช้เป็นผู้รับผิดชอบ</summary>
     [HttpGet("defect-insights")]
@@ -53,11 +59,13 @@ public sealed class DashboardController(DashboardService dashboard, IDataProtect
 
     [HttpGet("shared/{code}")]
     [AllowAnonymous]
-    public async Task<ActionResult<DashboardSummary>> GetShortShared(string code,CancellationToken ct)
+    public async Task<ActionResult<DashboardSummary>> GetShortShared(string code,CancellationToken ct,[FromQuery]bool includeInsights=false)
     {
         var share=await dashboard.FindShareAsync(code,ct);
         if(share?.ProjectId is null)return Unauthorized(new ProblemDetails{Title="Dashboard share link is invalid or expired."});
-        return Ok(await dashboard.GetAsync(share.ProjectId,share.ReleaseId,share.BuildId,ct));
+        var summary=await dashboard.GetAsync(share.ProjectId,share.ReleaseId,share.BuildId,ct);
+        // ลิงก์แชร์ (anonymous) ได้เฉพาะตัวเลขรวม ไม่มีรายการ Defect
+        return Ok(includeInsights?summary with{Insights=await dashboard.GetDefectInsightsAsync(share.ProjectId,share.ReleaseId,share.BuildId,null,false,ct)}:summary);
     }
 
     [HttpGet("shared/{code}/timeline")]

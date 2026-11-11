@@ -79,7 +79,7 @@ public sealed class ReleaseReadinessTests
         var dashboard = await new DashboardRepository(db, access).GetAsync(b.Project.ProjectId, b.Release.ReleaseId, null, CancellationToken.None);
 
         Assert.Equal(("NO_GO", 1, 1), (gate.RecommendedDecision, gate.OpenP0, gate.OpenCriticalDefects));
-        Assert.Equal((1, 1), (dashboard.OpenP0, dashboard.CriticalDefects));
+        Assert.Equal((1, 1, "NO-GO"), (dashboard.OpenP0, dashboard.GateCriticalDefects, dashboard.RecommendedDecision));
     }
 
     [Fact]

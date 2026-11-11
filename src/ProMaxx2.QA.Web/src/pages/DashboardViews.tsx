@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import type { DashboardSummary } from "./Dashboard";
 
+/** Critical ค้างที่ใช้ตัดสิน GO/NO-GO (ทั้ง Release) — API รุ่นเก่าไม่ส่ง ใช้ค่าตามขอบเขตแทน (เหมือน Dashboard.tsx) */
+const gateCritical = (d: DashboardSummary) => d.gateCriticalDefects ?? d.criticalDefects;
+
 /**
  * มุมมองผู้บริหาร / Dev ของ Dashboard (แนว SonarQube Quality Gate + TestRail + Jira) — ใช้ข้อมูล summary เดิม + /dashboard/defect-insights
  * หลัก: หนึ่งตัวเลขหนึ่งนิยาม, ไม่มีข้อมูล = "—" สีเทา (ไม่ใช่ 0% สีแดง), ทุกการ์ดอยู่ใต้แถบขอบเขตเดียวกัน, ตัวเลขกดไปดูรายการได้
@@ -68,17 +71,20 @@ export function ExecutiveView({ data, insights, insightsError, scope, onOpenModu
   const notRun = Math.max(0, data.totalCases - data.executedCases);
   const hasRuns = data.executedCases > 0;
   const blockers = data.defectBlockersWithoutRisk ?? data.highDefects;
+  const critical = gateCritical(data);
+  // เลือก Build: ตัวเลข Defect ในหน้ากรองตาม Build แต่เกณฑ์ปล่อยนับทั้ง Release — บอกไว้ที่ชื่อเกณฑ์
+  const releaseWide = data.newDefectsInBuild != null ? " (ทั้ง Release)" : "";
   const criteria: Criterion[] = [
     { label: "P0 ที่ Fail / Blocked", rule: "เกณฑ์ = 0", value: data.totalCases ? fmt(data.openP0) : "—", state: data.totalCases ? (data.openP0 === 0 ? "pass" : "fail") : "na", note: data.totalCases ? undefined : "ยังไม่มีแผนทดสอบ" },
-    { label: "Critical Defect ค้าง", rule: "เกณฑ์ = 0", value: fmt(data.criticalDefects), state: data.criticalDefects === 0 ? "pass" : "fail" },
-    { label: "High / รอตรวจซ้ำ ที่ยังไม่ยอมรับความเสี่ยง", rule: "เกณฑ์ = 0 หรืออนุมัติ Risk Acceptance", value: fmt(blockers), state: blockers === 0 ? "pass" : "fail", note: data.defectBlockersWithRisk ? `ยอมรับความเสี่ยงแล้ว ${fmt(data.defectBlockersWithRisk)}` : undefined },
+    { label: `Critical Defect ค้าง${releaseWide}`, rule: "เกณฑ์ = 0", value: fmt(critical), state: critical === 0 ? "pass" : "fail" },
+    { label: `High / รอตรวจซ้ำ ที่ยังไม่ยอมรับความเสี่ยง${releaseWide}`, rule: "เกณฑ์ = 0 หรืออนุมัติ Risk Acceptance", value: fmt(blockers), state: blockers === 0 ? "pass" : "fail", note: data.defectBlockersWithRisk ? `ยอมรับความเสี่ยงแล้ว ${fmt(data.defectBlockersWithRisk)}` : undefined },
     { label: "อัตราผ่าน (Pass Rate)", rule: `เกณฑ์ ≥ ${gate}% ของที่รันแล้ว`, value: hasRuns ? `${data.passRate}%` : "—", state: hasRuns ? (data.passRate >= gate ? "pass" : "fail") : "na", note: hasRuns ? undefined : "ยังไม่มีผลทดสอบ" },
     { label: "ความครอบคลุม Requirement", rule: `เกณฑ์ ≥ ${gate}%`, value: data.totalRequirements ? `${data.requirementCoverage}%` : "—", state: data.totalRequirements ? (data.requirementCoverage >= gate ? "pass" : "fail") : "na", note: data.totalRequirements ? undefined : "ยังไม่มี Requirement ในขอบเขตนี้" },
   ];
   const passed = criteria.filter(x => x.state === "pass").length, measured = criteria.filter(x => x.state !== "na").length;
   const todo = [
     data.totalCases === 0 ? `สร้าง Test Cycle${data.buildNumber ? ` ของ Build ${data.buildNumber}` : ""} เพื่อเริ่มทดสอบ` : notRun > 0 ? `ทดสอบส่วนที่เหลือ ${fmt(notRun)} รายการ` : null,
-    data.criticalDefects > 0 ? `แก้ Critical Defect ${fmt(data.criticalDefects)} รายการ` : null,
+    critical > 0 ? `แก้ Critical Defect ${fmt(critical)} รายการ${releaseWide}` : null,
     data.openP0 > 0 ? `แก้ P0 ที่ Fail/Blocked ${fmt(data.openP0)} รายการ` : null,
     blockers > 0 ? `แก้ หรืออนุมัติความเสี่ยงของ High/รอตรวจซ้ำ ${fmt(blockers)} รายการ` : null,
     hasRuns && data.passRate < gate ? `เพิ่มอัตราผ่านอีก ${Math.round((gate - data.passRate) * 10) / 10}%` : null,
@@ -90,7 +96,7 @@ export function ExecutiveView({ data, insights, insightsError, scope, onOpenModu
   const statusTotal = data.statusDistribution.reduce((s, x) => s + x.count, 0);
   const risks = [
     blockers > 0 && { tone: "danger", value: fmt(blockers), title: "High / รอตรวจซ้ำ ยังไม่ได้แก้", detail: "ยังไม่มี Risk Acceptance — กันการปล่อย", go: onOpenDefects },
-    data.criticalDefects > 0 && { tone: "danger", value: fmt(data.criticalDefects), title: "Critical Defect ค้าง", detail: "ต้องแก้ก่อนปล่อยเสมอ", go: onOpenDefects },
+    critical > 0 && { tone: "danger", value: fmt(critical), title: `Critical Defect ค้าง${releaseWide}`, detail: "ต้องแก้ก่อนปล่อยเสมอ", go: onOpenDefects },
     notRun > 0 && { tone: "warning", value: fmt(notRun), title: "รายการทดสอบที่ยังไม่รัน", detail: `${Math.round(notRun / data.totalCases * 100)}% ของแผนทดสอบ` },
     insights && insights.reopened > 0 && { tone: "warning", value: fmt(insights.reopened), title: "Defect ถูกเปิดซ้ำ", detail: "แก้แล้วแต่ตรวจซ้ำไม่ผ่าน", go: onOpenDefects },
     data.totalRequirements === 0 && { tone: "muted", value: "0", title: "Requirement ในขอบเขตนี้", detail: "วัดไม่ได้ว่าทดสอบครอบคลุมงานครบหรือไม่" },
@@ -181,8 +187,8 @@ export function ExecutiveView({ data, insights, insightsError, scope, onOpenModu
       <ul>
         <li><b>ความคืบหน้า</b> = รายการในแผนทดสอบ (Test Cycle) ที่รันแล้ว ÷ ทั้งหมด</li>
         <li><b>อัตราผ่าน</b> = Pass ÷ รายการที่รันแล้ว</li>
-        <li><b>Defect ค้าง ณ Build</b> = ยังไม่ปิด (Open / In Progress / Resolved) ที่เจอใน Build นี้หรือ Build ก่อนหน้าของ Release เดียวกัน</li>
-        <li><b>เกณฑ์ Defect</b> ในคำตัดสินนับทั้ง Release รวม Build หลังจากนี้ เพราะของค้างทุก Build กันการปล่อย</li>
+        <li><b>Defect ค้าง</b> = ยังไม่ปิด (Open / In Progress / Resolved) ตามขอบเขตที่เลือก — เลือก Build = เฉพาะที่พบใน Build นั้น</li>
+        <li><b>เกณฑ์ Defect</b> ในคำตัดสินนับทั้ง Release (ทุก Build) เพราะของค้างจาก Build ไหนก็กันการปล่อย</li>
         <li><b>—</b> สีเทา = ยังไม่มีข้อมูลให้วัด ไม่ใช่ไม่ผ่าน</li>
       </ul>
     </details>
@@ -194,7 +200,7 @@ function DefectRow({ x, onOpenDefect, showResolved }: { x: DefectItem; onOpenDef
     <span className={`dbv-sev ${sevClass[x.severity] ?? ""}`}>{x.severity}</span>
     <span className="dbv-item-body">
       <span className="dbv-item-code">{onOpenDefect ? <button type="button" className="dbv-link" onClick={() => onOpenDefect(x.defectId)}>{x.defectCode}</button> : x.defectCode}
-        {x.newInBuild && <span className="dbv-chip new">ใหม่ใน Build นี้</span>}{x.reopenCount > 0 && <span className="dbv-chip">เปิดซ้ำ {x.reopenCount}</span>}</span>
+        {x.reopenCount > 0 && <span className="dbv-chip">เปิดซ้ำ {x.reopenCount}</span>}</span>
       <span className="dbv-item-title" title={x.title}>{x.title}</span>
       <small>{[x.moduleName, x.foundInBuild ? `พบใน ${x.foundInBuild}` : null, x.crmLinked ? "ส่ง CRM แล้ว" : "ยังไม่ส่ง CRM"].filter(Boolean).join(" · ")}</small>
     </span>
@@ -207,7 +213,7 @@ export function DevView({ insights, insightsError, scope, mine, onMineChange, bu
   const maxBucket = Math.max(1, ...buckets);
   const kpis = insights ? [
     { label: "Defect ค้างทั้งหมด", value: fmt(insights.open), sub: sevSummary(insights) },
-    { label: buildNumber ? `พบใหม่ใน ${buildNumber}` : "พบใหม่ใน Build นี้", value: insights.newInBuild === null ? "—" : fmt(insights.newInBuild), sub: insights.newInBuild === null ? "เลือก Build เพื่อดู" : `ทุกสถานะ · High/Critical ${fmt(insights.newInBuildHigh ?? 0)}` },
+    { label: buildNumber ? `พบใน ${buildNumber}` : "พบใน Build นี้", value: insights.newInBuild === null ? "—" : fmt(insights.newInBuild), sub: insights.newInBuild === null ? "เลือก Build เพื่อดู" : `ทุกสถานะ · High/Critical ${fmt(insights.newInBuildHigh ?? 0)}` },
     { label: "ยังไม่ได้แก้", value: fmt(insights.unresolved), sub: `กำลังแก้ (In Progress) ${fmt(insights.inProgress)}` },
     { label: "รอ QA ตรวจซ้ำ", value: fmt(insights.awaitingRetest), sub: "Resolved รอผลตรวจใน Build ถัดไป" },
     { label: "ถูกเปิดซ้ำ", value: fmt(insights.reopened), sub: "แก้แล้วแต่ตรวจซ้ำไม่ผ่าน" },
@@ -243,7 +249,7 @@ export function DevView({ insights, insightsError, scope, mine, onMineChange, bu
 
       <div className="dbv-grid two">
         <article className="card" aria-label="ต้องดูก่อน">
-          <div className="db-card-head"><h3>ต้องดูก่อน</h3><p>พบใหม่ใน Build นี้ → ความรุนแรง → ค้างนานสุด (ยังไม่ได้แก้)</p></div>
+          <div className="db-card-head"><h3>ต้องดูก่อน</h3><p>ความรุนแรง → ค้างนานสุด (ยังไม่ได้แก้)</p></div>
           {insights.attention.length ? <ul className="dbv-items">{insights.attention.map(x => <DefectRow key={x.defectId} x={x} onOpenDefect={onOpenDefect} />)}</ul> : <p className="muted-row">ไม่มี Defect ที่ยังไม่ได้แก้</p>}
           {onOpenDefects && insights.unresolved > insights.attention.length && <p className="dbv-more"><Go onClick={onOpenDefects}>ดูทั้งหมดในหน้า Defect →</Go></p>}
         </article>

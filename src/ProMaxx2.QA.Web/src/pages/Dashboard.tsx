@@ -16,10 +16,14 @@ export type DashboardSummary = {
   releaseCode?: string; releaseVersion?: string; buildNumber?: string;
   /** เหตุผลของคำตัดสินจาก ReleaseGate (กฎเดียวกับ Release Sign-off) — null = ไม่มีข้อมูลให้ประเมิน */
   decisionReason?: string | null;
-  /** เลือก Build = Defect ที่เจอใน Build นี้ (Found in Build) ทุกสถานะ; ไม่เลือก Build = null — การ์ด Defect นับ "ค้าง ณ Build นี้" (รวม Build ก่อนหน้า) */
+  /** เลือก Build = Defect ที่พบใน Build นี้ (Found in Build) ทุกสถานะ; ไม่เลือก Build = null — ตัวเลข Defect ทั้งหน้ากรองตาม Build ที่เลือก */
   newDefectsInBuild?: number | null;
+  /** Critical/High ที่ยังไม่ปิดของทั้ง Release — ชุดเดียวกับคำตัดสิน GO/NO-GO (ไม่กรอง Build เพราะของค้างจาก Build ก่อนยังกันการปล่อย) */
+  gateCriticalDefects?: number; gateHighDefects?: number;
   /** High ค้าง/รอตรวจซ้ำที่ยังไม่มี / มี Risk Acceptance (ทั้ง Release) — ชุดเดียวกับคำตัดสิน */
   defectBlockersWithoutRisk?: number; defectBlockersWithRisk?: number;
+  /** ข้อมูล Defect ของมุมมองผู้บริหาร/Dev — ขอมาพร้อม summary (includeInsights=true) ในคำขอเดียว */
+  insights?: DefectInsights | null;
 };
 type Module = DashboardSummary["modules"][number];
 
@@ -85,10 +89,9 @@ function DefectSeverityChart({ data }: { data: DashboardSummary }) {
   const openTotal = sevCounts.reduce((s, x) => s + x.count, 0);
   const maxSev = Math.max(1, ...sevCounts.map(x => x.count));
   const closed = Math.max(0, data.totalDefects - openTotal);
-  // เลือก Build: นับ Defect ที่ค้าง ณ Build นี้ (เจอใน Build นี้หรือ Build ก่อนหน้าของ Release) แบบ Jira/TestRail + ตัวเลขรอง "พบใหม่ใน Build นี้"
-  const byBuild = data.newDefectsInBuild != null;
+  // เลือก Build: นับเฉพาะ Defect ที่พบใน Build นั้น
   const subtitle = `เปิดอยู่ ${openTotal.toLocaleString()} จากทั้งหมด ${data.totalDefects.toLocaleString()} รายการ`
-    + (byBuild ? ` · รวม Build ก่อนหน้า · พบใหม่ใน Build นี้ ${(data.newDefectsInBuild ?? 0).toLocaleString()}` : "");
+    + (data.newDefectsInBuild != null ? " · เฉพาะที่พบใน Build นี้" : "");
 
   return <FoldCard className="db-defects" title="Defect ที่เปิดอยู่ตามความรุนแรง" subtitle={subtitle}>
     {openTotal === 0 ? <p className="muted-row">ไม่มี Defect ที่เปิดอยู่</p> : <ul className="db-sev">
@@ -113,7 +116,7 @@ function FollowUpList({ data, notStarted, noCycle }: { data: DashboardSummary; n
   // มี Requirement ในขอบเขตแต่ไม่มีเคสใน Test Cycle เลย (รวมโมดูลย่อย) = ยังไม่ได้วางแผนทดสอบ — รายการโมดูลค่าเริ่มต้นซ่อนโมดูลเหล่านี้ จึงต้องเตือนตรงนี้
   if (noCycle.length) items.push({ tone: "warning", icon: "event_busy", title: `มี Requirement แต่ยังไม่มี Cycle · ${noCycle.length} โมดูล`, detail: noCycle.map(x => x.moduleName).join(", ") });
   if (notStarted.length) items.push({ tone: "info", icon: "pending_actions", title: `ยังไม่เริ่มทดสอบ · ${notStarted.length} โมดูล`, detail: notStarted.map(x => x.moduleName).join(", ") });
-  const gateFailing = data.criticalDefects > 0 || data.openP0 > 0;
+  const gateFailing = gateCritical(data) > 0 || data.openP0 > 0;
 
   return <article className="card db-followup">
     <div className="db-card-head"><h3>สิ่งที่ต้องติดตาม</h3><p>นอกเหนือจากเกณฑ์ปล่อย Release ด้านบน</p></div>
@@ -137,9 +140,15 @@ function DashboardSkeleton() {
 type OpenModule = (moduleId: string, target: "defects" | "test-cases") => void;
 /** มุมมองของ Dashboard: ผู้บริหาร / Dev / QA Lead (หน้าเดิม) — ลิงก์แชร์มีเฉพาะผู้บริหารและ QA Lead (ไม่ส่งรายการ Defect ให้คนนอก) */
 type DashboardView = "executive" | "dev" | "qa";
-const viewKey = "qa.dashboardView";
-const readView = (): DashboardView => { try { const v = localStorage.getItem(viewKey); return v === "executive" || v === "dev" ? v : "qa"; } catch { return "qa"; } };
+/**
+ * ข้อมูลล่าสุดต่อขอบเขต (อยู่ในหน่วยความจำของแท็บนี้เท่านั้น) — กลับมาหน้า Dashboard หรือสลับกลับมาขอบเขตเดิมจะแสดงทันที
+ * แล้วโหลดใหม่เบื้องหลัง (stale-while-revalidate) แทนการขึ้น skeleton และรอ round trip ผ่าน Cloudflare ทุกครั้ง
+ */
+const summaryCache = new Map<string, DashboardSummary>();
+const rememberSummary = (key: string, value: DashboardSummary) => { summaryCache.delete(key); summaryCache.set(key, value); if (summaryCache.size > 12) summaryCache.delete(summaryCache.keys().next().value!); };
 
+/** Critical ค้างที่ใช้ตัดสิน GO/NO-GO (ทั้ง Release) — API รุ่นเก่าไม่ส่ง ใช้ค่าตามขอบเขตแทน */
+const gateCritical = (d: DashboardSummary) => d.gateCriticalDefects ?? d.criticalDefects;
 const healthLabelTH: Record<string, string> = { Healthy: "ปกติ", Watch: "เฝ้าระวัง", Risk: "เสี่ยง", "No Data": "ไม่มีข้อมูล" };
 const decisionInfo: Record<string, { icon: string; label: string }> = {
   GO: { icon: "check_circle", label: "พร้อมปล่อย" }, "NO-GO": { icon: "cancel", label: "ยังไม่พร้อมปล่อย" },
@@ -151,11 +160,10 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
   const onOpenModule = shared ? undefined : onOpenModuleProp;
   const onOpenDefect = shared ? undefined : onOpenDefectProp;
   const onOpenDefects = shared ? undefined : onOpenDefectsProp;
-  // ลิงก์แชร์เปิดที่มุมมองผู้บริหารเสมอ; ในแอปจำมุมมองล่าสุดของผู้ใช้ (ค่าเริ่มต้น QA Lead = หน้าเดิม)
-  const [view, setViewState] = useState<DashboardView>(() => shared ? "executive" : readView());
-  const setView = (next: DashboardView) => { setViewState(next); if (!shared) { try { localStorage.setItem(viewKey, next); } catch { /* storage ใช้ไม่ได้ — จำเฉพาะหน้านี้ */ } } };
+  // เปิดที่มุมมอง QA Lead เสมอ (ทั้งในแอปและลิงก์แชร์) — ไม่จำมุมมองที่เลือกไว้ครั้งก่อน
+  const [view, setView] = useState<DashboardView>("qa");
   const [mine, setMine] = useState(false);
-  const [insights, setInsights] = useState<DefectInsights | null>(null), [insightsError, setInsightsError] = useState("");
+  const [mineInsights, setMineInsights] = useState<DefectInsights | null>(null), [mineError, setMineError] = useState("");
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
   const [moduleSort, setModuleSort] = useState<"tree" | "defects">("tree");
   // ค่าเริ่มต้นแสดงเฉพาะโมดูลที่มีเคสใน Test Cycle ของขอบเขต Project/Release/Build (โมดูลแม่ของโมดูลเหล่านั้นแสดงด้วย) — สลับดูทุกโมดูลได้
@@ -168,35 +176,30 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
   const scopeKey = [projectId, releaseId, buildId, shareCode, shareToken].join("|");
   useEffect(() => {
     // สลับขอบเขต (Project/Release/Build/ลิงก์) = ล้างแล้วแสดง skeleton; กดรีเฟรช/ลองใหม่ = คงข้อมูลเดิมไว้จนข้อมูลใหม่มา
-    if (scope !== scopeKey) { setScope(scopeKey); setData(null); setLoading(true); }
+    // มีข้อมูลเดิมของขอบเขตนี้ในหน่วยความจำ = แสดงทันทีแล้วอัปเดตเบื้องหลัง (ไอคอนรีเฟรชหมุน)
+    if (scope !== scopeKey) { setScope(scopeKey); const cached = summaryCache.get(scopeKey); setData(cached ?? null); setLoading(!cached); if (cached) setRefreshing(true); }
     setError("");
-    const params = new URLSearchParams({ ...(projectId && { projectId }), ...(releaseId && { releaseId }), ...(buildId && { buildId }) });
-    const url = shareCode ? `${apiUrl}/dashboard/shared/${encodeURIComponent(shareCode)}` : shareToken ? `${apiUrl}/dashboard/shared?token=${encodeURIComponent(shareToken)}` : `${apiUrl}/dashboard/summary?${params}`;
+    const params = new URLSearchParams({ ...(projectId && { projectId }), ...(releaseId && { releaseId }), ...(buildId && { buildId }), includeInsights: "true" });
+    const url = shareCode ? `${apiUrl}/dashboard/shared/${encodeURIComponent(shareCode)}?includeInsights=true` : shareToken ? `${apiUrl}/dashboard/shared?token=${encodeURIComponent(shareToken)}` : `${apiUrl}/dashboard/summary?${params}`;
     // AbortController: สลับ Project/Release/Build เร็ว ๆ แล้วผลของบริบทเก่าต้องไม่มาทับ
     const ctrl = new AbortController();
     fetch(url, shareCode || shareToken ? { signal: ctrl.signal } : { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, signal: ctrl.signal })
       .then(async r => { if (!r.ok) throw new Error(r.status === 401 ? "ลิงก์แชร์ไม่ถูกต้องหรือหมดอายุ" : "ไม่สามารถโหลดข้อมูล Dashboard ได้"); return r.json(); })
-      .then(d => { setData(d); setNow(Date.now()); }).catch(e => { if (!isAbortError(e)) setError(e.message); }).finally(() => { if (!ctrl.signal.aborted) { setLoading(false); setRefreshing(false); } });
+      .then(d => { setData(d); rememberSummary(scopeKey, d); setNow(Date.now()); }).catch(e => { if (!isAbortError(e)) setError(e.message); }).finally(() => { if (!ctrl.signal.aborted) { setLoading(false); setRefreshing(false); } });
     return () => ctrl.abort();
     // scope ใช้แค่เทียบว่าเปลี่ยนขอบเขตหรือไม่ — ไม่ต้องยิงซ้ำเมื่อ scope ถูกตั้งค่า
   }, [projectId, releaseId, buildId, shareCode, shareToken, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  // ข้อมูล Defect ของมุมมองผู้บริหาร/Dev โหลดแยกเฉพาะเมื่อเปิดมุมมองนั้น (หน้า QA Lead ไม่ต้องใช้)
-  const insightsKey = [scopeKey, mine].join("|");
-  const [insightsScope, setInsightsScope] = useState("");
+  // "ของฉัน" (Dev) ขอแยกเฉพาะตอนเปิดใช้ — ทั้งทีมมากับ summary แล้ว
   useEffect(() => {
-    if (view === "qa") return;
-    if (insightsScope !== insightsKey) { setInsightsScope(insightsKey); setInsights(null); }
-    setInsightsError("");
-    if (shareToken) { setInsightsError("ลิงก์แชร์แบบเดิมไม่มีข้อมูล Defect เพิ่มเติม — สร้างลิงก์แชร์ใหม่เพื่อดูส่วนนี้"); return; }
-    const params = new URLSearchParams({ ...(projectId && { projectId }), ...(releaseId && { releaseId }), ...(buildId && { buildId }), ...(mine && { mine: "true" }) });
-    const url = shareCode ? `${apiUrl}/dashboard/shared/${encodeURIComponent(shareCode)}/defect-insights` : `${apiUrl}/dashboard/defect-insights?${params}`;
+    if (view !== "dev" || !mine || shared) return;
+    setMineInsights(null); setMineError("");
+    const params = new URLSearchParams({ ...(projectId && { projectId }), ...(releaseId && { releaseId }), ...(buildId && { buildId }), mine: "true" });
     const ctrl = new AbortController();
-    fetch(url, shareCode ? { signal: ctrl.signal } : { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, signal: ctrl.signal })
-      .then(async r => { if (!r.ok) throw new Error("โหลดข้อมูล Defect ไม่สำเร็จ — กดรีเฟรชเพื่อลองใหม่"); return r.json(); })
-      .then(d => setInsights(d)).catch(e => { if (!isAbortError(e)) setInsightsError(e.message); });
+    fetch(`${apiUrl}/dashboard/defect-insights?${params}`, { headers: { Authorization: `Bearer ${localStorage.getItem("qa.accessToken")}` }, signal: ctrl.signal })
+      .then(async r => { if (!r.ok) throw new Error("โหลดข้อมูล Defect ของคุณไม่สำเร็จ — กดรีเฟรชเพื่อลองใหม่"); return r.json(); })
+      .then(d => setMineInsights(d)).catch(e => { if (!isAbortError(e)) setMineError(e.message); });
     return () => ctrl.abort();
-    // insightsScope ใช้แค่เทียบว่าเปลี่ยนขอบเขตหรือไม่
-  }, [view, projectId, releaseId, buildId, shareCode, shareToken, mine, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, mine, shared, projectId, releaseId, buildId, retryKey]);
   const refresh = () => { setRefreshing(true); setRetryKey(k => k + 1); };
   if (loading && !data) return <DashboardSkeleton />;
   if (!data) return <div className="executive-error" role="alert">
@@ -208,7 +211,7 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
   // เหตุผลมาจาก Server (ReleaseGate ชุดเดียวกับ Release Sign-off) — ด้านล่างเป็น fallback เมื่อ API รุ่นเก่ายังไม่ส่งมา
   const decisionReason = data.decisionReason ? data.decisionReason
     : data.recommendedDecision === "NO DATA" ? "ยังไม่มี Requirement หรือ Test Cycle สำหรับประเมิน"
-    : data.criticalDefects > 0 ? `พบ Critical Defect ค้าง ${data.criticalDefects} รายการ`
+    : gateCritical(data) > 0 ? `พบ Critical Defect ค้าง ${gateCritical(data)} รายการ`
     : data.openP0 > 0 ? `พบ P0 ค้าง ${data.openP0} รายการ`
     : data.highDefects > 0 ? `พบ High Defect ค้าง ${data.highDefects} รายการ`
     : data.openP1 > 0 ? `พบ P1 ค้าง ${data.openP1} รายการ`
@@ -282,7 +285,7 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
       ? { label: "ความครอบคลุม Requirement", value: "—", note: "ยังไม่มี Requirement ในขอบเขตนี้", passed: false, noData: true }
       : { label: "ความครอบคลุม Requirement", value: `${data.requirementCoverage}%`, note: data.requirementCoverage >= gate ? `${data.coveredRequirements.toLocaleString()}/${data.totalRequirements.toLocaleString()} Requirement` : `ขาดอีก ${gapTo(data.requirementCoverage)}%`, passed: data.requirementCoverage >= gate },
     { label: "อัตราผ่าน (Pass Rate)", value: `${data.passRate}%`, note: data.passRate >= gate ? `${data.passedCases.toLocaleString()} รายการผ่าน` : `ขาดอีก ${gapTo(data.passRate)}%`, passed: data.passRate >= gate },
-    { label: "Defect ระดับ Critical", value: `${data.criticalDefects}`, note: data.criticalDefects ? "ต้องแก้ก่อน Release" : "ไม่มีค้าง", passed: data.criticalDefects === 0 },
+    { label: data.newDefectsInBuild != null ? "Defect ระดับ Critical (ทั้ง Release)" : "Defect ระดับ Critical", value: `${gateCritical(data)}`, note: gateCritical(data) ? "ต้องแก้ก่อน Release" : "ไม่มีค้าง", passed: gateCritical(data) === 0 },
     { label: "P0 ที่ติดขัด (Blocker)", value: `${data.openP0}`, note: data.openP0 ? "P0 ที่ Fail หรือ Blocked" : "ไม่มีค้าง", passed: data.openP0 === 0 },
   ];
   const decision = decisionInfo[data.recommendedDecision] ?? { icon: "help", label: data.recommendedDecision };
@@ -303,10 +306,14 @@ export function Dashboard({ projectId, releaseId, buildId, shareCode, shareToken
     {error && <span className="db-hero-error" role="alert">{error} — แสดงข้อมูลชุดก่อนหน้า</span>}
   </div>
   );
+  const insights = mine ? mineInsights : data.insights ?? null;
+  const insightsError = mine ? mineError
+    : data.insights ? "" : shareToken ? "ลิงก์แชร์แบบเดิมไม่มีข้อมูล Defect เพิ่มเติม — สร้างลิงก์แชร์ใหม่เพื่อดูส่วนนี้"
+    : refreshing ? "" : "ไม่มีข้อมูล Defect เพิ่มเติมจาก Server — กดรีเฟรชเพื่อลองใหม่";
   const views: { key: DashboardView; label: string; icon: string }[] = [
+    { key: "qa", label: "QA Lead", icon: "fact_check" },
     { key: "executive", label: "ผู้บริหาร", icon: "insights" },
     ...(shared ? [] : [{ key: "dev" as const, label: "Dev", icon: "code" }]),
-    { key: "qa", label: "QA Lead", icon: "fact_check" },
   ];
   return <div className="executive-dashboard">
     <div className="dbv-switch">

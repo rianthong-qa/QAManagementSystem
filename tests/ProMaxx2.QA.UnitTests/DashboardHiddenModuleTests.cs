@@ -79,15 +79,15 @@ public sealed class DashboardHiddenModuleTests
     }
 
     [Fact]
-    public async Task Build_scope_counts_defects_still_open_as_of_that_build()
+    public async Task Build_scope_counts_only_defects_found_in_that_build()
     {
-        // เลือก Build = Defect ที่ค้าง ณ Build นี้ (เจอใน Build นี้หรือก่อนหน้า) แบบ Jira Affects Version; "พบใหม่" = เจอใน Build นี้เท่านั้น
+        // เลือก Build = นับเฉพาะ Defect ที่พบใน Build นั้น (ผู้ใช้กำหนด 2026-11-11); เกณฑ์ GO/NO-GO ยังนับทั้ง Release
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
         var seed = await AutomationTestFixtures.SeedBaselineAsync(db);
         var later = new Build(seed.Release.ReleaseId, "2", "1.0", null, null, DateTime.UtcNow.AddDays(1), null, null, null);
         db.Builds.Add(later);
         Defect Found(Guid buildId, string code, string severity) => new(seed.Project.ProjectId, seed.Release.ReleaseId, buildId, seed.Module.ModuleId, code, code, severity, "Open", null, null, null, null, null, null);
-        db.Defects.AddRange(Found(seed.Build.BuildId, "DF-OLD", "Medium"), Found(later.BuildId, "DF-NEW", "High"));
+        db.Defects.AddRange(Found(seed.Build.BuildId, "DF-OLD", "Critical"), Found(later.BuildId, "DF-NEW", "High"));
         await db.SaveChangesAsync();
         var repository = new DashboardRepository(db, new ProjectAccessContext());
 
@@ -95,14 +95,17 @@ public sealed class DashboardHiddenModuleTests
         var onFirst = await repository.GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, CancellationToken.None);
         var byRelease = await repository.GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, null, CancellationToken.None);
 
-        Assert.Equal(2, onLater.OpenDefects);
-        Assert.Equal(1, onLater.NewDefectsInBuild);
-        Assert.Equal(2, onLater.Modules.Single(x => x.ModuleId == seed.Module.ModuleId).OpenDefects);
+        Assert.Equal((1, 1, 0, 1), (onLater.TotalDefects, onLater.OpenDefects, onLater.CriticalDefects, onLater.HighDefects));
+        Assert.Equal(1, onLater.Modules.Single(x => x.ModuleId == seed.Module.ModuleId).OpenDefects);
         Assert.Equal(1, onFirst.OpenDefects);
+        Assert.Equal(2, byRelease.OpenDefects);
         Assert.Null(byRelease.NewDefectsInBuild);
-        // ไม่มี Cycle = NO DATA แต่เหตุผลบอก Defect ที่ค้าง
-        Assert.Equal("NO DATA", onLater.RecommendedDecision);
-        Assert.Contains("มี Defect ค้าง 2 รายการ (High 1)", onLater.DecisionReason);
+        // Critical ค้างจาก Build ก่อนยังกันการปล่อย และเหตุผลบอกว่านับทั้ง Release
+        Assert.Equal((1, 1), (onLater.GateCriticalDefects, onLater.GateHighDefects));
+        Assert.Equal("NO-GO", onLater.RecommendedDecision);
+        Assert.Contains("ใน Release นี้", onLater.DecisionReason);
+        var insights = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, later.BuildId, null, true, CancellationToken.None);
+        Assert.Equal("DF-NEW", Assert.Single(insights.Attention).DefectCode);
     }
 
     [Fact]
@@ -120,23 +123,25 @@ public sealed class DashboardHiddenModuleTests
         await db.SaveChangesAsync();
         var repository = new DashboardRepository(db, new ProjectAccessContext());
 
-        var team = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, later.BuildId, null, true, CancellationToken.None);
-        var shared = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, later.BuildId, null, false, CancellationToken.None);
-        var mineOnly = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, later.BuildId, me, true, CancellationToken.None);
+        // เลือก Build แรก = เฉพาะ Defect ที่พบใน Build นั้น (DF-NEW อยู่ Build ถัดไปจึงไม่นับ)
+        var team = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, null, true, CancellationToken.None);
+        var shared = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, null, false, CancellationToken.None);
+        var mineOnly = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, me, true, CancellationToken.None);
+        var release = await repository.GetDefectInsightsAsync(seed.Project.ProjectId, seed.Release.ReleaseId, null, null, true, CancellationToken.None);
 
-        Assert.Equal(3, team.Open);
-        Assert.Equal(2, team.Unresolved);
+        Assert.Equal(2, team.Open);
+        Assert.Equal(1, team.Unresolved);
         Assert.Equal(1, team.AwaitingRetest);
-        Assert.Equal(1, team.NewInBuild);
+        Assert.Equal(3, team.NewInBuild);
         Assert.Equal(1, team.NewInBuildHigh);
         Assert.Equal(1, team.Closed);
-        // ต้องดูก่อน: พบใหม่ใน Build นี้ขึ้นก่อน; รอตรวจซ้ำ = Resolved
-        Assert.Equal(["DF-NEW", "DF-OLD"], team.Attention.Select(x => x.DefectCode));
-        Assert.True(team.Attention[0].NewInBuild);
+        Assert.Equal(["DF-OLD"], team.Attention.Select(x => x.DefectCode));
         Assert.Equal("DF-FIXED", Assert.Single(team.AwaitingRetestItems).DefectCode);
-        Assert.Equal(3, Assert.Single(team.Modules).Total);
+        Assert.Equal(2, Assert.Single(team.Modules).Total);
         Assert.Equal(30, team.Trend.Count);
-        Assert.Equal(4, team.Trend[^1].Created);
+        Assert.Equal(3, team.Trend[^1].Created);
+        Assert.Equal(3, release.Open);
+        Assert.Null(release.NewInBuild);
         Assert.Empty(shared.Attention);
         Assert.Empty(shared.AwaitingRetestItems);
         Assert.Equal("DF-OLD", Assert.Single(mineOnly.Attention).DefectCode);
