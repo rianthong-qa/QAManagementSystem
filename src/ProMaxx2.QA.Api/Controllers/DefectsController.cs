@@ -63,7 +63,7 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   var images=await db.DefectAttachments.Where(x=>x.DefectId==defectId&&x.CommentId==commentId).ToListAsync(ct);
   if(images.Count>0){db.DefectAttachments.RemoveRange(images);await db.SaveChangesAsync(ct);imageStorage.DeleteFiles(defectId,images.Select(x=>x.StoredFileName));}
   return NoContent();}
- [HttpGet("{id:guid}/test-cases"),Authorize(Policy="DefectView")]public async Task<ActionResult<IReadOnlyList<DefectTestCaseDto>>>TestCases(Guid id,CancellationToken ct){var entity=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(entity is null||!CanAccess(entity.ProjectId))return NotFound();return Ok(await db.DefectTestCaseLinks.AsNoTracking().Where(x=>x.DefectId==id).Join(db.TestCases,x=>x.TestCaseId,y=>y.TestCaseId,(x,y)=>new DefectTestCaseDto(y.TestCaseId,y.TestCaseCode,y.Title)).ToListAsync(ct));}
+ [HttpGet("{id:guid}/test-cases"),Authorize(Policy="DefectView")]public async Task<ActionResult<IReadOnlyList<DefectTestCaseDto>>>TestCases(Guid id,CancellationToken ct){var entity=await db.Defects.AsNoTracking().FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(entity is null||!CanAccess(entity.ProjectId))return NotFound();return Ok(await db.DefectTestCaseLinks.AsNoTracking().Where(x=>x.DefectId==id).Join(db.TestCases,x=>x.TestCaseId,y=>y.TestCaseId,(x,y)=>new DefectTestCaseDto(y.TestCaseId,y.TestCaseCode,y.Title,y.IsDeleted||db.TestCycleCases.Any(c=>c.TestCaseId==y.TestCaseId&&c.Cycle.BuildId==entity.BuildId&&!c.Cycle.IsDeleted))).ToListAsync(ct));}
  [HttpGet("by-test-case/{testCaseId:guid}"),Authorize(Policy="DefectView")]
  public async Task<ActionResult<IReadOnlyList<DefectDto>>>ByTestCase(Guid testCaseId,CancellationToken ct)
  {
@@ -162,6 +162,7 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   if(r.Delete==true)
   {
    foreach(var e in entities)e.SoftDelete(userId);
+   await RemoveAutoResultsAsync(entities,ct);
    await db.SaveChangesAsync(ct);
    if(entities.Count>0)await activityService.LogManyAsync(entities.Select(e=>e.DefectId),"Deleted","Defect deleted by bulk action",userId,ct);
    return Ok(new{updated=entities.Count,failed=Array.Empty<BulkDefectFailure>()});
@@ -178,10 +179,13 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
    {
     // ตรวจกฎก่อนแตะข้อมูล — ผลการปิดที่จะใส่ใช้ตัดสินด้วย (ปิดตรงจาก Open ต้องไม่ใช่ Fixed)
     if(Defect.TransitionError(from,target,r.Resolution?.ResolutionType??e.ResolutionType) is {} error){failed.Add(new(e.DefectId,e.DefectCode,error));continue;}
+    var resolutionBefore=e.ResolutionType;
     if(r.Resolution is not null&&await ApplyResolutionAsync(e,r.Resolution,ct) is {} resolutionError){failed.Add(new(e.DefectId,e.DefectCode,resolutionError));continue;}
     var fix=target=="Resolved"&&from!="Resolved"?r.FixedInBuildId??await DefectBuilds.LatestActiveBuildIdAsync(db,e.ReleaseId,ct):r.FixedInBuildId;
+    var fixBefore=e.FixedInBuildId;
     e.TransitionTo(target,fix,null,userId);
     if(from!=e.Status)statusChanges.Add(StatusActivity(e,from,"bulk action"));
+    if((await RecordRetestAsync(e,from,fixBefore,resolutionBefore,null,ct)).CycleCode is {} retestCycle)statusChanges.Add(new DefectActivity(e.DefectId,"TestLinked",RetestMessage(e,retestCycle),userId));
    }
    if(!string.IsNullOrWhiteSpace(r.Severity))e.UpdateSeverity(r.Severity,userId);
    if(r.AssigneeUserId.HasValue)e.Assign(r.AssigneeUserId.Value,userId);
@@ -230,48 +234,151 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
  /// </summary>
  private async Task<(string?CycleCode,string?Skipped)>AddUnplannedExecutionAsync(Defect defect,TestCase testCase,string projectCode,CancellationToken ct)
  {
-  if(UserId() is not {} testerId)return(null,"ไม่พบผู้ใช้ที่บันทึก");
-  // ผลนี้นับเป็นผลทดสอบของผู้สร้าง จึงต้องมีสิทธิ์เดียวกับการบันทึกผลใน Execution Workspace (policy ExecutionRun) — เช่น Developer แจ้ง Defect ได้แต่ไม่ถูกบันทึกเป็นผู้ทดสอบ
-  if(!User.HasClaim("permission","EXECUTION.RUN"))return(null,"บัญชีนี้ไม่มีสิทธิ์บันทึกผลทดสอบ (EXECUTION.RUN)");
   if(!DefectStatusGroups.NotDone.Contains(defect.Status))return(null,$"Defect สถานะ {defect.Status} — ไม่บันทึกผล Fail");
   if(defect.BuildId is not {} buildId)return(null,"ไม่ได้เลือก Build — เลือก Build ด้านบนของหน้าก่อนสร้าง Defect เพื่อให้ผลทดสอบแสดงใน Dashboard");
+  return await RecordResultAsync(defect,[testCase],buildId,false,defect.ActualResult,AutoResultComment(defect.DefectCode),projectCode,true,ct);
+ }
+ /// <summary>Comment ของผล Fail ที่ระบบบันทึกให้ตอนพบ Defect — ใช้หาผลนี้อีกครั้งเมื่อ Defect ถูกลบ</summary>
+ public static string AutoResultComment(string defectCode)=>$"บันทึกอัตโนมัติจาก {defectCode}";
+ /// <summary>
+ /// บันทึกผล Pass/Fail ของ Test Case ที่ผูกกับ Defect ลง Cycle ของ Build (ไม่ SaveChanges — ผู้เรียกบันทึกพร้อมงานหลัก):
+ /// Test Case อยู่ใน Cycle ที่ยังเปิดของ Build นั้นแล้ว (เช่น Retest Cycle) = เพิ่มผลรอบใหม่ในเคสเดิม; ไม่อยู่ = ใส่ Cycle "พบนอกแผน" ของ Build
+ /// ข้ามพร้อมเหตุผลเมื่อผู้ใช้ไม่มีสิทธิ์ EXECUTION.RUN, Release ปิดแล้ว, Build ปิดใช้งาน หรือไม่มี Environment — กฎเดียวกับ Execution Workspace / การสร้าง Cycle
+ /// </summary>
+ private async Task<(string?CycleCode,string?Skipped)>RecordResultAsync(Defect defect,IReadOnlyList<TestCase> testCases,Guid buildId,bool passed,string? actualResult,string comment,string projectCode,bool addToSuite,CancellationToken ct)
+ {
+  if(testCases.Count==0)return default;
+  if(UserId() is not {} testerId)return(null,"ไม่พบผู้ใช้ที่บันทึก");
+  // ผลนี้นับเป็นผลทดสอบของผู้บันทึก จึงต้องมีสิทธิ์เดียวกับการบันทึกผลใน Execution Workspace (policy ExecutionRun) — เช่น Developer แจ้ง Defect ได้แต่ไม่ถูกบันทึกเป็นผู้ทดสอบ
+  if(!User.HasClaim("permission","EXECUTION.RUN"))return(null,"บัญชีนี้ไม่มีสิทธิ์บันทึกผลทดสอบ (EXECUTION.RUN)");
   var build=await db.Builds.AsNoTracking().Where(b=>b.BuildId==buildId).Select(b=>new{b.ReleaseId,b.BuildNumber,b.IsActive,ProjectId=db.Releases.Where(x=>x.ReleaseId==b.ReleaseId).Select(x=>(Guid?)x.ProjectId).FirstOrDefault(),ReleaseStatus=db.Releases.Where(x=>x.ReleaseId==b.ReleaseId).Select(x=>x.Status).FirstOrDefault()}).SingleOrDefaultAsync(ct);
   if(build is null||build.ProjectId!=defect.ProjectId)return(null,"Build ไม่อยู่ใน Project นี้");
   // กฎเดียวกับการสร้าง Test Cycle ปกติ (TestCycleRepository.ValidateReferencesAsync): Release ที่ปิดแล้ว / Build ที่ปิดใช้งาน ไม่รับ Cycle และผลทดสอบใหม่
   if(build.ReleaseStatus is "Released" or "Cancelled")return(null,$"Release สถานะ {build.ReleaseStatus} แล้ว — ไม่บันทึกผลทดสอบเพิ่ม");
   if(!build.IsActive)return(null,$"Build {build.BuildNumber} ถูกปิดใช้งานแล้ว — ไม่บันทึกผลทดสอบเพิ่ม");
-  var environmentId=await db.TestEnvironments.AsNoTracking().Where(x=>x.ProjectId==defect.ProjectId&&x.IsActive).OrderBy(x=>x.EnvironmentName).Select(x=>(Guid?)x.TestEnvironmentId).FirstOrDefaultAsync(ct);
-  if(environmentId is not {} envId)return(null,"Project ยังไม่มี Environment ที่เปิดใช้ — เพิ่ม Environment ในหน้า Test Cycle ก่อน");
-  // Suite กลาง 1 ชุดต่อ Project (หาจากรหัส — รวมที่ถูกลบ เพราะ unique index ไม่สนใจ IsDeleted จึงกู้คืนมาใช้ต่อ)
-  var suiteCode=DefectSuiteCode(projectCode);
-  var suite=await db.TestSuites.FirstOrDefaultAsync(x=>x.ProjectId==defect.ProjectId&&x.SuiteCode==suiteCode,ct);
-  if(suite is null){suite=new TestSuite(defect.ProjectId,suiteCode,"Defect Regression","Regression","Test Case ที่สร้างจาก Defect ที่แจ้งนอกแผน — ระบบเพิ่มให้อัตโนมัติเมื่อสร้าง Defect",null,testerId);await db.TestSuites.AddAsync(suite,ct);db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Created","TestSuite",suite.TestSuiteId.ToString(),$"ระบบสร้าง Test Suite {suiteCode} (Defect Regression) จากการสร้าง {defect.DefectCode}",null,null,null));}
-  else if(suite.IsDeleted){suite.Restore();suite.Update(suite.SuiteName,suite.SuiteType,suite.Description,suite.RiskTier,true);db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Restored","TestSuite",suite.TestSuiteId.ToString(),$"ระบบกู้คืน Test Suite {suiteCode} (Defect Regression) จากการสร้าง {defect.DefectCode}",null,null,null));}
-  var suiteId=suite.TestSuiteId;
-  var suiteOrder=await db.TestSuiteCases.CountAsync(x=>x.TestSuiteId==suiteId,ct)+1;
-  db.TestSuiteCases.Add(new TestSuiteCase(suiteId,testCase.TestCaseId,suiteOrder,true));
-  // Cycle นอกแผน 1 รอบต่อ Build ที่ยังเปิดอยู่ (ปิดไปแล้ว = เปิดรอบใหม่); ไม่ใช้ Cycle ที่ผูก Test Plan เพราะแผนอาจถูก freeze
-  var cycle=await db.TestCycles.Where(x=>x.ProjectId==defect.ProjectId&&x.BuildId==buildId&&x.TestSuiteId==suiteId&&!x.IsDeleted&&(x.Status=="Draft"||x.Status=="InProgress")&&!db.TestPlanRuns.Any(p=>p.TestCycleId==x.TestCycleId)).OrderByDescending(x=>x.CreatedAt).FirstOrDefaultAsync(ct);
-  if(cycle is null)
+  var status=passed?"Pass":"Fail";
+  // รายการที่เพิ่งเพิ่มในคำขอเดียวกัน (ยังไม่ SaveChanges เช่น Bulk หลาย Defect) query ไม่เห็น — ดูจาก Local ด้วย
+  bool Added(object entity)=>db.Entry(entity).State==EntityState.Added;
+  TestSuite? suite=null;TestCycle? unplanned=null;string? skipped=null;var cycleCodes=new List<string>();
+  foreach(var testCase in testCases)
   {
-   var prefix=$"{projectCode}-CYC";
-   var codes=await db.TestCycles.Where(x=>x.ProjectId==defect.ProjectId&&x.CycleCode.StartsWith(prefix)).Select(x=>x.CycleCode).ToListAsync(ct);
-   cycle=new TestCycle(defect.ProjectId,build.ReleaseId,buildId,envId,suiteId,BusinessCodeGenerator.NextAvailable(prefix,codes),$"พบนอกแผน · {build.BuildNumber}",UnplannedCycleType,DateTime.UtcNow.Date,null,testerId,"ระบบสร้างอัตโนมัติสำหรับ Defect ที่แจ้งเองโดยไม่ได้มาจาก Test Cycle ที่วางแผนไว้",testerId);
-   cycle.ChangeStatus("InProgress");
-   await db.TestCycles.AddAsync(cycle,ct);
-   db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Created","TestCycle",cycle.TestCycleId.ToString(),$"ระบบสร้าง Test Cycle {cycle.CycleCode} (พบนอกแผน) บน Build {build.BuildNumber} จากการสร้าง {defect.DefectCode}",null,null,null));
+   var testCaseId=testCase.TestCaseId;
+   var cycleCase=db.TestCycleCases.Local.FirstOrDefault(x=>x.TestCaseId==testCaseId&&Added(x)&&db.TestCycles.Local.Any(c=>c.TestCycleId==x.TestCycleId&&c.BuildId==buildId))
+    ??await db.TestCycleCases.Include(x=>x.Cycle).Where(x=>x.TestCaseId==testCaseId&&x.Cycle.BuildId==buildId&&x.Cycle.ProjectId==defect.ProjectId&&!x.Cycle.IsDeleted&&(x.Cycle.Status=="Draft"||x.Cycle.Status=="InProgress")
+      &&!db.TestPlanRuns.Any(p=>p.TestCycleId==x.TestCycleId&&p.Plan.IsFrozen)).OrderByDescending(x=>x.Cycle.CreatedAt).FirstOrDefaultAsync(ct);
+   TestCycle cycle;
+   if(cycleCase is not null)cycle=db.TestCycles.Local.First(c=>c.TestCycleId==cycleCase.TestCycleId);
+   else
+   {
+    if(unplanned is null)
+    {
+     var environmentId=await db.TestEnvironments.AsNoTracking().Where(x=>x.ProjectId==defect.ProjectId&&x.IsActive).OrderBy(x=>x.EnvironmentName).Select(x=>(Guid?)x.TestEnvironmentId).FirstOrDefaultAsync(ct);
+     if(environmentId is not {} envId){skipped="Project ยังไม่มี Environment ที่เปิดใช้ — เพิ่ม Environment ในหน้า Test Cycle ก่อน";break;}
+     // Suite กลาง 1 ชุดต่อ Project (หาจากรหัส — รวมที่ถูกลบ เพราะ unique index ไม่สนใจ IsDeleted จึงกู้คืนมาใช้ต่อ)
+     var suiteCode=DefectSuiteCode(projectCode);
+     suite=db.TestSuites.Local.FirstOrDefault(x=>x.ProjectId==defect.ProjectId&&x.SuiteCode==suiteCode)??await db.TestSuites.FirstOrDefaultAsync(x=>x.ProjectId==defect.ProjectId&&x.SuiteCode==suiteCode,ct);
+     if(suite is null){suite=new TestSuite(defect.ProjectId,suiteCode,"Defect Regression","Regression","Test Case ที่สร้างจาก Defect ที่แจ้งนอกแผน — ระบบเพิ่มให้อัตโนมัติเมื่อสร้าง Defect",null,testerId);await db.TestSuites.AddAsync(suite,ct);db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Created","TestSuite",suite.TestSuiteId.ToString(),$"ระบบสร้าง Test Suite {suiteCode} (Defect Regression) จาก {defect.DefectCode}",null,null,null));}
+     else if(suite.IsDeleted){suite.Restore();suite.Update(suite.SuiteName,suite.SuiteType,suite.Description,suite.RiskTier,true);db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Restored","TestSuite",suite.TestSuiteId.ToString(),$"ระบบกู้คืน Test Suite {suiteCode} (Defect Regression) จาก {defect.DefectCode}",null,null,null));}
+     var suiteKey=suite.TestSuiteId;
+     // Cycle นอกแผน 1 รอบต่อ Build ที่ยังเปิดอยู่ (ปิดไปแล้ว = เปิดรอบใหม่); ไม่ใช้ Cycle ที่ผูก Test Plan เพราะแผนอาจถูก freeze
+     unplanned=db.TestCycles.Local.FirstOrDefault(x=>Added(x)&&x.ProjectId==defect.ProjectId&&x.BuildId==buildId&&x.TestSuiteId==suiteKey)
+      ??await db.TestCycles.Where(x=>x.ProjectId==defect.ProjectId&&x.BuildId==buildId&&x.TestSuiteId==suiteKey&&!x.IsDeleted&&(x.Status=="Draft"||x.Status=="InProgress")&&!db.TestPlanRuns.Any(p=>p.TestCycleId==x.TestCycleId)).OrderByDescending(x=>x.CreatedAt).FirstOrDefaultAsync(ct);
+     if(unplanned is null)
+     {
+      var prefix=$"{projectCode}-CYC";
+      var codes=await db.TestCycles.Where(x=>x.ProjectId==defect.ProjectId&&x.CycleCode.StartsWith(prefix)).Select(x=>x.CycleCode).ToListAsync(ct);
+      codes.AddRange(db.TestCycles.Local.Where(Added).Select(x=>x.CycleCode));
+      unplanned=new TestCycle(defect.ProjectId,build.ReleaseId,buildId,envId,suiteKey,BusinessCodeGenerator.NextAvailable(prefix,codes),$"พบนอกแผน · {build.BuildNumber}",UnplannedCycleType,DateTime.UtcNow.Date,null,testerId,"ระบบสร้างอัตโนมัติสำหรับ Defect ที่แจ้งเองโดยไม่ได้มาจาก Test Cycle ที่วางแผนไว้",testerId);
+      unplanned.ChangeStatus("InProgress");
+      await db.TestCycles.AddAsync(unplanned,ct);
+      db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Created","TestCycle",unplanned.TestCycleId.ToString(),$"ระบบสร้าง Test Cycle {unplanned.CycleCode} (พบนอกแผน) บน Build {build.BuildNumber} จาก {defect.DefectCode}",null,null,null));
+     }
+    }
+    cycle=unplanned;var suiteId=suite!.TestSuiteId;var cycleId=cycle.TestCycleId;
+    if(addToSuite&&!db.TestSuiteCases.Local.Any(x=>x.TestSuiteId==suiteId&&x.TestCaseId==testCaseId)&&!await db.TestSuiteCases.AnyAsync(x=>x.TestSuiteId==suiteId&&x.TestCaseId==testCaseId,ct))
+     db.TestSuiteCases.Add(new TestSuiteCase(suiteId,testCaseId,await db.TestSuiteCases.CountAsync(x=>x.TestSuiteId==suiteId,ct)+db.TestSuiteCases.Local.Count(x=>x.TestSuiteId==suiteId&&Added(x))+1,true));
+    cycleCase=new TestCycleCase(cycleId,testCaseId,testCase.RevisionNo,testCase.Priority,await db.TestCycleCases.CountAsync(x=>x.TestCycleId==cycleId,ct)+db.TestCycleCases.Local.Count(x=>x.TestCycleId==cycleId&&Added(x))+1);
+    db.TestCycleCases.Add(cycleCase);
+   }
+   var cycleCaseId=cycleCase.TestCycleCaseId;var revision=cycleCase.TestCaseRevisionNo;
+   var executionNo=(await db.TestExecutions.Where(x=>x.TestCycleCaseId==cycleCaseId).MaxAsync(x=>(int?)x.ExecutionNo,ct)??0)+db.TestExecutions.Local.Count(x=>x.TestCycleCaseId==cycleCaseId&&Added(x))+1;
+   // ผลรายขั้น: ผ่าน = ทุกขั้นผ่าน; ไม่ผ่าน = ขั้นสุดท้ายคือจุดที่ผลไม่ตรง (Fail + ผลจริง) ขั้นก่อนหน้าทำผ่านมาได้
+   var stepNos=testCase.Steps.Where(x=>x.RevisionNo==revision).Select(x=>x.StepNo).OrderBy(x=>x).ToList();
+   var steps=stepNos.Select((no,i)=>!passed&&i==stepNos.Count-1?new StepResultInput(no,"Fail",actualResult,null):new StepResultInput(no,"Pass",null,null));
+   var execution=new TestExecution(cycleCaseId,executionNo,buildId,cycle.EnvironmentId,testerId,status,passed?null:actualResult,comment,steps);
+   cycleCase.SetStatus(execution.Status);
+   await db.TestExecutions.AddAsync(execution,ct);
+   cycleCodes.Add(cycle.CycleCode);
   }
-  var cycleId=cycle.TestCycleId;
-  var order=await db.TestCycleCases.CountAsync(x=>x.TestCycleId==cycleId,ct)+1;
-  var cycleCase=new TestCycleCase(cycleId,testCase.TestCaseId,testCase.RevisionNo,testCase.Priority,order);
-  // ผลรายขั้น: ขั้นสุดท้ายคือจุดที่ผลไม่ตรง (Fail + ผลจริงของ Defect) ขั้นก่อนหน้าทำผ่านมาได้
-  var stepNos=testCase.Steps.Where(x=>x.RevisionNo==testCase.RevisionNo).Select(x=>x.StepNo).OrderBy(x=>x).ToList();
-  var steps=stepNos.Select((no,i)=>i==stepNos.Count-1?new StepResultInput(no,"Fail",defect.ActualResult,null):new StepResultInput(no,"Pass",null,null));
-  var execution=new TestExecution(cycleCase.TestCycleCaseId,1,buildId,cycle.EnvironmentId,testerId,"Fail",defect.ActualResult,$"บันทึกอัตโนมัติจาก {defect.DefectCode}",steps);
-  cycleCase.SetStatus(execution.Status);
-  db.TestCycleCases.Add(cycleCase);
-  await db.TestExecutions.AddAsync(execution,ct);
-  return(cycle.CycleCode,null);
+  return cycleCodes.Count>0?(string.Join(", ",cycleCodes.Distinct()),null):(null,skipped);
+ }
+ /// <summary>
+ /// ออกจาก Resolved = ผลตรวจซ้ำของ QA (Closed = ผ่านบน Verified Build, กลับไปยังไม่แก้ = ไม่ผ่านบน Fix Build) — บันทึกผลนั้นลง Cycle ของ Build ที่ตรวจด้วย
+ /// เพื่อให้เคสใน Cycle ไม่ค้างเป็น Fail หลัง Defect ปิดแล้ว; ปิดด้วยผลอื่น (Won't Fix, Duplicate ฯลฯ) ไม่ใช่การตรวจซ้ำ จึงไม่บันทึก
+ /// </summary>
+ private async Task<(string?CycleCode,string?Skipped)>RecordRetestAsync(Defect entity,string from,Guid? fixBuildBefore,string? resolutionBefore,Guid? retestBuildId,CancellationToken ct)
+ {
+  if(from!="Resolved"||entity.Status==from)return default;
+  var passed=entity.Status=="Closed";
+  if(!passed&&!Defect.UnresolvedStatuses.Contains(entity.Status))return default;
+  if((passed?entity.ResolutionType:resolutionBefore) is not(null or "Fixed"))return default;
+  if((retestBuildId??(passed?entity.VerifiedInBuildId:fixBuildBefore)) is not {} buildId)return default;
+  var cases=await LinkedTestCasesAsync(entity.DefectId).ToListAsync(ct);
+  if(cases.Count==0)return default;
+  var projectCode=await db.Projects.Where(x=>x.ProjectId==entity.ProjectId).Select(x=>x.ProjectCode).SingleAsync(ct);
+  return await RecordResultAsync(entity,cases,buildId,passed,null,$"ตรวจซ้ำ {entity.DefectCode} — {(passed?"ผ่าน":"ไม่ผ่าน")}",projectCode,false,ct);
+ }
+ private IQueryable<TestCase>LinkedTestCasesAsync(Guid defectId)=>db.TestCases.Include(x=>x.Steps).Where(x=>!x.IsDeleted&&db.DefectTestCaseLinks.Any(l=>l.DefectId==defectId&&l.TestCaseId==x.TestCaseId));
+ private static string RetestMessage(Defect entity,string cycleCode)=>$"บันทึกผลตรวจซ้ำ ({(entity.Status=="Closed"?"Pass":"Fail")}) ลง Test Cycle {cycleCode}";
+ /// <summary>
+ /// ลบ Defect = ถอนผล Fail ที่ระบบบันทึกให้ตอนพบ (Comment = AutoResultComment) ออกจาก Cycle ที่ยังเปิด — ไม่ให้ Dashboard นับผลของ Defect ที่ลบแล้ว
+ /// เคสที่มีแต่ผลอัตโนมัตินี้ = เอาออกจาก Cycle; เคสที่มีผลอื่นด้วย (เช่น รันซ้ำใน Execution Workspace) = ลบเฉพาะผลอัตโนมัติและคืนสถานะตามผลล่าสุดที่เหลือ
+ /// ข้าม Cycle ที่ปิดแล้ว / อยู่ใน Test Plan ที่ Frozen (หลักฐานของรอบที่จบแล้ว)
+ /// </summary>
+ private async Task RemoveAutoResultsAsync(IEnumerable<Defect> defects,CancellationToken ct)
+ {
+  var userId=UserId();
+  foreach(var defect in defects)
+  {
+   var comment=AutoResultComment(defect.DefectCode);var defectId=defect.DefectId;var projectId=defect.ProjectId;
+   var cycleCases=await db.TestCycleCases.Include(x=>x.Cycle).Include(x=>x.Executions).ThenInclude(x=>x.StepResults)
+    .Where(x=>db.DefectTestCaseLinks.Any(l=>l.DefectId==defectId&&l.TestCaseId==x.TestCaseId)&&x.Cycle.ProjectId==projectId&&!x.Cycle.IsDeleted&&(x.Cycle.Status=="Draft"||x.Cycle.Status=="InProgress")
+     &&!db.TestPlanRuns.Any(p=>p.TestCycleId==x.TestCycleId&&p.Plan.IsFrozen)&&x.Executions.Any(e=>!e.IsDeleted&&e.Comment==comment)).ToListAsync(ct);
+   foreach(var cycleCase in cycleCases)
+   {
+    var cycleCaseId=cycleCase.TestCycleCaseId;
+    if(cycleCase.Executions.All(e=>e.Comment==comment)&&!await db.TestCycleCaseAssignments.AnyAsync(a=>a.TestCycleCaseId==cycleCaseId,ct))
+    {
+     db.RemoveRange(cycleCase.Executions.SelectMany(e=>e.StepResults));db.TestExecutions.RemoveRange(cycleCase.Executions);db.TestCycleCases.Remove(cycleCase);
+    }
+    else
+    {
+     foreach(var execution in cycleCase.Executions.Where(e=>!e.IsDeleted&&e.Comment==comment))execution.SoftDelete(userId);
+     cycleCase.SetStatus(cycleCase.Executions.Where(e=>!e.IsDeleted).OrderByDescending(e=>e.ExecutionNo).Select(e=>e.Status).FirstOrDefault()??"NotRun");
+    }
+    db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(userId,"Deleted","TestExecution",cycleCaseId.ToString(),$"ถอนผล Fail ที่ระบบบันทึกจาก {defect.DefectCode} ออกจาก Test Cycle {cycleCase.Cycle.CycleCode} เพราะ Defect ถูกลบ",null,null,null));
+   }
+  }
+ }
+ /// <summary>
+ /// บันทึกผล Fail ย้อนหลังลง Cycle "พบนอกแผน" ของ Build ที่พบ — สำหรับ Defect ที่ตอนสร้างไม่ได้บันทึก (ปิดตัวเลือก, ยังไม่มี Environment, ผู้สร้างไม่มีสิทธิ์)
+ /// หรือ Defect ที่กู้คืนจากการลบ; เฉพาะ Test Case ที่ผูกไว้ซึ่งยังไม่อยู่ใน Cycle ใดของ Build นั้น (ไม่ทับผลทดสอบจริง)
+ /// </summary>
+ [HttpPost("{id:guid}/record-execution"),Authorize(Policy="DefectEdit")]
+ public async Task<ActionResult<DefectDto>>RecordExecution(Guid id,CancellationToken ct)
+ {
+  var entity=await db.Defects.FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);
+  if(entity is null||!CanAccess(entity.ProjectId))return NotFound();
+  if(!DefectStatusGroups.NotDone.Contains(entity.Status))return BadRequest($"Defect สถานะ {entity.Status} — ไม่บันทึกผล Fail");
+  if(entity.BuildId is not {} buildId)return BadRequest("Defect นี้ไม่ได้ระบุ Build ที่พบ จึงบันทึกผลทดสอบย้อนหลังไม่ได้");
+  var cases=await LinkedTestCasesAsync(id).Where(x=>!db.TestCycleCases.Any(c=>c.TestCaseId==x.TestCaseId&&c.Cycle.BuildId==buildId&&!c.Cycle.IsDeleted)).ToListAsync(ct);
+  if(cases.Count==0)return BadRequest("ไม่มี Test Case ที่เชื่อมโยงซึ่งยังไม่มีผลทดสอบใน Build ที่พบ");
+  var projectCode=await db.Projects.Where(x=>x.ProjectId==entity.ProjectId).Select(x=>x.ProjectCode).SingleAsync(ct);
+  var recorded=await RecordResultAsync(entity,cases,buildId,false,entity.ActualResult,AutoResultComment(entity.DefectCode),projectCode,true,ct);
+  if(recorded.CycleCode is null)return BadRequest(recorded.Skipped??"บันทึกผลทดสอบไม่สำเร็จ");
+  await db.SaveChangesAsync(ct);
+  await activityService.LogAsync(id,"TestLinked",$"บันทึกผล Fail ของ {string.Join(", ",cases.Select(x=>x.TestCaseCode))} ลง Test Cycle {recorded.CycleCode} (พบนอกแผน)",UserId(),ct);
+  return Ok((await MapAsync(entity,ct)) with{AutoExecutionCycleCode=recorded.CycleCode});
  }
  private async Task<(string?Code,string?Error,TestCase?TestCase)>AddTestCaseForNewDefectAsync(Defect defect,NewDefectTestCaseRequest r,string projectCode,CancellationToken ct)
  {
@@ -298,29 +405,33 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
  {
   var entity=await db.Defects.FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);
   if(entity is null||!CanAccess(entity.ProjectId))return NotFound();
-  var from=entity.Status;
+  var from=entity.Status;var fixBefore=entity.FixedInBuildId;var resolutionBefore=entity.ResolutionType;
   entity.Update(r.Title,r.Severity,r.Description,r.StepsToReproduce,r.ExpectedResult,r.ActualResult,r.AssigneeUserId,UserId());
   if(r.Resolution is not null&&await ApplyResolutionAsync(entity,r.Resolution,ct) is {} updateError)return BadRequest(updateError);
   if(await TransitionAsync(entity,r.Status,r.FixedInBuildId,r.VerifiedInBuildId,ct) is {} statusError)return BadRequest(statusError);
   if(from!=entity.Status)db.DefectActivities.Add(StatusActivity(entity,from,null));
+  var retest=await RecordRetestAsync(entity,from,fixBefore,resolutionBefore,null,ct);
+  if(retest.CycleCode is not null)db.DefectActivities.Add(new DefectActivity(id,"TestLinked",RetestMessage(entity,retest.CycleCode),UserId()));
   await db.SaveChangesAsync(ct);
   await activityService.LogAsync(id,"Updated","Defect details updated",UserId(),ct);
   if(r.Resolution is not null)await LogResolutionAsync(entity,ct);
-  return Ok(await MapAsync(entity,ct));
+  return Ok((await MapAsync(entity,ct)) with{AutoExecutionCycleCode=retest.CycleCode,AutoExecutionSkipped=retest.Skipped});
  }
  [HttpPatch("{id:guid}/status"),Authorize(Policy="DefectEdit")]
  public async Task<ActionResult<DefectDto>>ChangeStatus(Guid id,ChangeDefectStatusRequest r,CancellationToken ct)
  {
   var entity=await db.Defects.FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);
   if(entity is null||!CanAccess(entity.ProjectId))return NotFound();
-  var from=entity.Status;
+  var from=entity.Status;var fixBefore=entity.FixedInBuildId;var resolutionBefore=entity.ResolutionType;
   // ผลการปิดก่อน แล้วค่อยเปลี่ยนสถานะ — กฎ "ปิดตรงจาก Open ต้องไม่ใช่ Fixed" ใช้ผลการปิดที่เพิ่งเลือก
   if(r.Resolution is not null&&await ApplyResolutionAsync(entity,r.Resolution,ct) is {} statusError)return BadRequest(statusError);
   if(await TransitionAsync(entity,r.Status,r.FixedInBuildId,r.VerifiedInBuildId,ct) is {} transitionError)return BadRequest(transitionError);
   if(from!=entity.Status)db.DefectActivities.Add(StatusActivity(entity,from,null));
+  var retest=await RecordRetestAsync(entity,from,fixBefore,resolutionBefore,null,ct);
+  if(retest.CycleCode is not null)db.DefectActivities.Add(new DefectActivity(id,"TestLinked",RetestMessage(entity,retest.CycleCode),UserId()));
   await db.SaveChangesAsync(ct);
   if(r.Resolution is not null)await LogResolutionAsync(entity,ct);
-  return Ok(await MapAsync(entity,ct));
+  return Ok((await MapAsync(entity,ct)) with{AutoExecutionCycleCode=retest.CycleCode,AutoExecutionSkipped=retest.Skipped});
  }
  /// <summary>รหัส Release + เลข Build ที่เจอ / Fix / Verified ของทั้งหน้าใน query เดียว (หน้าเว็บแสดง releaseCode / buildNumber — เดิมไม่ส่ง จึงขึ้น "ไม่ระบุ" เสมอ)</summary>
  private async Task<List<DefectDto>>WithBuildNumbersAsync(List<DefectDto> rows,CancellationToken ct)
@@ -344,15 +455,17 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
   if(entity.ReleaseId.HasValue&&build.ReleaseId!=entity.ReleaseId)return BadRequest("ตรวจซ้ำได้เฉพาะ Build ใน Release เดียวกับ Defect");
   if(!build.IsActive)return BadRequest("Build นี้ถูกปิดใช้งานแล้ว");
   if(entity.Status=="Resolved"&&!await DefectBuilds.IsSameOrLaterAsync(db,r.BuildId,entity.FixedInBuildId,ct))return BadRequest("Build ที่ตรวจซ้ำต้องเป็น Fix Build หรือ Build ที่ใหม่กว่า");
-  var from=entity.Status;
+  var from=entity.Status;var fixBefore=entity.FixedInBuildId;var resolutionBefore=entity.ResolutionType;
   try{entity.Retest(r.BuildId,r.Passed,UserId());}catch(DefectTransitionException ex){return BadRequest(ex.Message);}
+  var retest=await RecordRetestAsync(entity,from,fixBefore,resolutionBefore,r.BuildId,ct);
+  if(retest.CycleCode is not null)db.DefectActivities.Add(new DefectActivity(id,"TestLinked",RetestMessage(entity,retest.CycleCode),UserId()));
   var buildNumber=await db.Builds.Where(b=>b.BuildId==r.BuildId).Select(b=>b.BuildNumber).SingleAsync(ct);
   var note=string.IsNullOrWhiteSpace(r.Note)?"":$" — {(r.Note.Trim().Length>1000?r.Note.Trim()[..1000]:r.Note.Trim())}";
   db.DefectActivities.Add(new DefectActivity(entity.DefectId,r.Passed?"Retested":"Reopened",
    r.Passed?$"ตรวจซ้ำผ่านบน Build {buildNumber} — Status changed from {from} to {entity.Status}{note}":$"ตรวจซ้ำไม่ผ่านบน Build {buildNumber} — Status changed from {from} to {entity.Status} (Reopen ครั้งที่ {entity.ReopenCount}){note}",
    UserId(),from,entity.Status,r.BuildId));
   await db.SaveChangesAsync(ct);
-  return Ok(await MapAsync(entity,ct));
+  return Ok((await MapAsync(entity,ct)) with{AutoExecutionCycleCode=retest.CycleCode,AutoExecutionSkipped=retest.Skipped});
  }
  /// <summary>เลือก Build: foundIn (ค่าเริ่มต้น) = เจอใน Build นี้, openAsOf = ยังไม่จบ (DefectStatusGroups.NotDone) ที่เจอใน Build นี้หรือก่อนหน้าของ Release เดียวกัน</summary>
  private async Task<IQueryable<Defect>>BuildFilterAsync(IQueryable<Defect>q,Guid?buildId,string?buildMode,CancellationToken ct)
@@ -407,7 +520,7 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
    .Select(x=>new{x.DefectId,x.DefectCode,x.Title,x.Status,x.Severity,x.ResolutionType}).ToDictionaryAsync(x=>x.DefectId,ct);
   return Ok(results.Where(x=>Guid.TryParse(x.SourceKey,out var defectId)&&defects.ContainsKey(defectId)).Take(5).Select(x=>{var d=defects[Guid.Parse(x.SourceKey)];return new SimilarDefectDto(d.DefectId,d.DefectCode,d.Title,d.Status,d.Severity,d.ResolutionType,x.Snippet);}).ToList());
  }
- [HttpDelete("{id:guid}"),Authorize(Policy="DefectEdit")]public async Task<IActionResult>Delete(Guid id,CancellationToken ct){var entity=await db.Defects.FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(entity is null||!CanAccess(entity.ProjectId))return NotFound();entity.SoftDelete(UserId());await db.SaveChangesAsync(ct);await activityService.LogAsync(id,"Deleted","Defect deleted",UserId(),ct);return NoContent();}
+ [HttpDelete("{id:guid}"),Authorize(Policy="DefectEdit")]public async Task<IActionResult>Delete(Guid id,CancellationToken ct){var entity=await db.Defects.FirstOrDefaultAsync(x=>x.DefectId==id&&!x.IsDeleted,ct);if(entity is null||!CanAccess(entity.ProjectId))return NotFound();entity.SoftDelete(UserId());await RemoveAutoResultsAsync([entity],ct);await db.SaveChangesAsync(ct);await activityService.LogAsync(id,"Deleted","Defect deleted",UserId(),ct);return NoContent();}
  [HttpPost("{id:guid}/send-to-crm"),Authorize(Policy="DefectEdit")]
  public async Task<ActionResult<SendToCrmResponse>>SendToCrm(Guid id,SendToCrmRequest r,CancellationToken ct)
  {
@@ -525,7 +638,8 @@ public sealed record SendToCrmRequest(string AssignToStaffCode,bool Relink=false
 public sealed record SendToCrmResponse(string CrmTicketId,string CrmSyncStatus,DateTime?CrmLastSyncedAt,int ImageCount=0,int SkippedImages=0);
 public sealed record CrmReassignRequest(string AssignToStaffCode);
 public sealed record DefectActivityDto(Guid ActivityId,Guid DefectId,string ActivityType,string? Description,Guid? PerformedByUserId,DateTime PerformedAt,IReadOnlyList<DefectAttachmentDto>? Attachments);
-public sealed record DefectTestCaseDto(Guid TestCaseId,string TestCaseCode,string Title);
+/// <param name="HasResultInFoundBuild">Test Case นี้อยู่ใน Cycle ของ Build ที่พบ Defect แล้ว (หรือถูกลบ) — false = ยังบันทึกผล Fail ย้อนหลังได้ (POST record-execution)</param>
+public sealed record DefectTestCaseDto(Guid TestCaseId,string TestCaseCode,string Title,bool HasResultInFoundBuild=false);
 public sealed record DefectSummaryDto(int Open,int InProgress,int Closed);
 public sealed record DefectListResultDto(IReadOnlyList<DefectDto> Rows,int Total,int Open,int InProgress,int Closed);
 public sealed record DefectStatsDto(int Total,int Open,int InProgress,int Resolved,int Closed,int Rejected,int Critical,int High,int Medium,int Low,int OldestOpenAgeDays,int UnassignedActive,double ClosureRate,IReadOnlyList<DefectModuleCountDto> Modules);

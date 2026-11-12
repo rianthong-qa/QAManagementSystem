@@ -30,7 +30,7 @@ type SimilarDefect = { defectId: string; defectCode: string; title: string; stat
 const readError = async (response: Response, fallback: string) => { const text = await response.text().catch(() => ""); try { const p = JSON.parse(text); return typeof p === "string" ? p : p?.detail ?? p?.title ?? fallback; } catch { return text.trim() || fallback; } };
 
 type DefectActivityItem = { activityId: string; actionType: string; message: string; actorUserId?: string | null; actorName?: string | null; createdAt: string; performedByUserId?: string | null; performedAt?: string; attachments?: DefectCommentAttachment[] };
-type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority?: string; status?: string; linkedAt?: string };
+type DefectTestCaseItem = { testCaseId: string; testCaseCode: string; title: string; priority?: string; status?: string; linkedAt?: string; /** false = ยังไม่อยู่ใน Cycle ใดของ Build ที่พบ Defect — บันทึกผล Fail ย้อนหลังได้ */ hasResultInFoundBuild?: boolean };
 const defectSeverities = ["Critical", "High", "Medium", "Low"];
 // คำอธิบายระดับเดียวกับ ExecutionDefectEditor — ใช้กับ Severity แบบ segmented ในฟอร์มสร้าง/แก้ไข
 const defectSeverityOptions = [
@@ -310,7 +310,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
       const response = await fetch(editing ? `${apiUrl}/defects/${editing.defectId}` : `${apiUrl}/defects`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
       if (!response.ok) throw new Error(await readError(response, "บันทึก Defect ไม่สำเร็จ"));
       // ผลของการบันทึก Fail ลง Cycle นอกแผน: สำเร็จ = ต่อท้ายข้อความ, ข้าม (เช่น Project ยังไม่มี Environment) = เตือนแยก
-      const created = editing ? null : await response.json().catch(() => null) as DefectItem | null;
+      const saved = await response.json().catch(() => null) as DefectItem | null;
+      const created = editing ? null : saved;
       const recorded = created?.autoExecutionCycleCode ? ` · บันทึกผล Fail ลง ${created.autoExecutionCycleCode} แล้ว` : "";
       if (created?.autoExecutionSkipped) notify(`ยังไม่ได้บันทึกผลทดสอบ: ${created.autoExecutionSkipped}`, "info");
       // "สร้างต่ออีกรายการ" (แบบ Jira): คง Module / Severity / ผู้รับผิดชอบ ล้างเฉพาะเนื้อหา แล้วเปิดฟอร์มค้างไว้
@@ -321,11 +322,10 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
         return;
       }
       if (editing && detail?.defectId === editing.defectId) {
-        const saved = await response.json().catch(() => null) as DefectItem | null;
         void openDetail({ ...detail, ...saved, assigneeName: users.find(u => u.userId === formAssigneeUserId)?.displayName ?? null, ...(saved?.assigneeName !== undefined && { assigneeName: saved.assigneeName }) }, true);
       }
       setFormOpen(false);
-      setNotice(editing ? "แก้ไข Defect แล้ว" : `สร้าง Defect และ Test Case (Draft) แล้ว${recorded}`);
+      setNotice(editing ? `แก้ไข Defect แล้ว${retestNote(saved)}` : `สร้าง Defect และ Test Case (Draft) แล้ว${recorded}`);
       setReload(x => x + 1);
     } catch (e) { setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ"); } finally { setSaving(false); }
   };
@@ -346,11 +346,28 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     } finally { setDetailSaving(false); }
   };
   const removeDefect = async (item: DefectItem): Promise<boolean> => {
-    if (!await confirmDialog({ title: `ลบ ${item.defectCode}`, message: `ลบ ${item.defectCode} ใช่หรือไม่? กู้คืนได้จากปุ่ม "ลบแล้ว"`, confirmLabel: "ลบ", tone: "danger" })) return false;
+    if (!await confirmDialog({ title: `ลบ ${item.defectCode}`, message: `ลบ ${item.defectCode} ใช่หรือไม่? กู้คืนได้จากปุ่ม "ลบแล้ว" — ผล Fail ที่ระบบบันทึกให้ใน Test Cycle “พบนอกแผน” จะถูกถอนออกด้วย`, confirmLabel: "ลบ", tone: "danger" })) return false;
     const response = await fetch(`${apiUrl}/defects/${item.defectId}`, { method: "DELETE", headers });
     if (!response.ok) { notify(await readError(response, `ลบ ${item.defectCode} ไม่สำเร็จ`), "error"); return false; }
     setNotice(`ลบ ${item.defectCode} แล้ว`); setReload(x => x + 1);
     return true;
+  };
+  // ออกจาก Resolved = ผลตรวจซ้ำ — Server บันทึกผล Pass/Fail ลง Cycle ของ Build ที่ตรวจให้: สำเร็จ = ต่อท้ายข้อความ, ข้าม = แจ้งเหตุผล
+  const retestNote = (updated: DefectItem | null) => {
+    if (updated?.autoExecutionSkipped) notify(`ยังไม่ได้บันทึกผลตรวจซ้ำลง Test Cycle: ${updated.autoExecutionSkipped}`, "info");
+    return updated?.autoExecutionCycleCode ? ` · บันทึกผลตรวจซ้ำลง ${updated.autoExecutionCycleCode} แล้ว` : "";
+  };
+  // บันทึกผล Fail ย้อนหลังของ Defect ที่ตอนสร้างไม่ได้บันทึก (ปิดตัวเลือก / ยังไม่มี Environment / ผู้สร้างไม่มีสิทธิ์ / กู้คืนจากการลบ)
+  const [recordingExecution, setRecordingExecution] = useState(false);
+  const recordExecutionLater = async (item: DefectItem) => {
+    setRecordingExecution(true);
+    try {
+      const response = await fetch(`${apiUrl}/defects/${item.defectId}/record-execution`, { method: "POST", headers });
+      if (!response.ok) { notify(await readError(response, `บันทึกผลทดสอบของ ${item.defectCode} ไม่สำเร็จ`), "error"); return; }
+      const updated = await response.json().catch(() => null) as DefectItem | null;
+      notify(`บันทึกผล Fail ของ ${item.defectCode} ลง ${updated?.autoExecutionCycleCode ?? "Test Cycle “พบนอกแผน”"} แล้ว`, "success");
+      void openDetail(item, true);
+    } finally { setRecordingExecution(false); }
   };
   // คืน Defect ที่อัปเดตแล้ว (null = ยกเลิก/ไม่สำเร็จ หรือรอหน้าต่างผลการปิด) ให้หน้าต่างรายละเอียดแสดงค่าใหม่ต่อได้
   const quickStatus = async (item: DefectItem, status: string): Promise<DefectItem | null> => {
@@ -361,8 +378,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     if (reopen && !await confirmDialog({ title: `Reopen ${item.defectCode}`, message: `ปัญหายังอยู่หลังแก้ใช่หรือไม่? Defect จะกลับเป็น ${status}, นับเป็น Reopen ครั้งที่ ${(item.reopenCount ?? 0) + 1} และล้างผลการปิดเดิม (ประวัติยังอยู่ใน Activity)`, confirmLabel: "Reopen" })) return null;
     const response = await fetch(`${apiUrl}/defects/${item.defectId}/status`, { method: "PATCH", headers, body: JSON.stringify({ status }) });
     if (!response.ok) { notify(await readError(response, `เปลี่ยนสถานะ ${item.defectCode} ไม่สำเร็จ`), "error"); return null; }
-    setNotice(reopen ? `Reopen ${item.defectCode} แล้ว` : `เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`); setReload(x => x + 1);
     const updated = await response.json().catch(() => null) as DefectItem | null;
+    setNotice(`${reopen ? `Reopen ${item.defectCode} แล้ว` : `เปลี่ยนสถานะ ${item.defectCode} เป็น ${status}`}${retestNote(updated)}`); setReload(x => x + 1);
     return updated ? { ...item, ...updated } : { ...item, status };
   };
   const confirmResolution = async (value: DefectResolutionChoice) => {
@@ -377,7 +394,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     if (!response.ok) throw new Error(await readError(response, "บันทึกผลการปิดไม่สำเร็จ"));
     const updated = await response.json() as DefectItem;
     setResolving(null);
-    setNotice(status ? `เปลี่ยนสถานะ ${item.defectCode} เป็น ${status} และบันทึกผลการปิดแล้ว` : `บันทึกผลการปิด ${item.defectCode} แล้ว`);
+    setNotice(`${status ? `เปลี่ยนสถานะ ${item.defectCode} เป็น ${status} และบันทึกผลการปิดแล้ว` : `บันทึกผลการปิด ${item.defectCode} แล้ว`}${retestNote(updated)}`);
     setReload(x => x + 1);
     // หน้าต่างรายละเอียดของ Defect นี้เปิดอยู่ (หน้าต่างผลการปิดซ้อนอยู่บน) — แสดงค่าใหม่ + ประวัติล่าสุดต่อ
     if (mode === "edit" || detail?.defectId === item.defectId) void openDetail({ ...item, ...updated }, true);
@@ -810,6 +827,10 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                     {onOpenTestCase && <button type="button" className="dj-icon-btn" title={`เปิด ${tc.testCaseCode}`} aria-label={`เปิด ${tc.testCaseCode}`} onClick={() => { const id = tc.testCaseId; setDetail(null); onOpenTestCase(id); }}><span className="material-symbols-outlined" aria-hidden="true">open_in_new</span></button>}
                   </li>)}
                 </ul> : <p className="dj-muted">{detailError.includes("Test Case") ? "โหลด Test Case ที่เชื่อมโยงไม่สำเร็จ" : "ยังไม่มี Test Case ที่เชื่อมโยง"}</p>}
+                {canEditDefects && canRunExecution !== false && detail.buildId && !["Closed", "Rejected"].includes(detail.status) && linkedCases.some(tc => tc.hasResultInFoundBuild === false) && <div className="dj-record-later">
+                  <p className="dj-field-hint is-warning">Test Case ที่เชื่อมโยงยังไม่มีผลทดสอบใน Build {detail.buildNumber ?? "ที่พบ"} — Dashboard จึงยังไม่นับผลของ Defect นี้</p>
+                  <button type="button" className="btn" disabled={recordingExecution} onClick={() => void recordExecutionLater(detail)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add_check</span>{recordingExecution ? "กำลังบันทึก..." : "บันทึกผล Fail ลง Test Cycle “พบนอกแผน”"}</button>
+                </div>}
               </section>
               <section className="dj-section dj-activity" aria-label="Activity">
                 <h3>Activity</h3>

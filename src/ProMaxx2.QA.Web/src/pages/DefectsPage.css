@@ -389,7 +389,10 @@
 .dj-tc-preview h2 .material-symbols-outlined { color: var(--primary); font-size: 18px; }
 .dj-editor.is-create .dj-tc-preview dl > div { min-height: 28px; }
 .dj-tc-preview > .dj-field-hint { margin: 0; border-top: 1px solid var(--line); padding: 6px 12px 8px; }
-.dj-tc-preview > .dj-field-hint.is-warning { color: var(--warning-text); }
+.dj-field-hint.is-warning { color: var(--warning-text); }
+.dj-record-later { display: grid; justify-items: start; gap: 8px; margin-top: 10px; }
+.dj-record-later .dj-field-hint { margin: 0; }
+@media (max-width: 760px) { .dj-record-later .btn { width: 100%; min-height: 44px; } }
 .dj-record-execution { display: flex; align-items: flex-start; gap: 8px; min-height: 32px; border-top: 1px solid var(--line); padding: 8px 12px 0; color: var(--text); font-size: 13px; line-height: 1.45; cursor: pointer; }
 .dj-record-execution input { flex: none; margin-top: 3px; }
 .dj-record-execution:has(input:disabled) { color: var(--muted); cursor: not-allowed; }

@@ -439,6 +439,12 @@ git diff --check
 - ผลที่ผู้ใช้ยอมรับแล้ว: Pass Rate/คำตัดสินเปลี่ยนตามผล Fail นี้ (Critical = นับทั้ง "Critical ค้าง" และ "P0 Fail"), นับเป็นผลงานทดสอบของผู้แจ้ง; Defect ที่สร้างก่อนหน้านี้ไม่เติมย้อนหลัง
 - ตรวจ Desktop 1440 และ Mobile 390 ด้วย Playwright (API จำลอง): ไม่มี horizontal scroll ระดับหน้า
 - **เพิ่มหลังตรวจทาน (วันเดียวกัน):** checkbox ปิดใช้งานด้วยเมื่อ**บัญชีไม่มีสิทธิ์ `EXECUTION.RUN`** (เช่น Developer) พร้อมคำอธิบายสีเตือน "บัญชีนี้ไม่มีสิทธิ์บันทึกผลทดสอบ" — หน้า Defect รับ prop `canRunExecution`; Server ข้ามเองด้วยเมื่อ Release ปิดแล้ว (Released/Cancelled) หรือ Build ปิดใช้งาน และเขียน Audit Log ของ Suite/Cycle ที่สร้างให้
+- **เพิ่มรอบ 2 (วันเดียวกัน) — ผลทดสอบตามวงจร Defect:**
+  - หน้าต่างรายละเอียด Defect ส่วน "Test Case ที่เชื่อมโยง": เมื่อ Test Case ที่ผูกไว้ยังไม่มีผลทดสอบใน Build ที่พบ แสดง `.dj-record-later` = คำอธิบายสีเตือน + ปุ่ม `.btn` **"บันทึกผล Fail ลง Test Cycle “พบนอกแผน”"** (เฉพาะผู้มีสิทธิ์แก้ Defect + `EXECUTION.RUN`, Defect มี Build ที่พบ และยังไม่ Closed/Rejected); Mobile (≤760px) ปุ่มเต็มความกว้าง สูง 44px
+  - เปลี่ยนสถานะออกจาก Resolved (ปิด = ตรวจซ้ำผ่าน, Reopen = ไม่ผ่าน): ข้อความสำเร็จต่อท้าย "บันทึกผลตรวจซ้ำลง {รหัส Cycle} แล้ว"; Server ข้าม = toast แจ้งเหตุผล
+  - กล่องยืนยันลบ Defect บอกว่าผล Fail ที่ระบบบันทึกให้ใน Cycle "พบนอกแผน" จะถูกถอนออกด้วย
+  - `.dj-field-hint.is-warning` ใช้ได้ทุกที่ในหน้า Defect (เดิมเฉพาะใน `.dj-tc-preview`)
+  - ส่วนนี้ตรวจด้วย type check / build / lint เท่านั้น **ยังไม่ได้เปิดดูในเบราว์เซอร์ทั้ง Desktop และ Mobile**
 
 ### 2026-11-11 — Dashboard: Defect กรองตาม Release > Build ที่เลือก
 
