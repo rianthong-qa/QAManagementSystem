@@ -389,6 +389,11 @@
 .dj-tc-preview h2 .material-symbols-outlined { color: var(--primary); font-size: 18px; }
 .dj-editor.is-create .dj-tc-preview dl > div { min-height: 28px; }
 .dj-tc-preview > .dj-field-hint { margin: 0; border-top: 1px solid var(--line); padding: 6px 12px 8px; }
+.dj-tc-preview > .dj-field-hint.is-warning { color: var(--warning-text); }
+.dj-record-execution { display: flex; align-items: flex-start; gap: 8px; min-height: 32px; border-top: 1px solid var(--line); padding: 8px 12px 0; color: var(--text); font-size: 13px; line-height: 1.45; cursor: pointer; }
+.dj-record-execution input { flex: none; margin-top: 3px; }
+.dj-record-execution:has(input:disabled) { color: var(--muted); cursor: not-allowed; }
+.dj-record-execution + .dj-field-hint { border-top: 0; padding-top: 2px; }
 .dj-editor.is-create .dj-editor-actions { padding: 10px 22px; }
 
 @media (max-width: 1280px) {

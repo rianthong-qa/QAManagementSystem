@@ -125,6 +125,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [showInsights, setShowInsightsState] = useState(() => { const stored = readStored("qa.defects.insights"); return stored ? stored !== "hidden" : !window.matchMedia("(max-width: 760px)").matches; });
   const setShowInsights = (next: boolean) => { setShowInsightsState(next); writeStored("qa.defects.insights", next ? "shown" : "hidden"); };
   const [createAnother, setCreateAnother] = useState(false);
+  // สร้าง Defect เอง = บันทึกผล Fail ลง Cycle "พบนอกแผน" ของ Build ด้วย (ค่าเริ่มต้นเปิด) — Dashboard จึงเห็นผลทดสอบของ Defect นี้
+  const [recordExecution, setRecordExecution] = useState(true);
   const [severityFilter, setSeverityFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -300,16 +302,19 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     try {
       // สร้างใหม่: ขั้นตอนมาจากตาราง Step และส่ง testCase ให้ API สร้าง Test Case พร้อมกัน; แก้ไข: ข้อความเดิม (Test Case สร้างไปแล้วตอนสร้าง)
       const filledSteps = formSteps.filter(defectStepStarted);
-      const testCase = editing ? null : { preconditions: formPreconditions.trim() || null, steps: filledSteps.map(x => ({ action: x.action.trim(), testData: x.testData.trim() || null, expectedResult: x.expectedResult.trim() })) };
+      const testCase = editing ? null : { preconditions: formPreconditions.trim() || null, steps: filledSteps.map(x => ({ action: x.action.trim(), testData: x.testData.trim() || null, expectedResult: x.expectedResult.trim() })), recordExecution: recordExecution && !!buildId };
       const stepsToReproduce = editing ? formStepsToReproduce : composeReproSteps(filledSteps);
       const body = { projectId: editing?.projectId ?? projectId ?? null, moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: stepsToReproduce || null, testCase, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null, resolution: picked?.resolution ?? null, fixedInBuildId: picked?.fixedInBuildId ?? null, verifiedInBuildId: picked?.verifiedInBuildId ?? null };
       const response = await fetch(editing ? `${apiUrl}/defects/${editing.defectId}` : `${apiUrl}/defects`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
       if (!response.ok) throw new Error(await readError(response, "บันทึก Defect ไม่สำเร็จ"));
+      // ผลของการบันทึก Fail ลง Cycle นอกแผน: สำเร็จ = ต่อท้ายข้อความ, ข้าม (เช่น Project ยังไม่มี Environment) = เตือนแยก
+      const created = editing ? null : await response.json().catch(() => null) as DefectItem | null;
+      const recorded = created?.autoExecutionCycleCode ? ` · บันทึกผล Fail ลง ${created.autoExecutionCycleCode} แล้ว` : "";
+      if (created?.autoExecutionSkipped) notify(`ยังไม่ได้บันทึกผลทดสอบ: ${created.autoExecutionSkipped}`, "info");
       // "สร้างต่ออีกรายการ" (แบบ Jira): คง Module / Severity / ผู้รับผิดชอบ ล้างเฉพาะเนื้อหา แล้วเปิดฟอร์มค้างไว้
       if (!editing && createAnother) {
-        const created = await response.json().catch(() => null) as DefectItem | null;
         setFormTitle(""); setFormDescription(""); setFormStepsToReproduce(""); setFormSteps([emptyDefectStep()]); setFormPreconditions(""); setFormExpectedResult(""); setFormActualResult(""); setFormStatus("Open");
-        notify(created?.defectCode ? `สร้าง ${created.defectCode} พร้อม Test Case แล้ว — กรอก Defect ถัดไปได้เลย` : "สร้าง Defect พร้อม Test Case แล้ว — กรอก Defect ถัดไปได้เลย", "success");
+        notify(`สร้าง ${created?.defectCode ?? "Defect"} พร้อม Test Case แล้ว${recorded} — กรอก Defect ถัดไปได้เลย`, "success");
         setReload(x => x + 1);
         return;
       }
@@ -318,7 +323,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
         void openDetail({ ...detail, ...saved, assigneeName: users.find(u => u.userId === formAssigneeUserId)?.displayName ?? null, ...(saved?.assigneeName !== undefined && { assigneeName: saved.assigneeName }) }, true);
       }
       setFormOpen(false);
-      setNotice(editing ? "แก้ไข Defect แล้ว" : "สร้าง Defect และ Test Case (Draft) แล้ว");
+      setNotice(editing ? "แก้ไข Defect แล้ว" : `สร้าง Defect และ Test Case (Draft) แล้ว${recorded}`);
       setReload(x => x + 1);
     } catch (e) { setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ"); } finally { setSaving(false); }
   };
@@ -916,6 +921,10 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                 <div><dt>สถานะ</dt><dd>Draft</dd></div>
               </dl>
               <p className="dj-field-hint">เชื่อมโยงกับ Defect นี้ และนำไปใช้ทดสอบซ้ำ / ใส่ Test Suite ได้ภายหลัง</p>
+              <label className="dj-record-execution"><input type="checkbox" checked={recordExecution && !!buildId} disabled={!buildId} onChange={e => setRecordExecution(e.target.checked)} aria-describedby="dj-record-execution-hint" /><span>บันทึกผลทดสอบ (Fail) ลง Test Cycle “พบนอกแผน”</span></label>
+              <p className={`dj-field-hint${buildId ? "" : " is-warning"}`} id="dj-record-execution-hint">{buildId
+                ? `ใส่ Test Case นี้ใน Suite “Defect Regression” และ Cycle “พบนอกแผน · ${buildLabel || "Build ที่เลือก"}” ให้อัตโนมัติ — Dashboard จะนับเป็นผลทดสอบที่ไม่ผ่าน 1 รายการ`
+                : "ยังไม่ได้เลือก Build ด้านบนของหน้า — Defect นี้จะไม่มีผลทดสอบใน Dashboard"}</p>
             </section>}
             {!editing && <p className="dj-dates">Release / Build มาจากตัวเลือกด้านบนของหน้า</p>}
           </aside>
