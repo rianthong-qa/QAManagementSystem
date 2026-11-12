@@ -105,7 +105,7 @@ function fmtAgo(iso?: string | null): string {
   return `${Math.floor(mo / 12)} ปีที่แล้ว`;
 }
 
-export function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel, buildLabel, search, onSearchChange, onClearSearch, canEdit, canExport, onOpenTestCase }: { projectId?: string; releaseId?: string; buildId?: string; projectName?: string; releaseLabel?: string; buildLabel?: string; search: string; onSearchChange?: (value: string) => void; onClearSearch?: () => void; canEdit?: boolean; canExport?: boolean; onOpenTestCase?: (testCaseId: string) => void }) {
+export function DefectsPage({ projectId, releaseId, buildId, projectName, releaseLabel, buildLabel, search, onSearchChange, onClearSearch, canEdit, canRunExecution, canExport, onOpenTestCase }: { projectId?: string; releaseId?: string; buildId?: string; projectName?: string; releaseLabel?: string; buildLabel?: string; search: string; onSearchChange?: (value: string) => void; onClearSearch?: () => void; canEdit?: boolean; canRunExecution?: boolean; canExport?: boolean; onOpenTestCase?: (testCaseId: string) => void }) {
   const [items, setItems] = useState<DefectItem[]>([]);
   const [listSort, setListSortState] = useState<SortState<DefectSortKey>>(readDefectSort);
   const setListSort = (next: SortState<DefectSortKey>) => { setListSortState(next); setPage(1); try { localStorage.setItem(defectSortStorageKey, JSON.stringify(next)); } catch { /* ไม่จำก็ได้ */ } };
@@ -127,6 +127,8 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [createAnother, setCreateAnother] = useState(false);
   // สร้าง Defect เอง = บันทึกผล Fail ลง Cycle "พบนอกแผน" ของ Build ด้วย (ค่าเริ่มต้นเปิด) — Dashboard จึงเห็นผลทดสอบของ Defect นี้
   const [recordExecution, setRecordExecution] = useState(true);
+  // ต้องเลือก Build และมีสิทธิ์บันทึกผลทดสอบ (EXECUTION.RUN) — เช่น Developer แจ้ง Defect ได้แต่ไม่ถูกบันทึกเป็นผู้ทดสอบ (Server ตรวจซ้ำ)
+  const canRecordExecution = !!buildId && canRunExecution !== false;
   const [severityFilter, setSeverityFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -302,7 +304,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
     try {
       // สร้างใหม่: ขั้นตอนมาจากตาราง Step และส่ง testCase ให้ API สร้าง Test Case พร้อมกัน; แก้ไข: ข้อความเดิม (Test Case สร้างไปแล้วตอนสร้าง)
       const filledSteps = formSteps.filter(defectStepStarted);
-      const testCase = editing ? null : { preconditions: formPreconditions.trim() || null, steps: filledSteps.map(x => ({ action: x.action.trim(), testData: x.testData.trim() || null, expectedResult: x.expectedResult.trim() })), recordExecution: recordExecution && !!buildId };
+      const testCase = editing ? null : { preconditions: formPreconditions.trim() || null, steps: filledSteps.map(x => ({ action: x.action.trim(), testData: x.testData.trim() || null, expectedResult: x.expectedResult.trim() })), recordExecution: recordExecution && canRecordExecution };
       const stepsToReproduce = editing ? formStepsToReproduce : composeReproSteps(filledSteps);
       const body = { projectId: editing?.projectId ?? projectId ?? null, moduleId: formModuleId || null, title: formTitle, severity: formSeverity, status: formStatus, description: formDescription || null, stepsToReproduce: stepsToReproduce || null, testCase, expectedResult: formExpectedResult || null, actualResult: formActualResult || null, assigneeUserId: formAssigneeUserId || null, releaseId: releaseId || null, buildId: buildId || null, resolution: picked?.resolution ?? null, fixedInBuildId: picked?.fixedInBuildId ?? null, verifiedInBuildId: picked?.verifiedInBuildId ?? null };
       const response = await fetch(editing ? `${apiUrl}/defects/${editing.defectId}` : `${apiUrl}/defects`, { method: editing ? "PUT" : "POST", headers, body: JSON.stringify(body) });
@@ -921,8 +923,10 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                 <div><dt>สถานะ</dt><dd>Draft</dd></div>
               </dl>
               <p className="dj-field-hint">เชื่อมโยงกับ Defect นี้ และนำไปใช้ทดสอบซ้ำ / ใส่ Test Suite ได้ภายหลัง</p>
-              <label className="dj-record-execution"><input type="checkbox" checked={recordExecution && !!buildId} disabled={!buildId} onChange={e => setRecordExecution(e.target.checked)} aria-describedby="dj-record-execution-hint" /><span>บันทึกผลทดสอบ (Fail) ลง Test Cycle “พบนอกแผน”</span></label>
-              <p className={`dj-field-hint${buildId ? "" : " is-warning"}`} id="dj-record-execution-hint">{buildId
+              <label className="dj-record-execution"><input type="checkbox" checked={recordExecution && canRecordExecution} disabled={!canRecordExecution} onChange={e => setRecordExecution(e.target.checked)} aria-describedby="dj-record-execution-hint" /><span>บันทึกผลทดสอบ (Fail) ลง Test Cycle “พบนอกแผน”</span></label>
+              <p className={`dj-field-hint${canRecordExecution ? "" : " is-warning"}`} id="dj-record-execution-hint">{canRunExecution === false
+                ? "บัญชีนี้ไม่มีสิทธิ์บันทึกผลทดสอบ — Defect นี้จะไม่มีผลทดสอบใน Dashboard"
+                : buildId
                 ? `ใส่ Test Case นี้ใน Suite “Defect Regression” และ Cycle “พบนอกแผน · ${buildLabel || "Build ที่เลือก"}” ให้อัตโนมัติ — Dashboard จะนับเป็นผลทดสอบที่ไม่ผ่าน 1 รายการ`
                 : "ยังไม่ได้เลือก Build ด้านบนของหน้า — Defect นี้จะไม่มีผลทดสอบใน Dashboard"}</p>
             </section>}

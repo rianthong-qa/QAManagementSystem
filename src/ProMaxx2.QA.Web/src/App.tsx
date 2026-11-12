@@ -969,7 +969,7 @@ function App() {
           ) : page === "system-monitor" ? (
             <SystemMonitorPage />
           ) : page === "defects" ? (
-            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} search={search} onSearchChange={setSearch} onClearSearch={() => setSearch("")} canEdit={can("DEFECT.EDIT")} canExport={can("REPORT.EXPORT")} onOpenTestCase={openTestCase} />
+            <DefectsPage projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} projectName={contextProjects.find(x => x.projectId === contextProjectId)?.projectName} releaseLabel={contextReleases.find(x => x.releaseId === contextReleaseId)?.releaseCode} buildLabel={contextBuilds.find(x => x.buildId === contextBuildId)?.buildNumber} search={search} onSearchChange={setSearch} onClearSearch={() => setSearch("")} canEdit={can("DEFECT.EDIT")} canRunExecution={can("EXECUTION.RUN")} canExport={can("REPORT.EXPORT")} onOpenTestCase={openTestCase} />
           ) : page === "summary" ? (
             <Suspense fallback={pageLoading}><TestSummaryPage projects={contextProjects} projectId={contextProjectId} releaseId={contextReleaseId} buildId={contextBuildId} canExport={can("REPORT.EXPORT")} onOpenRisks={() => setPage("risks")} onOpenSignoff={() => setPage("signoff")} /></Suspense>
           ) : page === "risks" ? (

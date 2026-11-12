@@ -438,6 +438,7 @@ git diff --check
 - หลังบันทึก: ข้อความสำเร็จต่อท้าย "บันทึกผล Fail ลง {รหัส Cycle} แล้ว"; Server ข้าม (เช่น Project ยังไม่มี Environment) = toast แจ้งเหตุผล โดย Defect + Test Case ยังสร้างตามปกติ
 - ผลที่ผู้ใช้ยอมรับแล้ว: Pass Rate/คำตัดสินเปลี่ยนตามผล Fail นี้ (Critical = นับทั้ง "Critical ค้าง" และ "P0 Fail"), นับเป็นผลงานทดสอบของผู้แจ้ง; Defect ที่สร้างก่อนหน้านี้ไม่เติมย้อนหลัง
 - ตรวจ Desktop 1440 และ Mobile 390 ด้วย Playwright (API จำลอง): ไม่มี horizontal scroll ระดับหน้า
+- **เพิ่มหลังตรวจทาน (วันเดียวกัน):** checkbox ปิดใช้งานด้วยเมื่อ**บัญชีไม่มีสิทธิ์ `EXECUTION.RUN`** (เช่น Developer) พร้อมคำอธิบายสีเตือน "บัญชีนี้ไม่มีสิทธิ์บันทึกผลทดสอบ" — หน้า Defect รับ prop `canRunExecution`; Server ข้ามเองด้วยเมื่อ Release ปิดแล้ว (Released/Cancelled) หรือ Build ปิดใช้งาน และเขียน Audit Log ของ Suite/Cycle ที่สร้างให้
 
 ### 2026-11-11 — Dashboard: Defect กรองตาม Release > Build ที่เลือก
 

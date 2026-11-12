@@ -231,17 +231,22 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
  private async Task<(string?CycleCode,string?Skipped)>AddUnplannedExecutionAsync(Defect defect,TestCase testCase,string projectCode,CancellationToken ct)
  {
   if(UserId() is not {} testerId)return(null,"ไม่พบผู้ใช้ที่บันทึก");
+  // ผลนี้นับเป็นผลทดสอบของผู้สร้าง จึงต้องมีสิทธิ์เดียวกับการบันทึกผลใน Execution Workspace (policy ExecutionRun) — เช่น Developer แจ้ง Defect ได้แต่ไม่ถูกบันทึกเป็นผู้ทดสอบ
+  if(!User.HasClaim("permission","EXECUTION.RUN"))return(null,"บัญชีนี้ไม่มีสิทธิ์บันทึกผลทดสอบ (EXECUTION.RUN)");
   if(!DefectStatusGroups.NotDone.Contains(defect.Status))return(null,$"Defect สถานะ {defect.Status} — ไม่บันทึกผล Fail");
   if(defect.BuildId is not {} buildId)return(null,"ไม่ได้เลือก Build — เลือก Build ด้านบนของหน้าก่อนสร้าง Defect เพื่อให้ผลทดสอบแสดงใน Dashboard");
-  var build=await db.Builds.AsNoTracking().Where(b=>b.BuildId==buildId).Select(b=>new{b.ReleaseId,b.BuildNumber,ProjectId=db.Releases.Where(x=>x.ReleaseId==b.ReleaseId).Select(x=>(Guid?)x.ProjectId).FirstOrDefault()}).SingleOrDefaultAsync(ct);
+  var build=await db.Builds.AsNoTracking().Where(b=>b.BuildId==buildId).Select(b=>new{b.ReleaseId,b.BuildNumber,b.IsActive,ProjectId=db.Releases.Where(x=>x.ReleaseId==b.ReleaseId).Select(x=>(Guid?)x.ProjectId).FirstOrDefault(),ReleaseStatus=db.Releases.Where(x=>x.ReleaseId==b.ReleaseId).Select(x=>x.Status).FirstOrDefault()}).SingleOrDefaultAsync(ct);
   if(build is null||build.ProjectId!=defect.ProjectId)return(null,"Build ไม่อยู่ใน Project นี้");
+  // กฎเดียวกับการสร้าง Test Cycle ปกติ (TestCycleRepository.ValidateReferencesAsync): Release ที่ปิดแล้ว / Build ที่ปิดใช้งาน ไม่รับ Cycle และผลทดสอบใหม่
+  if(build.ReleaseStatus is "Released" or "Cancelled")return(null,$"Release สถานะ {build.ReleaseStatus} แล้ว — ไม่บันทึกผลทดสอบเพิ่ม");
+  if(!build.IsActive)return(null,$"Build {build.BuildNumber} ถูกปิดใช้งานแล้ว — ไม่บันทึกผลทดสอบเพิ่ม");
   var environmentId=await db.TestEnvironments.AsNoTracking().Where(x=>x.ProjectId==defect.ProjectId&&x.IsActive).OrderBy(x=>x.EnvironmentName).Select(x=>(Guid?)x.TestEnvironmentId).FirstOrDefaultAsync(ct);
   if(environmentId is not {} envId)return(null,"Project ยังไม่มี Environment ที่เปิดใช้ — เพิ่ม Environment ในหน้า Test Cycle ก่อน");
   // Suite กลาง 1 ชุดต่อ Project (หาจากรหัส — รวมที่ถูกลบ เพราะ unique index ไม่สนใจ IsDeleted จึงกู้คืนมาใช้ต่อ)
   var suiteCode=DefectSuiteCode(projectCode);
   var suite=await db.TestSuites.FirstOrDefaultAsync(x=>x.ProjectId==defect.ProjectId&&x.SuiteCode==suiteCode,ct);
-  if(suite is null){suite=new TestSuite(defect.ProjectId,suiteCode,"Defect Regression","Regression","Test Case ที่สร้างจาก Defect ที่แจ้งนอกแผน — ระบบเพิ่มให้อัตโนมัติเมื่อสร้าง Defect",null,testerId);await db.TestSuites.AddAsync(suite,ct);}
-  else if(suite.IsDeleted){suite.Restore();suite.Update(suite.SuiteName,suite.SuiteType,suite.Description,suite.RiskTier,true);}
+  if(suite is null){suite=new TestSuite(defect.ProjectId,suiteCode,"Defect Regression","Regression","Test Case ที่สร้างจาก Defect ที่แจ้งนอกแผน — ระบบเพิ่มให้อัตโนมัติเมื่อสร้าง Defect",null,testerId);await db.TestSuites.AddAsync(suite,ct);db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Created","TestSuite",suite.TestSuiteId.ToString(),$"ระบบสร้าง Test Suite {suiteCode} (Defect Regression) จากการสร้าง {defect.DefectCode}",null,null,null));}
+  else if(suite.IsDeleted){suite.Restore();suite.Update(suite.SuiteName,suite.SuiteType,suite.Description,suite.RiskTier,true);db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Restored","TestSuite",suite.TestSuiteId.ToString(),$"ระบบกู้คืน Test Suite {suiteCode} (Defect Regression) จากการสร้าง {defect.DefectCode}",null,null,null));}
   var suiteId=suite.TestSuiteId;
   var suiteOrder=await db.TestSuiteCases.CountAsync(x=>x.TestSuiteId==suiteId,ct)+1;
   db.TestSuiteCases.Add(new TestSuiteCase(suiteId,testCase.TestCaseId,suiteOrder,true));
@@ -254,6 +259,7 @@ public sealed class DefectsController(QaDbContext db,ProjectAccessContext projec
    cycle=new TestCycle(defect.ProjectId,build.ReleaseId,buildId,envId,suiteId,BusinessCodeGenerator.NextAvailable(prefix,codes),$"พบนอกแผน · {build.BuildNumber}",UnplannedCycleType,DateTime.UtcNow.Date,null,testerId,"ระบบสร้างอัตโนมัติสำหรับ Defect ที่แจ้งเองโดยไม่ได้มาจาก Test Cycle ที่วางแผนไว้",testerId);
    cycle.ChangeStatus("InProgress");
    await db.TestCycles.AddAsync(cycle,ct);
+   db.AuditLogs.Add(new ProMaxx2.QA.Domain.Governance.AuditLog(testerId,"Created","TestCycle",cycle.TestCycleId.ToString(),$"ระบบสร้าง Test Cycle {cycle.CycleCode} (พบนอกแผน) บน Build {build.BuildNumber} จากการสร้าง {defect.DefectCode}",null,null,null));
   }
   var cycleId=cycle.TestCycleId;
   var order=await db.TestCycleCases.CountAsync(x=>x.TestCycleId==cycleId,ct)+1;

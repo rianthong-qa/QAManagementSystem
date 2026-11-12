@@ -54,6 +54,9 @@ public sealed class DefectUnplannedExecutionTests
         var summary = await new DashboardRepository(db, new ProjectAccessContext()).GetAsync(seed.Project.ProjectId, seed.Release.ReleaseId, seed.Build.BuildId, CancellationToken.None);
         Assert.Equal((2, 2, 0, 1), (summary.TotalCases, summary.ExecutedCases, summary.PassedCases, summary.OpenP0));
         Assert.Equal("NO-GO", summary.RecommendedDecision);
+
+        // Suite และ Cycle ที่ระบบสร้างมี Audit Log เหมือนการสร้างทางอื่น — สร้างครั้งเดียว จึงมีอย่างละ 1 รายการ
+        Assert.Equal(["TestCycle", "TestSuite"], await db.AuditLogs.Where(x => x.Action == "Created").Select(x => x.EntityType).OrderBy(x => x).ToListAsync());
     }
 
     [Fact]
@@ -100,6 +103,34 @@ public sealed class DefectUnplannedExecutionTests
     }
 
     [Fact]
+    public async Task Closed_release_inactive_build_or_no_execution_permission_skips_with_reason()
+    {
+        await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
+        var seed = await AutomationTestFixtures.SeedBaselineAsync(db);
+
+        // Developer: แจ้ง Defect ได้ (DEFECT.EDIT) แต่ไม่มี EXECUTION.RUN — ไม่ถูกบันทึกเป็นผู้ทดสอบ
+        var noPermission = await Create(db, seed.Project.ProjectId, seed.Build.BuildId, seed.Module.ModuleId, "High", canRunExecution: false);
+        var inactive = new Build(seed.Release.ReleaseId, "2", "1.0", null, null, DateTime.UtcNow.AddDays(1), null, null, null);
+        db.Builds.Add(inactive);
+        await db.SaveChangesAsync();
+        inactive.Deactivate();
+        await db.SaveChangesAsync();
+        var inactiveBuild = await Create(db, seed.Project.ProjectId, inactive.BuildId, seed.Module.ModuleId, "High");
+        seed.Release.ChangeStatus("Released", null);
+        await db.SaveChangesAsync();
+        var closedRelease = await Create(db, seed.Project.ProjectId, seed.Build.BuildId, seed.Module.ModuleId, "High");
+
+        Assert.Contains("EXECUTION.RUN", noPermission.AutoExecutionSkipped);
+        Assert.Contains("ปิดใช้งาน", inactiveBuild.AutoExecutionSkipped);
+        Assert.Contains("Released", closedRelease.AutoExecutionSkipped);
+        Assert.Equal(3, await db.Defects.CountAsync());
+        Assert.Equal(3, await db.DefectTestCaseLinks.CountAsync());
+        Assert.False(await db.TestCycles.AnyAsync());
+        Assert.False(await db.TestSuites.AnyAsync());
+        Assert.False(await db.TestExecutions.AnyAsync());
+    }
+
+    [Fact]
     public async Task Record_execution_off_keeps_previous_behaviour()
     {
         await using var db = AutomationTestFixtures.CreateInMemoryDatabase();
@@ -112,13 +143,13 @@ public sealed class DefectUnplannedExecutionTests
         Assert.True(await db.DefectTestCaseLinks.AnyAsync());
     }
 
-    private static async Task<DefectDto> Create(QaDbContext db, Guid projectId, Guid? buildId, Guid moduleId, string severity, bool recordExecution = true, Guid? tester = null)
+    private static async Task<DefectDto> Create(QaDbContext db, Guid projectId, Guid? buildId, Guid moduleId, string severity, bool recordExecution = true, Guid? tester = null, bool canRunExecution = true)
     {
         var request = new SaveDefectRequest(projectId, null, buildId, moduleId, "Wrong total", severity, ActualResult: "Total is 400",
             TestCase: new NewDefectTestCaseRequest(null, [new("Open sales", null, "Sales screen shown"), new("Sell 5 units", "SKU-1", "Total is 500")], recordExecution));
         var controller = new DefectsController(db, new ProjectAccessContext(), new DefectActivityService(db), null!, null!, NullLogger<DefectsController>.Instance)
         {
-            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, (tester ?? Tester).ToString())], "test")) } },
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, (tester ?? Tester).ToString()), .. canRunExecution ? [new Claim("permission", "EXECUTION.RUN")] : Array.Empty<Claim>()], "test")) } },
         };
         var result = await controller.Create(request, CancellationToken.None);
         return (DefectDto)Assert.IsType<OkObjectResult>(result.Result).Value!;
