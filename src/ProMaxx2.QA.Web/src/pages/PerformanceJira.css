@@ -1,0 +1,164 @@
+/* หน้า ผลงานและการประเมิน แบบ Jira (ปรับ 2026-11-12) — prefix pj-, โหลดหลัง Performance.css
+   ชิ้นส่วนกลาง (avatar) อยู่ใน components/JiraParts; สีใช้ token ทั้งหมด และใช้สีเฉพาะกับสถานะ (เลยกำหนด/ถึงรอบประเมิน)
+   แท็บ "สรุปประจำสัปดาห์" และ "สรุปผลงาน" เป็นเอกสารสำหรับส่งต่อ/พิมพ์ — ไฟล์นี้ไม่แตะการ์ดของสองแท็บนั้น */
+.performance-page.pj-page { gap: 12px; --pj-hover: color-mix(in srgb, var(--muted) 7%, var(--card)); }
+/* .performance-page เป็น grid คอลัมน์ auto — ลูกทุกตัวต้อง min-width: 0 ไม่งั้นแถบแท็บ (nowrap) ดันทั้งหน้ากว้างเกินจอบน Mobile */
+.performance-page.pj-page > * { min-width: 0; }
+
+/* ส่วนหัวแถวเดียว: แท็บขีดเส้นใต้ | ช่วงเวลา + รีเฟรช */
+.pj-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; border-bottom: 1px solid var(--line); }
+.pj-tabs, .pj-subtabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.pj-tabs { align-self: stretch; }
+.pj-subtabs { border-bottom: 1px solid var(--line); }
+.pj-page :is(.pj-tabs, .pj-subtabs) button { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 44px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 6px 10px; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.pj-page .pj-subtabs button { min-height: 38px; font-size: 13px; }
+.pj-page :is(.pj-tabs, .pj-subtabs) button:hover { color: var(--text); }
+.pj-page :is(.pj-tabs, .pj-subtabs) button[aria-pressed="true"] { border-bottom-color: var(--primary); color: var(--primary); }
+.pj-page :is(.pj-tabs, .pj-subtabs) button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: -3px; }
+.pj-count { display: inline-grid; min-width: 20px; height: 20px; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, var(--card)); padding: 0 6px; color: var(--text); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pj-page button[aria-pressed="true"] > .pj-count { background: color-mix(in srgb, var(--primary) 14%, var(--card)); color: var(--primary); }
+.pj-tools { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 0; }
+.performance-page.pj-page .perf-period { min-height: 36px; border-radius: 8px; }
+.performance-page.pj-page .perf-period-select { padding-left: 6px; }
+.performance-page.pj-page .perf-period-select select { min-height: 34px; padding-left: 4px; font-size: 13px; }
+.performance-page.pj-page .perf-period-custom .date-field { min-height: 28px; }
+.pj-page button.pj-icon-btn { display: inline-grid; flex: none; width: 36px; height: 36px; min-height: 0; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 0; color: var(--muted); cursor: pointer; }
+.pj-page button.pj-icon-btn:hover { background: var(--pj-hover); color: var(--text); }
+.pj-page button.pj-icon-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+
+/* ตัวกรองแถวเดียว สูง 36px + ชิป "ต้องติดตาม" ที่กดเพื่อกรองตาราง */
+.pj-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pj-search { position: relative; display: flex; flex: 0 1 280px; align-items: center; min-width: 200px; }
+.pj-search > .material-symbols-outlined { position: absolute; left: 9px; color: var(--muted); font-size: 19px; pointer-events: none; }
+.pj-search input { width: 100%; height: 36px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 4px 10px 4px 34px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.pj-page :is(.pj-filters, .pj-title-actions) select { height: 36px; min-width: 0; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; background-color: var(--card); padding: 4px 28px 4px 10px; color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+.pj-page .pj-filters select { flex: 0 1 180px; }
+.pj-page .pj-filters select.pj-sort-mobile { display: none; }
+.pj-page :is(.pj-search input, .pj-filters select, .pj-title-actions select):focus-visible { border-color: var(--primary); outline: 3px solid color-mix(in srgb, var(--primary) 15%, transparent); }
+.pj-divider { width: 1px; height: 22px; margin: 0 2px; background: var(--line); }
+.pj-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pj-page button.pj-chip { --pj-tone: var(--muted); display: inline-flex; align-items: center; gap: 6px; min-height: 30px; border: 1px solid color-mix(in srgb, var(--pj-tone) 30%, var(--line)); border-radius: 999px; background: color-mix(in srgb, var(--pj-tone) 6%, var(--card)); padding: 2px 10px; color: color-mix(in srgb, var(--pj-tone) 85%, var(--text)); font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.pj-page button.pj-chip.is-late { --pj-tone: var(--red); }
+.pj-page button.pj-chip.is-warn { --pj-tone: var(--warning-text); }
+.pj-page button.pj-chip b { font-variant-numeric: tabular-nums; }
+.pj-page button.pj-chip:hover { background: color-mix(in srgb, var(--pj-tone) 12%, var(--card)); }
+.pj-page button.pj-chip[aria-pressed="true"] { border-color: var(--pj-tone); background: color-mix(in srgb, var(--pj-tone) 14%, var(--card)); box-shadow: inset 0 0 0 1px var(--pj-tone); }
+.pj-page button.pj-chip:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+.pj-quiet { color: var(--muted); font-size: 12px; }
+.pj-page button.pj-clear { min-height: 30px; border: 0; background: transparent; padding: 2px 6px; color: var(--primary); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.pj-page button.pj-clear:hover { text-decoration: underline; }
+
+/* การ์ดรายการ: แถบสรุปบรรทัดเดียว → ตารางแถวเดียวต่อคน */
+.pj-card { min-width: 0; overflow: clip; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.pj-listbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; border-bottom: 1px solid var(--line); padding: 10px 14px; color: var(--muted); font-size: 13px; }
+.pj-listbar b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.pj-listbar > span:last-child { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pj-info { color: var(--muted); font-size: 17px !important; cursor: help; }
+.performance-page.pj-page .pj-card .table-wrap { border: 0; border-radius: 0; box-shadow: none; }
+.performance-page.pj-page .pj-table { width: 100%; border-collapse: collapse; }
+.performance-page.pj-page .pj-table th { border-bottom: 2px solid var(--line); background: var(--card); padding: 8px 12px; color: var(--muted); font-size: 11px; font-weight: 600; text-align: left; white-space: nowrap; }
+.performance-page.pj-page .pj-table td { height: 48px; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, var(--card)); padding: 6px 12px; font-size: 13px; vertical-align: middle; }
+.performance-page.pj-page .pj-table :is(th, td).num { text-align: right; font-variant-numeric: tabular-nums; }
+.performance-page.pj-page .pj-table tbody tr:last-child td { border-bottom: 0; }
+.performance-page.pj-page .pj-table td:first-child { min-width: 190px; }
+.performance-page.pj-page .pj-table tbody tr.pj-row { cursor: pointer; }
+.performance-page.pj-page .pj-table tbody tr.pj-row:hover { background: var(--pj-hover); }
+.pj-person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pj-person > span:last-child { display: grid; gap: 1px; min-width: 0; }
+.pj-person small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.pj-page button.pj-link { min-height: 0; border: 0; border-radius: 4px; background: transparent; padding: 0; color: var(--text); font: inherit; font-weight: 600; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.pj-page button.pj-link:hover { color: var(--primary); text-decoration: underline; }
+.pj-page button.pj-link:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: 2px; }
+.pj-zero { color: var(--muted); }
+.pj-late { color: var(--red); font-weight: 700; }
+.pj-warn { color: var(--warning-text); font-weight: 600; }
+
+/* รายบุคคลแบบ issue view: หัวเรื่องบรรทัดเดียว → เนื้อหาซ้าย (แท็บย่อย) + แผงข้อมูลพนักงานขวา */
+.pj-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.pj-page .pj-crumb button.pj-link { color: var(--primary); font-weight: 500; }
+.pj-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.pj-title-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pj-title-id h2 { margin: 0; color: var(--text); font-size: 20px; line-height: 1.3; overflow-wrap: anywhere; }
+.pj-title-id p { margin: 0; color: var(--muted); font-size: 13px; }
+.pj-title-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.performance-page.pj-page .pj-title-actions .btn { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+.pj-split { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: start; gap: 20px; }
+.pj-main { display: grid; gap: 14px; min-width: 0; }
+.pj-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.pj-stats > div { display: grid; align-content: start; gap: 2px; min-width: 0; border-left: 1px solid var(--line); padding: 12px 14px; }
+.pj-stats > div:first-child { border-left: 0; }
+.pj-stats dt { color: var(--muted); font-size: 12px; }
+.pj-stats dd { margin: 0; color: var(--text); font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.pj-stats dd.pj-stat-sub { color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.5; }
+.pj-stats dd.pj-stat-sub.pj-late { color: var(--red); font-weight: 700; }
+.pj-section { display: grid; gap: 8px; min-width: 0; }
+.pj-section > h3 { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; font-weight: 600; }
+.pj-highlights { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.pj-highlights li { display: grid; gap: 2px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 10px 14px; }
+.pj-highlights b { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.pj-highlights p { display: -webkit-box; margin: 0; overflow: hidden; color: var(--text); font-size: 13px; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.pj-highlights small { color: var(--muted); font-size: 12px; }
+.pj-highlights a { color: var(--primary); }
+.pj-side { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.pj-side h3 { margin: 0; border-bottom: 1px solid var(--line); padding: 10px 14px; color: var(--text); font-size: 14px; font-weight: 600; }
+.pj-side dl { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px 8px; margin: 0; padding: 12px 14px; font-size: 13px; }
+.pj-side dt { color: var(--muted); }
+.pj-side dd { min-width: 0; margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.pj-side dd small { display: block; color: var(--muted); font-size: 12px; }
+.pj-side :is(dt, dd).pj-wide { grid-column: 1 / -1; }
+.pj-side dt.pj-wide { margin-bottom: -6px; }
+.pj-side .perf-hint { margin: 0; border-top: 1px solid var(--line); padding: 10px 14px; }
+.pj-side-person { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+
+/* การ์ดเดิมที่ยังใช้ในหน้ารายบุคคลและแท็บการประเมิน — เรียบแบบเดียวกัน: ไม่มีเส้นสีบนการ์ด ไม่มีเงา ไม่มีกล่องไอคอนสี */
+.performance-page.pj-page :is(.pj-main .content-card, .perf-evaluations, .perf-team-quarters, .perf-compare) { border: 1px solid var(--line); border-radius: 10px; box-shadow: none; }
+.performance-page.pj-page :is(.pj-main, .perf-evaluations, .perf-team-quarters, .perf-compare) .perf-section-head h3 { font-size: 14px; }
+.performance-page.pj-page :is(.pj-main, .perf-evaluations, .perf-team-quarters, .perf-compare) .perf-section-head h3 > .material-symbols-outlined { width: auto; height: auto; background: none; color: var(--muted); }
+.performance-page.pj-page .perf-metric-groups { gap: 12px; }
+.performance-page.pj-page .pj-main .perf-metric-group { --perf-accent: var(--muted); background: var(--card); padding: 12px 14px; }
+.performance-page.pj-page .pj-main .perf-metric-group h3 { margin-bottom: 6px; border-bottom: 0; padding-bottom: 0; font-size: 13px; font-weight: 600; }
+.performance-page.pj-page .pj-main .perf-metric-group h3 .material-symbols-outlined { width: auto; height: auto; background: none; color: var(--muted); font-size: 18px; }
+.performance-page.pj-page .pj-main .perf-metric-head { margin-bottom: 6px; }
+.performance-page.pj-page .pj-main .perf-metric-head b { font-size: 20px; }
+.performance-page.pj-page .pj-main .perf-worklog-item { border-left-width: 3px; border-radius: 8px; background: var(--card); }
+.performance-page.pj-page .pj-main .perf-timeline-icon { background: color-mix(in srgb, var(--muted) 12%, var(--card)); color: var(--muted); }
+/* แท็บการประเมิน — โครงเดิม แต่ตัดกล่องไอคอนสีและพื้นสีของหัวการ์ด; สีคงไว้เฉพาะสถานะ (ไอคอนขั้นตอน, เลยกำหนด) */
+.performance-page.pj-page .perf-eval-pipeline ol,
+.performance-page.pj-page .perf-eval-pipeline .perf-eval-pipeline-overdue,
+.performance-page.pj-page .perf-eval-people > li { border-radius: 10px; }
+.performance-page.pj-page :is(.perf-eval-pipeline button, .perf-eval-pipeline-overdue) > .material-symbols-outlined { width: auto; height: auto; background: none; }
+.performance-page.pj-page .perf-eval-person-head { background: var(--card); }
+.performance-page.pj-page .perf-eval-people > li.has-overdue .perf-eval-person-head { background: color-mix(in srgb, var(--red) 4%, var(--card)); }
+
+@media (max-width: 1100px) {
+  .pj-split { grid-template-columns: minmax(0, 1fr); }
+  .performance-page.pj-page .pj-table :is(th, td) { padding-right: 8px; padding-left: 8px; }
+}
+@media (max-width: 760px) {
+  .pj-header { flex-flow: column nowrap; align-items: stretch; gap: 0; } /* nowrap: ถ้า wrap ความกว้างของแถวจะเท่าเนื้อหา (ช่วงเวลา) แล้วล้นจอ */
+  .pj-tools { justify-content: flex-end; border-top: 1px solid var(--line); padding: 8px 0; }
+  .pj-tools .perf-period { flex: 1 1 0; min-width: 0; }
+  .performance-page.pj-page .perf-period-range { min-width: 0; padding: 0 8px; white-space: normal; text-align: right; }
+  .performance-page.pj-page .perf-period { min-height: 44px; }
+  .pj-page button.pj-icon-btn { width: 44px; height: 44px; }
+  .pj-page .pj-subtabs button { min-height: 44px; }
+  .pj-search { flex: 1 1 100%; }
+  .pj-search input, .pj-page :is(.pj-filters, .pj-title-actions) select { height: 44px; }
+  .pj-page .pj-filters select { flex: 1 1 140px; }
+  .pj-page .pj-filters select.pj-sort-mobile { display: block; }
+  .pj-divider { display: none; }
+  .pj-chips { flex: 1 1 100%; }
+  .pj-page button.pj-chip, .pj-page button.pj-clear { min-height: 44px; padding: 2px 14px; }
+  .pj-card { overflow: visible; border: 0; border-radius: 0; background: transparent; }
+  .pj-listbar { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; background: var(--card); }
+  .performance-page.pj-page .pj-table td { height: auto; border-bottom: 0; padding: 0; }
+  .performance-page.pj-page .pj-table td.num { text-align: left; }
+  .performance-page.pj-page .pj-table td:first-child { min-width: 0; padding-bottom: 10px; }
+  .pj-page button.pj-link { min-height: 44px; }
+  .pj-title-actions { flex: 1 1 100%; }
+  .pj-title-actions select { flex: 1 1 100%; }
+  .performance-page.pj-page .pj-title-actions .btn { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .pj-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pj-stats > div:nth-child(odd) { border-left: 0; }
+  .pj-stats > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}

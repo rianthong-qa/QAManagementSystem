@@ -13,7 +13,10 @@ import { ImageLightbox, type LightboxImage } from "../components/ImageLightbox";
 import { EvaluationComparison, EvaluationsPanel } from "./PerformanceEvaluations";
 import { ReportView } from "./PerformanceReport";
 import { WeeklyReportView } from "./WeeklyReport";
+import { Avatar } from "../components/JiraParts";
+import { SortHeader, type SortState } from "../components/SortHeader";
 import "./Performance.css";
+import "./PerformanceJira.css";
 
 type Profile = {
   userId: string; username: string; displayName: string; email?: string | null; isActive: boolean; roles: string[]; hasProfile: boolean;
@@ -41,10 +44,14 @@ const sourceLabel: Record<string, string> = { Execution: "รันเทส", D
 const sourceIcon: Record<string, string> = { Execution: "play_circle", Defect: "bug_report", TestCase: "fact_check", Requirement: "description", Regression: "replay", CRM: "support_agent" };
 const trendLabel = { executions: "Execution", defects: "Defect ที่แจ้ง", testCases: "Test Case ที่สร้าง" } as const;
 const timelineSize = 8;
-type TeamSort = "name" | "executions" | "defects" | "testCases" | "crm" | "overdue";
-const teamSortLabel: Record<TeamSort, string> = { name: "ชื่อ", executions: " Execution", defects: " Defect", testCases: " Test Case", crm: " CRM Ticket", overdue: "งานเลยกำหนด" };
+type View = "team" | "weekly" | "member" | "report" | "evaluations";
+type MemberSection = "work" | "logs" | "activity" | "evaluations";
+type Attention = "overdue" | "probation" | "idle";
+type TeamSort = "name" | "executions" | "defects" | "testCases" | "crm" | "pending" | "overdue" | "workLogs";
+const teamSortLabel: Record<TeamSort, string> = { name: "ชื่อ", executions: " Execution", defects: " Defect", testCases: " Test Case", crm: " CRM", pending: "งานค้าง", overdue: "งานเลยกำหนด", workLogs: "บันทึกงาน" };
 const teamSortValue: Record<Exclude<TeamSort, "name">, (m: Metrics) => number> = {
-  executions: (m) => m.executions, defects: (m) => m.defectsReported, testCases: (m) => m.testCasesCreated, crm: (m) => m.crmTicketsHandled, overdue: (m) => m.assignedOverdue,
+  executions: (m) => m.executions, defects: (m) => m.defectsReported, testCases: (m) => m.testCasesCreated, crm: (m) => m.crmTicketsHandled,
+  pending: (m) => m.assignedPending, overdue: (m) => m.assignedOverdue, workLogs: (m) => m.workLogs + m.highlights,
 };
 
 function rangeFor(period: Exclude<Period, "custom">): { from: string; to: string } {
@@ -77,7 +84,7 @@ function nextMilestone(p: Profile): { label: string; daysLeft: number } | null {
 export function PerformancePage({ user, canManage }: { user: SessionUser; canManage: boolean }) {
   const [period, setPeriod] = useState<Period>("month");
   const [range, setRange] = useState(() => rangeFor("month"));
-  const [view, setView] = useState<"team" | "weekly" | "member" | "report" | "evaluations">(canManage ? "team" : "member");
+  const [view, setView] = useState<View>(canManage ? "team" : "member");
   const [selectedUserId, setSelectedUserId] = useState(user.userId);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -89,37 +96,20 @@ export function PerformancePage({ user, canManage }: { user: SessionUser; canMan
   const openReport = (userId: string) => { setSelectedUserId(userId); setView("report"); };
   const rangeInvalid = !range.from || !range.to || range.from > range.to;
 
+  const tabs: { key: View; label: string }[] = canManage
+    ? [{ key: "team", label: "ภาพรวมทีม" }, { key: "weekly", label: "สรุปประจำสัปดาห์" }, { key: "member", label: "รายบุคคล" }, { key: "report", label: "สรุปผลงาน" }, { key: "evaluations", label: "การประเมิน" }]
+    : [{ key: "member", label: "ผลงานของฉัน" }, { key: "evaluations", label: "การประเมินของฉัน" }];
+
   return (
-    <div className="performance-page">
-      <section className="content-card perf-toolbar" aria-label="มุมมองและช่วงเวลา">
-        <div className="perf-tabs" role="group" aria-label="มุมมอง">
-          {canManage && (
-            <button type="button" data-perf-category="groups" aria-pressed={view === "team"} className={view === "team" ? "active" : ""} onClick={() => setView("team")}>
-              <span className="material-symbols-outlined" aria-hidden="true">groups</span>ภาพรวมทีม
-            </button>
-          )}
-          {canManage && (
-            <button type="button" data-perf-category="event_note" aria-pressed={view === "weekly"} className={view === "weekly" ? "active" : ""} onClick={() => setView("weekly")}>
-              <span className="material-symbols-outlined" aria-hidden="true">event_note</span>สรุปประจำสัปดาห์
-            </button>
-          )}
-          <button type="button" data-perf-category="person" aria-pressed={view === "member"} className={view === "member" ? "active" : ""} onClick={() => setView("member")}>
-            <span className="material-symbols-outlined" aria-hidden="true">person</span>{canManage ? "รายบุคคล" : "ผลงานของฉัน"}
-          </button>
-          {canManage && (
-            <button type="button" data-perf-category="summarize" aria-pressed={view === "report"} className={view === "report" ? "active" : ""} onClick={() => setView("report")}>
-              <span className="material-symbols-outlined" aria-hidden="true">summarize</span>สรุปผลงาน
-            </button>
-          )}
-          <button type="button" data-perf-category="rate_review" aria-pressed={view === "evaluations"} className={view === "evaluations" ? "active" : ""} onClick={() => setView("evaluations")}>
-            <span className="material-symbols-outlined" aria-hidden="true">rate_review</span>{canManage ? "การประเมิน" : "การประเมินของฉัน"}
-          </button>
+    <div className="performance-page pj-page">
+      <div className="pj-header">
+        <div className="pj-tabs" role="group" aria-label="มุมมอง">
+          {tabs.map((t) => <button key={t.key} type="button" aria-pressed={view === t.key} onClick={() => setView(t.key)}>{t.label}</button>)}
         </div>
-        <div className="perf-toolbar-actions">
+        <div className="pj-tools">
           {view !== "evaluations" && view !== "weekly" ? (
             <div className="perf-period" role="group" aria-label="ช่วงเวลา">
               <label className="perf-period-select">
-                <span className="material-symbols-outlined" aria-hidden="true">date_range</span>
                 <select value={period} onChange={(e) => choosePeriod(e.target.value as Period)} aria-label="ช่วงเวลา">
                   <option value="month">เดือนนี้</option>
                   <option value="quarter">ไตรมาสนี้</option>
@@ -138,9 +128,9 @@ export function PerformancePage({ user, canManage }: { user: SessionUser; canMan
               )}
             </div>
           ) : null}
-          <button className="btn perf-refresh" type="button" onClick={() => setRefreshKey((k) => k + 1)} aria-label="โหลดข้อมูลใหม่" title="โหลดข้อมูลใหม่"><span className="material-symbols-outlined" aria-hidden="true">refresh</span><span className="perf-refresh-text">รีเฟรช</span></button>
+          <button className="pj-icon-btn" type="button" onClick={() => setRefreshKey((k) => k + 1)} aria-label="โหลดข้อมูลใหม่" title="โหลดข้อมูลใหม่"><span className="material-symbols-outlined" aria-hidden="true">refresh</span></button>
         </div>
-      </section>
+      </div>
       {view === "weekly" && canManage ? (
         <WeeklyReportView refreshKey={refreshKey} />
       ) : view === "evaluations" ? (
@@ -161,6 +151,7 @@ export function PerformancePage({ user, canManage }: { user: SessionUser; canMan
           refreshKey={refreshKey}
           onSelectUser={canManage ? setSelectedUserId : undefined}
           onOpenReport={canManage ? openReport : undefined}
+          onBack={canManage ? () => setView("team") : undefined}
           onChanged={() => setRefreshKey((k) => k + 1)}
         />
       )}
@@ -168,13 +159,33 @@ export function PerformancePage({ user, canManage }: { user: SessionUser; canMan
   );
 }
 
+/** ข้อความเตือนรอบประเมินทดลองงาน — เฉพาะที่ถึงรอบใน 7 วันหรือเลยกำหนด (ที่เหลือไม่นับเป็นเรื่องที่ต้องติดตาม) */
+function probationNote(p: Profile): { text: string; late: boolean } | null {
+  const next = nextMilestone(p);
+  if (!next || next.daysLeft > 7) return null;
+  return next.daysLeft < 0
+    ? { text: `เลยกำหนดทดลองงาน ${-next.daysLeft} วัน — ควรสรุปผล`, late: true }
+    : { text: `ประเมินรอบ ${next.label} ${next.daysLeft === 0 ? "วันนี้" : `ในอีก ${next.daysLeft} วัน`}`, late: false };
+}
+
+/** ไม่มีผลงานหรือบันทึกงานในช่วงที่เลือก (ไม่รวมคนที่ลาออก) */
+const isIdle = ({ profile: p, metrics: m }: TeamMember) =>
+  p.employmentStatus !== "Resigned" && m.executions + m.defectsReported + m.testCasesCreated + m.testCaseRevisions + m.crmTicketsHandled + m.workLogs + m.highlights === 0;
+
+const attentionChips: { key: Attention; label: string; tone: string; title: string }[] = [
+  { key: "overdue", label: "งานเลยกำหนด", tone: " is-late", title: "คนที่มีงานที่ได้รับมอบหมายเลยกำหนด" },
+  { key: "probation", label: "ถึงรอบประเมินทดลองงาน", tone: " is-warn", title: "ถึงรอบประเมิน (วันที่ 30, 60, 90 หรือรอบสรุป) ภายใน 7 วัน หรือเลยกำหนดแล้ว" },
+  { key: "idle", label: "ไม่มีกิจกรรม", tone: "", title: "ไม่มีผลงานหรือบันทึกงานในช่วงเวลานี้ (ไม่รวมคนที่ลาออก)" },
+];
+
 function TeamView({ range, refreshKey, onOpen }: { range: { from: string; to: string }; refreshKey: number; onOpen: (userId: string) => void }) {
   const [data, setData] = useState<TeamOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [employmentStatus, setEmploymentStatus] = useState("");
-  const [sortBy, setSortBy] = useState<TeamSort>("name");
+  const [attention, setAttention] = useState<Attention | "">("");
+  const [sort, setSort] = useState<SortState<TeamSort>>({ key: "name", dir: "asc" });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -188,140 +199,114 @@ function TeamView({ range, refreshKey, onOpen }: { range: { from: string; to: st
   }, [range.from, range.to, refreshKey]);
 
   const members = useMemo(() => data?.members ?? [], [data]);
+  // สิ่งที่ต้องติดตาม: งานเลยกำหนด / ทดลองงานที่ถึงรอบประเมินใน 7 วันหรือเลยกำหนด / ไม่มีกิจกรรมในช่วงนี้ — แสดงเป็นชิปที่กดเพื่อกรองตาราง
+  const flagged: Record<Attention, TeamMember[]> = {
+    overdue: members.filter((m) => m.metrics.assignedOverdue > 0),
+    probation: members.filter((m) => probationNote(m.profile) != null),
+    idle: members.filter(isIdle),
+  };
+  const chips = attentionChips.filter((c) => flagged[c.key].length > 0);
+  // ชิปที่เลือกไว้หายไปหลังโหลดข้อมูลใหม่ (ไม่มีคนเข้าเงื่อนไขแล้ว) = ไม่กรอง
+  const activeAttention = attention && flagged[attention].length > 0 ? attention : "";
+  const attentionIds = activeAttention ? new Set(flagged[activeAttention].map((m) => m.profile.userId)) : null;
   const query = search.trim().toLocaleLowerCase();
+  const byName = (a: TeamMember, b: TeamMember) => a.profile.displayName.localeCompare(b.profile.displayName, "th");
+  const direction = sort.dir === "asc" ? 1 : -1;
   const filteredMembers = members
     .filter(({ profile: p }) =>
+      (!attentionIds || attentionIds.has(p.userId)) &&
       (!employmentStatus || p.employmentStatus === employmentStatus) &&
       (!query || [p.displayName, p.username, p.employeeCode, p.position].some((value) => value?.toLocaleLowerCase().includes(query))))
-    .sort((a, b) => sortBy === "name"
-      ? a.profile.displayName.localeCompare(b.profile.displayName, "th")
-      : teamSortValue[sortBy](b.metrics) - teamSortValue[sortBy](a.metrics) || a.profile.displayName.localeCompare(b.profile.displayName, "th"));
-  const probation = members.filter((m) => m.profile.probationDay != null);
+    .sort((a, b) => (sort.key === "name" ? byName(a, b) : teamSortValue[sort.key](a.metrics) - teamSortValue[sort.key](b.metrics)) * direction || byName(a, b));
   const totals = members.reduce(
     (acc, m) => ({
       executions: acc.executions + m.metrics.executions, passed: acc.passed + m.metrics.passed, defects: acc.defects + m.metrics.defectsReported,
-      severe: acc.severe + m.metrics.defectsCritical + m.metrics.defectsHigh, testCases: acc.testCases + m.metrics.testCasesCreated,
-      revisions: acc.revisions + m.metrics.testCaseRevisions, crm: acc.crm + m.metrics.crmTicketsHandled, crmToDev: acc.crmToDev + m.metrics.crmHandedToDev,
-      overdue: acc.overdue + m.metrics.assignedOverdue,
+      severe: acc.severe + m.metrics.defectsCritical + m.metrics.defectsHigh, testCases: acc.testCases + m.metrics.testCasesCreated, crm: acc.crm + m.metrics.crmTicketsHandled,
     }),
-    { executions: 0, passed: 0, defects: 0, severe: 0, testCases: 0, revisions: 0, crm: 0, crmToDev: 0, overdue: 0 },
+    { executions: 0, passed: 0, defects: 0, severe: 0, testCases: 0, crm: 0 },
   );
-  // ค่าสูงสุดของแต่ละคอลัมน์ในทีม — ใช้วาดแถบเทียบสัดส่วนในตาราง (ไม่เปลี่ยนตามตัวกรอง)
-  const max = {
-    executions: Math.max(0, ...members.map((m) => m.metrics.executions)),
-    defects: Math.max(0, ...members.map((m) => m.metrics.defectsReported)),
-    testCases: Math.max(0, ...members.map((m) => m.metrics.testCasesCreated)),
-    crm: Math.max(0, ...members.map((m) => m.metrics.crmTicketsHandled)),
-  };
-  const top = (pick: (m: Metrics) => number) => {
-    const best = members.reduce<TeamMember | null>((acc, m) => (pick(m.metrics) > (acc ? pick(acc.metrics) : 0) ? m : acc), null);
-    return best ? `สูงสุด ${best.profile.displayName} ${pick(best.metrics).toLocaleString("th-TH")}` : "ยังไม่มีข้อมูลในช่วงนี้";
-  };
-  const perHead = (value: number) => members.length ? (value / members.length).toLocaleString("th-TH", { maximumFractionDigits: 1 }) : "0";
-
-  // สิ่งที่ต้องติดตาม: งานเลยกำหนด → ทดลองงานที่ถึงรอบประเมินใน 7 วัน/เลยกำหนด → คนที่ไม่มีกิจกรรมในช่วงนี้
-  const overdueMembers = members.filter((m) => m.metrics.assignedOverdue > 0).sort((a, b) => b.metrics.assignedOverdue - a.metrics.assignedOverdue);
-  // ทุกคนที่ทดลองงานอยู่ในรายการเดียว เรียงรอบที่ใกล้/เลยกำหนดก่อน — นับเป็น "เรื่องที่ต้องติดตาม" เฉพาะที่ถึงรอบใน 7 วันหรือเลยกำหนด
-  const probationRows = probation
-    .map((m) => ({ member: m, next: nextMilestone(m.profile) }))
-    .sort((a, b) => (a.next?.daysLeft ?? 9999) - (b.next?.daysLeft ?? 9999));
-  const probationDue = probationRows.filter((x) => x.next != null && x.next.daysLeft <= 7);
-  const idleMembers = members.filter(({ profile: p, metrics: m }) =>
-    p.employmentStatus !== "Resigned" && m.executions + m.defectsReported + m.testCasesCreated + m.testCaseRevisions + m.crmTicketsHandled + m.workLogs + m.highlights === 0);
-  const attentionCount = overdueMembers.length + probationDue.length + (idleMembers.length ? 1 : 0);
+  const num = (value: number) => value.toLocaleString("th-TH");
+  const filtering = Boolean(search || employmentStatus || activeAttention);
 
   if (loading) return <article className="card empty" role="status"><div className="spinner" /><h3>กำลังโหลดภาพรวมทีม...</h3></article>;
   if (error) return <div className="inline-alert error" role="alert"><span>{error}</span></div>;
 
   return (
     <>
-      <section className="perf-kpis" aria-label="สรุปทีม">
-        <Kpi icon="play_circle" label="Execution" value={totals.executions} meta={`Pass rate ${passRate(totals)} · เฉลี่ย ${perHead(totals.executions)} / คน`} note={top((m) => m.executions)} />
-        <Kpi icon="bug_report" label="Defect ที่แจ้ง" value={totals.defects} meta={`Critical/High ${totals.severe.toLocaleString("th-TH")} · เฉลี่ย ${perHead(totals.defects)} / คน`} note={top((m) => m.defectsReported)} />
-        <Kpi icon="fact_check" label="Test Case ที่สร้าง" value={totals.testCases} meta={`แก้ไข ${totals.revisions.toLocaleString("th-TH")} ครั้ง · เฉลี่ย ${perHead(totals.testCases)} / คน`} note={top((m) => m.testCasesCreated)} />
-        <Kpi icon="support_agent" label="CRM Ticket ที่ดูแล" value={totals.crm} meta={`ส่งต่อ Dev ${totals.crmToDev.toLocaleString("th-TH")} · ข้อมูลดึงจาก CRM อัตโนมัติ`} note={top((m) => m.crmTicketsHandled)} />
-      </section>
-
-      <section className="content-card perf-attention" aria-label="สิ่งที่ต้องติดตาม">
-        <div className="perf-section-head">
-          <div><h3><span className="material-symbols-outlined" aria-hidden="true">notification_important</span>สิ่งที่ต้องติดตาม</h3><p>งานเลยกำหนด ช่วงทดลองงาน (ประเมินวันที่ 30, 60, 90 และรอบสรุป) และคนที่ยังไม่มีกิจกรรม</p></div>
-          <span className={`perf-count${attentionCount ? " warn" : ""}`}>{attentionCount ? `${attentionCount} เรื่อง` : "เรียบร้อย"}</span>
-        </div>
-        {overdueMembers.length + probationRows.length + idleMembers.length === 0 ? (
-          <p className="perf-attention-clear"><span className="material-symbols-outlined" aria-hidden="true">task_alt</span>ไม่มีเรื่องที่ต้องติดตามในช่วงนี้</p>
-        ) : (
-          <ul className="perf-attention-list">
-            {overdueMembers.map(({ profile: p, metrics: m }) => (
-              <li key={`overdue-${p.userId}`} className="tone-danger">
-                <span className="material-symbols-outlined" aria-hidden="true">schedule</span>
-                <span><b>{p.displayName}</b><small>งานเลยกำหนด {m.assignedOverdue.toLocaleString("th-TH")} งาน · ค้างทั้งหมด {m.assignedPending.toLocaleString("th-TH")}</small></span>
-                <button className="btn" type="button" onClick={() => onOpen(p.userId)} aria-label={`ดูผลงานของ ${p.displayName}`}>ดู</button>
-              </li>
-            ))}
-            {probationRows.map(({ member: { profile: p }, next }) => (
-              <li key={`probation-${p.userId}`} className={next && next.daysLeft < 0 ? "tone-danger" : next && next.daysLeft <= 7 ? "tone-warning" : "tone-info"}>
-                <span className="material-symbols-outlined" aria-hidden="true">hourglass_top</span>
-                <span className="perf-attention-probation">
-                  <b>{p.displayName}</b>
-                  <small>{!next ? "ไม่มีรอบประเมินถัดไป" : next.daysLeft < 0 ? `เลยกำหนดทดลองงาน ${-next.daysLeft} วัน — ควรสรุปผล` : `ประเมินรอบ ${next.label} ${next.daysLeft === 0 ? "วันนี้" : `ในอีก ${next.daysLeft} วัน`}`}</small>
-                  <ProbationBar profile={p} compact />
-                </span>
-                <button className="btn" type="button" onClick={() => onOpen(p.userId)} aria-label={`ดูผลงานและการประเมินของ ${p.displayName}`}>ดู</button>
-              </li>
-            ))}
-            {idleMembers.length > 0 && (
-              <li className="tone-muted">
-                <span className="material-symbols-outlined" aria-hidden="true">bedtime</span>
-                <span><b>ไม่มีกิจกรรมในช่วงนี้ {idleMembers.length} คน</b><small>{idleMembers.map((m) => m.profile.displayName).join(", ")}</small></span>
-              </li>
-            )}
-          </ul>
+      <div className="pj-filters">
+        <label className="pj-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="ค้นหาพนักงาน" placeholder="ค้นหาชื่อ รหัส หรือตำแหน่ง" /></label>
+        <select value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)} aria-label="สถานะพนักงาน"><option value="">ทุกสถานะพนักงาน</option>{Array.from(new Set(members.map((m) => m.profile.employmentStatus))).map((status) => <option key={status} value={status}>{statusLabel[status] ?? status}</option>)}</select>
+        {/* Mobile ตารางเป็น card ไม่มีหัวคอลัมน์ให้กดเรียง จึงมีตัวเลือกเรียงแทน (ซ่อนบน Desktop) */}
+        <select className="pj-sort-mobile" value={sort.key} onChange={(e) => { const key = e.target.value as TeamSort; setSort({ key, dir: key === "name" ? "asc" : "desc" }); }} aria-label="เรียงตาม">{Object.entries(teamSortLabel).map(([value, label]) => <option key={value} value={value}>เรียงตาม{label}</option>)}</select>
+        {members.length > 0 && (
+          <>
+            <span className="pj-divider" aria-hidden="true" />
+            <div className="pj-chips" role="group" aria-label="สิ่งที่ต้องติดตาม">
+              {chips.length === 0 ? <span className="pj-quiet">ไม่มีเรื่องที่ต้องติดตาม</span> : chips.map((c) => (
+                <button key={c.key} type="button" className={`pj-chip${c.tone}`} aria-pressed={activeAttention === c.key} title={c.title} onClick={() => setAttention(activeAttention === c.key ? "" : c.key)}>
+                  {c.label}<b>{num(flagged[c.key].length)}</b>
+                </button>
+              ))}
+            </div>
+          </>
         )}
-      </section>
+        {filtering && <button className="pj-clear" type="button" onClick={() => { setSearch(""); setEmploymentStatus(""); setAttention(""); }}>ล้างตัวกรอง</button>}
+      </div>
 
-      <section className="content-card perf-team-panel" aria-label="ผลงานรายคน">
-        <div className="perf-section-head">
-          <div><h3><span className="material-symbols-outlined" aria-hidden="true">groups</span>ผลงานรายคน</h3><p>นับเฉพาะ Project ที่คุณเป็นสมาชิก · แถบสีเทียบกับคนที่มากที่สุดในทีม</p></div><span className="perf-count" role="status">{filteredMembers.length} / {members.length} คน</span>
-        </div>
-        <div className="perf-team-filters">
-          <label className="perf-search"><span className="material-symbols-outlined" aria-hidden="true">search</span><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="ค้นหาพนักงาน" placeholder="ค้นหาชื่อ รหัสพนักงาน หรือตำแหน่ง" /></label>
-          <label className="perf-status-filter"><span className="sr-only">สถานะพนักงาน</span><select value={employmentStatus} onChange={(e) => setEmploymentStatus(e.target.value)}><option value="">ทุกสถานะพนักงาน</option>{Array.from(new Set(members.map((m) => m.profile.employmentStatus))).map((status) => <option key={status} value={status}>{statusLabel[status] ?? status}</option>)}</select></label>
-          <label className="perf-status-filter"><span className="sr-only">เรียงตาม</span><select value={sortBy} onChange={(e) => setSortBy(e.target.value as TeamSort)} aria-label="เรียงตาม">{Object.entries(teamSortLabel).map(([value, label]) => <option key={value} value={value}>เรียงตาม{label}</option>)}</select></label>
-          {(search || employmentStatus) && <button className="btn" type="button" onClick={() => { setSearch(""); setEmploymentStatus(""); }}>ล้างตัวกรอง</button>}
+      <section className="pj-card" aria-label="ผลงานรายคน">
+        <div className="pj-listbar">
+          <span><b>{num(members.length)} คน</b> · Execution <b>{num(totals.executions)}</b>{totals.executions > 0 && ` (ผ่าน ${passRate(totals)})`} · Defect <b>{num(totals.defects)}</b>{totals.severe > 0 && ` (Critical/High ${num(totals.severe)})`} · Test Case <b>{num(totals.testCases)}</b> · CRM <b>{num(totals.crm)}</b></span>
+          <span><span role="status">แสดง {num(filteredMembers.length)} จาก {num(members.length)}</span><span className="material-symbols-outlined pj-info" role="img" aria-label="นับเฉพาะ Project ที่คุณเป็นสมาชิก งาน CRM ดึงจาก CRM อัตโนมัติ" title="นับเฉพาะ Project ที่คุณเป็นสมาชิก · งาน CRM ดึงจาก CRM อัตโนมัติ">info</span></span>
         </div>
         {members.length === 0 ? (
           <div className="empty-state"><span className="material-symbols-outlined" aria-hidden="true">group_off</span><b>ยังไม่มีสมาชิกทีม QA</b><small>ผู้ใช้ที่มี Role QA_LEAD / QA_TESTER หรือมีโปรไฟล์พนักงานจะแสดงที่นี่</small></div>
         ) : filteredMembers.length === 0 ? (
-          <div className="empty-state"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><b>ไม่พบพนักงานที่ตรงกับตัวกรอง</b><small>ลองเปลี่ยนคำค้นหรือเลือกสถานะอื่น</small></div>
+          <div className="empty-state"><span className="material-symbols-outlined" aria-hidden="true">search_off</span><b>ไม่พบพนักงานที่ตรงกับตัวกรอง</b><small>ลองเปลี่ยนคำค้น สถานะ หรือกดล้างตัวกรอง</small></div>
         ) : (
           <div className="table-wrap">
-            <table className="table-cards perf-team-table">
+            <table className="table-cards perf-team-table pj-table">
               <thead>
-                <tr><th>พนักงาน</th><th>Execution</th><th>Defect</th><th>Test Case</th><th>CRM Ticket</th><th>งานค้าง / เลยกำหนด</th><th>Work Log</th><th><span className="sr-only">ดูรายละเอียด</span></th></tr>
+                <tr>
+                  <SortHeader label="พนักงาน" sortKey="name" sort={sort} onSort={setSort} />
+                  <th>สถานะ</th>
+                  <SortHeader className="num" label="Execution" sortKey="executions" sort={sort} onSort={setSort} defaultDir="desc" />
+                  <SortHeader className="num" label="Defect" sortKey="defects" sort={sort} onSort={setSort} defaultDir="desc" />
+                  <SortHeader className="num" label="Test Case" sortKey="testCases" sort={sort} onSort={setSort} defaultDir="desc" />
+                  <SortHeader className="num" label="CRM" sortKey="crm" sort={sort} onSort={setSort} defaultDir="desc" />
+                  <SortHeader className="num" label="งานค้าง" sortKey="pending" sort={sort} onSort={setSort} defaultDir="desc" />
+                  <SortHeader className="num" label="เลยกำหนด" sortKey="overdue" sort={sort} onSort={setSort} defaultDir="desc" />
+                  <SortHeader className="num" label="บันทึกงาน" sortKey="workLogs" sort={sort} onSort={setSort} defaultDir="desc" />
+                </tr>
               </thead>
               <tbody>
-                {filteredMembers.map(({ profile: p, metrics: m }) => (
-                  <tr key={p.userId}>
-                    <td>
-                      <span className="perf-person">
-                        <span className="perf-avatar" aria-hidden="true">{p.displayName.slice(0, 1).toUpperCase()}</span>
-                        <span><b>{p.displayName}</b>
-                          <span className="perf-person-status"><Badge tone={statusTone[p.employmentStatus]}>{statusLabel[p.employmentStatus] ?? p.employmentStatus}</Badge><span>{p.position || p.roles.join(", ") || p.username}{p.probationDay != null && ` · วันที่ ${p.probationDay}/${p.probationTotalDays}`}</span></span>
+                {filteredMembers.map(({ profile: p, metrics: m }) => {
+                  const note = probationNote(p);
+                  const severe = m.defectsCritical + m.defectsHigh;
+                  return (
+                    <tr key={p.userId} className="pj-row" onClick={() => onOpen(p.userId)}>
+                      <td data-label="">
+                        <span className="pj-person">
+                          <Avatar name={p.displayName} size={28} />
+                          <span>
+                            <button type="button" className="pj-link" onClick={(e) => { e.stopPropagation(); onOpen(p.userId); }} aria-label={`ดูผลงานของ ${p.displayName}`}>{p.displayName}</button>
+                            <small>
+                              {p.position || p.roles.join(", ") || p.username}{p.probationDay != null && ` · ทดลองงานวันที่ ${p.probationDay}/${p.probationTotalDays}`}
+                              {note && <> · <span className={note.late ? "pj-late" : "pj-warn"}>{note.text}</span></>}
+                            </small>
+                          </span>
                         </span>
-                      </span>
-                    </td>
-                    <td><MetricCell category="play_circle" value={m.executions} max={max.executions} sub={m.executions ? `Pass ${passRate(m)}` : undefined} /></td>
-                    <td><MetricCell category="bug_report" value={m.defectsReported} max={max.defects} sub={m.defectsCritical + m.defectsHigh > 0 ? `Critical/High ${m.defectsCritical + m.defectsHigh}` : undefined} /></td>
-                    <td><MetricCell category="fact_check" value={m.testCasesCreated} max={max.testCases} sub={m.testCaseRevisions > 0 ? `แก้ไข ${m.testCaseRevisions}` : undefined} /></td>
-                    <td>{m.hasCrmAccount ? <MetricCell category="support_agent" value={m.crmTicketsHandled} max={max.crm} sub={m.crmHandedToDev > 0 ? `ส่ง Dev ${m.crmHandedToDev}` : undefined} /> : <small className="perf-sub" title="ยังไม่ได้ผูกบัญชี CRM">ไม่ได้ผูก CRM</small>}</td>
-                    <td>
-                      <span className="perf-pending">{m.assignedPending.toLocaleString("th-TH")}</span>
-                      {m.assignedOverdue > 0 ? <span className="perf-overdue-chip"><span className="material-symbols-outlined" aria-hidden="true">schedule</span>เลย {m.assignedOverdue}</span> : <small className="perf-sub">ไม่มีเลยกำหนด</small>}
-                    </td>
-                    <td><span className="perf-pending">{(m.workLogs + m.highlights).toLocaleString("th-TH")}</span>{m.highlights > 0 && <small className="perf-sub">ผลงานเด่น {m.highlights}</small>}</td>
-                    <td className="perf-row-action"><button className="btn" type="button" onClick={() => onOpen(p.userId)} aria-label={`ดูรายละเอียดของ ${p.displayName}`}>ดูผลงาน<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></button></td>
-                  </tr>
-                ))}
+                      </td>
+                      <td data-label="สถานะ"><Badge tone={statusTone[p.employmentStatus]}>{statusLabel[p.employmentStatus] ?? p.employmentStatus}</Badge></td>
+                      <td className="num" data-label="Execution"><TeamNumber value={m.executions} title={m.executions ? `ผ่าน ${passRate(m)}` : undefined} /></td>
+                      <td className="num" data-label="Defect"><TeamNumber value={m.defectsReported} title={severe > 0 ? `Critical/High ${num(severe)}` : undefined} /></td>
+                      <td className="num" data-label="Test Case"><TeamNumber value={m.testCasesCreated} title={m.testCaseRevisions > 0 ? `แก้ไข ${num(m.testCaseRevisions)} ครั้ง` : undefined} /></td>
+                      <td className="num" data-label="CRM">{m.hasCrmAccount ? <TeamNumber value={m.crmTicketsHandled} title={m.crmHandedToDev > 0 ? `ส่งต่อ Dev ${num(m.crmHandedToDev)}` : undefined} /> : <span className="pj-zero" title="ยังไม่ได้ผูกบัญชี CRM">ไม่ได้ผูก</span>}</td>
+                      <td className="num" data-label="งานค้าง"><TeamNumber value={m.assignedPending} /></td>
+                      <td className="num" data-label="เลยกำหนด">{m.assignedOverdue > 0 ? <span className="pj-late">{num(m.assignedOverdue)}</span> : <span className="pj-zero" aria-label="ไม่มี">–</span>}</td>
+                      <td className="num" data-label="บันทึกงาน"><TeamNumber value={m.workLogs + m.highlights} title={m.highlights > 0 ? `ผลงานเด่น ${num(m.highlights)}` : undefined} /></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -331,26 +316,9 @@ function TeamView({ range, refreshKey, onOpen }: { range: { from: string; to: st
   );
 }
 
-function Kpi({ icon, label, value, meta, note }: { icon: string; label: string; value: number; meta: string; note: string }) {
-  return (
-    <div className="perf-kpi" data-perf-category={icon}>
-      <div className="perf-kpi-head"><span className="material-symbols-outlined" aria-hidden="true">{icon}</span><small>{label}</small></div>
-      <b>{value.toLocaleString("th-TH")}</b>
-      <span className="perf-kpi-meta">{meta}</span>
-      <span className="perf-kpi-note"><span className="material-symbols-outlined" aria-hidden="true">military_tech</span>{note}</span>
-    </div>
-  );
-}
-
-/** ตัวเลขในตารางทีม + แถบบางเทียบกับค่าสูงสุดของทีม (ตัวเลขยังเป็นข้อมูลหลัก แถบเป็นตัวช่วยสแกน) */
-function MetricCell({ category, value, max, sub }: { category: string; value: number; max: number; sub?: string }) {
-  return (
-    <span className="perf-metric-cell" data-perf-category={category}>
-      <b>{value.toLocaleString("th-TH")}</b>
-      <span className="perf-metric-bar" aria-hidden="true"><span style={{ width: `${max ? Math.max(value ? 4 : 0, (value / max) * 100) : 0}%` }} /></span>
-      {sub && <small>{sub}</small>}
-    </span>
-  );
+/** ตัวเลขในตารางทีม — 0 เป็นสีจาง, รายละเอียดรอง (เช่น อัตราผ่าน) อยู่ใน title */
+function TeamNumber({ value, title }: { value: number; title?: string }) {
+  return <span className={value ? undefined : "pj-zero"} title={title}>{value.toLocaleString("th-TH")}</span>;
 }
 
 function ProbationBar({ profile, compact = false }: { profile: Profile; compact?: boolean }) {
@@ -375,15 +343,16 @@ function ProbationBar({ profile, compact = false }: { profile: Profile; compact?
   );
 }
 
-function MemberView({ userId, currentUserId, canManage, range, refreshKey, onSelectUser, onOpenReport, onChanged }: {
+function MemberView({ userId, currentUserId, canManage, range, refreshKey, onSelectUser, onOpenReport, onBack, onChanged }: {
   userId: string; currentUserId: string; canManage: boolean; range: { from: string; to: string }; refreshKey: number;
-  onSelectUser?: (userId: string) => void; onOpenReport?: (userId: string) => void; onChanged: () => void;
+  onSelectUser?: (userId: string) => void; onOpenReport?: (userId: string) => void; onBack?: () => void; onChanged: () => void;
 }) {
   const [data, setData] = useState<UserPerformance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [users, setUsers] = useState<UserOption[]>([]);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [section, setSection] = useState<MemberSection>("work");
 
   useEffect(() => {
     if (!canManage) return;
@@ -409,6 +378,13 @@ function MemberView({ userId, currentUserId, canManage, range, refreshKey, onSel
   const highlights = workLogs.items.filter((x) => x.kind === "Highlight");
   const tenure = tenureText(p?.hireDate);
 
+  const sections: { key: MemberSection; label: string; count?: number }[] = [
+    { key: "work", label: "ผลงาน" },
+    { key: "logs", label: "บันทึกงาน", count: workLogs.loading || workLogs.error ? undefined : workLogs.items.length },
+    { key: "activity", label: "กิจกรรมในระบบ" },
+    { key: "evaluations", label: "การประเมิน" },
+  ];
+
   return (
     <>
       {loading && !data ? (
@@ -417,95 +393,108 @@ function MemberView({ userId, currentUserId, canManage, range, refreshKey, onSel
         <div className="inline-alert error" role="alert"><span>{error}</span></div>
       ) : p && m && data ? (
         <>
-          <section className="content-card perf-hero" aria-label={`โปรไฟล์ผลงานของ ${p.displayName}`}>
-            <div className="perf-hero-cover">
-              {onSelectUser && users.length > 0 ? (
-                <label className="perf-hero-picker">
-                  <span className="material-symbols-outlined" aria-hidden="true">person_search</span>
+          {onBack && (
+            <nav className="pj-crumb" aria-label="เส้นทาง">
+              <button type="button" className="pj-link" onClick={onBack}>ภาพรวมทีม</button><span aria-hidden="true">/</span><span>{p.displayName}</span>
+            </nav>
+          )}
+          <header className="pj-title">
+            <div className="pj-title-id">
+              <Avatar name={p.displayName} size={40} />
+              <div>
+                <h2>{p.displayName}</h2>
+                <p>{[p.position, p.level].filter(Boolean).join(" · ") || p.roles.join(", ") || p.username}</p>
+              </div>
+            </div>
+            {canManage && (
+              <div className="pj-title-actions">
+                {onSelectUser && users.length > 0 && (
                   <select value={userId} onChange={(e) => onSelectUser(e.target.value)} aria-label="เลือกพนักงาน">
                     {!users.some((u) => u.userId === userId) && <option value={userId}>{p.displayName}</option>}
                     {users.map((u) => <option key={u.userId} value={u.userId}>{u.displayName}{u.userId === currentUserId ? " (ฉัน)" : ""}</option>)}
                   </select>
-                </label>
-              ) : <span />}
-              {canManage && (
-                <div className="perf-hero-actions">
-                  <button className="btn" type="button" onClick={() => setProfileOpen(true)}>
-                    <span className="material-symbols-outlined" aria-hidden="true">edit</span>{p.hasProfile ? "แก้ไขข้อมูล" : "ตั้งค่าข้อมูลพนักงาน"}
+                )}
+                <button className="btn" type="button" onClick={() => setProfileOpen(true)}>{p.hasProfile ? "แก้ไขข้อมูล" : "ตั้งค่าข้อมูลพนักงาน"}</button>
+                {onOpenReport && <button className="btn" type="button" onClick={() => onOpenReport(userId)}>สรุปผลงาน / แชร์ HR</button>}
+              </div>
+            )}
+          </header>
+
+          <div className="pj-split">
+            <div className="pj-main">
+              <div className="pj-subtabs" role="group" aria-label="ส่วนของข้อมูล">
+                {sections.map((s) => (
+                  <button key={s.key} type="button" aria-pressed={section === s.key} onClick={() => setSection(s.key)}>
+                    {s.label}{s.count != null && <span className="pj-count">{s.count.toLocaleString("th-TH")}</span>}
                   </button>
-                  {onOpenReport && (
-                    <button className="btn" type="button" onClick={() => onOpenReport(userId)}>
-                      <span className="material-symbols-outlined" aria-hidden="true">summarize</span>สรุปผลงาน / แชร์ HR
-                    </button>
+                ))}
+              </div>
+
+              {section === "work" && (
+                <>
+                  <dl className="pj-stats" aria-label="สรุปผลงานในช่วงที่เลือก">
+                    <div><dt>Execution</dt><dd>{m.executions.toLocaleString("th-TH")}</dd><dd className="pj-stat-sub">ผ่าน {passRate(m)}</dd></div>
+                    <div><dt>Defect ที่แจ้ง</dt><dd>{m.defectsReported.toLocaleString("th-TH")}</dd><dd className="pj-stat-sub">Critical/High {(m.defectsCritical + m.defectsHigh).toLocaleString("th-TH")}</dd></div>
+                    <div><dt>Test Case ที่สร้าง</dt><dd>{m.testCasesCreated.toLocaleString("th-TH")}</dd><dd className="pj-stat-sub">แก้ไข {m.testCaseRevisions.toLocaleString("th-TH")} ครั้ง</dd></div>
+                    <div><dt>งานค้าง</dt><dd>{m.assignedPending.toLocaleString("th-TH")}</dd><dd className={`pj-stat-sub${m.assignedOverdue > 0 ? " pj-late" : ""}`}>{m.assignedOverdue > 0 ? `เลยกำหนด ${m.assignedOverdue.toLocaleString("th-TH")}` : "ไม่มีเลยกำหนด"}</dd></div>
+                  </dl>
+
+                  <WeeklyTrend points={data.weekly} />
+
+                  {(highlights.length > 0 || workLogs.error) && (
+                    <section className="pj-section" aria-labelledby="perf-showcase-title">
+                      <h3 id="perf-showcase-title">ผลงานเด่น{highlights.length > 0 && <span className="pj-count">{highlights.length}</span>}</h3>
+                      {workLogs.error ? <div className="inline-alert error" role="alert"><span>{workLogs.error}</span></div> : (
+                        <ul className="pj-highlights">
+                          {highlights.map((x) => (
+                            <li key={x.workLogEntryId}>
+                              <b>{x.title}</b>
+                              {x.description && <p>{x.description}</p>}
+                              <small>
+                                {fmtDate(x.workDate)} · {categoryLabel[x.category] ?? x.category}{x.projectName && ` · ${x.projectName}`}{x.effortHours != null && ` · ${x.effortHours} ชม.`}{x.attachments?.length ? ` · หลักฐาน ${x.attachments.length} ไฟล์` : ""}
+                                {x.referenceUrl && <> · <a href={x.referenceUrl} target="_blank" rel="noopener noreferrer">ลิงก์อ้างอิง</a></>}
+                              </small>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
                   )}
-                </div>
+
+                  <section className="pj-section" aria-labelledby="perf-skills-title">
+                    <h3 id="perf-skills-title">รายละเอียดตามด้าน<span className="material-symbols-outlined pj-info" role="img" aria-label="นับเฉพาะ Project ที่คุณเป็นสมาชิก ใช้เป็นหลักฐานประกอบการประเมิน ไม่ใช่คะแนน งาน CRM ดึงจาก CRM อัตโนมัติและต้องผูกบัญชี CRM ก่อน" title="นับเฉพาะ Project ที่คุณเป็นสมาชิก · ใช้เป็นหลักฐานประกอบการประเมิน ไม่ใช่คะแนน · งาน CRM ดึงจาก CRM อัตโนมัติและต้องผูกบัญชี CRM ก่อน">info</span></h3>
+                    <div className="perf-metric-groups">
+                      {metricGroups(m).map((g) => <MetricGroup key={g.icon} icon={g.icon} title={g.title} items={g.items} />)}
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {section === "logs" && <WorkLogSection userId={userId} isSelf={userId === currentUserId} canManage={canManage} items={workLogs.items} loading={workLogs.loading} error={workLogs.error} onChanged={onChanged} />}
+
+              {section === "activity" && <Timeline userId={userId} range={range} refreshKey={refreshKey} />}
+
+              {section === "evaluations" && (
+                <>
+                  <EvaluationsPanel canManage={canManage} userId={userId} refreshKey={refreshKey} onChanged={onChanged} compact />
+                  <EvaluationComparison userId={userId} refreshKey={refreshKey} />
+                </>
               )}
             </div>
-            <div className="perf-hero-body">
-              <span className="perf-hero-avatar" aria-hidden="true">{p.displayName.slice(0, 1).toUpperCase()}</span>
-              <div className="perf-hero-id">
-                <h2>{p.displayName}</h2>
-                <p>{[p.position, p.level].filter(Boolean).join(" · ") || p.roles.join(", ") || p.username}</p>
-                <ul className="perf-hero-tags">
-                  <li><Badge tone={statusTone[p.employmentStatus]}>{statusLabel[p.employmentStatus] ?? p.employmentStatus}</Badge></li>
-                  {p.employeeCode && <li><span className="material-symbols-outlined" aria-hidden="true">badge</span>{p.employeeCode}</li>}
-                  <li><span className="material-symbols-outlined" aria-hidden="true">event</span>เริ่มงาน {fmtDate(p.hireDate)}{tenure && <> · {tenure}</>}</li>
-                  <li><span className="material-symbols-outlined" aria-hidden="true">supervisor_account</span>หัวหน้า {p.supervisorName ?? "-"}</li>
-                </ul>
-              </div>
-            </div>
-            {p.probationDay != null && <div className="perf-hero-probation"><span className="perf-hero-probation-label"><span className="material-symbols-outlined" aria-hidden="true">hourglass_top</span>ช่วงทดลองงาน</span><ProbationBar profile={p} /></div>}
-            {!p.hasProfile && canManage && <p className="perf-hint perf-hero-hint">ยังไม่ได้ตั้งค่าวันเริ่มงานและสถานะ — ตั้งค่าเพื่อติดตามช่วงทดลองงาน</p>}
-          </section>
 
-          {(highlights.length > 0 || workLogs.error) && <section className="content-card perf-showcase" aria-labelledby="perf-showcase-title">
-            <div className="perf-section-head">
-              <div><h3 id="perf-showcase-title"><span className="material-symbols-outlined" aria-hidden="true">workspace_premium</span>ผลงานเด่น</h3><p>เพิ่มได้จาก "บันทึกงาน" โดยเลือกประเภทผลงานเด่น</p></div>
-              {highlights.length > 0 && <span className="perf-count">{highlights.length} ผลงาน</span>}
-            </div>
-            {workLogs.error ? <div className="inline-alert error" role="alert"><span>{workLogs.error}</span></div>
-              : workLogs.loading ? <div className="perf-feedback" role="status">กำลังโหลด...</div>
-                : highlights.length === 0 ? (
-                  <div className="perf-showcase-empty"><span className="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span><b>ยังไม่มีผลงานเด่นในช่วงนี้</b><small>บันทึกงานที่ภูมิใจ เช่น ปิด Regression ก่อนกำหนด พบ Defect สำคัญ หรือช่วยทีมแก้ปัญหาลูกค้า</small></span></div>
-                ) : (
-                  <ul className="perf-showcase-grid">
-                    {highlights.map((x) => (
-                      <li key={x.workLogEntryId} className="perf-showcase-card">
-                        <span className="perf-showcase-meta"><span className="material-symbols-outlined" aria-hidden="true">star</span>{fmtDate(x.workDate)} · {categoryLabel[x.category] ?? x.category}</span>
-                        <b>{x.title}</b>
-                        {x.description && <p>{x.description}</p>}
-                        {(x.projectName || x.effortHours != null || x.attachments?.length || x.referenceUrl) && <span className="perf-showcase-foot">
-                          {x.projectName && <span><span className="material-symbols-outlined" aria-hidden="true">folder</span>{x.projectName}</span>}
-                          {x.effortHours != null && <span><span className="material-symbols-outlined" aria-hidden="true">schedule</span>{x.effortHours} ชม.</span>}
-                          {x.attachments?.length ? <span><span className="material-symbols-outlined" aria-hidden="true">attach_file</span>หลักฐาน {x.attachments.length} ไฟล์</span> : null}
-                          {x.referenceUrl && <a href={x.referenceUrl} target="_blank" rel="noopener noreferrer"><span className="material-symbols-outlined" aria-hidden="true">open_in_new</span>ลิงก์อ้างอิง</a>}
-                        </span>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-          </section>}
-
-          <section className="perf-skills" aria-labelledby="perf-skills-title">
-            <div className="perf-skills-head">
-              <h3 id="perf-skills-title"><span className="material-symbols-outlined" aria-hidden="true">insights</span>ผลงานตามด้าน</h3>
-              <p>นับเฉพาะ Project ที่คุณเป็นสมาชิก · ใช้เป็นหลักฐานประกอบการประเมิน ไม่ใช่คะแนน</p>
-            </div>
-            <div className="perf-metric-groups">
-              {metricGroups(m).map((g) => <MetricGroup key={g.icon} icon={g.icon} title={g.title} items={g.items} />)}
-            </div>
-            <p className="perf-hint">งาน CRM ดึงจาก CRM อัตโนมัติ และต้องผูกบัญชี CRM ก่อนจึงจะนับให้พนักงานได้</p>
-          </section>
-
-          <WeeklyTrend points={data.weekly} />
-
-          <div className="perf-two-col">
-            <WorkLogSection userId={userId} isSelf={userId === currentUserId} canManage={canManage} items={workLogs.items} loading={workLogs.loading} error={workLogs.error} onChanged={onChanged} />
-            <Timeline userId={userId} range={range} refreshKey={refreshKey} />
+            <aside className="pj-side" aria-label="ข้อมูลพนักงาน">
+              <h3>ข้อมูลพนักงาน</h3>
+              <dl>
+                <dt>สถานะ</dt><dd><Badge tone={statusTone[p.employmentStatus]}>{statusLabel[p.employmentStatus] ?? p.employmentStatus}</Badge></dd>
+                {p.probationDay != null && <><dt className="pj-wide">ทดลองงาน</dt><dd className="pj-wide"><ProbationBar profile={p} /></dd></>}
+                <dt>รหัสพนักงาน</dt><dd>{p.employeeCode || "-"}</dd>
+                <dt>เริ่มงาน</dt><dd>{fmtDate(p.hireDate)}{tenure && <small>{tenure}</small>}</dd>
+                <dt>หัวหน้า</dt><dd>{p.supervisorName ? <span className="pj-side-person"><Avatar name={p.supervisorName} size={20} />{p.supervisorName}</span> : "-"}</dd>
+                <dt>บัญชี CRM</dt><dd className={m.hasCrmAccount ? undefined : "pj-zero"}>{m.hasCrmAccount ? "ผูกแล้ว" : "ยังไม่ได้ผูก"}</dd>
+              </dl>
+              {!p.hasProfile && canManage && <p className="perf-hint">ยังไม่ได้ตั้งค่าวันเริ่มงานและสถานะ — กด "ตั้งค่าข้อมูลพนักงาน" เพื่อติดตามช่วงทดลองงาน</p>}
+            </aside>
           </div>
-
-          <EvaluationsPanel canManage={canManage} userId={userId} refreshKey={refreshKey} onChanged={onChanged} compact />
-          <EvaluationComparison userId={userId} refreshKey={refreshKey} />
 
           {profileOpen && <ProfileModal profile={p} users={users} onClose={() => setProfileOpen(false)} onSaved={() => { setProfileOpen(false); onChanged(); }} />}
         </>
