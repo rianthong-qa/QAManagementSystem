@@ -1,0 +1,137 @@
+/* Sidebar แบบ Jira (แบบ C, 2026-11-18) — components/AppSidebar.tsx, prefix sb-, UI_DESIGN_SYSTEM §4
+   พื้นขาวอมฟ้า + เส้นขวา; สีประจำหมวด (ink = ตัวอักษร/ไอคอน ผ่าน 4.5:1 บนพื้นอ่อน, tint = พื้นกรอบไอคอน/เมนูที่เลือก)
+   selector ขึ้นต้น aside.sidebar.sb-root ให้ชนะกฎ .sidebar / .sidebar.collapsed เดิมใน styles.css โดยไม่ขึ้นกับลำดับโหลด */
+aside.sidebar.sb-root {
+  --sb-bg: color-mix(in srgb, var(--primary) 2%, var(--card));
+  --sb-hover: color-mix(in srgb, var(--muted) 9%, var(--card));
+  display: flex; flex-direction: column; gap: 0;
+  border-right: 1px solid var(--line); background: var(--sb-bg); padding: 0; color: var(--text);
+  overflow: hidden;
+}
+.sb-root .tone-blue { --sb-ink: var(--primary); }
+.sb-root .tone-purple, .sb-palette .tone-purple { --sb-ink: #6e5dc6; }
+.sb-root .tone-green, .sb-palette .tone-green { --sb-ink: #1f845a; }
+.sb-root .tone-orange, .sb-palette .tone-orange { --sb-ink: #a54800; }
+.sb-root .tone-magenta, .sb-palette .tone-magenta { --sb-ink: #ae4787; }
+.sb-palette .tone-blue { --sb-ink: var(--primary); }
+:is(.sb-root, .sb-palette) [class*="tone-"] { --sb-tint: color-mix(in srgb, var(--sb-ink) 12%, var(--card)); }
+
+/* หัว: โลโก้ + ชื่อระบบ */
+.sb-head { display: flex; flex: none; align-items: center; gap: 10px; padding: 16px 16px 12px; }
+.sb-logo { display: grid; flex: none; width: 36px; height: 36px; place-items: center; border-radius: 9px; background: var(--primary); color: var(--card); font-size: 13px; font-weight: 800; }
+.sb-brand { display: grid; gap: 1px; min-width: 0; }
+.sb-brand b { overflow: hidden; color: var(--text); font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.sb-brand small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ปุ่มค้นหาเมนู (Ctrl + K) */
+.sb-search-wrap { flex: none; padding: 0 12px 8px; }
+.sb-root button.sb-search { display: flex; align-items: center; gap: 8px; width: 100%; height: 38px; min-height: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 0 8px 0 10px; color: var(--muted); font: inherit; font-size: 13px; font-weight: 400; text-align: left; cursor: pointer; }
+.sb-root button.sb-search:hover { border-color: color-mix(in srgb, var(--muted) 55%, var(--line)); color: var(--text); }
+.sb-search .material-symbols-outlined { font-size: 19px; }
+.sb-search-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.sb-root, .sb-palette) kbd { flex: none; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: var(--bg); padding: 0 5px; color: var(--muted); font: inherit; font-size: 11px; line-height: 18px; }
+
+/* รายการ */
+.sb-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 10px 16px; }
+.sb-section + .sb-section { margin-top: 12px; }
+.sb-label { display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.sb-label .material-symbols-outlined { font-size: 16px; }
+.sb-empty { margin: 0; padding: 2px 8px 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.sb-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.sb-row { position: relative; display: flex; align-items: center; min-width: 0; }
+.sb-root button.sb-item { position: relative; display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; min-height: 38px; border: 0; border-radius: 6px; background: transparent; padding: 4px 36px 4px 8px; color: var(--text); font: inherit; font-size: 14px; font-weight: 400; text-align: left; cursor: pointer; transition: background-color .12s ease, color .12s ease; }
+.sb-root button.sb-item:hover { background: var(--sb-hover); }
+.sb-root button.sb-item.is-active { background: var(--sb-tint); color: var(--sb-ink); font-weight: 600; }
+.sb-root button.sb-item.is-active::before { position: absolute; top: 8px; bottom: 8px; left: 0; width: 3px; border-radius: 0 3px 3px 0; background: var(--sb-ink); content: ""; }
+.sb-item-text { display: grid; min-width: 0; line-height: 1.3; }
+.sb-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-item-text small { overflow: hidden; color: var(--muted); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.sb-tile { display: grid; flex: none; width: 28px; height: 28px; place-items: center; border-radius: 7px; background: var(--sb-tint); color: var(--sb-ink); }
+.sb-tile .material-symbols-outlined { font-size: 18px; font-variation-settings: 'FILL' 0, 'wght' 500; }
+.sb-root button.sb-item.is-active .sb-tile { background: var(--card); box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 18%, transparent); }
+.sb-root button.sb-item.is-active .sb-tile .material-symbols-outlined { font-variation-settings: 'FILL' 1, 'wght' 500; }
+
+/* ปุ่มปักหมุด: แสดงเมื่อชี้/โฟกัสแถว — เมนูที่ปักแล้วแสดงตลอด (จอสัมผัสแสดงตลอด) */
+.sb-root button.sb-star { position: absolute; right: 4px; display: grid; width: 30px; height: 30px; min-height: 0; place-items: center; border: 0; border-radius: 6px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; opacity: 0; }
+.sb-row:hover .sb-star, .sb-root button.sb-star:focus-visible, .sb-root button.sb-star.is-on { opacity: 1; }
+.sb-root button.sb-star.is-on { color: var(--primary); }
+.sb-root button.sb-star:hover { background: color-mix(in srgb, var(--muted) 16%, var(--card)); color: var(--text); }
+.sb-star .material-symbols-outlined { font-size: 18px; }
+.sb-root button.sb-star.is-on .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+@media (hover: none) { .sb-root button.sb-star { opacity: 1; } }
+
+/* หมวด (พับได้) */
+.sb-group + .sb-group { margin-top: 4px; }
+.sb-root button.sb-group-btn { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; border: 0; border-radius: 6px; background: transparent; padding: 2px 8px 2px 4px; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
+.sb-root button.sb-group-btn:hover { background: var(--sb-hover); color: var(--text); }
+.sb-chevron { font-size: 18px; transition: transform .15s ease; }
+.sb-group-btn[aria-expanded="true"] .sb-chevron { transform: rotate(90deg); }
+.sb-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--sb-ink); }
+.sb-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-group-count { color: var(--muted); font-weight: 400; }
+.sb-group > .sb-list { margin-bottom: 4px; }
+:is(.sb-root button.sb-item, .sb-root button.sb-search, .sb-root button.sb-star, .sb-root button.sb-group-btn):focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* โหมดย่อ (Desktop, ปุ่ม ☰ ใน Topbar): ไอคอนอย่างเดียว + tooltip จาก data-tooltip */
+aside.sidebar.sb-root.collapsed { width: 72px; padding: 0; }
+.sb-root.collapsed .sb-head { justify-content: center; padding: 16px 0 12px; }
+.sb-root.collapsed .sb-brand, .sb-root.collapsed .sb-label, .sb-root.collapsed .sb-search-text, .sb-root.collapsed .sb-search kbd, .sb-root.collapsed .sb-item-text { display: none; }
+.sb-root.collapsed .sb-search-wrap { display: flex; justify-content: center; padding: 0 0 6px; }
+.sb-root.collapsed button.sb-search { justify-content: center; width: 44px; height: 40px; padding: 0; }
+.sb-root.collapsed .sb-scroll { overflow-x: visible; padding: 4px 8px 16px; }
+.sb-root.collapsed .sb-section + .sb-section, .sb-root.collapsed .sb-group + .sb-group { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
+.sb-root.collapsed button.sb-item { justify-content: center; padding: 4px 0; }
+.sb-root.collapsed button.sb-item.is-active::before { left: -8px; }
+.sb-root.collapsed [data-tooltip] { position: relative; }
+.sb-root.collapsed [data-tooltip]:is(:hover, :focus-visible)::after { position: fixed; z-index: 40; margin-left: 52px; border-radius: 6px; background: var(--text); padding: 5px 9px; color: var(--card); font-size: 12px; font-weight: 500; line-height: 1.3; white-space: nowrap; content: attr(data-tooltip); pointer-events: none; }
+
+/* ค้นหาเมนู (Ctrl + K): กล่องชิดบน กว้าง 600px */
+.modal:has(> .sb-palette) { align-items: flex-start; padding-top: 12vh; }
+.modal > .modal-box.sb-palette { display: flex; flex-direction: column; width: min(600px, 100%); max-width: 600px; max-height: 70vh; overflow: hidden; border-radius: 12px; padding: 0; }
+.sb-palette-input { display: flex; flex: none; align-items: center; gap: 10px; height: 56px; border-bottom: 1px solid var(--line); padding: 0 16px; }
+.sb-palette-input .material-symbols-outlined { color: var(--muted); font-size: 22px; }
+.sb-palette-input input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 0; color: var(--text); font: inherit; font-size: 16px; font-weight: 400; outline: none; box-shadow: none; }
+.sb-palette-caption { flex: none; margin: 0; padding: 10px 18px 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.sb-palette-list { flex: 1; min-height: 0; margin: 0; overflow-y: auto; padding: 4px 8px 8px; list-style: none; }
+.sb-palette-list li { display: flex; align-items: center; gap: 12px; min-height: 44px; border-radius: 8px; padding: 6px 10px; font-size: 14px; cursor: pointer; }
+.sb-palette-list li.is-active { background: color-mix(in srgb, var(--primary) 9%, var(--card)); }
+.sb-palette-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-palette-list small { flex: none; color: var(--muted); font-size: 12px; }
+.sb-palette-empty { margin: 0; padding: 24px 16px; color: var(--muted); font-size: 14px; text-align: center; }
+.sb-palette-foot { display: flex; flex: none; gap: 16px; border-top: 1px solid var(--line); background: var(--bg); padding: 8px 16px; color: var(--muted); font-size: 12px; }
+.sb-palette-foot kbd { margin-right: 2px; }
+
+@media (max-width: 760px) {
+  .sb-root button.sb-item { min-height: 44px; }
+  .sb-root button.sb-star { width: 40px; height: 40px; }
+  .sb-root button.sb-group-btn { min-height: 40px; }
+  .sb-root button.sb-search { height: 44px; }
+  .sb-search kbd { display: none; }
+  .modal:has(> .sb-palette) { padding-top: 0; }
+  .modal > .modal-box.sb-palette { max-height: 100dvh; }
+  .sb-palette-foot { display: none; }
+}
+
+/* ปุ่มย่อ/กางเมนูที่หัว Sidebar (Desktop > 1200px ตามแบบ C) — ตอนย่ออยู่ใต้โลโก้; ปุ่ม ☰ ใน Topbar เหลือไว้เปิด drawer บนจอ ≤ 1200px */
+.sb-root button.sb-collapse { display: grid; flex: none; width: 34px; height: 34px; min-height: 0; margin-left: auto; place-items: center; border: 0; border-radius: 8px; background: transparent; padding: 0; color: var(--muted); cursor: pointer; }
+.sb-root button.sb-collapse:hover { background: var(--sb-hover); color: var(--text); }
+.sb-root button.sb-collapse:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.sb-collapse .material-symbols-outlined { font-size: 21px; }
+.sb-root.collapsed .sb-head { flex-direction: column; gap: 8px; }
+.sb-root.collapsed button.sb-collapse { margin-left: 0; width: 40px; height: 36px; }
+@media (min-width: 1201px) { header.qa-topbar .topbar-menu { display: none; } }
+
+/* ขนาดไอคอน (ปรับ 2026-11-18 ตามผู้ใช้ "icon เล็กไป"): กาง = กรอบ 30px ไอคอน 20px, ย่อ = กรอบ 40px ไอคอน 24px แถว 48px
+   แถบเลื่อนบางลง (โหมดย่อซ่อนแถบ ยังเลื่อนด้วยล้อเมาส์/ลากได้) ไม่ให้กินความกว้าง 72px */
+.sb-tile { width: 30px; height: 30px; }
+.sb-tile .material-symbols-outlined { font-size: 20px; }
+.sb-scroll { scrollbar-width: thin; }
+.sb-root.collapsed .sb-scroll { scrollbar-width: none; }
+.sb-root.collapsed .sb-scroll::-webkit-scrollbar { display: none; }
+.sb-root.collapsed button.sb-item { min-height: 48px; }
+.sb-root.collapsed .sb-tile { width: 40px; height: 40px; border-radius: 10px; }
+.sb-root.collapsed .sb-tile .material-symbols-outlined { font-size: 24px; }
+.sb-root.collapsed button.sb-search { width: 48px; height: 44px; }
+.sb-root.collapsed button.sb-search .material-symbols-outlined { font-size: 22px; }
+.sb-root.collapsed button.sb-collapse { width: 44px; height: 40px; }
+.sb-root.collapsed button.sb-collapse .material-symbols-outlined { font-size: 24px; }

@@ -6,6 +6,7 @@ import { formatThaiDateTime } from "./dateTime";
 import { Badge } from "./components/Badge";
 import { ModalShell } from "./components/ModalShell";
 import { AccountMenu } from "./components/AccountMenu";
+import { AppSidebar } from "./components/AppSidebar";
 import { type AdminUser, type ModuleItem, type Page, type SessionUser, copyText, nav, okJsonOrEmpty, pageViewPermission, renderModuleSelectOptions } from "./shared/appShared";
 import "./App.css";
 import "./styles.css";
@@ -269,6 +270,20 @@ function App() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, []);
+  // Desktop (> 1200px) = Sidebar ติดหน้าจอ ย่อ/กางด้วยปุ่มที่หัว Sidebar; ≤ 1200px = drawer เปิดด้วยปุ่ม ☰ ใน Topbar (ตรงกับ breakpoint ใน styles.css)
+  const [isDesktopNav, setIsDesktopNav] = useState(() => window.matchMedia("(min-width: 1201px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1201px)");
+    const update = () => setIsDesktopNav(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  const navCollapsed = sidebarCollapsed && isDesktopNav;
+  const toggleSidebarCollapsed = () => setSidebarCollapsed((current) => {
+    const next = !current;
+    try { localStorage.setItem("qa.sidebar.collapsed", String(next)); } catch { /* จำเฉพาะหน้านี้ */ }
+    return next;
+  });
   const [user, setUser] = useState<SessionUser | null>(() => {
     try {
       // token หมดอายุต้องเริ่มเป็น "ยังไม่ login" ตั้งแต่ render แรก — ถ้าคืน user จาก localStorage ก่อนแล้วค่อยล้างใน
@@ -776,41 +791,15 @@ function App() {
   const canCreate =
     editPermission[page] !== undefined && can(editPermission[page]!);
   return (
-    <div className={`${menu ? "app menu-open" : "app menu-closed"}${sidebarCollapsed ? " sidebar-is-collapsed" : ""}`}>
-      <aside className={`${menu ? "sidebar open" : "sidebar"}${sidebarCollapsed ? " collapsed" : ""}`}>
-        <div className="brand">
-          <div className="logo">QA</div>
-          <div>
-            <b>ProMaxx2 QA Hub</b>
-            <small>Quality Assurance Management</small>
-          </div>
-        </div>
-        {nav.map((g) => {
-          const items = g.items.filter((i) => can(pageViewPermission[i.id]));
-          return items.length ? (
-            <div className="nav-group" key={g.label}>
-              <p>{g.label}</p>
-              {items.map((i) => (
-                <button
-                  key={i.id}
-                  className={page === i.id ? "active" : ""}
-                  title={sidebarCollapsed ? i.label : undefined}
-                  data-tooltip={sidebarCollapsed ? i.label : undefined}
-                  aria-label={i.label}
-                  onClick={() => go(i.id)}
-                >
-                  <i className="material-symbols-outlined" aria-hidden="true">{i.icon}</i>
-                  {i.label}
-                </button>
-              ))}
-            </div>
-          ) : null;
-        })}
+    <div className={`${menu ? "app menu-open" : "app menu-closed"}${navCollapsed ? " sidebar-is-collapsed" : ""}`}>
+      <aside className={`${menu ? "sidebar open" : "sidebar"}${navCollapsed ? " collapsed" : ""} sb-root`}>
+        <AppSidebar page={page} userId={user.userId} collapsed={navCollapsed} canView={(id) => can(pageViewPermission[id])} onGo={go} onToggleCollapse={isDesktopNav ? toggleSidebarCollapsed : undefined} />
       </aside>
-      {menu && !sidebarCollapsed && <button className="sidebar-backdrop" type="button" aria-label="ปิดเมนู" onClick={() => setMenu(false)} />}
+      {menu && !navCollapsed && <button className="sidebar-backdrop" type="button" aria-label="ปิดเมนู" onClick={() => setMenu(false)} />}
       <main onScroll={(event) => setShowBackToTop(event.currentTarget.scrollTop > 480)}>
         <header className="topbar qa-topbar" ref={topbarRef}>
-          <button className="menu-btn topbar-menu" aria-label={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} title={sidebarCollapsed ? "ขยายเมนู" : "ย่อเมนู"} onClick={() => { if (window.matchMedia("(max-width: 900px)").matches) setMenu((v) => !v); else { const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("qa.sidebar.collapsed", String(next)); } }}>
+          {/* เฉพาะ ≤ 1200px (ซ่อนบน Desktop ใน AppSidebar.css) — Desktop ย่อ/กางที่หัว Sidebar */}
+          <button className="menu-btn topbar-menu" aria-label={menu ? "ปิดเมนู" : "เปิดเมนู"} aria-expanded={menu} title={menu ? "ปิดเมนู" : "เปิดเมนู"} onClick={() => setMenu((v) => !v)}>
             <span aria-hidden="true">☰</span>
           </button>
           {showContext && <button type="button" className="context-toggle" aria-expanded={contextOpen} aria-controls="topbar-context" aria-label="เปลี่ยน Project / Release / Build" onClick={() => setContextOpen((v) => !v)}>
