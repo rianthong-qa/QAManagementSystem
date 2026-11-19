@@ -145,8 +145,11 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   const [detailError, setDetailError] = useState("");
   const [comments, setComments] = useState<DefectComment[]>([]);
   const commentImageUrls = useAuthedAttachmentUrls(apiUrl, detail?.defectId, comments.flatMap((c) => c.attachments.map((a) => a.attachmentId)));
-  // รูปของ activity "แนบรูปภาพ n ไฟล์" (API จับคู่ให้) — คลิกรูปย่อเปิด ImageLightbox ของชุดรูปในรายการนั้น
-  const activityImageUrls = useAuthedAttachmentUrls(apiUrl, detail?.defectId, activities.flatMap((a) => a.attachments?.map((x) => x.attachmentId) ?? []));
+  // รูปประกอบของ Defect (ไม่รวมรูปในคอมเมนต์) — แสดงเป็นแกลเลอรี "รูปภาพประกอบ" ในเนื้อหาหลัก (เดิมเห็นได้แค่รูปย่อในแท็บประวัติ)
+  const [defectImages, setDefectImages] = useState<DefectCommentAttachment[]>([]);
+  // รูปของ activity "แนบรูปภาพ n ไฟล์" (API จับคู่ให้) เป็นชุดเดียวกับรูปประกอบ — โหลดรวมครั้งเดียว ไม่ดาวน์โหลดซ้ำ
+  const activityImageUrls = useAuthedAttachmentUrls(apiUrl, detail?.defectId, [...new Set([...defectImages.map((x) => x.attachmentId), ...activities.flatMap((a) => a.attachments?.map((x) => x.attachmentId) ?? [])])]);
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const [activityViewer, setActivityViewer] = useState<{ attachments: DefectCommentAttachment[]; index: number } | null>(null);
   // แผงขวาของรายละเอียด: คอมเมนต์ (ค่าเริ่มต้น) หรือ Activities — คอมเมนต์เรียงเก่า → ใหม่ จึงเลื่อนไปล่างสุดให้เห็นล่าสุดก่อน
   const [detailTab, setDetailTab] = useState<"comments" | "activities">("comments");
@@ -444,16 +447,18 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
   // keep = โหลดใหม่ของ Defect ที่เปิดอยู่ (หลังเปลี่ยนสถานะ/แก้ช่อง/คอมเมนต์) — ไม่ล้างหน้าจอและคงแท็บเดิม
   const openDetail = async (item: DefectItem, keep = false) => {
     setDetail(item); setDetailLoading(true); setDetailError("");
-    if (!keep) { setActivities([]); setActivityViewer(null); setDetailTab("comments"); setLinkedCases([]); setComments([]); setCodeCopied(false); }
+    if (!keep) { setActivities([]); setActivityViewer(null); setGalleryIndex(null); setDefectImages([]); setDetailTab("comments"); setLinkedCases([]); setComments([]); setCodeCopied(false); }
     try {
       // โหลดไม่สำเร็จต้องบอก — เดิมแสดงเป็น "ยังไม่มีกิจกรรม / ยังไม่มี Test Case ที่เชื่อมโยง"
       const failed: string[] = [];
-      const [actRes, tcRes, commentRes] = await Promise.all([
+      const [actRes, tcRes, commentRes, imageRes] = await Promise.all([
         getJson<any[]>(`${apiUrl}/defects/${item.defectId}/activities`).catch((): any[] => { failed.push("ประวัติกิจกรรม"); return []; }),
         getJson<DefectTestCaseItem[]>(`${apiUrl}/defects/${item.defectId}/test-cases`).catch((): DefectTestCaseItem[] => { failed.push("Test Case ที่เชื่อมโยง"); return []; }),
         getJson<DefectComment[]>(`${apiUrl}/defects/${item.defectId}/comments`).catch((): DefectComment[] => { failed.push("คอมเมนต์"); return []; }),
+        getJson<DefectCommentAttachment[]>(`${apiUrl}/defects/${item.defectId}/attachments`).catch((): DefectCommentAttachment[] => { failed.push("รูปภาพประกอบ"); return []; }),
       ]);
       setComments(Array.isArray(commentRes) ? commentRes : []);
+      setDefectImages(Array.isArray(imageRes) ? imageRes : []);
       if (failed.length) setDetailError(`โหลด${failed.join(" และ ")}ไม่สำเร็จ — ปิดแล้วเปิดใหม่เพื่อลองอีกครั้ง`);
       setActivities(Array.isArray(actRes) ? actRes.map((a: any) => ({ activityId: a.activityId ?? a.defectActivityId ?? "", actionType: a.actionType ?? a.activityType ?? "", message: a.message ?? a.description ?? "", actorUserId: a.actorUserId ?? a.performedByUserId ?? null, actorName: a.actorName ?? null, createdAt: a.createdAt ?? a.performedAt ?? "", performedAt: a.performedAt ?? a.createdAt ?? "", attachments: Array.isArray(a.attachments) ? a.attachments : [] })) : []);
       setLinkedCases(Array.isArray(tcRes) ? tcRes : []);
@@ -749,6 +754,14 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
           <div className="dj-detail-body">
             <div className="dj-detail-headline">
               <h1 id="dj-detail-title" tabIndex={-1} data-autofocus>{detail.title}</h1>
+              {/* สรุปสั้นใต้ชื่อ: อ่านความรุนแรง / ที่มา / อายุ ได้ทันทีโดยไม่ต้องมองแผงขวา (มือถือแผงขวาอยู่ถัดลงไป) */}
+              <ul className="dj-headline-meta" aria-label="สรุป Defect">
+                <li><SeverityMark severity={detail.severity} /></li>
+                {module && <li title={`Module ${module.moduleCode} · ${module.moduleName}`}><span className="material-symbols-outlined" aria-hidden="true">view_module</span>{module.moduleName}</li>}
+                {detail.buildNumber && <li title="เจอใน Build"><span className="material-symbols-outlined" aria-hidden="true">deployed_code</span>{detail.buildNumber}</li>}
+                <li className={defectAgeDays(detail.createdAt) > 30 && !isDefectDone(detail.status) ? "is-old" : undefined} title="อายุนับจากวันที่สร้าง"><span className="material-symbols-outlined" aria-hidden="true">schedule</span>{defectAgeDays(detail.createdAt)} วัน</li>
+                {defectImages.length > 0 && <li><a href="#dj-images" onClick={(e) => { e.preventDefault(); document.getElementById("dj-images")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}><span className="material-symbols-outlined" aria-hidden="true">image</span>รูปภาพ {defectImages.length}</a></li>}
+              </ul>
               {canEditDefects && <div className="dj-detail-actions">
                 <button type="button" className="btn" onClick={() => openForm(detail)}><span className="material-symbols-outlined" aria-hidden="true">edit</span>แก้ไข</button>
                 {detail.crmSyncStatus !== "Linked" && <button type="button" className="btn" onClick={() => void openCrmDialog("send", detail)}><span className="material-symbols-outlined" aria-hidden="true">upload</span>ส่งไป CRM</button>}
@@ -770,30 +783,30 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                     return detail.assigneeUserId || !crmLine ? <>{select}{crmLine}</> : <>{crmLine}{select}</>;
                   })()}</dd></div>
                   <div><dt>ผู้แจ้ง</dt><dd><AssigneeCell name={detail.createdByName ?? userName(detail.createdByUserId)} empty="ไม่ทราบผู้สร้าง" /></dd></div>
-                  <div><dt>Severity</dt><dd>{canEditDefects
+                  <div className="is-group"><dt>Severity</dt><dd>{canEditDefects
                     ? <label className="dj-inline-field"><SeverityMark severity={detail.severity} showLabel={false} /><select aria-label="Severity" value={detail.severity} disabled={detailSaving} onChange={(e) => void updateDetailField({ severity: e.target.value })}>{defectSeverities.map(s => <option key={s}>{s}</option>)}</select></label>
                     : <SeverityMark severity={detail.severity} />}</dd></div>
                   <div><dt>Module</dt><dd>{module ? <span title={`${module.moduleCode} · ${module.moduleName}`}>{module.moduleName}<small>{module.moduleCode}</small></span> : <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
-                  <div><dt>Release</dt><dd>{releaseText(detail) ?? <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
+                  <div className="is-group"><dt>Release</dt><dd>{releaseText(detail) ?? <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
                   <div><dt>เจอใน Build</dt><dd>{detail.buildNumber ?? <span className="dj-muted">ไม่ระบุ</span>}</dd></div>
                   {(detail.fixedInBuildId || detail.status === "Resolved" || detail.status === "Closed") && <div><dt>Fix Build</dt><dd>{detail.fixedInBuildNumber ?? <span className="dj-muted">ไม่ระบุ Build</span>}</dd></div>}
                   {detail.verifiedInBuildNumber && <div><dt>ตรวจซ้ำผ่านใน</dt><dd>{detail.verifiedInBuildNumber}</dd></div>}
                   {(detail.reopenCount ?? 0) > 0 && <div><dt>Reopen</dt><dd><Badge tone="red">{detail.reopenCount} ครั้ง</Badge></dd></div>}
                   {detail.regressionOfDefectCode && <div><dt>ปัญหาเดิมของ</dt><dd>{detail.regressionOfDefectCode}</dd></div>}
-                  <div><dt>อายุ</dt><dd><span className={defectAgeDays(detail.createdAt) > 30 && !isDefectDone(detail.status) ? "df-age-old" : undefined}>{defectAgeDays(detail.createdAt)} วัน</span></dd></div>
+                  <div className="is-group"><dt>อายุ</dt><dd><span className={defectAgeDays(detail.createdAt) > 30 && !isDefectDone(detail.status) ? "df-age-old" : undefined}>{defectAgeDays(detail.createdAt)} วัน</span></dd></div>
                   <div><dt>CRM</dt><dd>{detail.crmSyncStatus === "Linked" && detail.crmTicketId
                     ? <a href={`https://bluesea.seniorsoft.com/bluesea/BookLicence/MA/Support/JobDetailsHD?JobNo=${encodeURIComponent(detail.crmTicketId)}&JobType=HD`} target="_blank" rel="noreferrer" title={`เปิด Ticket #${detail.crmTicketId} ใน CRM`}>#{detail.crmTicketId}</a>
                     : <Badge tone={defectCrmSyncTones[detail.crmSyncStatus ?? "None"] ?? "gray"}>{defectCrmSyncLabels[detail.crmSyncStatus ?? "None"] ?? "ยังไม่ส่ง"}</Badge>}</dd></div>
                 </dl>
+                <p className="dj-dates">
+                  <span><span className="material-symbols-outlined" aria-hidden="true">add_circle</span>สร้าง {dateText(detail.createdAt)}</span>
+                  {detail.updatedAt && <span><span className="material-symbols-outlined" aria-hidden="true">update</span>อัปเดต {dateText(detail.updatedAt)}{detail.updatedByName ? ` · ${detail.updatedByName}` : ""}</span>}
+                </p>
               </section>
-              <p className="dj-dates">
-                <span>สร้าง {dateText(detail.createdAt)}</span>
-                {detail.updatedAt && <span>อัปเดต {dateText(detail.updatedAt)}{detail.updatedByName ? ` · ${detail.updatedByName}` : ""}</span>}
-              </p>
             </aside>
             <div className="dj-detail-main">
               <section className="dj-section">
-                <h3>รายละเอียด</h3>
+                <h3><span className="material-symbols-outlined" aria-hidden="true">notes</span>รายละเอียด</h3>
                 {detail.description
                   ? <DefectDescription text={detail.description} hide={[detail.actualResult ?? "", detail.expectedResult ?? ""]} />
                   : <p className="dj-text dj-muted">ไม่มีรายละเอียด</p>}
@@ -802,12 +815,28 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                 <section className="dj-section dj-actual"><h3><span className="material-symbols-outlined" aria-hidden="true">close</span>ผลที่เกิดขึ้นจริง</h3><p className="dj-text">{detail.actualResult || <span className="dj-muted">ไม่ระบุ</span>}</p></section>
                 <section className="dj-section dj-expected"><h3><span className="material-symbols-outlined" aria-hidden="true">check</span>ผลที่คาดหวัง</h3><p className="dj-text">{detail.expectedResult || <span className="dj-muted">ไม่ระบุ</span>}</p></section>
               </div>}
+              {defectImages.length > 0 && <section className="dj-section dj-gallery-section" id="dj-images" aria-labelledby="dj-images-title">
+                <h3 id="dj-images-title"><span className="material-symbols-outlined" aria-hidden="true">image</span>รูปภาพประกอบ <span className="dj-count">{defectImages.length}</span><small>กดที่รูปเพื่อดูขนาดเต็ม</small></h3>
+                {/* 1 รูป = แสดงเต็มความกว้างทั้งภาพ (contain) ให้อ่านข้อความบนหน้าจอได้เลย; หลายรูป = ตารางรูปขนาดใหญ่ */}
+                <ul className={`dj-gallery${defectImages.length === 1 ? " is-single" : ""}`}>
+                  {defectImages.map((img, i) => {
+                    const src = activityImageUrls[img.attachmentId];
+                    return <li key={img.attachmentId}>
+                      <button type="button" aria-label={`ดูรูป ${img.fileName} ขนาดเต็ม (${i + 1} จาก ${defectImages.length})`} onClick={() => setGalleryIndex(i)}>
+                        {src ? <img src={src} alt={img.fileName} loading="lazy" /> : <span className="dj-gallery-loading"><span className="material-symbols-outlined" aria-hidden="true">image</span>กำลังโหลดรูป...</span>}
+                        <span className="dj-gallery-zoom" aria-hidden="true"><span className="material-symbols-outlined">zoom_in</span></span>
+                      </button>
+                      <span className="dj-gallery-name" title={img.fileName}>{img.fileName}</span>
+                    </li>;
+                  })}
+                </ul>
+              </section>}
               <section className="dj-section">
-                <h3>ขั้นตอนการทำซ้ำ</h3>
+                <h3><span className="material-symbols-outlined" aria-hidden="true">format_list_numbered</span>ขั้นตอนการทำซ้ำ{steps && steps.length > 0 && <span className="dj-count">{steps.length}</span>}</h3>
                 {detail.stepsToReproduce ? (steps ? <ReproSteps steps={steps} /> : <p className="dj-text">{detail.stepsToReproduce}</p>) : <p className="dj-text dj-muted">ไม่มีขั้นตอนการทำซ้ำ</p>}
               </section>
               {(detail.resolutionType || defectClosingStatuses.includes(detail.status)) && <section className="dj-section dj-resolution">
-                <h3>ผลการปิด</h3>
+                <h3><span className="material-symbols-outlined" aria-hidden="true">task_alt</span>ผลการปิด</h3>
                 {detail.resolutionType ? <dl className="defect-resolution-view">
                   <div><dt>ผล</dt><dd>{defectResolutionLabel(detail.resolutionType)}{detail.duplicateOfDefectCode ? ` · ซ้ำกับ ${detail.duplicateOfDefectCode}` : ""}</dd></div>
                   {detail.rootCauseCategory && <div><dt>หมวดสาเหตุ</dt><dd>{rootCauseName(detail.rootCauseCategory)}</dd></div>}
@@ -817,23 +846,24 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
                 {canEditDefects && <button type="button" className="btn defect-resolution-edit" onClick={() => setResolving({ item: detail, status: null, mode: "edit" })}><span className="material-symbols-outlined" aria-hidden="true">edit_note</span>{detail.resolutionType ? "แก้ไขผลการปิด" : "บันทึกผลการปิด"}</button>}
               </section>}
               <section className="dj-section">
-                <h3>Test Case ที่เชื่อมโยง <span className="dj-count">{linkedCases.length}</span></h3>
+                <h3><span className="material-symbols-outlined" aria-hidden="true">fact_check</span>Test Case ที่เชื่อมโยง <span className="dj-count">{linkedCases.length}</span></h3>
                 {linkedCases.length ? <ul className="dj-links">
                   {linkedCases.map(tc => <li key={tc.testCaseId}>
                     <span className="material-symbols-outlined dj-link-icon" aria-hidden="true">fact_check</span>
                     <b>{tc.testCaseCode}</b>
                     <span className="dj-link-title" title={tc.title}>{tc.title}</span>
-                    <Badge tone={tc.status ? (testCaseStatusTones[tc.status] ?? "gray") : "gray"}>{tc.status ?? "-"}</Badge>
+                    {tc.status ? <Badge tone={testCaseStatusTones[tc.status] ?? "gray"}>{tc.status}</Badge> : <span />}
                     {onOpenTestCase && <button type="button" className="dj-icon-btn" title={`เปิด ${tc.testCaseCode}`} aria-label={`เปิด ${tc.testCaseCode}`} onClick={() => { const id = tc.testCaseId; setDetail(null); onOpenTestCase(id); }}><span className="material-symbols-outlined" aria-hidden="true">open_in_new</span></button>}
                   </li>)}
                 </ul> : <p className="dj-muted">{detailError.includes("Test Case") ? "โหลด Test Case ที่เชื่อมโยงไม่สำเร็จ" : "ยังไม่มี Test Case ที่เชื่อมโยง"}</p>}
                 {canEditDefects && canRunExecution !== false && detail.buildId && !["Closed", "Rejected"].includes(detail.status) && linkedCases.some(tc => tc.hasResultInFoundBuild === false) && <div className="dj-record-later">
+                  <span className="material-symbols-outlined" aria-hidden="true">warning</span>
                   <p className="dj-field-hint is-warning">Test Case ที่เชื่อมโยงยังไม่มีผลทดสอบใน Build {detail.buildNumber ?? "ที่พบ"} — Dashboard จึงยังไม่นับผลของ Defect นี้</p>
                   <button type="button" className="btn" disabled={recordingExecution} onClick={() => void recordExecutionLater(detail)}><span className="material-symbols-outlined" aria-hidden="true">playlist_add_check</span>{recordingExecution ? "กำลังบันทึก..." : "บันทึกผล Fail ลง Test Cycle “พบนอกแผน”"}</button>
                 </div>}
               </section>
               <section className="dj-section dj-activity" aria-label="Activity">
-                <h3>Activity</h3>
+                <h3><span className="material-symbols-outlined" aria-hidden="true">forum</span>Activity</h3>
                 <div className="dj-tabs" role="tablist" aria-label="Activity">
                   <button type="button" role="tab" id="dj-tab-comments" aria-controls="dj-panel-comments" aria-selected={detailTab === "comments"} tabIndex={detailTab === "comments" ? 0 : -1}
                     onClick={() => setDetailTab("comments")} onKeyDown={(e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { setDetailTab("activities"); document.getElementById("dj-tab-activities")?.focus(); } }}>ความคิดเห็น <span className="dj-count">{comments.length}</span></button>
@@ -866,6 +896,7 @@ export function DefectsPage({ projectId, releaseId, buildId, projectName, releas
             </div>
           </div>
           {activityViewer && <ImageLightbox images={toLightboxImages(activityViewer.attachments, (id) => activityImageUrls[id])} index={activityViewer.index} onIndexChange={(index) => setActivityViewer({ ...activityViewer, index })} onClose={() => setActivityViewer(null)} />}
+          {galleryIndex !== null && defectImages.length > 0 && <ImageLightbox images={toLightboxImages(defectImages, (id) => activityImageUrls[id])} index={Math.min(galleryIndex, defectImages.length - 1)} onIndexChange={setGalleryIndex} onClose={() => setGalleryIndex(null)} />}
         </ModalShell>
       );
     })()}

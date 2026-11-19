@@ -318,6 +318,66 @@
 .dj-inline-field .dj-sev > .material-symbols-outlined { font-size: 20px; }
 .dj-dates { display: grid; gap: 2px; margin: 0; color: var(--muted); font-size: 12px; }
 
+/* ===== รายละเอียดอ่านง่าย (ปรับ 2026-11-18) — เฉพาะหน้าต่างรายละเอียด (.dj-detail ที่ไม่ใช่ฟอร์ม) =====
+   หัวแยกจากเนื้อหาที่เลื่อนด้วยเส้นคั่น + สรุปสั้นใต้ชื่อ, หัวข้อมีไอคอน + เส้นคั่นระหว่างหัวข้อ, รูปภาพประกอบเป็นแกลเลอรีขนาดใหญ่,
+   แผงขวาแบ่งกลุ่ม (คน | การจำแนก | Release | อื่น ๆ) และวันที่อยู่ท้ายการ์ด */
+.dj-detail:not(.dj-editor) .dj-detail-headline { border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+.dj-headline-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.dj-headline-meta > li { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; min-height: 28px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); padding: 2px 10px 2px 8px; color: var(--text); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.dj-headline-meta > li > .material-symbols-outlined, .dj-headline-meta a > .material-symbols-outlined { color: var(--muted); font-size: 16px; }
+.dj-headline-meta > li.is-old { border-color: color-mix(in srgb, var(--yellow) 45%, var(--line)); background: color-mix(in srgb, var(--yellow) 10%, var(--card)); color: var(--warning-text); }
+.dj-headline-meta > li.is-old > .material-symbols-outlined { color: var(--warning-text); }
+.dj-headline-meta .dj-sev { font-size: 12px; }
+.dj-headline-meta .dj-sev > .material-symbols-outlined { font-size: 18px; }
+.dj-headline-meta a { display: inline-flex; align-items: center; gap: 4px; color: var(--primary); text-decoration: none; }
+.dj-headline-meta a:hover { text-decoration: underline; }
+.dj-headline-meta a > .material-symbols-outlined { color: var(--primary); }
+.dj-detail:not(.dj-editor) .dj-detail-main { padding-top: 4px; }
+.dj-detail:not(.dj-editor) .dj-detail-main > :is(.dj-section, .dj-result-pair) { margin-top: 0; border-top: 1px solid var(--line); padding: 20px 0; }
+.dj-detail:not(.dj-editor) .dj-detail-main > :first-child { border-top: 0; }
+.dj-detail:not(.dj-editor) .dj-result-pair > .dj-section { margin-top: 0; }
+.dj-detail:not(.dj-editor) .dj-section > h3 { margin-bottom: 12px; font-size: 15px; }
+.dj-detail:not(.dj-editor) .dj-section > h3 > .material-symbols-outlined { color: var(--muted); font-size: 20px; }
+.dj-detail:not(.dj-editor) .dj-actual > h3 > .material-symbols-outlined { color: var(--red); }
+.dj-detail:not(.dj-editor) .dj-expected > h3 > .material-symbols-outlined { color: var(--green); }
+.dj-section > h3 > small { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; }
+.dj-detail:not(.dj-editor) .dj-result-pair .dj-text { padding: 12px 14px; }
+
+/* แกลเลอรีรูปภาพประกอบ: หลายรูป = ตาราง 4:3 ขนาดใหญ่, รูปเดียว = แสดงทั้งภาพเต็มความกว้าง (สูงสุด 460px) */
+.dj-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.dj-gallery > li { display: grid; gap: 6px; min-width: 0; }
+.dj-detail .dj-gallery button { position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--muted) 8%, var(--card)); padding: 0; cursor: zoom-in; }
+.dj-gallery.is-single button { aspect-ratio: auto; height: auto; max-height: 460px; }
+.dj-gallery img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+.dj-gallery.is-single img { height: auto; max-height: 458px; object-fit: contain; object-position: center; }
+.dj-gallery.is-single { grid-template-columns: minmax(0, 1fr); }
+.dj-gallery.is-single .dj-gallery-loading { min-height: 200px; }
+.dj-detail .dj-gallery button:hover { border-color: var(--primary); }
+.dj-detail .dj-gallery button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); outline-offset: 2px; }
+.dj-gallery-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 100%; color: var(--muted); font-size: 12px; }
+.dj-gallery-loading .material-symbols-outlined { font-size: 32px; }
+.dj-gallery-zoom { position: absolute; right: 8px; bottom: 8px; display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; background: color-mix(in srgb, var(--text) 72%, transparent); color: var(--card); opacity: 0; transition: opacity .15s ease; }
+.dj-gallery-zoom .material-symbols-outlined { font-size: 20px; }
+.dj-gallery button:is(:hover, :focus-visible) .dj-gallery-zoom { opacity: 1; }
+@media (hover: none) { .dj-gallery-zoom { opacity: 1; } }
+.dj-gallery-name { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+/* รูปย่อในคอมเมนต์/ประวัติของหน้าต่างรายละเอียดใหญ่ขึ้น (72px เดิมดูรายละเอียดบนหน้าจอไม่ออก) */
+.dj-detail .defect-comment-thumbs { gap: 8px; }
+.dj-detail .defect-comment-thumbs > button { width: 132px; height: 96px; }
+.dj-detail .defect-comment-thumbs img { object-position: top left; }
+
+/* Test Case ที่ยังไม่มีผลใน Build: กล่องเตือน (ไอคอน + ข้อความ + ปุ่ม) แทนข้อความลอย */
+.dj-detail .dj-record-later { grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px 10px; border: 1px solid color-mix(in srgb, var(--yellow) 40%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--yellow) 8%, var(--card)); padding: 12px 14px; }
+.dj-detail .dj-record-later > .material-symbols-outlined { color: var(--warning-text); font-size: 20px; }
+.dj-detail .dj-record-later > .dj-field-hint { align-self: center; font-size: 13px; }
+.dj-detail .dj-record-later > .btn { grid-column: 2; background: var(--card); }
+
+/* แผงขวา: เส้นคั่นกลุ่ม + วันที่ท้ายการ์ด */
+.dj-fields dl > div.is-group { margin-top: 6px; border-top: 1px dashed var(--line); padding-top: 6px; }
+.dj-fields > .dj-dates { gap: 4px; border-top: 1px solid var(--line); padding: 10px 14px; }
+.dj-dates > span { display: inline-flex; align-items: center; gap: 6px; }
+.dj-dates .material-symbols-outlined { font-size: 16px; }
+
 /* ฟอร์มสร้าง/แก้ไข = โครงเดียวกับหน้าต่างรายละเอียด (.dj-detail + .dj-editor): ชื่อเป็นช่องตัวใหญ่, เนื้อหาเป็น textarea ใต้หัวข้อแบบเดียวกับ .dj-section,
    แผงขวาใช้ .dj-fields แต่ช่องมีกรอบเสมอ (เป็นฟอร์ม) และแถบปุ่มติดล่าง */
 .dj-editor-title { display: grid; gap: 6px; }
@@ -472,6 +532,14 @@
   .dj-detail-headline { padding: 16px 16px 4px; }
   .dj-detail-main { padding: 4px 16px 24px; }
   .dj-detail-headline h1 { font-size: 20px; }
+  .dj-headline-meta > li { min-height: 32px; }
+  .dj-detail:not(.dj-editor) .dj-result-pair { gap: 16px; }
+  .dj-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .dj-gallery.is-single { grid-template-columns: minmax(0, 1fr); }
+  .dj-detail .defect-comment-thumbs > button { width: calc(50% - 4px); height: auto; aspect-ratio: 4 / 3; }
+  .dj-detail .dj-record-later { grid-template-columns: minmax(0, 1fr); }
+  .dj-detail .dj-record-later > .material-symbols-outlined { display: none; }
+  .dj-detail .dj-record-later > .btn { grid-column: 1; }
   .dj-detail-actions .btn { flex: 1 1 0; min-height: 44px; justify-content: center; }
   .dj-result-pair { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .dj-desc-field { grid-template-columns: minmax(0, 1fr); }

@@ -2234,26 +2234,31 @@ textarea::placeholder {
 /* คอลัมน์ CRM ในตาราง Defect list — ถ้ายังไม่เคยส่งไป CRM (สถานะ None) ให้ badge กดได้ทันทีเพื่อเปิด
    dialog เลือกผู้รับผิดชอบแล้วส่งไป CRM เลย ไม่ต้องเปิด detail modal ก่อน (ปุ่มล้วนๆ ไม่มีกรอบ/พื้นหลัง
    ของตัวเอง ให้ badge ข้างในเป็นตัวรับผิดชอบหน้าตาแทน) */
-/* ขั้นตอนการทำซ้ำแบบการ์ด (components/ReproSteps.tsx) — ใช้ใน Defect detail และหน้าแชร์ Defect */
-.defect-repro-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; min-width: 0; }
-.defect-repro-step { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; background: #fff; padding: 10px 12px; min-width: 0; }
-.defect-repro-step.is-fail { border-color: #f3c6c6; border-left-color: var(--red); background: #fef6f6; }
-.defect-repro-step.is-pass { border-left-color: var(--green); }
-.defect-repro-step-no { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 50%; background: #eef3ff; color: var(--primary); font-size: 12px; font-weight: 800; }
-.defect-repro-step.is-fail .defect-repro-step-no { background: color-mix(in srgb, var(--red) 12%, #fff); color: var(--red); }
-.defect-repro-step-body { flex: 1; min-width: 0; display: grid; gap: 8px; font-size: 14px; line-height: 1.55; color: var(--text); }
+/* ขั้นตอนการทำซ้ำ (components/ReproSteps.tsx) — ใช้ใน Defect detail และหน้าแชร์ Defect
+   แบบไทม์ไลน์ (ปรับ 2026-11-18): เลขข้อในวงกลมต่อกันด้วยเส้นแนวตั้ง, การกระทำตัวหนา, ผลที่คาดหวัง/ข้อมูลอยู่ในกล่องเทาอ่อน
+   ขั้นที่ Fail = วงกลมแดง + กล่องแดงอ่อน, Pass = วงกลมเขียว */
+.defect-repro-steps { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.defect-repro-step { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; min-width: 0; padding-bottom: 14px; }
+.defect-repro-step:last-child { padding-bottom: 0; }
+.defect-repro-step:not(:last-child)::before { position: absolute; top: 30px; bottom: 2px; left: 13px; width: 2px; border-radius: 2px; background: var(--line); content: ""; }
+.defect-repro-step-no { display: grid; width: 28px; height: 28px; place-items: center; border: 2px solid color-mix(in srgb, var(--primary) 30%, var(--card)); border-radius: 50%; background: color-mix(in srgb, var(--primary) 8%, var(--card)); color: var(--primary); font-size: 12px; font-weight: 800; }
+.defect-repro-step.is-fail .defect-repro-step-no { border-color: var(--red); background: var(--red); color: var(--card); }
+.defect-repro-step.is-pass .defect-repro-step-no { border-color: color-mix(in srgb, var(--green) 45%, var(--card)); background: color-mix(in srgb, var(--green) 10%, var(--card)); color: var(--green); }
+.defect-repro-step-body { display: grid; gap: 6px; min-width: 0; padding-top: 3px; color: var(--text); font-size: 14px; line-height: 1.55; }
 .defect-repro-step-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.defect-repro-step-head b { min-width: 0; overflow-wrap: anywhere; }
+.defect-repro-step-head b { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .defect-repro-step-head .badge { flex: none; }
-.defect-repro-fields { margin: 0; display: grid; gap: 6px; }
+.defect-repro-fields { display: grid; gap: 4px; margin: 0; border-radius: 8px; background: color-mix(in srgb, var(--muted) 6%, var(--card)); padding: 8px 12px; }
+.defect-repro-step.is-fail .defect-repro-fields { border: 1px solid color-mix(in srgb, var(--red) 22%, var(--line)); background: color-mix(in srgb, var(--red) 4%, var(--card)); }
 .defect-repro-fields > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; align-items: baseline; }
 .defect-repro-fields > div.is-plain { grid-template-columns: minmax(0, 1fr); }
-.defect-repro-fields dt { font-size: 11px; font-weight: 700; color: var(--muted); }
-.defect-repro-fields dd { margin: 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.defect-repro-fields dt { color: var(--muted); font-size: 12px; font-weight: 600; }
+.defect-repro-fields dd { margin: 0; color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
 .defect-repro-notes { display: flex; flex-wrap: wrap; gap: 6px; }
-.defect-repro-notes span { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.defect-repro-notes span { border: 1px solid var(--line); border-radius: 999px; background: var(--bg); padding: 2px 8px; color: var(--muted); font-size: 11px; font-weight: 600; }
 @media (max-width: 760px) {
-  .defect-repro-step { padding: 9px 10px; gap: 8px; }
+  .defect-repro-step { gap: 10px; }
+  .defect-repro-fields { padding: 8px 10px; }
   .defect-repro-fields > div { grid-template-columns: minmax(0, 1fr); gap: 1px; }
 }
 .quick-action-blue { border-color: #bcd0f7 !important; color: var(--primary) !important; }
